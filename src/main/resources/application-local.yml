@@ -1,0 +1,11 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/lifeplatform}
+    username: ${SPRING_DATASOURCE_USERNAME:app_role}
+    password: ${SPRING_DATASOURCE_PASSWORD:devapppassword}
+
+server:
+  port: 8080
