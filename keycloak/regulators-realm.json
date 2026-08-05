@@ -1,0 +1,24 @@
+{
+  "realm": "regulators",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "TIRA_READ_ONLY" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "lifeplatform-app",
+      "enabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["*"],
+      "secret": "dev-secret-regulators"
+    }
+  ]
+}
