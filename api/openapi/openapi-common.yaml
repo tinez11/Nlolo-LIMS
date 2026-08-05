@@ -1,0 +1,175 @@
+openapi: 3.1.0
+info:
+  title: Digital Life Insurance Platform — Common Components
+  version: "0.1.0-draft"
+  description: >
+    Shared schemas, security schemes, parameters, and standard responses referenced
+    by every module's OpenAPI specification via $ref. Not a standalone API.
+    Base server URL and Keycloak issuer below are placeholders — confirm before Deliverable 6.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+    description: Placeholder — confirm production/staging hosts
+paths: {}
+components:
+  securitySchemes:
+    customersAuth:
+      type: oauth2
+      description: >
+        Keycloak realm "customers". Tenant and party identity come ONLY from validated
+        JWT claims (tenant_id, party_id) — never from a client-supplied header or query
+        param, to prevent tenant/party spoofing.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/customers/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/customers/protocol/openid-connect/token
+          scopes:
+            profile: Basic profile / self-service access
+    agentsAuth:
+      type: oauth2
+      description: Keycloak realm "agents" — agents, brokers, bancassurance partner staff, agency supervisors.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/agents/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/agents/protocol/openid-connect/token
+          scopes:
+            agent: Agent-scoped access
+            supervisor: Agency supervisor access (hierarchy visibility)
+    staffAuth:
+      type: oauth2
+      description: >
+        Keycloak realm "staff" — back-office roles: UNDERWRITER, CLAIMS_ASSESSOR,
+        CLAIMS_MANAGER, FINANCE_OFFICER, CUSTOMER_SERVICE_REP, ADMIN. Fine-grained
+        authorization is role-based on top of this realm (see each spec's per-endpoint notes).
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.nlolo-lifeplatform.tz/realms/staff/protocol/openid-connect/auth
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/staff/protocol/openid-connect/token
+          scopes: {}
+    regulatorAuth:
+      type: oauth2
+      description: Keycloak realm "regulators" — TIRA read-only portal. No write scopes exist in this realm at all.
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.nlolo-lifeplatform.tz/realms/regulators/protocol/openid-connect/token
+          scopes:
+            read-only: Read-only regulatory access
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: >
+        Client-generated key for safe retry of unsafe (POST) operations — most
+        important on USSD/agent-portal flows over unreliable connectivity.
+  schemas:
+    ProblemDetails:
+      type: object
+      description: RFC 7807 Problem Details, extended with errorCode and traceId.
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://api.nlolo-lifeplatform.tz/problems/beneficiary-shares-invalid
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+        errorCode:
+          type: string
+          description: Stable machine-readable code for client-side branching, distinct from HTTP status.
+        traceId:
+          type: string
+          description: Correlates to platform tracing/logs; always present, including on 5xx.
+        errors:
+          type: array
+          description: Field-level validation errors; present on 400 responses only.
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+      required: [type, title, status, traceId]
+    Money:
+      type: object
+      properties:
+        amount:
+          type: string
+          pattern: '^-?\d+(\.\d{1,2})?$'
+          description: Decimal string — never a binary float.
+        currencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: TZS
+      required: [amount, currencyCode]
+    PartyRef:
+      type: string
+      format: uuid
+      description: Opaque PartyId. Resolved via the party module's own API; never expanded inline.
+    PolicyNumberRef:
+      type: string
+      pattern: '^[A-Z0-9-]{6,20}$'
+    ProcessStatus:
+      type: object
+      description: Poll target for async operations kicked off by a 202 response (e.g. surrender/maturity).
+      properties:
+        processInstanceId: { type: string }
+        status:
+          type: string
+          enum: [IN_PROGRESS, COMPLETED, COMPENSATING, FAILED]
+        errorDetails: { type: string, nullable: true }
+        resultLocation:
+          type: string
+          format: uri
+          nullable: true
+          description: Present once COMPLETED — link to the finalized resource.
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalElements: { type: integer }
+  responses:
+    BadRequest:
+      description: Validation failure (RFC 7807)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Unauthorized:
+      description: Missing/invalid bearer token
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Forbidden:
+      description: >
+        Authenticated but not authorized — includes object-level authorization failures
+        (e.g. a customer token requesting a policy whose policyholderPartyId doesn't match
+        the token's party_id claim). Every customer- and agent-scoped endpoint below performs
+        this check explicitly; role membership alone is never sufficient.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    NotFound:
+      description: >
+        Resource does not exist, OR exists in a different tenant. Deliberately the same
+        response either way — a 403 or a tenant-specific 404 would leak cross-tenant
+        existence information.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Conflict:
+      description: Optimistic-locking conflict or state-machine violation (e.g. surrendering an already-surrendered policy).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    UnprocessableEntity:
+      description: Semantically valid request rejected by a domain invariant (e.g. beneficiary shares don't sum to 100%).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }

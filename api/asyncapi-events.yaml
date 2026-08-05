@@ -1,0 +1,636 @@
+asyncapi: '2.6.0'
+info:
+  title: Digital Life Insurance Platform — Domain Event Catalog
+  version: '0.1.0-draft'
+  description: >
+    Every domain event produced across the 18 modules (Deliverables 2-3). Modeled as
+    an in-process event bus today (Spring Application Events / Spring Modulith's Event
+    Publication Registry) — one channel per event type, so this document converts
+    directly to a Kafka-backed AsyncAPI spec without restructuring if a module is ever
+    extracted per your stated migration path. "publish" below means "the producer
+    module publishes to this channel"; consumers are documented in each channel's
+    description rather than modeled as separate subscriber applications, since this
+    is a shared-bus catalog, not one service's contract.
+defaultContentType: application/json
+channels:
+
+  party.PartyRegistered:
+    description: "Producer: party. Consumers: distribution, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PartyRegistered' }
+  party.PartyKycStatusChanged:
+    description: "Producer: party. Consumers: underwriting, distribution, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PartyKycStatusChanged' }
+  party.PartyDetailsUpdated:
+    description: "Producer: party. Consumers: communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PartyDetailsUpdated' }
+
+  product.ProductDefinitionPublished:
+    description: "Producer: product. Consumers: finaccounting, regreporting, audit."
+    publish:
+      message: { $ref: '#/components/messages/ProductDefinitionPublished' }
+  product.ProductVersionRetired:
+    description: "Producer: product. Consumers: regreporting, audit."
+    publish:
+      message: { $ref: '#/components/messages/ProductVersionRetired' }
+
+  underwriting.UnderwritingCaseOpened:
+    description: "Producer: underwriting. Consumers: audit, regreporting."
+    publish:
+      message: { $ref: '#/components/messages/UnderwritingCaseOpened' }
+  underwriting.UnderwritingDecisionMade:
+    description: >
+      Producer: underwriting. Consumers: policy (auto-issuance trigger on ACCEPT/LOADED
+      — the common issuance path, per Deliverable 4's framing note), communication, audit, regreporting.
+    publish:
+      message: { $ref: '#/components/messages/UnderwritingDecisionMade' }
+
+  policy.PolicyIssued:
+    description: "Producer: policy. Consumers: billing, distribution, reinsurance, finaccounting, regreporting, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PolicyIssued' }
+  policy.PolicyEndorsed:
+    description: "Producer: policy. Consumers: billing (schedule regen), finaccounting, regreporting, audit."
+    publish:
+      message: { $ref: '#/components/messages/PolicyEndorsed' }
+  policy.PolicyLapsed:
+    description: "Producer: policy. Consumers: finaccounting, communication, regreporting, audit."
+    publish:
+      message: { $ref: '#/components/messages/PolicyLapsed' }
+  policy.PolicyReinstated:
+    description: "Producer: policy. Consumers: billing, finaccounting, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PolicyReinstated' }
+  policy.PolicySuspended:
+    description: "Producer: policy. Consumers: billing (pause schedule), finaccounting, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PolicySuspended' }
+  policy.PolicyMatured:
+    description: "Producer: policy. Consumers: finaccounting, regreporting, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PolicyMatured' }
+  policy.BeneficiaryChanged:
+    description: "Producer: policy. Consumers: claims (refresh any open claim's beneficiary snapshot), communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/BeneficiaryChanged' }
+  policy.SurrenderValueCalculated:
+    description: "Producer: policy. Consumers: communication, audit. Informational quote only — no finaccounting posting."
+    publish:
+      message: { $ref: '#/components/messages/SurrenderValueCalculated' }
+  policy.PolicySurrenderInitiated:
+    description: "Producer: policy. Consumer: policyloan (loan-netting choreography start, Deliverable 3 Rev 2 §12)."
+    publish:
+      message: { $ref: '#/components/messages/PolicySurrenderInitiated' }
+  policy.PolicyMaturityInitiated:
+    description: "Producer: policy. Consumer: policyloan (same choreography, maturity path)."
+    publish:
+      message: { $ref: '#/components/messages/PolicyMaturityInitiated' }
+  policy.PolicySurrendered:
+    description: "Producer: policy. Consumers: finaccounting, regreporting, communication, audit. Final, net-of-loan proceeds."
+    publish:
+      message: { $ref: '#/components/messages/PolicySurrendered' }
+  policy.SurrenderPayoutRequested:
+    description: "Producer: policy. Consumer: payment (request/confirm pattern)."
+    publish:
+      message: { $ref: '#/components/messages/SurrenderPayoutRequested' }
+  policy.MaturityPayoutRequested:
+    description: "Producer: policy. Consumer: payment (request/confirm pattern)."
+    publish:
+      message: { $ref: '#/components/messages/MaturityPayoutRequested' }
+
+  policyloan.LoanOriginated:
+    description: "Producer: policyloan. Consumers: finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/LoanOriginated' }
+  policyloan.LoanDisbursementRequested:
+    description: "Producer: policyloan. Consumer: payment (request/confirm pattern, Deliverable 2 Rev 2 A2)."
+    publish:
+      message: { $ref: '#/components/messages/LoanDisbursementRequested' }
+  policyloan.LoanDisbursed:
+    description: "Producer: policyloan (confirmation, after consuming payment.DisbursementCompleted). Consumers: policy (encumbrance projection), communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/LoanDisbursed' }
+  policyloan.LoanRepaid:
+    description: "Producer: policyloan. Consumers: policy (encumbrance projection), finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/LoanRepaid' }
+  policyloan.LoanForcedLapseTriggered:
+    description: "Producer: policyloan. Consumers: policy, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/LoanForcedLapseTriggered' }
+  policyloan.LoanSettledForPayout:
+    description: "Producer: policyloan. Consumer: policy (loan-netting choreography, settlement leg)."
+    publish:
+      message: { $ref: '#/components/messages/LoanSettledForPayout' }
+
+  billing.PremiumInvoiceGenerated:
+    description: "Producer: billing. Consumers: finaccounting, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PremiumInvoiceGenerated' }
+  billing.PremiumOverdue:
+    description: "Producer: billing. Consumers: communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PremiumOverdue' }
+  billing.GracePeriodTriggered:
+    description: "Producer: billing. Consumers: communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/GracePeriodTriggered' }
+  billing.GracePeriodExpiring:
+    description: "Producer: billing. Consumers: communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/GracePeriodExpiring' }
+  billing.PaymentRequested:
+    description: "Producer: billing. Consumer: payment (request/confirm pattern)."
+    publish:
+      message: { $ref: '#/components/messages/PaymentRequested' }
+  billing.PolicyLapseRecommended:
+    description: "Producer: billing. Consumer: policy (billing recommends, policy alone performs the lapse transition)."
+    publish:
+      message: { $ref: '#/components/messages/PolicyLapseRecommended' }
+  billing.FieldReceiptCaptured:
+    description: "Producer: billing (BillingSyncApi offline capture). Consumer: audit."
+    publish:
+      message: { $ref: '#/components/messages/FieldReceiptCaptured' }
+  billing.FieldReceiptReconciliationOverdue:
+    description: "Producer: billing (24h SLA breach, Deliverable 2 Rev 2 B4). Consumers: communication (staff alert), audit."
+    publish:
+      message: { $ref: '#/components/messages/FieldReceiptReconciliationOverdue' }
+
+  claims.ClaimRegistered:
+    description: "Producer: claims. Consumers: communication, audit, regreporting."
+    publish:
+      message: { $ref: '#/components/messages/ClaimRegistered' }
+  claims.ClaimAssessed:
+    description: "Producer: claims. Consumers: audit, regreporting."
+    publish:
+      message: { $ref: '#/components/messages/ClaimAssessed' }
+  claims.ClaimApproved:
+    description: "Producer: claims. Consumers: reinsurance (recovery calc), finaccounting, communication, audit, regreporting."
+    publish:
+      message: { $ref: '#/components/messages/ClaimApproved' }
+  claims.ClaimRejected:
+    description: "Producer: claims. Consumers: communication, audit, regreporting."
+    publish:
+      message: { $ref: '#/components/messages/ClaimRejected' }
+  claims.ClaimSettlementRequested:
+    description: "Producer: claims. Consumer: payment (request/confirm pattern, Deliverable 2 Rev 2 A3)."
+    publish:
+      message: { $ref: '#/components/messages/ClaimSettlementRequested' }
+  claims.ClaimSettled:
+    description: "Producer: claims (confirmation, after consuming payment.DisbursementCompleted). Consumers: finaccounting, communication, audit, regreporting."
+    publish:
+      message: { $ref: '#/components/messages/ClaimSettled' }
+
+  distribution.AgentOnboarded:
+    description: "Producer: distribution. Consumers: communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/AgentOnboarded' }
+  distribution.AgentLicenseExpiring:
+    description: "Producer: distribution. Consumers: communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/AgentLicenseExpiring' }
+  distribution.CommissionAccrued:
+    description: "Producer: distribution. Consumers: finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/CommissionAccrued' }
+  distribution.CommissionPayoutRequested:
+    description: "Producer: distribution. Consumer: payment (request/confirm pattern)."
+    publish:
+      message: { $ref: '#/components/messages/CommissionPayoutRequested' }
+  distribution.CommissionPaid:
+    description: "Producer: distribution (confirmation). Consumers: communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/CommissionPaid' }
+
+  payment.PaymentConfirmed:
+    description: "Producer: payment. Consumers: billing, policyloan (repayment leg), finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/PaymentConfirmed' }
+  payment.PaymentFailed:
+    description: "Producer: payment. Consumers: billing, policyloan, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/PaymentFailed' }
+  payment.DisbursementCompleted:
+    description: "Producer: payment. Consumers: policyloan, claims, distribution, policy, finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/DisbursementCompleted' }
+  payment.DisbursementFailed:
+    description: "Producer: payment. Consumers: policyloan, claims, distribution, policy, communication, audit."
+    publish:
+      message: { $ref: '#/components/messages/DisbursementFailed' }
+
+  reinsurance.CessionRecorded:
+    description: "Producer: reinsurance. Consumers: finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/CessionRecorded' }
+  reinsurance.RecoveryCalculated:
+    description: "Producer: reinsurance. Consumers: finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/RecoveryCalculated' }
+  reinsurance.RecoveryConfirmed:
+    description: "Producer: reinsurance. Consumers: finaccounting, audit."
+    publish:
+      message: { $ref: '#/components/messages/RecoveryConfirmed' }
+
+  finaccounting.GlPostingRecorded:
+    description: "Producer: finaccounting. Consumers: regreporting, audit. Schema provisional pending C1."
+    publish:
+      message: { $ref: '#/components/messages/GlPostingRecorded' }
+  finaccounting.CsmRolledForward:
+    description: "Producer: finaccounting. Consumers: regreporting, audit. Schema provisional pending C1."
+    publish:
+      message: { $ref: '#/components/messages/CsmRolledForward' }
+
+  communication.NotificationDispatched:
+    description: "Producer: communication. Consumer: audit."
+    publish:
+      message: { $ref: '#/components/messages/NotificationDispatched' }
+  communication.NotificationFailed:
+    description: "Producer: communication. Consumer: audit."
+    publish:
+      message: { $ref: '#/components/messages/NotificationFailed' }
+
+  document.DocumentUploaded:
+    description: "Producer: document. Consumer: audit."
+    publish:
+      message: { $ref: '#/components/messages/DocumentUploaded' }
+
+components:
+  messages:
+    PartyRegistered: { messageId: PartyRegistered, name: PartyRegistered, payload: { $ref: '#/components/schemas/PartyRegisteredPayload' } }
+    PartyKycStatusChanged: { messageId: PartyKycStatusChanged, name: PartyKycStatusChanged, payload: { $ref: '#/components/schemas/PartyKycStatusChangedPayload' } }
+    PartyDetailsUpdated: { messageId: PartyDetailsUpdated, name: PartyDetailsUpdated, payload: { $ref: '#/components/schemas/PartyDetailsUpdatedPayload' } }
+    ProductDefinitionPublished: { messageId: ProductDefinitionPublished, name: ProductDefinitionPublished, payload: { $ref: '#/components/schemas/ProductDefinitionPublishedPayload' } }
+    ProductVersionRetired: { messageId: ProductVersionRetired, name: ProductVersionRetired, payload: { $ref: '#/components/schemas/ProductVersionRetiredPayload' } }
+    UnderwritingCaseOpened: { messageId: UnderwritingCaseOpened, name: UnderwritingCaseOpened, payload: { $ref: '#/components/schemas/UnderwritingCaseOpenedPayload' } }
+    UnderwritingDecisionMade: { messageId: UnderwritingDecisionMade, name: UnderwritingDecisionMade, payload: { $ref: '#/components/schemas/UnderwritingDecisionMadePayload' } }
+    PolicyIssued: { messageId: PolicyIssued, name: PolicyIssued, payload: { $ref: '#/components/schemas/PolicyIssuedPayload' } }
+    PolicyEndorsed: { messageId: PolicyEndorsed, name: PolicyEndorsed, payload: { $ref: '#/components/schemas/PolicyEndorsedPayload' } }
+    PolicyLapsed: { messageId: PolicyLapsed, name: PolicyLapsed, payload: { $ref: '#/components/schemas/PolicyLapsedPayload' } }
+    PolicyReinstated: { messageId: PolicyReinstated, name: PolicyReinstated, payload: { $ref: '#/components/schemas/PolicyReinstatedPayload' } }
+    PolicySuspended: { messageId: PolicySuspended, name: PolicySuspended, payload: { $ref: '#/components/schemas/PolicySuspendedPayload' } }
+    PolicyMatured: { messageId: PolicyMatured, name: PolicyMatured, payload: { $ref: '#/components/schemas/PolicyMaturedPayload' } }
+    BeneficiaryChanged: { messageId: BeneficiaryChanged, name: BeneficiaryChanged, payload: { $ref: '#/components/schemas/BeneficiaryChangedPayload' } }
+    SurrenderValueCalculated: { messageId: SurrenderValueCalculated, name: SurrenderValueCalculated, payload: { $ref: '#/components/schemas/SurrenderValueCalculatedPayload' } }
+    PolicySurrenderInitiated: { messageId: PolicySurrenderInitiated, name: PolicySurrenderInitiated, payload: { $ref: '#/components/schemas/PolicySurrenderInitiatedPayload' } }
+    PolicyMaturityInitiated: { messageId: PolicyMaturityInitiated, name: PolicyMaturityInitiated, payload: { $ref: '#/components/schemas/PolicyMaturityInitiatedPayload' } }
+    PolicySurrendered: { messageId: PolicySurrendered, name: PolicySurrendered, payload: { $ref: '#/components/schemas/PolicySurrenderedPayload' } }
+    SurrenderPayoutRequested: { messageId: SurrenderPayoutRequested, name: SurrenderPayoutRequested, payload: { $ref: '#/components/schemas/SurrenderPayoutRequestedPayload' } }
+    MaturityPayoutRequested: { messageId: MaturityPayoutRequested, name: MaturityPayoutRequested, payload: { $ref: '#/components/schemas/MaturityPayoutRequestedPayload' } }
+    LoanOriginated: { messageId: LoanOriginated, name: LoanOriginated, payload: { $ref: '#/components/schemas/LoanOriginatedPayload' } }
+    LoanDisbursementRequested: { messageId: LoanDisbursementRequested, name: LoanDisbursementRequested, payload: { $ref: '#/components/schemas/LoanDisbursementRequestedPayload' } }
+    LoanDisbursed: { messageId: LoanDisbursed, name: LoanDisbursed, payload: { $ref: '#/components/schemas/LoanDisbursedPayload' } }
+    LoanRepaid: { messageId: LoanRepaid, name: LoanRepaid, payload: { $ref: '#/components/schemas/LoanRepaidPayload' } }
+    LoanForcedLapseTriggered: { messageId: LoanForcedLapseTriggered, name: LoanForcedLapseTriggered, payload: { $ref: '#/components/schemas/LoanForcedLapseTriggeredPayload' } }
+    LoanSettledForPayout: { messageId: LoanSettledForPayout, name: LoanSettledForPayout, payload: { $ref: '#/components/schemas/LoanSettledForPayoutPayload' } }
+    PremiumInvoiceGenerated: { messageId: PremiumInvoiceGenerated, name: PremiumInvoiceGenerated, payload: { $ref: '#/components/schemas/PremiumInvoiceGeneratedPayload' } }
+    PremiumOverdue: { messageId: PremiumOverdue, name: PremiumOverdue, payload: { $ref: '#/components/schemas/PremiumOverduePayload' } }
+    GracePeriodTriggered: { messageId: GracePeriodTriggered, name: GracePeriodTriggered, payload: { $ref: '#/components/schemas/GracePeriodTriggeredPayload' } }
+    GracePeriodExpiring: { messageId: GracePeriodExpiring, name: GracePeriodExpiring, payload: { $ref: '#/components/schemas/GracePeriodExpiringPayload' } }
+    PaymentRequested: { messageId: PaymentRequested, name: PaymentRequested, payload: { $ref: '#/components/schemas/PaymentRequestedPayload' } }
+    PolicyLapseRecommended: { messageId: PolicyLapseRecommended, name: PolicyLapseRecommended, payload: { $ref: '#/components/schemas/PolicyLapseRecommendedPayload' } }
+    FieldReceiptCaptured: { messageId: FieldReceiptCaptured, name: FieldReceiptCaptured, payload: { $ref: '#/components/schemas/FieldReceiptCapturedPayload' } }
+    FieldReceiptReconciliationOverdue: { messageId: FieldReceiptReconciliationOverdue, name: FieldReceiptReconciliationOverdue, payload: { $ref: '#/components/schemas/FieldReceiptReconciliationOverduePayload' } }
+    ClaimRegistered: { messageId: ClaimRegistered, name: ClaimRegistered, payload: { $ref: '#/components/schemas/ClaimRegisteredPayload' } }
+    ClaimAssessed: { messageId: ClaimAssessed, name: ClaimAssessed, payload: { $ref: '#/components/schemas/ClaimAssessedPayload' } }
+    ClaimApproved: { messageId: ClaimApproved, name: ClaimApproved, payload: { $ref: '#/components/schemas/ClaimApprovedPayload' } }
+    ClaimRejected: { messageId: ClaimRejected, name: ClaimRejected, payload: { $ref: '#/components/schemas/ClaimRejectedPayload' } }
+    ClaimSettlementRequested: { messageId: ClaimSettlementRequested, name: ClaimSettlementRequested, payload: { $ref: '#/components/schemas/ClaimSettlementRequestedPayload' } }
+    ClaimSettled: { messageId: ClaimSettled, name: ClaimSettled, payload: { $ref: '#/components/schemas/ClaimSettledPayload' } }
+    AgentOnboarded: { messageId: AgentOnboarded, name: AgentOnboarded, payload: { $ref: '#/components/schemas/AgentOnboardedPayload' } }
+    AgentLicenseExpiring: { messageId: AgentLicenseExpiring, name: AgentLicenseExpiring, payload: { $ref: '#/components/schemas/AgentLicenseExpiringPayload' } }
+    CommissionAccrued: { messageId: CommissionAccrued, name: CommissionAccrued, payload: { $ref: '#/components/schemas/CommissionAccruedPayload' } }
+    CommissionPayoutRequested: { messageId: CommissionPayoutRequested, name: CommissionPayoutRequested, payload: { $ref: '#/components/schemas/CommissionPayoutRequestedPayload' } }
+    CommissionPaid: { messageId: CommissionPaid, name: CommissionPaid, payload: { $ref: '#/components/schemas/CommissionPaidPayload' } }
+    PaymentConfirmed: { messageId: PaymentConfirmed, name: PaymentConfirmed, payload: { $ref: '#/components/schemas/PaymentConfirmedPayload' } }
+    PaymentFailed: { messageId: PaymentFailed, name: PaymentFailed, payload: { $ref: '#/components/schemas/PaymentFailedPayload' } }
+    DisbursementCompleted: { messageId: DisbursementCompleted, name: DisbursementCompleted, payload: { $ref: '#/components/schemas/DisbursementCompletedPayload' } }
+    DisbursementFailed: { messageId: DisbursementFailed, name: DisbursementFailed, payload: { $ref: '#/components/schemas/DisbursementFailedPayload' } }
+    CessionRecorded: { messageId: CessionRecorded, name: CessionRecorded, payload: { $ref: '#/components/schemas/CessionRecordedPayload' } }
+    RecoveryCalculated: { messageId: RecoveryCalculated, name: RecoveryCalculated, payload: { $ref: '#/components/schemas/RecoveryCalculatedPayload' } }
+    RecoveryConfirmed: { messageId: RecoveryConfirmed, name: RecoveryConfirmed, payload: { $ref: '#/components/schemas/RecoveryConfirmedPayload' } }
+    GlPostingRecorded: { messageId: GlPostingRecorded, name: GlPostingRecorded, payload: { $ref: '#/components/schemas/GlPostingRecordedPayload' } }
+    CsmRolledForward: { messageId: CsmRolledForward, name: CsmRolledForward, payload: { $ref: '#/components/schemas/CsmRolledForwardPayload' } }
+    NotificationDispatched: { messageId: NotificationDispatched, name: NotificationDispatched, payload: { $ref: '#/components/schemas/NotificationDispatchedPayload' } }
+    NotificationFailed: { messageId: NotificationFailed, name: NotificationFailed, payload: { $ref: '#/components/schemas/NotificationFailedPayload' } }
+    DocumentUploaded: { messageId: DocumentUploaded, name: DocumentUploaded, payload: { $ref: '#/components/schemas/DocumentUploadedPayload' } }
+
+  schemas:
+    EventEnvelopeMeta:
+      type: object
+      description: >
+        Common to every message below (Deliverable 2's DomainEventEnvelope<T>), shown
+        once here rather than repeated per schema. sequenceNumber is new in this
+        deliverable — a per-aggregate monotonic counter assigned by the producer within
+        the same transaction as the state change, letting ordering-sensitive consumers
+        (finaccounting, audit) detect and buffer out-of-order delivery.
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType: { type: string, description: "e.g. policy.PolicyIssued" }
+        schemaVersion: { type: integer, default: 1 }
+        tenantId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+        sequenceNumber: { type: integer, description: "Monotonic per aggregate (e.g. per policyNumber), not global." }
+      required: [eventId, eventType, schemaVersion, tenantId, occurredAt]
+
+    PartyRegisteredPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { partyId: {type: string, format: uuid}, partyType: {type: string, enum: [INDIVIDUAL, CORPORATE, GROUP]} }
+    PartyKycStatusChangedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { partyId: {type: string, format: uuid}, previousStatus: {type: string}, newStatus: {type: string}, evidenceDocumentRef: {type: string} }
+    PartyDetailsUpdatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { partyId: {type: string, format: uuid}, changedFields: {type: array, items: {type: string}} }
+
+    ProductDefinitionPublishedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, effectiveDate: {type: string, format: date}, ifrsMeasurementModel: {type: string, enum: [GMM, PAA]} }
+    ProductVersionRetiredPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, retirementDate: {type: string, format: date} }
+
+    UnderwritingCaseOpenedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { caseId: {type: string, format: uuid}, applicantPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid} }
+    UnderwritingDecisionMadePayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { caseId: {type: string, format: uuid}, outcome: {type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED]}, loadingPercent: {type: number, nullable: true}, decidedAt: {type: string, format: date-time} }
+
+    PolicyIssuedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, issueDate: {type: string, format: date}, agentOfRecordId: {type: string, format: uuid, nullable: true} }
+    PolicyEndorsedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, endorsementType: {type: string}, effectiveDate: {type: string, format: date} }
+    PolicyLapsedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, lapsedAt: {type: string, format: date-time} }
+    PolicyReinstatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, reinstatedAt: {type: string, format: date-time} }
+    PolicySuspendedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, suspendedAt: {type: string, format: date-time}, reason: {type: string} }
+    PolicyMaturedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, maturedAt: {type: string, format: date-time}, netProceeds: {type: object} }
+    BeneficiaryChangedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, changedAt: {type: string, format: date-time} }
+    SurrenderValueCalculatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, quotedValue: {type: object}, quotedAt: {type: string, format: date-time} }
+    PolicySurrenderInitiatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, grossProceeds: {type: object} }
+    PolicyMaturityInitiatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, grossProceeds: {type: object} }
+    PolicySurrenderedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, netProceeds: {type: object}, surrenderedAt: {type: string, format: date-time} }
+    SurrenderPayoutRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, payeeRef: {type: string}, amount: {type: object}, idempotencyKey: {type: string} }
+    MaturityPayoutRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, payeeRef: {type: string}, amount: {type: object}, idempotencyKey: {type: string} }
+
+    LoanOriginatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { loanId: {type: string, format: uuid}, policyNumber: {type: string}, principalAmount: {type: object}, interestRate: {type: number}, originatedAt: {type: string, format: date-time} }
+    LoanDisbursementRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { loanId: {type: string, format: uuid}, payeeRef: {type: string}, amount: {type: object}, idempotencyKey: {type: string} }
+    LoanDisbursedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { loanId: {type: string, format: uuid}, disbursedAt: {type: string, format: date-time} }
+    LoanRepaidPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { loanId: {type: string, format: uuid}, amount: {type: object}, repaidAt: {type: string, format: date-time}, outstandingBalance: {type: object} }
+    LoanForcedLapseTriggeredPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { loanId: {type: string, format: uuid}, policyNumber: {type: string}, triggeredAt: {type: string, format: date-time} }
+    LoanSettledForPayoutPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, loanId: {type: string, format: uuid, nullable: true}, settlementAmount: {type: object, description: "Zero if no active loan."} }
+
+    PremiumInvoiceGeneratedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, dueDate: {type: string, format: date}, amount: {type: object} }
+    PremiumOverduePayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, daysOverdue: {type: integer} }
+    GracePeriodTriggeredPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, graceEndsAt: {type: string, format: date} }
+    GracePeriodExpiringPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, hoursRemaining: {type: integer} }
+    PaymentRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { invoiceId: {type: string, format: uuid}, payerRef: {type: string}, amount: {type: object}, idempotencyKey: {type: string} }
+    PolicyLapseRecommendedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, invoiceId: {type: string, format: uuid}, recommendedAt: {type: string, format: date-time} }
+    FieldReceiptCapturedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { receiptId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object}, capturedAt: {type: string, format: date-time}, agentId: {type: string, format: uuid} }
+    FieldReceiptReconciliationOverduePayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { receiptId: {type: string, format: uuid}, policyNumber: {type: string}, overdueSince: {type: string, format: date-time} }
+
+    ClaimRegisteredPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { claimId: {type: string, format: uuid}, policyNumber: {type: string}, claimantPartyId: {type: string, format: uuid}, claimType: {type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY]}, dateOfEvent: {type: string, format: date} }
+    ClaimAssessedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { claimId: {type: string, format: uuid}, fraudIndicator: {type: boolean} }
+    ClaimApprovedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { claimId: {type: string, format: uuid}, policyNumber: {type: string}, approvedAmount: {type: object} }
+    ClaimRejectedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { claimId: {type: string, format: uuid}, reason: {type: string} }
+    ClaimSettlementRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { claimId: {type: string, format: uuid}, payeeRef: {type: string}, amount: {type: object}, idempotencyKey: {type: string} }
+    ClaimSettledPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { claimId: {type: string, format: uuid}, settledAt: {type: string, format: date-time} }
+
+    AgentOnboardedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { agentId: {type: string, format: uuid}, partyId: {type: string, format: uuid}, licenseNumber: {type: string} }
+    AgentLicenseExpiringPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { agentId: {type: string, format: uuid}, expiresAt: {type: string, format: date} }
+    CommissionAccruedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { statementId: {type: string, format: uuid}, agentId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object} }
+    CommissionPayoutRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { statementId: {type: string, format: uuid}, payeeRef: {type: string}, amount: {type: object}, idempotencyKey: {type: string} }
+    CommissionPaidPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { statementId: {type: string, format: uuid}, paidAt: {type: string, format: date-time} }
+
+    PaymentConfirmedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { paymentRequestId: {type: string, format: uuid}, idempotencyKey: {type: string}, amount: {type: object}, confirmedAt: {type: string, format: date-time} }
+    PaymentFailedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { paymentRequestId: {type: string, format: uuid}, idempotencyKey: {type: string}, reason: {type: string} }
+    DisbursementCompletedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { disbursementId: {type: string, format: uuid}, idempotencyKey: {type: string}, amount: {type: object}, completedAt: {type: string, format: date-time} }
+    DisbursementFailedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { disbursementId: {type: string, format: uuid}, idempotencyKey: {type: string}, reason: {type: string} }
+
+    CessionRecordedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { cessionId: {type: string, format: uuid}, policyNumber: {type: string}, treatyId: {type: string, format: uuid}, cededAmount: {type: object} }
+    RecoveryCalculatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { recoveryId: {type: string, format: uuid}, claimId: {type: string, format: uuid}, treatyId: {type: string, format: uuid}, recoverableAmount: {type: object} }
+    RecoveryConfirmedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { recoveryId: {type: string, format: uuid}, confirmedAt: {type: string, format: date-time} }
+
+    GlPostingRecordedPayload:
+      description: "Provisional — finaccounting's aggregate design remains gated on C1 (Deliverable 3 Rev 2 §8)."
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { postingId: {type: string, format: uuid}, groupId: {type: string, format: uuid}, period: {type: string}, amount: {type: object}, postingType: {type: string} }
+    CsmRolledForwardPayload:
+      description: "Provisional — see above."
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { groupId: {type: string, format: uuid}, period: {type: string}, csmBalance: {type: object} }
+
+    NotificationDispatchedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { dispatchId: {type: string, format: uuid}, partyId: {type: string, format: uuid}, channel: {type: string}, templateKey: {type: string} }
+    NotificationFailedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { dispatchId: {type: string, format: uuid}, reason: {type: string} }
+
+    DocumentUploadedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { documentRef: {type: string}, ownerContext: {type: string}, documentType: {type: string} }

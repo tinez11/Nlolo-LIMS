@@ -1,0 +1,158 @@
+# Digital Life Insurance Core Platform -- local development environment.
+# Camunda is deliberately NOT a separate service here: Camunda 7 (the embedded,
+# Spring-Boot-native engine) runs inside the `app` container itself, persisting to
+# its own schema in the same Postgres instance -- consistent with the modular-monolith
+# philosophy (Deliverable 3's surrender/maturity choreography is process logic living
+# inside the `policy` module, not a call to an external distributed workflow service).
+# This is a decision point flagged in the covering doc -- Camunda 8/Zeebe would be the
+# right call ONLY if/when modules are actually extracted into separate services.
+
+services:
+
+  postgres:
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    environment:
+      POSTGRES_DB: lifeplatform
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      mc mb -p local/policy-documents;
+      mc mb -p local/kyc-evidence;
+      exit 0;
+      "
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-devadmin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "8081:8080"
+    volumes:
+      - ../keycloak:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mock-mobile-money:
+    # Simulates Vodacom M-Pesa / Airtel Money / Tigo Pesa callback behavior for local
+    # dev and integration tests, so `payment`'s ACL can be exercised without live
+    # aggregator sandbox credentials. Stub mappings live in ./mock-mobile-money/mappings.
+    image: wiremock/wiremock:3.5.4
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./mock-mobile-money:/home/wiremock:ro
+    command: ["--global-response-templating"]
+
+  mailpit:
+    # Local email capture for communication-module testing (EMAIL channel) -- not a
+    # production dependency, dev/test convenience only.
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"   # web UI
+      - "1025:1025"   # SMTP
+
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/app/Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lifeplatform
+      SPRING_DATASOURCE_USERNAME: app_role
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD:-devapppassword}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: "6379"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      KEYCLOAK_ISSUER_CUSTOMERS: http://keycloak:8080/realms/customers
+      KEYCLOAK_ISSUER_AGENTS: http://keycloak:8080/realms/agents
+      KEYCLOAK_ISSUER_STAFF: http://keycloak:8080/realms/staff
+      KEYCLOAK_ISSUER_REGULATORS: http://keycloak:8080/realms/regulators
+      MOBILE_MONEY_GATEWAY_BASE_URL: http://mock-mobile-money:8080
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: dev@nlolo-lifeplatform.tz
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-devadmin}
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    profiles: ["tools"]   # `docker compose --profile tools up` -- optional, not part of default startup
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

@@ -1,0 +1,145 @@
+openapi: 3.1.0
+info:
+  title: Claims Management API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `claims` module. Settlement is asynchronous
+    (ClaimSettlementRequested → payment → ClaimSettled, Deliverable 2 Rev 2 A3) —
+    decideSettlement returns 202, not a final result.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /claims:
+    post:
+      summary: Register a new claim
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - $ref: 'openapi-common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterClaimRequest' }
+      responses:
+        '201':
+          description: Claim registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimView' }
+        '422':
+          description: claimType inconsistent with the policy's active coverage as of dateOfEvent
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /claims/{claimId}:
+    get:
+      summary: Get claim detail
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /claims/{claimId}/assessments:
+    post:
+      summary: Submit a claim assessment (staff — CLAIMS_ASSESSOR role)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitClaimAssessmentRequest' }
+      responses:
+        '201':
+          description: Assessment recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimView' }
+  /claims/{claimId}/settlement-decision:
+    post:
+      summary: Approve or reject the claim (staff — CLAIMS_MANAGER role only; distinct from CLAIMS_ASSESSOR)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved]
+              properties:
+                approved: { type: boolean }
+                approvedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                rejectionReason: { type: string, nullable: true }
+      responses:
+        '202':
+          description: >
+            Decision recorded; if approved, ClaimSettlementRequested is published and
+            settlement completes asynchronously via payment's request/confirm loop.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimView' }
+        '409':
+          description: Claim requires at least one completed assessment first (except MATURITY, which auto-approves — Deliverable 3 Rev 2, Cl3)
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+components:
+  schemas:
+    RegisterClaimRequest:
+      type: object
+      required: [policyNumber, claimantPartyId, claimType, dateOfEvent, details]
+      properties:
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        claimantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        claimType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY] }
+        dateOfEvent: { type: string, format: date }
+        details:
+          type: object
+          description: >
+            Polymorphic by claimType — modeled server-side as a sealed ClaimDetails
+            hierarchy (Deliverable 3 Rev 2, Cl2); concrete per-type schemas to be
+            finalized in Deliverable 6 alongside DDL.
+    SubmitClaimAssessmentRequest:
+      type: object
+      required: [findings, recommendedAmount]
+      properties:
+        findings: { type: string }
+        recommendedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        fraudIndicator:
+          type: boolean
+          default: false
+          description: Scrutiny/reporting signal only — does not itself reject the claim (Deliverable 3 Rev 2, Cl1).
+    ClaimView:
+      type: object
+      properties:
+        claimId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        claimType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY] }
+        status: { type: string, enum: [REGISTERED, UNDER_ASSESSMENT, APPROVED, REJECTED, SETTLEMENT_REQUESTED, SETTLED, REOPENED] }
+        dateOfEvent: { type: string, format: date }
+        approvedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }

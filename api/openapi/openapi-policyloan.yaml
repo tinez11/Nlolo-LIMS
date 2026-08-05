@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: Policy Loans & Cash Value API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `policyloan` module. Note: the reserve/confirm
+    interaction with `policy` (Deliverable 3 Rev 2 B1 fix) is an in-process call this
+    module makes internally — it is not exposed here, since no external channel needs
+    to call it directly. Disbursement is asynchronous and event-driven internally
+    (Deliverable 2 Rev 2 A2) — the client polls status via GET .../loans/{loanId}.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /policies/{policyNumber}/loans:
+    post:
+      summary: Originate a new policy loan
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - $ref: 'openapi-common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestedAmount, payeeRef]
+              properties:
+                requestedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                payeeRef: { type: string, description: "Mobile money / bank disbursement destination" }
+      responses:
+        '202':
+          description: Loan reservation confirmed and disbursement requested (async — see LoanDisbursed event / poll below)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanView' }
+        '409':
+          description: Requested amount exceeds available loan value
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: List loans against a policy
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LoanView' }
+  /loans/{loanId}:
+    get:
+      summary: Get loan detail and current outstanding balance
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /loans/{loanId}/repayments:
+    post:
+      summary: Record a repayment (ad hoc or scheduled — RepaymentSchedule is optional per Deliverable 3 Rev 2 B3)
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: 'openapi-common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, paymentReference]
+              properties:
+                amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                paymentReference: { type: string }
+      responses:
+        '202':
+          description: Repayment accepted — pending payment gateway confirmation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanView' }
+components:
+  schemas:
+    LoanView:
+      type: object
+      properties:
+        loanId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        principalAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        outstandingBalance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        currentInterestRate:
+          type: number
+          description: The rate from the most recent LoanInterestTerm entry (Deliverable 3 Rev 2, L1).
+        status:
+          type: string
+          enum: [RESERVED_PENDING_ORIGINATION, ORIGINATED, DISBURSEMENT_REQUESTED, DISBURSED, REPAYING, SETTLED, FORCED_LAPSE_TRIGGERED]

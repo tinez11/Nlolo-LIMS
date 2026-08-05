@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: Distribution & Channel Management API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `distribution` module. CommissionPlan/CommissionRule
+    (Deliverable 3 Rev 2, Di1) are staff/finance-authored; agents only ever read their
+    applicable plan and their own statements.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /agents:
+    post:
+      summary: Onboard an agent (requires the referenced Party to already have KYC VERIFIED)
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [partyId, licenseNumber, licenseExpiryDate]
+              properties:
+                partyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+                licenseNumber: { type: string }
+                licenseExpiryDate: { type: string, format: date }
+                hierarchyParentId: { type: string, format: uuid, nullable: true }
+      responses:
+        '201':
+          description: Onboarded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentView' }
+        '422':
+          description: Referenced party does not have KYC status VERIFIED
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /agents/{agentId}:
+    get:
+      summary: Get agent detail
+      security:
+        - agentsAuth: [agent, supervisor]
+        - staffAuth: []
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentView' }
+  /agents/{agentId}/commission-plan:
+    get:
+      summary: Get the agent's applicable commission plan for a product
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: productId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommissionPlanView' }
+  /agents/{agentId}/commission-statements:
+    get:
+      summary: List an agent's commission statements
+      security:
+        - agentsAuth: [agent, supervisor]
+        - staffAuth: []
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: period
+          in: query
+          schema: { type: string, description: "YYYY-MM" }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CommissionStatementView' }
+components:
+  schemas:
+    AgentView:
+      type: object
+      properties:
+        agentId: { type: string, format: uuid }
+        partyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        licenseNumber: { type: string }
+        licenseStatus: { type: string, enum: [ACTIVE, EXPIRED, SUSPENDED] }
+        hierarchyParentId: { type: string, format: uuid, nullable: true }
+    CommissionPlanView:
+      type: object
+      properties:
+        planId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        rules:
+          type: array
+          items:
+            type: object
+            properties:
+              tierType: { type: string, enum: [FIRST_YEAR, RENEWAL, OVERRIDE, SUPERVISOR_OVERRIDE, THRESHOLD_BONUS] }
+              rate: { type: number, nullable: true }
+              flatAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+    CommissionStatementView:
+      type: object
+      properties:
+        statementId: { type: string, format: uuid }
+        period: { type: string }
+        totalAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        status: { type: string, enum: [PENDING, PAID] }

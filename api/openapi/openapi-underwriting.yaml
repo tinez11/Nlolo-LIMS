@@ -1,0 +1,132 @@
+openapi: 3.1.0
+info:
+  title: Underwriting & Risk Assessment API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `underwriting` module. Internal calls (e.g. `policy`
+    consuming UnderwritingDecisionMade, `claims` calling checkContestability) are
+    in-process Spring Modulith calls per Deliverable 2 and are NOT part of this contract —
+    only endpoints a channel (agent portal, mobile app, staff back-office) invokes directly
+    are specified here.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+security:
+  - agentsAuth: []
+  - staffAuth: []
+paths:
+  /underwriting/cases:
+    post:
+      summary: Submit a new business application for underwriting
+      description: Entry point for new business — agent portal, bancassurance portal, or staff back-office.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - $ref: 'openapi-common.yaml#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenCaseRequest' }
+      responses:
+        '201':
+          description: Case opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /underwriting/cases/{caseId}:
+    get:
+      summary: Get underwriting case status and decision
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /underwriting/cases/{caseId}/assessments:
+    post:
+      summary: Submit a risk assessment (medical/financial/occupational) against an open case
+      description: Staff-only (UNDERWRITER role). Not exposed to agents or customers.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubmitAssessmentRequest' }
+      responses:
+        '201':
+          description: Assessment recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /underwriting/cases/{caseId}/referral:
+    post:
+      summary: Refer a borderline case to a senior underwriter
+      description: Sets referralStatus separately from the final decision (Deliverable 3 Rev 2, U1).
+      security:
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Referral recorded }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+components:
+  schemas:
+    OpenCaseRequest:
+      type: object
+      required: [applicantPartyId, productId, productVersionId, sumAssured]
+      properties:
+        applicantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        productId: { type: string, format: uuid }
+        productVersionId: { type: string, format: uuid }
+        sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        medicalDisclosure:
+          type: object
+          description: Structured Q&A responses; schema varies by product — see Deliverable 6 for the concrete field set.
+    SubmitAssessmentRequest:
+      type: object
+      required: [assessmentType, findings]
+      properties:
+        assessmentType: { type: string, enum: [MEDICAL, FINANCIAL, OCCUPATIONAL] }
+        findings: { type: string }
+        riskScore: { type: number, nullable: true }
+    UnderwritingCaseView:
+      type: object
+      properties:
+        caseId: { type: string, format: uuid }
+        applicantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        productId: { type: string, format: uuid }
+        status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
+        referralStatus: { type: string, enum: [NONE, REFERRED_TO_SENIOR, REFERRAL_RESOLVED] }
+        decision:
+          type: object
+          nullable: true
+          properties:
+            outcome: { type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED] }
+            loadingPercent: { type: number, nullable: true }
+            declineReason: { type: string, nullable: true }
+            decidedAt: { type: string, format: date-time }

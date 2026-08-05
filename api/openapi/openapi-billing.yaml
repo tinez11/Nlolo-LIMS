@@ -1,0 +1,128 @@
+openapi: 3.1.0
+info:
+  title: Premium Billing & Collection API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `billing` module. The BillingSyncApi from Deliverable 2
+    (offline field-receipt capture) is a separate, agent-portal-only endpoint set,
+    included here since agents genuinely call it directly from the field app.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /policies/{policyNumber}/invoices:
+    get:
+      summary: List outstanding invoices for a policy
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: status
+          in: query
+          schema: { type: string, enum: [DUE, PARTIALLY_PAID, PAID, IN_GRACE, OVERDUE, WAIVED] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InvoiceView' }
+  /policies/{policyNumber}/invoices/next-due:
+    get:
+      summary: Lightweight "what do I owe?" lookup (Deliverable 3 Rev 2, Bi2 — built for USSD)
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceView' }
+        '404':
+          description: No invoice currently due
+  /invoices/{invoiceId}/waiver:
+    post:
+      summary: Waive an invoice (staff only — reason is mandatory and audit-relevant)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 10 }
+      responses:
+        '200': { description: Invoice waived }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /agents/{agentId}/field-receipts:
+    post:
+      summary: Capture a premium receipt offline (BillingSyncApi — agent field app)
+      description: >
+        Lands as PENDING_RECONCILIATION (FieldReceiptCaptured). If unmatched by a
+        PaymentConfirmed within the refdata-configured SLA (default 24h), escalates
+        to FieldReceiptReconciliationOverdue (Deliverable 2 Rev 2, B4).
+      security:
+        - agentsAuth: [agent]
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [policyNumber, amount, clientIdempotencyKey, capturedAt]
+              properties:
+                policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+                amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                clientIdempotencyKey: { type: string }
+                capturedAt: { type: string, format: date-time, description: "Client-device timestamp — server timestamp also recorded for reconciliation ordering." }
+      responses:
+        '202':
+          description: Accepted, pending reconciliation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  receiptId: { type: string, format: uuid }
+                  status: { type: string, enum: [PENDING_RECONCILIATION] }
+components:
+  schemas:
+    InvoiceView:
+      type: object
+      properties:
+        invoiceId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        dueDate: { type: string, format: date }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        status: { type: string, enum: [DUE, PARTIALLY_PAID, PAID, IN_GRACE, OVERDUE, WAIVED] }
+        gracePeriodEndsAt: { type: string, format: date, nullable: true }
+        dunningLevel:
+          type: integer
+          minimum: 1
+          maximum: 5
+          nullable: true
+          description: Present only when an ArrearsCase is open (Deliverable 3 Rev 2, Bi1).

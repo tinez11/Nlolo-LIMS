@@ -1,0 +1,63 @@
+# Optional observability overlay for local dev -- not started by default.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.observability.yml up
+
+services:
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+    ports:
+      - "9090:9090"
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports:
+      - "9093:9093"
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-devadmin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"   # local dev only -- never in staging/production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:latest
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - loki
+
+  tempo:
+    # Distributed tracing backend -- receives OpenTelemetry spans from the app.
+    # Even in a monolith, tracing across module boundaries, event listeners, and
+    # Camunda process steps is worth the (small) instrumentation cost -- see
+    # Deliverable 7 covering doc §3.
+    image: grafana/tempo:latest
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ../observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+
+  postgres-exporter:
+    # Postgres-level metrics (connections, partition/table bloat, replication lag) --
+    # feeds the partition-maintenance-health and disk-space alerts in alert-rules.yml.
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: "postgresql://app_role:${APP_DB_PASSWORD:-devapppassword}@postgres:5432/lifeplatform?sslmode=disable"
+    ports:
+      - "9187:9187"

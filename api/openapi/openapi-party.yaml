@@ -1,0 +1,181 @@
+openapi: 3.1.0
+info:
+  title: Party Management API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `party` module. Per ADR-001, response field names
+    are role-specific where a consuming UI needs them (e.g. an agent-onboarding
+    flow reads this same PartyView but the agent portal's own DTO layer renders it
+    as "Agent", never as "Party" — that translation happens in `distribution`/BFF
+    layers, not here). GroupMembership is its own paginated resource (Deliverable 3
+    Rev 2, Pa1) — never embedded in the Group representation.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /parties/individuals:
+    post:
+      summary: Register an individual (self-service signup, or agent-assisted)
+      security:
+        - customersAuth: []
+        - agentsAuth: [agent]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterIndividualRequest' }
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartyView' }
+  /parties/corporates:
+    post:
+      summary: Register a corporate (e.g. an employer or SACCO for a group scheme)
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterCorporateRequest' }
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartyView' }
+  /parties/{partyId}:
+    get:
+      summary: Get party detail
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartyView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /parties/{partyId}/kyc:
+    post:
+      summary: Submit KYC evidence and update verification status (staff-verified only)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, evidenceDocumentRef]
+              properties:
+                status: { type: string, enum: [VERIFIED, REJECTED, PENDING] }
+                evidenceDocumentRef: { type: string, description: "DocumentRef from the document module" }
+      responses:
+        '200': { description: KYC status updated }
+  /parties/{partyId}/groups/{groupId}/members:
+    get:
+      summary: List group members (paginated — never loaded as part of the group aggregate, Deliverable 3 Rev 2 Pa1)
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/GroupMembershipView' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+    post:
+      summary: Add a group member
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [memberPartyId]
+              properties:
+                memberPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+      responses:
+        '201': { description: Member added }
+components:
+  schemas:
+    RegisterIndividualRequest:
+      type: object
+      required: [fullName, dateOfBirth, contactInfo]
+      properties:
+        fullName: { type: string }
+        dateOfBirth: { type: string, format: date }
+        contactInfo:
+          type: object
+          properties:
+            phoneNumber: { type: string, pattern: '^\+255\d{9}$' }
+            email: { type: string, format: email, nullable: true }
+    RegisterCorporateRequest:
+      type: object
+      required: [registeredName, registrationNumber, contactInfo]
+      properties:
+        registeredName: { type: string }
+        registrationNumber: { type: string, description: "Unique per tenant." }
+        contactInfo:
+          type: object
+    PartyView:
+      type: object
+      properties:
+        partyId: { type: string, format: uuid }
+        partyType: { type: string, enum: [INDIVIDUAL, CORPORATE, GROUP] }
+        kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        displayName: { type: string }
+    GroupMembershipView:
+      type: object
+      properties:
+        memberPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        joinDate: { type: string, format: date }
+        status: { type: string, enum: [ACTIVE, REMOVED] }

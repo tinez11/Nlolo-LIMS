@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: Product Configuration API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `product` module. Product authoring (create/publish
+    versions, rating tables) is a staff/actuarial back-office capability; the
+    read/catalog side is what customer and agent channels actually consume
+    (product browsing, quote calculation inputs).
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /products:
+    get:
+      summary: List active products (catalog browsing)
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProductSummary' }
+    post:
+      summary: Create a new product definition (staff/actuarial only)
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProductRequest' }
+      responses:
+        '201':
+          description: Product created (status DRAFT)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductSummary' }
+  /products/{productId}/versions:
+    post:
+      summary: Publish a new product version (staff/actuarial only)
+      description: Rejected with 422 if ifrsMeasurementModel is not set (Deliverable 3 Rev 2 — carried from Deliverable 2 Rev 2's mandatory-before-ACTIVE rule).
+      security:
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductVersionSpec' }
+      responses:
+        '201':
+          description: Version published
+        '422':
+          description: Missing ifrsMeasurementModel, incomplete rating-factor coverage, or a fund definition on a non-unit-linked product
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /products/{productId}/active-snapshot:
+    get:
+      summary: Get the version active as of a given date (used for quoting and rating)
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: effectiveDate
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductSnapshot' }
+components:
+  schemas:
+    ProductSummary:
+      type: object
+      properties:
+        productId: { type: string, format: uuid }
+        productCode: { type: string }
+        productName: { type: string }
+        category: { type: string }
+        status: { type: string, enum: [DRAFT, ACTIVE, RETIRED] }
+        defaultCurrency: { type: string, example: TZS }
+    CreateProductRequest:
+      type: object
+      required: [productCode, productName, category, defaultCurrency]
+      properties:
+        productCode: { type: string }
+        productName: { type: string }
+        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
+        defaultCurrency: { type: string, example: TZS }
+    ProductVersionSpec:
+      type: object
+      required: [ifrsMeasurementModel, effectiveDate, ratingTable, benefitSchedule]
+      properties:
+        ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
+        effectiveDate: { type: string, format: date }
+        retirementDate: { type: string, format: date, nullable: true }
+        ratingTable:
+          type: array
+          items:
+            type: object
+            properties:
+              factorType: { type: string, enum: [AGE, OCCUPATION_CLASS, SMOKER_STATUS, SUM_ASSURED_BAND] }
+              band: { type: string }
+              multiplier: { type: number }
+        benefitSchedule:
+          type: array
+          items:
+            type: object
+            properties:
+              benefitType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY, SURRENDER] }
+              calculationMethod: { type: string }
+        fundDefinitions:
+          type: array
+          nullable: true
+          description: Only valid when category = UNIT_LINKED.
+          items:
+            type: object
+            properties:
+              fundCode: { type: string }
+              currentNav: { type: number }
+    ProductSnapshot:
+      type: object
+      properties:
+        productId: { type: string, format: uuid }
+        productVersionId: { type: string, format: uuid }
+        effectiveDate: { type: string, format: date }
+        ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
+        gracePeriodDays: { type: integer }
+        maxLoanToValuePercent: { type: number }

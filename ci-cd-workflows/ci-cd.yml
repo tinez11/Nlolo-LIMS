@@ -1,0 +1,175 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+env:
+  JAVA_VERSION: "21"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+
+  build-and-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: Build and run unit tests
+        run: ./mvnw -B -q verify -DskipITs
+
+  modulith-verify:
+    runs-on: ubuntu-latest
+    needs: build-and-unit-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21", cache: maven }
+      # Runs ApplicationModules.of(Application.class).verify() plus the custom
+      # NoCrossModuleJoinTest and NoCircularDependencyTest from Deliverable 2 Rev 2 §2
+      # and Deliverable 3 Rev 2 §13's D4 -- a broken module boundary fails the build
+      # here, not in code review.
+      - name: Spring Modulith structural verification
+        run: ./mvnw -B -q test -Dtest=ModularityTests,NoCrossModuleJoinTest,NoCircularDependencyTest
+
+  contract-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Validate OpenAPI 3.1 specs (Deliverable 4)
+        run: |
+          pip install -q openapi-spec-validator
+          for f in openapi/openapi-*.yaml; do
+            echo "Validating $f"
+            python -m openapi_spec_validator "$f"
+          done
+      - name: Validate AsyncAPI 2.6 event catalog (Deliverable 5)
+        run: npx --yes @asyncapi/cli validate asyncapi-events.yaml
+
+  db-migration-validation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create app_role with correct (non-superuser, non-BYPASSRLS) attributes
+        env:
+          PGPASSWORD: ci_password
+        run: |
+          psql -h localhost -U postgres -c "CREATE ROLE app_role LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD 'ci_app_password';"
+      - name: Run every module's Flyway migration in sequence (mirrors Deliverable 6's manual validation)
+        env:
+          PGPASSWORD: ci_password
+        run: |
+          set -e
+          for mod in party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata; do
+            echo "Applying $mod"
+            psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f db-migrations/$mod/V1__create_${mod}_schema.sql
+          done
+      - name: Assert app_role cannot bypass RLS (Deliverable 6 §1/§5 -- automatable, not just documented)
+        env:
+          PGPASSWORD: ci_password
+        run: |
+          RESULT=$(psql -h localhost -U postgres -tA -c "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'app_role';")
+          if [ "$RESULT" = "t" ]; then
+            echo "::error::app_role has superuser or BYPASSRLS -- every RLS policy is silently inactive. Failing the build."
+            exit 1
+          fi
+          echo "OK: app_role has neither superuser nor BYPASSRLS."
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [modulith-verify, db-migration-validation]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21", cache: maven }
+      # Testcontainers spins up Postgres/Redis/MinIO/Keycloak per test class --
+      # no shared `services:` block needed here, unlike db-migration-validation above.
+      - name: Run integration test suite
+        run: ./mvnw -B -q verify -Dtest=none -DfailIfNoTests=false -DskipUTs -DrunITs
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secret scanning
+        uses: gitleaks/gitleaks-action@v2
+      - name: Dependency vulnerability scan
+        run: ./mvnw -B -q org.owasp:dependency-check-maven:check
+      - name: Filesystem/container scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          severity: "CRITICAL,HIGH"
+
+  build-image:
+    runs-on: ubuntu-latest
+    needs: [contract-validation, integration-tests, security-scan]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/app/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Flyway migrations against staging
+        run: ./scripts/migrate.sh staging
+      - name: Configure pg_partman for any newly-added partitioned tables
+        run: psql "${{ secrets.STAGING_DB_URL }}" -f db-migrations/_post-migration/configure-pg-partman.sql
+      - name: Rolling deploy
+        run: ./scripts/deploy.sh staging ${{ github.sha }}
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production   # GitHub Environment with required reviewers -- manual approval gate
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Flyway migrations against production
+        run: ./scripts/migrate.sh production
+      - name: Configure pg_partman for any newly-added partitioned tables
+        run: psql "${{ secrets.PRODUCTION_DB_URL }}" -f db-migrations/_post-migration/configure-pg-partman.sql
+      - name: Rolling deploy
+        run: ./scripts/deploy.sh production ${{ github.ref_name }}

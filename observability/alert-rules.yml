@@ -1,0 +1,71 @@
+groups:
+  - name: lifeplatform-business-and-reliability
+    rules:
+
+      # Deliverable 5 §4 dead-letter table -- an event that exhausted retry is a
+      # correctness problem (a domain side-effect that never happened), not just an
+      # ops nuisance, so this alerts fast and on any growth, not on a high threshold.
+      - alert: FailedEventBacklogGrowing
+        expr: increase(lifeplatform_failed_event_total[15m]) > 0
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "Events landing in audit.failed_event -- at least one consumer is failing repeatedly"
+          description: "Check audit.failed_event for unresolved rows; a producer's event is not reaching its consumer(s)."
+
+      # Deliverable 2 Rev 2 B4 / Deliverable 6 -- field-captured premium receipts that
+      # missed their reconciliation SLA.
+      - alert: FieldReceiptReconciliationOverdue
+        expr: lifeplatform_field_receipt_overdue_count > 0
+        for: 10m
+        labels: { severity: medium }
+        annotations:
+          summary: "Field-captured premium receipts overdue for reconciliation"
+          description: "One or more agent-captured receipts have exceeded the OFFLINE_RECEIPT_SLA_HOURS refdata parameter without a matching PaymentConfirmed."
+
+      # Deliverable 3 Rev 2 §12 -- the surrender/maturity Camunda process stuck
+      # mid-choreography (e.g. policyloan never replied to PolicySurrenderInitiated).
+      - alert: SurrenderMaturityProcessStuck
+        expr: camunda_process_instances{process="policy-surrender-maturity", state="IN_PROGRESS"} and on() (time() - camunda_process_instance_start_timestamp) > 3600
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "A surrender/maturity process instance has been IN_PROGRESS for over an hour"
+          description: "Per Deliverable 3 Rev 2 §12, this should escalate to a staff manual-resolution task well before this alert fires; if it fired, the escalation itself may have failed too."
+
+      # Deliverable 6 §4 -- partition-maintenance is not optional; a missed run means
+      # the platform is one insert away from a hard failure on a partitioned table
+      # (exactly what Deliverable 6's smoke test demonstrated deliberately).
+      - alert: PgPartmanMaintenanceFailed
+        expr: increase(pg_cron_job_failed_total{jobname="pg-partman-maintenance"}[1d]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "pg_partman's daily maintenance job failed"
+          description: "Partitioned tables (loan_transaction, payment_transaction, disbursement_instruction, gl_posting, audit_log, premium_invoice) risk running out of pre-created future partitions."
+
+      - alert: PartitionHeadroomLow
+        expr: (lifeplatform_max_partition_upper_bound_epoch - time()) < 30 * 86400
+        labels: { severity: high }
+        annotations:
+          summary: "A partitioned table has less than 30 days of pre-created partition headroom"
+
+      - alert: MobileMoneyGatewayErrorRateHigh
+        expr: rate(lifeplatform_payment_gateway_requests_total{status="FAILED"}[5m]) / rate(lifeplatform_payment_gateway_requests_total[5m]) > 0.1
+        for: 10m
+        labels: { severity: high }
+        annotations:
+          summary: "Mobile money gateway failure rate above 10% over 10 minutes"
+
+      - alert: PostgresDiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Postgres data volume below 15% free space"
+
+      - alert: RlsBypassRoleDetected
+        expr: lifeplatform_app_role_has_bypassrls == 1 or lifeplatform_app_role_is_superuser == 1
+        labels: { severity: critical }
+        annotations:
+          summary: "The application's runtime DB role has BYPASSRLS or superuser -- every Row-Level Security policy is silently inactive"
+          description: "Deliverable 6 discovered this exact failure mode during validation; this metric is emitted by a scheduled query against pg_roles specifically to catch it in production, not just in testing."

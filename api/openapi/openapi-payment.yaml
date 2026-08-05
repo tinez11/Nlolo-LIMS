@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info:
+  title: Payments & Disbursements API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `payment` module — deliberately minimal. Per
+    Deliverable 2 Rev 2, every payment/disbursement is initiated by an internal
+    event (PaymentRequested, LoanDisbursementRequested, ClaimSettlementRequested,
+    CommissionPayoutRequested, SurrenderPayoutRequested, MaturityPayoutRequested),
+    never by a channel calling `payment` directly to "make a payment." The only
+    externally-facing concern is checking status and receiving gateway callbacks.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /payments/{paymentRequestId}/status:
+    get:
+      summary: Get payment status
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: paymentRequestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentStatusView' }
+  /payments/status-by-key:
+    get:
+      summary: Get payment/disbursement status by idempotency key (Deliverable 3 Rev 2, Pay2 — for clients that lost track of the generated ID, e.g. after a dropped USSD session)
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: idempotencyKey
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentStatusView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /payout-batches/{batchId}:
+    get:
+      summary: Get a settlement batch's status (Deliverable 3 Rev 2, Pay1 — commission runs, maturity batches, dividend runs)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutBatchView' }
+  /webhooks/mobile-money-callback:
+    post:
+      summary: >
+        Inbound gateway callback (Vodacom M-Pesa / Airtel Money / Tigo Pesa). Not part
+        of the platform's own OpenAPI contract in the usual sense — each aggregator has
+        its own callback payload shape; this endpoint is the ACL boundary translating
+        that shape into PaymentConfirmed/PaymentFailed internally. Authenticated via the
+        aggregator's own signature/HMAC scheme, not Keycloak.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Aggregator-specific payload — see each gateway's own API docs.
+      responses:
+        '200': { description: Acknowledged }
+components:
+  schemas:
+    PaymentStatusView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        idempotencyKey: { type: string }
+        status: { type: string, enum: [PENDING, CONFIRMED, FAILED] }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+    PayoutBatchView:
+      type: object
+      properties:
+        batchId: { type: string, format: uuid }
+        batchType: { type: string, enum: [COMMISSION_RUN, MATURITY_BATCH, DIVIDEND_RUN] }
+        status: { type: string, enum: [IN_PROGRESS, COMPLETED, PARTIAL_FAILURE] }
+        disbursementCount: { type: integer }
+        failedCount: { type: integer }
