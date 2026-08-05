@@ -49,12 +49,12 @@ jobs:
       - name: Validate OpenAPI 3.1 specs (Deliverable 4)
         run: |
           pip install -q openapi-spec-validator
-          for f in openapi/openapi-*.yaml; do
+          for f in api/openapi/openapi-*.yaml; do
             echo "Validating $f"
             python -m openapi_spec_validator "$f"
           done
       - name: Validate AsyncAPI 2.6 event catalog (Deliverable 5)
-        run: npx --yes @asyncapi/cli validate asyncapi-events.yaml
+        run: npx --yes @asyncapi/cli validate api/asyncapi-events.yaml
 
   db-migration-validation:
     runs-on: ubuntu-latest
