@@ -17,6 +17,7 @@ services:
       POSTGRES_DB: lifeplatform
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-devapppassword}
     ports:
       - "5432:5432"
     volumes:
