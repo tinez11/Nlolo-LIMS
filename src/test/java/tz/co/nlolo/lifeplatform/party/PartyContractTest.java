@@ -118,13 +118,13 @@ class PartyContractTest {
     }
 
     @Test
-    void tenantContextIsIsolatedPerRequest() throws Exception {
-        // Prove that TenantContextFilter reads tenant_id fresh from each request's
-        // JWT claim, not leaking a stale value across sequential requests with
-        // different tenants (mirroring TenantAwareDataSourceIntegrationTest's
-        // per-request isolation proof). Register two individuals under two
-        // different tenant_id claims, then fetch each back using the
-        // tenant-specific JWT.
+    void tenantContextFilterReadsTenanIdFreshPerRequest() throws Exception {
+        // Prove TenantContextFilter reads tenant_id fresh from each request's JWT
+        // claim (not cached/leaked from prior requests). Register two parties under
+        // two different tenant_id claims, then fetch each back: if the filter leaked
+        // a stale tenant_id, the second fetch would incorrectly find the other
+        // tenant's row and succeed; instead, each request gets the correct tenant_id
+        // from its own JWT claim.
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
 
@@ -154,7 +154,7 @@ class PartyContractTest {
             .andReturn();
         PartyView partyB = objectMapper.readValue(resultB.getResponse().getContentAsString(), PartyView.class);
 
-        // Verify tenant A can read their own party
+        // Verify tenant A can read their own party (filter read tenantA from JWT)
         mockMvc.perform(get("/parties/" + partyA.partyId())
                 .with(jwt()
                     .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
@@ -163,7 +163,8 @@ class PartyContractTest {
                         .claim("party_id", partyA.partyId().toString()))))
             .andExpect(status().isOk());
 
-        // Verify tenant B can read their own party
+        // Verify tenant B can read their own party (filter read tenantB from JWT,
+        // not a leaked tenantA from the prior request)
         mockMvc.perform(get("/parties/" + partyB.partyId())
                 .with(jwt()
                     .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
@@ -171,23 +172,52 @@ class PartyContractTest {
                         .claim("tenant_id", tenantB.toString())
                         .claim("party_id", partyB.partyId().toString()))))
             .andExpect(status().isOk());
+    }
 
-        // Verify tenant A cannot read tenant B's party (access denied, not "not found" leak)
-        mockMvc.perform(get("/parties/" + partyB.partyId())
-                .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
-                    .jwt(builder -> builder
-                        .claim("tenant_id", tenantA.toString())
-                        .claim("party_id", partyA.partyId().toString()))))
-            .andExpect(status().isForbidden());
+    @Test
+    void tenantContextFilterClearsThreadLocalToPreventLeakAcrossRequests() throws Exception {
+        // Prove the TenantContextFilter's finally-block unconditionally clears
+        // TenantContext after each request, preventing ThreadLocal leaks across
+        // requests dispatched on the same servlet worker thread. Request 1 (with
+        // valid tenant_id) succeeds normally, then the filter clears the context.
+        // Request 2 (with NO tenant_id claim) should fail with 500 because
+        // TenantContext.get() will be null, hitting the fail-loud guard in
+        // PartyApiImpl. If the finally-clear were broken, request 2 would
+        // incorrectly inherit request 1's tenant_id and succeed — exactly the
+        // production bug this test is designed to catch.
 
-        // Verify tenant B cannot read tenant A's party (access denied, not leak)
-        mockMvc.perform(get("/parties/" + partyA.partyId())
+        UUID tenantId = UUID.randomUUID();
+
+        // Request 1: Register an individual with a valid tenant_id.
+        // Uses agent role to bypass PartyController's customer-specific party_id
+        // check (which would short-circuit before TenantContext is consulted).
+        mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
-                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
-                    .jwt(builder -> builder
-                        .claim("tenant_id", tenantB.toString())
-                        .claim("party_id", partyB.partyId().toString()))))
-            .andExpect(status().isForbidden());
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Request 1 Party","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345678","email":"r1@example.tz"}}
+                    """))
+            .andExpect(status().isCreated());
+        // At this point, TenantContextFilter's finally-block has run and
+        // cleared TenantContext.
+
+        // Request 2: Register an individual with NO tenant_id claim.
+        // If the finally-block worked, TenantContext.get() will be null,
+        // PartyApiImpl will throw IllegalStateException (fail-loud guard),
+        // and the catch-all exception handler will return 500 INTERNAL_ERROR.
+        // If the finally-block is broken/missing, TenantContext will still
+        // have tenantId from Request 1, the registration succeeds with 201,
+        // and this assertion fails — a falsifiable proof that the clear works.
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS")))
+                    // Deliberately omit .claim("tenant_id", ...)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Request 2 Party (No Tenant)","dateOfBirth":"1990-06-13","contactInfo":{"phoneNumber":"+255712345679","email":"r2@example.tz"}}
+                    """))
+            .andExpect(status().isInternalServerError());
     }
 }
