@@ -101,6 +101,17 @@ public class Party {
         return party;
     }
 
+    public static Party newGroup(UUID tenantId, String displayName, String createdBy) {
+        Party party = new Party();
+        party.tenantId = tenantId;
+        party.partyType = PartyType.GROUP;
+        party.displayName = displayName;
+        party.kycStatus = KycStatus.PENDING;
+        party.createdAt = Instant.now();
+        party.createdBy = createdBy;
+        return party;
+    }
+
     public void applyKycDecision(KycStatus newStatus, String decidedBy) {
         this.kycStatus = newStatus;
         this.kycVerifiedAt = Instant.now();

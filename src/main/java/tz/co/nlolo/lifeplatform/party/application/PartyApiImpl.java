@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
+import tz.co.nlolo.lifeplatform.party.api.PartyType;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.party.domain.GroupMembership;
 import tz.co.nlolo.lifeplatform.party.domain.KycRecord;
@@ -15,6 +16,7 @@ import tz.co.nlolo.lifeplatform.party.infrastructure.GroupMembershipRepository;
 import tz.co.nlolo.lifeplatform.party.infrastructure.KycRecordRepository;
 import tz.co.nlolo.lifeplatform.party.infrastructure.PartyRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -66,7 +68,25 @@ public class PartyApiImpl implements PartyApi {
         if (partyRepository.findByTenantIdAndRegistrationNumber(tenantId, registrationNumber).isPresent()) {
             throw new DuplicateRegistrationNumberException(registrationNumber);
         }
-        Party party = partyRepository.save(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy));
+        Party party;
+        try {
+            // The check above is a fast-path UX improvement, not the guarantee -- ux_party_corporate_regno
+            // (the partial unique index on (tenant_id, registration_number)) is. Two concurrent requests can
+            // both pass the check above and race to save(); the loser's DataIntegrityViolationException is
+            // translated here so callers see the same domain exception regardless of timing.
+            party = partyRepository.save(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy));
+        } catch (DataIntegrityViolationException e) {
+            throw new DuplicateRegistrationNumberException(registrationNumber);
+        }
+        publishRegistered(party);
+        return toView(party);
+    }
+
+    @Override
+    @Transactional
+    public PartyView registerGroup(String displayName, String registeredBy) {
+        UUID tenantId = TenantContext.get();
+        Party party = partyRepository.save(Party.newGroup(tenantId, displayName, registeredBy));
         publishRegistered(party);
         return toView(party);
     }
@@ -95,12 +115,19 @@ public class PartyApiImpl implements PartyApi {
     @Transactional
     public void addGroupMember(UUID groupPartyId, UUID memberPartyId) {
         Party group = findPartyOrThrow(groupPartyId);
+        if (group.getPartyType() != PartyType.GROUP) {
+            throw new IllegalArgumentException("Party " + groupPartyId + " is not a GROUP-type party");
+        }
         findPartyOrThrow(memberPartyId);
         groupMembershipRepository.save(new GroupMembership(group.getTenantId(), groupPartyId, memberPartyId));
     }
 
     @Override
     public Page<GroupMembershipView> listGroupMembers(UUID groupPartyId, Pageable pageable) {
+        // Tenant-check the group itself before querying memberships -- group_membership rows
+        // aren't filtered by tenant_id below otherwise, so a caller under the wrong tenant could
+        // list another tenant's group members if they had (or guessed) its groupPartyId.
+        findPartyOrThrow(groupPartyId);
         return groupMembershipRepository.findByGroupPartyIdAndStatus(groupPartyId, "ACTIVE", pageable)
             .map(m -> new GroupMembershipView(m.getMemberPartyId(), m.getJoinDate(), m.getStatus()));
     }
@@ -111,7 +138,16 @@ public class PartyApiImpl implements PartyApi {
     }
 
     private Party findPartyOrThrow(UUID partyId) {
-        return partyRepository.findById(partyId).orElseThrow(() -> new PartyNotFoundException(partyId));
+        Party party = partyRepository.findById(partyId).orElseThrow(() -> new PartyNotFoundException(partyId));
+        // Fail-loud tenant scoping (plan's Global Constraint): RLS (Task 7) isn't wired up yet, so
+        // until then this is the ONLY thing stopping a caller under tenant A's TenantContext from
+        // reading or writing tenant B's party via a partyId it doesn't own. A cross-tenant mismatch
+        // is reported identically to "doesn't exist" (docs/04-api-contracts.md §2) so callers can't
+        // distinguish "not found" from "not yours" and infer another tenant's data exists.
+        if (!party.getTenantId().equals(TenantContext.get())) {
+            throw new PartyNotFoundException(partyId);
+        }
+        return party;
     }
 
     private static void validatePhone(String phoneNumber) {
