@@ -2,6 +2,12 @@
 # Applies every module's V1 schema migration in sequence against the target
 # environment's database, mirroring .github/workflows/ci-cd.yml's
 # db-migration-validation job. Usage: scripts/migrate.sh <staging|production>
+#
+# NOTE: not idempotent -- safe for a first migration run only. Re-running
+# against an already-migrated database will fail (plain CREATE TABLE/INDEX,
+# no schema-history tracking). Tracked as an M1 follow-up: switch to Flyway
+# CLI per-module (-schemas=<mod> -table=flyway_schema_history) once a V2
+# migration exists for any module.
 set -euo pipefail
 
 ENVIRONMENT="${1:?Usage: scripts/migrate.sh <staging|production>}"

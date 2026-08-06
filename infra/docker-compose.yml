@@ -98,7 +98,7 @@ services:
     ports:
       - "8082:8080"
     volumes:
-      - ./mock-mobile-money:/home/wiremock:ro
+      - ../mock-mobile-money:/home/wiremock:ro
     command: ["--global-response-templating"]
 
   mailpit:

@@ -1,0 +1,5 @@
+target/
+.git/
+.worktrees/
+.mvn/wrapper/maven-wrapper.jar
+*.log

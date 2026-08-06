@@ -154,6 +154,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Flyway migrations against staging
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
         run: ./scripts/migrate.sh staging
       - name: Configure pg_partman for any newly-added partitioned tables
         run: psql "${{ secrets.STAGING_DB_URL }}" -f db-migrations/_post-migration/configure-pg-partman.sql
@@ -168,6 +170,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Flyway migrations against production
+        env:
+          PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
         run: ./scripts/migrate.sh production
       - name: Configure pg_partman for any newly-added partitioned tables
         run: psql "${{ secrets.PRODUCTION_DB_URL }}" -f db-migrations/_post-migration/configure-pg-partman.sql
