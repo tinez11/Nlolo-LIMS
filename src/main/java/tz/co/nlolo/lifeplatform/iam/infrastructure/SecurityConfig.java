@@ -18,6 +18,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
 import org.springframework.security.oauth2.server.resource.authentication.JwtIssuerAuthenticationManagerResolver;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
 import java.util.ArrayList;
@@ -118,7 +119,8 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
-                .authenticationManagerResolver(issuerAuthenticationManagerResolver));
+                .authenticationManagerResolver(issuerAuthenticationManagerResolver))
+            .addFilterAfter(new TenantContextFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 }
