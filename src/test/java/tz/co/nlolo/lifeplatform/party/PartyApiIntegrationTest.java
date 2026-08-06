@@ -28,6 +28,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -98,6 +104,56 @@ class PartyApiIntegrationTest {
     void invalidPhoneNumberIsRejected() {
         Assertions.assertThrows(IllegalArgumentException.class,
             () -> partyApi.registerIndividual("Bad Phone", LocalDate.of(1990, 1, 1), "0712345678", null, "test-agent"));
+    }
+
+    /**
+     * Real concurrency, not two sequential calls: two threads race to registerCorporate with
+     * the SAME (tenantId, registrationNumber), synchronized via CountDownLatch so both plausibly
+     * clear the findByTenantIdAndRegistrationNumber pre-check before either transaction commits.
+     * Whichever thread's saveAndFlush() (or, if the other already committed by the time this one
+     * runs its pre-check, whichever thread's pre-check) loses must see DuplicateRegistrationNumberException
+     * -- never a raw DataIntegrityViolationException leaking out. Exactly one of the two must succeed.
+     */
+    @Test
+    void concurrentDuplicateCorporateRegistrationsYieldExactlyOneSuccess() throws Exception {
+        UUID sharedTenantId = tenantId;
+        String registrationNumber = "REG-RACE-001";
+        CountDownLatch readyLatch = new CountDownLatch(2);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        Callable<Object> attempt = () -> {
+            TenantContext.set(sharedTenantId);
+            try {
+                readyLatch.countDown();
+                startLatch.await(5, TimeUnit.SECONDS);
+                return partyApi.registerCorporate("Race Corp", registrationNumber, "+255712345900", null, "test-agent");
+            } catch (Exception e) {
+                return e;
+            } finally {
+                TenantContext.clear();
+            }
+        };
+
+        try {
+            Future<Object> first = executor.submit(attempt);
+            Future<Object> second = executor.submit(attempt);
+
+            assertThat(readyLatch.await(5, TimeUnit.SECONDS)).isTrue();
+            startLatch.countDown();
+
+            List<Object> results = List.of(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS));
+
+            long successes = results.stream().filter(r -> r instanceof PartyView).count();
+            long duplicateRejections = results.stream().filter(r -> r instanceof DuplicateRegistrationNumberException).count();
+            long anythingElse = results.size() - successes - duplicateRejections;
+
+            assertThat(successes).isEqualTo(1);
+            assertThat(duplicateRejections).isEqualTo(1);
+            assertThat(anythingElse).as("no other exception type (e.g. a raw DataIntegrityViolationException) should leak").isEqualTo(0);
+        } finally {
+            executor.shutdown();
+        }
     }
 
     @Test

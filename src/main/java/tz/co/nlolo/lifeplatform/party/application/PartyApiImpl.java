@@ -72,9 +72,14 @@ public class PartyApiImpl implements PartyApi {
         try {
             // The check above is a fast-path UX improvement, not the guarantee -- ux_party_corporate_regno
             // (the partial unique index on (tenant_id, registration_number)) is. Two concurrent requests can
-            // both pass the check above and race to save(); the loser's DataIntegrityViolationException is
-            // translated here so callers see the same domain exception regardless of timing.
-            party = partyRepository.save(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy));
+            // both pass the check above and race to insert; the loser's DataIntegrityViolationException is
+            // translated here so callers see the same domain exception regardless of timing. This MUST be
+            // saveAndFlush, not save: partyId is an in-memory-generated UUID (Hibernate's UuidGenerator, no
+            // DB round-trip needed to assign it), so plain save() only queues the INSERT in the flush action
+            // queue -- it doesn't hit the DB until the surrounding @Transactional proxy commits, which is
+            // after this method (and this catch block) has already returned. saveAndFlush forces the INSERT
+            // to execute synchronously, right here, so a real unique-constraint violation is actually caught.
+            party = partyRepository.saveAndFlush(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy));
         } catch (DataIntegrityViolationException e) {
             throw new DuplicateRegistrationNumberException(registrationNumber);
         }
