@@ -111,7 +111,7 @@ services:
 
   app:
     build:
-      context: ../..
+      context: ..
       dockerfile: infra/app/Dockerfile
     environment:
       SPRING_PROFILES_ACTIVE: local
