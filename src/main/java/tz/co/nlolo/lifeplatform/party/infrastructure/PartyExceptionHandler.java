@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -34,6 +35,16 @@ public class PartyExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleValidation(IllegalArgumentException ex) {
         return problem(HttpStatus.BAD_REQUEST, ex.getMessage(), "VALIDATION_ERROR");
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+        return problem(HttpStatus.FORBIDDEN, ex.getMessage(), "FORBIDDEN");
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleGenericException(Exception ex) {
+        return problem(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", "INTERNAL_ERROR");
     }
 
     private static ProblemDetail problem(HttpStatus status, String detail, String errorCode) {
