@@ -2517,9 +2517,10 @@ Expected: `BUILD SUCCESS`, 0 failures. Includes M0's `ModularityTests`/`NoCircul
 - [ ] **Step 2: Full-stack smoke test**
 
 ```bash
-docker build -f infra/app/Dockerfile -t lifeplatform:m2 .
-cd infra && docker compose up -d
+cd infra && docker compose up -d --build
 ```
+
+`--build` is load-bearing: `docker compose up -d` alone reuses an existing `infra-app` image and never rebuilds it. Building a separately-tagged image first (e.g. `docker build -t lifeplatform:m2 .`) does NOT help — compose references its own `infra-app` tag, not that one. M2's Task 8 found this had silently invalidated the smoke test since M0: the running container held an M0-era jar containing only `package-info.class` files, so every "smoke test passed" from M0 and M1 had actually exercised an empty scaffold app.
 
 Wait at least 90 seconds before checking (M1's final verification found this environment's real cold-start is ~75s, longer than a short fixed sleep).
 
@@ -2531,6 +2532,15 @@ cd ..
 ```
 
 Expected: `{"status":"UP",...}`, no restart loop, no errors in the app logs.
+
+**A health-endpoint 200 alone does not prove the app is real** — `/actuator/health` returns UP even when zero controllers and zero repositories were registered. Assert on evidence that the business code actually loaded:
+
+```bash
+docker compose logs app | grep "JPA repository interfaces"   # expect a non-zero count, not "Found 0"
+for p in /products /parties /underwriting/cases; do curl -s -o /dev/null -w "$p -> %{http_code}\n" "http://localhost:8080$p"; done
+```
+
+Expected: a non-zero repository count, and `401` (endpoint exists, auth required) on each module path — **not `404`**, which means the controller was never registered.
 
 - [ ] **Step 3: Confirm both M2 acceptance criteria are independently demonstrated**
 
