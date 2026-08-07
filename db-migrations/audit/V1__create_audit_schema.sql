@@ -35,8 +35,22 @@ CREATE INDEX idx_audit_log_event_id ON audit.audit_log (event_id);   -- supports
 
 -- WORM enforcement (Deliverable 3 Rev 2, A2 -- explicit REVOKE, as requested).
 -- app_role is the application's runtime DB role; only INSERT/SELECT are granted.
+-- GRANT USAGE ON SCHEMA is load-bearing here: without it the table-level grant below
+-- cannot be exercised at all (schema USAGE gates every access to objects inside it,
+-- independent of table-level GRANTs) -- migrations run as the postgres superuser
+-- (scripts/migrate.sh), which becomes owner of this schema, so app_role otherwise
+-- has zero access to it.
+GRANT USAGE ON SCHEMA audit TO app_role;
 REVOKE UPDATE, DELETE ON audit.audit_log FROM app_role;
 GRANT INSERT, SELECT ON audit.audit_log TO app_role;
+
+-- Row-Level Security -- audit stores every event payload from every module, for every
+-- tenant, so it is not a declared exception to the tenant-isolation Global Constraint
+-- the way refdata is; the only tenant filter previously in place was the application-level
+-- WHERE clause in AuditApiImpl.getTrail, which is not defense-in-depth on its own.
+ALTER TABLE audit.audit_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY audit_log_tenant_isolation ON audit.audit_log
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 
 -- Dead-letter table for events that exhausted retry (Deliverable 5, §4) -- surfaced to
 -- a staff monitoring view; not partitioned (expected to be low-volume relative to
@@ -55,3 +69,20 @@ CREATE TABLE audit.failed_event (
     payload                  JSONB NOT NULL
 );
 CREATE INDEX idx_failed_event_unresolved ON audit.failed_event (tenant_id) WHERE resolved_at IS NULL;
+
+-- app_role privileges -- as of M1, DomainEventAuditListener.recordFailure() only ever
+-- inserts a new row (JpaRepository.save() on a @GeneratedValue id, i.e. entityManager
+-- .persist(), not merge); there is no reader or retry/resolve writer against this table
+-- yet anywhere in the codebase (the "staff monitoring view" and retry mechanism mentioned
+-- above are not implemented in M1). Grant is scoped to that actual usage rather than the
+-- full column set (retry_count/resolved_at) the eventual monitoring/retry feature will
+-- need -- widen this grant (add SELECT, and UPDATE for the retry/resolve path) in the
+-- same migration that introduces that feature.
+GRANT INSERT ON audit.failed_event TO app_role;
+
+-- Row-Level Security -- same rationale as audit_log above: this table holds every
+-- tenant's dead-lettered event payloads and has its own tenant_id column, so it gets
+-- the same policy shape as every other tenant-scoped table on the platform.
+ALTER TABLE audit.failed_event ENABLE ROW LEVEL SECURITY;
+CREATE POLICY failed_event_tenant_isolation ON audit.failed_event
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);

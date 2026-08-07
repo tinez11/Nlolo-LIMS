@@ -87,3 +87,12 @@ CREATE POLICY party_relationship_tenant_isolation ON party.party_relationship
 ALTER TABLE party.group_membership ENABLE ROW LEVEL SECURITY;
 CREATE POLICY group_membership_tenant_isolation ON party.group_membership
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- app_role privileges -- migrations run as the postgres superuser (scripts/migrate.sh),
+-- which becomes owner of every object created above; without these explicit grants
+-- app_role (the application's runtime DB role, infra/postgres/init/01-create-app-role.sql.template)
+-- has no access to this schema at all and every request against it fails with
+-- "permission denied for schema party".
+GRANT USAGE ON SCHEMA party TO app_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA party TO app_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA party GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_role;

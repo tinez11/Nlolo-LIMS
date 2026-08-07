@@ -30,3 +30,12 @@ INSERT INTO refdata.reference_code_set (code_set_key, code, label, value, jurisd
 
 COMMENT ON TABLE refdata.reference_code_set IS
     'Global, non-tenant-scoped reference and regulatory parameter data. Seed values above are PLACEHOLDERS pending Legal/Compliance/Product/Actuarial sign-off (see Deliverable 3 Rev 2 §13 and Deliverable 6 covering doc §5) -- do not go live on these numbers without explicit confirmation.';
+
+-- app_role privileges -- migrations run as the postgres superuser (scripts/migrate.sh),
+-- which becomes owner of every object created above; without these explicit grants
+-- app_role (the application's runtime DB role, infra/postgres/init/01-create-app-role.sql.template)
+-- has no access to this schema at all and every request against it fails with
+-- "permission denied for schema refdata".
+GRANT USAGE ON SCHEMA refdata TO app_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA refdata TO app_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA refdata GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_role;
