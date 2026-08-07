@@ -3,6 +3,10 @@ package tz.co.nlolo.lifeplatform;
 import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.product.api.*;
+import tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -83,7 +87,12 @@ class AppRolePrivilegesIntegrationTest {
     static void applyMigrationsAndBootstrapAppRole() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            // M2 additions (final-review finding 4): product/underwriting's GRANT/RLS SQL
+            // read correct by inspection but were never exercised under the real app_role
+            // identity -- exactly the M1 blind spot this class's own javadoc describes.
+            "db-migrations/product/V1__create_product_schema.sql",
+            "db-migrations/underwriting/V1__create_underwriting_schema.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -98,6 +107,12 @@ class AppRolePrivilegesIntegrationTest {
 
     @Autowired
     private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private ProductApi productApi;
+
+    @Autowired
+    private UnderwritingApi underwritingApi;
 
     @AfterEach
     void clearTenant() {
@@ -127,5 +142,66 @@ class AppRolePrivilegesIntegrationTest {
         List<?> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
             tenantId, "party.PartyRegistered", before.minusSeconds(5), Instant.now().plusSeconds(5));
         assertThat(auditRows).hasSize(1);
+    }
+
+    /**
+     * M2 addition (final-review finding 4): proves app_role can actually write and read
+     * through product.product_definition/product_version/rating_table via the app's own
+     * DataSource -- not merely that the migration's GRANT statements read correctly.
+     * Before the migration grants existed, this would fail with "permission denied for
+     * schema product", the exact M1 failure mode.
+     */
+    @Test
+    void appRoleCanCreateAndPublishAProductThroughTheApplicationsOwnDataSource() {
+        TenantContext.set(UUID.randomUUID());
+
+        ProductSummaryView product = productApi.createProduct("APP-ROLE-PROD", "App Role Product Test", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThat(product.productId()).isNotNull();
+
+        // publishVersion writes product_version + rating_table + benefit_schedule rows,
+        // and (Task's rollover fix) reads product_version back to retire the prior active
+        // one -- exercising SELECT, INSERT and UPDATE on app_role's grants, not just INSERT.
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, java.time.LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", java.math.BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", java.math.BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
+        assertThat(snapshot.productVersionId()).isNotNull();
+    }
+
+    /**
+     * M2 addition (final-review finding 4): proves app_role can actually write and read
+     * through underwriting.underwriting_case/risk_assessment via the app's own DataSource.
+     * Before the migration grants existed, this would fail with "permission denied for
+     * schema underwriting", the exact M1 failure mode -- and openCase/submitAssessment
+     * also round-trip through party (getParty) and product (resolveRatingMultiplier),
+     * exercising all three new-and-existing schemas' grants together in one real business
+     * operation, the way a real deployment actually exercises them.
+     */
+    @Test
+    void appRoleCanOpenAndDecideAnUnderwritingCaseThroughTheApplicationsOwnDataSource() {
+        TenantContext.set(UUID.randomUUID());
+
+        PartyView applicant = partyApi.registerIndividual("App Role Underwriting Applicant", LocalDate.of(1990, 1, 1),
+            "+255713000001", null, "test-agent");
+        ProductSummaryView product = productApi.createProduct("APP-ROLE-UW", "App Role Underwriting Product", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, java.time.LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", java.math.BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", java.math.BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
+
+        UnderwritingCaseView opened = underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(),
+            new java.math.BigDecimal("1000000"), "TZS", "agent1");
+        assertThat(opened.caseId()).isNotNull();
+
+        UnderwritingCaseView decided = underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings", new java.math.BigDecimal("10"), "underwriter1");
+        assertThat(decided.decisionOutcome()).isNotNull();
+
+        UnderwritingCaseView fetched = underwritingApi.getCase(opened.caseId());
+        assertThat(fetched.caseId()).isEqualTo(opened.caseId());
     }
 }
