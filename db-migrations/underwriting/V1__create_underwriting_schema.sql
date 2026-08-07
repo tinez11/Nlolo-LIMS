@@ -57,3 +57,17 @@ CREATE INDEX idx_medical_disclosure_case ON underwriting.medical_disclosure (cas
 ALTER TABLE underwriting.underwriting_case ENABLE ROW LEVEL SECURITY;
 CREATE POLICY underwriting_case_tenant_isolation ON underwriting.underwriting_case
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE underwriting.risk_assessment ENABLE ROW LEVEL SECURITY;
+CREATE POLICY risk_assessment_tenant_isolation ON underwriting.risk_assessment
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE underwriting.medical_disclosure ENABLE ROW LEVEL SECURITY;
+CREATE POLICY medical_disclosure_tenant_isolation ON underwriting.medical_disclosure
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- app_role privileges -- see product/V1's identical comment (Global Constraints);
+-- same bug class, fixed here from the start.
+GRANT USAGE ON SCHEMA underwriting TO app_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA underwriting TO app_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA underwriting GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_role;

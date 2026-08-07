@@ -11,12 +11,14 @@ import java.io.InputStream;
 
 /**
  * Bucket routing matches infra/docker-compose.yml's minio-init job, which
- * pre-creates exactly two buckets: policy-documents and kyc-evidence.
+ * pre-creates exactly three buckets: policy-documents, kyc-evidence, and
+ * underwriting-evidence.
  */
 @Component
 public class MinioDocumentStorage {
 
     private static final String KYC_BUCKET = "kyc-evidence";
+    private static final String UNDERWRITING_BUCKET = "underwriting-evidence";
     private static final String GENERAL_BUCKET = "policy-documents";
 
     private final MinioClient minioClient;
@@ -52,6 +54,10 @@ public class MinioDocumentStorage {
     }
 
     private static String bucketFor(DocumentType documentType) {
-        return documentType == DocumentType.KYC_EVIDENCE ? KYC_BUCKET : GENERAL_BUCKET;
+        return switch (documentType) {
+            case KYC_EVIDENCE -> KYC_BUCKET;
+            case UNDERWRITING_EVIDENCE -> UNDERWRITING_BUCKET;
+            default -> GENERAL_BUCKET;
+        };
     }
 }
