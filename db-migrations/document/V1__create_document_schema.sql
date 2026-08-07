@@ -8,7 +8,7 @@ CREATE TABLE document.document_record (
     tenant_id               UUID NOT NULL,
     owner_context             VARCHAR(50) NOT NULL,       -- which module/aggregate this belongs to, free text by design
     document_type              VARCHAR(30) NOT NULL CHECK (document_type IN
-        ('KYC_EVIDENCE','POLICY_DOCUMENT','CLAIM_EVIDENCE','SIGNED_FORM')),
+        ('KYC_EVIDENCE','POLICY_DOCUMENT','CLAIM_EVIDENCE','SIGNED_FORM','UNDERWRITING_EVIDENCE')),
     uploaded_by                 VARCHAR(100),
     uploaded_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
 );

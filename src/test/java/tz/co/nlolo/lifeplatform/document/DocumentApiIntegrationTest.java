@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
+import io.minio.StatObjectArgs;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,8 @@ class DocumentApiIntegrationTest {
     @Container
     static MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
 
+    private static MinioClient minioClient;
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
@@ -50,12 +53,13 @@ class DocumentApiIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/document/V1__create_document_schema.sql");
 
-        MinioClient client = MinioClient.builder()
+        minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
             .credentials(MINIO.getUserName(), MINIO.getPassword())
             .build();
-        client.makeBucket(MakeBucketArgs.builder().bucket("policy-documents").build());
-        client.makeBucket(MakeBucketArgs.builder().bucket("kyc-evidence").build());
+        minioClient.makeBucket(MakeBucketArgs.builder().bucket("policy-documents").build());
+        minioClient.makeBucket(MakeBucketArgs.builder().bucket("kyc-evidence").build());
+        minioClient.makeBucket(MakeBucketArgs.builder().bucket("underwriting-evidence").build());
     }
 
     @Autowired
@@ -84,5 +88,28 @@ class DocumentApiIntegrationTest {
         var metadata = documentApi.getMetadata(documentRef);
         assertThat(metadata.ownerContext()).isEqualTo("party:test-party-id");
         assertThat(metadata.documentType()).isEqualTo(DocumentType.KYC_EVIDENCE);
+    }
+
+    @Test
+    void uploadAndDownloadRoundTripsForUnderwritingEvidence() throws Exception {
+        byte[] originalContent = "underwriting-evidence-bytes".getBytes();
+
+        String documentRef = documentApi.upload("underwriting-case:test-case-id", DocumentType.UNDERWRITING_EVIDENCE,
+            "test-uploader", new ByteArrayInputStream(originalContent), originalContent.length, "application/octet-stream");
+
+        byte[] downloaded = documentApi.download(documentRef);
+        assertThat(downloaded).isEqualTo(originalContent);
+
+        var metadata = documentApi.getMetadata(documentRef);
+        assertThat(metadata.ownerContext()).isEqualTo("underwriting-case:test-case-id");
+        assertThat(metadata.documentType()).isEqualTo(DocumentType.UNDERWRITING_EVIDENCE);
+
+        // Confirms MinioDocumentStorage.bucketFor() actually routed this object into the
+        // dedicated underwriting-evidence bucket, not the general policy-documents bucket.
+        // Object key mirrors DocumentApiImpl.storageKey(): "<tenantId>/<documentRef>".
+        assertThat(minioClient.statObject(StatObjectArgs.builder()
+            .bucket("underwriting-evidence")
+            .object(TenantContext.get() + "/" + documentRef)
+            .build())).isNotNull();
     }
 }
