@@ -1,0 +1,118 @@
+package tz.co.nlolo.lifeplatform.policy.application;
+
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
+import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Auto-issuance trigger -- openapi-policy.yaml's own description: "normal issuance is
+ * system-triggered by consuming UnderwritingDecisionMade internally." AFTER_COMMIT, mirroring
+ * audit.DomainEventAuditListener's established pattern: underwriting's decision must actually
+ * be durable before policy acts on it.
+ *
+ * The event payload alone (caseId, outcome, loadingPercent, decidedAt) is NOT enough to issue a
+ * policy -- it carries none of applicantPartyId/productId/productVersionId/sumAssured. This
+ * listener calls UnderwritingApi.getCase(caseId) synchronously to pull the full decided case
+ * (made possible by this task's UnderwritingCaseView extension), exercising the
+ * policy -> underwriting allowedDependencies edge the design docs provision but never spell out
+ * a concrete use for.
+ *
+ * <p>The call into {@code policyApi.issuePolicy(...)} MUST run inside a brand-new transaction
+ * (PROPAGATION_REQUIRES_NEW), not the plain {@code @Transactional} REQUIRED that
+ * {@code PolicyApiImpl.issuePolicy} declares on its own -- for exactly the reason
+ * {@code DomainEventAuditListener}'s own javadoc documents: at AFTER_COMMIT time the
+ * producer's (underwriting's) transaction has physically committed but Spring's
+ * TransactionSynchronizationManager hasn't unbound its resources yet, so a plain REQUIRED
+ * call here would silently "join" that already-committed transaction instead of opening a new
+ * one -- issuePolicy's writes would run, throw nothing, and never actually be committed
+ * anywhere (this exact failure mode was caught empirically: this listener's first draft found
+ * 0 policy rows after a real end-to-end submitAssessment call, with no exception anywhere).
+ */
+@Component
+public class UnderwritingDecisionEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(UnderwritingDecisionEventListener.class);
+
+    private final UnderwritingApi underwritingApi;
+    private final PolicyApi policyApi;
+    private final TransactionTemplate requiresNewTransactionTemplate;
+
+    public UnderwritingDecisionEventListener(UnderwritingApi underwritingApi, PolicyApi policyApi,
+                                              PlatformTransactionManager transactionManager) {
+        this.underwritingApi = underwritingApi;
+        this.policyApi = policyApi;
+        this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onDomainEvent(DomainEventEnvelope<?> envelope) {
+        if (!"underwriting.UnderwritingDecisionMade".equals(envelope.eventType())) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) envelope.payload();
+        Object outcome = payload.get("outcome");
+        // Per docs/03-aggregate-design.md: ACCEPT and LOADED (rated-up-but-accepted) both
+        // result in issuance; DECLINED/POSTPONED never do.
+        if (!DecisionOutcome.ACCEPT.name().equals(outcome) && !"LOADED".equals(outcome)) {
+            return;
+        }
+        UUID caseId = (UUID) payload.get("caseId");
+        // AFTER_COMMIT listeners run synchronously on the SAME thread as the original caller
+        // (Spring registers this as a same-thread TransactionSynchronization, not a hand-off to
+        // another thread) -- so this is NOT necessarily an otherwise-empty ThreadLocal. Save
+        // whatever TenantContext the calling thread already had (its own ambient tenant, most
+        // often none in production but frequently something in an integration test that issues
+        // further calls on the same thread right after submitAssessment returns) and restore it
+        // in finally, rather than unconditionally clearing -- an unconditional clear() here was
+        // caught wiping out a caller's own still-in-use TenantContext immediately after
+        // submitAssessment returned, breaking every subsequent same-thread call that assumed it
+        // was still set.
+        UUID previousTenant = TenantContext.getOrNull();
+        TenantContext.set(envelope.tenantId());
+        try {
+            requiresNewTransactionTemplate.executeWithoutResult(status -> {
+                UnderwritingCaseView decidedCase = underwritingApi.getCase(caseId);
+                // agentOfRecordId/premiumFrequency/beneficiaries aren't part of an UnderwritingCase
+                // at all -- no agent-of-record or premium-frequency field exists on that aggregate,
+                // and beneficiary designation happens post-issuance via PUT .../beneficiaries. This
+                // defaults them for the automatic path; POST /policies/manual-issue lets staff set
+                // all three explicitly for the exception path.
+                PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
+                    decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+                    decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
+                    null, "MONTHLY", List.of(), "Automatic issuance on underwriting decision " + outcome);
+                policyApi.issuePolicy(caseId, request, "system:underwriting-decision-listener");
+            });
+        } catch (Exception e) {
+            // AFTER_COMMIT -- underwriting's own transaction already committed; there is
+            // nothing left to roll back here. audit.DomainEventAuditListener has already
+            // durably recorded the raw UnderwritingDecisionMade event regardless of whether
+            // this listener succeeds, so the decision itself is never lost -- only automatic
+            // issuance needs a manual retry (via /policies/manual-issue) if this path fails. No
+            // dead-letter queue is built for this listener specifically in M3.
+            log.error("Automatic policy issuance failed for underwriting case {}", caseId, e);
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.set(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
+    }
+}

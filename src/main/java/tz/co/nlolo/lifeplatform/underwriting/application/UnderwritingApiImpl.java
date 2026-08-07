@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.underwriting.application;
 
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
@@ -10,13 +11,16 @@ import tz.co.nlolo.lifeplatform.underwriting.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.domain.*;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.RiskAssessmentRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.UnderwritingCaseRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Period;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -28,15 +32,18 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
     private final RulesEnginePort rulesEnginePort;
+    private final ApplicationEventPublisher eventPublisher;
 
     public UnderwritingApiImpl(UnderwritingCaseRepository underwritingCaseRepository, RiskAssessmentRepository riskAssessmentRepository,
-                                PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi, RulesEnginePort rulesEnginePort) {
+                                PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi, RulesEnginePort rulesEnginePort,
+                                ApplicationEventPublisher eventPublisher) {
         this.underwritingCaseRepository = underwritingCaseRepository;
         this.riskAssessmentRepository = riskAssessmentRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
         this.rulesEnginePort = rulesEnginePort;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -75,6 +82,22 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
         decideIfPossible(underwritingCase);
         underwritingCaseRepository.save(underwritingCase);
+
+        // M3 addition: the ONLY producer of underwriting.UnderwritingDecisionMade anywhere in
+        // the codebase -- policy.application.UnderwritingDecisionEventListener is this event's
+        // sole consumer and has nothing to react to without this call (see plan Global
+        // Constraints -- underwriting published zero domain events before this task).
+        if (UnderwritingCaseStatus.DECIDED.name().equals(underwritingCase.getStatus())) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("caseId", caseId);
+            payload.put("outcome", underwritingCase.getDecisionOutcome());
+            // loadingPercent is genuinely nullable (only set when outcome=LOADED per the
+            // chk_loading_only_when_loaded DB CHECK) -- Map.of(...) would throw NPE here for
+            // every other outcome, hence the mutable map (Global Constraints).
+            payload.put("loadingPercent", underwritingCase.getDecisionLoadingPercent());
+            payload.put("decidedAt", underwritingCase.getDecisionDecidedAt().toString());
+            eventPublisher.publishEvent(DomainEventEnvelope.of("underwriting.UnderwritingDecisionMade", tenantId, payload));
+        }
         return toView(underwritingCase);
     }
 
@@ -155,9 +178,10 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     }
 
     private UnderwritingCaseView toView(UnderwritingCase c) {
-        return new UnderwritingCaseView(c.getCaseId(), c.getApplicantPartyId(), c.getProductId(),
+        return new UnderwritingCaseView(c.getCaseId(), c.getApplicantPartyId(), c.getProductId(), c.getProductVersionId(),
             UnderwritingCaseStatus.valueOf(c.getStatus()), ReferralStatus.valueOf(c.getReferralStatus()),
             c.getDecisionOutcome() != null ? DecisionOutcome.valueOf(c.getDecisionOutcome()) : null,
-            c.getDecisionLoadingPercent(), c.getDecisionDeclineReason(), c.getDecisionDecidedAt());
+            c.getDecisionLoadingPercent(), c.getDecisionDeclineReason(), c.getDecisionDecidedAt(),
+            c.getSumAssuredAmount(), c.getSumAssuredCurrency());
     }
 }

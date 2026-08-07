@@ -1,0 +1,403 @@
+package tz.co.nlolo.lifeplatform.policy.application;
+
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
+import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.policy.domain.*;
+import tz.co.nlolo.lifeplatform.policy.infrastructure.*;
+import tz.co.nlolo.lifeplatform.product.api.BenefitType;
+import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
+import tz.co.nlolo.lifeplatform.refdata.api.ReferenceCodeView;
+import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.Period;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Service
+public class PolicyApiImpl implements PolicyApi {
+
+    private static final Logger log = LoggerFactory.getLogger(PolicyApiImpl.class);
+
+    private final PolicyRepository policyRepository;
+    private final PolicyAccountRepository policyAccountRepository;
+    private final EndorsementRepository endorsementRepository;
+    private final BeneficiaryRepository beneficiaryRepository;
+    private final CoverageRepository coverageRepository;
+    private final LoanValueReservationRepository loanValueReservationRepository;
+    private final PartyApi partyApi;
+    private final ProductApi productApi;
+    private final ReferenceDataApi referenceDataApi;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ObjectMapper objectMapper;
+
+    public PolicyApiImpl(PolicyRepository policyRepository, PolicyAccountRepository policyAccountRepository,
+                          EndorsementRepository endorsementRepository, BeneficiaryRepository beneficiaryRepository,
+                          CoverageRepository coverageRepository, LoanValueReservationRepository loanValueReservationRepository,
+                          PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
+                          ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
+        this.policyRepository = policyRepository;
+        this.policyAccountRepository = policyAccountRepository;
+        this.endorsementRepository = endorsementRepository;
+        this.beneficiaryRepository = beneficiaryRepository;
+        this.coverageRepository = coverageRepository;
+        this.loanValueReservationRepository = loanValueReservationRepository;
+        this.partyApi = partyApi;
+        this.productApi = productApi;
+        this.referenceDataApi = referenceDataApi;
+        this.eventPublisher = eventPublisher;
+        this.objectMapper = objectMapper;
+    }
+
+    @Override
+    @Transactional
+    public PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy) {
+        UUID tenantId = TenantContext.get();
+        partyApi.getParty(request.policyholderPartyId()); // existence check -- PartyNotFoundException propagates as-is
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
+
+        // Placeholder generation scheme (flagged): policy.policy's own column comment describes
+        // a "tenant/product/year/sequence, human-meaningful for USSD/call-center lookup"
+        // business key -- no sequence generator or product-code lookup is wired here. This is
+        // pattern-valid (^[A-Z0-9-]{6,20}$) and unique enough for M3; a later milestone can
+        // replace the generation strategy without changing this method's signature.
+        String policyNumber = "POL-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+
+        List<Beneficiary> beneficiaries = validateAndBuildBeneficiaries(tenantId, policyNumber, request.beneficiaries());
+
+        Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(), request.productVersionId(),
+            snapshot.category().name(), request.agentOfRecordId(), request.sumAssuredAmount(), request.sumAssuredCurrency(), issuedBy);
+        policy.activate(LocalDate.now());
+        policyRepository.save(policy);
+
+        policyAccountRepository.save(new PolicyAccount(policyNumber, tenantId, BigDecimal.ZERO, request.sumAssuredCurrency()));
+
+        // Only a DEATH coverage row is created at issuance -- ProductApi does not expose the
+        // full benefit schedule list back to callers (publishVersion accepts one at authoring
+        // time, but no getter returns it), so a Coverage row per BenefitScheduleEntry isn't
+        // buildable without a further ProductApi change this plan does not make. Flagged.
+        coverageRepository.save(new Coverage(tenantId, policyNumber, BenefitType.DEATH.name(), request.sumAssuredAmount(), request.sumAssuredCurrency()));
+
+        beneficiaryRepository.saveAll(beneficiaries);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("policyNumber", policyNumber);
+        payload.put("policyholderPartyId", request.policyholderPartyId());
+        payload.put("productId", request.productId());
+        payload.put("productVersionId", request.productVersionId());
+        payload.put("sumAssured", Map.of("amount", request.sumAssuredAmount().toPlainString(), "currencyCode", request.sumAssuredCurrency()));
+        payload.put("issueDate", policy.getIssueDate().toString());
+        payload.put("agentOfRecordId", request.agentOfRecordId()); // nullable -- see Global Constraints
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
+
+        return toView(policy);
+    }
+
+    @Override
+    @Transactional
+    public PolicyView applyEndorsement(String policyNumber, EndorsementInput request, String appliedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        if (!policy.isInForce()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be in force to apply an endorsement (current: " + policy.getStatus() + ")");
+        }
+        Endorsement endorsement = new Endorsement(tenantId, policyNumber, request.endorsementType(), request.effectiveDate(), request.changes(), appliedBy);
+        endorsementRepository.save(endorsement);
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyEndorsed", tenantId,
+            Map.of("policyNumber", policyNumber, "endorsementType", request.endorsementType(), "effectiveDate", request.effectiveDate().toString())));
+        return toView(policy);
+    }
+
+    @Override
+    @Transactional
+    public void replaceBeneficiaries(String policyNumber, List<BeneficiaryInput> beneficiaries, String changedBy) {
+        UUID tenantId = TenantContext.get();
+        findPolicyOrThrow(policyNumber, tenantId);
+        List<Beneficiary> newBeneficiaries = validateAndBuildBeneficiaries(tenantId, policyNumber, beneficiaries);
+
+        List<Beneficiary> existing = beneficiaryRepository.findByPolicyNumberAndActiveTrue(policyNumber);
+        existing.forEach(Beneficiary::deactivate);
+        beneficiaryRepository.saveAll(existing);
+        beneficiaryRepository.saveAll(newBeneficiaries);
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.BeneficiaryChanged", tenantId,
+            Map.of("policyNumber", policyNumber, "changedAt", Instant.now().toString())));
+    }
+
+    @Override
+    public SurrenderQuoteView quoteSurrenderValue(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(policy.getProductId(), LocalDate.now());
+
+        BigDecimal chargePercent = resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(), policy.getIssueDate());
+        BigDecimal charge = account.getCashValueAmount().multiply(chargePercent).divide(new BigDecimal("100"));
+        BigDecimal quotedValue = account.getCashValueAmount().subtract(charge);
+        Instant quotedAt = Instant.now();
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderValueCalculated", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "quotedValue", Map.of("amount", quotedValue.toPlainString(), "currencyCode", account.getCashValueCurrency()),
+                   "quotedAt", quotedAt.toString())));
+
+        return new SurrenderQuoteView(policyNumber, quotedValue, account.getCashValueCurrency(), quotedAt);
+    }
+
+    /**
+     * Duration-band -> charge% shape (Global Constraints -- a plan-level decision pending
+     * Actuarial confirmation, not a confirmed contractual schedule): a JSON array of
+     * {"minMonths": int, "maxMonths": int-or-absent, "chargePercent": number} objects,
+     * minMonths inclusive, maxMonths exclusive (absent/null = unbounded). A missing, blank, or
+     * unparseable schedule means ZERO charge -- this must never throw out to the caller.
+     */
+    private BigDecimal resolveSurrenderChargePercent(String scheduleJson, LocalDate issueDate) {
+        if (scheduleJson == null || scheduleJson.isBlank() || issueDate == null) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            long monthsInForce = Period.between(issueDate, LocalDate.now()).toTotalMonths();
+            JsonNode bands = objectMapper.readTree(scheduleJson);
+            for (JsonNode band : bands) {
+                long minMonths = band.path("minMonths").asLong(0);
+                long maxMonths = band.hasNonNull("maxMonths") ? band.path("maxMonths").asLong() : Long.MAX_VALUE;
+                if (monthsInForce >= minMonths && monthsInForce < maxMonths) {
+                    return new BigDecimal(band.path("chargePercent").asText("0"));
+                }
+            }
+            return BigDecimal.ZERO;
+        } catch (Exception e) {
+            log.warn("Unparseable surrender_charge_schedule for a policy issued {} -- treating as zero charge", issueDate, e);
+            return BigDecimal.ZERO;
+        }
+    }
+
+    @Override
+    public PolicyView getPolicy(String policyNumber) {
+        return toView(findPolicyOrThrow(policyNumber, TenantContext.get()));
+    }
+
+    @Override
+    public Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+        Page<Policy> page;
+        if (policyholderPartyId != null && status != null) {
+            page = policyRepository.findByTenantIdAndPolicyholderPartyIdAndStatus(tenantId, policyholderPartyId, status.name(), pageable);
+        } else if (policyholderPartyId != null) {
+            page = policyRepository.findByTenantIdAndPolicyholderPartyId(tenantId, policyholderPartyId, pageable);
+        } else if (status != null) {
+            page = policyRepository.findByTenantIdAndStatus(tenantId, status.name(), pageable);
+        } else {
+            page = policyRepository.findByTenantId(tenantId, pageable);
+        }
+        return page.map(this::toView);
+    }
+
+    @Override
+    public CoverageStatusView getCoverageStatus(String policyNumber, LocalDate asOf) {
+        UUID tenantId = TenantContext.get();
+        findPolicyOrThrow(policyNumber, tenantId);
+        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now();
+        List<CoverageStatusView.ActiveCoverageView> coverages = coverageRepository.findByPolicyNumberAndActiveTrue(policyNumber).stream()
+            .filter(c -> !"SURRENDER".equals(c.getBenefitType())) // openapi-policy.yaml's CoverageStatusView enum excludes SURRENDER
+            .map(c -> new CoverageStatusView.ActiveCoverageView(BenefitType.valueOf(c.getBenefitType()), c.getSumAssuredAmount(), c.getSumAssuredCurrency()))
+            .toList();
+        return new CoverageStatusView(policyNumber, effectiveAsOf, coverages);
+    }
+
+    @Override
+    public boolean isPolicyInForce(String policyNumber, LocalDate asOf) {
+        // asOf is accepted (matches the OpenAPI query param and Po3's signature) but not
+        // otherwise consulted -- this is a pure "is this policy currently ACTIVE-or-REINSTATED"
+        // status read, not a date-bounded coverage-window computation (that's
+        // getCoverageStatus's job, which separately filters `active` Coverage rows). Flagged.
+        return findPolicyOrThrow(policyNumber, TenantContext.get()).isInForce();
+    }
+
+    @Override
+    @Transactional
+    public UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl) {
+        UUID tenantId = TenantContext.get();
+        findPolicyOrThrow(policyNumber, tenantId);
+        PolicyAccount account = policyAccountRepository.lockByPolicyNumber(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+
+        // Uses the shared native aggregate query (added at the end of Task 1) rather than
+        // pulling every RESERVED row into memory and reducing client-side -- same result,
+        // one fewer place computing "sum of currently-RESERVED amounts" for this policy.
+        BigDecimal currentlyReserved = loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId);
+        BigDecimal available = account.availableLoanValue(currentlyReserved);
+        if (amount.compareTo(available) > 0) {
+            throw new InsufficientLoanValueException(
+                "Requested " + amount + " " + currency + " exceeds available loan value " + available + " for policy " + policyNumber);
+        }
+
+        LoanValueReservation reservation = new LoanValueReservation(tenantId, policyNumber, amount, currency, Instant.now().plus(ttl));
+        loanValueReservationRepository.save(reservation);
+        return reservation.getReservationId();
+    }
+
+    @Override
+    @Transactional
+    public void confirmReservation(UUID reservationId) {
+        UUID tenantId = TenantContext.get();
+        LoanValueReservation reservation = loanValueReservationRepository.findByReservationIdAndTenantId(reservationId, tenantId)
+            .orElseThrow(() -> new ReservationNotFoundException(reservationId));
+        if (!"RESERVED".equals(reservation.getStatus())) {
+            throw new InvalidPolicyStateException("Reservation " + reservationId + " is " + reservation.getStatus() + ", not RESERVED -- cannot confirm");
+        }
+        // Encumbrance updated synchronously here, not via async LoanOriginated consumption --
+        // see Global Constraints.
+        PolicyAccount account = policyAccountRepository.lockByPolicyNumber(reservation.getPolicyNumber())
+            .orElseThrow(() -> new PolicyNotFoundException(reservation.getPolicyNumber()));
+        account.increaseEncumbrance(reservation.getAmount());
+        policyAccountRepository.save(account);
+
+        reservation.confirm();
+        loanValueReservationRepository.save(reservation);
+    }
+
+    @Override
+    @Transactional
+    public void releaseReservation(UUID reservationId) {
+        UUID tenantId = TenantContext.get();
+        LoanValueReservation reservation = loanValueReservationRepository.findByReservationIdAndTenantId(reservationId, tenantId)
+            .orElseThrow(() -> new ReservationNotFoundException(reservationId));
+        if ("CONFIRMED".equals(reservation.getStatus())) {
+            throw new InvalidPolicyStateException("Reservation " + reservationId + " is already CONFIRMED -- cannot release a confirmed reservation");
+        }
+        if ("RESERVED".equals(reservation.getStatus())) {
+            reservation.release();
+            loanValueReservationRepository.save(reservation);
+        }
+        // Already RELEASED or EXPIRED -- idempotent no-op, so a caller retrying after a network
+        // timeout on a first, actually-successful release doesn't get a spurious error.
+    }
+
+    @Override
+    @Transactional
+    public void suspendPolicy(String policyNumber, String reason, String suspendedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // Deliverable 3 Rev 2 §3's flagged, unresolved "which product categories support
+        // SUSPENDED" item, resolved here as a configurable refdata code set (Task 6's
+        // db-migrations/refdata/V2) rather than a hardcoded category list.
+        List<ReferenceCodeView> eligibleCategories = referenceDataApi.getCodes("POLICY_SUSPENSION_ELIGIBLE_CATEGORIES");
+        boolean eligible = eligibleCategories.stream().anyMatch(c -> c.code().equals(policy.getProductCategory()));
+        if (!eligible) {
+            throw new InvalidPolicyStateException("Product category " + policy.getProductCategory() + " is not eligible for SUSPENDED status");
+        }
+        policy.suspend(reason);
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySuspended", tenantId,
+            Map.of("policyNumber", policyNumber, "suspendedAt", policy.getSuspendedAt().toString(), "reason", reason)));
+    }
+
+    @Override
+    @Transactional
+    public void resumeSuspendedPolicy(String policyNumber, String resumedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        policy.resume();
+        policyRepository.save(policy);
+        // No dedicated "PolicyResumed" event exists in the event catalog -- docs/05-event-
+        // catalog.md only says billing "resumes on the reverse transition" in prose, naming no
+        // event. Nothing published here; billing's M4 consumption is out of scope regardless.
+    }
+
+    @Override
+    @Transactional
+    public void lapsePolicy(String policyNumber, String lapsedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        policy.lapse();
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyLapsed", tenantId,
+            Map.of("policyNumber", policyNumber, "lapsedAt", policy.getLapsedAt().toString())));
+    }
+
+    @Override
+    @Transactional
+    public void reinstatePolicy(String policyNumber, String reinstatedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        int windowMonths = Integer.parseInt(referenceDataApi.getValue("TZ_REINSTATEMENT_WINDOW_MONTHS", "TZ"));
+        long monthsSinceLapse = Period.between(policy.getLapsedAt().atZone(ZoneOffset.UTC).toLocalDate(), LocalDate.now()).toTotalMonths();
+        if (monthsSinceLapse > windowMonths) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " lapsed " + monthsSinceLapse
+                + " months ago, exceeding the " + windowMonths + "-month reinstatement window (TZ_REINSTATEMENT_WINDOW_MONTHS, a PLACEHOLDER pending B1 sign-off)");
+        }
+        policy.reinstate();
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyReinstated", tenantId,
+            Map.of("policyNumber", policyNumber, "reinstatedAt", Instant.now().toString())));
+    }
+
+    private List<Beneficiary> validateAndBuildBeneficiaries(UUID tenantId, String policyNumber, List<BeneficiaryInput> inputs) {
+        if (inputs == null || inputs.isEmpty()) {
+            return List.of();
+        }
+        BigDecimal totalShare = BigDecimal.ZERO;
+        List<Beneficiary> built = new ArrayList<>();
+        for (BeneficiaryInput input : inputs) {
+            boolean hasParty = input.partyId() != null;
+            boolean hasFreeform = input.freeformDesignee() != null && !input.freeformDesignee().isBlank();
+            if (hasParty == hasFreeform) { // both true or both false -- neither is valid
+                throw new BeneficiaryValidationException("Each beneficiary must have exactly one of partyId or freeformDesignee, not both or neither");
+            }
+            if (input.type() == BeneficiaryType.PARTY && !hasParty) {
+                throw new BeneficiaryValidationException("Beneficiary type PARTY requires partyId");
+            }
+            if (input.type() == BeneficiaryType.FREEFORM && !hasFreeform) {
+                throw new BeneficiaryValidationException("Beneficiary type FREEFORM requires freeformDesignee");
+            }
+            totalShare = totalShare.add(input.sharePercent());
+            built.add(new Beneficiary(tenantId, policyNumber, input.type().name(), input.partyId(), input.freeformDesignee(),
+                input.sharePercent(), input.revocable()));
+        }
+        if (totalShare.compareTo(new BigDecimal("100")) != 0) {
+            throw new BeneficiaryValidationException("Beneficiary shares must sum to 100, got " + totalShare);
+        }
+        return built;
+    }
+
+    private Policy findPolicyOrThrow(String policyNumber, UUID tenantId) {
+        return policyRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+    }
+
+    private PolicyView toView(Policy policy) {
+        PolicyAccount account = policyAccountRepository.findById(policy.getPolicyNumber()).orElse(null);
+        List<BeneficiaryView> beneficiaryViews = beneficiaryRepository.findByPolicyNumberAndActiveTrue(policy.getPolicyNumber()).stream()
+            .map(b -> new BeneficiaryView(b.getBeneficiaryId(), BeneficiaryType.valueOf(b.getBeneficiaryType()), b.getPartyId(),
+                b.getFreeformDesignee(), b.getSharePercent(), b.isRevocable()))
+            .toList();
+        return new PolicyView(policy.getPolicyNumber(), policy.getPolicyholderPartyId(), policy.getProductId(), policy.getProductVersionId(),
+            policy.getAgentOfRecordId(), PolicyStatus.valueOf(policy.getStatus()), policy.getIssueDate(),
+            policy.getSumAssuredAmount(), policy.getSumAssuredCurrency(),
+            account != null ? account.getCashValueAmount() : BigDecimal.ZERO,
+            account != null ? account.getCashValueCurrency() : policy.getSumAssuredCurrency(),
+            beneficiaryViews);
+    }
+}

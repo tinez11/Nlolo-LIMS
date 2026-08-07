@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform;
 import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -92,7 +93,8 @@ class AppRolePrivilegesIntegrationTest {
             // read correct by inspection but were never exercised under the real app_role
             // identity -- exactly the M1 blind spot this class's own javadoc describes.
             "db-migrations/product/V1__create_product_schema.sql",
-            "db-migrations/underwriting/V1__create_underwriting_schema.sql");
+            "db-migrations/underwriting/V1__create_underwriting_schema.sql",
+            "db-migrations/policy/V1__create_policy_schema.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -113,6 +115,9 @@ class AppRolePrivilegesIntegrationTest {
 
     @Autowired
     private UnderwritingApi underwritingApi;
+
+    @Autowired
+    private PolicyApi policyApi;
 
     @AfterEach
     void clearTenant() {
@@ -203,5 +208,36 @@ class AppRolePrivilegesIntegrationTest {
 
         UnderwritingCaseView fetched = underwritingApi.getCase(opened.caseId());
         assertThat(fetched.caseId()).isEqualTo(opened.caseId());
+    }
+
+    /**
+     * M3 addition: proves app_role can write and read through policy.policy/policy_account
+     * via the app's own DataSource -- issuePolicy persists both tables in one transaction, and
+     * getPolicy reads them back, exercising INSERT+SELECT on both new grants together.
+     */
+    @Test
+    void appRoleCanIssueAndReadAPolicyThroughTheApplicationsOwnDataSource() {
+        TenantContext.set(UUID.randomUUID());
+
+        PartyView policyholder = partyApi.registerIndividual("App Role Policy Applicant", LocalDate.of(1988, 6, 1),
+            "+255713000002", null, "test-agent");
+        ProductSummaryView product = productApi.createProduct("APP-ROLE-POLICY", "App Role Policy Product", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, java.time.LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", java.math.BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", java.math.BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
+        UnderwritingCaseView opened = underwritingApi.openCase(policyholder.partyId(), product.productId(), snapshot.productVersionId(),
+            new java.math.BigDecimal("1000000"), "TZS", "agent1");
+        underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings", new java.math.BigDecimal("10"), "underwriter1");
+
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(policyholder.partyId(), product.productId(), snapshot.productVersionId(),
+            new java.math.BigDecimal("1000000"), "TZS", null, "MONTHLY", java.util.List.of(), "App role smoke test");
+        PolicyView issued = policyApi.issuePolicy(opened.caseId(), request, "test-staff");
+        assertThat(issued.policyNumber()).isNotNull();
+
+        PolicyView fetched = policyApi.getPolicy(issued.policyNumber());
+        assertThat(fetched.status()).isEqualTo(PolicyStatus.ACTIVE);
     }
 }
