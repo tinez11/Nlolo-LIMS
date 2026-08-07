@@ -86,8 +86,14 @@ public class TenantContextFilter extends OncePerRequestFilter {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN,
             "Token is missing a valid tenant_id claim");
         problem.setProperty("errorCode", "TENANT_CLAIM_MISSING");
+        // traceId is required on every ProblemDetails response (api/openapi/openapi-common.yaml,
+        // docs/04-api-contracts.md §2) -- this filter runs before GlobalExceptionHandler ever sees
+        // anything, so it must stamp its own, the same way that advice does for every other error.
+        problem.setProperty("traceId", UUID.randomUUID().toString());
         response.setStatus(HttpStatus.FORBIDDEN.value());
-        response.setContentType("application/problem+json");
+        // Explicit UTF-8: the servlet container default (ISO-8859-1) would otherwise be a latent
+        // mojibake risk if this problem's detail text ever contains non-ASCII content.
+        response.setContentType("application/problem+json;charset=UTF-8");
         response.getWriter().write(objectMapper.writeValueAsString(problem));
     }
 }

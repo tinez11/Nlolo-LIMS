@@ -432,4 +432,58 @@ class PartyContractTest {
                         .claim("party_id", ownPartyId.toString()))))
             .andExpect(status().isBadRequest());
     }
+
+    // --- Advice-ordering regression coverage (final-review fix round 4, Critical) ----------
+    //
+    // GlobalExceptionHandler and PartyExceptionHandler are both unrestricted @RestControllerAdvice
+    // beans. Without an explicit @Order on each, ExceptionHandlerExceptionResolver picks the winner
+    // by bean-registration/classpath-scan order, NOT by exception-type specificity across beans --
+    // and on this classpath that put GlobalExceptionHandler's catch-all ahead of
+    // PartyExceptionHandler, silently turning PartyNotFoundException/DuplicateRegistrationNumberException
+    // (which should be 404/409) into bare 500s. Every other assertion of those exceptions in this
+    // codebase is a service-layer assertThrows() call, which passes regardless of which advice bean
+    // wins -- these are the only two tests in the whole suite that would have caught this at the
+    // HTTP layer, and did (they failed against the pre-@Order code before the fix).
+
+    @Test
+    void getPartyForNonexistentPartyReturnsNotFoundNotServerError() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID nonexistentPartyId = UUID.randomUUID();
+        // STAFF role bypasses PartyController's customer-only "must be your own party_id" check,
+        // so the request reaches PartyApiImpl.getParty and throws PartyNotFoundException for real.
+        mockMvc.perform(get("/parties/" + nonexistentPartyId)
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("PARTY_NOT_FOUND"))
+            .andExpect(jsonPath("$.traceId").exists());
+    }
+
+    @Test
+    void duplicateCorporateRegistrationReturnsConflictNotServerError() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String registrationNumber = "CONTRACT-TEST-DUPLICATE-001";
+        String body = """
+            {"registeredName":"Duplicate Test SACCO","registrationNumber":"%s","contactInfo":{"phoneNumber":"+255712345693"}}
+            """.formatted(registrationNumber);
+
+        mockMvc.perform(post("/parties/corporates")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/parties/corporates")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("DUPLICATE_REGISTRATION_NUMBER"))
+            .andExpect(jsonPath("$.traceId").exists());
+    }
 }

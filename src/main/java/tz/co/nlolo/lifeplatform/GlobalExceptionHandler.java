@@ -2,6 +2,8 @@ package tz.co.nlolo.lifeplatform;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -49,8 +51,20 @@ import java.util.UUID;
  *
  * <p>Not implementing the full dereferenceable type-URI scheme (".../problems/...") here -- no
  * module has a semantically rich 422 case yet that would need one; a simplification, not a silent gap.
+ *
+ * <p><b>{@code @Order(LOWEST_PRECEDENCE)} is required, not decorative.</b> {@code @ExceptionHandler}
+ * resolution across multiple {@code @ControllerAdvice} beans is NOT "most specific exception type
+ * wins app-wide" -- {@code ExceptionHandlerExceptionResolver.getExceptionHandlerMethod} iterates
+ * advice beans in precedence order and returns the first bean with ANY matching handler, full stop.
+ * Left unordered, this class's unrestricted {@code @ExceptionHandler(Exception.class)} catch-all was
+ * silently winning over module-local advices like {@code party.infrastructure.PartyExceptionHandler}
+ * for exceptions this class has no business handling (PartyNotFoundException, 404, was coming back as
+ * 500) purely because of classpath-scan bean-registration order (final-review fix round 4, Critical).
+ * {@code LOWEST_PRECEDENCE} here, paired with an explicit higher precedence on every module-local
+ * advice, makes this class the deliberate last resort it was always meant to be.
  */
 @RestControllerAdvice
+@Order(Ordered.LOWEST_PRECEDENCE)
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
@@ -82,6 +96,35 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             .toList();
         problem.setProperty("errors", errors);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    /**
+     * Central hook every base-class {@code handleXxx} override (malformed JSON, wrong HTTP verb,
+     * unsupported media type, unresolvable path, etc.) funnels its response through. Without this
+     * override, only {@link #handleMethodArgumentNotValid} attached errorCode/traceId -- every other
+     * standard MVC error (400/404/405/415/...) went out as a bare {@link ProblemDetail} with neither,
+     * even though api/openapi/openapi-common.yaml's ProblemDetails schema marks traceId required on
+     * every error response (docs/04-api-contracts.md §2). Stamping it here, once, covers all of them
+     * uniformly instead of requiring an override per exception type.
+     */
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
+            HttpStatusCode statusCode, WebRequest request) {
+        ResponseEntity<Object> response = super.handleExceptionInternal(ex, body, headers, statusCode, request);
+        if (response != null && response.getBody() instanceof ProblemDetail problemDetail) {
+            if (problemDetail.getProperties() == null || !problemDetail.getProperties().containsKey("traceId")) {
+                problemDetail.setProperty("traceId", UUID.randomUUID().toString());
+            }
+            if (problemDetail.getProperties() == null || !problemDetail.getProperties().containsKey("errorCode")) {
+                problemDetail.setProperty("errorCode", errorCodeFor(statusCode));
+            }
+        }
+        return response;
+    }
+
+    private static String errorCodeFor(HttpStatusCode statusCode) {
+        HttpStatus status = HttpStatus.resolve(statusCode.value());
+        return status != null ? status.name() : "ERROR_" + statusCode.value();
     }
 
     private static Map<String, String> toFieldError(FieldError fieldError) {
