@@ -65,4 +65,18 @@ public class ProductVersion {
     public boolean isActiveForNewBusiness() { return activeForNewBusiness; }
     public int getGracePeriodDays() { return gracePeriodDays; }
     public BigDecimal getMaxLoanToValuePercent() { return maxLoanToValuePercent; }
+
+    /**
+     * Version rollover: retires this version from new-business eligibility so a
+     * subsequent version for the same product can become the sole active-for-new-business
+     * row. Required by {@code ux_product_version_active}, the partial unique index on
+     * {@code product_version(product_id) WHERE is_active_for_new_business = true} -- at
+     * most one row per product may carry the flag, so publishing a second version must
+     * retire the prior one first. Does not affect {@code retirementDate}/{@code effectiveDate}
+     * (which govern {@code findActiveAsOf}'s point-in-time lookups) -- this flag governs
+     * new-business eligibility specifically, a narrower concept.
+     */
+    public void retireFromNewBusiness() {
+        this.activeForNewBusiness = false;
+    }
 }

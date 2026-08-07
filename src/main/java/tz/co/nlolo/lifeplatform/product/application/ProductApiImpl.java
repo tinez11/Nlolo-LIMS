@@ -90,6 +90,21 @@ public class ProductApiImpl implements ProductApi {
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
         }
 
+        // Version rollover: ux_product_version_active permits at most one
+        // is_active_for_new_business = true row per product_id. Retire whatever version
+        // currently holds that flag before inserting the new one, in the same transaction,
+        // so a second publishVersion call on an existing product succeeds instead of
+        // crashing on the partial unique index (C1 in the final review). This MUST be
+        // saveAndFlush, not save: Hibernate's flush executes all queued INSERTs before any
+        // queued UPDATEs regardless of call order, so a plain save() here would still let
+        // the new version's INSERT reach the DB (and violate the partial unique index)
+        // before this retirement UPDATE does. saveAndFlush forces the UPDATE to execute
+        // synchronously, right here, ahead of the new version's insert below.
+        for (ProductVersion currentActive : productVersionRepository.findByTenantIdAndProductIdAndActiveForNewBusinessTrue(tenantId, productId)) {
+            currentActive.retireFromNewBusiness();
+            productVersionRepository.saveAndFlush(currentActive);
+        }
+
         int gracePeriodDays = 30; // Deliverable 3 doesn't specify a grace-period source yet at this layer -- see Global Constraints; this is a fixed, flagged default, not read from an OpenAPI field (ProductVersionSpec has no gracePeriodDays field).
         ProductVersion version = new ProductVersion(tenantId, productId, effectiveDate, retirementDate, gracePeriodDays, null, publishedBy);
         productVersionRepository.save(version);

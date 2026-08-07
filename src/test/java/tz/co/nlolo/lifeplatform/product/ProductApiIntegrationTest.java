@@ -4,6 +4,8 @@ import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.product.api.*;
+import tz.co.nlolo.lifeplatform.product.domain.ProductVersion;
+import tz.co.nlolo.lifeplatform.product.infrastructure.ProductVersionRepository;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -48,6 +50,9 @@ class ProductApiIntegrationTest {
 
     @Autowired
     private ProductApi productApi;
+
+    @Autowired
+    private ProductVersionRepository productVersionRepository;
 
     @Test
     void createProductStartsInDraft() {
@@ -143,6 +148,40 @@ class ProductApiIntegrationTest {
         TenantContext.set(UUID.randomUUID());
         List<ProductSummaryView> tenantBProducts = productApi.listActiveProducts(null);
         assertTrue(tenantBProducts.stream().noneMatch(p -> p.productCode().equals("SHARED-CODE")));
+    }
+
+    @Test
+    void publishingSecondVersionRetiresFirstFromNewBusinessAndBecomesActiveSnapshot() {
+        // Regression test for the final-review C1 finding: ux_product_version_active is a
+        // partial unique index permitting at most one is_active_for_new_business = true row
+        // per product_id. Before the fix, this second publishVersion call raised a raw
+        // DataIntegrityViolationException (surfaced to callers as an uncaught 500).
+        ProductSummaryView product = productApi.createProduct("TERM-08", "Rollover test", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(2), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        ProductSnapshotView firstSnapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        UUID firstVersionId = firstSnapshot.productVersionId();
+
+        // Second publish on the same product must succeed, not crash.
+        assertDoesNotThrow(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("1.25")),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz"));
+
+        List<ProductVersion> versions = productVersionRepository.findByTenantIdAndProductIdOrderByEffectiveDateDesc(TenantContext.get(), product.productId());
+        assertEquals(2, versions.size());
+        ProductVersion olderVersion = versions.stream().filter(v -> v.getProductVersionId().equals(firstVersionId)).findFirst().orElseThrow();
+        ProductVersion newerVersion = versions.stream().filter(v -> !v.getProductVersionId().equals(firstVersionId)).findFirst().orElseThrow();
+        assertFalse(olderVersion.isActiveForNewBusiness(), "older version must be retired from new business");
+        assertTrue(newerVersion.isActiveForNewBusiness(), "newly published version must be active for new business");
+
+        ProductSnapshotView latestSnapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        assertEquals(newerVersion.getProductVersionId(), latestSnapshot.productVersionId(), "getActiveSnapshot must return the newer version");
     }
 
     @Test
