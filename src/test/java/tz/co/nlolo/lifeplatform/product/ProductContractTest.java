@@ -78,11 +78,90 @@ class ProductContractTest {
 
     @Test
     void listProductsMatchesOpenApiContract() throws Exception {
+        // A brand-new tenant with zero products would make listActiveProducts return [] --
+        // OpenAPI validation would only ever check "is an empty array valid," never a real
+        // ProductSummary item's fields/enums. So seed a real ACTIVE product (create + publish
+        // a version, since publishVersion is what flips a product from DRAFT to ACTIVE) under
+        // the same tenant before listing, and assert on that item's presence/fields too.
+        UUID tenantId = UUID.randomUUID();
+        MvcResult createResult = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"CONTRACT-LIST-01","productName":"Contract Listed Product","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated())
+            .andReturn();
+        ProductSummaryView created = objectMapper.readValue(createResult.getResponse().getContentAsString(), ProductSummaryView.class);
+        UUID productId = created.productId();
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
+                    """))
+            .andExpect(status().isCreated());
+
         mockMvc.perform(get("/products")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
-                    .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString()))))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
-            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')]").exists())
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].category").value("TERM_LIFE"))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].status").value("ACTIVE"))
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')].defaultCurrency").value("TZS"));
+    }
+
+    @Test
+    void createProductRejectsNonStaffCaller() throws Exception {
+        // POST /products is @PreAuthorize("hasRole('REALM_STAFF')") -- a customer or agent JWT
+        // must be rejected with 403, not silently allowed through. Regression coverage for the
+        // staff-only authoring boundary described in openapi-product.yaml's module description.
+        mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"CONTRACT-FORBIDDEN-01","productName":"Should Be Rejected","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void publishVersionRejectsNonStaffCaller() throws Exception {
+        // POST /products/{productId}/versions is also @PreAuthorize("hasRole('REALM_STAFF')").
+        // Create the product as staff (so the request reaches the authorization check on the
+        // versions endpoint against a real product, not a 404 short-circuit), then attempt to
+        // publish a version as a customer -- must be rejected with 403.
+        UUID tenantId = UUID.randomUUID();
+        MvcResult createResult = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"CONTRACT-FORBIDDEN-02","productName":"Contract Forbidden Version","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated())
+            .andReturn();
+        ProductSummaryView created = objectMapper.readValue(createResult.getResponse().getContentAsString(), ProductSummaryView.class);
+        UUID productId = created.productId();
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
+                    """))
+            .andExpect(status().isForbidden());
     }
 
     @Test
