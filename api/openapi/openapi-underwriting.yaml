@@ -98,17 +98,24 @@ components:
   schemas:
     OpenCaseRequest:
       type: object
-      # sumAssured (a Money object elsewhere in this platform, see openapi-common.yaml)
-      # is intentionally flattened here to sumAssuredAmount/sumAssuredCurrency to match
-      # tz.co.nlolo.lifeplatform.underwriting.infrastructure.OpenCaseRequest -- confirmed
-      # against the real controller/DTO by Task 7's UnderwritingContractTest.
-      required: [applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency]
+      # sumAssured uses the platform's shared Money schema (a decimal STRING amount,
+      # never a binary float -- see openapi-common.yaml#Money's own description) rather
+      # than a flattened sumAssuredAmount/sumAssuredCurrency pair of bare numbers. This
+      # was flattened to bare number/string fields by an earlier task to match the code
+      # as it existed then; the final review (finding 6) found that divergence from the
+      # platform's own Money convention was a real (if currently latent) precision-loss
+      # risk at any double-parsing client boundary (JS/TS frontends, most generated
+      # client SDKs), with zero external consumers today making it free to fix now and
+      # expensive after external codegen exists. Reversed deliberately: the code (see
+      # tz.co.nlolo.lifeplatform.underwriting.infrastructure.OpenCaseRequest) was changed
+      # to match this spec, not the other way round. Matches openapi-policy.yaml's own
+      # sumAssured usage of this same shared schema.
+      required: [applicantPartyId, productId, productVersionId, sumAssured]
       properties:
         applicantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
-        sumAssuredAmount: { type: number }
-        sumAssuredCurrency: { type: string, pattern: '^[A-Z]{3}$', example: TZS }
+        sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         medicalDisclosure:
           type: object
           description: Structured Q&A responses; schema varies by product — see Deliverable 6 for the concrete field set.

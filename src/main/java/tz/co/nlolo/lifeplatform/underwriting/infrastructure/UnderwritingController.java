@@ -10,6 +10,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @RestController
@@ -30,7 +31,7 @@ public class UnderwritingController {
         // Idempotency-Key accepted but not yet enforced -- see plan Global Constraints;
         // real dedup registry lands with payment's idempotency work in M5.
         UnderwritingCaseView view = underwritingApi.openCase(request.applicantPartyId(), request.productId(), request.productVersionId(),
-            request.sumAssuredAmount(), request.sumAssuredCurrency(), jwt.getSubject());
+            new BigDecimal(request.sumAssured().amount()), request.sumAssured().currencyCode(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 

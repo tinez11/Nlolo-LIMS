@@ -59,7 +59,7 @@ class UnderwritingContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssuredAmount":1000000,"sumAssuredCurrency":"TZS"}
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssured":{"amount":"1000000.00","currencyCode":"TZS"}}
                     """.formatted(applicantPartyId, productId, productVersionId)))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
