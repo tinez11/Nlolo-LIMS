@@ -85,3 +85,26 @@ CREATE POLICY product_definition_tenant_isolation ON product.product_definition
 ALTER TABLE product.product_version ENABLE ROW LEVEL SECURITY;
 CREATE POLICY product_version_tenant_isolation ON product.product_version
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE product.rating_table ENABLE ROW LEVEL SECURITY;
+CREATE POLICY rating_table_tenant_isolation ON product.rating_table
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE product.benefit_schedule ENABLE ROW LEVEL SECURITY;
+CREATE POLICY benefit_schedule_tenant_isolation ON product.benefit_schedule
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE product.fund_definition ENABLE ROW LEVEL SECURITY;
+CREATE POLICY fund_definition_tenant_isolation ON product.fund_definition
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- app_role privileges -- migrations run as the postgres superuser (scripts/migrate.sh),
+-- which becomes owner of every object created above; without these explicit grants
+-- app_role (the application's runtime DB role) has no access to this schema at all
+-- and every request against it fails with "permission denied for schema product"
+-- (the exact bug M1's final whole-branch review found and fixed for party/document/
+-- refdata/audit -- fixed here from the start instead of waiting for the same review
+-- to catch it again).
+GRANT USAGE ON SCHEMA product TO app_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA product TO app_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA product GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_role;
