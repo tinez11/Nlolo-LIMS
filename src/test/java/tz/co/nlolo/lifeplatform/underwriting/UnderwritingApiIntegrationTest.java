@@ -140,6 +140,62 @@ class UnderwritingApiIntegrationTest {
     }
 
     @Test
+    void ageBandRatingIsNeutralEvenWhenProductDefinesARealNonNeutralThirtiesBand() {
+        // Regression test for the final-review I5/finding-2 defect: resolveAgeBand used to
+        // hardcode the literal "30-39" -- a real band name products actually define -- so
+        // any product whose AGE rating table happened to declare "30-39" with a non-1.0
+        // multiplier had that multiplier silently applied to every applicant regardless of
+        // actual age. resolveAgeBand now returns "UNKNOWN", which cannot collide with any
+        // real band, so the AGE contribution must be neutral (1.0) here even though this
+        // product defines "30-39" with a strongly non-neutral multiplier (3.0).
+        var applicant = partyApi.registerIndividual("Age Band Test Applicant", LocalDate.of(1990, 1, 1), "+255712345000", null, "test");
+        var product = productApi.createProduct("UW-AGE-" + UUID.randomUUID().toString().substring(0, 8), "Age Band Test Product", ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            // AGE 30-39 -> 3.0 is a real, strongly non-neutral multiplier. If it were
+            // (incorrectly) applied, combinedMultiplier (3.0 x 1.0 = 3.0) would exceed
+            // SimpleRulesEngine's DECLINE_MULTIPLIER_THRESHOLD (2.5) and this low-risk-score
+            // case would be DECLINED instead of ACCEPTed.
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("3.0")),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary");
+        var snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        UUID caseId = underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(), new BigDecimal("1000000"), "TZS", "agent1").caseId();
+
+        UnderwritingCaseView view = underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+
+        assertEquals(DecisionOutcome.ACCEPT, view.decisionOutcome(),
+            "AGE contribution must be neutral -- the product's real '30-39' band multiplier must not be applied");
+    }
+
+    @Test
+    void submitAssessmentOnAlreadyDecidedCaseIsRejectedAndOriginalDecisionIsPreserved() {
+        // Regression test for the final-review finding 3 defect: submitAssessment used to
+        // unconditionally recompute and overwrite decision_outcome/decision_decline_reason
+        // /decision_decided_at on a case that was already DECIDED, with no guard and no
+        // history. It must now reject the second submission and leave the original
+        // decision untouched.
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+        UnderwritingCaseView firstDecision = underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        assertEquals(UnderwritingCaseStatus.DECIDED, firstDecision.status());
+        assertEquals(DecisionOutcome.ACCEPT, firstDecision.decisionOutcome());
+        // Re-read through getCase (a DB round-trip) rather than comparing against
+        // firstDecision's in-memory Instant.now() directly -- Postgres' timestamp column
+        // truncates sub-microsecond precision, so the in-memory and DB-round-tripped
+        // Instants for the same write are not bit-for-bit equal despite representing the
+        // same decision.
+        UnderwritingCaseView beforeRejectedResubmit = underwritingApi.getCase(caseId);
+
+        assertThrows(UnderwritingCaseAlreadyDecidedException.class, () ->
+            underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "New serious findings", new BigDecimal("95"), "underwriter2"));
+
+        UnderwritingCaseView afterRejectedResubmit = underwritingApi.getCase(caseId);
+        assertEquals(UnderwritingCaseStatus.DECIDED, afterRejectedResubmit.status());
+        assertEquals(DecisionOutcome.ACCEPT, afterRejectedResubmit.decisionOutcome(), "original decision must be preserved, not overwritten");
+        assertEquals(beforeRejectedResubmit.decisionDecidedAt(), afterRejectedResubmit.decisionDecidedAt(), "decidedAt must not change on a rejected resubmission");
+    }
+
+    @Test
     void casesAreTenantIsolated() {
         UUID caseId = openTestCase(new BigDecimal("1000000"));
         TenantContext.clear();

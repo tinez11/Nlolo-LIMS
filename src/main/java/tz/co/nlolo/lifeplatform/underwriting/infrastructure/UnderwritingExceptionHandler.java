@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseAlreadyDecidedException;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseNotFoundException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -25,6 +26,14 @@ public class UnderwritingExceptionHandler {
     public ProblemDetail handleNotFound(UnderwritingCaseNotFoundException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         problem.setProperty("errorCode", "UNDERWRITING_CASE_NOT_FOUND");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
+    @ExceptionHandler(UnderwritingCaseAlreadyDecidedException.class)
+    public ProblemDetail handleAlreadyDecided(UnderwritingCaseAlreadyDecidedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setProperty("errorCode", "UNDERWRITING_CASE_ALREADY_DECIDED");
         problem.setProperty("traceId", UUID.randomUUID().toString());
         return problem;
     }

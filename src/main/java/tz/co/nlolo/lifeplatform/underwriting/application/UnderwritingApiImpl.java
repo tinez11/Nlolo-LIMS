@@ -58,6 +58,16 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     public UnderwritingCaseView submitAssessment(UUID caseId, AssessmentType assessmentType, String findings, BigDecimal riskScore, String assessedBy) {
         UUID tenantId = TenantContext.get();
         UnderwritingCase underwritingCase = findOrThrow(caseId, tenantId);
+        // Guard against silently overwriting an already-decided case (final review
+        // finding 3): without this, a second submitAssessment call recomputes and
+        // overwrites decision_outcome/decision_decline_reason/decision_decided_at in
+        // place with zero record of what the original decision was. A case that
+        // genuinely needs re-assessment (e.g. new medical evidence after a DECLINE)
+        // must go through an explicit re-open step, not yet modeled, rather than have
+        // this method quietly recompute over an existing decision.
+        if (UnderwritingCaseStatus.DECIDED.name().equals(underwritingCase.getStatus())) {
+            throw new UnderwritingCaseAlreadyDecidedException(caseId);
+        }
         underwritingCase.markInReview();
 
         RiskAssessment assessment = new RiskAssessment(tenantId, caseId, assessmentType.name(), assessedBy, findings, riskScore);
@@ -88,19 +98,23 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     }
 
     /**
-     * Placeholder age-banding matching the rating table's own placeholder band naming
-     * ("30-39" used throughout this plan's tests) -- pending Actuarial sign-off on the
-     * real band boundaries, same status as the rest of SimpleRulesEngine's thresholds.
+     * Age-band rating is NOT YET RESOLVABLE: {@code PartyView} (M1's narrow read model)
+     * exposes no {@code dateOfBirth} field, so there is no real data this method can band
+     * on. Deliberately returns a sentinel that cannot collide with any real band a product
+     * defines -- "UNKNOWN" is not a valid AGE band value any product's rating table would
+     * ever declare (real bands look like "30-39", "40-49", etc.), so
+     * {@code ProductApi.resolveRatingMultiplier}'s neutral-1.0-on-no-match fallback
+     * genuinely applies here: every applicant, regardless of actual age, gets a neutral
+     * AGE contribution rather than being silently rated against whichever real band
+     * happens to share this placeholder's name. (A previous version of this method
+     * returned the literal "30-39" -- itself a real band many products define with a
+     * non-1.0 multiplier -- which meant every applicant, including a 22-year-old or a
+     * 78-year-old, was actively rated as if they were 30-39. That was not a neutral
+     * placeholder, it was silently wrong.) Revisit once PartyView exposes dateOfBirth (or
+     * a narrow age-only accessor) so a real band can be computed.
      */
     private String resolveAgeBand(PartyView applicant) {
-        // PartyView doesn't currently expose dateOfBirth (M1's PartyApi.PartyView is a
-        // narrow read model) -- flagged here rather than guessed: without it, age-band
-        // rating cannot be resolved from real data yet, so this defaults to a single
-        // placeholder band until PartyView is extended. Not silently wrong -- the
-        // rating-table lookup itself already returns a neutral 1.0 for an unmatched
-        // band (ProductApi.resolveRatingMultiplier's contract), so this doesn't produce
-        // an incorrect decision, only an under-differentiated one.
-        return "30-39";
+        return "UNKNOWN";
     }
 
     private String resolveSumAssuredBand(BigDecimal sumAssuredAmount) {
