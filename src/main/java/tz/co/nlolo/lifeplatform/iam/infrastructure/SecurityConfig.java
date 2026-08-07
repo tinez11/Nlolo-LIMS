@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.iam.infrastructure;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -111,7 +112,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            AuthenticationManagerResolver<HttpServletRequest> issuerAuthenticationManagerResolver) throws Exception {
+            AuthenticationManagerResolver<HttpServletRequest> issuerAuthenticationManagerResolver,
+            ObjectMapper objectMapper) throws Exception {
         http
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .csrf(csrf -> csrf.disable())
@@ -120,7 +122,7 @@ public class SecurityConfig {
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
                 .authenticationManagerResolver(issuerAuthenticationManagerResolver))
-            .addFilterAfter(new TenantContextFilter(), BearerTokenAuthenticationFilter.class);
+            .addFilterAfter(new TenantContextFilter(objectMapper), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 }

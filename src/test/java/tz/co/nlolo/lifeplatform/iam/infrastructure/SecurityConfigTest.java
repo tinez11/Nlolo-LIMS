@@ -1,4 +1,4 @@
-package tz.co.nlolo.lifeplatform.iam;
+package tz.co.nlolo.lifeplatform.iam.infrastructure;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -9,6 +9,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+// Same-package test (final-review Finding 6): calls SecurityConfig.authoritiesFor directly --
+// it's package-private, and a same-package test class can access it with no production-side
+// visibility-widening helper needed. Replaces the deleted SecurityConfigTestSupport, whose only
+// purpose was exposing that method to this test from a different package.
 class SecurityConfigTest {
 
     @Test
@@ -20,8 +24,7 @@ class SecurityConfigTest {
             .expiresAt(Instant.now().plusSeconds(60))
             .build();
 
-        var authorities = tz.co.nlolo.lifeplatform.iam.infrastructure.SecurityConfigTestSupport
-            .authoritiesFor(jwt, "STAFF");
+        var authorities = SecurityConfig.authoritiesFor(jwt, "STAFF");
 
         assertThat(authorities).extracting(a -> a.getAuthority())
             .containsExactlyInAnyOrder("ROLE_REALM_STAFF", "ROLE_ADMIN", "ROLE_UNDERWRITER");
@@ -35,8 +38,7 @@ class SecurityConfigTest {
             .expiresAt(Instant.now().plusSeconds(60))
             .build();
 
-        var authorities = tz.co.nlolo.lifeplatform.iam.infrastructure.SecurityConfigTestSupport
-            .authoritiesFor(jwt, "CUSTOMERS");
+        var authorities = SecurityConfig.authoritiesFor(jwt, "CUSTOMERS");
 
         assertThat(authorities).extracting(a -> a.getAuthority())
             .containsExactly("ROLE_REALM_CUSTOMERS");

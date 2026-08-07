@@ -37,9 +37,9 @@ public class DocumentApiImpl implements DocumentApi {
     public String upload(String ownerContext, DocumentType documentType, String uploadedBy,
                           InputStream content, long contentLength, String contentType) {
         String documentRef = UUID.randomUUID().toString();
-        storage.put(documentRef, documentType, content, contentLength, contentType);
-
         UUID tenantId = TenantContext.get();
+        storage.put(storageKey(tenantId, documentRef), documentType, content, contentLength, contentType);
+
         repository.save(new DocumentRecord(documentRef, tenantId, ownerContext, documentType, uploadedBy, Instant.now()));
 
         eventPublisher.publishEvent(DomainEventEnvelope.of("document.DocumentUploaded", tenantId,
@@ -51,7 +51,7 @@ public class DocumentApiImpl implements DocumentApi {
     @Override
     public byte[] download(String documentRef) {
         DocumentRecord record = findOrThrow(documentRef);
-        return storage.get(documentRef, record.getDocumentType());
+        return storage.get(storageKey(record.getTenantId(), documentRef), record.getDocumentType());
     }
 
     @Override
@@ -62,7 +62,27 @@ public class DocumentApiImpl implements DocumentApi {
     }
 
     private DocumentRecord findOrThrow(String documentRef) {
-        return repository.findById(documentRef)
+        DocumentRecord record = repository.findById(documentRef)
             .orElseThrow(() -> new NoSuchElementException("No document found for ref " + documentRef));
+        // Fail-loud tenant scoping (mirrors PartyApiImpl.findPartyOrThrow): RLS is the primary
+        // control, but this is genuine defense-in-depth, not a substitute for it. A cross-tenant
+        // mismatch is reported identically to "doesn't exist" (docs/04-api-contracts.md §2) --
+        // same exception, same message shape -- so callers can't distinguish "not found" from
+        // "not yours" and infer another tenant's document exists.
+        if (!record.getTenantId().equals(TenantContext.get())) {
+            throw new NoSuchElementException("No document found for ref " + documentRef);
+        }
+        return record;
+    }
+
+    /**
+     * Prefixes the MinIO object key with the owning tenant's ID (final-review Finding 4):
+     * bare-UUID object keys give object storage itself zero tenant boundary, relevant for any
+     * future presigned-URL or direct-download feature. Pre-production (no real objects exist
+     * yet on this feature branch), so this changes key layout going forward with no
+     * migration/backfill needed for existing objects.
+     */
+    private static String storageKey(UUID tenantId, String documentRef) {
+        return tenantId + "/" + documentRef;
     }
 }

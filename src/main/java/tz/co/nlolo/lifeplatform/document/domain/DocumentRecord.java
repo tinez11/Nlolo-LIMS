@@ -48,6 +48,7 @@ public class DocumentRecord {
     }
 
     public String getDocumentRef() { return documentRef; }
+    public UUID getTenantId() { return tenantId; }
     public String getOwnerContext() { return ownerContext; }
     public DocumentType getDocumentType() { return documentType; }
     public String getUploadedBy() { return uploadedBy; }

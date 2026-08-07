@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.party;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import com.atlassian.oai.validator.mockmvc.OpenApiValidationMatchers;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -22,6 +23,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +68,9 @@ class PartyContractTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private PartyApi partyApi;
 
     @Test
     void registerIndividualMatchesOpenApiContract() throws Exception {
@@ -117,6 +122,95 @@ class PartyContractTest {
                         .claim("tenant_id", tenantId.toString())
                         .claim("party_id", customersOwnPartyId.toString()))))
             .andExpect(status().isForbidden());
+    }
+
+    // --- OpenAPI contract coverage for the remaining party operations (final-review Finding 5) --
+    //
+    // Only registerIndividual/registerCorporate were previously validated against
+    // openapi-party.yaml -- getParty, submitKyc, and both group-member operations were
+    // exercised (elsewhere, or not via real HTTP at all) without ever being checked against
+    // the spec. These add real MockMvc dispatches, each asserting OpenApiValidationMatchers.
+
+    @Test
+    void getPartyMatchesOpenApiContract() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        MvcResult registerResult = mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Get Party Contract Test","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345690","email":"getparty@example.tz"}}
+                    """))
+            .andExpect(status().isCreated())
+            .andReturn();
+        PartyView registered = objectMapper.readValue(registerResult.getResponse().getContentAsString(), PartyView.class);
+
+        mockMvc.perform(get("/parties/" + registered.partyId())
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void submitKycMatchesOpenApiContract() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        MvcResult registerResult = mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Kyc Contract Test","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345691","email":"kyc@example.tz"}}
+                    """))
+            .andExpect(status().isCreated())
+            .andReturn();
+        PartyView registered = objectMapper.readValue(registerResult.getResponse().getContentAsString(), PartyView.class);
+
+        mockMvc.perform(post("/parties/" + registered.partyId() + "/kyc")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"status":"VERIFIED","evidenceDocumentRef":"doc-ref-contract-test"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void addAndListGroupMembersMatchOpenApiContract() throws Exception {
+        // registerGroup has no dedicated REST endpoint (only individuals/corporates do) -- the
+        // group and its prospective member are created directly via PartyApi, exactly as
+        // PartyApiIntegrationTest does for the same reason. The operations actually under
+        // contract test here are the two group-membership HTTP endpoints themselves.
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        PartyView group = partyApi.registerGroup("Contract Test Group", "test-agent");
+        PartyView member = partyApi.registerIndividual("Contract Test Member", LocalDate.of(1990, 1, 1),
+            "+255712345692", "member@example.tz", "test-agent");
+        TenantContext.clear();
+
+        String membersPath = "/parties/" + group.partyId() + "/groups/" + group.partyId() + "/members";
+
+        mockMvc.perform(post(membersPath)
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"memberPartyId\":\"" + member.partyId() + "\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(get(membersPath)
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
     @Test
@@ -206,12 +300,15 @@ class PartyContractTest {
         // cleared TenantContext.
 
         // Request 2: Register an individual with NO tenant_id claim.
-        // If the finally-block worked, TenantContext.get() will be null,
-        // PartyApiImpl will throw IllegalStateException (fail-loud guard),
-        // and the catch-all exception handler will return 500 INTERNAL_ERROR.
-        // If the finally-block is broken/missing, TenantContext will still
-        // have tenantId from Request 1, the registration succeeds with 201,
-        // and this assertion fails — a falsifiable proof that the clear works.
+        // If the finally-block worked, TenantContextFilter finds no valid tenant_id
+        // claim on THIS request and rejects it with 403 FORBIDDEN before it ever
+        // reaches PartyApiImpl (final-review Finding 3: a missing/malformed
+        // tenant_id claim is an authorization failure, rejected at the request
+        // boundary, not a server fault). If the finally-block is broken/missing,
+        // TenantContext would still have tenantId from Request 1, the registration
+        // would succeed with 201, and this assertion would fail — a falsifiable
+        // proof that the clear works, regardless of which status code correctly
+        // represents "no claim on this request."
         mockMvc.perform(post("/parties/individuals")
                 .with(jwt()
                     .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS")))
@@ -220,7 +317,38 @@ class PartyContractTest {
                 .content("""
                     {"fullName":"Request 2 Party (No Tenant)","dateOfBirth":"1990-06-13","contactInfo":{"phoneNumber":"+255712345679","email":"r2@example.tz"}}
                     """))
-            .andExpect(status().isInternalServerError());
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void missingTenantIdClaimReturnsForbiddenWithTenantClaimMissingErrorCode() throws Exception {
+        // Direct coverage of final-review Finding 3: a JWT with no tenant_id claim
+        // must be rejected at the request boundary (403) with a recognizable
+        // errorCode, not allowed through to fail deep in the service layer as a 500.
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS")))
+                    // Deliberately omit .claim("tenant_id", ...)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"No Tenant Claim","dateOfBirth":"1990-06-13","contactInfo":{"phoneNumber":"+255712345680","email":"notenant@example.tz"}}
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.errorCode").value("TENANT_CLAIM_MISSING"));
+    }
+
+    @Test
+    void malformedTenantIdClaimReturnsForbiddenWithTenantClaimMissingErrorCode() throws Exception {
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", "not-a-uuid")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Malformed Tenant Claim","dateOfBirth":"1990-06-13","contactInfo":{"phoneNumber":"+255712345681","email":"malformed@example.tz"}}
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.errorCode").value("TENANT_CLAIM_MISSING"));
     }
 
     // --- GlobalExceptionHandler coverage (final-review Finding 1 + 2) ---------------------

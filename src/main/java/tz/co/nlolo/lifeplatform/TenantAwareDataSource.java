@@ -61,18 +61,28 @@ public class TenantAwareDataSource extends DelegatingDataSource {
     }
 
     private Connection applyTenantContext(Connection connection) throws SQLException {
-        UUID tenantId = TenantContext.getOrNull();
-        try (Statement statement = connection.createStatement()) {
-            if (tenantId != null) {
-                statement.execute("SET app.current_tenant_id = '" + tenantId + "'");
-            } else {
-                // Explicit RESET, not a no-op skip: a pooled physical connection may
-                // still carry a PREVIOUS borrower's SET from before it was returned
-                // to the pool. Without this, that stale value would leak into this
-                // borrower's queries instead of leaving RLS to fail closed.
-                statement.execute("RESET app.current_tenant_id");
+        try {
+            UUID tenantId = TenantContext.getOrNull();
+            try (Statement statement = connection.createStatement()) {
+                if (tenantId != null) {
+                    statement.execute("SET app.current_tenant_id = '" + tenantId + "'");
+                } else {
+                    // Explicit RESET, not a no-op skip: a pooled physical connection may
+                    // still carry a PREVIOUS borrower's SET from before it was returned
+                    // to the pool. Without this, that stale value would leak into this
+                    // borrower's queries instead of leaving RLS to fail closed.
+                    statement.execute("RESET app.current_tenant_id");
+                }
             }
+            return connection;
+        } catch (SQLException | RuntimeException e) {
+            // If SET/RESET fails (stale/broken pooled connection, DB failover, statement
+            // timeout), the caller never received this Connection object and so could never
+            // close it -- without this, every such failure would leak one connection out of
+            // the pool permanently. Close it here, before rethrowing, so the pool always gets
+            // it back (or a genuinely dead connection is discarded, not held forever).
+            connection.close();
+            throw e;
         }
-        return connection;
     }
 }
