@@ -98,12 +98,17 @@ components:
   schemas:
     OpenCaseRequest:
       type: object
-      required: [applicantPartyId, productId, productVersionId, sumAssured]
+      # sumAssured (a Money object elsewhere in this platform, see openapi-common.yaml)
+      # is intentionally flattened here to sumAssuredAmount/sumAssuredCurrency to match
+      # tz.co.nlolo.lifeplatform.underwriting.infrastructure.OpenCaseRequest -- confirmed
+      # against the real controller/DTO by Task 7's UnderwritingContractTest.
+      required: [applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency]
       properties:
         applicantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
-        sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        sumAssuredAmount: { type: number }
+        sumAssuredCurrency: { type: string, pattern: '^[A-Z]{3}$', example: TZS }
         medicalDisclosure:
           type: object
           description: Structured Q&A responses; schema varies by product — see Deliverable 6 for the concrete field set.
@@ -116,17 +121,17 @@ components:
         riskScore: { type: number, nullable: true }
     UnderwritingCaseView:
       type: object
+      # The decision is intentionally flattened to decisionOutcome/decisionLoadingPercent/
+      # decisionDeclineReason/decisionDecidedAt here to match
+      # tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView -- confirmed against
+      # the real controller/DTO by Task 7's UnderwritingContractTest.
       properties:
         caseId: { type: string, format: uuid }
         applicantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         productId: { type: string, format: uuid }
         status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
         referralStatus: { type: string, enum: [NONE, REFERRED_TO_SENIOR, REFERRAL_RESOLVED] }
-        decision:
-          type: object
-          nullable: true
-          properties:
-            outcome: { type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED] }
-            loadingPercent: { type: number, nullable: true }
-            declineReason: { type: string, nullable: true }
-            decidedAt: { type: string, format: date-time }
+        decisionOutcome: { type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED], nullable: true }
+        decisionLoadingPercent: { type: number, nullable: true }
+        decisionDeclineReason: { type: string, nullable: true }
+        decisionDecidedAt: { type: string, format: date-time, nullable: true }
