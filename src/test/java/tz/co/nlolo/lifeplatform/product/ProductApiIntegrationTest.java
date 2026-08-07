@@ -127,10 +127,28 @@ class ProductApiIntegrationTest {
 
     @Test
     void productsAreTenantIsolated() {
-        productApi.createProduct("SHARED-CODE", "Tenant A product", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        ProductSummaryView product = productApi.createProduct("SHARED-CODE", "Tenant A product", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        // Prove the negative result under tenant B isn't just "nothing is ever active": the
+        // creating tenant (A) must see its own now-ACTIVE product in its own listing.
+        List<ProductSummaryView> tenantAProducts = productApi.listActiveProducts(null);
+        assertTrue(tenantAProducts.stream().anyMatch(p -> p.productCode().equals("SHARED-CODE") && p.status() == ProductStatus.ACTIVE));
+
         TenantContext.clear();
         TenantContext.set(UUID.randomUUID());
         List<ProductSummaryView> tenantBProducts = productApi.listActiveProducts(null);
         assertTrue(tenantBProducts.stream().noneMatch(p -> p.productCode().equals("SHARED-CODE")));
+    }
+
+    @Test
+    void createProductRejectsDuplicateProductCodeForSameTenant() {
+        productApi.createProduct("DUP-01", "First product", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThrows(DuplicateProductCodeException.class, () ->
+            productApi.createProduct("DUP-01", "Second product with same code", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz"));
     }
 }

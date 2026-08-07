@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.product.domain.*;
 import tz.co.nlolo.lifeplatform.product.infrastructure.*;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,8 +37,25 @@ public class ProductApiImpl implements ProductApi {
     @Transactional
     public ProductSummaryView createProduct(String productCode, String productName, ProductCategory category, String defaultCurrency, String createdBy) {
         UUID tenantId = TenantContext.get();
+        if (productDefinitionRepository.findByTenantIdAndProductCode(tenantId, productCode).isPresent()) {
+            throw new DuplicateProductCodeException(productCode);
+        }
         ProductDefinition product = new ProductDefinition(tenantId, productCode, productName, category.name(), defaultCurrency, createdBy);
-        productDefinitionRepository.save(product);
+        try {
+            // The check above is a fast-path UX improvement, not the guarantee -- ux_product_code
+            // (the unique index on (tenant_id, product_code)) is. Two concurrent requests can both
+            // pass the check above and race to insert; the loser's DataIntegrityViolationException is
+            // translated here so callers see the same domain exception regardless of timing. This MUST
+            // be saveAndFlush, not save: productId is an in-memory-generated UUID (Hibernate's
+            // UuidGenerator, no DB round-trip needed to assign it), so plain save() only queues the
+            // INSERT in the flush action queue -- it doesn't hit the DB until the surrounding
+            // @Transactional proxy commits, which is after this method (and this catch block) has
+            // already returned. saveAndFlush forces the INSERT to execute synchronously, right here, so
+            // a real unique-constraint violation is actually caught. Mirrors PartyApiImpl.registerCorporate.
+            productDefinitionRepository.saveAndFlush(product);
+        } catch (DataIntegrityViolationException e) {
+            throw new DuplicateProductCodeException(productCode);
+        }
         return toSummaryView(product);
     }
 
