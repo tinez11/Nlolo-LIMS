@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.party.infrastructure;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -33,7 +34,7 @@ public class PartyController {
 
     @PostMapping("/parties/individuals")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS')")
-    public ResponseEntity<PartyView> registerIndividual(@RequestBody RegisterIndividualRequest request,
+    public ResponseEntity<PartyView> registerIndividual(@Valid @RequestBody RegisterIndividualRequest request,
                                                           @AuthenticationPrincipal Jwt jwt) {
         PartyView view = partyApi.registerIndividual(request.fullName(), request.dateOfBirth(),
             request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
@@ -44,7 +45,7 @@ public class PartyController {
 
     @PostMapping("/parties/corporates")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
-    public ResponseEntity<PartyView> registerCorporate(@RequestBody RegisterCorporateRequest request,
+    public ResponseEntity<PartyView> registerCorporate(@Valid @RequestBody RegisterCorporateRequest request,
                                                          @AuthenticationPrincipal Jwt jwt) {
         PartyView view = partyApi.registerCorporate(request.registeredName(), request.registrationNumber(),
             request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
@@ -76,7 +77,7 @@ public class PartyController {
 
     @PostMapping("/parties/{partyId}/kyc")
     @PreAuthorize("hasRole('REALM_STAFF')")
-    public ResponseEntity<Void> submitKyc(@PathVariable UUID partyId, @RequestBody KycUpdateRequest request,
+    public ResponseEntity<Void> submitKyc(@PathVariable UUID partyId, @Valid @RequestBody KycUpdateRequest request,
                                             @AuthenticationPrincipal Jwt jwt) {
         partyApi.submitKycEvidence(partyId, request.status(), request.evidenceDocumentRef(), jwt.getSubject());
         return ResponseEntity.ok().build();
@@ -94,7 +95,7 @@ public class PartyController {
     @PostMapping("/parties/{partyId}/groups/{groupId}/members")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<Void> addGroupMember(@PathVariable UUID partyId, @PathVariable UUID groupId,
-                                                 @RequestBody AddGroupMemberRequest request) {
+                                                 @Valid @RequestBody AddGroupMemberRequest request) {
         partyApi.addGroupMember(groupId, request.memberPartyId());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

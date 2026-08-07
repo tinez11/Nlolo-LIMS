@@ -4,20 +4,27 @@ import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.UUID;
 
 /**
- * Maps domain exceptions to RFC 7807 application/problem+json responses
- * (docs/04-api-contracts.md §2). Spring's ProblemDetail already produces
- * type/title/status/detail/instance; errorCode and traceId are the two
- * platform-specific extensions doc04 §2 describes. Not implementing the full
- * dereferenceable type-URI scheme (".../problems/...") here -- party has no
- * semantically rich 422 cases yet that would need one; a simplification, not
- * a silent gap.
+ * Maps party's own domain exceptions to RFC 7807 application/problem+json responses
+ * (docs/04-api-contracts.md §2). Genuinely scoped to this module -- unlike the class this replaced
+ * (also named PartyExceptionHandler, also living here), which additionally carried an unrestricted
+ * catch-all @ExceptionHandler(Exception.class) that intercepted every standard Spring MVC exception
+ * app-wide before Spring's own defaults ever ran. That cross-cutting concern now lives in
+ * tz.co.nlolo.lifeplatform.GlobalExceptionHandler (the shared-kernel root package), extending
+ * ResponseEntityExceptionHandler; it is intentionally NOT merged into this class because doing so
+ * would make the root package depend back on the party module's exception types, which
+ * ModularityTests.verifiesModularStructure (Spring Modulith's module-dependency-graph check,
+ * docs/02-module-architecture.md §4) correctly rejects as a cycle -- other modules already depend on
+ * the root package (TenantContext, DomainEventEnvelope), so the root package must never depend back
+ * on them. Spring merges @ExceptionHandler resolution across every discovered @ControllerAdvice bean
+ * by exception-type specificity, so this narrower, party-specific advice and the root generic one
+ * co-exist correctly: a PartyNotFoundException is matched here (more specific) even though
+ * GlobalExceptionHandler's catch-all could also technically apply.
  */
 @RestControllerAdvice
 public class PartyExceptionHandler {
@@ -30,21 +37,6 @@ public class PartyExceptionHandler {
     @ExceptionHandler(DuplicateRegistrationNumberException.class)
     public ProblemDetail handleDuplicate(DuplicateRegistrationNumberException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "DUPLICATE_REGISTRATION_NUMBER");
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ProblemDetail handleValidation(IllegalArgumentException ex) {
-        return problem(HttpStatus.BAD_REQUEST, ex.getMessage(), "VALIDATION_ERROR");
-    }
-
-    @ExceptionHandler(AccessDeniedException.class)
-    public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
-        return problem(HttpStatus.FORBIDDEN, ex.getMessage(), "FORBIDDEN");
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ProblemDetail handleGenericException(Exception ex) {
-        return problem(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred", "INTERNAL_ERROR");
     }
 
     private static ProblemDetail problem(HttpStatus status, String detail, String errorCode) {

@@ -28,6 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
@@ -219,5 +221,87 @@ class PartyContractTest {
                     {"fullName":"Request 2 Party (No Tenant)","dateOfBirth":"1990-06-13","contactInfo":{"phoneNumber":"+255712345679","email":"r2@example.tz"}}
                     """))
             .andExpect(status().isInternalServerError());
+    }
+
+    // --- GlobalExceptionHandler coverage (final-review Finding 1 + 2) ---------------------
+    //
+    // Before the fix, PartyExceptionHandler's bare @ExceptionHandler(Exception.class) catch-all
+    // intercepted every one of these standard Spring MVC exceptions before Spring's own
+    // DefaultHandlerExceptionResolver ever got a chance, turning all of them into 500s. These
+    // tests exercise the real MockMvc dispatch stack (not the handler in isolation) against the
+    // now-global GlobalExceptionHandler, which extends ResponseEntityExceptionHandler, to prove
+    // each one now resolves to its correct standard status.
+
+    @Test
+    void malformedJsonBodyReturnsBadRequestNotServerError() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{ this is not valid json"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void missingRequiredFieldReturnsValidationErrorNotServerError() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // fullName is required by openapi-party.yaml's RegisterIndividualRequest schema but
+        // omitted here -- pre-fix this reached the DB, hit a NOT NULL constraint, and surfaced
+        // as a bare 500; post-fix Bean Validation rejects it before the controller ever runs.
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345678","email":"amina@example.tz"}}
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+            .andExpect(jsonPath("$.traceId").exists())
+            .andExpect(jsonPath("$.errors[?(@.field == 'fullName')]").exists());
+    }
+
+    @Test
+    void unsupportedHttpMethodReturnsMethodNotAllowedNotServerError() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // PUT is not mapped on this path at all (only POST is) -- this is Spring's own
+        // HttpRequestMethodNotSupportedException, resolved by ResponseEntityExceptionHandler.
+        mockMvc.perform(put("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
+    void unsupportedMediaTypeReturnsUnsupportedMediaTypeNotServerError() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.TEXT_PLAIN)
+                .content("plain text, not json"))
+            .andExpect(status().isUnsupportedMediaType());
+    }
+
+    @Test
+    void pathVariableTypeMismatchReturnsBadRequestNotServerError() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID ownPartyId = UUID.randomUUID();
+        // partyId is declared as a UUID path variable -- "not-a-uuid" triggers Spring's
+        // MethodArgumentTypeMismatchException, resolved by ResponseEntityExceptionHandler.
+        mockMvc.perform(get("/parties/not-a-uuid")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder
+                        .claim("tenant_id", tenantId.toString())
+                        .claim("party_id", ownPartyId.toString()))))
+            .andExpect(status().isBadRequest());
     }
 }
