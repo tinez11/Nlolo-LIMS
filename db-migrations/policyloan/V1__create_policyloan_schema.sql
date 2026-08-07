@@ -90,20 +90,38 @@ CREATE POLICY repayment_schedule_tenant_isolation ON policyloan.repayment_schedu
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 
 -- loan_transaction is PARTITIONED BY RANGE. Verified empirically (throwaway Postgres 16
--- container, not taken on faith): enabling RLS + a policy on the PARENT table alone
--- correctly restricts every query that addresses policyloan.loan_transaction by name --
--- the only access path this application ever uses (Postgres checks privileges/RLS
--- against the relation named in the query, not the partition tuples are routed to).
--- What does NOT happen automatically: a query addressing a dated partition directly
--- (e.g. policyloan.loan_transaction_2026_08) is a DIFFERENT relation with its own,
--- independent row-security setting -- the parent's CREATE POLICY does not cascade to
--- it. Duplicating the policy onto every partition was deliberately not done here: no
--- code path in this codebase ever addresses a partition by name, and doing so would
--- require every future monthly partition (already a manual/ops-script convention per
--- the comment above) to also carry its own copy of this policy, which nothing currently
--- enforces. Flagged, not silently dropped.
+-- container, not taken on faith) that `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` on the
+-- PARENT table (no ONLY) does NOT cascade the enable flag to existing partitions --
+-- pg_class.relrowsecurity stays FALSE on each partition, because a partition is a
+-- separate relation with its own independent row-security setting. This is NOT
+-- Postgres's RLS default-deny (a claim in an earlier draft of this comment that this
+-- same empirical test disproved): with RLS off on the partition, a direct query against
+-- a dated partition (e.g. policyloan.loan_transaction_2026_08) by any role, including
+-- app_role, returns EVERY tenant's rows, completely unfiltered -- a full cross-tenant
+-- data leak on the highest-volume table in this schema, not a merely-inconvenient
+-- zero-row result. Querying through the parent by name -- the only access path this
+-- application uses today -- IS correctly filtered, because Postgres evaluates RLS
+-- against the relation actually named in the query, and the parent does have RLS
+-- enabled with a policy below.
+-- Defense in depth: RLS + the identical tenant-isolation policy is therefore also
+-- enabled explicitly on BOTH existing partitions, not just the parent -- mirroring how
+-- the REVOKE further down already has to name each partition explicitly.
+-- OPERATIONAL TRAP FOR FUTURE PARTITIONS: neither the parent's ENABLE ROW LEVEL
+-- SECURITY nor its CREATE POLICY is inherited by a partition created later (by
+-- pg_partman or a future Flyway migration). Any such partition needs its own
+-- ENABLE ROW LEVEL SECURITY + CREATE POLICY <name>_tenant_isolation (and its own
+-- REVOKE UPDATE, DELETE, see below) or it will be silently readable, and
+-- writable/deletable, across every tenant.
 ALTER TABLE policyloan.loan_transaction ENABLE ROW LEVEL SECURITY;
 CREATE POLICY loan_transaction_tenant_isolation ON policyloan.loan_transaction
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE policyloan.loan_transaction_2026_08 ENABLE ROW LEVEL SECURITY;
+CREATE POLICY loan_transaction_2026_08_tenant_isolation ON policyloan.loan_transaction_2026_08
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE policyloan.loan_transaction_2026_09 ENABLE ROW LEVEL SECURITY;
+CREATE POLICY loan_transaction_2026_09_tenant_isolation ON policyloan.loan_transaction_2026_09
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 
 -- app_role privileges -- migrations run as the postgres superuser (scripts/migrate.sh),
