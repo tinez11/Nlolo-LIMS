@@ -38,6 +38,13 @@ public class ProductVersion {
     @Column(name = "max_loan_to_value_percent")
     private BigDecimal maxLoanToValuePercent;
 
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "surrender_charge_schedule", columnDefinition = "jsonb")
+    private String surrenderChargeScheduleJson;
+
+    public String getSurrenderChargeScheduleJson() { return surrenderChargeScheduleJson; }
+    public void setSurrenderChargeScheduleJson(String surrenderChargeScheduleJson) { this.surrenderChargeScheduleJson = surrenderChargeScheduleJson; }
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 

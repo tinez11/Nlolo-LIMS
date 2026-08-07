@@ -2,8 +2,10 @@ package tz.co.nlolo.lifeplatform;
 
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -56,7 +58,8 @@ class RowLevelSecurityIntegrationTest {
             // on product/underwriting tables too, not merely that the CREATE POLICY SQL
             // reads correctly.
             "db-migrations/product/V1__create_product_schema.sql",
-            "db-migrations/underwriting/V1__create_underwriting_schema.sql");
+            "db-migrations/underwriting/V1__create_underwriting_schema.sql",
+            "db-migrations/policy/V1__create_policy_schema.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -79,6 +82,8 @@ class RowLevelSecurityIntegrationTest {
             statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA product TO app_role");
             statement.execute("GRANT USAGE ON SCHEMA underwriting TO app_role");
             statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA underwriting TO app_role");
+            statement.execute("GRANT USAGE ON SCHEMA policy TO app_role");
+            statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA policy TO app_role");
         }
     }
 
@@ -90,6 +95,9 @@ class RowLevelSecurityIntegrationTest {
 
     @Autowired
     private UnderwritingApi underwritingApi;
+
+    @Autowired
+    private PolicyApi policyApi;
 
     @AfterEach
     void clearTenant() {
@@ -204,6 +212,55 @@ class RowLevelSecurityIntegrationTest {
             try (ResultSet resultSet = statement.executeQuery("SELECT case_id FROM underwriting.underwriting_case")) {
                 assertThat(resultSet.next()).isTrue();
                 assertThat(resultSet.getString(1)).isEqualTo(caseIdA.toString());
+                assertThat(resultSet.next()).isFalse();
+            }
+        }
+    }
+
+    /**
+     * M3 addition: proves policy_tenant_isolation actually isolates tenants for policy.policy,
+     * not merely that the CREATE POLICY statement parses -- same proof shape as the existing
+     * product/underwriting tests in this class.
+     */
+    @Test
+    void policyIsTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+
+        TenantContext.set(tenantA);
+        UUID caseIdA = openCaseForCurrentTenant("RLS-POLICY-A", "3");
+        underwritingApi.submitAssessment(caseIdA, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
+        UnderwritingCaseView decidedA = underwritingApi.getCase(caseIdA);
+        String policyNumberA = policyApi.issuePolicy(caseIdA,
+            new PolicyApi.IssueRequest(decidedA.applicantPartyId(), decidedA.productId(), decidedA.productVersionId(),
+                new java.math.BigDecimal("1000000"), "TZS", null, "MONTHLY", java.util.List.of(), "RLS test"),
+            "test-staff").policyNumber();
+
+        TenantContext.set(tenantB);
+        UUID caseIdB = openCaseForCurrentTenant("RLS-POLICY-B", "4");
+        underwritingApi.submitAssessment(caseIdB, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
+        UnderwritingCaseView decidedB = underwritingApi.getCase(caseIdB);
+        policyApi.issuePolicy(caseIdB,
+            new PolicyApi.IssueRequest(decidedB.applicantPartyId(), decidedB.productId(), decidedB.productVersionId(),
+                new java.math.BigDecimal("2000000"), "TZS", null, "MONTHLY", java.util.List.of(), "RLS test"),
+            "test-staff");
+
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = superuserConnection.createStatement();
+             ResultSet resultSet = statement.executeQuery("SELECT COUNT(*) FROM policy.policy")) {
+            resultSet.next();
+            assertThat(resultSet.getInt(1)).isEqualTo(2);
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery("SELECT policy_number FROM policy.policy")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo(policyNumberA);
                 assertThat(resultSet.next()).isFalse();
             }
         }

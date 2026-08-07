@@ -148,3 +148,5 @@ components:
         ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
         gracePeriodDays: { type: integer }
         maxLoanToValuePercent: { type: number }
+        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
+        surrenderChargeScheduleJson: { type: string, nullable: true, description: Raw JSON surrender-charge schedule from product_version.surrender_charge_schedule; null until a future milestone adds a way to author it. }

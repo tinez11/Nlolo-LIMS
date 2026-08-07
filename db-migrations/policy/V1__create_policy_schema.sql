@@ -120,3 +120,50 @@ CREATE INDEX idx_loan_reservation_ttl_sweep ON policy.loan_value_reservation (tt
 ALTER TABLE policy.policy ENABLE ROW LEVEL SECURITY;
 CREATE POLICY policy_tenant_isolation ON policy.policy
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- New columns needed by the policy lifecycle state machine (Deliverable 3 Rev 2 §3) --
+-- absent from the original schema, which only carried the `status` enum itself.
+ALTER TABLE policy.policy ADD COLUMN product_category VARCHAR(30);
+-- Captured at issuance from product.ProductSnapshotView.category() (see this task's
+-- product.api changes below) so SUSPENDED-eligibility can be checked against
+-- POLICY_SUSPENSION_ELIGIBLE_CATEGORIES (db-migrations/refdata/V2, Task 6) without a
+-- synchronous call into product on every suspend attempt.
+ALTER TABLE policy.policy ADD COLUMN suspended_at TIMESTAMPTZ;
+ALTER TABLE policy.policy ADD COLUMN suspension_reason VARCHAR(255);
+ALTER TABLE policy.policy ADD COLUMN lapsed_at TIMESTAMPTZ;
+
+-- Defense-in-depth RLS (Global Constraints) -- policy.policy already had it; the
+-- remaining 6 tenant-scoped tables in this schema did not.
+ALTER TABLE policy.policy_account ENABLE ROW LEVEL SECURITY;
+CREATE POLICY policy_account_tenant_isolation ON policy.policy_account
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE policy.fund_holding ENABLE ROW LEVEL SECURITY;
+CREATE POLICY fund_holding_tenant_isolation ON policy.fund_holding
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE policy.endorsement ENABLE ROW LEVEL SECURITY;
+CREATE POLICY endorsement_tenant_isolation ON policy.endorsement
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE policy.beneficiary ENABLE ROW LEVEL SECURITY;
+CREATE POLICY beneficiary_tenant_isolation ON policy.beneficiary
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE policy.coverage ENABLE ROW LEVEL SECURITY;
+CREATE POLICY coverage_tenant_isolation ON policy.coverage
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+ALTER TABLE policy.loan_value_reservation ENABLE ROW LEVEL SECURITY;
+CREATE POLICY loan_value_reservation_tenant_isolation ON policy.loan_value_reservation
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+-- app_role privileges -- migrations run as the postgres superuser (scripts/migrate.sh),
+-- which becomes owner of every object created above; without these explicit grants
+-- app_role (the application's runtime DB role) has no access to this schema at all
+-- and every request against it fails with "permission denied for schema policy"
+-- (the exact bug M1's/M2's final whole-branch reviews found and fixed for every other
+-- schema -- fixed here from the start instead of waiting for a third review to catch it).
+GRANT USAGE ON SCHEMA policy TO app_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA policy TO app_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA policy GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_role;

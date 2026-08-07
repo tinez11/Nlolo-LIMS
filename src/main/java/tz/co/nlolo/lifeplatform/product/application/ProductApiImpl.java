@@ -132,9 +132,11 @@ public class ProductApiImpl implements ProductApi {
         ProductVersion version = productVersionRepository.findActiveAsOf(tenantId, productId, effectiveAsOf).stream()
             .findFirst()
             .orElseThrow(() -> new ProductNotFoundException(productId));
+        ProductDefinition definition = productDefinitionRepository.findById(productId).orElseThrow(() -> new ProductNotFoundException(productId));
         return new ProductSnapshotView(productId, version.getProductVersionId(), version.getEffectiveDate(),
-            IfrsMeasurementModel.valueOf(productDefinitionRepository.findById(productId).orElseThrow(() -> new ProductNotFoundException(productId)).getIfrsMeasurementModel()),
-            version.getGracePeriodDays(), version.getMaxLoanToValuePercent());
+            IfrsMeasurementModel.valueOf(definition.getIfrsMeasurementModel()),
+            version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
+            ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson());
     }
 
     @Override
