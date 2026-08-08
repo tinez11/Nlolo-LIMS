@@ -28,4 +28,12 @@ public interface ProductApi {
      * defines every factor type/band combination.
      */
     BigDecimal resolveRatingMultiplier(UUID productVersionId, FactorType factorType, String band);
+
+    /**
+     * M3 addition: manual policy issuance (openapi-policy.yaml's ManualIssueRequest) supplies
+     * only productVersionId, never a bare productId -- PolicyApi.IssueRequest needs both.
+     * Internal-only, not part of openapi-product.yaml (same convention as
+     * resolveRatingMultiplier).
+     */
+    ProductSnapshotView getSnapshotByVersionId(UUID productVersionId);
 }

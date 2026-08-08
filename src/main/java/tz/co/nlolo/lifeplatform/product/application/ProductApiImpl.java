@@ -148,6 +148,19 @@ public class ProductApiImpl implements ProductApi {
             .orElse(BigDecimal.ONE); // No matching band -- neutral multiplier, not an error (see ProductApi.resolveRatingMultiplier's javadoc).
     }
 
+    @Override
+    public ProductSnapshotView getSnapshotByVersionId(UUID productVersionId) {
+        UUID tenantId = TenantContext.get();
+        ProductVersion version = productVersionRepository.findById(productVersionId)
+            .filter(v -> v.getTenantId().equals(tenantId))
+            .orElseThrow(() -> new ProductNotFoundException(productVersionId));
+        ProductDefinition definition = productDefinitionRepository.findById(version.getProductId())
+            .orElseThrow(() -> new ProductNotFoundException(version.getProductId()));
+        return new ProductSnapshotView(version.getProductId(), productVersionId, version.getEffectiveDate(),
+            IfrsMeasurementModel.valueOf(definition.getIfrsMeasurementModel()), version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
+            ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson());
+    }
+
     private ProductSummaryView toSummaryView(ProductDefinition p) {
         return new ProductSummaryView(p.getProductId(), p.getProductCode(), p.getProductName(),
             ProductCategory.valueOf(p.getCategory()), ProductStatus.valueOf(p.getStatus()), p.getDefaultCurrency());

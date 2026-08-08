@@ -273,7 +273,6 @@ components:
   schemas:
     ManualIssueRequest:
       type: object
-      required: [underwritingCaseId, policyholderPartyId, productVersionId, sumAssured, agentOfRecordId]
       properties:
         underwritingCaseId: { type: string, format: uuid }
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
