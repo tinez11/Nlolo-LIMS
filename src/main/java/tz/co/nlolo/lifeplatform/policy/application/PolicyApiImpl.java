@@ -243,6 +243,14 @@ public class PolicyApiImpl implements PolicyApi {
     @Transactional
     public UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl) {
         UUID tenantId = TenantContext.get();
+        // Opportunistic TTL sweep (Module-Architecture-B1; Global Constraints -- a true cross-
+        // tenant @Scheduled sweep is architecturally incompatible with this platform's fail-closed
+        // RLS design, since a background thread with no TenantContext sees zero rows on every
+        // RLS-protected table and there is no tenant-directory table to iterate). Runs inside the
+        // CALLER's own TenantContext, so it is RLS-safe and expires only this tenant's stale
+        // RESERVED rows for this policy -- self-healing the crash case (reserved, then crashed
+        // before confirm/release) on the next real access instead of on a fixed wall-clock timer.
+        loanValueReservationRepository.expireStaleReservations(policyNumber, tenantId, Instant.now());
         findPolicyOrThrow(policyNumber, tenantId);
         PolicyAccount account = policyAccountRepository.lockByPolicyNumber(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
