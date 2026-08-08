@@ -51,6 +51,19 @@ public class PolicyController {
     @GetMapping("/policies/{policyNumber}")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PolicyResponseDto> getPolicy(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        // Object-level authorization (docs/04-api-contracts.md §3), same idiom as
+        // PartyController.getParty: a customers-realm token may only read the policy matching
+        // its own party_id claim (enforceCustomerOwnPolicyOnly below). Agents/staff are scoped
+        // by realm role alone here, same as PartyController -- openapi-policy.yaml's description
+        // for this operation states agents "are scoped to policies where they are agentOfRecord
+        // or within their agency hierarchy," but that hierarchy is not implemented: unlike the
+        // party case, PolicyView.agentOfRecordId DOES already exist on this resource, so a
+        // direct agentOfRecordId-match (leaving the fuzzier agency-hierarchy part genuinely
+        // deferred) is feasible sooner than the party equivalent -- but there is still no
+        // agent/agency data model (which agent a caller's JWT corresponds to, or how agencies
+        // nest) to resolve "is this caller's agent identity the agentOfRecord" against, so it
+        // remains deferred to a later milestone rather than silently skipped. Same gap applies
+        // to searchPolicies/getCoverageStatus/isInForce below (all agentsAuth-gated).
         PolicyView view = policyApi.getPolicy(policyNumber);
         enforceCustomerOwnPolicyOnly(view, jwt, authentication);
         return ResponseEntity.ok(PolicyResponseDto.from(view));
@@ -80,7 +93,7 @@ public class PolicyController {
     @PutMapping("/policies/{policyNumber}/beneficiaries")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<Void> replaceBeneficiaries(@PathVariable String policyNumber,
-            @RequestBody List<@Valid BeneficiaryInputDto> beneficiaries, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+            @Valid @RequestBody List<BeneficiaryInputDto> beneficiaries, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
         policyApi.replaceBeneficiaries(policyNumber, beneficiaries.stream().map(BeneficiaryInputDto::toApiInput).toList(), jwt.getSubject());
         return ResponseEntity.ok().build();

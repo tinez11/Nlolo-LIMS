@@ -204,6 +204,16 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '501':
+          description: >
+            Surrender/maturity loan-netting choreography is deferred pending a workflow-engine
+            decision (Camunda 7 is EOL; Camunda 8 needs a paid licence and a cross-tenant leak
+            review) -- this endpoint is real, routable, and correctly secured, but returns 501
+            instead of 202 until that engine is chosen. Interim state, not the intended eventual
+            behaviour (see the 202/409 responses above).
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /policies/{policyNumber}/processes/{processInstanceId}:
     get:
       summary: Poll status of an async surrender/maturity process
@@ -226,6 +236,16 @@ paths:
           content:
             application/json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProcessStatus' }
+        '501':
+          description: >
+            Surrender/maturity loan-netting choreography is deferred pending a workflow-engine
+            decision (Camunda 7 is EOL; Camunda 8 needs a paid licence and a cross-tenant leak
+            review) -- there is no process engine to poll, so this endpoint returns 501 instead
+            of 200 until that engine is chosen. Interim state, not the intended eventual
+            behaviour (see the 200 response above).
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /policies/{policyNumber}/coverage-status:
     get:
       summary: Coverage status as of a given date (used by claims, staff, support)

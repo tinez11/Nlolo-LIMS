@@ -12,7 +12,13 @@ public record ManualIssueRequestDto(
     @NotNull UUID policyholderPartyId,
     @NotNull UUID productVersionId,
     @NotNull @Valid MoneyDto sumAssured,
-    @NotNull UUID agentOfRecordId,
+    // openapi-policy.yaml's ManualIssueRequest marks agentOfRecordId both `nullable: true` and
+    // present in `required` -- that combination means the JSON key must be present but its value
+    // may be null (e.g. a direct/online issuance channel with no agent), not "must be non-null."
+    // A bare UUID field can't express "must be present, may be null" any more precisely at the
+    // Bean Validation layer, so no @NotNull here; a null value is spec-valid and must reach
+    // PolicyApi.IssueRequest unchanged.
+    UUID agentOfRecordId,
     String premiumFrequency,
     List<@Valid BeneficiaryInputDto> beneficiaries,
     @NotBlank String reasonForManualIssue) {}

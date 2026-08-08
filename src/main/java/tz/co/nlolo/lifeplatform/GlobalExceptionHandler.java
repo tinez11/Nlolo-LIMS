@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.MessageSourceResolvable;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -11,12 +12,16 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +104,53 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * Overrides the base class's hook for Spring Framework 6.1's newer, consolidated
+     * method-validation path ({@link HandlerMethodValidationException}) -- a second, separate
+     * validation mechanism from the classic {@code WebDataBinder}-based path
+     * {@link #handleMethodArgumentNotValid} above covers. Framework 6.1 activates this path
+     * whenever it finds a constraint annotation reachable anywhere in a handler method's
+     * parameter list, including a type-use {@code @Valid} on a generic type argument (e.g.
+     * {@code List<@Valid Foo>}) or a constraint directly on a bare-collection
+     * {@code @RequestBody} parameter -- both annotation placements route here identically, since
+     * Jakarta Bean Validation's {@code ExecutableValidator} natively cascades into container
+     * elements regardless of exactly where {@code @Valid} sits (discovered empirically while
+     * verifying the Task 4 review's C1 fix on {@code PolicyController.replaceBeneficiaries}: the
+     * review's predicted 500-via-uncaught-NPE did not reproduce on this codebase's actual Spring
+     * Boot 3.3.5 / Framework 6.1 version, because this path already caught the malformed input --
+     * just via a generic, undifferentiated shape). Without this override, that generic shape
+     * (bare {@code errorCode: BAD_REQUEST}, no per-field detail) fell through to
+     * {@link #handleExceptionInternal}'s funnel, inconsistent with
+     * {@link #handleMethodArgumentNotValid}'s {@code VALIDATION_ERROR} + {@code errors[]} shape
+     * used everywhere else on this platform. Mirrors that same shape here so the two validation
+     * paths are indistinguishable to API clients.
+     */
+    @Override
+    protected ResponseEntity<Object> handleHandlerMethodValidationException(HandlerMethodValidationException ex,
+            HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Request validation failed");
+        problem.setProperty("errorCode", "VALIDATION_ERROR");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        List<Map<String, String>> errors = new ArrayList<>();
+        for (ParameterValidationResult result : ex.getAllValidationResults()) {
+            String field = result.getMethodParameter().getParameterName();
+            if (result.getContainerIndex() != null) {
+                field = field + "[" + result.getContainerIndex() + "]";
+            }
+            if (result instanceof ParameterErrors parameterErrors) {
+                for (FieldError fieldError : parameterErrors.getFieldErrors()) {
+                    errors.add(fieldErrorEntry(field + "." + fieldError.getField(), fieldError.getDefaultMessage()));
+                }
+            } else {
+                for (MessageSourceResolvable resolvable : result.getResolvableErrors()) {
+                    errors.add(fieldErrorEntry(field, resolvable.getDefaultMessage()));
+                }
+            }
+        }
+        problem.setProperty("errors", errors);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problem);
+    }
+
+    /**
      * Central hook every base-class {@code handleXxx} override (malformed JSON, wrong HTTP verb,
      * unsupported media type, unresolvable path, etc.) funnels its response through. Without this
      * override, only {@link #handleMethodArgumentNotValid} attached errorCode/traceId -- every other
@@ -128,9 +180,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     private static Map<String, String> toFieldError(FieldError fieldError) {
+        return fieldErrorEntry(fieldError.getField(), fieldError.getDefaultMessage());
+    }
+
+    private static Map<String, String> fieldErrorEntry(String field, String message) {
         Map<String, String> entry = new LinkedHashMap<>();
-        entry.put("field", fieldError.getField());
-        entry.put("message", fieldError.getDefaultMessage());
+        entry.put("field", field);
+        entry.put("message", message);
         return entry;
     }
 
