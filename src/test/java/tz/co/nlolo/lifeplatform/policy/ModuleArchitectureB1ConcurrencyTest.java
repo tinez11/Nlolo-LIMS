@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.policy.infrastructure.LoanValueReservationRepository;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Module-Architecture-B1 (docs/02-module-architecture.md §3.4/§3.5) -- the loan-origination
@@ -61,13 +63,13 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
-            "db-migrations/policy/V1__create_policy_schema.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/policy/V1__create_policy_schema.sql");
     }
 
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
+    @Autowired private LoanValueReservationRepository loanValueReservationRepository;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -176,5 +178,149 @@ class ModuleArchitectureB1ConcurrencyTest {
         // @Scheduled job (Global Constraints).
         UUID newReservationId = policyApi.reserveLoanValue(policyNumber, new BigDecimal("900000"), "TZS", Duration.ofMinutes(15));
         assertThat(newReservationId).isNotEqualTo(staleReservationId);
+    }
+
+    /** Task 3 review Critical finding #1: confirmReservation must not silently resurrect a
+     * reservation the TTL sweep has already retired. This is the deterministic half of the
+     * proof -- the sweep is run to completion (its own committed transaction) BEFORE
+     * confirmReservation is even attempted, so there is no timing ambiguity: an already-EXPIRED
+     * reservation must always be explicitly rejected, never confirmed. */
+    @Test
+    void confirmReservationExplicitlyRejectsAnAlreadyExpiredReservation() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"));
+        TenantContext.set(tenantId);
+        UUID reservationId = policyApi.reserveLoanValue(policyNumber, new BigDecimal("400000"), "TZS", Duration.ofMillis(1));
+        Thread.sleep(50);
+
+        int sweptRows = loanValueReservationRepository.expireStaleReservations(policyNumber, tenantId, java.time.Instant.now());
+        assertThat(sweptRows).isEqualTo(1); // sanity: the row really is EXPIRED, deterministically, before confirm is attempted
+
+        assertThatThrownBy(() -> policyApi.confirmReservation(reservationId))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("EXPIRED");
+
+        assertThat(readReservationStatus(reservationId)).isEqualTo("EXPIRED");
+        assertThat(readEncumbranceAmount(policyNumber)).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    /** Same fix, the idempotent side: releaseReservation on an already-EXPIRED reservation must
+     * remain a no-op (not an error) per its documented contract -- proving the new
+     * PESSIMISTIC_WRITE lock didn't turn this pre-existing idempotency into a spurious
+     * InvalidPolicyStateException. */
+    @Test
+    void releaseReservationOnAnAlreadyExpiredReservationIsIdempotentNotAnError() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"));
+        TenantContext.set(tenantId);
+        UUID reservationId = policyApi.reserveLoanValue(policyNumber, new BigDecimal("400000"), "TZS", Duration.ofMillis(1));
+        Thread.sleep(50);
+        assertThat(loanValueReservationRepository.expireStaleReservations(policyNumber, tenantId, java.time.Instant.now())).isEqualTo(1);
+
+        policyApi.releaseReservation(reservationId); // must not throw
+
+        assertThat(readReservationStatus(reservationId)).isEqualTo("EXPIRED");
+    }
+
+    /** THE Critical finding's falsifiable proof, real-threads-and-barrier style (Task 3 review,
+     * "Prove it with a falsifiable test"). A reservation is created with a TTL already in the
+     * past -- simulating the review's "slow policyloan transaction + TTL expiry" scenario: the
+     * hold is stale, but nothing has swept it yet, so its DB row still reads RESERVED. Two real
+     * threads then race, barrier-synchronized to maximize overlap: one runs the opportunistic
+     * TTL sweep directly (the exact mechanism Task 3 wires into reserveLoanValue), the other
+     * calls confirmReservation on the same row.
+     *
+     * <p>The falsifiable invariant: the sweep's atomic conditional UPDATE (status='RESERVED' ->
+     * 'EXPIRED', WHERE status='RESERVED') and confirmReservation's now-locked read-check-write
+     * can never BOTH claim to have transitioned this same row -- at most one of
+     * "sweep reports 1 row affected" and "confirmReservation returns normally" may be true. Before
+     * the fix (plain unlocked findByReservationIdAndTenantId + unconditional save()),
+     * confirmReservation's read could observe RESERVED, the sweep could then commit EXPIRED
+     * underneath it, and confirmReservation's later unconditional write would silently overwrite
+     * that back to CONFIRMED -- both signals true at once, a resurrected reservation. Whichever
+     * side "wins" a given run is legitimately nondeterministic (real DB scheduling); what must
+     * NEVER happen, on any run, is both winning. */
+    @Test
+    void confirmReservationAndConcurrentSweepNeverBothClaimTheSameReservation() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"));
+        TenantContext.set(tenantId);
+        UUID reservationId = policyApi.reserveLoanValue(policyNumber, new BigDecimal("400000"), "TZS", Duration.ofMillis(1));
+        Thread.sleep(50); // ttlExpiresAt is now in the past; status is still RESERVED -- nothing has swept it yet.
+        TenantContext.clear();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Future<Integer> sweepFuture = executor.submit(() -> attemptSweep(tenantId, policyNumber, barrier));
+        Future<Boolean> confirmFuture = executor.submit(() -> attemptConfirm(tenantId, reservationId, barrier));
+
+        int sweptRows = sweepFuture.get(10, TimeUnit.SECONDS);
+        boolean confirmed = confirmFuture.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+
+        boolean sweepExpiredIt = sweptRows == 1;
+        assertThat(sweepExpiredIt && confirmed)
+            .as("sweep reported expiring the row (sweptRows=%d) AND confirmReservation also reported success (%b) "
+                + "-- both cannot be true, or the reservation was silently resurrected", sweptRows, confirmed)
+            .isFalse();
+
+        // Durable, DB-level cross-check (not just the Java-level booleans): status and the
+        // account's encumbrance must agree with exactly one winner, never a partial/double effect.
+        String finalStatus = readReservationStatus(reservationId);
+        BigDecimal encumbrance = readEncumbranceAmount(policyNumber);
+        if (confirmed) {
+            assertThat(finalStatus).isEqualTo("CONFIRMED");
+            assertThat(encumbrance).isEqualByComparingTo(new BigDecimal("400000"));
+        } else {
+            assertThat(finalStatus).isEqualTo("EXPIRED");
+            assertThat(encumbrance).isEqualByComparingTo(BigDecimal.ZERO);
+        }
+    }
+
+    private int attemptSweep(UUID tenantId, String policyNumber, CyclicBarrier barrier) throws Exception {
+        TenantContext.set(tenantId);
+        try {
+            barrier.await(5, TimeUnit.SECONDS);
+            return loanValueReservationRepository.expireStaleReservations(policyNumber, tenantId, java.time.Instant.now());
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private boolean attemptConfirm(UUID tenantId, UUID reservationId, CyclicBarrier barrier) throws Exception {
+        TenantContext.set(tenantId);
+        try {
+            barrier.await(5, TimeUnit.SECONDS);
+            policyApi.confirmReservation(reservationId);
+            return true;
+        } catch (InvalidPolicyStateException e) {
+            return false;
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private String readReservationStatus(UUID reservationId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement(
+                 "SELECT status FROM policy.loan_value_reservation WHERE reservation_id = ?")) {
+            statement.setObject(1, reservationId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getString(1);
+            }
+        }
+    }
+
+    private BigDecimal readEncumbranceAmount(String policyNumber) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement(
+                 "SELECT loan_encumbrance_amount FROM policy.policy_account WHERE policy_number = ?")) {
+            statement.setString(1, policyNumber);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getBigDecimal(1);
+            }
+        }
     }
 }

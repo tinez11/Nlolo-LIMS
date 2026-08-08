@@ -274,9 +274,25 @@ public class PolicyApiImpl implements PolicyApi {
     @Transactional
     public void confirmReservation(UUID reservationId) {
         UUID tenantId = TenantContext.get();
-        LoanValueReservation reservation = loanValueReservationRepository.findByReservationIdAndTenantId(reservationId, tenantId)
+        // Task 3 review fix (Critical finding #1): PESSIMISTIC_WRITE on the reservation row
+        // itself, taken BEFORE the status check and BEFORE the policy_account lock below --
+        // closes the race where a concurrent opportunistic TTL sweep (reserveLoanValue)
+        // flips this same row RESERVED -> EXPIRED between an unlocked read and this method's
+        // write. Whichever transaction (this one, or the sweep's status-conditioned UPDATE)
+        // gets here first wins and commits; the loser re-evaluates against the now-committed
+        // state (the sweep's WHERE status='RESERVED' no longer matches a row this method just
+        // confirmed; this method's status check below sees EXPIRED if the sweep won) instead of
+        // blindly overwriting it. Lock ordering (reservation row, then policy_account) is
+        // unchanged from before this fix and matches reserveLoanValue's sweep-then-account-lock
+        // order, so this does not introduce a new deadlock class.
+        LoanValueReservation reservation = loanValueReservationRepository.lockByReservationIdAndTenantId(reservationId, tenantId)
             .orElseThrow(() -> new ReservationNotFoundException(reservationId));
         if (!"RESERVED".equals(reservation.getStatus())) {
+            // Explicitly rejected, not silently resurrected or made idempotent: a reservation
+            // already CONFIRMED, RELEASED, or EXPIRED is a terminal state (see LoanValueReservation's
+            // class Javadoc) and a second confirm attempt (e.g. a duplicate policyloan callback)
+            // must surface as a clear domain error rather than double-applying the encumbrance
+            // increase below.
             throw new InvalidPolicyStateException("Reservation " + reservationId + " is " + reservation.getStatus() + ", not RESERVED -- cannot confirm");
         }
         // Encumbrance updated synchronously here, not via async LoanOriginated consumption --
@@ -294,7 +310,9 @@ public class PolicyApiImpl implements PolicyApi {
     @Transactional
     public void releaseReservation(UUID reservationId) {
         UUID tenantId = TenantContext.get();
-        LoanValueReservation reservation = loanValueReservationRepository.findByReservationIdAndTenantId(reservationId, tenantId)
+        // Same PESSIMISTIC_WRITE fix as confirmReservation above, for the identical race against
+        // the TTL sweep.
+        LoanValueReservation reservation = loanValueReservationRepository.lockByReservationIdAndTenantId(reservationId, tenantId)
             .orElseThrow(() -> new ReservationNotFoundException(reservationId));
         if ("CONFIRMED".equals(reservation.getStatus())) {
             throw new InvalidPolicyStateException("Reservation " + reservationId + " is already CONFIRMED -- cannot release a confirmed reservation");
@@ -303,8 +321,10 @@ public class PolicyApiImpl implements PolicyApi {
             reservation.release();
             loanValueReservationRepository.save(reservation);
         }
-        // Already RELEASED or EXPIRED -- idempotent no-op, so a caller retrying after a network
-        // timeout on a first, actually-successful release doesn't get a spurious error.
+        // Already RELEASED or EXPIRED -- idempotent no-op (unlike confirmReservation's explicit
+        // rejection above), so a caller retrying after a network timeout on a first,
+        // actually-successful release -- or racing the TTL sweep to the same terminal outcome --
+        // doesn't get a spurious error.
     }
 
     @Override
