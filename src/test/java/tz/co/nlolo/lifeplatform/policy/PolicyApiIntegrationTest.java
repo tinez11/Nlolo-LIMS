@@ -3,13 +3,23 @@ package tz.co.nlolo.lifeplatform.policy;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
+import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.policy.domain.Endorsement;
+import tz.co.nlolo.lifeplatform.policy.domain.PolicyAccount;
+import tz.co.nlolo.lifeplatform.policy.infrastructure.EndorsementRepository;
+import tz.co.nlolo.lifeplatform.policy.infrastructure.PolicyAccountRepository;
 import tz.co.nlolo.lifeplatform.product.api.*;
+import tz.co.nlolo.lifeplatform.product.domain.ProductVersion;
+import tz.co.nlolo.lifeplatform.product.infrastructure.ProductVersionRepository;
 import tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -18,13 +28,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,13 +65,19 @@ class PolicyApiIntegrationTest {
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
-            "db-migrations/policy/V1__create_policy_schema.sql");
+            "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private UnderwritingApi underwritingApi;
     @Autowired private PolicyApi policyApi;
+    @Autowired private AuditLogRepository auditLogRepository;
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private EndorsementRepository endorsementRepository;
+    @Autowired private PolicyAccountRepository policyAccountRepository;
+    @Autowired private ProductVersionRepository productVersionRepository;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -89,14 +108,33 @@ class PolicyApiIntegrationTest {
     }
 
     @Test
-    void issuePolicyActivatesImmediatelyAndPublishesPolicyIssued() {
+    void issuePolicyActivatesImmediatelyAndPublishesPolicyIssued() throws Exception {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-ISSUE-01");
+        Instant before = Instant.now();
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
         PolicyView view = policyApi.getPolicy(policyNumber);
         assertEquals(PolicyStatus.ACTIVE, view.status());
         assertEquals(fixture.applicantId(), view.policyholderPartyId());
         assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+
+        // Falsifiable proof that policy.PolicyIssued was genuinely published (not just that the
+        // policy row exists): DomainEventAuditListener persists every published
+        // DomainEventEnvelope to audit.audit_log AFTER_COMMIT -- same precedent as
+        // AppRolePrivilegesIntegrationTest's and PartyApiIntegrationTest's
+        // party.PartyRegistered audit-log assertions. If eventPublisher.publishEvent(...) were
+        // removed from PolicyApiImpl.issuePolicy, this would find zero rows and fail (verified
+        // by temporarily commenting the call out -- see task-2-report.md addendum).
+        List<AuditLogEntry> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicyIssued", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(auditRows).hasSize(1);
+        JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
+        assertThat(payload.path("policyNumber").asText()).isEqualTo(policyNumber);
+        assertThat(payload.path("policyholderPartyId").asText()).isEqualTo(fixture.applicantId().toString());
+        assertThat(payload.path("productId").asText()).isEqualTo(fixture.productId().toString());
+        assertThat(payload.path("productVersionId").asText()).isEqualTo(fixture.productVersionId().toString());
+        assertThat(payload.path("sumAssured").path("amount").asText()).isEqualTo("1000000");
+        assertThat(payload.path("sumAssured").path("currencyCode").asText()).isEqualTo("TZS");
     }
 
     @Test
@@ -223,6 +261,35 @@ class PolicyApiIntegrationTest {
     }
 
     @Test
+    void applyEndorsementOnAnInForcePolicySucceedsPersistsChangesAndPublishesPolicyEndorsed() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-ENDORSE-02");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        TenantContext.set(tenantId);
+        Instant before = Instant.now();
+
+        PolicyView view = policyApi.applyEndorsement(policyNumber,
+            new PolicyApi.EndorsementInput("SUM_ASSURED_CHANGE", LocalDate.now(), Map.of("newSumAssured", "2000000")),
+            "test-agent");
+        // Endorsing an in-force policy doesn't itself transition lifecycle status.
+        assertEquals(PolicyStatus.ACTIVE, view.status());
+
+        List<Endorsement> endorsements = endorsementRepository.findByPolicyNumberOrderByEffectiveDateDesc(policyNumber);
+        assertThat(endorsements).hasSize(1);
+        Endorsement persisted = endorsements.get(0);
+        assertEquals("SUM_ASSURED_CHANGE", persisted.getEndorsementType());
+        assertEquals(LocalDate.now(), persisted.getEffectiveDate());
+        assertEquals("2000000", persisted.getChanges().get("newSumAssured")); // real changes JSONB round-trip, not a stub
+
+        List<AuditLogEntry> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicyEndorsed", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(auditRows).hasSize(1);
+        JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
+        assertThat(payload.path("policyNumber").asText()).isEqualTo(policyNumber);
+        assertThat(payload.path("endorsementType").asText()).isEqualTo("SUM_ASSURED_CHANGE");
+    }
+
+    @Test
     void quoteSurrenderValueDoesNotCrashWhenNoScheduleIsConfigured() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-SURR-01");
@@ -230,5 +297,41 @@ class PolicyApiIntegrationTest {
         TenantContext.set(tenantId);
         SurrenderQuoteView quote = policyApi.quoteSurrenderValue(policyNumber);
         assertEquals(0, BigDecimal.ZERO.compareTo(quote.quotedValueAmount())); // zero cash value, zero charge -- zero quote, no exception
+    }
+
+    @Test
+    void quoteSurrenderValueAppliesTheChargePercentFromTheMatchingBandToTheQuotedValue() {
+        // resolveSurrenderChargePercent's own band-matching/boundary logic is unit-tested in
+        // isolation by PolicyApiImplSurrenderChargeTest; this proves the real, wired-together
+        // pipeline (schedule parsing -> percent selection -> charge/quotedValue arithmetic)
+        // actually applies that percent to a real SurrenderQuoteView.
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-SURR-02");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        TenantContext.set(tenantId);
+
+        // ProductApi exposes no public method to configure surrender_charge_schedule (a flagged,
+        // Actuarial-pending placeholder shape -- see PolicyApiImpl.resolveSurrenderChargePercent's
+        // javadoc), so the persisted ProductVersion row created by buildFixture is updated
+        // directly via the same repository ProductApiIntegrationTest already reads through.
+        ProductVersion version = productVersionRepository
+            .findByTenantIdAndProductIdOrderByEffectiveDateDesc(tenantId, fixture.productId()).get(0);
+        version.setSurrenderChargeScheduleJson(
+            "[{\"minMonths\":0,\"maxMonths\":12,\"chargePercent\":10},{\"minMonths\":12,\"chargePercent\":2}]");
+        productVersionRepository.save(version);
+
+        // Cash value starts at zero at issuance (no premium/billing accrual path exists yet in
+        // M3) and there is likewise no public API to credit it. Without a non-zero cash value,
+        // quotedValue would be zero regardless of chargePercent and this test would be exactly
+        // the kind of vacuous test this task exists to eliminate -- so the persisted
+        // PolicyAccount row's field is set directly via reflection instead.
+        PolicyAccount account = policyAccountRepository.findById(policyNumber).orElseThrow();
+        ReflectionTestUtils.setField(account, "cashValueAmount", new BigDecimal("100000"));
+        policyAccountRepository.save(account);
+
+        SurrenderQuoteView quote = policyApi.quoteSurrenderValue(policyNumber);
+        // issueDate is "today" -> 0 months in force -> matches the first band (0 <= 0 < 12) -> 10% charge
+        // charge = 100000 * 10 / 100 = 10000; quotedValue = 100000 - 10000 = 90000
+        assertEquals(0, new BigDecimal("90000").compareTo(quote.quotedValueAmount()));
     }
 }

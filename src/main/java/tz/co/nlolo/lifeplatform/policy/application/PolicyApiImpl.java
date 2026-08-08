@@ -171,8 +171,12 @@ public class PolicyApiImpl implements PolicyApi {
      * {"minMonths": int, "maxMonths": int-or-absent, "chargePercent": number} objects,
      * minMonths inclusive, maxMonths exclusive (absent/null = unbounded). A missing, blank, or
      * unparseable schedule means ZERO charge -- this must never throw out to the caller.
+     *
+     * <p>Package-private (not private) solely so PolicyApiImplSurrenderChargeTest can exercise
+     * this money-affecting band-parsing/percentage logic directly, without a Spring context --
+     * mirroring underwriting.SimpleRulesEngineTest's approach to unit-testing pure decision logic.
      */
-    private BigDecimal resolveSurrenderChargePercent(String scheduleJson, LocalDate issueDate) {
+    BigDecimal resolveSurrenderChargePercent(String scheduleJson, LocalDate issueDate) {
         if (scheduleJson == null || scheduleJson.isBlank() || issueDate == null) {
             return BigDecimal.ZERO;
         }
