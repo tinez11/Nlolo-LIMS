@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSourceResolvable;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -82,6 +83,50 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
         return problem(HttpStatus.FORBIDDEN, ex.getMessage(), "FORBIDDEN");
+    }
+
+    /**
+     * Optimistic-lock loss -> 409, the status the API contract has always promised for it:
+     * api/openapi/openapi-common.yaml's shared {@code Conflict} response is described,
+     * verbatim, as "Optimistic-locking conflict or state-machine violation", and every path
+     * that can lose a version race declares it (e.g. openapi-policyloan.yaml's
+     * {@code POST /loans/{loanId}/repayments}, which declares 403/404/409 and does NOT declare
+     * 500). Until M3's final review this mapping did not exist anywhere in the application, so
+     * the loser of an ordinary double-submit fell through to {@link #handleGenericException}
+     * and got a bare 500 {@code INTERNAL_ERROR} plus an "Unhandled exception" stack trace --
+     * an undeclared status for a completely expected outcome.
+     *
+     * <p>Reachable today, not theoretical: two concurrent repayments against the same
+     * {@code DISBURSED} loan both pass {@code PolicyLoanApiImpl.recordRepayment}'s eligibility
+     * gate, both dirty-check {@code DISBURSED -> REPAYING}, and both issue
+     * {@code UPDATE ... WHERE version = N}; {@code PolicyLoan} carries {@code @Version} with no
+     * pessimistic lock anywhere in that path. The same shape exists on {@code Policy},
+     * {@code UnderwritingCase}, {@code Party} and {@code ProductDefinition} -- i.e. every
+     * aggregate on the platform -- which is why this lives in the root advice rather than in
+     * any one module's.
+     *
+     * <p>This class is {@code @Order(LOWEST_PRECEDENCE)} and every module advice is
+     * {@code @Order(HIGHEST_PRECEDENCE)}, and resolution is first-matching-ADVICE-BEAN-wins
+     * (see this class's Javadoc). That is safe here: {@code OptimisticLockingFailureException}
+     * is Spring's {@code org.springframework.dao} type, and all five module advices
+     * (party/product/underwriting/policy/policyloan) declare handlers only for their own
+     * module-owned domain exceptions -- none for this type or any supertype of it -- so
+     * resolution reaches this bean. Within this bean the most specific handler wins, so this
+     * beats the {@code Exception.class} catch-all below. Both halves are asserted, not
+     * assumed, by OptimisticLockingConflictContractTest.
+     *
+     * <p>Deliberately NOT logged at error level: a lost version race is an expected outcome of
+     * concurrent access with a correct client remedy (retry), not an application fault.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ProblemDetail handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
+        String traceId = UUID.randomUUID().toString();
+        log.warn("Optimistic-locking conflict, traceId={}: {}", traceId, ex.getMessage());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+            "The resource was modified concurrently by another request -- re-read it and retry.");
+        problem.setProperty("errorCode", "CONCURRENT_MODIFICATION");
+        problem.setProperty("traceId", traceId);
+        return problem;
     }
 
     /**

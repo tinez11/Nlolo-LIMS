@@ -13,6 +13,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -28,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers
@@ -53,7 +57,9 @@ class PolicyLoanApiIntegrationTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
+            "db-migrations/policyloan/V3__money_check_constraints.sql",
             // Every policyloan event this test triggers (LoanOriginated, LoanDisbursementRequested,
             // etc.) is picked up application-wide by audit.DomainEventAuditListener, which
             // persists an audit_log row regardless of which module published the event -- without
@@ -66,6 +72,7 @@ class PolicyLoanApiIntegrationTest {
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
     @Autowired private PolicyLoanApi policyLoanApi;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -87,7 +94,20 @@ class PolicyLoanApiIntegrationTest {
              PreparedStatement statement = connection.prepareStatement("UPDATE policy.policy_account SET cash_value_amount = ? WHERE policy_number = ?")) {
             statement.setBigDecimal(1, cashValue);
             statement.setString(2, policyNumber);
-            statement.executeUpdate();
+            // Asserted, not discarded (M3 final review, I4 -- the same guard Task 8 added to
+            // PolicyLoanContractTest and ModuleArchitectureB1EndToEndRaceTest after proving
+            // with a two-run control that the vacuous path is real). A seed that matched zero
+            // rows would leave cash value at the 0.00 PolicyApiImpl.issuePolicy creates the
+            // account with, and originateLoanRejectsAnAmountExceedingAvailableLoanValue below
+            // -- which deliberately seeds a SMALL 100,000 and asserts
+            // InsufficientLoanValueException on a 500,000 request -- would still throw, having
+            // proven nothing about PolicyAccount.availableLoanValue's arithmetic. That test
+            // would also pass against `return BigDecimal.ZERO;`. This guard is what makes it
+            // non-vacuous; the other tests here seed large values and would fail loudly on
+            // their own.
+            assertThat(statement.executeUpdate())
+                .as("cash-value seed for %s must update exactly one policy_account row", policyNumber)
+                .isEqualTo(1);
         }
         return policyNumber;
     }
@@ -177,6 +197,57 @@ class PolicyLoanApiIntegrationTest {
         List<LoanView> loans = policyLoanApi.listLoansForPolicy(policyNumber);
         assertThat(loans).hasSize(1);
         assertThat(loans.get(0).policyNumber()).isEqualTo(policyNumber);
+    }
+
+    /**
+     * M3 final review, I1 -- the REACHABILITY half of the proof. The mapping half (that
+     * {@code OptimisticLockingFailureException} becomes a 409 {@code CONCURRENT_MODIFICATION}
+     * over real HTTP) is {@code OptimisticLockingConflictContractTest}; without this test that
+     * one would pass against an exception no production code path can actually raise.
+     *
+     * <p>{@code PolicyLoan} carries {@code @Version} and {@code recordRepayment} takes no
+     * pessimistic lock, so two concurrent repayments against the same DISBURSED loan both pass
+     * the eligibility gate, both dirty-check DISBURSED -> REPAYING, and both issue
+     * {@code UPDATE ... WHERE version = N}. Reproduced DETERMINISTICALLY rather than with a
+     * two-thread barrier (which could pass without either request ever losing a race): the
+     * loan is loaded into this transaction's persistence context at version N, a separate
+     * already-committed connection bumps the row to N+1, and only then does
+     * {@code recordRepayment} -- joining this same transaction, and therefore seeing the
+     * first-level-cached entity still at version N -- dirty it and flush. The service code
+     * under test is the real, unmodified {@code PolicyLoanApiImpl.recordRepayment}.
+     */
+    @Test
+    void concurrentRepaymentLosesTheVersionRaceAndRaisesAnOptimisticLockingFailure() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-OPTLOCK-01");
+        TenantContext.set(tenantId);
+        LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
+        policyLoanApi.markDisbursed(originated.loanId());
+
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        assertThatThrownBy(() -> transaction.execute(status -> {
+            policyLoanApi.getLoan(originated.loanId());          // version N into the persistence context
+            bumpLoanVersionOnACommittedSideConnection(originated.loanId());  // the concurrent winner
+            return policyLoanApi.recordRepayment(originated.loanId(), new BigDecimal("100000"), "TZS",
+                "MPESA-REPAY-OPTLOCK", "test-agent");            // flushes UPDATE ... WHERE version = N
+        })).isInstanceOf(OptimisticLockingFailureException.class);
+    }
+
+    /** Stands in for the winning concurrent request: commits a version bump on its own
+     * connection, outside the caller's transaction. Asserted, not discarded -- a zero-row update
+     * here would make the test above pass for the wrong reason (no conflict, no exception... and
+     * then it would fail, so this is belt-and-braces rather than a vacuity guard). */
+    private void bumpLoanVersionOnACommittedSideConnection(UUID loanId) {
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement(
+                 "UPDATE policyloan.policy_loan SET version = version + 1 WHERE loan_id = ?")) {
+            statement.setObject(1, loanId);
+            assertThat(statement.executeUpdate())
+                .as("the simulated concurrent writer must update exactly one policy_loan row")
+                .isEqualTo(1);
+        } catch (java.sql.SQLException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     // Review fix (Task 6 fix round 1, I1): deleted
