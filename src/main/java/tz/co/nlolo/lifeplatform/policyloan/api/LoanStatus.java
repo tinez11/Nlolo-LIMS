@@ -1,0 +1,3 @@
+package tz.co.nlolo.lifeplatform.policyloan.api;
+
+public enum LoanStatus { RESERVED_PENDING_ORIGINATION, ORIGINATED, DISBURSEMENT_REQUESTED, DISBURSED, REPAYING, SETTLED, FORCED_LAPSE_TRIGGERED }

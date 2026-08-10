@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.policyloan.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -94,7 +95,13 @@ class AppRolePrivilegesIntegrationTest {
             // identity -- exactly the M1 blind spot this class's own javadoc describes.
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
-            "db-migrations/policy/V1__create_policy_schema.sql");
+            "db-migrations/policy/V1__create_policy_schema.sql",
+            // M3 (Task 6) additions: policyloan.PolicyLoanApiImpl.originateLoan reads
+            // TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE via ReferenceDataApi and writes through
+            // policyloan's own new grants -- both needed for this class's own app_role smoke test.
+            "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
+            "db-migrations/policyloan/V1__create_policyloan_schema.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -118,6 +125,9 @@ class AppRolePrivilegesIntegrationTest {
 
     @Autowired
     private PolicyApi policyApi;
+
+    @Autowired
+    private PolicyLoanApi policyLoanApi;
 
     @AfterEach
     void clearTenant() {
@@ -239,5 +249,45 @@ class AppRolePrivilegesIntegrationTest {
 
         PolicyView fetched = policyApi.getPolicy(issued.policyNumber());
         assertThat(fetched.status()).isEqualTo(PolicyStatus.ACTIVE);
+    }
+
+    /**
+     * M3 addition: proves app_role can write and read through policyloan.policy_loan/
+     * loan_interest_term via the app's own DataSource, exercising the full
+     * Module-Architecture-B1 reserve/confirm/release round trip -- confirmReservation writes
+     * through policy.policy_account's grants (already proven above) AND policyloan's own new
+     * grants in the same call.
+     */
+    @Test
+    void appRoleCanOriginateALoanThroughTheApplicationsOwnDataSource() throws Exception {
+        TenantContext.set(UUID.randomUUID());
+
+        PartyView policyholder = partyApi.registerIndividual("App Role Loan Applicant", LocalDate.of(1988, 6, 1), "+255713000003", null, "test-agent");
+        ProductSummaryView product = productApi.createProduct("APP-ROLE-LOAN", "App Role Loan Product", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, java.time.LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", java.math.BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", java.math.BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, "actuary@nlolo.co.tz");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
+        PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(),
+            new PolicyApi.IssueRequest(policyholder.partyId(), product.productId(), snapshot.productVersionId(),
+                new java.math.BigDecimal("1000000"), "TZS", null, "MONTHLY", java.util.List.of(), "App role loan smoke test"),
+            "test-staff");
+
+        // policy.policy_account.cash_value_amount starts at ZERO at issuance (PolicyApiImpl
+        // has no premium-accrual path yet) -- bumped directly here, exactly as
+        // PolicyLoanApiIntegrationTest's own issuePolicyWithCashValue helper does, or
+        // originateLoan below would reject every amount with InsufficientLoanValueException
+        // regardless of app_role's grants, defeating the point of this test.
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE policy.policy_account SET cash_value_amount = 1000000 WHERE policy_number = '" + issued.policyNumber() + "'");
+        }
+
+        LoanView loan = policyLoanApi.originateLoan(issued.policyNumber(), new java.math.BigDecimal("100000"), "TZS", "MPESA-0700000000", "test-agent");
+        assertThat(loan.loanId()).isNotNull();
+
+        LoanView fetched = policyLoanApi.getLoan(loan.loanId());
+        assertThat(fetched.status()).isEqualTo(LoanStatus.DISBURSEMENT_REQUESTED);
     }
 }

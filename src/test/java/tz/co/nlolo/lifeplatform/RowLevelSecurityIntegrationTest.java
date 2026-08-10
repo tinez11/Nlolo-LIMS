@@ -3,12 +3,16 @@ package tz.co.nlolo.lifeplatform;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.policyloan.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
@@ -36,9 +40,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * superuser, which always bypasses RLS regardless of policy -- the exact
  * mistake Deliverable 6's own first validation attempt made), and confirm
  * exactly one tenant's rows are visible.
+ *
+ * <p>M3 (Task 6) addition: explicit @Order pinning. Every "exactly N rows" assertion below
+ * (product/underwriting/policy) counts its WHOLE table, shared across every test method against
+ * the SAME static Postgres container/@BeforeAll-applied schema -- there is no per-test rollback.
+ * Before this class had a fifth test that also creates products/underwriting cases/policies
+ * (policyLoanIsTenantIsolatedUnderRls), JUnit 5's default method order (deterministic but
+ * intentionally unspecified, and not guaranteed stable when the method set changes) happened to
+ * run product-before-underwriting-before-policy; adding a new method without pinning order broke
+ * that by coincidence (each earlier count-based test started seeing the new test's rows too).
+ * Pinned explicitly here instead of relying on default ordering to keep matching by luck.
  */
 @Testcontainers
 @SpringBootTest(classes = Application.class)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class RowLevelSecurityIntegrationTest {
 
     @Container
@@ -60,7 +75,13 @@ class RowLevelSecurityIntegrationTest {
             // reads correctly.
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
-            "db-migrations/policy/V1__create_policy_schema.sql");
+            "db-migrations/policy/V1__create_policy_schema.sql",
+            // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata
+            // (PolicyLoanApiImpl.originateLoan reads TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE) and
+            // policyloan's own schema.
+            "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
+            "db-migrations/policyloan/V1__create_policyloan_schema.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -85,6 +106,13 @@ class RowLevelSecurityIntegrationTest {
             statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA underwriting TO app_role");
             statement.execute("GRANT USAGE ON SCHEMA policy TO app_role");
             statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA policy TO app_role");
+            // refdata/policyloan's own migrations already GRANT app_role these same privileges
+            // (verified by reading both files) -- redundant with that, kept only to mirror this
+            // test's existing pattern for every other schema above.
+            statement.execute("GRANT USAGE ON SCHEMA refdata TO app_role");
+            statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA refdata TO app_role");
+            statement.execute("GRANT USAGE ON SCHEMA policyloan TO app_role");
+            statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA policyloan TO app_role");
         }
     }
 
@@ -100,12 +128,16 @@ class RowLevelSecurityIntegrationTest {
     @Autowired
     private PolicyApi policyApi;
 
+    @Autowired
+    private PolicyLoanApi policyLoanApi;
+
     @AfterEach
     void clearTenant() {
         TenantContext.clear();
     }
 
     @Test
+    @Order(1)
     void appRoleOnlySeesItsOwnTenantsRowsUnderRls() throws Exception {
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
@@ -150,6 +182,7 @@ class RowLevelSecurityIntegrationTest {
      * actually works, not merely that the CREATE POLICY statement parses.
      */
     @Test
+    @Order(2)
     void productDefinitionIsTenantIsolatedUnderRls() throws Exception {
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
@@ -187,6 +220,7 @@ class RowLevelSecurityIntegrationTest {
      * inspection but had never been exercised under a real restricted role either.
      */
     @Test
+    @Order(3)
     void underwritingCaseIsTenantIsolatedUnderRls() throws Exception {
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
@@ -232,6 +266,7 @@ class RowLevelSecurityIntegrationTest {
      * auto-issued policy is looked up via searchPolicies instead.
      */
     @Test
+    @Order(4)
     void policyIsTenantIsolatedUnderRls() throws Exception {
         UUID tenantA = UUID.randomUUID();
         UUID tenantB = UUID.randomUUID();
@@ -267,6 +302,77 @@ class RowLevelSecurityIntegrationTest {
                 assertThat(resultSet.getString(1)).isEqualTo(policyNumberA);
                 assertThat(resultSet.next()).isFalse();
             }
+        }
+    }
+
+    /**
+     * M3 addition: proves policy_loan_tenant_isolation actually isolates tenants for
+     * policyloan.policy_loan, not merely that the CREATE POLICY statement parses.
+     *
+     * <p>@Order(5), strictly after every other "exactly N rows" count-based test in this class:
+     * openCaseForCurrentTenant below adds 2 more rows each to product.product_definition and
+     * underwriting.underwriting_case, which would otherwise inflate productDefinitionIsTenantIsolatedUnderRls's/
+     * underwritingCaseIsTenantIsolatedUnderRls's own blanket COUNT(*) assertions if this test ran
+     * first. Also mirrors policyIsTenantIsolatedUnderRls's own documented deviation: looks the
+     * auto-issued policy up via searchPolicies rather than also calling policyApi.issuePolicy
+     * directly, which would double-issue (policy.application.UnderwritingDecisionEventListener
+     * already auto-issues synchronously on submitAssessment's ACCEPT/LOADED decision commit).
+     */
+    @Test
+    @Order(5)
+    void policyLoanIsTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+
+        TenantContext.set(tenantA);
+        UUID caseIdA = openCaseForCurrentTenant("RLS-LOAN-A", "5");
+        underwritingApi.submitAssessment(caseIdA, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
+        UnderwritingCaseView decidedA = underwritingApi.getCase(caseIdA);
+        String policyNumberA = policyApi.searchPolicies(decidedA.applicantPartyId(), null, PageRequest.of(0, 10))
+            .getContent().get(0).policyNumber();
+        bumpCashValue(policyNumberA, "1000000");
+        String loanIdA = policyLoanApi.originateLoan(policyNumberA, new java.math.BigDecimal("100000"), "TZS", "MPESA-0700000001", "test-agent").loanId().toString();
+
+        TenantContext.set(tenantB);
+        UUID caseIdB = openCaseForCurrentTenant("RLS-LOAN-B", "6");
+        underwritingApi.submitAssessment(caseIdB, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
+        UnderwritingCaseView decidedB = underwritingApi.getCase(caseIdB);
+        String policyNumberB = policyApi.searchPolicies(decidedB.applicantPartyId(), null, PageRequest.of(0, 10))
+            .getContent().get(0).policyNumber();
+        bumpCashValue(policyNumberB, "2000000");
+        policyLoanApi.originateLoan(policyNumberB, new java.math.BigDecimal("200000"), "TZS", "MPESA-0700000002", "test-agent");
+
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = superuserConnection.createStatement();
+             ResultSet resultSet = statement.executeQuery("SELECT COUNT(*) FROM policyloan.policy_loan")) {
+            resultSet.next();
+            assertThat(resultSet.getInt(1)).isEqualTo(2);
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery("SELECT loan_id FROM policyloan.policy_loan")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo(loanIdA);
+                assertThat(resultSet.next()).isFalse();
+            }
+        }
+    }
+
+    /**
+     * policy.policy_account.cash_value_amount starts at ZERO at issuance (PolicyApiImpl has no
+     * premium-accrual path yet) -- bumped directly here, exactly as PolicyLoanApiIntegrationTest's
+     * own issuePolicyWithCashValue helper does, or originateLoan would reject every amount with
+     * InsufficientLoanValueException regardless of RLS, defeating the point of this test.
+     */
+    private void bumpCashValue(String policyNumber, String cashValue) throws Exception {
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE policy.policy_account SET cash_value_amount = " + cashValue + " WHERE policy_number = '" + policyNumber + "'");
         }
     }
 

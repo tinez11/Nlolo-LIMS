@@ -16,3 +16,12 @@
 -- a SUSPENDED status (e.g. group schemes with SACCO-linked premium collection).
 INSERT INTO refdata.reference_code_set (code_set_key, code, label, value, jurisdiction) VALUES
     ('POLICY_SUSPENSION_ELIGIBLE_CATEGORIES', 'GROUP_LIFE', 'Group Life', 'true', 'TZ');   -- PLACEHOLDER, pending B1 follow-up
+
+-- Task 6 (policyloan) addition: the loan interest rate policyloan.application.PolicyLoanApiImpl
+-- resolves via ReferenceDataApi.getValue at loan origination, recorded per-loan (effective-dated)
+-- in policyloan.loan_interest_term rather than hardcoded (Deliverable 3 Rev 2, L1). Appended to
+-- this existing V2 file rather than a new migration -- V2 is already taken by this same file's
+-- POLICY_SUSPENSION_ELIGIBLE_CATEGORIES seed above; INSERT here is additive, not exhaustive, same
+-- as that earlier addition's own comment already explains.
+INSERT INTO refdata.reference_code_set (code_set_key, code, label, value, jurisdiction) VALUES
+    ('TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE', 'DEFAULT', 'Policy loan annual interest rate (percent)', '12.0', 'TZ'); -- PLACEHOLDER, pending Actuarial sign-off
