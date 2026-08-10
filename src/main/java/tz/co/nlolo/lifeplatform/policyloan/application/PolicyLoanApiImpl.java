@@ -58,40 +58,68 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
             throw new LoanNotEligibleException("Policy " + policyNumber + " must be in force to originate a loan");
         }
 
-        // Module-Architecture-B1's reserve leg -- created/checked inside policy's OWN
-        // transaction (policy.PolicyApiImpl.reserveLoanValue), never a lock held across this
-        // module boundary. InsufficientLoanValueException (policy.api) propagates as-is --
-        // policy.infrastructure.PolicyExceptionHandler maps it to 409 application-wide, so
-        // policyloan does not need its own duplicate mapping for a policy-owned exception type.
+        // Module-Architecture-B1's reserve/persist/confirm sequence below runs in ONE physical
+        // DB transaction spanning policy and policyloan, DELIBERATELY -- per this plan's own
+        // Global Constraints: "policyloan.confirmReservation(reservationId) is already a direct
+        // synchronous call from policyloan into policy's own transaction (that is the entire
+        // point of the reserve/confirm/release protocol). This plan updates
+        // loan_encumbrance_amount directly inside PolicyApiImpl.confirmReservation, in the same
+        // transaction." This is a CONSCIOUS deviation from docs/02-module-architecture.md's
+        // stated B1 rationale for preferring reserve/confirm/release over a raw pessimistic lock
+        // in the first place ("a lock taken during getAvailableLoanValue()'s transaction can't
+        // survive into policyloan's separate transaction without violating module transaction
+        // autonomy"): this implementation achieves safety by collapsing policy's and
+        // policyloan's transactions into one, rather than by running a true two-phase protocol
+        // across independent transactions. Consequence, stated plainly: the PESSIMISTIC_WRITE
+        // lock reserveLoanValue takes on policy_account below (and re-acquires inside
+        // confirmReservation) is held for the FULL remainder of this method -- across the
+        // ReferenceDataApi lookup, both policyloan-schema inserts, and confirmReservation's own
+        // lock/update -- not released until this transaction commits, not just for policy's own
+        // writes. The genuine two-phase protocol (independent transactions, real compensating
+        // actions, idempotency across retries) is DEFERRED: it lands only when payment (M5)
+        // forces it, it is not built here. InsufficientLoanValueException (policy.api)
+        // propagates as-is -- policy.infrastructure.PolicyExceptionHandler maps it to 409
+        // application-wide, so policyloan does not need its own duplicate mapping for a
+        // policy-owned exception type.
         UUID reservationId = policyApi.reserveLoanValue(policyNumber, requestedAmount, currency, RESERVATION_TTL);
         BigDecimal rate = new BigDecimal(referenceDataApi.getValue("TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE", "TZ"));
         PolicyLoan loan = new PolicyLoan(tenantId, policyNumber, requestedAmount, currency, originatedBy);
-        try {
-            policyLoanRepository.save(loan);
-            loanInterestTermRepository.save(new LoanInterestTerm(tenantId, loan.getLoanId(), rate, LocalDate.now()));
-            loan.markOriginated();
-            policyLoanRepository.save(loan);
-        } catch (RuntimeException e) {
-            // Module-Architecture-B1's release leg -- persistence failed in policyloan's OWN
-            // transaction/schema after the reservation already succeeded in policy's; releasing
-            // immediately here (rather than leaving it to the TTL sweep) frees the hold right
-            // away instead of making a legitimate concurrent borrower wait out the full TTL.
-            policyApi.releaseReservation(reservationId);
-            throw e;
-        }
 
-        // Deliberately unguarded: policyApi.confirmReservation is called by default REQUIRED
-        // propagation, so it joins this same @Transactional method's single physical DB
-        // transaction rather than committing independently -- reserveLoanValue's own
-        // opportunistic TTL sweep in a DIFFERENT, later call can therefore never observe (and
-        // flip to EXPIRED) a reservation this transaction hasn't committed yet. If confirmReservation
-        // nonetheless throws InvalidPolicyStateException (policy.api) -- e.g. the reservation was
-        // already terminal for some other reason -- it is NOT caught here: letting it propagate
-        // (a) relies on this method's own transaction rolling back atomically, undoing the
-        // PolicyLoan/LoanInterestTerm rows just persisted above AND the reservation's own INSERT
-        // together, so no compensating releaseReservation call is needed (unlike the persistence-
-        // failure catch above, which runs BEFORE any attempt to confirm), and (b) InvalidPolicyStateException
-        // is already mapped to 409 CONFLICT by policy.infrastructure.PolicyExceptionHandler
+        // No try/catch + compensating releaseReservation here (removed on review -- it was
+        // inert). Reserve, persist, and confirm all share the single physical transaction
+        // described above, so if either save below ever surfaced a persistence failure
+        // synchronously, or confirmReservation further down throws, the whole transaction rolls
+        // back atomically -- undoing these two inserts AND the reservation's own INSERT
+        // together; no compensating action is needed. A local catch here would not even see the
+        // realistic failure in the first place: PolicyLoan.loanId is an application-assigned
+        // UUID (set in the constructor, no @GeneratedValue) and PolicyLoan carries a
+        // non-primitive @Version field, so Spring Data's isNew() check treats a fresh instance
+        // as new via the null-version check and calls entityManager.persist(), which only
+        // enqueues the INSERT in Hibernate's flush action queue rather than executing it here.
+        // (Verified against this codebase's own established precedent for the identical
+        // situation: PartyApiImpl.registerCorporate and ProductApiImpl.createProduct both call
+        // saveAndFlush instead of plain save specifically because save() on an
+        // application/Hibernate-assigned UUID id defers the INSERT past any local catch.)
+        // Nothing between here and confirmReservation issues a query that would force an early
+        // flush, so a real constraint violation would only ever surface at confirmReservation's
+        // own locking query below or at this transaction's final commit -- both already outside
+        // where a catch placed here could run.
+        policyLoanRepository.save(loan);
+        loanInterestTermRepository.save(new LoanInterestTerm(tenantId, loan.getLoanId(), rate, LocalDate.now()));
+        loan.markOriginated();
+        policyLoanRepository.save(loan);
+
+        // Deliberately unguarded: confirmReservation joins this same @Transactional method's
+        // single physical transaction (see the comment above reserveLoanValue), so
+        // reserveLoanValue's own opportunistic TTL sweep in a DIFFERENT, later call can never
+        // observe (and flip to EXPIRED) a reservation this transaction hasn't committed yet. If
+        // confirmReservation nonetheless throws InvalidPolicyStateException (policy.api) -- e.g.
+        // the reservation was already terminal for some other reason -- it is NOT caught here:
+        // letting it propagate relies on this method's own transaction rolling back atomically,
+        // undoing the PolicyLoan/LoanInterestTerm rows just persisted above AND the
+        // reservation's own INSERT together -- no compensating releaseReservation call is
+        // needed, unlike a true two-phase protocol would require. InvalidPolicyStateException is
+        // already mapped to 409 CONFLICT by policy.infrastructure.PolicyExceptionHandler
         // application-wide, so it does not need a policyloan-local translation.
         policyApi.confirmReservation(reservationId);
 

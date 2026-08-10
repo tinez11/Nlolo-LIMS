@@ -179,36 +179,27 @@ class PolicyLoanApiIntegrationTest {
         assertThat(loans.get(0).policyNumber()).isEqualTo(policyNumber);
     }
 
-    /**
-     * Task-orchestrator note: confirmReservation on an EXPIRED reservation is a documented
-     * failure mode of the reserve/confirm/release protocol (policy.PolicyApiImpl.confirmReservation
-     * throws InvalidPolicyStateException, not a policyloan-specific type). Proven directly against
-     * PolicyApi rather than through originateLoan: originateLoan calls reserveLoanValue and
-     * confirmReservation from within its OWN single @Transactional method, joining one physical DB
-     * transaction by default REQUIRED propagation -- so the reservation this method creates is
-     * never visible to any other transaction (and therefore can never be flipped to EXPIRED by
-     * another call's opportunistic sweep) before this same method's own confirmReservation call
-     * runs. Reproducing the race requires two separate, independently-committed PolicyApi calls,
-     * which is what this test does; a same-transaction reproduction through originateLoan would be
-     * a contrived test that cannot fail for the reason it claims to test.
-     */
-    @Test
-    void confirmingAReservationThatTheOpportunisticSweepAlreadyExpiredIsRejected() throws Exception {
-        UUID tenantId = UUID.randomUUID();
-        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-EXPIRE-01");
-        TenantContext.set(tenantId);
-
-        // Reservation with a TTL so short it is already in the past by the time any later
-        // statement runs.
-        UUID staleReservationId = policyApi.reserveLoanValue(policyNumber, new BigDecimal("50000"), "TZS", java.time.Duration.ofNanos(1));
-
-        // A second, independent reserveLoanValue call against the SAME policy runs the
-        // opportunistic TTL sweep (policy.PolicyApiImpl.reserveLoanValue's own first statement)
-        // before doing anything else -- this is what actually flips staleReservationId's status
-        // to EXPIRED and commits that change (its own top-level @Transactional call).
-        policyApi.reserveLoanValue(policyNumber, new BigDecimal("50000"), "TZS", java.time.Duration.ofMinutes(15));
-
-        assertThrows(tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException.class, () ->
-            policyApi.confirmReservation(staleReservationId));
-    }
+    // Review fix (Task 6 fix round 1, I1): deleted
+    // confirmingAReservationThatTheOpportunisticSweepAlreadyExpiredIsRejected from here. It
+    // called policyApi.reserveLoanValue/confirmReservation directly and never touched
+    // policyLoanApi.originateLoan, so it was testing policy, not policyloan -- and it was a
+    // near-duplicate of policy.ModuleArchitectureB1ConcurrencyTest
+    // .confirmReservationExplicitlyRejectsAnAlreadyExpiredReservation, which proves the identical
+    // PolicyApi-level behavior more deterministically (it forces the sweep directly via
+    // loanValueReservationRepository.expireStaleReservations instead of racing a second
+    // reserveLoanValue call) and additionally asserts the rejected reservation's persisted status
+    // and that the encumbrance amount was never applied -- strictly more than the deleted test
+    // checked.
+    //
+    // Why policyloan has no test of its own for this scenario: under the single-physical-
+    // transaction design documented in PolicyLoanApiImpl.originateLoan (Global Constraints;
+    // see the comment above its reserveLoanValue call), the reservation originateLoan creates
+    // is never visible to any other transaction before this same transaction's own
+    // confirmReservation call runs -- so it can never be flipped to EXPIRED by a concurrent
+    // call's opportunistic TTL sweep first. The "TTL sweep expires the reservation mid-flight"
+    // race is therefore UNREACHABLE through originateLoan by construction, and a same-transaction
+    // test that tried to reproduce it here would be contrived and could not fail for the reason
+    // it claims to test. This becomes reachable from originateLoan -- and must then be tested
+    // here -- only once M5 splits policy's and policyloan's transactions apart (the deferred,
+    // genuine two-phase protocol).
 }
