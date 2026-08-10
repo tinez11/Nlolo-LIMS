@@ -66,6 +66,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

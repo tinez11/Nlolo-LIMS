@@ -59,7 +59,28 @@ public class PolicyAccount {
         return cashValueAmount.subtract(loanEncumbranceAmount).subtract(currentlyReserved);
     }
 
+    /**
+     * The aggregate's own invariant, not merely a service-layer precondition (M3 final review,
+     * I3). This method was an unguarded {@code .add()}: the exact mechanism of Task 7's
+     * Critical, where a negative amount arriving here <em>reduces</em> the encumbrance and so
+     * <em>raises</em> the policyholder's available loan value, letting them borrow beyond
+     * surrender value. That was closed at the wire (policyloan's MoneyDto {@code @DecimalMin})
+     * and now at the service boundary (PolicyApiImpl.reserveLoanValue's sign guard), but an
+     * invariant this load-bearing belongs on the entity that owns the column -- the amount
+     * reaching here has travelled through a reservation row and a confirm call, so "the caller
+     * already checked" is not something this class can verify. Rejecting rather than clamping:
+     * a negative encumbrance is always a bug upstream, and silently coercing it to zero would
+     * hide it.
+     *
+     * <p>Zero is rejected too, matching the wire-level {@code @DecimalMin("0.01")} and
+     * db-migrations/policy/V2's {@code CHECK (amount > 0)} on loan_value_reservation -- there
+     * is no legitimate zero-value loan reservation.
+     */
     public void increaseEncumbrance(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException(
+                "Encumbrance increase must be a positive amount, was: " + amount + " (policy " + policyNumber + ")");
+        }
         this.loanEncumbranceAmount = this.loanEncumbranceAmount.add(amount);
     }
 }

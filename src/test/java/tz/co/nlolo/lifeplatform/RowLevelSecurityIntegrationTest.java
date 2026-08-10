@@ -76,12 +76,14 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata
             // (PolicyLoanApiImpl.originateLoan reads TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE) and
             // policyloan's own schema.
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
-            "db-migrations/policyloan/V1__create_policyloan_schema.sql");
+            "db-migrations/policyloan/V1__create_policyloan_schema.sql",
+            "db-migrations/policyloan/V3__money_check_constraints.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());

@@ -242,6 +242,20 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl) {
+        // M3 final review, I3. Task 7's Critical (a negative requestedAmount reaching
+        // PolicyAccount.increaseEncumbrance, DECREASING loan_encumbrance_amount and thereby
+        // RAISING the customer's own available loan value) was closed only at the HTTP
+        // boundary, by policyloan.infrastructure.MoneyDto's @DecimalMin("0.01"). This guard
+        // closes it at the module boundary instead. PolicyApi is a published @NamedInterface
+        // that policyloan already calls and that M5's payment integration is documented to
+        // call next; the check below at :~263 is an UPPER bound only
+        // (amount.compareTo(available) > 0), which a negative amount passes trivially, so
+        // without this line the next non-HTTP caller reintroduces the exploit with no
+        // annotation anywhere to protect it. IllegalArgumentException maps to 400
+        // VALIDATION_ERROR via GlobalExceptionHandler.handleValidation.
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("Reservation amount must be a positive value, was: " + amount);
+        }
         UUID tenantId = TenantContext.get();
         // Opportunistic TTL sweep (Module-Architecture-B1; Global Constraints -- a true cross-
         // tenant @Scheduled sweep is architecturally incompatible with this platform's fail-closed

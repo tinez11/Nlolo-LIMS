@@ -63,7 +63,8 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
-            "db-migrations/policy/V1__create_policy_schema.sql");
+            "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql");
     }
 
     @Autowired private PartyApi partyApi;
@@ -95,7 +96,14 @@ class ModuleArchitectureB1ConcurrencyTest {
              PreparedStatement statement = connection.prepareStatement("UPDATE policy.policy_account SET cash_value_amount = ? WHERE policy_number = ?")) {
             statement.setBigDecimal(1, cashValue);
             statement.setString(2, policyNumber);
-            statement.executeUpdate();
+            // Asserted for consistency with the other three fixtures on this branch (M3 final
+            // review, I4). This class self-guards -- every test here seeds a large cash value
+            // and asserts a SUCCESSFUL reservation, so a zero-row seed fails all four loudly
+            // rather than silently -- but leaving one of four copies of this fixture different
+            // is exactly how the defect recurred in PolicyLoanApiIntegrationTest.
+            assertThat(statement.executeUpdate())
+                .as("cash-value seed for %s must update exactly one policy_account row", policyNumber)
+                .isEqualTo(1);
         }
         return policyNumber;
     }
@@ -298,6 +306,37 @@ class ModuleArchitectureB1ConcurrencyTest {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * M3 final review, I3. {@code reserveLoanValue}'s only amount check was an UPPER bound
+     * ({@code amount.compareTo(available) > 0}), which any negative amount passes trivially --
+     * so a non-HTTP caller of this published {@code @NamedInterface} (policyloan already calls
+     * all four methods; M5's payment integration is documented as the next one) could reach
+     * {@code PolicyAccount.increaseEncumbrance} with a negative amount and RAISE the
+     * policyholder's own available loan value. Runs against a real policy with a real seeded
+     * cash value so the guard is proven to fire BEFORE, not because of, the availability
+     * arithmetic.
+     */
+    @Test
+    void reserveLoanValueRejectsANonPositiveAmount() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"));
+        TenantContext.set(tenantId);
+
+        assertThatThrownBy(() -> policyApi.reserveLoanValue(policyNumber, new BigDecimal("-700000"), "TZS", Duration.ofMinutes(15)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("positive");
+        assertThatThrownBy(() -> policyApi.reserveLoanValue(policyNumber, BigDecimal.ZERO, "TZS", Duration.ofMinutes(15)))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        // Encodes the actual exploit, not merely the exception type: nothing was reserved, and
+        // the encumbrance did not move -- so available loan value did not go up.
+        assertThat(readEncumbranceAmount(policyNumber)).isEqualByComparingTo("0.00");
+
+        // Control: a positive amount on the same policy still reserves, so the guard is not
+        // rejecting everything.
+        assertThat(policyApi.reserveLoanValue(policyNumber, new BigDecimal("700000"), "TZS", Duration.ofMinutes(15))).isNotNull();
     }
 
     private String readReservationStatus(UUID reservationId) throws SQLException {

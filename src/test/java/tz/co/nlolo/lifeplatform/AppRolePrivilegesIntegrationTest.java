@@ -20,8 +20,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -29,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Every other integration test in this suite (PartyApiIntegrationTest,
@@ -96,12 +99,14 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyloan.PolicyLoanApiImpl.originateLoan reads
             // TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE via ReferenceDataApi and writes through
             // policyloan's own new grants -- both needed for this class's own app_role smoke test.
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
-            "db-migrations/policyloan/V1__create_policyloan_schema.sql");
+            "db-migrations/policyloan/V1__create_policyloan_schema.sql",
+            "db-migrations/policyloan/V3__money_check_constraints.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -128,6 +133,12 @@ class AppRolePrivilegesIntegrationTest {
 
     @Autowired
     private PolicyLoanApi policyLoanApi;
+
+    /** The application's own DataSource, pointed at a real app_role LOGIN by
+     * {@link #datasourceProperties} -- the same connection pool every business read and write in
+     * this class travels through. */
+    @Autowired
+    private DataSource dataSource;
 
     @AfterEach
     void clearTenant() {
@@ -289,5 +300,48 @@ class AppRolePrivilegesIntegrationTest {
 
         LoanView fetched = policyLoanApi.getLoan(loan.loanId());
         assertThat(fetched.status()).isEqualTo(LoanStatus.DISBURSEMENT_REQUESTED);
+    }
+
+    /**
+     * M3 final review, I5. {@code db-migrations/policy/V1:63} states, inside the CREATE TABLE,
+     * "Append-only: no UPDATE/DELETE grant for the application role" -- and M3's own
+     * {@code GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA policy TO app_role}
+     * at {@code V1:168} silently made that false, with no compensating REVOKE anywhere in the
+     * repository. Both sibling schemas got it right in the same branch
+     * ({@code policyloan/V1:147}, {@code audit/V1:44}); {@code db-migrations/policy/V2} brings
+     * this one into line, and this is the assertion that keeps it there. Before V2 this class
+     * asserted no REVOKE at all, anywhere.
+     *
+     * <p>Uses the application's OWN Spring-managed DataSource, which this class points at a real
+     * {@code app_role} login -- so this is the runtime identity's actual ACL being tested, not
+     * the migration text read back. Postgres checks table privileges before touching any rows,
+     * so no endorsement fixture is needed for the denial; the SELECT below is the positive
+     * control proving app_role does still have real access to the table and the denial is
+     * specific to UPDATE/DELETE rather than a blanket permission failure.
+     */
+    @Test
+    void appRoleCannotUpdateOrDeletePolicyEndorsementsBecauseTheLedgerIsAppendOnly() throws Exception {
+        // A tenant must be in scope before borrowing a connection: TenantAwareDataSource issues
+        // RESET app.current_tenant_id when TenantContext is empty, and every policy-schema RLS
+        // policy then evaluates ''::uuid and errors out -- fail-closed, but it would mask the
+        // privilege denial this test is actually about.
+        TenantContext.set(UUID.randomUUID());
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            assertThat(connection.getMetaData().getUserName()).isEqualTo("app_role");
+
+            statement.execute("SELECT count(*) FROM policy.endorsement");   // positive control
+
+            assertThatThrownBy(() -> statement.execute("UPDATE policy.endorsement SET approved_by = 'tamper'"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.execute("DELETE FROM policy.endorsement"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("permission denied");
+
+            // Counter-control: a table in the same schema that is NOT append-only must still be
+            // updatable, so the two denials above cannot be explained by app_role having lost
+            // UPDATE across the whole schema.
+            statement.execute("UPDATE policy.policy_account SET updated_at = now() WHERE policy_number = 'no-such-policy'");
+        }
     }
 }

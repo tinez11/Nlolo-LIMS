@@ -84,7 +84,9 @@ class PolicyLoanContractTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
+            "db-migrations/policyloan/V3__money_check_constraints.sql",
             // NOT optional, and NOT in the task brief's list: every domain event these tests
             // publish (LoanOriginated, LoanDisbursementRequested, LoanRepaid, PolicyIssued, ...)
             // is picked up application-wide by audit.DomainEventAuditListener. It swallows its
