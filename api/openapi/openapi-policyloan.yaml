@@ -40,8 +40,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoanView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409':
-          description: Requested amount exceeds available loan value
+          description: Requested amount exceeds available loan value, or the policy is not in force
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -64,6 +66,8 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/LoanView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /loans/{loanId}:
     get:
       summary: Get loan detail and current outstanding balance
@@ -82,6 +86,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoanView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /loans/{loanId}/repayments:
     post:
@@ -112,6 +117,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LoanView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
 components:
   schemas:
     LoanView:
