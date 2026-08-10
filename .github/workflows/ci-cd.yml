@@ -81,10 +81,20 @@ jobs:
           PGPASSWORD: ci_password
         run: |
           set -e
+          # Every V*.sql per module in version order, NOT just V1 -- this loop used to
+          # hardcode V1__create_<mod>_schema.sql, so refdata/V2 (runtime reference data) and
+          # policyloan/V2 (partition tenant-control event trigger) were validated by nothing.
           for mod in party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata; do
-            echo "Applying $mod"
-            psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f db-migrations/$mod/V1__create_${mod}_schema.sql
+            for f in $(ls db-migrations/$mod/V*.sql 2>/dev/null | sort -V); do
+              echo "Applying $f"
+              psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f "$f"
+            done
           done
+      - name: Assert no partition is less protected than its partitioned parent (M3 final review, I2)
+        env:
+          PGPASSWORD: ci_password
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/verify-partition-controls.sql
       - name: Assert app_role cannot bypass RLS (Deliverable 6 §1/§5 -- automatable, not just documented)
         env:
           PGPASSWORD: ci_password
@@ -157,8 +167,13 @@ jobs:
         env:
           STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
         run: ./scripts/migrate.sh staging
+      # ON_ERROR_STOP is load-bearing: without it psql exits 0 even when every statement in
+      # the file failed, which is exactly how three broken create_parent() calls survived
+      # unnoticed until M3's final review (see the header of configure-pg-partman.sql).
       - name: Configure pg_partman for any newly-added partitioned tables
-        run: psql "${{ secrets.STAGING_DB_URL }}" -f db-migrations/_post-migration/configure-pg-partman.sql
+        run: psql "${{ secrets.STAGING_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-pg-partman.sql
+      - name: Assert every pg_partman-created partition inherited the parent's RLS/append-only controls
+        run: psql "${{ secrets.STAGING_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/verify-partition-controls.sql
       - name: Rolling deploy
         run: ./scripts/deploy.sh staging ${{ github.sha }}
 
@@ -174,6 +189,8 @@ jobs:
           PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
         run: ./scripts/migrate.sh production
       - name: Configure pg_partman for any newly-added partitioned tables
-        run: psql "${{ secrets.PRODUCTION_DB_URL }}" -f db-migrations/_post-migration/configure-pg-partman.sql
+        run: psql "${{ secrets.PRODUCTION_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-pg-partman.sql
+      - name: Assert every pg_partman-created partition inherited the parent's RLS/append-only controls
+        run: psql "${{ secrets.PRODUCTION_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/verify-partition-controls.sql
       - name: Rolling deploy
         run: ./scripts/deploy.sh production ${{ github.ref_name }}

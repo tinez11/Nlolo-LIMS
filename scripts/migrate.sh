@@ -27,9 +27,17 @@ esac
 
 MODULES="party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata"
 
+# Every V*.sql per module, in version order -- NOT just V1. Until M3's final-review fix wave
+# this loop hardcoded V1__create_<mod>_schema.sql, so db-migrations/refdata/V2 (the
+# POLICY_SUSPENSION_ELIGIBLE_CATEGORIES / TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE seed that
+# PolicyApiImpl.suspendPolicy and PolicyLoanApiImpl.originateLoan both read at runtime) and
+# db-migrations/policyloan/V2 (the partition tenant-control event trigger) would never have
+# been applied to staging or production at all.
 for mod in $MODULES; do
-  echo "Applying $mod"
-  psql "$DB_URL" -v ON_ERROR_STOP=1 -f "db-migrations/$mod/V1__create_${mod}_schema.sql"
+  for migration in $(ls "db-migrations/$mod"/V*.sql 2>/dev/null | sort -V); do
+    echo "Applying $migration"
+    psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+  done
 done
 
-echo "All 16 module migrations applied against $ENVIRONMENT."
+echo "All 16 modules' migrations applied against $ENVIRONMENT."

@@ -22,8 +22,15 @@ CREATE DATABASE keycloak OWNER postgres;
 -- run by the CD pipeline immediately after Flyway migrations -- pg_partman's
 -- create_parent() requires the target table to already exist, which it doesn't yet
 -- at this bootstrap stage (Flyway hasn't run).
+-- The extension MUST live in a schema named `partman`: every call in
+-- configure-pg-partman.sql is qualified `partman.create_parent(...)` /
+-- `partman.run_maintenance_proc()`, and pg_partman's own documentation installs it that way.
+-- Installing it into `public` (as this file did until M3's final-review fix wave) makes every
+-- one of those calls fail with `schema "partman" does not exist` -- silently, because the CD
+-- step ran psql without ON_ERROR_STOP.
 \c lifeplatform
-CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA public;
+CREATE SCHEMA IF NOT EXISTS partman;
+CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Grants are scoped per-schema as each module's Flyway migration creates its schema
