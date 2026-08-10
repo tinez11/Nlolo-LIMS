@@ -17,6 +17,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -189,12 +190,12 @@ class PolicyLoanContractTest {
         return new Fixture(tenantId, policyNumber, applicantId);
     }
 
-    private static org.springframework.test.web.servlet.request.RequestPostProcessor agentOf(UUID tenantId) {
+    private static RequestPostProcessor agentOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
     }
 
-    private static org.springframework.test.web.servlet.request.RequestPostProcessor customerOf(UUID tenantId, UUID partyId) {
+    private static RequestPostProcessor customerOf(UUID tenantId, UUID partyId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("party_id", partyId.toString()));
     }

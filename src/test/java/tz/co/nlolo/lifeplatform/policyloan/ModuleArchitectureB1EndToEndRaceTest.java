@@ -16,6 +16,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -69,11 +71,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * how a concurrency test passes for the wrong reason: RLS fails closed, so a connection with no
  * tenant sees zero rows and the "race" never happens at all.
  *
- * <p><b>Negative control performed (see task-8-report.md for the captured output).</b> With the
- * {@code @Lock(LockModeType.PESSIMISTIC_WRITE)} removed from
- * {@code PolicyAccountRepository.lockByPolicyNumber} -- the exact mechanism this test claims to
- * protect -- this test FAILS; with it restored it passes. A concurrency test never observed
- * failing is decoration.
+ * <p><b>Negative controls actually performed</b> (captured output in task-8-report.md) -- a
+ * concurrency test never observed failing is decoration:
+ * <ol>
+ *   <li>{@code @Lock(LockModeType.PESSIMISTIC_WRITE)} removed from
+ *       {@code PolicyAccountRepository.lockByPolicyNumber}: this test FAILS, statuses
+ *       {@code [500, 202]}. Both reservations pass the availability check, and the loser is then
+ *       stopped one layer deeper by {@code PolicyAccount}'s {@code @Version} -- surfacing as an
+ *       unhandled {@code INTERNAL_ERROR}, not the clean 409 the protocol is supposed to give.</li>
+ *   <li>The same, plus {@code PolicyAccount}'s {@code @Version} neutralized: this test FAILS with
+ *       statuses {@code [202, 202]} -- two 700,000.00 loans confirmed against a 1,000,000.00 cash
+ *       value, the exact 400,000.00 joint overdraw Module-Architecture-B1 exists to prevent, and
+ *       the case the DB-level count assertions below (not the status codes) are what catch.</li>
+ * </ol>
+ * Both edits were reverted; the test passes against the real code.
  */
 @Testcontainers
 @AutoConfigureMockMvc
@@ -163,7 +174,7 @@ class ModuleArchitectureB1EndToEndRaceTest {
         // boundary this test exists to cover.
         mockMvc.perform(get("/policies/" + policyNumber + "/loans").with(agentOf(tenantId)))
             .andExpect(status().isOk())
-            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.length()").value(1));
+            .andExpect(jsonPath("$.length()").value(1));
     }
 
     /**
@@ -199,7 +210,7 @@ class ModuleArchitectureB1EndToEndRaceTest {
         }
     }
 
-    private static org.springframework.test.web.servlet.request.RequestPostProcessor agentOf(UUID tenantId) {
+    private static RequestPostProcessor agentOf(UUID tenantId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
     }
