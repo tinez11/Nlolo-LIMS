@@ -71,8 +71,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * how a concurrency test passes for the wrong reason: RLS fails closed, so a connection with no
  * tenant sees zero rows and the "race" never happens at all.
  *
- * <p><b>Negative controls actually performed</b> (captured output in task-8-report.md) -- a
- * concurrency test never observed failing is decoration:
+ * <p><b>Negative controls actually performed</b> (captured output in
+ * {@code .superpowers/sdd/2026-08-08-m3-policy-core/task-8-report.md}, §2) -- a concurrency test
+ * never observed failing is decoration:
  * <ol>
  *   <li>{@code @Lock(LockModeType.PESSIMISTIC_WRITE)} removed from
  *       {@code PolicyAccountRepository.lockByPolicyNumber}: this test FAILS, statuses
@@ -81,10 +82,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       unhandled {@code INTERNAL_ERROR}, not the clean 409 the protocol is supposed to give.</li>
  *   <li>The same, plus {@code PolicyAccount}'s {@code @Version} neutralized: this test FAILS with
  *       statuses {@code [202, 202]} -- two 700,000.00 loans confirmed against a 1,000,000.00 cash
- *       value, the exact 400,000.00 joint overdraw Module-Architecture-B1 exists to prevent, and
- *       the case the DB-level count assertions below (not the status codes) are what catch.</li>
+ *       value, the exact 400,000.00 joint overdraw Module-Architecture-B1 exists to prevent.</li>
  * </ol>
- * Both edits were reverted; the test passes against the real code.
+ * In BOTH controls the assertion that actually fails is the status-pair assertion in the test
+ * body; it runs first, so the DB-level assertions after it never execute on those runs. Nothing
+ * here claims the DB assertions are what detect a broken lock -- see the comment above them for
+ * the narrower job they really do. Both edits were reverted; the test passes against the real code.
  */
 @Testcontainers
 @AutoConfigureMockMvc
@@ -148,7 +151,9 @@ class ModuleArchitectureB1EndToEndRaceTest {
         // THE invariant, stated over HTTP status codes: exactly one 202 and exactly one 409.
         // Two 202s would be the 400,000.00 joint overdraw the reserve/confirm protocol exists to
         // prevent; a 500 would mean the protocol degraded into an unhandled failure instead of a
-        // clean, client-actionable rejection.
+        // clean, client-actionable rejection. This assertion is THE detector: it is what fails in
+        // both of the negative controls recorded in this class's Javadoc, and being first it is
+        // also what stops the run before any assertion below it executes.
         assertThat(statuses)
             .as("both attempts' bodies: %s", attempts)
             .containsExactlyInAnyOrder(202, 409);
@@ -159,11 +164,21 @@ class ModuleArchitectureB1EndToEndRaceTest {
         Attempt rejected = attempts.stream().filter(a -> a.status() == 409).findFirst().orElseThrow();
         assertThat(JsonPath.<String>read(rejected.body(), "$.errorCode")).isEqualTo("INSUFFICIENT_LOAN_VALUE");
 
-        // Durable DB-level cross-checks, not just the returned status codes. The loser's whole
-        // transaction rolls back (reserveLoanValue throws before inserting anything), so exactly
-        // one loan, exactly one reservation -- CONFIRMED, for exactly the winning amount -- and an
-        // encumbrance of exactly one loan's principal must exist. These are what catch a break
-        // that still happens to yield one 202 and one 409.
+        // Durable DB-level cross-checks. To be precise about what these do and do NOT do: they
+        // are NOT what catches either negative control -- the status assertion above fails first
+        // and these never run on those attempts. Their job is narrower and additive: pin the
+        // winner's effect as actually committed and the loser's transaction as having left
+        // nothing behind, so that a future break producing a superficially correct {202, 409}
+        // pair with divergent persistence would still be caught. The loser's whole transaction
+        // rolls back (reserveLoanValue throws before inserting anything), so exactly one loan and
+        // exactly one reservation -- CONFIRMED, for the winning amount -- must exist.
+        //
+        // The row COUNTS are the load-bearing ones here; readEncumbranceAmount is the weakest of
+        // the four and would NOT by itself have detected negative control 2 even had it run,
+        // because under lost-update semantics the second writer computes 0 + 700,000.00 from its
+        // own stale read and overwrites the first writer's identical value -- the column still
+        // reads 700000.00 while two loans exist. Kept anyway: it is the assertion that would fail
+        // if confirmReservation stopped applying the encumbrance at all.
         assertThat(countLoans(policyNumber)).isEqualTo(1);
         assertThat(countAllReservations(policyNumber)).isEqualTo(1);
         assertThat(countConfirmedReservations(policyNumber)).isEqualTo(1);

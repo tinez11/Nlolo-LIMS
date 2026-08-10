@@ -27,6 +27,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -185,7 +186,15 @@ class PolicyLoanContractTest {
                  "UPDATE policy.policy_account SET cash_value_amount = ?::numeric WHERE policy_number = ?")) {
             statement.setString(1, cashValue);
             statement.setString(2, policyNumber);
-            statement.executeUpdate();
+            // Asserted, not discarded. A seed that matched zero rows would leave cash value at
+            // 0.00, and originateLoanRejectsAnAmountExceedingAvailableWith409 -- the one test here
+            // that seeds a DELIBERATELY SMALL cash value and asserts a 409 -- would still get its
+            // 409 (0.00 available rejects any positive request) and pass having proven nothing
+            // about availableLoanValue's arithmetic. Every other test seeds a large value and
+            // would fail loudly on its own, but this guard is what makes that one non-vacuous.
+            assertThat(statement.executeUpdate())
+                .as("cash-value seed for %s must update exactly one policy_account row", policyNumber)
+                .isEqualTo(1);
         }
         return new Fixture(tenantId, policyNumber, applicantId);
     }
