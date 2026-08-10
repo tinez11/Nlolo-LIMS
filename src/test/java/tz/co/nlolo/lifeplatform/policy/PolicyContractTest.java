@@ -109,7 +109,10 @@ class PolicyContractTest {
     // beneficiary-validation tests), the tests below exercise the *entire* policy REST surface,
     // including POST /policies/manual-issue itself -- so the fixture chain below goes through
     // real HTTP end to end (register applicant -> publish product -> open underwriting case ->
-    // manual-issue), each hop OpenAPI-validated against its own module's spec where applicable.
+    // manual-issue). Only the final manual-issue hop is OpenAPI-validated here, against this
+    // module's policy spec; the earlier registerApplicant/publishProduct/openUnderwritingCase
+    // hops call no validator, correctly, since this file's SPEC_PATH is policy-only and doesn't
+    // cover the party/product/underwriting modules' own contracts.
 
     private record IssuedPolicy(String policyNumber, UUID policyholderPartyId) {}
 
@@ -379,6 +382,7 @@ class PolicyContractTest {
                     [{"type":"PARTY","partyId":"%s","freeformDesignee":"estate","sharePercent":100,"revocable":true}]
                     """.formatted(issued.policyholderPartyId())))
             .andExpect(status().isUnprocessableEntity())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("BENEFICIARY_VALIDATION_FAILED"));
     }
 
@@ -395,6 +399,7 @@ class PolicyContractTest {
                     [{"type":"FREEFORM","freeformDesignee":"estate","sharePercent":60,"revocable":true}]
                     """))
             .andExpect(status().isUnprocessableEntity())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("BENEFICIARY_VALIDATION_FAILED"));
     }
 
