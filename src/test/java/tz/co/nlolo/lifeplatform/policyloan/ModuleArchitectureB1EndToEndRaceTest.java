@@ -114,6 +114,7 @@ class ModuleArchitectureB1EndToEndRaceTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             // Required, and absent from the task brief's list -- see PolicyLoanContractTest's
@@ -296,7 +297,8 @@ class ModuleArchitectureB1EndToEndRaceTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
-                     "sumAssured":{"amount":"%s","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "sumAssured":{"amount":"%s","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
                      "reasonForManualIssue":"E2E race test issuance"}
                     """.formatted(caseId, applicantId, productVersionId, CASH_VALUE.toPlainString(), UUID.randomUUID())))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();

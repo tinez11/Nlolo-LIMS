@@ -85,7 +85,8 @@ public class PolicyApiImpl implements PolicyApi {
         List<Beneficiary> beneficiaries = validateAndBuildBeneficiaries(tenantId, policyNumber, request.beneficiaries());
 
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(), request.productVersionId(),
-            snapshot.category().name(), request.agentOfRecordId(), request.sumAssuredAmount(), request.sumAssuredCurrency(), issuedBy);
+            snapshot.category().name(), request.agentOfRecordId(), request.sumAssuredAmount(), request.sumAssuredCurrency(),
+            request.premiumAmount(), request.premiumCurrency(), request.premiumFrequency(), issuedBy);
         policy.activate(LocalDate.now());
         policyRepository.save(policy);
 
@@ -106,6 +107,8 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("productVersionId", request.productVersionId());
         payload.put("sumAssured", Map.of("amount", request.sumAssuredAmount().toPlainString(), "currencyCode", request.sumAssuredCurrency()));
         payload.put("issueDate", policy.getIssueDate().toString());
+        payload.put("premium", Map.of("amount", request.premiumAmount().toPlainString(), "currencyCode", request.premiumCurrency()));
+        payload.put("premiumFrequency", request.premiumFrequency());
         payload.put("agentOfRecordId", request.agentOfRecordId()); // nullable -- see Global Constraints
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
@@ -367,9 +370,8 @@ public class PolicyApiImpl implements PolicyApi {
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         policy.resume();
         policyRepository.save(policy);
-        // No dedicated "PolicyResumed" event exists in the event catalog -- docs/05-event-
-        // catalog.md only says billing "resumes on the reverse transition" in prose, naming no
-        // event. Nothing published here; billing's M4 consumption is out of scope regardless.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyResumed", tenantId,
+            Map.of("policyNumber", policyNumber, "resumedAt", Instant.now().toString())));
     }
 
     @Override
@@ -444,6 +446,7 @@ public class PolicyApiImpl implements PolicyApi {
             policy.getSumAssuredAmount(), policy.getSumAssuredCurrency(),
             account != null ? account.getCashValueAmount() : BigDecimal.ZERO,
             account != null ? account.getCashValueCurrency() : policy.getSumAssuredCurrency(),
+            policy.getPremiumAmount(), policy.getPremiumCurrency(), policy.getPremiumFrequency(),
             beneficiaryViews);
     }
 }

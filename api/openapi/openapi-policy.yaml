@@ -298,13 +298,14 @@ components:
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         productVersionId: { type: string, format: uuid }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        premiumAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         agentOfRecordId: { type: string, format: uuid, nullable: true }
         premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
         beneficiaries:
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryInput' }
         reasonForManualIssue: { type: string, description: "Required — feeds audit." }
-      required: [underwritingCaseId, policyholderPartyId, productVersionId, sumAssured, agentOfRecordId, reasonForManualIssue]
+      required: [underwritingCaseId, policyholderPartyId, productVersionId, sumAssured, premiumAmount, agentOfRecordId, reasonForManualIssue]
     BeneficiaryInput:
       type: object
       properties:
@@ -335,6 +336,8 @@ components:
         issueDate: { type: string, format: date }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cashValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        premium: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
         beneficiaries:
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryInput' }

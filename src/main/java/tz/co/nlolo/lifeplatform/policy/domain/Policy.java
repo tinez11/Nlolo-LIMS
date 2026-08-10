@@ -59,6 +59,15 @@ public class Policy {
     @Column(name = "sum_assured_currency", nullable = false)
     private String sumAssuredCurrency = "TZS";
 
+    @Column(name = "premium_amount", nullable = false)
+    private BigDecimal premiumAmount;
+
+    @Column(name = "premium_currency", nullable = false)
+    private String premiumCurrency = "TZS";
+
+    @Column(name = "premium_frequency", nullable = false)
+    private String premiumFrequency;
+
     @Column(name = "suspended_at")
     private Instant suspendedAt;
 
@@ -86,7 +95,8 @@ public class Policy {
     protected Policy() {}
 
     public Policy(String policyNumber, UUID tenantId, UUID policyholderPartyId, UUID productId, UUID productVersionId,
-                  String productCategory, UUID agentOfRecordId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, String createdBy) {
+                  String productCategory, UUID agentOfRecordId, BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                  BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency, String createdBy) {
         this.policyNumber = policyNumber;
         this.tenantId = tenantId;
         this.policyholderPartyId = policyholderPartyId;
@@ -96,6 +106,9 @@ public class Policy {
         this.agentOfRecordId = agentOfRecordId;
         this.sumAssuredAmount = sumAssuredAmount;
         this.sumAssuredCurrency = sumAssuredCurrency;
+        this.premiumAmount = premiumAmount;
+        this.premiumCurrency = premiumCurrency;
+        this.premiumFrequency = premiumFrequency;
         this.createdBy = createdBy;
     }
 
@@ -110,6 +123,9 @@ public class Policy {
     public LocalDate getIssueDate() { return issueDate; }
     public BigDecimal getSumAssuredAmount() { return sumAssuredAmount; }
     public String getSumAssuredCurrency() { return sumAssuredCurrency; }
+    public BigDecimal getPremiumAmount() { return premiumAmount; }
+    public String getPremiumCurrency() { return premiumCurrency; }
+    public String getPremiumFrequency() { return premiumFrequency; }
     public Instant getSuspendedAt() { return suspendedAt; }
     public String getSuspensionReason() { return suspensionReason; }
     public Instant getLapsedAt() { return lapsedAt; }

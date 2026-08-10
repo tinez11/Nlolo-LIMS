@@ -58,6 +58,7 @@ class PolicyLoanApiIntegrationTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             // Every policyloan event this test triggers (LoanOriginated, LoanDisbursementRequested,
@@ -87,7 +88,7 @@ class PolicyLoanApiIntegrationTest {
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(), snapshot.productVersionId(),
-            cashValue, "TZS", null, "MONTHLY", List.of(), "Loan test issuance");
+            cashValue, "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY", null, List.of(), "Loan test issuance");
         String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
 
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());

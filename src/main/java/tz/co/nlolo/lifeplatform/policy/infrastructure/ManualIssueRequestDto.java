@@ -12,6 +12,7 @@ public record ManualIssueRequestDto(
     @NotNull UUID policyholderPartyId,
     @NotNull UUID productVersionId,
     @NotNull @Valid MoneyDto sumAssured,
+    @NotNull @Valid MoneyDto premiumAmount,
     // openapi-policy.yaml's ManualIssueRequest marks agentOfRecordId both `nullable: true` and
     // present in `required` -- that combination means the JSON key must be present but its value
     // may be null (e.g. a direct/online issuance channel with no agent), not "must be non-null."

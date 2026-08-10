@@ -21,8 +21,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
@@ -32,6 +35,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 
 /**
  * Every other integration test in this suite (PartyApiIntegrationTest,
@@ -106,7 +110,16 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
-            "db-migrations/policyloan/V3__money_check_constraints.sql");
+            "db-migrations/policyloan/V3__money_check_constraints.sql",
+            // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
+            // on every insert (this class's own policy-issuing tests would otherwise fail), the
+            // auto-issuance listener invoked by submitAssessment below needs
+            // TZ_BASE_PREMIUM_RATE_PER_MILLE, and billing needs its own schema/grants for
+            // appRoleCanReadAndWriteBillingSchedule below.
+            "db-migrations/policy/V3__premium_fields.sql",
+            "db-migrations/refdata/V3__seed_billing_parameters.sql",
+            "db-migrations/billing/V1__create_billing_schema.sql",
+            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -254,7 +267,7 @@ class AppRolePrivilegesIntegrationTest {
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings", new java.math.BigDecimal("10"), "underwriter1");
 
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(policyholder.partyId(), product.productId(), snapshot.productVersionId(),
-            new java.math.BigDecimal("1000000"), "TZS", null, "MONTHLY", java.util.List.of(), "App role smoke test");
+            new java.math.BigDecimal("1000000"), "TZS", new java.math.BigDecimal("50000.00"), "TZS", "MONTHLY", null, java.util.List.of(), "App role smoke test");
         PolicyView issued = policyApi.issuePolicy(opened.caseId(), request, "test-staff");
         assertThat(issued.policyNumber()).isNotNull();
 
@@ -282,7 +295,7 @@ class AppRolePrivilegesIntegrationTest {
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
         PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(),
             new PolicyApi.IssueRequest(policyholder.partyId(), product.productId(), snapshot.productVersionId(),
-                new java.math.BigDecimal("1000000"), "TZS", null, "MONTHLY", java.util.List.of(), "App role loan smoke test"),
+                new java.math.BigDecimal("1000000"), "TZS", new java.math.BigDecimal("50000.00"), "TZS", "MONTHLY", null, java.util.List.of(), "App role loan smoke test"),
             "test-staff");
 
         // policy.policy_account.cash_value_amount starts at ZERO at issuance (PolicyApiImpl
@@ -342,6 +355,40 @@ class AppRolePrivilegesIntegrationTest {
             // updatable, so the two denials above cannot be explained by app_role having lost
             // UPDATE across the whole schema.
             statement.execute("UPDATE policy.policy_account SET updated_at = now() WHERE policy_number = 'no-such-policy'");
+        }
+    }
+
+    /**
+     * M4 (Task 1) addition: direct SQL round-trip through app_role's own restricted connection --
+     * proves the GRANT block in billing/V2 actually took effect under the real runtime identity,
+     * not just the migration/superuser identity this suite's other integration tests use. Same
+     * "app_role, not just the migration text" proof this class exists for, applied to billing's
+     * grants for the first time.
+     */
+    @Test
+    void appRoleCanReadAndWriteBillingSchedule() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO billing.billing_schedule (tenant_id, policy_number, premium_frequency, premium_amount, premium_currency) " +
+                 "VALUES (?, ?, 'MONTHLY', 15000.00, 'TZS')")) {
+            insert.setObject(1, tenantId);
+            insert.setString(2, "APPROLE-BILLING-01");
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into billing.billing_schedule: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT premium_amount FROM billing.billing_schedule WHERE policy_number = ?")) {
+            select.setString(1, "APPROLE-BILLING-01");
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getBigDecimal(1)).isEqualByComparingTo(new BigDecimal("15000.00"));
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from billing.billing_schedule: " + e.getMessage());
         }
     }
 }

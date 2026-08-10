@@ -67,6 +67,13 @@ class PolicyApiIntegrationTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
+            // on every insert, and endToEndAutoIssuanceFiresFromARealUnderwritingDecision below
+            // needs TZ_BASE_PREMIUM_RATE_PER_MILLE for the auto-issuance listener's premium
+            // computation to succeed (without it the listener catches the lookup failure, logs,
+            // and issues nothing -- the test's retry loop would then find zero policies and fail).
+            "db-migrations/policy/V3__premium_fields.sql",
+            "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -102,9 +109,14 @@ class PolicyApiIntegrationTest {
     }
 
     private String issueDirectly(UUID tenantId, Fixture fixture, List<PolicyApi.BeneficiaryInput> beneficiaries) {
+        return issueDirectly(tenantId, fixture, beneficiaries, new BigDecimal("50000.00"), "TZS", "MONTHLY");
+    }
+
+    private String issueDirectly(UUID tenantId, Fixture fixture, List<PolicyApi.BeneficiaryInput> beneficiaries,
+                                  BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency) {
         TenantContext.set(tenantId);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
-            new BigDecimal("1000000"), "TZS", null, "MONTHLY", beneficiaries, "Direct issuance test");
+            new BigDecimal("1000000"), "TZS", premiumAmount, premiumCurrency, premiumFrequency, null, beneficiaries, "Direct issuance test");
         return policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
     }
 
@@ -334,5 +346,56 @@ class PolicyApiIntegrationTest {
         // issueDate is "today" -> 0 months in force -> matches the first band (0 <= 0 < 12) -> 10% charge
         // charge = 100000 * 10 / 100 = 10000; quotedValue = 100000 - 10000 = 90000
         assertEquals(0, new BigDecimal("90000").compareTo(quote.quotedValueAmount()));
+    }
+
+    @Test
+    void issuedPolicyExposesPremiumFields() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-PREMIUM-01");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of(), new BigDecimal("15000.00"), "TZS", "MONTHLY");
+
+        PolicyView view = policyApi.getPolicy(policyNumber);
+        assertEquals(0, new BigDecimal("15000.00").compareTo(view.premiumAmount()));
+        assertEquals("TZS", view.premiumCurrency());
+        assertEquals("MONTHLY", view.premiumFrequency());
+    }
+
+    @Test
+    void resumingASuspendedPolicyPublishesPolicyResumed() throws Exception {
+        // Deviation from the brief's own sketch (caught by reading the real code, not assumed):
+        // buildFixture(...) always creates a TERM_LIFE product, which is NOT on
+        // POLICY_SUSPENSION_ELIGIBLE_CATEGORIES (only GROUP_LIFE is seeded eligible, per
+        // db-migrations/refdata/V2 and suspendRejectsAProductCategoryNotOnTheEligibleList above)
+        // -- suspendPolicy would throw InvalidPolicyStateException before ever reaching resume,
+        // exactly the failure mode suspendRejectsAProductCategoryNotOnTheEligibleList exists to
+        // prove. Uses a GROUP_LIFE fixture instead, mirroring
+        // suspendAndResumeRoundTripForAnEligibleCategory's own fixture construction above.
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        PartyView applicant = partyApi.registerIndividual("Group Scheme Member Resume Test", LocalDate.of(1990, 1, 1), "+255713099002", null, "test-agent");
+        ProductSummaryView product = productApi.createProduct("POLICY-RESUME-EVENT-01", "Group Life Resume Product", ProductCategory.GROUP_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        Fixture fixture = new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+
+        TenantContext.set(tenantId);
+        policyApi.suspendPolicy(policyNumber, "investigation", "test-staff");
+        Instant before = Instant.now();
+        policyApi.resumeSuspendedPolicy(policyNumber, "test-staff");
+
+        // Same audit-log-query idiom as issuePolicyActivatesImmediatelyAndPublishesPolicyIssued
+        // above, applied to the new event. Falsifiable: verified during implementation by
+        // temporarily commenting out the new publishEvent(...) call in resumeSuspendedPolicy
+        // and confirming this query returns zero rows (assertThat(...).hasSize(1) then fails),
+        // then restoring it before commit -- recorded in this task's completion report.
+        List<AuditLogEntry> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicyResumed", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(auditRows).hasSize(1);
+        JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
+        assertThat(payload.path("policyNumber").asText()).isEqualTo(policyNumber);
     }
 }

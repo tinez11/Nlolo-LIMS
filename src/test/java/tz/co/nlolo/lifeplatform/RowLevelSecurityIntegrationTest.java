@@ -24,6 +24,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
@@ -83,7 +84,16 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
-            "db-migrations/policyloan/V3__money_check_constraints.sql");
+            "db-migrations/policyloan/V3__money_check_constraints.sql",
+            // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
+            // on every insert (every auto-issued policy in policyIsTenantIsolatedUnderRls/
+            // policyLoanIsTenantIsolatedUnderRls below would otherwise fail at persist time), the
+            // auto-issuance listener needs TZ_BASE_PREMIUM_RATE_PER_MILLE, and
+            // billingScheduleIsTenantIsolatedUnderRls below needs billing's own schema/grants.
+            "db-migrations/policy/V3__premium_fields.sql",
+            "db-migrations/refdata/V3__seed_billing_parameters.sql",
+            "db-migrations/billing/V1__create_billing_schema.sql",
+            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -360,6 +370,54 @@ class RowLevelSecurityIntegrationTest {
             try (ResultSet resultSet = statement.executeQuery("SELECT loan_id FROM policyloan.policy_loan")) {
                 assertThat(resultSet.next()).isTrue();
                 assertThat(resultSet.getString(1)).isEqualTo(loanIdA);
+                assertThat(resultSet.next()).isFalse();
+            }
+        }
+    }
+
+    /**
+     * M4 (Task 1) addition: proves billing_schedule_tenant_isolation (declared in billing/V1,
+     * completed by billing/V2's grants -- V1 alone had zero GRANT statements, so app_role could
+     * not even reach the table to be isolated) actually isolates tenants. billing has no
+     * BillingApi yet (Task 2+), so rows are seeded directly via SQL as the superuser rather than
+     * through an application API, then read back exclusively via a genuinely restricted app_role
+     * connection -- same proof shape as policyIsTenantIsolatedUnderRls above.
+     */
+    @Test
+    @Order(6)
+    void billingScheduleIsTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO billing.billing_schedule (tenant_id, policy_number, premium_frequency, premium_amount, premium_currency) " +
+                 "VALUES (?, ?, 'MONTHLY', 15000.00, 'TZS')")) {
+            insert.setObject(1, tenantA);
+            insert.setString(2, "RLS-BILLING-A");
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+            insert.setObject(1, tenantB);
+            insert.setString(2, "RLS-BILLING-B");
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        }
+
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = superuserConnection.createStatement();
+             ResultSet resultSet = statement.executeQuery("SELECT COUNT(*) FROM billing.billing_schedule")) {
+            resultSet.next();
+            assertThat(resultSet.getInt(1)).isEqualTo(2);
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery("SELECT policy_number FROM billing.billing_schedule")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("RLS-BILLING-A");
                 assertThat(resultSet.next()).isFalse();
             }
         }

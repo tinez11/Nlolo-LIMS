@@ -15,8 +15,9 @@ public interface PolicyApi {
     record BeneficiaryInput(BeneficiaryType type, UUID partyId, String freeformDesignee, BigDecimal sharePercent, boolean revocable) {}
 
     record IssueRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
-                         BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId,
-                         String premiumFrequency, List<BeneficiaryInput> beneficiaries, String reasonForManualIssue) {}
+                         BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                         BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                         UUID agentOfRecordId, List<BeneficiaryInput> beneficiaries, String reasonForManualIssue) {}
 
     record EndorsementInput(String endorsementType, LocalDate effectiveDate, Map<String, Object> changes) {}
 

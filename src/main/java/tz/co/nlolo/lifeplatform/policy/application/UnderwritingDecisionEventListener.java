@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.policy.application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
@@ -14,6 +15,8 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -49,12 +52,14 @@ public class UnderwritingDecisionEventListener {
 
     private final UnderwritingApi underwritingApi;
     private final PolicyApi policyApi;
+    private final ReferenceDataApi referenceDataApi;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
-    public UnderwritingDecisionEventListener(UnderwritingApi underwritingApi, PolicyApi policyApi,
+    public UnderwritingDecisionEventListener(UnderwritingApi underwritingApi, PolicyApi policyApi, ReferenceDataApi referenceDataApi,
                                               PlatformTransactionManager transactionManager) {
         this.underwritingApi = underwritingApi;
         this.policyApi = policyApi;
+        this.referenceDataApi = referenceDataApi;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -88,15 +93,33 @@ public class UnderwritingDecisionEventListener {
         try {
             requiresNewTransactionTemplate.executeWithoutResult(status -> {
                 UnderwritingCaseView decidedCase = underwritingApi.getCase(caseId);
-                // agentOfRecordId/premiumFrequency/beneficiaries aren't part of an UnderwritingCase
-                // at all -- no agent-of-record or premium-frequency field exists on that aggregate,
-                // and beneficiary designation happens post-issuance via PUT .../beneficiaries. This
-                // defaults them for the automatic path; POST /policies/manual-issue lets staff set
-                // all three explicitly for the exception path.
+                // No actuarial rating engine exists anywhere in this codebase (M2's
+                // SimpleRulesEngine is a deliberate placeholder). Global Constraints (M4):
+                // annualPremium = sumAssured * (baseRatePerMille/1000) * (1 + loadingPercent/100),
+                // divided into MONTHLY instalments for the automatic-issuance path -- manual
+                // issuance (POST /policies/manual-issue) instead accepts staff's own agreed
+                // premium directly, since that path already represents a human override.
+                // decisionLoadingPercent is already a BigDecimal (UnderwritingCaseView's real
+                // declared type, confirmed by reading the file -- not the Integer/boxed-wrapper
+                // the brief's own sketch assumed), so only a null-guard is needed here, no
+                // BigDecimal.valueOf(...) conversion.
+                BigDecimal baseRatePerMille = new BigDecimal(referenceDataApi.getValue("TZ_BASE_PREMIUM_RATE_PER_MILLE", "TZ"));
+                BigDecimal loadingPercent = decidedCase.decisionLoadingPercent() != null ? decidedCase.decisionLoadingPercent() : BigDecimal.ZERO;
+                BigDecimal loadingMultiplier = BigDecimal.ONE.add(loadingPercent.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
+                BigDecimal annualPremium = decidedCase.sumAssuredAmount()
+                    .multiply(baseRatePerMille).divide(BigDecimal.valueOf(1000), 6, RoundingMode.HALF_UP)
+                    .multiply(loadingMultiplier);
+                BigDecimal monthlyPremium = annualPremium.divide(BigDecimal.valueOf(12), 2, RoundingMode.HALF_UP);
+                // agentOfRecordId/beneficiaries aren't part of an UnderwritingCase at all -- no
+                // agent-of-record field exists on that aggregate, and beneficiary designation
+                // happens post-issuance via PUT .../beneficiaries. This defaults them for the
+                // automatic path; POST /policies/manual-issue lets staff set both explicitly
+                // for the exception path.
                 PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
                     decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
                     decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
-                    null, "MONTHLY", List.of(), "Automatic issuance on underwriting decision " + outcome);
+                    monthlyPremium, decidedCase.sumAssuredCurrency(), "MONTHLY",
+                    null, List.of(), "Automatic issuance on underwriting decision " + outcome);
                 policyApi.issuePolicy(caseId, request, "system:underwriting-decision-listener");
             });
         } catch (Exception e) {

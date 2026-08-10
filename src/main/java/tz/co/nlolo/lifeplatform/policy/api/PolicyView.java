@@ -9,4 +9,5 @@ public record PolicyView(String policyNumber, UUID policyholderPartyId, UUID pro
                           UUID agentOfRecordId, PolicyStatus status, LocalDate issueDate,
                           BigDecimal sumAssuredAmount, String sumAssuredCurrency,
                           BigDecimal cashValueAmount, String cashValueCurrency,
+                          BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
                           List<BeneficiaryView> beneficiaries) {}

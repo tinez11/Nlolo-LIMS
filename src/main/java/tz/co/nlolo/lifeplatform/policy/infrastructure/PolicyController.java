@@ -43,7 +43,9 @@ public class PolicyController {
             ? request.beneficiaries().stream().map(BeneficiaryInputDto::toApiInput).toList() : List.of();
         PolicyApi.IssueRequest issueRequest = new PolicyApi.IssueRequest(request.policyholderPartyId(), snapshot.productId(), request.productVersionId(),
             new BigDecimal(request.sumAssured().amount()), request.sumAssured().currencyCode(),
-            request.agentOfRecordId(), request.premiumFrequency(), beneficiaries, request.reasonForManualIssue());
+            new BigDecimal(request.premiumAmount().amount()), request.premiumAmount().currencyCode(),
+            request.premiumFrequency() != null && !request.premiumFrequency().isBlank() ? request.premiumFrequency() : "MONTHLY",
+            request.agentOfRecordId(), beneficiaries, request.reasonForManualIssue());
         PolicyView view = policyApi.issuePolicy(request.underwritingCaseId(), issueRequest, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyResponseDto.from(view));
     }

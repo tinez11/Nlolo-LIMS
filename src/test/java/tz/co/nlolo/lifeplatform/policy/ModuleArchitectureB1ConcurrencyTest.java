@@ -64,7 +64,8 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
-            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql");
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql");
     }
 
     @Autowired private PartyApi partyApi;
@@ -89,7 +90,7 @@ class ModuleArchitectureB1ConcurrencyTest {
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(), snapshot.productVersionId(),
-            cashValue, "TZS", null, "MONTHLY", List.of(), "Concurrency test issuance");
+            cashValue, "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY", null, List.of(), "Concurrency test issuance");
         String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
 
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());

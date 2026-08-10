@@ -67,6 +67,7 @@ class PolicyContractTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -98,7 +99,7 @@ class PolicyContractTest {
             null, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(), snapshot.productVersionId(),
-            new BigDecimal("1000000"), "TZS", null, "MONTHLY", List.of(), "Contract test issuance");
+            new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY", null, List.of(), "Contract test issuance");
         String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
         TenantContext.clear();
         return policyNumber;
@@ -187,7 +188,8 @@ class PolicyContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
-                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
                      "reasonForManualIssue":"Contract test manual issuance"}
                     """.formatted(caseId, applicantId, product.productVersionId(), UUID.randomUUID())))
             .andExpect(status().isCreated())
@@ -276,7 +278,8 @@ class PolicyContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
-                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},"agentOfRecordId":null,
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
                      "reasonForManualIssue":"Should be rejected before reaching the service layer"}
                     """.formatted(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())))
             .andExpect(status().isForbidden());

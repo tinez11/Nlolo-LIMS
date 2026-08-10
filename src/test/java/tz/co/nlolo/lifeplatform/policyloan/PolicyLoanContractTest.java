@@ -85,6 +85,7 @@ class PolicyLoanContractTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             // NOT optional, and NOT in the task brief's list: every domain event these tests
@@ -177,7 +178,8 @@ class PolicyLoanContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
-                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
                      "reasonForManualIssue":"Loan contract test issuance"}
                     """.formatted(caseId, applicantId, productVersionId, UUID.randomUUID())))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
