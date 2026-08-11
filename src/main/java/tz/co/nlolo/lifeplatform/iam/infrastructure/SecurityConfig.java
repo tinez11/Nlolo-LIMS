@@ -1,7 +1,9 @@
 package tz.co.nlolo.lifeplatform.iam.infrastructure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,7 +24,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtIssuerAuthenticationManagerResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
-import tz.co.nlolo.lifeplatform.payment.infrastructure.MobileMoneyHmacFilter;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -111,19 +112,39 @@ public class SecurityConfig {
         return authorities;
     }
 
+    /**
+     * {@code mobileMoneyHmacFilter} is injected as {@link Filter} (the generic servlet type), not
+     * the concrete {@code payment.infrastructure.MobileMoneyHmacFilter}, resolved by bean name via
+     * {@code @Qualifier} instead of by type. This is deliberate: {@code iam} declaring a field of
+     * the concrete type would be a real compile-time dependency from this module onto an internal
+     * (non-{@code api}) type of {@code payment}, which Spring Modulith's structural verification
+     * (ModularityTests) treats as encapsulation breakage. {@code Filter} is a third-party
+     * framework type, not part of any module, so this wiring creates no such dependency while
+     * still resolving to the exact right bean at runtime -- {@code addFilterBefore} only needs a
+     * {@link Filter} for its first argument anyway.
+     */
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             AuthenticationManagerResolver<HttpServletRequest> issuerAuthenticationManagerResolver,
-            ObjectMapper objectMapper) throws Exception {
+            ObjectMapper objectMapper,
+            @Qualifier("mobileMoneyHmacFilter") Filter mobileMoneyHmacFilter) throws Exception {
         http
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                // The mobile-money aggregator authenticates with its own HMAC signature scheme,
+                // not a Keycloak bearer token (openapi-payment.yaml declares security: [] for
+                // this one path). It is permitAll HERE only because mobileMoneyHmacFilter runs
+                // in front of it and fails closed -- this is not an unauthenticated endpoint,
+                // it is a differently-authenticated one. Scoped to the exact path, never a
+                // prefix wildcard.
+                .requestMatchers(HttpMethod.POST, "/webhooks/mobile-money-callback").permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
                 .authenticationManagerResolver(issuerAuthenticationManagerResolver))
+            .addFilterBefore(mobileMoneyHmacFilter, BearerTokenAuthenticationFilter.class)
             .addFilterAfter(new TenantContextFilter(objectMapper), BearerTokenAuthenticationFilter.class);
         return http.build();
     }

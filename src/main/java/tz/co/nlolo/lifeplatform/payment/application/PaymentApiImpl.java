@@ -7,7 +7,9 @@ import tz.co.nlolo.lifeplatform.payment.domain.*;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.*;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -25,19 +27,31 @@ public class PaymentApiImpl implements PaymentApi {
     private final PaymentIdempotencyRepository paymentIdempotencyRepository;
     private final DisbursementIdempotencyRepository disbursementIdempotencyRepository;
     private final ApplicationEventPublisher eventPublisher;
+    // Task 8 (review fix, Critical 3): a fresh PROPAGATION_REQUIRES_NEW transaction for
+    // applyGatewayCallback's mutation, opened only AFTER TenantContext has been set to the
+    // resolved tenant. See applyGatewayCallback's javadoc for why this can't just be a plain
+    // @Transactional on that method -- same root cause PaymentRequestListener's own class javadoc
+    // already documents for the same reason (TenantAwareDataSource sets app.current_tenant_id at
+    // connection-ACQUISITION time, so the connection a @Transactional method's own transaction
+    // opens at method entry is bound before any TenantContext.set(...) inside that same method
+    // body can affect it).
+    private final TransactionTemplate requiresNewTransactionTemplate;
 
     public PaymentApiImpl(PaymentTransactionRepository paymentTransactionRepository,
                            DisbursementInstructionRepository disbursementRepository,
                            PayoutBatchRepository payoutBatchRepository,
                            PaymentIdempotencyRepository paymentIdempotencyRepository,
                            DisbursementIdempotencyRepository disbursementIdempotencyRepository,
-                           ApplicationEventPublisher eventPublisher) {
+                           ApplicationEventPublisher eventPublisher,
+                           PlatformTransactionManager transactionManager) {
         this.paymentTransactionRepository = paymentTransactionRepository;
         this.disbursementRepository = disbursementRepository;
         this.payoutBatchRepository = payoutBatchRepository;
         this.paymentIdempotencyRepository = paymentIdempotencyRepository;
         this.disbursementIdempotencyRepository = disbursementIdempotencyRepository;
         this.eventPublisher = eventPublisher;
+        this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
     // ---- Read surface ----
@@ -240,8 +254,24 @@ public class PaymentApiImpl implements PaymentApi {
      *         was applied (including the idempotent no-op case of a redelivered, already-terminal
      *         outcome); false if it matched nothing in either ledger. The controller acks HTTP 200
      *         either way -- see {@code MobileMoneyCallbackController}'s own javadoc for why.
+     *
+     * <p><b>Review fix (Critical 3): deliberately NOT {@code @Transactional} on this method.</b>
+     * {@code TenantAwareDataSource} sets the {@code app.current_tenant_id} GUC only at JDBC
+     * connection-ACQUISITION time. If this method carried a plain {@code @Transactional}, Spring
+     * would open the transaction (and therefore acquire and bind the connection for the WHOLE
+     * method body) at method entry -- before {@code TenantContext} has been set to anything, since
+     * the very first thing this method does is the tenant-resolving read. Every later
+     * {@code TenantContext.set(...)} inside {@code withResolvedTenant} would then be changing only
+     * the ThreadLocal, with no effect on the connection already bound to that same transaction for
+     * the rest of the method -- so the re-fetch via {@code findByGatewayReferenceAndTenantId} would
+     * see zero rows under real RLS, always, exactly as {@code PaymentRequestListener}'s own class
+     * javadoc already documents for the same underlying reason. The tenant-resolving read below
+     * runs with no ambient transaction at all (a plain SELECT through a SECURITY DEFINER function
+     * needs none), and the actual mutation runs inside a fresh {@code PROPAGATION_REQUIRES_NEW}
+     * transaction opened by {@code requiresNewTransactionTemplate} from INSIDE
+     * {@code withResolvedTenant}, i.e. strictly after {@code TenantContext.set(...)} -- so that
+     * transaction's own connection acquisition sees the correct GUC from the start.
      */
-    @Transactional
     public boolean applyGatewayCallback(String gatewayReference, boolean succeeded, String reason) {
         UUID disbursementTenantId = disbursementRepository.resolveTenantByGatewayReference(gatewayReference);
         if (disbursementTenantId != null) {
@@ -288,12 +318,19 @@ public class PaymentApiImpl implements PaymentApi {
      * same thread. TenantContext is expected to be unset on entry (no bearer token was present
      * for this request), but restoring "whatever was there before" rather than unconditionally
      * clearing is the same defensive pattern PaymentRequestListener.withTenant already uses, for
-     * the same reason. */
+     * the same reason.
+     *
+     * <p>Review fix (Critical 3): {@code action} now runs INSIDE a fresh
+     * {@code PROPAGATION_REQUIRES_NEW} transaction opened here, i.e. after {@code TenantContext
+     * .set(tenantId)} above -- not merely as a plain method call under whatever transaction (if
+     * any) the caller already had. See {@code applyGatewayCallback}'s own javadoc for why opening
+     * the transaction at the right moment, relative to setting TenantContext, is what actually
+     * matters here, not merely setting TenantContext at all. */
     private void withResolvedTenant(UUID tenantId, Runnable action) {
         UUID previousTenant = TenantContext.getOrNull();
         TenantContext.set(tenantId);
         try {
-            action.run();
+            requiresNewTransactionTemplate.executeWithoutResult(status -> action.run());
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

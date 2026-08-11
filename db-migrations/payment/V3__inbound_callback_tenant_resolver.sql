@@ -46,15 +46,41 @@
 -- Reviewer note: this is a genuinely new security posture for app_role and deserves explicit
 -- sign-off beyond this migration's own review, not a rubber stamp because it's "just a helper
 -- function."
+--
+-- REVIEW FIX (Critical 5): the original body was `SELECT tenant_id ... LIMIT 1` with no
+-- ORDER BY. This file's own comment above already documents that a gateway_reference is NOT
+-- unique across tenants ("a gateway may legitimately reuse a reference across tenants" -- see
+-- V2's idx_disbursement_gateway_reference/idx_payment_transaction_gateway_reference comment).
+-- With two tenants sharing one gateway_reference, `LIMIT 1` picked an ARBITRARY one of them --
+-- confirmed empirically against a live container -- and the caller (PaymentApiImpl
+-- .applyGatewayCallback) would then mark THAT tenant's row complete/failed and publish a
+-- confirmation event under the wrong tenantId: a real wrong-tenant financial mutation, not a
+-- theoretical one. Fixed by aggregating over ALL matching rows and returning the shared
+-- tenant_id ONLY when every matching row agrees on it (COUNT(DISTINCT tenant_id) = 1); any
+-- ambiguity, or no match at all, returns NULL -- exactly the same "resolved to nothing" signal
+-- applyGatewayCallback already treats as "no match, log and ack 200 without applying anything"
+-- rather than ever guessing which tenant's row to touch. An aggregate query with no GROUP BY
+-- always returns exactly one row (NULL over zero input rows, the single value when unambiguous,
+-- or NULL when ambiguous), so this can never itself raise Postgres's "more than one row returned
+-- by a subquery used as an expression" error the way a plain multi-row SELECT would if two
+-- tenants' rows both matched.
+--
+-- Correction found empirically, not by inspection: the first version of this fix used
+-- `MIN(tenant_id)` to pick the single agreed-upon value. Postgres has no MIN/MAX aggregate
+-- registered for `uuid` at all (unlike types with a default btree opclass wired to min/max) --
+-- running this against a real container failed outright with "function min(uuid) does not
+-- exist" before a single row was ever inserted. `array_agg(DISTINCT tenant_id)` has no such
+-- type restriction; when COUNT(DISTINCT tenant_id) = 1 it is a one-element array, so `[1]`
+-- (Postgres arrays are 1-indexed) is exactly that single value.
 CREATE FUNCTION payment.resolve_disbursement_tenant(p_gateway_reference text)
 RETURNS uuid
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = payment, pg_temp
 AS $$
-    SELECT tenant_id FROM payment.disbursement_instruction
-    WHERE gateway_reference = p_gateway_reference
-    LIMIT 1;
+    SELECT CASE WHEN COUNT(DISTINCT tenant_id) = 1 THEN (array_agg(DISTINCT tenant_id))[1] ELSE NULL END
+    FROM payment.disbursement_instruction
+    WHERE gateway_reference = p_gateway_reference;
 $$;
 
 CREATE FUNCTION payment.resolve_payment_transaction_tenant(p_gateway_reference text)
@@ -63,9 +89,9 @@ LANGUAGE sql
 SECURITY DEFINER
 SET search_path = payment, pg_temp
 AS $$
-    SELECT tenant_id FROM payment.payment_transaction
-    WHERE gateway_reference = p_gateway_reference
-    LIMIT 1;
+    SELECT CASE WHEN COUNT(DISTINCT tenant_id) = 1 THEN (array_agg(DISTINCT tenant_id))[1] ELSE NULL END
+    FROM payment.payment_transaction
+    WHERE gateway_reference = p_gateway_reference;
 $$;
 
 -- Defence in depth: SECURITY DEFINER functions default to callable by PUBLIC. Revoke that first,
