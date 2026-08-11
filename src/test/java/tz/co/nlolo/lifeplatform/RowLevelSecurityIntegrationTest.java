@@ -93,7 +93,12 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
-            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql");
+            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
+            // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
+            // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.
+            "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -125,6 +130,11 @@ class RowLevelSecurityIntegrationTest {
             statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA refdata TO app_role");
             statement.execute("GRANT USAGE ON SCHEMA policyloan TO app_role");
             statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA policyloan TO app_role");
+            // payment's own migration (V2) already GRANTs app_role these same privileges
+            // (verified by reading the file) -- redundant with that, kept only to mirror this
+            // test's existing pattern for every other schema above.
+            statement.execute("GRANT USAGE ON SCHEMA payment TO app_role");
+            statement.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA payment TO app_role");
         }
     }
 
@@ -431,6 +441,117 @@ class RowLevelSecurityIntegrationTest {
             try (ResultSet resultSet = statement.executeQuery("SELECT policy_number FROM billing.billing_schedule")) {
                 assertThat(resultSet.next()).isTrue();
                 assertThat(resultSet.getString(1)).isEqualTo("RLS-BILLING-A");
+                assertThat(resultSet.next()).isFalse();
+            }
+        }
+    }
+
+    /**
+     * M5 addition: proves disbursement_instruction_tenant_isolation actually isolates tenants.
+     * payment/V1 shipped with zero RLS and zero GRANTs -- app_role could not even reach the
+     * schema -- so this test is only meaningful as of payment/V2. Seeded directly via SQL as the
+     * superuser (payment has no synchronous write API by design), then read back exclusively
+     * through a genuinely restricted app_role connection.
+     */
+    @Test
+    @Order(7)
+    void disbursementInstructionIsTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO payment.disbursement_instruction (tenant_id, idempotency_key, payee_ref, " +
+                 "amount, currency, purpose, source_ref) VALUES (?, ?, ?, 50000.00, 'TZS', 'LOAN_DISBURSEMENT', ?)")) {
+            insert.setObject(1, tenantA);
+            insert.setString(2, "rls-disb-a");
+            insert.setString(3, "MPESA-0700000001");
+            insert.setString(4, "loan-a");
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+            insert.setObject(1, tenantB);
+            insert.setString(2, "rls-disb-b");
+            insert.setString(3, "MPESA-0700000002");
+            insert.setString(4, "loan-b");
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        }
+
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement select = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM payment.disbursement_instruction WHERE tenant_id IN (?, ?)")) {
+            select.setObject(1, tenantA);
+            select.setObject(2, tenantB);
+            try (ResultSet resultSet = select.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery("SELECT source_ref FROM payment.disbursement_instruction")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("loan-a");
+                assertThat(resultSet.next()).isFalse();
+            }
+        }
+    }
+
+    /**
+     * M5 addition: regression test for section 3's fix -- V1's disbursement_idempotency_registry
+     * had NO tenant_id column at all, so the PK was `idempotency_key` alone: two different
+     * tenants' agents sharing the same client-generated key would collide, and the second
+     * tenant's genuine, unrelated disbursement would be silently dropped as a "safe duplicate".
+     * Under V1's schema the second insert below would have failed outright with a PK violation;
+     * proving both inserts succeed AND that app_role restricted to tenant A sees only its own
+     * row is what makes this test genuinely falsifiable against that regression.
+     */
+    @Test
+    @Order(8)
+    void disbursementIdempotencyRegistryIsTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        String sharedKey = "rls-shared-idem-key";
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO payment.disbursement_idempotency_registry (tenant_id, idempotency_key, disbursement_id) " +
+                 "VALUES (?, ?, ?)")) {
+            insert.setObject(1, tenantA);
+            insert.setString(2, sharedKey);
+            insert.setObject(3, UUID.randomUUID());
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+            insert.setObject(1, tenantB);
+            insert.setString(2, sharedKey);
+            insert.setObject(3, UUID.randomUUID());
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        }
+
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement select = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM payment.disbursement_idempotency_registry WHERE idempotency_key = ?")) {
+            select.setString(1, sharedKey);
+            try (ResultSet resultSet = select.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT tenant_id FROM payment.disbursement_idempotency_registry WHERE idempotency_key = '" + sharedKey + "'")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo(tenantA.toString());
                 assertThat(resultSet.next()).isFalse();
             }
         }

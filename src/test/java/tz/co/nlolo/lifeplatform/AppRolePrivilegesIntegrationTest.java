@@ -119,7 +119,12 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
-            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql");
+            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            // M5 (Task 1) additions: appRoleCanReadWriteAndUpdateDisbursementInstruction below
+            // needs payment's own schema/grants -- V1 alone had zero GRANT statements anywhere
+            // in the file, the exact M1 failure mode this class exists to catch.
+            "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -389,6 +394,54 @@ class AppRolePrivilegesIntegrationTest {
             }
         } catch (SQLException e) {
             fail("app_role could not select from billing.billing_schedule: " + e.getMessage());
+        }
+    }
+
+    /**
+     * M5 (Task 1) addition: direct SQL round-trip through app_role's own restricted connection --
+     * proves the GRANT block in payment/V2 actually took effect under the real runtime identity,
+     * not just the migration/superuser identity this suite's other integration tests use. Same
+     * "app_role, not just the migration text" proof this class exists for, applied to payment's
+     * grants for the first time. The UPDATE assertion is the one that proves the append-only
+     * decision (section 1 of payment/V2 -- deliberately NOT re-issuing V1's REVOKE UPDATE, DELETE
+     * on this table) actually took effect: disbursement_instruction has a real status lifecycle
+     * (PENDING -> CONFIRMED/COMPLETED/FAILED), so app_role must be able to UPDATE it, unlike the
+     * genuinely append-only policy.endorsement tested above.
+     */
+    @Test
+    void appRoleCanReadWriteAndUpdateDisbursementInstruction() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO payment.disbursement_instruction (tenant_id, idempotency_key, payee_ref, " +
+                 "amount, currency, purpose, source_ref) VALUES (?, ?, ?, 75000.00, 'TZS', 'LOAN_DISBURSEMENT', ?)")) {
+            insert.setObject(1, tenantId);
+            insert.setString(2, "approle-disb-01");
+            insert.setString(3, "MPESA-0700000099");
+            insert.setString(4, "loan-approle-01");
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into payment.disbursement_instruction: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT status FROM payment.disbursement_instruction WHERE idempotency_key = ?")) {
+            select.setString(1, "approle-disb-01");
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getString(1)).isEqualTo("PENDING");
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from payment.disbursement_instruction: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE payment.disbursement_instruction SET status = 'COMPLETED' WHERE idempotency_key = ?")) {
+            update.setString(1, "approle-disb-01");
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not update payment.disbursement_instruction: " + e.getMessage());
         }
     }
 }

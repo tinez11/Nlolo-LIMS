@@ -29,7 +29,9 @@ Every file was first parsed with `pglast` (the real PostgreSQL grammar, not a ge
 - **Cross-module references are opaque columns, never FKs** — e.g. `claims.claim.policy_number` has no foreign key to `policy.policy`, consistent with "modules never access another module's tables directly" (existence is checked via the owning module's API at write time, per Deliverable 2).
 - **Enums as `VARCHAR` + `CHECK`**, not native Postgres `ENUM` types — a native `ENUM`'s value set can't be altered inside a transaction pre-PG12 and is still awkward to extend safely under Flyway's migration model; `VARCHAR`+`CHECK` trades a little storage efficiency for migrations that are simple `ALTER TABLE ... DROP CONSTRAINT / ADD CONSTRAINT` statements.
 - **Money as `NUMERIC(19,2)` + `CHAR(3)` currency code** — exact decimal arithmetic, matching the API layer's decimal-string convention from Deliverable 4 (never a float anywhere in the stack, wire format or storage).
-- **Append-only ledgers get `REVOKE UPDATE, DELETE ... FROM app_role`** at the DB level, not just an application convention: `policyloan.loan_transaction`, `payment.payment_transaction`, `payment.disbursement_instruction`, `finaccounting.gl_posting`, `audit.audit_log`, `policy.endorsement`.
+- **Append-only ledgers get `REVOKE UPDATE, DELETE ... FROM app_role`** at the DB level, not just an application convention: `policyloan.loan_transaction`, `finaccounting.gl_posting`, `audit.audit_log`, `policy.endorsement`.
+
+`payment.payment_transaction` and `payment.disbursement_instruction` were originally in this list but were removed in M5: both are instruction records with a real status lifecycle (`PENDING → CONFIRMED/COMPLETED/FAILED`, plus a `gateway_reference` filled in on callback and a `batch_id` set on batching), not immutable movement ledgers, so an append-only `REVOKE` and a mutable `status` column could not both hold. The independent append-only audit trail for payment activity is `audit.audit_log`, which records every `payment.*` event generically.
 
 ---
 
