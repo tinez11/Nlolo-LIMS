@@ -5,9 +5,11 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl;
 import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +20,10 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import javax.sql.DataSource;
 import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -63,6 +68,8 @@ class BillingApiIntegrationTest {
     @Autowired private tz.co.nlolo.lifeplatform.party.api.PartyApi partyApi;
     @Autowired private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
     @Autowired private BillingScheduleRepository billingScheduleRepository;
+    @Autowired private BillingApiImpl billingApiImpl;
+    @Autowired private DataSource dataSource;
 
     private record Fixture(UUID applicantId, UUID productId, UUID productVersionId) {}
 
@@ -134,5 +141,34 @@ class BillingApiIntegrationTest {
         // (not just that the status flipped back) -- the horizon must have advanced from where
         // it was left at suspension time, not merely been left untouched.
         assertThat(resumedSchedule.getNextDueDate()).isAfter(horizonBeforeSuspend);
+    }
+
+    @Test
+    void dunningLevelFiveRecommendationEventuallyLapsesThePolicy() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-LAPSE-RECOMMEND-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        List<InvoiceView> invoices = billingApi.listInvoices(policyNumber, null);
+        UUID firstInvoiceId = invoices.get(0).invoiceId();
+
+        // Manually insert an ArrearsCase row at dunning_level=5 via raw JDBC -- this test proves
+        // the NOTIFICATION -> LAPSE wiring specifically, not the day-threshold escalation math
+        // (Task 5's own SQL sweep test proves that separately). Seeding directly here means this
+        // test does not have to wait out 30 real days to reach level 5.
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO billing.arrears_case (tenant_id, invoice_id, policy_number, dunning_level, last_notified_dunning_level) " +
+                 "VALUES (?, ?, ?, 5, 0)")) {
+            insert.setObject(1, tenantId);
+            insert.setObject(2, firstInvoiceId);
+            insert.setString(3, policyNumber);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        }
+
+        TenantContext.set(tenantId);
+        billingApiImpl.publishPendingNotifications(tenantId);
+
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.LAPSED);
     }
 }

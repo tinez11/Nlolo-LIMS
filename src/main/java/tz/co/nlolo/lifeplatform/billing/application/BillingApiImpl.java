@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.billing.api.*;
 import tz.co.nlolo.lifeplatform.billing.domain.ArrearsCase;
 import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
+import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.ArrearsCaseRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
@@ -90,6 +91,36 @@ public class BillingApiImpl implements BillingApi {
     public FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,
                                                    String clientIdempotencyKey, Instant capturedAtClient) {
         throw new UnsupportedOperationException("Implemented in Task 5");
+    }
+
+    // ---- Java-side half of the notification split described in Global Constraints: publishes
+    // domain events for ArrearsCase/FieldReceipt rows whose business state the pg_cron-driven
+    // sweep (Task 5) has already transitioned, but which haven't been notified yet. ----
+
+    @Transactional
+    public int publishPendingNotifications(UUID tenantId) {
+        int published = 0;
+        for (ArrearsCase arrearsCase : arrearsCaseRepository.findByTenantIdAndResolvedAtIsNullAndDunningLevelGreaterThanLastNotifiedDunningLevel(tenantId)) {
+            int level = arrearsCase.getDunningLevel();
+            String eventType = level >= 5 ? "billing.PolicyLapseRecommended" : "billing.PremiumOverdue";
+            eventPublisher.publishEvent(DomainEventEnvelope.of(eventType, tenantId,
+                level >= 5
+                    ? Map.of("policyNumber", arrearsCase.getPolicyNumber(), "invoiceId", arrearsCase.getInvoiceId(),
+                             "recommendedAt", Instant.now().toString())
+                    : Map.of("invoiceId", arrearsCase.getInvoiceId(), "policyNumber", arrearsCase.getPolicyNumber(), "dunningLevel", level)));
+            arrearsCase.markNotified(level);
+            arrearsCaseRepository.save(arrearsCase);
+            published++;
+        }
+        for (FieldReceipt receipt : fieldReceiptRepository.findByTenantIdAndStatusAndNotifiedOverdueAtIsNull(tenantId, "RECONCILIATION_OVERDUE")) {
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptReconciliationOverdue", tenantId,
+                Map.of("receiptId", receipt.getReceiptId(), "policyNumber", receipt.getPolicyNumber(),
+                       "overdueSince", receipt.getCapturedAtServer().toString())));
+            receipt.markNotifiedOverdue();
+            fieldReceiptRepository.save(receipt);
+            published++;
+        }
+        return published;
     }
 
     // ---- PolicyEventListener entry points (package-private -- called only from this module's
