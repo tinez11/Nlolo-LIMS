@@ -127,6 +127,35 @@ class BillingApiIntegrationTest {
         assertThat(nextDue.dueDate()).isEqualTo(invoices.get(0).dueDate());
     }
 
+    /**
+     * Regression test for a real bug found in Task 8's self-review: an earlier draft of
+     * BillingApiImpl.regenerateScheduleForEndorsement unconditionally TERMINATED the active
+     * schedule with nothing to replace it, and policy.PolicyEndorsed fires for EVERY endorsement
+     * type (an unrestricted free-form string, e.g. an address change) -- so any single
+     * endorsement on any policy would have silently stopped all future invoicing. This proves
+     * the fix: an endorsement leaves the schedule genuinely untouched.
+     */
+    @Test
+    void applyingAnEndorsementLeavesTheActiveScheduleUntouched() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-ENDORSE-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        BillingSchedule scheduleBeforeEndorsement = billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
+            .orElseThrow(() -> new AssertionError("expected an ACTIVE schedule after issuance"));
+
+        TenantContext.set(tenantId);
+        policyApi.applyEndorsement(policyNumber,
+            new PolicyApi.EndorsementInput("ADDRESS_CHANGE", LocalDate.now(), java.util.Map.of("newAddress", "Dar es Salaam")),
+            "test-agent");
+
+        BillingSchedule scheduleAfterEndorsement = billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
+            .orElseThrow(() -> new AssertionError("expected the SAME schedule to still be ACTIVE after an unrelated endorsement -- " +
+                "if this fails, the schedule was terminated with nothing to replace it"));
+        assertThat(scheduleAfterEndorsement.getBillingScheduleId()).isEqualTo(scheduleBeforeEndorsement.getBillingScheduleId());
+        assertThat(billingApi.listInvoices(policyNumber, null)).hasSize(12);
+    }
+
     @Test
     void suspendingAPolicyPausesItsScheduleAndResumingReactivatesIt() {
         UUID tenantId = UUID.randomUUID();

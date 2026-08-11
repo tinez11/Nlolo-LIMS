@@ -65,8 +65,11 @@ public class PremiumInvoice {
         this.gracePeriodEndsAt = gracePeriodEndsAt;
     }
 
-    public void markOverdue() { this.status = "OVERDUE"; }
-    public void markInGrace() { this.status = "IN_GRACE"; }
+    // No markOverdue()/markInGrace() here -- unlike waive() (the REST-triggered staff action
+    // below), DUE/IN_GRACE -> OVERDUE and DUE -> IN_GRACE are exclusively performed by
+    // billing.sweep_billing_state()'s own SQL UPDATE statements, which write these columns
+    // directly and bypass the JPA entity layer entirely (it runs SECURITY DEFINER, outside any
+    // request's Hibernate session). A Java-side setter for either transition would be dead code.
     public void waive(String reason) { this.status = "WAIVED"; this.waiverReason = reason; }
 
     public UUID getInvoiceId() { return invoiceId; }

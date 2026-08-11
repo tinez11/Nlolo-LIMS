@@ -156,19 +156,17 @@ public class BillingApiImpl implements BillingApi {
 
     @Transactional
     void regenerateScheduleForEndorsement(UUID tenantId, String policyNumber, UUID productVersionId, LocalDate effectiveDate) {
-        // Per db-migrations/billing/V1's own column comment: never mutated in place -- the old
-        // ACTIVE schedule is TERMINATED and a new one created ACTIVE, so schedule history is a
-        // sequence of rows, not edits. This mirrors policyloan's own append-only-ledger posture.
-        billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
-            .ifPresent(old -> {
-                old.terminate();
-                billingScheduleRepository.save(old);
-            });
-        // An endorsement in this plan's scope never changes premiumAmount/premiumFrequency
-        // (no endorsement type in policy.PolicyApi.EndorsementInput carries either field as of
-        // M3) -- this method exists so a future endorsement type CAN regenerate the schedule
-        // without billing needing further changes, but for M4 the only real caller
-        // (PolicyEventListener.onPolicyEndorsed) is a documented no-op scope limitation.
+        // Genuinely a no-op for M4: policy.PolicyEndorsed fires for EVERY endorsement type
+        // (policy.api.PolicyApi.EndorsementInput.endorsementType is an unrestricted free-form
+        // string -- an address change endorses just as much as a premium change would), and no
+        // endorsement type in this milestone's scope carries a new premiumAmount/premiumFrequency
+        // to regenerate against. An earlier draft of this method unconditionally TERMINATED the
+        // active schedule here with nothing to replace it -- that is not a no-op, it silently
+        // stops every future invoice for any policy after its very first endorsement of any
+        // kind. Left as a real, callable method (rather than deleted) so a future endorsement
+        // type that DOES change premium terms has a home to implement termination + regeneration
+        // together, atomically, once productVersionId/effectiveDate carry real values instead of
+        // the null/null PolicyEventListener passes today.
     }
 
     @Transactional
