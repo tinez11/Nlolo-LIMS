@@ -30,6 +30,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.UUID;
 
 /**
  * Authenticates the mobile-money aggregator's callback. This is the FIRST unauthenticated path
@@ -214,11 +215,23 @@ public class MobileMoneyHmacFilter extends OncePerRequestFilter {
     private void reject(HttpServletResponse response, String reason) throws IOException {
         // Reason logged, never returned — a caller failing authentication learns only that it
         // failed, not which check caught it.
-        log.warn("Rejected mobile-money callback: {}", reason);
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/problem+json");
+        // Task 9 contract test finding: openapi-common.yaml's ProblemDetails schema declares
+        // traceId REQUIRED ("always present, including on 5xx") and every other error response in
+        // the platform is built through ProblemDetail.forStatusAndDetail(...) plus
+        // problem.setProperty("traceId", ...) (see e.g. PaymentExceptionHandler), which always
+        // supplies one. This filter runs before any of that machinery -- it is a raw Filter, not a
+        // @RestControllerAdvice -- so its hand-written JSON silently omitted the field entirely,
+        // a genuine contract violation PaymentContractTest's openApi().isValid(...) assertion on
+        // this exact response caught. Fixed the same way every other handler already does: a
+        // fresh random id per rejection, logged alongside the reason so a caller who quotes it back
+        // in a support request can be correlated to the exact log line above.
+        String traceId = UUID.randomUUID().toString();
+        log.warn("Rejected mobile-money callback traceId={}: {}", traceId, reason);
         response.getWriter().write("{\"type\":\"about:blank\",\"title\":\"Unauthorized\",\"status\":401,"
-            + "\"detail\":\"Callback authentication failed\",\"errorCode\":\"CALLBACK_AUTH_FAILED\"}");
+            + "\"detail\":\"Callback authentication failed\",\"errorCode\":\"CALLBACK_AUTH_FAILED\","
+            + "\"traceId\":\"" + traceId + "\"}");
     }
 
     /**
