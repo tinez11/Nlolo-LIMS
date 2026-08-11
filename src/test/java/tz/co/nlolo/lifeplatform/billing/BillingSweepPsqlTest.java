@@ -134,4 +134,88 @@ class BillingSweepPsqlTest {
             }
         }
     }
+
+    /**
+     * Proves item 5 of sweep_billing_state() -- the OFFLINE_RECEIPT_SLA_HOURS breach -- at the
+     * SQL level. Task 5's Java-side test (BillingApiIntegrationTest
+     * .capturingAFieldReceiptThenSweepingAfterTheSlaWindowPublishesReconciliationOverdue) seeds
+     * RECONCILIATION_OVERDUE directly rather than letting the real sweep produce it, explicitly
+     * deferring that proof to this class; this is the test that actually closes it, exercising
+     * refdata.reference_code_set's real seeded OFFLINE_RECEIPT_SLA_HOURS/DEFAULT value (24h) via
+     * the sweep function's own subquery rather than a hardcoded interval literal.
+     */
+    @Test
+    void sweepBillingStateFlipsAStaleFieldReceiptToReconciliationOverdue() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID overdueReceiptId = UUID.randomUUID();
+        UUID freshReceiptId = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            // Captured 25 hours ago -- past the seeded 24-hour SLA -- must flip to
+            // RECONCILIATION_OVERDUE.
+            try (PreparedStatement insertOverdue = connection.prepareStatement(
+                    "INSERT INTO billing.field_receipt (receipt_id, tenant_id, policy_number, agent_id, amount, " +
+                    "client_idempotency_key, captured_at_client, captured_at_server) " +
+                    "VALUES (?, ?, 'SWEEP-RECEIPT-01', ?, 15000.00, ?, now() - interval '25 hours', now() - interval '25 hours')")) {
+                insertOverdue.setObject(1, overdueReceiptId);
+                insertOverdue.setObject(2, tenantId);
+                insertOverdue.setObject(3, UUID.randomUUID());
+                insertOverdue.setString(4, "sweep-test-overdue-" + overdueReceiptId);
+                assertThat(insertOverdue.executeUpdate()).isEqualTo(1);
+            }
+            // Captured 1 hour ago -- well within the SLA -- the NEGATIVE CONTROL proving the
+            // sweep doesn't just flip every PENDING_RECONCILIATION row regardless of age.
+            try (PreparedStatement insertFresh = connection.prepareStatement(
+                    "INSERT INTO billing.field_receipt (receipt_id, tenant_id, policy_number, agent_id, amount, " +
+                    "client_idempotency_key, captured_at_client, captured_at_server) " +
+                    "VALUES (?, ?, 'SWEEP-RECEIPT-02', ?, 15000.00, ?, now() - interval '1 hour', now() - interval '1 hour')")) {
+                insertFresh.setObject(1, freshReceiptId);
+                insertFresh.setObject(2, tenantId);
+                insertFresh.setObject(3, UUID.randomUUID());
+                insertFresh.setString(4, "sweep-test-fresh-" + freshReceiptId);
+                assertThat(insertFresh.executeUpdate()).isEqualTo(1);
+            }
+
+            try (PreparedStatement preCheck = connection.prepareStatement(
+                    "SELECT status FROM billing.field_receipt WHERE receipt_id = ?")) {
+                preCheck.setObject(1, overdueReceiptId);
+                try (ResultSet rs = preCheck.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getString(1)).isEqualTo("PENDING_RECONCILIATION");
+                }
+            }
+
+            try (Statement sweep = connection.createStatement()) {
+                sweep.execute("SELECT billing.sweep_billing_state()");
+            }
+
+            try (PreparedStatement postCheckOverdue = connection.prepareStatement(
+                    "SELECT status FROM billing.field_receipt WHERE receipt_id = ?")) {
+                postCheckOverdue.setObject(1, overdueReceiptId);
+                try (ResultSet rs = postCheckOverdue.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getString(1)).isEqualTo("RECONCILIATION_OVERDUE");
+                }
+            }
+
+            try (PreparedStatement postCheckFresh = connection.prepareStatement(
+                    "SELECT status FROM billing.field_receipt WHERE receipt_id = ?")) {
+                postCheckFresh.setObject(1, freshReceiptId);
+                try (ResultSet rs = postCheckFresh.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getString(1)).isEqualTo("PENDING_RECONCILIATION");
+                }
+            }
+
+            // Also proves the metrics snapshot the OverdueMetricsGauge reads was really
+            // refreshed by this same sweep call, not left at its migration-seeded 0.
+            try (PreparedStatement metricsCheck = connection.prepareStatement(
+                    "SELECT field_receipt_overdue_count FROM billing.overdue_metrics_snapshot WHERE id = 1")) {
+                try (ResultSet rs = metricsCheck.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getInt(1)).isEqualTo(1);
+                }
+            }
+        }
+    }
 }
