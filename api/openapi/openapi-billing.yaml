@@ -32,6 +32,8 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/InvoiceView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /policies/{policyNumber}/invoices/next-due:
     get:
       summary: Lightweight "what do I owe?" lookup (Deliverable 3 Rev 2, Bi2 — built for USSD)
@@ -49,8 +51,12 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/InvoiceView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404':
-          description: No invoice currently due
+          description: Policy not found, or no invoice currently due for it
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /invoices/{invoiceId}/waiver:
     post:
       summary: Waive an invoice (staff only — reason is mandatory and audit-relevant)
@@ -72,7 +78,9 @@ paths:
                 reason: { type: string, minLength: 10 }
       responses:
         '200': { description: Invoice waived }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /agents/{agentId}/field-receipts:
     post:
       summary: Capture a premium receipt offline (BillingSyncApi — agent field app)
@@ -109,10 +117,13 @@ paths:
                 properties:
                   receiptId: { type: string, format: uuid }
                   status: { type: string, enum: [PENDING_RECONCILIATION] }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
 components:
   schemas:
     InvoiceView:
       type: object
+      additionalProperties: false
       properties:
         invoiceId: { type: string, format: uuid }
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
