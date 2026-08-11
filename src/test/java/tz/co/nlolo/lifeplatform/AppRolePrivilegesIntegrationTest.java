@@ -92,6 +92,26 @@ class AppRolePrivilegesIntegrationTest {
         registry.add("spring.datasource.password", () -> APP_ROLE_PASSWORD);
     }
 
+    /**
+     * Review fix (Task 6, Important finding 1): pins {@code mobile-money.base-url} to a
+     * deterministically-dead address, rather than leaving it at
+     * {@code application.yml}'s default ({@code http://localhost:8082}). That default is exactly
+     * the host/port {@code infra/docker-compose.yml} maps the real {@code mock-mobile-money}
+     * WireMock service onto, and that service's own {@code disburse-success.json} stub mapping
+     * ACCEPTs any {@code payeeRef} other than the specific reject-sentinel
+     * {@code MPESA-0000000000} -- which this test's {@code appRoleCanOriginateALoanThroughTheApplicationsOwnDataSource}
+     * does not use. Without this override, running this test on a developer machine with the
+     * compose stack up would silently flip its outcome from {@code DISBURSEMENT_FAILED} to
+     * {@code DISBURSED}, because the real gateway would actually accept the call. Port 1 is
+     * privileged and nothing in this test process (or realistically anywhere) binds to it, so the
+     * connection is refused deterministically regardless of what else is running on the host --
+     * this test's outcome must depend only on the code under test, never on machine state.
+     */
+    @DynamicPropertySource
+    static void mobileMoneyProperties(DynamicPropertyRegistry registry) {
+        registry.add("mobile-money.base-url", () -> "http://127.0.0.1:1");
+    }
+
     @BeforeAll
     static void applyMigrationsAndBootstrapAppRole() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
@@ -317,17 +337,28 @@ class AppRolePrivilegesIntegrationTest {
         LoanView loan = policyLoanApi.originateLoan(issued.policyNumber(), new java.math.BigDecimal("100000"), "TZS", "MPESA-0700000000", "test-agent");
         assertThat(loan.loanId()).isNotNull();
 
-        // M5 (Task 6): originateLoan's LoanDisbursementRequested is now consumed application-wide
-        // by the real payment.PaymentRequestListener, which is wired into this same Spring
-        // context (this test does not redirect mobile-money.base-url to a stub, unlike
-        // PaymentRequestListenerIntegrationTest/LoanDisbursementEndToEndTest) -- so the gateway
-        // call genuinely fails (nothing listens on the configured base URL in this test process),
-        // and policyloan's own PaymentEventListener consumes the resulting
-        // payment.DisbursementFailed and drives the loan to DISBURSEMENT_FAILED, synchronously,
-        // before getLoan below ever runs. This is not a workaround -- it further strengthens this
-        // test's own point (app_role privileges through the app's DataSource): markDisbursementFailed
-        // additionally writes a REVERSAL loan_transaction row and updates policy.policy_account's
-        // encumbrance, both through app_role's own connection.
+        // M5 (Task 6) changed this test's outcome, and the corrected reason (review fix, Important
+        // finding 2 -- the original version of this comment claimed a pre-existing failing
+        // gateway call had merely gone unnoticed, which is NOT what happened): before Task 6,
+        // originateLoan's LoanDisbursementRequested payload carried NO idempotencyKey at all (see
+        // the removed comment this task's own diff deleted -- "idempotencyKey isn't a parameter
+        // on this method ... omitted entirely here"), and payment.PaymentRequestListener
+        // .requireKey throws IllegalArgumentException on a missing key, swallowed by that
+        // listener's own withTenant catch -- so payment recorded NOTHING and called NOTHING; there
+        // was no gateway call to fail. Task 6 is what made this pipe live for the first time, by
+        // BOTH adding the idempotencyKey (so payment.PaymentRequestListener now actually acts) AND
+        // adding policyloan.application.PaymentEventListener (so policyloan now reacts to the
+        // outcome). With mobile-money.base-url pinned to a dead address by this class's own
+        // mobileMoneyProperties override above (review fix, Important finding 1 -- the previous
+        // version relied on nothing happening to listen on the application.yml default port,
+        // which the real infra/docker-compose.yml mock-mobile-money service binds to on a
+        // developer machine), the gateway call now deterministically fails, and policyloan's
+        // PaymentEventListener consumes the resulting payment.DisbursementFailed and drives the
+        // loan to DISBURSEMENT_FAILED, synchronously, before getLoan below ever runs. This is not
+        // a workaround -- it further strengthens this test's own point (app_role privileges
+        // through the app's DataSource): markDisbursementFailed additionally writes a REVERSAL
+        // loan_transaction row and updates policy.policy_account's encumbrance, both through
+        // app_role's own connection.
         LoanView fetched = policyLoanApi.getLoan(loan.loanId());
         assertThat(fetched.status()).isEqualTo(LoanStatus.DISBURSEMENT_FAILED);
     }

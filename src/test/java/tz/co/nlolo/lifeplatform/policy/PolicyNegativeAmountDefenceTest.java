@@ -116,4 +116,54 @@ class PolicyNegativeAmountDefenceTest {
         assertThat(account.getLoanEncumbranceAmount()).isEqualByComparingTo("700000.00");
         assertThat(account.availableLoanValue(BigDecimal.ZERO)).isEqualByComparingTo("300000.00");
     }
+
+    /**
+     * Review fix (Task 6, Important finding 3): {@code decreaseEncumbrance} -- the M5
+     * {@code DisbursementFailed} compensation's own money-correctness guard, constraint-4's
+     * "reject rather than clamp" stance mirrored from {@code increaseEncumbrance} -- had no
+     * direct unit coverage; it was only exercised via the end-to-end test's happy path, which
+     * never reaches the over-release branch at all. Same class, same pattern as
+     * {@code increaseEncumbrance}'s own guard tests above, since this method is
+     * {@code increaseEncumbrance}'s compensating mirror.
+     */
+    @Test
+    void decreaseEncumbranceRejectsAnOverReleaseExceedingWhatIsCurrentlyEncumbered() {
+        PolicyAccount account = new PolicyAccount("POL-TEST-0004", UUID.randomUUID(), new BigDecimal("1000000.00"), "TZS");
+        account.increaseEncumbrance(new BigDecimal("300000.00"));
+
+        assertThatThrownBy(() -> account.decreaseEncumbrance(new BigDecimal("300000.01")))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("300000.01")
+            .hasMessageContaining("300000.00");
+
+        // The assertion that actually encodes the exploit this guard closes: an over-release
+        // must not have moved the encumbrance at all -- a bare .subtract() would drive it
+        // negative, which would in turn hand back loan value that was never encumbered.
+        assertThat(account.getLoanEncumbranceAmount()).isEqualByComparingTo("300000.00");
+    }
+
+    @Test
+    void decreaseEncumbranceRejectsZeroAndNull() {
+        PolicyAccount account = new PolicyAccount("POL-TEST-0005", UUID.randomUUID(), new BigDecimal("1000000.00"), "TZS");
+        account.increaseEncumbrance(new BigDecimal("300000.00"));
+
+        assertThatThrownBy(() -> account.decreaseEncumbrance(BigDecimal.ZERO)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> account.decreaseEncumbrance(null)).isInstanceOf(IllegalArgumentException.class);
+        // Neither rejected call may have moved the encumbrance.
+        assertThat(account.getLoanEncumbranceAmount()).isEqualByComparingTo("300000.00");
+    }
+
+    @Test
+    void decreaseEncumbranceStillAcceptsAPositiveAmountWithinBounds() {
+        // Control: the guard must not have turned decreaseEncumbrance into a no-op, and a
+        // release within bounds must genuinely subtract (mirrors increaseEncumbranceStillAccepts
+        // APositiveAmount's role for the increase side).
+        PolicyAccount account = new PolicyAccount("POL-TEST-0006", UUID.randomUUID(), new BigDecimal("1000000.00"), "TZS");
+        account.increaseEncumbrance(new BigDecimal("700000.00"));
+
+        account.decreaseEncumbrance(new BigDecimal("200000.00"));
+
+        assertThat(account.getLoanEncumbranceAmount()).isEqualByComparingTo("500000.00");
+        assertThat(account.availableLoanValue(BigDecimal.ZERO)).isEqualByComparingTo("500000.00");
+    }
 }
