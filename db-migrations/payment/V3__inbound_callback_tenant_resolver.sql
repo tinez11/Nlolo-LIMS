@@ -100,3 +100,41 @@ REVOKE ALL ON FUNCTION payment.resolve_disbursement_tenant(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION payment.resolve_payment_transaction_tenant(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION payment.resolve_disbursement_tenant(text) TO app_role;
 GRANT EXECUTE ON FUNCTION payment.resolve_payment_transaction_tenant(text) TO app_role;
+
+-- REVIEW FIX (Important 3): resolve_*_tenant returns NULL for BOTH "nothing matched this
+-- gateway_reference" and "more than one tenant's row shares it" -- Java cannot tell those two
+-- apart from that single NULL, so PaymentApiImpl.applyGatewayCallback logged them identically
+-- ("referenced an unknown gatewayReference"). That collapses a real, working safety mechanism
+-- (refusing to guess which tenant owns an ambiguous reference) into something that reads exactly
+-- like a data-entry error, and a genuine cross-tenant collision -- the exact case V2's own
+-- comment calls a legitimate, expected occurrence -- would leave a real payout sitting PENDING
+-- forever with no distinguishable alert. These two functions answer only the narrower question
+-- "does more than one tenant's row share this reference" (a boolean, nothing else), so the
+-- caller can log/alert on AMBIGUOUS distinctly from NOT_FOUND -- called only on the rare path
+-- where resolve_*_tenant already returned NULL, so this is not an extra query on the common path.
+CREATE FUNCTION payment.disbursement_gateway_reference_is_ambiguous(p_gateway_reference text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = payment, pg_temp
+AS $$
+    SELECT COUNT(DISTINCT tenant_id) > 1
+    FROM payment.disbursement_instruction
+    WHERE gateway_reference = p_gateway_reference;
+$$;
+
+CREATE FUNCTION payment.payment_transaction_gateway_reference_is_ambiguous(p_gateway_reference text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = payment, pg_temp
+AS $$
+    SELECT COUNT(DISTINCT tenant_id) > 1
+    FROM payment.payment_transaction
+    WHERE gateway_reference = p_gateway_reference;
+$$;
+
+REVOKE ALL ON FUNCTION payment.disbursement_gateway_reference_is_ambiguous(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION payment.payment_transaction_gateway_reference_is_ambiguous(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION payment.disbursement_gateway_reference_is_ambiguous(text) TO app_role;
+GRANT EXECUTE ON FUNCTION payment.payment_transaction_gateway_reference_is_ambiguous(text) TO app_role;

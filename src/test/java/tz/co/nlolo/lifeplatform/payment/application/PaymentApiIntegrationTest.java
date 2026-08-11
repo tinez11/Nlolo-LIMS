@@ -148,7 +148,7 @@ class PaymentApiIntegrationTest {
 
         // One succeeds, one fails, both terminal -> PARTIAL_FAILURE with a real failed count.
         paymentApiImpl.completeDisbursement(tenantId, one, "MM-OK-1");
-        paymentApiImpl.failDisbursement(tenantId, two, "INSUFFICIENT_FLOAT");
+        paymentApiImpl.failDisbursement(tenantId, two, null, "INSUFFICIENT_FLOAT");
         PayoutBatchView partial = paymentApi.getPayoutBatch(batch.getBatchId());
         assertThat(partial.status()).isEqualTo("PARTIAL_FAILURE");
         assertThat(partial.disbursementCount()).isEqualTo(2);

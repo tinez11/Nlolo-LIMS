@@ -24,6 +24,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtIssuerAuthenticationManagerResolver;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import tz.co.nlolo.lifeplatform.payment.infrastructure.MobileMoneyHmacFilter;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -122,6 +123,16 @@ public class SecurityConfig {
      * framework type, not part of any module, so this wiring creates no such dependency while
      * still resolving to the exact right bean at runtime -- {@code addFilterBefore} only needs a
      * {@link Filter} for its first argument anyway.
+     *
+     * <p>Review fix (I6): the {@code permitAll()} rule below references {@code MobileMoneyHmacFilter
+     * .CALLBACK_PATH} instead of its own separately-hardcoded literal, so the two can never
+     * silently diverge. This DOES import the concrete type, unlike the {@code Filter} bean
+     * parameter above -- but only to read a {@code public static final String} compile-time
+     * constant, which {@code javac} inlines at this usage site (JLS 13.4.9): the compiled
+     * {@code SecurityConfig.class} carries no runtime reference to {@code MobileMoneyHmacFilter}
+     * at all, so this does not reintroduce the encapsulation dependency the {@code Filter}/
+     * {@code @Qualifier} wiring above was designed to avoid -- confirmed via {@code ModularityTests}
+     * after this change, not assumed.
      */
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -140,7 +151,7 @@ public class SecurityConfig {
                 // in front of it and fails closed -- this is not an unauthenticated endpoint,
                 // it is a differently-authenticated one. Scoped to the exact path, never a
                 // prefix wildcard.
-                .requestMatchers(HttpMethod.POST, "/webhooks/mobile-money-callback").permitAll()
+                .requestMatchers(HttpMethod.POST, MobileMoneyHmacFilter.CALLBACK_PATH).permitAll()
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2
                 .authenticationManagerResolver(issuerAuthenticationManagerResolver))

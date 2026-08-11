@@ -10,6 +10,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.web.servlet.util.matcher.MvcRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
@@ -79,7 +81,17 @@ import java.util.HexFormat;
 @Component
 public class MobileMoneyHmacFilter extends OncePerRequestFilter {
 
-    static final String CALLBACK_PATH = "/webhooks/mobile-money-callback";
+    /**
+     * Review fix (I6): PUBLIC, not package-private, so {@code SecurityConfig}'s
+     * {@code permitAll()} rule can reference this same constant instead of carrying its own
+     * separately-hardcoded literal -- nothing previously pinned the two equal, so a typo or a
+     * one-sided edit in either place could silently widen or break the exemption. Referencing a
+     * compile-time-constant {@code String} field like this one adds no real runtime dependency:
+     * {@code javac} inlines the literal value at every usage site (JLS 13.4.9), so
+     * {@code SecurityConfig}'s compiled bytecode carries no reference to this class at all --
+     * confirmed empirically via {@code ModularityTests} after making this change, not assumed.
+     */
+    public static final String CALLBACK_PATH = "/webhooks/mobile-money-callback";
     private static final String SIGNATURE_HEADER = "X-MobileMoney-Signature";
     private static final String TIMESTAMP_HEADER = "X-MobileMoney-Timestamp";
 
@@ -99,6 +111,26 @@ public class MobileMoneyHmacFilter extends OncePerRequestFilter {
         this.callbackMatcher = matcher;
     }
 
+    /**
+     * Review fix (I4): a bare {@code @Component implementing Filter} gets auto-registered by
+     * Spring Boot as a container-level filter at {@code /*} IN ADDITION TO its explicit position
+     * in the Security chain (confirmed live: both registrations show up in the real
+     * {@code ServletContext} filter list). Harmless today only because {@code OncePerRequestFilter}
+     * dedups via its own "already filtered" request attribute -- but that means this filter's
+     * carefully-chosen chain position is not actually what determines its behavior, and a future
+     * refactor of either registration path could silently change that invisibly. This explicit,
+     * disabled {@code FilterRegistrationBean} suppresses ONLY the automatic container-level
+     * registration Boot would otherwise create for this bean; the bean itself is untouched and
+     * still exactly what {@code SecurityConfig} injects (by name, via {@code @Qualifier}) into
+     * the Security chain via {@code addFilterBefore}.
+     */
+    @Bean
+    public FilterRegistrationBean<MobileMoneyHmacFilter> filterRegistration() {
+        FilterRegistrationBean<MobileMoneyHmacFilter> registration = new FilterRegistrationBean<>(this);
+        registration.setEnabled(false);
+        return registration;
+    }
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !callbackMatcher.matches(request);
@@ -107,17 +139,22 @@ public class MobileMoneyHmacFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        // Read the raw body directly -- no caching wrapper needed, since verification happens
-        // right here and the controller gets its own independent replay via ReplayableRequestWrapper
-        // below, not a second read of this same stream.
-        byte[] body = request.getInputStream().readAllBytes();
-
+        // Review fix (I5): header presence/freshness checked BEFORE the body is read at all. The
+        // original order called readAllBytes() first -- on a permitAll path, that let ANY
+        // unauthenticated caller force an arbitrarily large body fully into heap before the
+        // filter ever looked at whether it carried valid auth headers. Both header checks here
+        // need nothing from the body, so they can reject first and cheaply.
         String signature = request.getHeader(SIGNATURE_HEADER);
         String timestamp = request.getHeader(TIMESTAMP_HEADER);
         if (signature == null || timestamp == null || !withinReplayWindow(timestamp)) {
             reject(response, "missing or stale callback authentication headers");
             return;
         }
+        // Read the raw body directly -- no caching wrapper needed, since verification happens
+        // right here and the controller gets its own independent replay via ReplayableRequestWrapper
+        // below, not a second read of this same stream.
+        byte[] body = request.getInputStream().readAllBytes();
+
         String expected = hmacHex((timestamp + "." + new String(body, StandardCharsets.UTF_8)));
         if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), signature.getBytes(StandardCharsets.UTF_8))) {
             reject(response, "callback signature mismatch");

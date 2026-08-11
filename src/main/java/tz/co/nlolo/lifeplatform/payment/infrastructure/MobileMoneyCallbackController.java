@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.payment.infrastructure;
 
 import tz.co.nlolo.lifeplatform.payment.application.PaymentApiImpl;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,20 +40,40 @@ public class MobileMoneyCallbackController {
 
     private static final Logger log = LoggerFactory.getLogger(MobileMoneyCallbackController.class);
 
-    private final PaymentApiImpl paymentApiImpl;
+    /** Review fix (Important 3): a real, alertable signal distinct from ordinary NOT_FOUND
+     * logging -- an AMBIGUOUS outcome is a genuine cross-tenant gateway_reference collision that
+     * this platform correctly refuses to guess on, not a data-entry mistake, and without a
+     * separate counter it was invisible to anyone watching dashboards/alerts rather than reading
+     * logs line-by-line. Mirrors MobileMoneyGatewayAdapter's own counter naming convention. */
+    private static final String AMBIGUOUS_COUNTER = "lifeplatform_payment_callback_ambiguous_total";
 
-    public MobileMoneyCallbackController(PaymentApiImpl paymentApiImpl) {
+    private final PaymentApiImpl paymentApiImpl;
+    private final MeterRegistry meterRegistry;
+
+    public MobileMoneyCallbackController(PaymentApiImpl paymentApiImpl, MeterRegistry meterRegistry) {
         this.paymentApiImpl = paymentApiImpl;
+        this.meterRegistry = meterRegistry;
     }
 
     @PostMapping(MobileMoneyHmacFilter.CALLBACK_PATH)
     public ResponseEntity<Void> handleCallback(@Valid @RequestBody MobileMoneyCallbackRequestDto callback) {
         try {
-            boolean matched = paymentApiImpl.applyGatewayCallback(
+            PaymentApiImpl.GatewayCallbackOutcome outcome = paymentApiImpl.applyGatewayCallback(
                 callback.gatewayReference(), isSuccess(callback.status()), callback.reason());
-            if (!matched) {
-                log.warn("Mobile-money callback referenced an unknown gatewayReference={} (own reference={})",
-                    callback.gatewayReference(), callback.reference());
+            switch (outcome) {
+                case AMBIGUOUS -> {
+                    // Review fix (Important 3): deliberately NOT the same log line as NOT_FOUND --
+                    // this is the fail-closed safety mechanism working (refusing to guess which
+                    // tenant owns a gateway_reference more than one tenant's row shares), and it
+                    // needs to read as an operational alert, not a shrug-worthy "unknown reference".
+                    log.error("Mobile-money callback gatewayReference={} is AMBIGUOUS across more than "
+                        + "one tenant -- refusing to guess, no row was touched. Requires manual "
+                        + "reconciliation (own reference={})", callback.gatewayReference(), callback.reference());
+                    meterRegistry.counter(AMBIGUOUS_COUNTER).increment();
+                }
+                case NOT_FOUND -> log.warn("Mobile-money callback referenced an unknown gatewayReference={} "
+                    + "(own reference={})", callback.gatewayReference(), callback.reference());
+                case APPLIED -> { /* nothing to log -- the normal case */ }
             }
         } catch (Exception e) {
             // Logged, not rethrown -- see class javadoc on why this always acks 200 regardless.

@@ -160,16 +160,21 @@ public class PaymentRequestListener {
                 // this REQUIRES_NEW transaction and strand the row at PENDING forever (constraint
                 // 2: a gateway failure must always reach a FAILED row plus a published event).
                 String reason = result.failureReason() != null ? result.failureReason() : "GATEWAY_REJECTED";
+                // Review fix (Important 2): pass the rail's own reference through even on a
+                // decline, not a hardcoded null -- a rail can decline WITH a reference attached,
+                // and discarding it broke the mobile-money webhook's ability to resolve a
+                // REDELIVERED failure notification for that same reference later.
                 requiresNewTransactionTemplate.executeWithoutResult(status ->
-                    paymentApiImpl.failDisbursement(tenantId, disbursementId, reason));
+                    paymentApiImpl.failDisbursement(tenantId, disbursementId, result.gatewayReference(), reason));
             }
         } catch (GatewayException e) {
             // Transport failure. The instruction is already committed as PENDING, so this is
             // recorded as FAILED and announced -- never left as a silent PENDING row nobody
-            // will ever look at again.
+            // will ever look at again. No gatewayReference here is genuinely correct -- there is
+            // no `result` at all when the rail never responded.
             log.error("Gateway transport failure disbursing {} for tenant {}", disbursementId, tenantId, e);
             requiresNewTransactionTemplate.executeWithoutResult(status ->
-                paymentApiImpl.failDisbursement(tenantId, disbursementId, "GATEWAY_UNAVAILABLE"));
+                paymentApiImpl.failDisbursement(tenantId, disbursementId, null, "GATEWAY_UNAVAILABLE"));
         }
     }
 
@@ -184,14 +189,16 @@ public class PaymentRequestListener {
             } else {
                 // Same defaulting as submitDisbursement's else-branch, same reason: a null here
                 // would NPE inside Map.of(..., "reason", reason) and strand this row at PENDING.
+                // Same Important-2 fix as submitDisbursement's else-branch: pass the rail's own
+                // reference through on a decline, not a hardcoded null.
                 String reason = result.failureReason() != null ? result.failureReason() : "GATEWAY_REJECTED";
                 requiresNewTransactionTemplate.executeWithoutResult(status ->
-                    paymentApiImpl.failCollection(tenantId, transactionId, reason));
+                    paymentApiImpl.failCollection(tenantId, transactionId, result.gatewayReference(), reason));
             }
         } catch (GatewayException e) {
             log.error("Gateway transport failure collecting {} for tenant {}", transactionId, tenantId, e);
             requiresNewTransactionTemplate.executeWithoutResult(status ->
-                paymentApiImpl.failCollection(tenantId, transactionId, "GATEWAY_UNAVAILABLE"));
+                paymentApiImpl.failCollection(tenantId, transactionId, null, "GATEWAY_UNAVAILABLE"));
         }
     }
 

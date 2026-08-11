@@ -28,4 +28,15 @@ public interface DisbursementInstructionRepository
      */
     @Query(value = "SELECT payment.resolve_disbursement_tenant(:gatewayReference)", nativeQuery = true)
     UUID resolveTenantByGatewayReference(@Param("gatewayReference") String gatewayReference);
+
+    /**
+     * Review fix (Important 3): called only when {@link #resolveTenantByGatewayReference} has
+     * already returned {@code null}, to distinguish "nothing matched this reference at all"
+     * (NOT_FOUND) from "more than one tenant's row shares it" (AMBIGUOUS) -- the two functions
+     * are indistinguishable from that single null return alone, and treating them identically
+     * turned a real, working safety mechanism into something that reads exactly like a data-entry
+     * error. See db-migrations/payment/V3's Important-3 comment for the full reasoning.
+     */
+    @Query(value = "SELECT payment.disbursement_gateway_reference_is_ambiguous(:gatewayReference)", nativeQuery = true)
+    boolean isGatewayReferenceAmbiguous(@Param("gatewayReference") String gatewayReference);
 }
