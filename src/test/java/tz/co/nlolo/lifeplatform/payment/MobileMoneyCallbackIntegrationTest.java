@@ -25,12 +25,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.sql.DataSource;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.UUID;
@@ -208,6 +213,64 @@ class MobileMoneyCallbackIntegrationTest {
         ResponseEntity<String> response = post(body,
             "0000000000000000000000000000000000000000000000000000000000000000", Instant.now().toString());
         assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
+
+    /**
+     * Pins Important 5 (part 2): reproduces the reviewer's exact raw-socket probe. A request
+     * carrying two JUNK (present, wrong-value, NOT missing) auth headers used to sail straight
+     * past the header-presence check and into an unbounded {@code readAllBytes()} -- so a
+     * declared {@code Content-Length: 50000000} with only 16 bytes actually sent made the server
+     * hang 5+ seconds waiting for the rest of a body that was never coming, before the signature
+     * check (which needed the whole body anyway) ever got a chance to fail it. A plain
+     * {@code TestRestTemplate}/{@code HttpEntity} call cannot reproduce this: those clients always
+     * compute a truthful {@code Content-Length} for the bytes they actually send, so this needs a
+     * raw socket that can lie about how much body is coming and then simply stop sending.
+     *
+     * <p>Asserts the response now comes back FAST (well under the socket's own generous 5s read
+     * timeout) and is 401 -- proving the fix (checking the declared length upfront, and bounding
+     * the actual read via {@code readNBytes(cap + 1)} regardless of what the header claims) closes
+     * the hang rather than merely changing its error message after still blocking.
+     */
+    @Test
+    void oversizedDeclaredContentLengthWithJunkAuthHeadersFailsFastInsteadOfHanging() throws Exception {
+        String partialBody = "1234567890123456"; // 16 bytes -- deliberately far short of the lie below.
+        // The timestamp must be a VALID, CURRENT instant -- a malformed one would be rejected by
+        // the (already-correct) stale-timestamp check before ever reaching the vulnerable
+        // body-read code, which would make this test pass for the wrong reason regardless of
+        // whether the size-cap fix is present. Only the SIGNATURE is junk (wrong value, still
+        // present) -- exactly the reviewer's scenario: present-but-wrong headers, not missing ones.
+        String request = "POST /webhooks/mobile-money-callback HTTP/1.1\r\n"
+            + "Host: localhost\r\n"
+            + "Content-Type: application/json\r\n"
+            + "X-MobileMoney-Signature: junk-signature-value\r\n"
+            + "X-MobileMoney-Timestamp: " + Instant.now() + "\r\n"
+            + "Content-Length: 50000000\r\n" // The lie: ~50MB declared, 16 bytes actually sent.
+            + "Connection: close\r\n"
+            + "\r\n"
+            + partialBody;
+
+        long startedAt = System.nanoTime();
+        String statusLine;
+        try (Socket socket = new Socket("localhost", port)) {
+            socket.setSoTimeout(5000); // Generous but bounded -- the pre-fix bug hung 5+ seconds;
+                                        // this must not merely trade a hang for a timeout exception.
+            try (OutputStream out = socket.getOutputStream()) {
+                out.write(request.getBytes(StandardCharsets.US_ASCII));
+                out.flush();
+                // Deliberately do NOT send the remaining ~49999984 bytes Content-Length promised --
+                // this is exactly the attacker's move: declare a huge body, send a token amount,
+                // then go quiet.
+                try (BufferedReader in = new BufferedReader(
+                        new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))) {
+                    statusLine = in.readLine();
+                }
+            }
+        }
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
+
+        assertThat(statusLine).as("response status line").contains("401");
+        assertThat(elapsed).as("must fail fast, not hang waiting for a body that will never arrive")
+            .isLessThan(Duration.ofSeconds(3));
     }
 
     private double ambiguousCounterValue() {

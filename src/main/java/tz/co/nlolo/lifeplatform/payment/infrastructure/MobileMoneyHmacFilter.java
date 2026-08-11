@@ -95,6 +95,15 @@ public class MobileMoneyHmacFilter extends OncePerRequestFilter {
     private static final String SIGNATURE_HEADER = "X-MobileMoney-Signature";
     private static final String TIMESTAMP_HEADER = "X-MobileMoney-Timestamp";
 
+    /**
+     * Review fix (I5, part 2): a mobile-money callback payload is a few hundred bytes to low
+     * KB -- generous but bounded at 64KB. Not configurable via {@code @Value}, deliberately: this
+     * is a structural sanity bound on what this ACL boundary will ever legitimately need to read,
+     * not a business/tunable parameter (same distinction {@code PolicyLoanApiImpl} draws for
+     * {@code RESERVATION_TTL}).
+     */
+    private static final int MAX_BODY_BYTES = 64 * 1024;
+
     private static final Logger log = LoggerFactory.getLogger(MobileMoneyHmacFilter.class);
 
     private final byte[] secret;
@@ -139,21 +148,40 @@ public class MobileMoneyHmacFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        // Review fix (I5): header presence/freshness checked BEFORE the body is read at all. The
-        // original order called readAllBytes() first -- on a permitAll path, that let ANY
-        // unauthenticated caller force an arbitrarily large body fully into heap before the
-        // filter ever looked at whether it carried valid auth headers. Both header checks here
-        // need nothing from the body, so they can reject first and cheaply.
+        // Review fix (I5, part 1): header presence/freshness checked BEFORE the body is read at
+        // all. A request genuinely MISSING either header rejects here without touching the body.
         String signature = request.getHeader(SIGNATURE_HEADER);
         String timestamp = request.getHeader(TIMESTAMP_HEADER);
         if (signature == null || timestamp == null || !withinReplayWindow(timestamp)) {
             reject(response, "missing or stale callback authentication headers");
             return;
         }
-        // Read the raw body directly -- no caching wrapper needed, since verification happens
-        // right here and the controller gets its own independent replay via ReplayableRequestWrapper
-        // below, not a second read of this same stream.
-        byte[] body = request.getInputStream().readAllBytes();
+        // Review fix (I5, part 2): header PRESENCE alone doesn't close the exposure -- a caller
+        // that supplies two JUNK (wrong-value, not missing) headers sails past the check above
+        // and would still reach an unbounded readAllBytes() below, which this platform's own HMAC
+        // verification genuinely cannot skip (the signature covers the whole body, so there is no
+        // way to reject on signature alone before reading it). Proven live: a raw-socket request
+        // declaring Content-Length: 50000000, sending only 16 bytes, with a JUNK (not missing)
+        // signature/timestamp pair, made the server hang 5+ seconds waiting for the rest of an
+        // attacker-controlled body that was never coming -- letting ANY unauthenticated caller
+        // force an arbitrarily large body into heap merely by supplying non-empty junk headers.
+        // Fixed two ways, since Content-Length itself cannot be trusted (chunked encoding, a
+        // client sending fewer bytes than declared, or declaring small and sending more): reject
+        // upfront on a declared length that is missing/negative (chunked, no framing to check
+        // cheaply) or exceeds the cap, AND bound the actual read via readNBytes(cap + 1) rather
+        // than an unbounded readAllBytes() -- the "+1" lets a body that is exactly one byte over
+        // the cap be detected and rejected, rather than silently truncated and verified against a
+        // partial, wrong body.
+        long declaredLength = request.getContentLengthLong();
+        if (declaredLength < 0 || declaredLength > MAX_BODY_BYTES) {
+            reject(response, "callback body exceeds the maximum accepted size");
+            return;
+        }
+        byte[] body = request.getInputStream().readNBytes(MAX_BODY_BYTES + 1);
+        if (body.length > MAX_BODY_BYTES) {
+            reject(response, "callback body exceeds the maximum accepted size");
+            return;
+        }
 
         String expected = hmacHex((timestamp + "." + new String(body, StandardCharsets.UTF_8)));
         if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), signature.getBytes(StandardCharsets.UTF_8))) {
