@@ -67,7 +67,12 @@ SELECT partman.create_parent(
     p_control => 'due_date',
     p_interval => '1 year',
     p_premake => 2,
-    p_start_partition => '2028-01-01'   -- V1 hand-wrote 2026 and 2027
+    -- M4 billing/V2 hand-wrote a 2028 partition too (BillingApiImpl's 12-month schedule
+    -- horizon, applied twice in a row across a suspend/resume cycle, reaches past 2027 --
+    -- see that migration's own comment), so p_start_partition moves to 2029 for the same
+    -- overlap reason p_start_partition already skips past every other table's hand-written
+    -- months/years above.
+    p_start_partition => '2029-01-01'   -- V1 hand-wrote 2026/2027; billing/V2 hand-wrote 2028
 );
 
 -- Retention (auto-drop old partitions): explicitly NOT configured below --

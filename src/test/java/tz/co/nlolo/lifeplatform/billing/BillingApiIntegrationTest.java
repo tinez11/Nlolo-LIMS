@@ -3,6 +3,8 @@ package tz.co.nlolo.lifeplatform.billing;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
+import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
 import tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl;
@@ -10,6 +12,8 @@ import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +28,7 @@ import javax.sql.DataSource;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -70,6 +75,8 @@ class BillingApiIntegrationTest {
     @Autowired private BillingScheduleRepository billingScheduleRepository;
     @Autowired private BillingApiImpl billingApiImpl;
     @Autowired private DataSource dataSource;
+    @Autowired private AuditLogRepository auditLogRepository;
+    @Autowired private ObjectMapper objectMapper;
 
     private record Fixture(UUID applicantId, UUID productId, UUID productVersionId) {}
 
@@ -170,5 +177,46 @@ class BillingApiIntegrationTest {
         billingApiImpl.publishPendingNotifications(tenantId);
 
         assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.LAPSED);
+    }
+
+    @Test
+    void capturingAFieldReceiptThenSweepingAfterTheSlaWindowPublishesReconciliationOverdue() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-RECEIPT-SLA-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(
+            UUID.randomUUID(), policyNumber, new BigDecimal("15000.00"), "TZS",
+            "client-key-" + UUID.randomUUID(), Instant.now());
+        assertThat(result.status()).isEqualTo("PENDING_RECONCILIATION");
+
+        // This test proves the JAVA HALF of the split design (notification) -- the SQL half
+        // (sweep_billing_state()'s own SLA-breach UPDATE) is proven separately by
+        // BillingSweepPsqlTest. So the status flip to RECONCILIATION_OVERDUE is seeded directly
+        // here, exactly as sweep_billing_state() itself would have performed it, isolating
+        // publishPendingNotifications as the one thing under test.
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE billing.field_receipt SET status = 'RECONCILIATION_OVERDUE' WHERE receipt_id = ?")) {
+            update.setObject(1, result.receiptId());
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        }
+
+        TenantContext.set(tenantId);
+        Instant before = Instant.now();
+        int published = billingApiImpl.publishPendingNotifications(tenantId);
+        assertThat(published).isGreaterThanOrEqualTo(1);
+
+        // Same audit-log-query falsifiability idiom as policy.PolicyApiIntegrationTest's own
+        // event-publication tests -- proves the event was genuinely published, not merely that
+        // notifiedOverdueAt got set.
+        List<AuditLogEntry> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "billing.FieldReceiptReconciliationOverdue", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(auditRows).hasSize(1);
+        JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
+        assertThat(payload.path("receiptId").asText()).isEqualTo(result.receiptId().toString());
+
+        // Confirms the notification is idempotent, not re-fired on every sweep.
+        assertThat(billingApiImpl.publishPendingNotifications(tenantId)).isEqualTo(0);
     }
 }

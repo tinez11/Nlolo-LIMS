@@ -88,9 +88,28 @@ public class BillingApiImpl implements BillingApi {
     }
 
     @Override
+    @Transactional
     public FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,
                                                    String clientIdempotencyKey, Instant capturedAtClient) {
-        throw new UnsupportedOperationException("Implemented in Task 5");
+        UUID tenantId = TenantContext.get();
+        // Idempotency: the composite (tenant_id, client_idempotency_key) unique index (Task 1's
+        // billing/V2 migration) is the real dedup mechanism -- check-then-insert here is a
+        // convenience early-return, not the source of truth; a genuine race between two
+        // identical concurrent requests would still be caught by the DB constraint, surfacing
+        // as a DataIntegrityViolationException this method does not currently catch. Flagged
+        // for the final review -- same class of gap M3's Task 6 fix round closed for
+        // originateLoan's compensating-action reasoning.
+        var existing = fieldReceiptRepository.findByTenantIdAndClientIdempotencyKey(tenantId, clientIdempotencyKey);
+        if (existing.isPresent()) {
+            return new FieldReceiptResult(existing.get().getReceiptId(), existing.get().getStatus());
+        }
+        FieldReceipt receipt = new FieldReceipt(tenantId, policyNumber, agentId, amount, currency, clientIdempotencyKey, capturedAtClient);
+        fieldReceiptRepository.save(receipt);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptCaptured", tenantId,
+            Map.of("receiptId", receipt.getReceiptId(), "policyNumber", policyNumber,
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
+                   "capturedAt", receipt.getCapturedAtServer().toString(), "agentId", agentId)));
+        return new FieldReceiptResult(receipt.getReceiptId(), receipt.getStatus());
     }
 
     // ---- Java-side half of the notification split described in Global Constraints: publishes

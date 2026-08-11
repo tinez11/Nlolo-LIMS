@@ -19,3 +19,7 @@ INSERT INTO refdata.reference_code_set (code_set_key, code, label, value, jurisd
     ('DUNNING_ESCALATION_DAYS', 'LEVEL_3', 'Days overdue before dunning level 3 (call-center escalation)', '14', 'TZ'), -- PLACEHOLDER, pending Collections sign-off
     ('DUNNING_ESCALATION_DAYS', 'LEVEL_4', 'Days overdue before dunning level 4 (final notice)', '21', 'TZ'),   -- PLACEHOLDER, pending Collections sign-off
     ('DUNNING_ESCALATION_DAYS', 'LEVEL_5', 'Days overdue before dunning level 5 (PolicyLapseRecommended)', '30', 'TZ'); -- PLACEHOLDER, pending Collections sign-off
+
+-- Consumed by billing.sweep_billing_state() (Task 5) to flip PENDING_RECONCILIATION field
+-- receipts to RECONCILIATION_OVERDUE -- already seeded by refdata/V1 (OFFLINE_RECEIPT_SLA_HOURS/
+-- DEFAULT/24/TZ, "Field receipt reconciliation SLA", B4), not added here.
