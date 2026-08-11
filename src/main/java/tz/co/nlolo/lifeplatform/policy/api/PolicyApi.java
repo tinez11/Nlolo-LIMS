@@ -34,6 +34,13 @@ public interface PolicyApi {
     void confirmReservation(UUID reservationId);
     void releaseReservation(UUID reservationId);
 
+    /** M5: releases encumbrance applied by a confirmed reservation whose downstream disbursement
+     * subsequently failed. Deliberately NOT releaseReservation -- that method correctly refuses a
+     * CONFIRMED reservation, since un-confirming is not what this is. This reverses the
+     * encumbrance while leaving the reservation's own terminal CONFIRMED status as the historical
+     * record of what happened. */
+    void releaseEncumbrance(String policyNumber, BigDecimal amount, String currency);
+
     void suspendPolicy(String policyNumber, String reason, String suspendedBy);
     void resumeSuspendedPolicy(String policyNumber, String resumedBy);
     void lapsePolicy(String policyNumber, String lapsedBy);

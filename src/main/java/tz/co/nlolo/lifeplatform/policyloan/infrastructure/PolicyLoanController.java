@@ -22,9 +22,11 @@ import java.util.UUID;
 /** External REST surface of the policyloan module (api/openapi/openapi-policyloan.yaml).
  * Structural precedent: policy.infrastructure.PolicyController -- same object-level
  * authorization idiom, same Jwt-subject-as-audit-field pattern, same accepted-but-unenforced
- * Idempotency-Key header (Global Constraints). markDisbursed/triggerForcedLapse on
- * PolicyLoanApi are internal-only test seams (not in the OpenAPI spec) and deliberately have no
- * endpoint here. */
+ * Idempotency-Key header (Global Constraints). markDisbursed/markDisbursementFailed on
+ * PolicyLoanApi are driven by policyloan.application.PaymentEventListener consuming payment's
+ * confirmation events (M5), not by HTTP -- they and triggerForcedLapse (an internal-only test
+ * seam standing in for a future billing-driven forced-lapse, M4) deliberately have no endpoint
+ * here. */
 @RestController
 public class PolicyLoanController {
 

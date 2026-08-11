@@ -325,6 +325,24 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     @Transactional
+    public void releaseEncumbrance(String policyNumber, BigDecimal amount, String currency) {
+        // M4's ledger note ("loan_encumbrance_amount only ever increases in M3 -- no
+        // repayment-side consumption path") is now partially closed here, for the FAILURE
+        // direction only: a disbursement that never actually paid out must not permanently
+        // consume the policyholder's loan value. Full repayment-side consumption (decrementing
+        // encumbrance as the loan is repaid) remains out of scope for M5.
+        UUID tenantId = TenantContext.get();
+        // Same lockByPolicyNumber PESSIMISTIC_WRITE discipline confirmReservation uses -- the
+        // caller (policyloan.PolicyLoanApiImpl.markDisbursementFailed) already announces its own
+        // state change, so nothing is published from here.
+        PolicyAccount account = policyAccountRepository.lockByPolicyNumber(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+        account.decreaseEncumbrance(amount);
+        policyAccountRepository.save(account);
+    }
+
+    @Override
+    @Transactional
     public void releaseReservation(UUID reservationId) {
         UUID tenantId = TenantContext.get();
         // Same PESSIMISTIC_WRITE fix as confirmReservation above, for the identical race against

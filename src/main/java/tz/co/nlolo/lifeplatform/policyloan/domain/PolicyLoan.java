@@ -33,6 +33,12 @@ public class PolicyLoan {
     @Column(name = "originated_at")
     private Instant originatedAt;
 
+    // M5: which policy-side loan value reservation backed this loan, so the
+    // DisbursementFailed compensation path (markDisbursementFailed) knows what to release.
+    // Nullable -- loans originated before M5 have none recorded.
+    @Column(name = "reservation_id")
+    private UUID reservationId;
+
     @Version
     private Long version;
 
@@ -66,6 +72,11 @@ public class PolicyLoan {
     public String getPrincipalCurrency() { return principalCurrency; }
     public String getStatus() { return status; }
     public Instant getOriginatedAt() { return originatedAt; }
+    public UUID getReservationId() { return reservationId; }
+
+    public void recordReservation(UUID reservationId) {
+        this.reservationId = reservationId;
+    }
 
     public void markOriginated() {
         if (!"RESERVED_PENDING_ORIGINATION".equals(status)) {
@@ -83,10 +94,26 @@ public class PolicyLoan {
     }
 
     public void markDisbursed() {
+        if ("DISBURSED".equals(status)) {
+            return; // idempotent: a redelivered payment.DisbursementCompleted is not an error
+        }
         if (!"DISBURSEMENT_REQUESTED".equals(status)) {
             throw new LoanNotEligibleException("Loan " + loanId + " must be DISBURSEMENT_REQUESTED to mark disbursed (current: " + status + ")");
         }
         this.status = "DISBURSED";
+    }
+
+    /** M5: the DisbursementFailed leg. Terminal -- a failed disbursement is not retried
+     * automatically, because a retry that the rail actually accepted the first time is a double
+     * payout (see MobileMoneyGatewayAdapter's own no-retry rationale). Staff re-originate. */
+    public void markDisbursementFailed() {
+        if ("DISBURSEMENT_FAILED".equals(status)) {
+            return;
+        }
+        if (!"DISBURSEMENT_REQUESTED".equals(status)) {
+            throw new LoanNotEligibleException("Loan " + loanId + " must be DISBURSEMENT_REQUESTED to mark failed (current: " + status + ")");
+        }
+        this.status = "DISBURSEMENT_FAILED";
     }
 
     /** Idempotent on repeated repayments -- only the DISBURSED -> REPAYING edge is a real

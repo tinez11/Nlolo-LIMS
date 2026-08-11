@@ -71,6 +71,7 @@ class PolicyLoanControllerValidationContractTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
+            "db-migrations/policyloan/V4__persist_reservation_id.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

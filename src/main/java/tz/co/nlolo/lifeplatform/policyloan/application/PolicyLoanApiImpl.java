@@ -84,6 +84,10 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         UUID reservationId = policyApi.reserveLoanValue(policyNumber, requestedAmount, currency, RESERVATION_TTL);
         BigDecimal rate = new BigDecimal(referenceDataApi.getValue("TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE", "TZ"));
         PolicyLoan loan = new PolicyLoan(tenantId, policyNumber, requestedAmount, currency, originatedBy);
+        // M5: persisted so the DisbursementFailed compensation path (markDisbursementFailed)
+        // knows which reservation's encumbrance to release. Recorded before the first save below
+        // so it is part of the same INSERT, not a separate UPDATE.
+        loan.recordReservation(reservationId);
 
         // No try/catch + compensating releaseReservation here (removed on review -- it was
         // inert). Reserve, persist, and confirm all share the single physical transaction
@@ -138,12 +142,17 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         disbursementPayload.put("loanId", loan.getLoanId());
         disbursementPayload.put("payeeRef", payeeRef);
         disbursementPayload.put("amount", Map.of("amount", requestedAmount.toPlainString(), "currencyCode", currency));
-        // idempotencyKey isn't a parameter on this method (the header is accepted, not
-        // enforced, at the controller -- Global Constraints) -- omitted entirely here rather
-        // than put as a null value. LinkedHashMap used instead of Map.of above for the same
-        // reason: payeeRef, unlike every other field on this payload, is genuinely nullable
-        // (callers may originate a loan before a disbursement payee is known) and Map.of throws
-        // NPE on a null value, whereas a HashMap/LinkedHashMap accepts one.
+        // M5: idempotencyKey is REQUIRED on every inbound payment request event
+        // (docs/02-module-architecture.md:140; PaymentRequestListener.requireKey throws without
+        // one). loanId is used rather than DomainEventEnvelope.eventId() because eventId is
+        // regenerated per publication (so it cannot dedup a redelivery) while loanId is stable
+        // across redelivery AND unique per loan -- exactly the dedup semantics payment's
+        // idempotency registry needs.
+        disbursementPayload.put("idempotencyKey", loan.getLoanId().toString());
+        // LinkedHashMap used instead of Map.of above for a separate reason: payeeRef, unlike
+        // every other field on this payload, is genuinely nullable (callers may originate a loan
+        // before a disbursement payee is known) and Map.of throws NPE on a null value, whereas a
+        // HashMap/LinkedHashMap accepts one.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanDisbursementRequested", tenantId, disbursementPayload));
 
         return toView(loan);
@@ -189,14 +198,47 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
 
     @Override
     @Transactional
-    public LoanView markDisbursed(UUID loanId) {
+    public LoanView markDisbursed(UUID loanId, String gatewayReference, Instant disbursedAt) {
         UUID tenantId = TenantContext.get();
         PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        boolean alreadyDisbursed = "DISBURSED".equals(loan.getStatus());
         loan.markDisbursed();
-        loanTransactionRepository.save(new LoanTransaction(tenantId, loanId, "DISBURSEMENT", loan.getPrincipalAmount(), loan.getPrincipalCurrency(), "test-seam-disbursement"));
-        policyLoanRepository.save(loan);
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanDisbursed", tenantId,
-            Map.of("loanId", loanId, "disbursedAt", Instant.now().toString())));
+        if (!alreadyDisbursed) {
+            // Only on the real (non-idempotent-repeat) transition -- a redelivered
+            // payment.DisbursementCompleted must not write a second DISBURSEMENT transaction or
+            // publish a second LoanDisbursed.
+            loanTransactionRepository.save(new LoanTransaction(tenantId, loanId, "DISBURSEMENT", loan.getPrincipalAmount(), loan.getPrincipalCurrency(), gatewayReference));
+            policyLoanRepository.save(loan);
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanDisbursed", tenantId,
+                Map.of("loanId", loanId, "disbursedAt", disbursedAt.toString())));
+        }
+        return toView(loan);
+    }
+
+    /** M5: the DisbursementFailed leg -- see PaymentEventListener.handleFailed. Runs the
+     * compensation (ledger REVERSAL entry plus releasing the policy-side encumbrance) in the
+     * SAME transaction as the status transition: this is local-module work with no external
+     * call (unlike payment's own listener, which must split its gateway call across separate
+     * transactions), so a plain @Transactional here is correct and sufficient. */
+    @Override
+    @Transactional
+    public LoanView markDisbursementFailed(UUID loanId, String reason) {
+        UUID tenantId = TenantContext.get();
+        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        boolean alreadyFailed = "DISBURSEMENT_FAILED".equals(loan.getStatus());
+        loan.markDisbursementFailed();
+        if (!alreadyFailed) {
+            // Ledger-style compensation (docs/03-aggregate-design.md:208: "never delete the
+            // original") -- the original DISBURSEMENT_REQUESTED transition and any reservation
+            // row stay exactly as they were; this REVERSAL entry and the encumbrance release
+            // below are the record of the compensating action, not an edit to history.
+            loanTransactionRepository.save(new LoanTransaction(tenantId, loanId, "REVERSAL", loan.getPrincipalAmount(), loan.getPrincipalCurrency(), reason));
+            policyLoanRepository.save(loan);
+            policyApi.releaseEncumbrance(loan.getPolicyNumber(), loan.getPrincipalAmount(), loan.getPrincipalCurrency());
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanDisbursementFailed", tenantId,
+                Map.of("loanId", loanId, "policyNumber", loan.getPolicyNumber(), "reason", reason,
+                       "failedAt", Instant.now().toString())));
+        }
         return toView(loan);
     }
 

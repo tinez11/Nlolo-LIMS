@@ -83,4 +83,21 @@ public class PolicyAccount {
         }
         this.loanEncumbranceAmount = this.loanEncumbranceAmount.add(amount);
     }
+
+    /**
+     * The compensating half of increaseEncumbrance, added in M5 for the DisbursementFailed path.
+     * Rejects rather than clamps, exactly as increaseEncumbrance does: an over-release would
+     * silently hand back loan value that was never encumbered, and a negative encumbrance is
+     * always an upstream bug that must surface here rather than be coerced away.
+     */
+    public void decreaseEncumbrance(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("Encumbrance release amount must be positive, got: " + amount);
+        }
+        if (loanEncumbranceAmount.compareTo(amount) < 0) {
+            throw new IllegalStateException("Cannot release " + amount + " of encumbrance on policy "
+                + policyNumber + " -- only " + loanEncumbranceAmount + " is encumbered");
+        }
+        this.loanEncumbranceAmount = this.loanEncumbranceAmount.subtract(amount);
+    }
 }

@@ -61,6 +61,7 @@ public class LoanTransaction {
     public String getTransactionType() { return transactionType; }
     public BigDecimal getAmount() { return amount; }
     public String getCurrency() { return currency; }
+    public String getReference() { return reference; }
 
     public static class LoanTransactionId implements Serializable {
         private UUID loanTransactionId;

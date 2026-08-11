@@ -111,6 +111,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
+            "db-migrations/policyloan/V4__persist_reservation_id.sql",
             // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
             // on every insert (this class's own policy-issuing tests would otherwise fail), the
             // auto-issuance listener invoked by submitAssessment below needs
@@ -316,8 +317,19 @@ class AppRolePrivilegesIntegrationTest {
         LoanView loan = policyLoanApi.originateLoan(issued.policyNumber(), new java.math.BigDecimal("100000"), "TZS", "MPESA-0700000000", "test-agent");
         assertThat(loan.loanId()).isNotNull();
 
+        // M5 (Task 6): originateLoan's LoanDisbursementRequested is now consumed application-wide
+        // by the real payment.PaymentRequestListener, which is wired into this same Spring
+        // context (this test does not redirect mobile-money.base-url to a stub, unlike
+        // PaymentRequestListenerIntegrationTest/LoanDisbursementEndToEndTest) -- so the gateway
+        // call genuinely fails (nothing listens on the configured base URL in this test process),
+        // and policyloan's own PaymentEventListener consumes the resulting
+        // payment.DisbursementFailed and drives the loan to DISBURSEMENT_FAILED, synchronously,
+        // before getLoan below ever runs. This is not a workaround -- it further strengthens this
+        // test's own point (app_role privileges through the app's DataSource): markDisbursementFailed
+        // additionally writes a REVERSAL loan_transaction row and updates policy.policy_account's
+        // encumbrance, both through app_role's own connection.
         LoanView fetched = policyLoanApi.getLoan(loan.loanId());
-        assertThat(fetched.status()).isEqualTo(LoanStatus.DISBURSEMENT_REQUESTED);
+        assertThat(fetched.status()).isEqualTo(LoanStatus.DISBURSEMENT_FAILED);
     }
 
     /**

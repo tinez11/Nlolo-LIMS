@@ -25,6 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -88,6 +89,7 @@ class PolicyLoanContractTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
+            "db-migrations/policyloan/V4__persist_reservation_id.sql",
             // NOT optional, and NOT in the task brief's list: every domain event these tests
             // publish (LoanOriginated, LoanDisbursementRequested, LoanRepaid, PolicyIssued, ...)
             // is picked up application-wide by audit.DomainEventAuditListener. It swallows its
@@ -99,9 +101,12 @@ class PolicyLoanContractTest {
 
     @Autowired private MockMvc mockMvc;
 
-    /** Only used to reach {@code markDisbursed}, an internal-only test seam with no HTTP endpoint
-     * (it stands in for consuming {@code payment.DisbursementCompleted}, M5, not built). It is the
-     * only way to move a loan to DISBURSED so the repayment path is reachable at all. */
+    /** Only used to reach {@code markDisbursed}, which has no HTTP endpoint by design -- it is
+     * driven by {@code policyloan.application.PaymentEventListener} consuming
+     * {@code payment.DisbursementCompleted} (M5). Called directly here in place of running the
+     * real event chain, purely so the repayment path (which needs a DISBURSED loan) is
+     * reachable in a contract test that otherwise has no payment infrastructure wired in;
+     * {@code LoanDisbursementEndToEndTest} is what proves the real chain itself. */
     @Autowired private PolicyLoanApi policyLoanApi;
 
     @AfterEach
@@ -448,12 +453,13 @@ class PolicyLoanContractTest {
             .andExpect(jsonPath("$.errorCode").value("LOAN_NOT_ELIGIBLE"));
 
         // markDisbursed has no HTTP endpoint by design (it is not in openapi-policyloan.yaml) --
-        // it stands in for consuming payment.DisbursementCompleted, so it is called from Java.
+        // in production it is driven by PaymentEventListener consuming
+        // payment.DisbursementCompleted, so it is called from Java directly here.
         // TenantContext is set explicitly here because this call does NOT go through
         // TenantContextFilter, which is what populates it on every MockMvc request above.
         TenantContext.set(fixture.tenantId());
         try {
-            policyLoanApi.markDisbursed(loanId);
+            policyLoanApi.markDisbursed(loanId, "MM-TEST-REF", Instant.now());
         } finally {
             TenantContext.clear();
         }

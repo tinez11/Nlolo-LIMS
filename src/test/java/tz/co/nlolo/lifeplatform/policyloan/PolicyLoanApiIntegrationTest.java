@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -61,6 +62,7 @@ class PolicyLoanApiIntegrationTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
+            "db-migrations/policyloan/V4__persist_reservation_id.sql",
             // Every policyloan event this test triggers (LoanOriginated, LoanDisbursementRequested,
             // etc.) is picked up application-wide by audit.DomainEventAuditListener, which
             // persists an audit_log row regardless of which module published the event -- without
@@ -152,7 +154,7 @@ class PolicyLoanApiIntegrationTest {
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-REPAY-01");
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
-        policyLoanApi.markDisbursed(originated.loanId()); // test seam standing in for payment.DisbursementCompleted
+        policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now()); // stands in for consuming payment.DisbursementCompleted
 
         LoanView afterFirstRepayment = policyLoanApi.recordRepayment(originated.loanId(), new BigDecimal("200000"), "TZS", "PAY-REF-01", "test-agent");
         assertEquals(LoanStatus.REPAYING, afterFirstRepayment.status());
@@ -182,7 +184,7 @@ class PolicyLoanApiIntegrationTest {
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-FORCELAPSE-01");
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
-        policyLoanApi.markDisbursed(originated.loanId());
+        policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now());
 
         LoanView forced = policyLoanApi.triggerForcedLapse(originated.loanId(), "cash value exhausted");
         assertEquals(LoanStatus.FORCED_LAPSE_TRIGGERED, forced.status());
@@ -223,7 +225,7 @@ class PolicyLoanApiIntegrationTest {
         String policyNumber = issuePolicyWithCashValue(tenantId, new BigDecimal("1000000"), "LOAN-OPTLOCK-01");
         TenantContext.set(tenantId);
         LoanView originated = policyLoanApi.originateLoan(policyNumber, new BigDecimal("500000"), "TZS", "MPESA-0712345678", "test-agent");
-        policyLoanApi.markDisbursed(originated.loanId());
+        policyLoanApi.markDisbursed(originated.loanId(), "MM-TEST-REF", Instant.now());
 
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
         assertThatThrownBy(() -> transaction.execute(status -> {
