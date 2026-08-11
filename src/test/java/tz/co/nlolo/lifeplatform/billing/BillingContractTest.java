@@ -336,6 +336,103 @@ class BillingContractTest {
             .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
     }
 
+    // --- POST /invoices/{invoiceId}/payment-request (M5, Task 7) ----------------------------
+
+    @Test
+    void requestPaymentForInvoiceMatchesOpenApiContractForAStaffToken() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-PAYREQ-01");
+        String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
+
+        mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
+                .with(staffOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"payerRef":"MPESA-0712345678"}
+                    """))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /** @PreAuthorize on requestPaymentForInvoice allows REALM_STAFF or REALM_AGENTS -- unlike
+     * waiveInvoice (staff-only), this endpoint has two admitted roles, so this test proves the
+     * agent branch specifically, not just that staff (already proven above) also works. */
+    @Test
+    void requestPaymentForInvoiceAlsoAcceptsAnAgentToken() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-PAYREQ-02");
+        String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
+
+        mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
+                .with(agentOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"payerRef":"MPESA-0712345679"}
+                    """))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void requestPaymentForInvoiceRejectsACustomerWith403() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-PAYREQ-03");
+        String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
+
+        // @PreAuthorize on requestPaymentForInvoice admits only REALM_STAFF/REALM_AGENTS --
+        // REALM_CUSTOMERS (even the policy's own owner) is the excluded role.
+        mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
+                .with(customerOf(fixture.tenantId(), fixture.policyholderPartyId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"payerRef":"MPESA-0712345680"}
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+
+    @Test
+    void requestPaymentForInvoiceForNonexistentInvoiceReturnsNotFoundNotServerError() throws Exception {
+        mockMvc.perform(post("/invoices/" + UUID.randomUUID() + "/payment-request")
+                .with(staffOf(UUID.randomUUID()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"payerRef":"MPESA-0712345681"}
+                    """))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("INVOICE_NOT_FOUND"));
+    }
+
+    @Test
+    void requestPaymentForInvoiceRejectsABlankPayerRefWith400() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-PAYREQ-04");
+        String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
+
+        // No openApi().isValid(SPEC_PATH) here, same reason as waiveInvoiceRejectsAShortReasonWith400
+        // -- PaymentRequestDto's real @NotBlank on payerRef is what rejects this, not the OpenAPI
+        // schema (which places no minLength on payerRef), so this proves the Java-side validation
+        // annotation is genuinely wired, not merely declared.
+        mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
+                .with(staffOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"payerRef":""}
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+    }
+
     // --- POST /agents/{agentId}/field-receipts -----------------------------------------------
 
     @Test
