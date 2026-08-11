@@ -136,6 +136,18 @@
       <version>2.46.0</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- Mobile-money ACL harness. The compose stack runs the same WireMock as a service
+         (infra/docker-compose.yml:94-103) for local dev; tests run it IN-PROCESS on a random
+         port instead, because CI's integration tests are Testcontainers-based with "no shared
+         service containers needed" (docs/07-infrastructure-architecture.md:38) and cannot reach
+         a compose service. Both halves are built in M5, see mock-mobile-money/mappings/. -->
+    <dependency>
+      <groupId>org.wiremock</groupId>
+      <artifactId>wiremock-standalone</artifactId>
+      <version>3.5.4</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

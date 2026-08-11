@@ -24,6 +24,22 @@ minio:
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
 
+mobile-money:
+  # Set in infra/docker-compose.yml:131 for the compose stack (http://mock-mobile-money:8080).
+  # No Spring property read that env var before M5, so it was inert.
+  base-url: ${MOBILE_MONEY_GATEWAY_BASE_URL:http://localhost:8082}
+  # Internal protocol timing, deliberately NOT a refdata parameter -- same distinction
+  # PolicyLoanApiImpl draws for RESERVATION_TTL ("governs an internal protocol timing, not a
+  # business/statutory value").
+  connect-timeout-ms: ${MOBILE_MONEY_CONNECT_TIMEOUT_MS:3000}
+  read-timeout-ms: ${MOBILE_MONEY_READ_TIMEOUT_MS:10000}
+  # Shared secret the aggregator signs its callbacks with (Task 8's HMAC filter). The default is
+  # a DEV-ONLY placeholder; a real deployment must set the env var. Task 8's filter fails closed
+  # if a callback's signature does not verify, so a wrong secret rejects callbacks rather than
+  # accepting unsigned ones.
+  callback-hmac-secret: ${MOBILE_MONEY_CALLBACK_HMAC_SECRET:dev-only-placeholder-secret}
+  callback-replay-window-seconds: ${MOBILE_MONEY_CALLBACK_REPLAY_WINDOW_SECONDS:300}
+
 management:
   endpoints:
     web:

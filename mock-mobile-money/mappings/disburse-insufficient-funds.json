@@ -1,0 +1,13 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/disburse",
+    "bodyPatterns": [{ "matchesJsonPath": "$[?(@.payeeRef == 'MPESA-0000000000')]" }]
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "status": "REJECTED", "reason": "INSUFFICIENT_FLOAT" }
+  }
+}

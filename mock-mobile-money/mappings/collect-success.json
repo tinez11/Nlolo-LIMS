@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/collect",
+    "bodyPatterns": [{ "matchesJsonPath": "$.payerRef" }]
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "status": "ACCEPTED",
+      "gatewayReference": "MM-{{randomValue length=12 type='ALPHANUMERIC'}}"
+    },
+    "transformers": ["response-template"]
+  }
+}
