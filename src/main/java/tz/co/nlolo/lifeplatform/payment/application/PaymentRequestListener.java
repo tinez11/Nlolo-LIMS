@@ -153,8 +153,15 @@ public class PaymentRequestListener {
                 requiresNewTransactionTemplate.executeWithoutResult(status ->
                     paymentApiImpl.completeDisbursement(tenantId, disbursementId, result.gatewayReference()));
             } else {
+                // Defaulted, not passed through raw: PaymentApiImpl.failDisbursement builds its
+                // published event payload with Map.of(..., "reason", reason), which throws NPE on
+                // a null value -- a rail that declines without populating its own "reason" field
+                // must never turn into an uncaught exception here, because that would roll back
+                // this REQUIRES_NEW transaction and strand the row at PENDING forever (constraint
+                // 2: a gateway failure must always reach a FAILED row plus a published event).
+                String reason = result.failureReason() != null ? result.failureReason() : "GATEWAY_REJECTED";
                 requiresNewTransactionTemplate.executeWithoutResult(status ->
-                    paymentApiImpl.failDisbursement(tenantId, disbursementId, result.failureReason()));
+                    paymentApiImpl.failDisbursement(tenantId, disbursementId, reason));
             }
         } catch (GatewayException e) {
             // Transport failure. The instruction is already committed as PENDING, so this is
@@ -175,8 +182,11 @@ public class PaymentRequestListener {
                 requiresNewTransactionTemplate.executeWithoutResult(status ->
                     paymentApiImpl.confirmCollection(tenantId, transactionId, result.gatewayReference()));
             } else {
+                // Same defaulting as submitDisbursement's else-branch, same reason: a null here
+                // would NPE inside Map.of(..., "reason", reason) and strand this row at PENDING.
+                String reason = result.failureReason() != null ? result.failureReason() : "GATEWAY_REJECTED";
                 requiresNewTransactionTemplate.executeWithoutResult(status ->
-                    paymentApiImpl.failCollection(tenantId, transactionId, result.failureReason()));
+                    paymentApiImpl.failCollection(tenantId, transactionId, reason));
             }
         } catch (GatewayException e) {
             log.error("Gateway transport failure collecting {} for tenant {}", transactionId, tenantId, e);

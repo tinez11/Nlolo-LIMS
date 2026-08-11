@@ -82,6 +82,15 @@ public class MobileMoneyGatewayAdapter implements PaymentGatewayPort {
             boolean accepted = "ACCEPTED".equals(response.get("status"));
             String gatewayReference = (String) response.get("gatewayReference");
             String failureReason = (String) response.get("reason");
+            if (accepted && gatewayReference == null) {
+                // An ACCEPTED with nothing to reconcile against is untrustworthy, not a success --
+                // the caller's completeDisbursement/confirmCollection persists gatewayReference as
+                // the durable proof the rail took the money, so a null here can never be returned
+                // as a genuine accept. Treated as a transport-level failure (same family as a 5xx
+                // or an empty body above), never as GatewayResult(accepted=true, null, ...).
+                meterRegistry.counter(COUNTER, "status", "FAILED").increment();
+                throw new GatewayException("Mobile money gateway returned ACCEPTED with no gatewayReference for " + path);
+            }
             meterRegistry.counter(COUNTER, "status", accepted ? "SUCCESS" : "FAILED").increment();
             return new GatewayResult(accepted, gatewayReference, accepted ? null : failureReason);
         } catch (GatewayException e) {
