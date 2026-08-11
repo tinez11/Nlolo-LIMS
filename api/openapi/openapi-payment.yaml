@@ -15,8 +15,15 @@ paths:
   /payments/{paymentRequestId}/status:
     get:
       summary: Get payment status
+      description: >
+        Staff/agents only — REALM_CUSTOMERS is deliberately NOT admitted (see Task 8's
+        implementation note). payment's tables store only opaque payer_ref/payee_ref and
+        source_ref, with no party_id or policy_number column, so there is no way to perform
+        the mandatory object-level ownership check a customer token would require
+        (openapi-common.yaml:149-154, OWASP API #1). Admitting the realm without that check
+        would be a Broken-Object-Level-Authorization hole; this is a deliberate contract
+        narrowing versus an earlier design sketch, not an oversight.
       security:
-        - customersAuth: [profile]
         - agentsAuth: [agent]
         - staffAuth: []
       parameters:
@@ -30,11 +37,17 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PaymentStatusView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /payments/status-by-key:
     get:
       summary: Get payment/disbursement status by idempotency key (Deliverable 3 Rev 2, Pay2 — for clients that lost track of the generated ID, e.g. after a dropped USSD session)
+      description: >
+        Staff/agents only — same REALM_CUSTOMERS exclusion and reason as
+        /payments/{paymentRequestId}/status above. Resolves against BOTH ledgers
+        (PaymentStatusView.kind says which one answered).
       security:
-        - customersAuth: [profile]
         - agentsAuth: [agent]
         - staffAuth: []
       parameters:
@@ -48,6 +61,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PaymentStatusView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /payout-batches/{batchId}:
     get:
@@ -65,6 +80,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PayoutBatchView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /webhooks/mobile-money-callback:
     post:
       summary: >
@@ -72,8 +90,28 @@ paths:
         of the platform's own OpenAPI contract in the usual sense — each aggregator has
         its own callback payload shape; this endpoint is the ACL boundary translating
         that shape into PaymentConfirmed/PaymentFailed internally. Authenticated via the
-        aggregator's own signature/HMAC scheme, not Keycloak.
+        aggregator's own HMAC-SHA256 signature scheme (Task 8's MobileMoneyHmacFilter),
+        not Keycloak — this is the one path in the whole platform's filter chain that is
+        permitAll() for exactly this method+path, because a differently-authenticated
+        caller, not an unauthenticated one, sits in front of it.
       security: []
+      parameters:
+        - name: X-MobileMoney-Signature
+          in: header
+          required: true
+          schema: { type: string }
+          description: >
+            hex(HMAC-SHA256(sharedSecret, "<X-MobileMoney-Timestamp>.<raw request body>")).
+            Verified with a constant-time comparison; a mismatch is rejected without
+            revealing which check failed.
+        - name: X-MobileMoney-Timestamp
+          in: header
+          required: true
+          schema: { type: string, format: date-time }
+          description: >
+            Signed timestamp, checked against a bounded replay window (config:
+            mobile-money.callback-replay-window-seconds) — a captured-and-replayed
+            callback stops verifying once the window closes.
       requestBody:
         required: true
         content:
@@ -82,18 +120,41 @@ paths:
               type: object
               description: Aggregator-specific payload — see each gateway's own API docs.
       responses:
-        '200': { description: Acknowledged }
+        '200': { description: Acknowledged. Returned even for a well-formed callback whose gatewayReference is unrecognized or whose outcome could not be applied — a non-200 would only provoke a pointless retry (see Task 8's MobileMoneyCallbackController javadoc). }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '401':
+          description: >
+            Missing/malformed signature or timestamp header, stale timestamp (outside the
+            replay window), or signature mismatch. Deliberately generic — the response body
+            never says which check failed.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
     PaymentStatusView:
       type: object
+      additionalProperties: false
       properties:
         id: { type: string, format: uuid }
         idempotencyKey: { type: string }
-        status: { type: string, enum: [PENDING, CONFIRMED, FAILED] }
+        kind:
+          type: string
+          enum: [PAYMENT, DISBURSEMENT]
+          description: >
+            Which ledger answered. Always PAYMENT for
+            /payments/{paymentRequestId}/status; either kind for /payments/status-by-key,
+            since that lookup resolves against both ledgers.
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, COMPLETED, FAILED]
+          description: >
+            Union of both ledgers' terminal vocabularies — a payment's success status is
+            CONFIRMED, a disbursement's is COMPLETED (see kind to know which applies).
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
     PayoutBatchView:
       type: object
+      additionalProperties: false
       properties:
         batchId: { type: string, format: uuid }
         batchType: { type: string, enum: [COMMISSION_RUN, MATURITY_BATCH, DIVIDEND_RUN] }

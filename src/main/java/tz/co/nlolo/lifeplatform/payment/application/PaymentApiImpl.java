@@ -125,7 +125,12 @@ public class PaymentApiImpl implements PaymentApi {
     }
 
     // ---- Transaction boundaries 2 and 3: apply the gateway outcome and publish the
-    // confirmation. Runs AFTER the HTTP call has returned, in a fresh transaction. ----
+    // confirmation. Runs AFTER the HTTP call has returned, in a fresh transaction.
+    // Package-private: called by this module's own PaymentRequestListener (same package) and,
+    // as of Task 8, by applyGatewayCallback below (same class) -- never directly by the REST
+    // layer or another module. See applyGatewayCallback's javadoc for why the callback
+    // controller reaches these THROUGH that one new public method rather than each becoming
+    // public in its own right. ----
 
     @Transactional
     void completeDisbursement(UUID tenantId, UUID disbursementId, String gatewayReference) {
@@ -191,6 +196,111 @@ public class PaymentApiImpl implements PaymentApi {
                    "idempotencyKey", transaction.getIdempotencyKey(),
                    "sourceRef", transaction.getSourceRef(),
                    "reason", reason)));
+    }
+
+    // ---- Task 8: the mobile-money gateway's inbound callback entry point
+    // (payment.infrastructure.MobileMoneyCallbackController). PUBLIC and deliberately NOT part of
+    // payment.api.PaymentApi -- that interface stays exactly as documented, "read-only ... to
+    // everything except its own internal event listeners" (PaymentApi's own javadoc), because
+    // that statement is about OTHER MODULES calling payment, not about payment's own REST layer
+    // handling its own external ACL boundary (openapi-payment.yaml's own words: "the only
+    // externally-facing concern is checking status and receiving gateway callbacks"). Adding a
+    // write method to PaymentApi would leak this capability to any future module depending on
+    // payment::api; keeping it here, public only on the concrete impl, does not. This mirrors how
+    // PaymentRequestListener (same package) already reaches the four completion methods above --
+    // this is simply the same "concrete impl, not the interface" pattern extended to a caller
+    // that sits in a different package (payment.infrastructure), which is why this one method is
+    // public while completeDisbursement/failDisbursement/confirmCollection/failCollection stay
+    // package-private: everything the callback needs is orchestrated in one place instead of
+    // requiring the controller to reach into four narrower entry points plus repositories
+    // directly. ----
+
+    /**
+     * Resolves which tenant owns {@code gatewayReference}, then applies the aggregator's
+     * reported outcome under that tenant's ordinary RLS-enforced path.
+     *
+     * <p>The callback carries no bearer token (authenticated by MobileMoneyHmacFilter's HMAC
+     * signature instead), so TenantContextFilter never runs for it and TenantContext is unset on
+     * entry -- there is no tenant to scope an ordinary query with yet. Resolution instead goes
+     * through {@code resolveTenantByGatewayReference}, a narrow, PK-style lookup backed by a
+     * SECURITY DEFINER function (db-migrations/payment/V3): payment's RLS policies are
+     * fail-closed (an unset {@code app.current_tenant_id} hides every row, not just leaves them
+     * unfiltered), so an ordinary unscoped SELECT would see nothing even for a genuinely matching
+     * row. See that migration's header comment for the full mechanism and why it is a deliberate,
+     * narrowly-scoped exception rather than a general bypass. Once resolved, TenantContext is set
+     * and every subsequent read/write -- including the re-fetch immediately below -- runs through
+     * the normal tenant-scoped, RLS-enforced repository methods; this method is a bootstrap, not
+     * a replacement for RLS.
+     *
+     * <p>Checks the disbursement ledger before the collection ledger; the two are not expected to
+     * share a gateway_reference namespace in practice, but if one somehow did, disbursement wins
+     * deterministically rather than leaving the outcome to query order.
+     *
+     * @return true if {@code gatewayReference} matched a row in either ledger and the outcome
+     *         was applied (including the idempotent no-op case of a redelivered, already-terminal
+     *         outcome); false if it matched nothing in either ledger. The controller acks HTTP 200
+     *         either way -- see {@code MobileMoneyCallbackController}'s own javadoc for why.
+     */
+    @Transactional
+    public boolean applyGatewayCallback(String gatewayReference, boolean succeeded, String reason) {
+        UUID disbursementTenantId = disbursementRepository.resolveTenantByGatewayReference(gatewayReference);
+        if (disbursementTenantId != null) {
+            withResolvedTenant(disbursementTenantId, () -> {
+                UUID disbursementId = disbursementRepository
+                    .findByGatewayReferenceAndTenantId(gatewayReference, disbursementTenantId)
+                    .map(DisbursementInstruction::getDisbursementId)
+                    .orElseThrow(() -> new PaymentNotFoundException(
+                        "Disbursement with gatewayReference " + gatewayReference + " vanished after tenant resolution"));
+                if (succeeded) {
+                    completeDisbursement(disbursementTenantId, disbursementId, gatewayReference);
+                } else {
+                    failDisbursement(disbursementTenantId, disbursementId, reasonOrDefault(reason));
+                }
+            });
+            return true;
+        }
+        UUID paymentTenantId = paymentTransactionRepository.resolveTenantByGatewayReference(gatewayReference);
+        if (paymentTenantId != null) {
+            withResolvedTenant(paymentTenantId, () -> {
+                UUID paymentTransactionId = paymentTransactionRepository
+                    .findByGatewayReferenceAndTenantId(gatewayReference, paymentTenantId)
+                    .map(PaymentTransaction::getPaymentTransactionId)
+                    .orElseThrow(() -> new PaymentNotFoundException(
+                        "Payment with gatewayReference " + gatewayReference + " vanished after tenant resolution"));
+                if (succeeded) {
+                    confirmCollection(paymentTenantId, paymentTransactionId, gatewayReference);
+                } else {
+                    failCollection(paymentTenantId, paymentTransactionId, reasonOrDefault(reason));
+                }
+            });
+            return true;
+        }
+        return false;
+    }
+
+    private static String reasonOrDefault(String reason) {
+        return reason != null ? reason : "GATEWAY_REPORTED_FAILURE";
+    }
+
+    /** Save/set/restore, not a bare set -- this runs synchronously on the webhook's own request
+     * thread, which a container thread pool WILL reuse for an unrelated later request, so an
+     * unconditional set-without-restore would leak this tenant onto whatever runs next on the
+     * same thread. TenantContext is expected to be unset on entry (no bearer token was present
+     * for this request), but restoring "whatever was there before" rather than unconditionally
+     * clearing is the same defensive pattern PaymentRequestListener.withTenant already uses, for
+     * the same reason. */
+    private void withResolvedTenant(UUID tenantId, Runnable action) {
+        UUID previousTenant = TenantContext.getOrNull();
+        TenantContext.set(tenantId);
+        try {
+            action.run();
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.set(previousTenant);
+            } else {
+                TenantContext.clear();
+            }
+        }
     }
 
     /**
