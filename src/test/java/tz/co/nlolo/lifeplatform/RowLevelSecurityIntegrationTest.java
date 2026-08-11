@@ -378,10 +378,19 @@ class RowLevelSecurityIntegrationTest {
     /**
      * M4 (Task 1) addition: proves billing_schedule_tenant_isolation (declared in billing/V1,
      * completed by billing/V2's grants -- V1 alone had zero GRANT statements, so app_role could
-     * not even reach the table to be isolated) actually isolates tenants. billing has no
-     * BillingApi yet (Task 2+), so rows are seeded directly via SQL as the superuser rather than
-     * through an application API, then read back exclusively via a genuinely restricted app_role
-     * connection -- same proof shape as policyIsTenantIsolatedUnderRls above.
+     * not even reach the table to be isolated) actually isolates tenants. Rows are seeded
+     * directly via SQL as the superuser rather than through an application API, then read back
+     * exclusively via a genuinely restricted app_role connection -- same proof shape as
+     * policyIsTenantIsolatedUnderRls above.
+     *
+     * <p>M4 (Task 3) note: unlike policy.policy/policyloan.policy_loan above, this test's
+     * superuser count assertion is scoped to its own two tenant IDs rather than a blanket
+     * COUNT(*) -- Task 3's billing.application.PolicyEventListener now auto-generates a
+     * billing_schedule row for every policy issuance, so the four policies
+     * policyIsTenantIsolatedUnderRls and policyLoanIsTenantIsolatedUnderRls issue above (each
+     * @Order'd before this test) have already added four unrelated schedule rows to this same
+     * shared container by the time this test runs; @Order can no longer isolate this table's
+     * count the way it does for the earlier tests, since this test is already last.
      */
     @Test
     @Order(6)
@@ -404,10 +413,14 @@ class RowLevelSecurityIntegrationTest {
 
         try (Connection superuserConnection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
-             Statement statement = superuserConnection.createStatement();
-             ResultSet resultSet = statement.executeQuery("SELECT COUNT(*) FROM billing.billing_schedule")) {
-            resultSet.next();
-            assertThat(resultSet.getInt(1)).isEqualTo(2);
+             PreparedStatement select = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM billing.billing_schedule WHERE tenant_id IN (?, ?)")) {
+            select.setObject(1, tenantA);
+            select.setObject(2, tenantB);
+            try (ResultSet resultSet = select.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
         }
 
         try (Connection restrictedConnection = DriverManager.getConnection(

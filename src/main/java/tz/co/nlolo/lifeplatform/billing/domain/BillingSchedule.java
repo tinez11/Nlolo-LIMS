@@ -59,6 +59,7 @@ public class BillingSchedule {
 
     public void suspend() { this.status = "SUSPENDED"; }
     public void terminate() { this.status = "TERMINATED"; }
+    public void reactivate() { this.status = "ACTIVE"; }
     public void advanceNextDueDate(LocalDate next) { this.nextDueDate = next; }
 
     public UUID getBillingScheduleId() { return billingScheduleId; }

@@ -15,6 +15,19 @@ ALTER TABLE billing.premium_invoice_2027 ENABLE ROW LEVEL SECURITY;
 CREATE POLICY premium_invoice_2027_tenant_isolation ON billing.premium_invoice_2027
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 
+-- V1's own comment calls out that "subsequent yearly partitions [are] created ahead of need"
+-- -- BillingApiImpl's 12-month schedule horizon, applied twice in a row (once at issuance, once
+-- again on any later resume-after-suspension), reaches into a policy's second full year from
+-- issuance, i.e. past 2027-12-31 for any policy issued in 2026. Without this partition, that
+-- write fails outright with Postgres's "no partition of relation found for row" -- pg_partman is
+-- not wired to premium_invoice in this plan (unlike policyloan.loan_transaction), so this table's
+-- partitions stay a manually-pre-created, ahead-of-need set until a future milestone automates it.
+CREATE TABLE billing.premium_invoice_2028 PARTITION OF billing.premium_invoice
+    FOR VALUES FROM ('2028-01-01') TO ('2029-01-01');
+ALTER TABLE billing.premium_invoice_2028 ENABLE ROW LEVEL SECURITY;
+CREATE POLICY premium_invoice_2028_tenant_isolation ON billing.premium_invoice_2028
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
 ALTER TABLE billing.arrears_case ENABLE ROW LEVEL SECURITY;
 CREATE POLICY arrears_case_tenant_isolation ON billing.arrears_case
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
