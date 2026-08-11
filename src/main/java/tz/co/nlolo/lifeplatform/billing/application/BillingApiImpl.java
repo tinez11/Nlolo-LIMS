@@ -96,9 +96,10 @@ public class BillingApiImpl implements BillingApi {
         // billing/V2 migration) is the real dedup mechanism -- check-then-insert here is a
         // convenience early-return, not the source of truth; a genuine race between two
         // identical concurrent requests would still be caught by the DB constraint, surfacing
-        // as a DataIntegrityViolationException this method does not currently catch. Flagged
-        // for the final review -- same class of gap M3's Task 6 fix round closed for
-        // originateLoan's compensating-action reasoning.
+        // as an uncaught DataIntegrityViolationException (a 500, not a clean idempotent 202).
+        // Verified this has no closed precedent to point to elsewhere on this platform --
+        // `Idempotency-Key` is "accepted, not enforced" everywhere else too (deferred to M5) --
+        // so this is the same class of accepted, deferred gap, not a regression from a fixed one.
         var existing = fieldReceiptRepository.findByTenantIdAndClientIdempotencyKey(tenantId, clientIdempotencyKey);
         if (existing.isPresent()) {
             return new FieldReceiptResult(existing.get().getReceiptId(), existing.get().getStatus());
