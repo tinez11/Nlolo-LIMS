@@ -89,6 +89,33 @@ public class BillingApiImpl implements BillingApi {
 
     @Override
     @Transactional
+    public void requestPaymentForInvoice(UUID invoiceId, String payerRef) {
+        UUID tenantId = TenantContext.get();
+        PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
+            .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PaymentRequested", tenantId,
+            Map.of("invoiceId", invoiceId,
+                   "payerRef", payerRef,
+                   "amount", Map.of("amount", invoice.getAmount().toPlainString(),
+                                    "currencyCode", invoice.getCurrency()),
+                   "idempotencyKey", invoiceId.toString())));
+    }
+
+    @Override
+    @Transactional
+    public InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference) {
+        UUID tenantId = TenantContext.get();
+        PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
+            .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
+        invoice.applyPayment(amount);
+        premiumInvoiceRepository.save(invoice);
+        arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoiceId, tenantId)
+            .ifPresent(ArrearsCase::resolve);
+        return toView(invoice);
+    }
+
+    @Override
+    @Transactional
     public FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,
                                                    String clientIdempotencyKey, Instant capturedAtClient) {
         UUID tenantId = TenantContext.get();

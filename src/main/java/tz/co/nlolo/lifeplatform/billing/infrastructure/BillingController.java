@@ -58,6 +58,13 @@ public class BillingController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/invoices/{invoiceId}/payment-request")
+    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
+    public ResponseEntity<Void> requestPaymentForInvoice(@PathVariable UUID invoiceId, @Valid @RequestBody PaymentRequestDto request) {
+        billingApi.requestPaymentForInvoice(invoiceId, request.payerRef());
+        return ResponseEntity.accepted().build();
+    }
+
     /**
      * Mirrors PolicyController.enforceCustomerOwnPolicyOnly's exact structure: realm-membership
      * check via Authentication.getAuthorities(), then jwt.getClaimAsString("party_id") vs the

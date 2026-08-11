@@ -81,6 +81,35 @@ paths:
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /invoices/{invoiceId}/payment-request:
+    post:
+      summary: Request collection of an invoice's premium through payment (staff/agent)
+      description: >
+        Publishes billing.PaymentRequested (request/confirm pattern) — payment attempts collection
+        against payerRef and, on success, publishes payment.PaymentConfirmed, which billing's own
+        PaymentEventListener consumes to move the invoice toward PARTIALLY_PAID/PAID.
+      security:
+        - staffAuth: []
+        - agentsAuth: [agent]
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payerRef]
+              properties:
+                payerRef: { type: string }
+      responses:
+        '202': { description: "Payment requested, accepted for processing" }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /agents/{agentId}/field-receipts:
     post:
       summary: Capture a premium receipt offline (BillingSyncApi — agent field app)

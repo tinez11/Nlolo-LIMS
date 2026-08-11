@@ -95,6 +95,10 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            // M5 (Task 7) addition: PremiumInvoice now maps amount_paid -- every JPA insert this
+            // class's own auto-issued policies trigger (via billing's PolicyEventListener ->
+            // generateInvoicesAhead) would otherwise fail against a table missing this column.
+            "db-migrations/billing/V3__amount_paid.sql",
             // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.

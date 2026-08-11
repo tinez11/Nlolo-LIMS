@@ -46,6 +46,9 @@ public class PremiumInvoice {
     @Column(name = "waiver_reason")
     private String waiverReason;
 
+    @Column(name = "amount_paid", nullable = false)
+    private BigDecimal amountPaid = BigDecimal.ZERO;
+
     @Version
     private long version;
 
@@ -72,6 +75,26 @@ public class PremiumInvoice {
     // request's Hibernate session). A Java-side setter for either transition would be dead code.
     public void waive(String reason) { this.status = "WAIVED"; this.waiverReason = reason; }
 
+    /**
+     * M5: the money-in leg. PAID and PARTIALLY_PAID were declared in InvoiceStatus from M4 but
+     * unreachable — nothing could transition into them until payment existed.
+     *
+     * <p>Partial payment is decided by comparing the cumulative paid amount against this
+     * invoice's own amount, so an under-payment lands PARTIALLY_PAID rather than silently
+     * counting as settled. WAIVED is terminal and is never overwritten by a late payment —
+     * a payment arriving against a waived invoice is an operational anomaly, not a state change.
+     */
+    public void applyPayment(BigDecimal paidAmount) {
+        if (paidAmount == null || paidAmount.signum() <= 0) {
+            throw new IllegalArgumentException("Payment amount must be positive, got: " + paidAmount);
+        }
+        if ("WAIVED".equals(status) || "PAID".equals(status)) {
+            return;
+        }
+        this.amountPaid = this.amountPaid == null ? paidAmount : this.amountPaid.add(paidAmount);
+        this.status = this.amountPaid.compareTo(this.amount) >= 0 ? "PAID" : "PARTIALLY_PAID";
+    }
+
     public UUID getInvoiceId() { return invoiceId; }
     public LocalDate getDueDate() { return dueDate; }
     public UUID getTenantId() { return tenantId; }
@@ -81,6 +104,7 @@ public class PremiumInvoice {
     public String getCurrency() { return currency; }
     public String getStatus() { return status; }
     public LocalDate getGracePeriodEndsAt() { return gracePeriodEndsAt; }
+    public BigDecimal getAmountPaid() { return amountPaid; }
 
     public static class PremiumInvoiceId implements Serializable {
         private UUID invoiceId;

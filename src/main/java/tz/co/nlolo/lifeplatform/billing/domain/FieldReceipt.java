@@ -62,6 +62,18 @@ public class FieldReceipt {
 
     public void markNotifiedOverdue() { this.notifiedOverdueAt = Instant.now(); }
 
+    /** M5: closes the offline-receipt SLA loop (docs/02-module-architecture.md:78). Until now
+     * PENDING_RECONCILIATION -> RECONCILED had no implementation, so
+     * billing.sweep_billing_state()'s step 5 could only ever escalate receipts to
+     * RECONCILIATION_OVERDUE and never clear them. */
+    public void reconcile() {
+        if ("RECONCILED".equals(status)) {
+            return;
+        }
+        this.status = "RECONCILED";
+        this.reconciledAt = Instant.now();
+    }
+
     public UUID getReceiptId() { return receiptId; }
     public UUID getTenantId() { return tenantId; }
     public String getPolicyNumber() { return policyNumber; }

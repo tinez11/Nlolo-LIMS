@@ -218,4 +218,59 @@ class BillingSweepPsqlTest {
             }
         }
     }
+
+    /**
+     * M5 regression: RECONCILED is a new terminal status (Task 7's
+     * {@code FieldReceipt.reconcile()}) that step 5's escalation UPDATE must never touch. The
+     * function's own WHERE clause already reads {@code status = 'PENDING_RECONCILIATION'} --
+     * this test proves that guard genuinely excludes a reconciled receipt rather than merely
+     * asserting the SQL text looks right, using the same negative-control-then-sweep idiom as
+     * {@link #sweepBillingStateFlipsAStaleFieldReceiptToReconciliationOverdue}.
+     */
+    @Test
+    void sweepBillingStateNeverEscalatesAReconciledFieldReceipt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID reconciledReceiptId = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            // Captured 48 hours ago (well past the 24-hour SLA) but already RECONCILED --
+            // without the WHERE clause's exclusion this row would otherwise be exactly the kind
+            // sweepBillingStateFlipsAStaleFieldReceiptToReconciliationOverdue proves DOES escalate.
+            try (PreparedStatement insertReconciled = connection.prepareStatement(
+                    "INSERT INTO billing.field_receipt (receipt_id, tenant_id, policy_number, agent_id, amount, " +
+                    "client_idempotency_key, captured_at_client, captured_at_server, status, reconciled_at) " +
+                    "VALUES (?, ?, 'SWEEP-RECEIPT-03', ?, 15000.00, ?, now() - interval '48 hours', now() - interval '48 hours', " +
+                    "'RECONCILED', now() - interval '47 hours')")) {
+                insertReconciled.setObject(1, reconciledReceiptId);
+                insertReconciled.setObject(2, tenantId);
+                insertReconciled.setObject(3, UUID.randomUUID());
+                insertReconciled.setString(4, "sweep-test-reconciled-" + reconciledReceiptId);
+                assertThat(insertReconciled.executeUpdate()).isEqualTo(1);
+            }
+
+            // NEGATIVE CONTROL: assert the pre-sweep state first.
+            try (PreparedStatement preCheck = connection.prepareStatement(
+                    "SELECT status FROM billing.field_receipt WHERE receipt_id = ?")) {
+                preCheck.setObject(1, reconciledReceiptId);
+                try (ResultSet rs = preCheck.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getString(1)).isEqualTo("RECONCILED");
+                }
+            }
+
+            try (Statement sweep = connection.createStatement()) {
+                sweep.execute("SELECT billing.sweep_billing_state()");
+            }
+
+            try (PreparedStatement postCheck = connection.prepareStatement(
+                    "SELECT status FROM billing.field_receipt WHERE receipt_id = ?")) {
+                postCheck.setObject(1, reconciledReceiptId);
+                try (ResultSet rs = postCheck.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    // The whole point: still RECONCILED, never escalated to RECONCILIATION_OVERDUE.
+                    assertThat(rs.getString(1)).isEqualTo("RECONCILED");
+                }
+            }
+        }
+    }
 }

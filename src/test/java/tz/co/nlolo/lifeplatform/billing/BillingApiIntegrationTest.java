@@ -9,11 +9,18 @@ import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
 import tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl;
 import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
+import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
+import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
+import tz.co.nlolo.lifeplatform.billing.infrastructure.FieldReceiptRepository;
+import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.tomakehurst.wiremock.WireMockServer;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +40,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
+import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(classes = Application.class)
@@ -42,6 +51,8 @@ class BillingApiIntegrationTest {
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
+    static WireMockServer wireMock;
+
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
@@ -49,8 +60,18 @@ class BillingApiIntegrationTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
 
+    // M5: routes payment's MobileMoneyGatewayAdapter at the in-process WireMock standing in for
+    // the mobile-money rail, same mechanism policyloan.LoanDisbursementEndToEndTest already uses
+    // for its own real request/confirm chain proof.
+    @DynamicPropertySource
+    static void mobileMoneyProperties(DynamicPropertyRegistry registry) {
+        registry.add("mobile-money.base-url", () -> wireMock.baseUrl());
+    }
+
     @BeforeAll
     static void applyMigrations() throws Exception {
+        wireMock = new WireMockServer(options().dynamicPort());
+        wireMock.start();
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
@@ -65,8 +86,17 @@ class BillingApiIntegrationTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
-            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql");
+            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            "db-migrations/billing/V3__amount_paid.sql",
+            "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
     }
+
+    @AfterAll
+    static void stopGateway() { wireMock.stop(); }
+
+    @AfterEach
+    void resetWireMock() { wireMock.resetAll(); }
 
     @Autowired private PolicyApi policyApi;
     @Autowired private BillingApi billingApi;
@@ -74,6 +104,8 @@ class BillingApiIntegrationTest {
     @Autowired private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
     @Autowired private BillingScheduleRepository billingScheduleRepository;
     @Autowired private BillingApiImpl billingApiImpl;
+    @Autowired private PremiumInvoiceRepository premiumInvoiceRepository;
+    @Autowired private FieldReceiptRepository fieldReceiptRepository;
     @Autowired private DataSource dataSource;
     @Autowired private AuditLogRepository auditLogRepository;
     @Autowired private ObjectMapper objectMapper;
@@ -247,5 +279,117 @@ class BillingApiIntegrationTest {
 
         // Confirms the notification is idempotent, not re-fired on every sweep.
         assertThat(billingApiImpl.publishPendingNotifications(tenantId)).isEqualTo(0);
+    }
+
+    // --- M5: the money-in loop -----------------------------------------------------------------
+
+    /**
+     * Task 7's real end-to-end proof that billing's premium-collection loop is actually closed:
+     * {@code billingApi.requestPaymentForInvoice} (real API) -> {@code billing.PaymentRequested}
+     * (real event) -> {@code payment.PaymentRequestListener} (real listener) -> the mobile-money
+     * gateway (in-process WireMock stand-in) -> {@code payment.PaymentConfirmed} (real event) ->
+     * {@code billing.application.PaymentEventListener} (this task's new listener) ->
+     * {@code BillingApi.applyConfirmedPayment}. No call to {@code applyConfirmedPayment} anywhere
+     * in this test -- mirrors {@code LoanDisbursementEndToEndTest}'s structure exactly.
+     */
+    @Test
+    void requestingPaymentForAnInvoiceRunsTheRealChainThroughToPaid() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-PAYMENT-PAID-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        wireMock.stubFor(post(urlPathEqualTo("/collect")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-BILLING-PAID-01\"}")));
+
+        TenantContext.set(tenantId);
+        // By the time this call returns, the AFTER_COMMIT chain above has already run
+        // synchronously and committed -- no await/sleep, same reasoning as
+        // LoanDisbursementEndToEndTest's own class-level Javadoc.
+        billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340001");
+
+        PremiumInvoice reloaded = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
+            .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));
+        assertThat(reloaded.getStatus()).isEqualTo("PAID");
+        assertThat(reloaded.getAmountPaid()).isEqualByComparingTo("15000.00");
+
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/collect")));
+    }
+
+    @Test
+    void anUnderPaymentLandsPartiallyPaidWithTheRealAmountPaidRecorded() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-PAYMENT-PARTIAL-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        // requestPaymentForInvoice's own chain always requests the FULL invoice amount, so a
+        // genuine under-payment can only ever arrive as a partial gateway confirmation -- this
+        // drives applyConfirmedPayment directly to isolate its own PARTIALLY_PAID decision, the
+        // same isolation capturingAFieldReceiptThenSweepingAfterTheSlaWindowPublishesReconciliationOverdue
+        // already uses for the Java half of a two-part chain above.
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("5000.00"), "TZS", "MM-PARTIAL-01");
+
+        PremiumInvoice reloaded = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
+            .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));
+        assertThat(reloaded.getStatus()).isEqualTo("PARTIALLY_PAID");
+        // The falsifiable half: the ACTUAL amountPaid value, not just the status string -- a
+        // buggy applyPayment that flips status without ever writing amountPaid would still pass
+        // an assertion that only checked the status.
+        assertThat(reloaded.getAmountPaid()).isEqualByComparingTo("5000.00");
+    }
+
+    @Test
+    void aPaymentAgainstAWaivedInvoiceLeavesItWaived() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-PAYMENT-WAIVED-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        billingApi.waiveInvoice(invoice.invoiceId(), "Contract test waiver before a late payment", "test-staff");
+
+        // Negative control: the invoice is genuinely WAIVED before the late payment arrives, so
+        // this test isn't vacuously passing against an invoice that was never in a non-WAIVED
+        // state to begin with.
+        PremiumInvoice beforePayment = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
+            .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));
+        assertThat(beforePayment.getStatus()).isEqualTo("WAIVED");
+
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "MM-LATE-01");
+
+        PremiumInvoice afterPayment = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
+            .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));
+        assertThat(afterPayment.getStatus()).isEqualTo("WAIVED");
+        // WAIVED is terminal -- a late payment must never quietly credit amountPaid either.
+        assertThat(afterPayment.getAmountPaid()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void reconcilingAFieldReceiptMovesItToReconciled() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-RECEIPT-RECONCILE-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(
+            UUID.randomUUID(), policyNumber, new BigDecimal("15000.00"), "TZS",
+            "client-key-" + UUID.randomUUID(), Instant.now());
+        assertThat(result.status()).isEqualTo("PENDING_RECONCILIATION");
+
+        TenantContext.set(tenantId);
+        FieldReceipt receipt = fieldReceiptRepository.findById(result.receiptId())
+            .orElseThrow(() -> new AssertionError("expected a field_receipt row for " + result.receiptId()));
+        // Negative control before the transition, same idiom as BillingSweepPsqlTest's own
+        // pre-sweep checks.
+        assertThat(receipt.getReconciledAt()).isNull();
+
+        receipt.reconcile();
+        fieldReceiptRepository.save(receipt);
+
+        FieldReceipt reloaded = fieldReceiptRepository.findById(result.receiptId())
+            .orElseThrow(() -> new AssertionError("expected a field_receipt row for " + result.receiptId()));
+        assertThat(reloaded.getStatus()).isEqualTo("RECONCILED");
+        assertThat(reloaded.getReconciledAt()).isNotNull();
     }
 }
