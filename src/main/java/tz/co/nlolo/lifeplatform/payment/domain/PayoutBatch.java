@@ -50,14 +50,18 @@ public class PayoutBatch {
 
     /**
      * Partial-failure handling (roadmap acceptance criterion 3), stated as one rule: a batch is
-     * IN_PROGRESS while any member is still PENDING, COMPLETED only if every member COMPLETED,
-     * and PARTIAL_FAILURE if all members are terminal but at least one FAILED. An all-FAILED
-     * batch is also PARTIAL_FAILURE -- the DDL's CHECK offers no ALL_FAILED value, and
-     * "some money didn't move" is the operationally actionable distinction, not "how much".
-     * An empty batch stays IN_PROGRESS: nothing has succeeded, so COMPLETED would be a lie.
+     * IN_PROGRESS while any member is still PENDING or IN_DOUBT, COMPLETED only if every member
+     * COMPLETED, and PARTIAL_FAILURE if all members are terminal but at least one FAILED. An
+     * IN_DOUBT member is not yet terminal -- its eventual outcome is unknown, so the batch must
+     * not report COMPLETED (a lie if the in-doubt payout never lands) or PARTIAL_FAILURE (a lie
+     * if it does) -- staying IN_PROGRESS is the only claim that is never falsified by the later
+     * resolution. An all-FAILED batch is also PARTIAL_FAILURE -- the DDL's CHECK offers no
+     * ALL_FAILED value, and "some money didn't move" is the operationally actionable distinction,
+     * not "how much". An empty batch stays IN_PROGRESS: nothing has succeeded, so COMPLETED
+     * would be a lie.
      */
     public static String deriveStatus(List<String> memberStatuses) {
-        if (memberStatuses.isEmpty() || memberStatuses.contains("PENDING")) {
+        if (memberStatuses.isEmpty() || memberStatuses.contains("PENDING") || memberStatuses.contains("IN_DOUBT")) {
             return "IN_PROGRESS";
         }
         return memberStatuses.contains("FAILED") ? "PARTIAL_FAILURE" : "COMPLETED";

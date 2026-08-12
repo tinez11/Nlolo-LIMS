@@ -86,9 +86,10 @@ ALTER TABLE payment.disbursement_instruction
 
 -- payout_batch.status is deliberately NOT widened. Its allowed set (IN_PROGRESS / COMPLETED /
 -- PARTIAL_FAILURE) is derived from its members by PayoutBatch.deriveStatus, and an IN_DOUBT
--- member is simply not yet terminal -- i.e. the batch stays IN_PROGRESS, which is already an
--- allowed value and already the correct answer. Adding a fourth batch value would create a state
--- with no producer.
+-- member is simply not yet terminal -- i.e. the batch should stay IN_PROGRESS, which is already
+-- an allowed value. deriveStatus's member-status checks were updated in this same change to
+-- treat IN_DOUBT the same as PENDING (neither is terminal), so this holds as an invariant of the
+-- Java code, not merely as an absence of a producer for a fourth batch value.
 
 -- =============================================================================
 -- 2. ID-BASED tenant resolvers for the inbound webhook.

@@ -58,7 +58,9 @@ class PaymentApiIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
-            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
     }
 
     @Autowired private PaymentApi paymentApi;
@@ -167,6 +169,33 @@ class PaymentApiIntegrationTest {
         assignToBatch(tenantId, allGood.getBatchId(), three);
         paymentApiImpl.completeDisbursement(tenantId, three, "MM-OK-3");
         assertThat(paymentApi.getPayoutBatch(allGood.getBatchId()).status()).isEqualTo("COMPLETED");
+    }
+
+    /** Regression for the final-review fix wave: {@code deriveStatus} originally treated
+     * IN_DOUBT as terminal-and-not-FAILED, so a batch with an IN_DOUBT member alongside a
+     * COMPLETED one misreported COMPLETED -- a lie if the in-doubt payout never lands. IN_DOUBT
+     * must be treated the same as PENDING (neither is terminal), keeping the batch IN_PROGRESS
+     * until every member actually resolves. */
+    @Test
+    void payoutBatchWithAnInDoubtMemberStaysInProgressNeverCompletedOrPartialFailure() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        PayoutBatch batch = payoutBatchRepository.save(new PayoutBatch(tenantId, "MATURITY_BATCH"));
+
+        UUID resolved = paymentApiImpl.recordDisbursementRequest(tenantId, "batch-doubt-k1",
+            "MPESA-0700000021", new BigDecimal("1000.00"), "TZS", "MATURITY_PAYOUT", "policy-doubt-1")
+            .orElseThrow();
+        UUID inDoubt = paymentApiImpl.recordDisbursementRequest(tenantId, "batch-doubt-k2",
+            "MPESA-0700000022", new BigDecimal("2000.00"), "TZS", "MATURITY_PAYOUT", "policy-doubt-2")
+            .orElseThrow();
+        assignToBatch(tenantId, batch.getBatchId(), resolved, inDoubt);
+
+        paymentApiImpl.completeDisbursement(tenantId, resolved, "MM-OK-DOUBT-1");
+        paymentApiImpl.markDisbursementInDoubt(tenantId, inDoubt, null);
+
+        PayoutBatchView view = paymentApi.getPayoutBatch(batch.getBatchId());
+        assertThat(view.status()).isEqualTo("IN_PROGRESS");
+        assertThat(view.failedCount()).isZero();
     }
 
     @Test
