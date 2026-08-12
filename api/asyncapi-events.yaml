@@ -568,26 +568,91 @@ components:
         - type: object
           properties: { statementId: {type: string, format: uuid}, paidAt: {type: string, format: date-time} }
 
+    # M5 final-review fix (I2). All four payloads below previously omitted sourceRef, purpose and
+    # gatewayReference -- the ONLY correlation and routing fields a consumer has. This architecture
+    # has zero compile-time coupling between producer and consumer (DomainEventEnvelope lives in the
+    # root package and every payload is a Map<String, Object>, deliberately, so that payment needs no
+    # module dependency in either direction), which means THIS FILE is the entire contract. A
+    # consumer built from the declarations as they were could not have worked at all:
+    # policyloan.application.PaymentEventListener routes on purpose ("LOAN_DISBURSEMENT") and
+    # resolves its own aggregate from sourceRef, and billing's does the same with sourceRef -- both
+    # fields the spec did not mention. claims (M6), distribution (M7) and finaccounting (M9) are all
+    # listed as future consumers of these events and would each have hit the same wall.
+    #
+    # Mirrored field-for-field against the real producers in
+    # payment/application/PaymentApiImpl.java (completeDisbursement / failDisbursement /
+    # confirmCollection / failCollection), read rather than inferred. Purely ADDITIVE -- no field is
+    # renamed, retyped or removed -- so no schemaVersion bump is required.
+    #
+    # Note deliberately NOT added here: any payload for C2's IN_DOUBT state. That is the whole point
+    # of IN_DOUBT -- an indeterminate outcome publishes NO event at all, because publishing a
+    # *Failed event for it is what caused policyloan to compensate for payouts that may have
+    # succeeded. Its signal is the lifeplatform_payment_in_doubt_total metric plus an ERROR log
+    # (observability/alert-rules.yml), not an event. Recorded explicitly so a future reader does not
+    # "complete" this file by inventing a payment.DisbursementInDoubt event.
     PaymentConfirmedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { paymentRequestId: {type: string, format: uuid}, idempotencyKey: {type: string}, amount: {type: object}, confirmedAt: {type: string, format: date-time} }
+          properties:
+            paymentRequestId: {type: string, format: uuid}
+            idempotencyKey: {type: string}
+            # billing.application.PaymentEventListener resolves the invoice from this. It is the
+            # requesting aggregate's own id as a string (invoiceId.toString()), NOT a uuid-formatted
+            # field by contract -- payment stores it as an opaque VARCHAR(100) source_ref and never
+            # parses it, so a future producer whose aggregate key is not a UUID still fits.
+            sourceRef: {type: string}
+            # The aggregator's own reference. Present on a confirmation; this is the durable proof
+            # the rail took the money and the value the inbound webhook correlates redeliveries on.
+            gatewayReference: {type: string}
+            amount: {type: object}
+            confirmedAt: {type: string, format: date-time}
     PaymentFailedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { paymentRequestId: {type: string, format: uuid}, idempotencyKey: {type: string}, reason: {type: string} }
+          properties:
+            paymentRequestId: {type: string, format: uuid}
+            idempotencyKey: {type: string}
+            sourceRef: {type: string}
+            reason: {type: string}
     DisbursementCompletedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { disbursementId: {type: string, format: uuid}, idempotencyKey: {type: string}, amount: {type: object}, completedAt: {type: string, format: date-time} }
+          properties:
+            disbursementId: {type: string, format: uuid}
+            idempotencyKey: {type: string}
+            sourceRef: {type: string}
+            # The ROUTING field, and the reason a single event type can serve several requesting
+            # modules without payment depending on any of them: every consumer must filter on it
+            # (policyloan checks purpose == "LOAN_DISBURSEMENT" and returns otherwise) or it will
+            # try to handle another module's payout. Values match
+            # disbursement_instruction.purpose's CHECK constraint (db-migrations/payment/V1:54,
+            # widened by V2 to add DIVIDEND_PAYOUT).
+            purpose:
+              type: string
+              enum: [LOAN_DISBURSEMENT, CLAIM_SETTLEMENT, COMMISSION_PAYOUT, SURRENDER_PAYOUT, MATURITY_PAYOUT, DIVIDEND_PAYOUT]
+            gatewayReference: {type: string}
+            amount: {type: object}
+            completedAt: {type: string, format: date-time}
     DisbursementFailedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { disbursementId: {type: string, format: uuid}, idempotencyKey: {type: string}, reason: {type: string} }
+          properties:
+            disbursementId: {type: string, format: uuid}
+            idempotencyKey: {type: string}
+            sourceRef: {type: string}
+            purpose:
+              type: string
+              enum: [LOAN_DISBURSEMENT, CLAIM_SETTLEMENT, COMMISSION_PAYOUT, SURRENDER_PAYOUT, MATURITY_PAYOUT, DIVIDEND_PAYOUT]
+            # No gatewayReference here, matching the real producer: failDisbursement builds its
+            # payload with Map.of(...) over disbursementId/idempotencyKey/sourceRef/purpose/reason
+            # only. The rail's reference IS still persisted on the row when one was supplied (so a
+            # redelivered failure notification can resolve its tenant), it is simply not part of
+            # this event's payload -- declared as-is rather than as-wished.
+            reason: {type: string}
 
     CessionRecordedPayload:
       allOf:

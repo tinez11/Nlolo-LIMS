@@ -1,9 +1,21 @@
--- M5: the DisbursementFailed compensation path needs to know which policy reservation backed a
--- loan. originateLoan CONFIRMS the reservation before publishing LoanDisbursementRequested, so
--- by the time payment can report failure the encumbrance is already applied and must be undone
--- (docs/02-module-architecture.md:115 states this behaviour -- "on failure, releases the
--- policy-side reservation" -- but it was not implementable: reservationId was a local variable
--- in originateLoan, persisted nowhere).
+-- M5: records WHICH policy reservation backed a loan, for FORENSICS ONLY.
+--
+-- Correction (M5 final review): this header previously claimed the DisbursementFailed compensation
+-- path "needs to know which policy reservation backed a loan". It does not, and never did.
+-- PolicyLoanApiImpl.markDisbursementFailed releases the encumbrance by
+-- (policyNumber, principalAmount, currency) -- it never reads reservation_id, and no other code
+-- path does either. The compensation works entirely without this column.
+--
+-- What the column IS for: originateLoan CONFIRMS the policy-side reservation before publishing
+-- LoanDisbursementRequested, and until M5 the reservationId was a local variable inside that
+-- method, persisted nowhere at all. So after origination there was no record linking a loan to the
+-- reservation that backed it, which made a reconciliation question ("which reservation did this
+-- loan consume?") unanswerable from the database. It is an audit/forensics trail, written on
+-- origination and read by humans, deliberately not a functional dependency of any code path.
+-- Recorded plainly here because a column whose stated purpose is a compensation path that never
+-- reads it invites exactly the wrong conclusion -- either "this compensation is broken" or "this
+-- column is dead code and can be dropped". Neither is true.
+--
 -- Nullable: loans originated before M5 have no recorded reservation, and there is no correct
 -- value to invent for them.
 ALTER TABLE policyloan.policy_loan ADD COLUMN reservation_id UUID;

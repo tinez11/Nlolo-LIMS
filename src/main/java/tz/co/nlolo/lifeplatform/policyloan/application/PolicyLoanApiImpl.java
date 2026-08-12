@@ -84,9 +84,20 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         UUID reservationId = policyApi.reserveLoanValue(policyNumber, requestedAmount, currency, RESERVATION_TTL);
         BigDecimal rate = new BigDecimal(referenceDataApi.getValue("TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE", "TZ"));
         PolicyLoan loan = new PolicyLoan(tenantId, policyNumber, requestedAmount, currency, originatedBy);
-        // M5: persisted so the DisbursementFailed compensation path (markDisbursementFailed)
-        // knows which reservation's encumbrance to release. Recorded before the first save below
-        // so it is part of the same INSERT, not a separate UPDATE.
+        // M5: persisted for FORENSICS, not for any code path.
+        //
+        // Corrected in M5's final review -- this comment previously said the DisbursementFailed
+        // compensation path "knows which reservation's encumbrance to release" from it. It does not:
+        // markDisbursementFailed below releases by (policyNumber, principalAmount, currency) and
+        // never reads this column; PolicyLoan.getReservationId() has no caller anywhere in the
+        // application. What this records is the otherwise-unanswerable reconciliation question
+        // "which reservation did this loan consume?" -- before M5 reservationId was a local
+        // variable here and was persisted nowhere at all. Kept deliberately (see
+        // db-migrations/policyloan/V4's header), but a reader must not conclude the compensation
+        // depends on it.
+        //
+        // Recorded before the first save below so it is part of the same INSERT, not a separate
+        // UPDATE.
         loan.recordReservation(reservationId);
 
         // No try/catch + compensating releaseReservation here (removed on review -- it was

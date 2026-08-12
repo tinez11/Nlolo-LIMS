@@ -56,6 +56,55 @@ groups:
         annotations:
           summary: "Mobile money gateway failure rate above 10% over 10 minutes"
 
+      # M5 final-review fix (I2). The counter has existed since Task 8's own review round but
+      # nothing alerted on it, which left half of that fix undelivered: the whole reason the
+      # ambiguous case was given its own counter (rather than sharing NOT_FOUND's log line) was so
+      # that a real cross-tenant collision would be VISIBLE rather than reading like a data-entry
+      # error. A metric no rule references is not visible.
+      #
+      # Alerts on ANY occurrence, not a rate: db-migrations/payment/V2's own comment records that a
+      # gateway may legitimately reuse a reference across tenants, and when it happens this platform
+      # correctly refuses to guess which tenant's row to mutate -- which means a genuine payout is
+      # left sitting PENDING with no automated path to resolution. Every single one needs a human.
+      - alert: PaymentCallbackAmbiguousReference
+        expr: increase(lifeplatform_payment_callback_ambiguous_total[15m]) > 0
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "A mobile-money callback's gatewayReference matched more than one tenant -- nothing was applied"
+          description: "payment.applyGatewayCallback fails closed rather than guessing which tenant owns a shared gateway_reference, so the affected payment/disbursement is left in its prior state and needs manual reconciliation against the aggregator. Search logs for 'is AMBIGUOUS across more than one tenant'."
+
+      # M5 final-review fix (C2). An IN_DOUBT row means the platform sent an instruction to the rail
+      # and does NOT know whether money moved (read timeout, 5xx, or an ACCEPTED response carrying no
+      # gatewayReference). Deliberately no domain event is published for that state -- publishing
+      # payment.DisbursementFailed made policyloan write a REVERSAL and release the encumbrance for
+      # payouts that may well have succeeded -- so THIS RULE IS THE ONLY AUTOMATED SIGNAL that such a
+      # row exists. If it is removed, the state becomes invisible outside the database.
+      #
+      # Any occurrence, same reasoning as the ambiguous rule above: each one is money whose fate is
+      # unknown and which must be reconciled against the aggregator's statement by hand.
+      - alert: PaymentOutcomeInDoubt
+        expr: increase(lifeplatform_payment_in_doubt_total[15m]) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "A payment/disbursement outcome is IN_DOUBT -- money may or may not have moved"
+          description: "The rail neither confirmed nor declined (timeout, 5xx, or ACCEPTED with no gatewayReference). The row is recorded IN_DOUBT and NO *Failed event was published, so no compensation was triggered and the requesting module is still waiting. Reconcile against the aggregator's statement, then let the row resolve via the inbound webhook (IN_DOUBT is a valid source state for both terminal transitions). Search logs for 'INDETERMINATE gateway outcome'."
+
+      # M5 final-review fix (C2, second half). An unrecognized callback status now applies NOTHING
+      # (it previously drove a definitive FAILED transition on any string that was not "SUCCESS").
+      # That is the safe behaviour, and it is also silent: if an aggregator renames its statuses, every
+      # confirmation stops landing while the platform keeps returning HTTP 200. This is how that gets
+      # noticed. Not `critical` because nothing incorrect has happened -- but it does mean
+      # confirmations are being dropped, so it needs same-day attention.
+      - alert: PaymentCallbackUnknownStatus
+        expr: increase(lifeplatform_payment_callback_unknown_status_total[15m]) > 0
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "A mobile-money callback carried a status this platform does not recognize -- nothing was applied"
+          description: "MobileMoneyCallbackController validates status against a known dialect and refuses to let an unknown string drive a financial transition. A sustained rate means the aggregator's vocabulary has drifted and confirmations are silently not landing; the recognized sets in that class must be updated deliberately. Search logs for 'carried an UNRECOGNIZED status'."
+
       - alert: PostgresDiskSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
         for: 10m
