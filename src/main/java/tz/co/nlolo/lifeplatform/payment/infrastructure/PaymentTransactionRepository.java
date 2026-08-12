@@ -25,4 +25,12 @@ public interface PaymentTransactionRepository
      * DisbursementInstructionRepository.isGatewayReferenceAmbiguous, for the collection ledger. */
     @Query(value = "SELECT payment.payment_transaction_gateway_reference_is_ambiguous(:gatewayReference)", nativeQuery = true)
     boolean isGatewayReferenceAmbiguous(@Param("gatewayReference") String gatewayReference);
+
+    /** Review fix (C1): the id-keyed tenant-resolution route for the collection ledger -- same
+     * purpose, same narrowness argument and same "no COUNT(DISTINCT) guard needed because the key
+     * is a PK component" reasoning as
+     * {@code DisbursementInstructionRepository.resolveTenantByDisbursementId}. See that method's
+     * javadoc and db-migrations/payment/V4's section-2 comment. */
+    @Query(value = "SELECT payment.resolve_payment_transaction_tenant_by_id(:paymentTransactionId)", nativeQuery = true)
+    UUID resolveTenantByPaymentTransactionId(@Param("paymentTransactionId") UUID paymentTransactionId);
 }

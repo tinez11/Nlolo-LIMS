@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Locale;
+import java.util.Set;
+
 /**
  * The ACL boundary openapi-payment.yaml describes: "each aggregator has its own callback payload
  * shape; this endpoint ... translat[es] that shape into PaymentConfirmed/PaymentFailed
@@ -47,6 +50,44 @@ public class MobileMoneyCallbackController {
      * logs line-by-line. Mirrors MobileMoneyGatewayAdapter's own counter naming convention. */
     private static final String AMBIGUOUS_COUNTER = "lifeplatform_payment_callback_ambiguous_total";
 
+    /** Review fix (C2, second half): an alertable signal for a callback whose {@code status} this
+     * platform does not recognize at all. Previously such a status caused a definitive FAILED
+     * transition; now it causes NOTHING, which means it needs its own signal or an aggregator that
+     * changed its dialect would silently stop being able to confirm anything. */
+    private static final String UNKNOWN_STATUS_COUNTER = "lifeplatform_payment_callback_unknown_status_total";
+
+    /**
+     * The recognized dialect, spelled out rather than left as "SUCCESS vs everything else".
+     *
+     * <p>Review fix (C2): {@code isSuccess} used to be {@code "SUCCESS".equalsIgnoreCase(status)}
+     * and the caller treated its {@code false} as a terminal FAILURE. So EVERY other value on an
+     * unvalidated {@code @NotBlank String} -- a non-terminal {@code PENDING}/{@code PROCESSING}
+     * status poll, a vendor-specific code, a typo, a renamed field in an aggregator's next API
+     * version -- silently drove a real financial state transition to FAILED, which for a
+     * disbursement publishes {@code DisbursementFailed} and makes policyloan write a REVERSAL and
+     * release the encumbrance. An unrecognized string from an external system must never be able to
+     * do that.
+     *
+     * <p>Three buckets, deliberately, because two is not enough to be honest here:
+     * <ul>
+     *   <li>{@link #SUCCESS_STATUSES} -> apply success.</li>
+     *   <li>{@link #DECLINE_STATUSES} -> apply failure. A real business rejection; the requesting
+     *       module should compensate. (Note this is the CALLBACK dialect, which is why it includes
+     *       both the {@code FAILED} the tests and stub mappings use and the {@code REJECTED} the
+     *       synchronous {@code /disburse} response uses -- an aggregator that reuses one vocabulary
+     *       for both is the common case, and accepting both costs nothing.)</li>
+     *   <li>{@link #NON_TERMINAL_STATUSES} -> apply nothing, and do NOT alert. These are recognized,
+     *       expected, informational notifications ("still processing"); the row correctly stays where
+     *       it is until a terminal notification arrives. Alerting on them would generate noise on
+     *       normal traffic, which is how an alert gets muted and then stops working for the case it
+     *       was written for.</li>
+     * </ul>
+     * Anything outside all three: apply nothing, log ERROR, increment {@link #UNKNOWN_STATUS_COUNTER}.
+     */
+    private static final Set<String> SUCCESS_STATUSES = Set.of("SUCCESS", "SUCCESSFUL", "COMPLETED", "CONFIRMED");
+    private static final Set<String> DECLINE_STATUSES = Set.of("FAILED", "FAILURE", "REJECTED", "DECLINED", "CANCELLED");
+    private static final Set<String> NON_TERMINAL_STATUSES = Set.of("PENDING", "PROCESSING", "ACCEPTED", "IN_PROGRESS");
+
     private final PaymentApiImpl paymentApiImpl;
     private final MeterRegistry meterRegistry;
 
@@ -58,8 +99,19 @@ public class MobileMoneyCallbackController {
     @PostMapping(MobileMoneyHmacFilter.CALLBACK_PATH)
     public ResponseEntity<Void> handleCallback(@Valid @RequestBody MobileMoneyCallbackRequestDto callback) {
         try {
+            Boolean succeeded = classify(callback);
+            if (succeeded == null) {
+                // Not applied at all -- see the dialect constants' javadoc. Still a 200, for the
+                // same reason every other outcome here is: an identical retry cannot fix an
+                // unrecognized status either, so a non-200 would only provoke a retry storm.
+                return ResponseEntity.ok().build();
+            }
+            // C1: `reference` -- the merchant reference WE generated and the aggregator echoed
+            // back -- is now a resolution INPUT, not just a log field. It is the only handle that
+            // exists for a row whose gateway_reference is null (transport failure /
+            // ACCEPTED-without-reference, i.e. C2's IN_DOUBT rows).
             PaymentApiImpl.GatewayCallbackOutcome outcome = paymentApiImpl.applyGatewayCallback(
-                callback.gatewayReference(), isSuccess(callback.status()), callback.reason());
+                callback.gatewayReference(), callback.reference(), succeeded, callback.reason());
             switch (outcome) {
                 case AMBIGUOUS -> {
                     // Review fix (Important 3): deliberately NOT the same log line as NOT_FOUND --
@@ -83,7 +135,35 @@ public class MobileMoneyCallbackController {
         return ResponseEntity.ok().build();
     }
 
-    private static boolean isSuccess(String status) {
-        return "SUCCESS".equalsIgnoreCase(status);
+    /**
+     * @return {@code TRUE} for a recognized success, {@code FALSE} for a recognized decline, and
+     *         {@code null} for "apply nothing" -- either a recognized non-terminal notification
+     *         (logged quietly) or a status this platform does not recognize at all (logged ERROR
+     *         and counted, because it means an aggregator's dialect has drifted away from ours and
+     *         confirmations are silently no longer landing). A three-valued return rather than a
+     *         boolean is the point: with a boolean there is no way to express "do not touch this
+     *         row", which is exactly the expressiveness whose absence caused the bug.
+     */
+    private Boolean classify(MobileMoneyCallbackRequestDto callback) {
+        String status = callback.status();
+        String normalized = status == null ? "" : status.trim().toUpperCase(Locale.ROOT);
+        if (SUCCESS_STATUSES.contains(normalized)) {
+            return Boolean.TRUE;
+        }
+        if (DECLINE_STATUSES.contains(normalized)) {
+            return Boolean.FALSE;
+        }
+        if (NON_TERMINAL_STATUSES.contains(normalized)) {
+            log.info("Mobile-money callback reported non-terminal status={} for gatewayReference={} -- "
+                + "no state change applied, awaiting a terminal notification", status, callback.gatewayReference());
+            return null;
+        }
+        log.error("Mobile-money callback carried an UNRECOGNIZED status={} (gatewayReference={}, own "
+            + "reference={}) -- NO state change was applied. Never let an unknown status string drive a "
+            + "financial transition. If the aggregator changed its vocabulary, this platform's "
+            + "recognized dialect must be updated deliberately.",
+            status, callback.gatewayReference(), callback.reference());
+        meterRegistry.counter(UNKNOWN_STATUS_COUNTER).increment();
+        return null;
     }
 }

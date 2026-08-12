@@ -192,6 +192,63 @@ public class PaymentApiImpl implements PaymentApi {
                    "reason", reason)));
     }
 
+    /**
+     * Review fix (C2): records an INDETERMINATE gateway outcome -- a read timeout, or an ACCEPTED
+     * response with no {@code gatewayReference} to reconcile against -- as {@code IN_DOUBT} rather
+     * than as definitive {@code FAILED}.
+     *
+     * <p><b>Deliberately publishes NO event.</b> That is the entire point, not an oversight.
+     * {@code payment.DisbursementFailed} is consumed by
+     * {@code policyloan.application.PaymentEventListener.handleFailed}, which calls
+     * {@code PolicyLoanApiImpl.markDisbursementFailed} -- writing a {@code REVERSAL} loan
+     * transaction and calling {@code policyApi.releaseEncumbrance(...)}. Those are real financial
+     * compensations, correct for "the rail definitely did not pay" and WRONG for "we do not know":
+     * if the rail actually paid, the platform has just handed the policyholder's loan value back
+     * while the money is gone. Publishing nothing leaves the loan at
+     * {@code DISBURSEMENT_REQUESTED} with its encumbrance intact -- verified, not assumed:
+     * {@code PaymentEventListener}'s switch has exactly two payment cases
+     * ({@code DisbursementCompleted}, {@code DisbursementFailed}) and a {@code default} no-op, so
+     * an unpublished event is a genuine no-op on the policyloan side rather than an implicit
+     * failure path.
+     *
+     * <p>Because publishing nothing would otherwise make this state INVISIBLE (the requesting
+     * module hears nothing and no dashboard moves), the alertable signal is the caller's
+     * responsibility and is not optional: {@code PaymentRequestListener} increments
+     * {@code lifeplatform_payment_in_doubt_total} and logs at ERROR naming the id, and
+     * observability/alert-rules.yml alerts on that counter. The durable record is the IN_DOUBT row
+     * itself, which reconciliation can find precisely because it is not mixed in with PENDING
+     * ("never attempted") or FAILED ("definitely did not pay").
+     *
+     * <p>Idempotent and non-destructive by way of {@link DisbursementInstruction#markInDoubt}:
+     * safe on a repeat, and it refuses to walk a row back out of a terminal state.
+     */
+    @Transactional
+    void markDisbursementInDoubt(UUID tenantId, UUID disbursementId, String gatewayReference) {
+        DisbursementInstruction instruction = disbursementRepository
+            .findByDisbursementIdAndTenantId(disbursementId, tenantId)
+            .orElseThrow(() -> new PaymentNotFoundException("Disbursement " + disbursementId + " not found"));
+        instruction.markInDoubt(gatewayReference);
+        disbursementRepository.save(instruction);
+        // No recomputeBatchStatusIfBatched call, deliberately: IN_DOUBT is not terminal, so the
+        // batch's derived status is unchanged (still IN_PROGRESS) -- see V4's note on why
+        // payout_batch.status is not widened.
+    }
+
+    /** Review fix (C2): the collection-ledger equivalent of {@link #markDisbursementInDoubt} --
+     * same reasoning, same "publish nothing, signal via counter + ERROR log" posture. On this side
+     * the un-published event is {@code payment.PaymentFailed}, which
+     * {@code billing.application.PaymentEventListener} consumes; not publishing it leaves the
+     * invoice in whatever state it was already in (DUE/PARTIALLY_PAID) rather than recording a
+     * definitive collection failure the platform cannot actually vouch for. */
+    @Transactional
+    void markCollectionInDoubt(UUID tenantId, UUID paymentTransactionId, String gatewayReference) {
+        PaymentTransaction transaction = paymentTransactionRepository
+            .findByPaymentTransactionIdAndTenantId(paymentTransactionId, tenantId)
+            .orElseThrow(() -> new PaymentNotFoundException("Payment " + paymentTransactionId + " not found"));
+        transaction.markInDoubt(gatewayReference);
+        paymentTransactionRepository.save(transaction);
+    }
+
     @Transactional
     void confirmCollection(UUID tenantId, UUID paymentTransactionId, String gatewayReference) {
         PaymentTransaction transaction = paymentTransactionRepository
@@ -263,6 +320,27 @@ public class PaymentApiImpl implements PaymentApi {
      * share a gateway_reference namespace in practice, but if one somehow did, disbursement wins
      * deterministically rather than leaving the outcome to query order.
      *
+     * <p><b>Review fix (C1): a SECOND resolution route, keyed on our own merchant reference.</b>
+     * The gateway_reference route above cannot possibly work for the rows most likely to need
+     * webhook recovery. When the rail never responded (a read timeout) or responded ACCEPTED
+     * without a reference, {@code gateway_reference} is NULL on that row -- forever -- and V2's
+     * supporting indexes are literally {@code WHERE gateway_reference IS NOT NULL}. So the
+     * aggregator's later async notification for a payout that DID go through resolved to nothing,
+     * was logged at WARN, and was acked 200: unrecoverable by any callback, ever. C2's IN_DOUBT
+     * rows are exactly that population.
+     *
+     * <p>{@code merchantReference} closes it. It is the reference THIS PLATFORM generated and sent
+     * to the rail ({@code PaymentRequestListener} passes {@code disbursementId.toString()} /
+     * {@code transactionId.toString()} as the outbound request's {@code reference}), echoed back by
+     * the aggregator in the callback's {@code reference} field -- previously used for log lines
+     * only. It is tried ONLY after the gateway_reference route has resolved to nothing, and
+     * critically, only after the AMBIGUOUS check: a genuine cross-tenant collision on
+     * {@code gateway_reference} must still surface as AMBIGUOUS with nothing mutated, never be
+     * masked by quietly succeeding through the other route on a reference the caller also supplied.
+     * When the fallback does apply, it writes the aggregator's {@code gatewayReference} onto the
+     * row (via the ordinary {@code markCompleted}/{@code markFailed} path), which REPAIRS the null
+     * so any subsequent redelivery resolves through the primary route as normal.
+     *
      * @return {@link GatewayCallbackOutcome#APPLIED} if {@code gatewayReference} matched exactly
      *         one tenant's row in either ledger and the outcome was applied (including the
      *         idempotent no-op case of a redelivered, already-terminal outcome);
@@ -295,7 +373,8 @@ public class PaymentApiImpl implements PaymentApi {
      * {@code withResolvedTenant}, i.e. strictly after {@code TenantContext.set(...)} -- so that
      * transaction's own connection acquisition sees the correct GUC from the start.
      */
-    public GatewayCallbackOutcome applyGatewayCallback(String gatewayReference, boolean succeeded, String reason) {
+    public GatewayCallbackOutcome applyGatewayCallback(String gatewayReference, String merchantReference,
+                                                       boolean succeeded, String reason) {
         UUID disbursementTenantId = disbursementRepository.resolveTenantByGatewayReference(gatewayReference);
         if (disbursementTenantId != null) {
             withResolvedTenant(disbursementTenantId, () -> {
@@ -304,11 +383,7 @@ public class PaymentApiImpl implements PaymentApi {
                     .map(DisbursementInstruction::getDisbursementId)
                     .orElseThrow(() -> new PaymentNotFoundException(
                         "Disbursement with gatewayReference " + gatewayReference + " vanished after tenant resolution"));
-                if (succeeded) {
-                    completeDisbursement(disbursementTenantId, disbursementId, gatewayReference);
-                } else {
-                    failDisbursement(disbursementTenantId, disbursementId, gatewayReference, reasonOrDefault(reason));
-                }
+                applyToDisbursement(disbursementTenantId, disbursementId, gatewayReference, succeeded, reason);
             });
             return GatewayCallbackOutcome.APPLIED;
         }
@@ -320,22 +395,92 @@ public class PaymentApiImpl implements PaymentApi {
                     .map(PaymentTransaction::getPaymentTransactionId)
                     .orElseThrow(() -> new PaymentNotFoundException(
                         "Payment with gatewayReference " + gatewayReference + " vanished after tenant resolution"));
-                if (succeeded) {
-                    confirmCollection(paymentTenantId, paymentTransactionId, gatewayReference);
-                } else {
-                    failCollection(paymentTenantId, paymentTransactionId, gatewayReference, reasonOrDefault(reason));
-                }
+                applyToCollection(paymentTenantId, paymentTransactionId, gatewayReference, succeeded, reason);
             });
             return GatewayCallbackOutcome.APPLIED;
         }
         // Neither ledger resolved to a single tenant. Distinguishing AMBIGUOUS from NOT_FOUND
         // needs one more narrow, SECURITY DEFINER-backed check per ledger -- only reached on this
         // rare "nothing resolved" path, never on the common case above.
+        //
+        // This check comes BEFORE the C1 fallback below, deliberately and load-bearingly: an
+        // AMBIGUOUS gateway_reference is a real cross-tenant collision that this platform refuses
+        // to guess on, and it must keep surfacing as AMBIGUOUS (nothing mutated, alertable counter
+        // incremented) rather than being quietly "resolved" through the other route. Otherwise the
+        // fallback would silently mask the exact safety mechanism V3's Critical-5 fix installed.
         if (disbursementRepository.isGatewayReferenceAmbiguous(gatewayReference)
                 || paymentTransactionRepository.isGatewayReferenceAmbiguous(gatewayReference)) {
             return GatewayCallbackOutcome.AMBIGUOUS;
         }
+        return applyByMerchantReference(merchantReference, gatewayReference, succeeded, reason);
+    }
+
+    /**
+     * Review fix (C1): the fallback route. Resolves the row by the merchant reference WE generated
+     * and the aggregator echoed back, which is the only handle that exists for a row whose
+     * {@code gateway_reference} is NULL (transport failure / ACCEPTED-without-reference -- i.e.
+     * C2's IN_DOUBT population, the rows most likely to need exactly this).
+     *
+     * <p>A {@code reference} that is absent or not a UUID is simply NOT_FOUND, not an error: the
+     * field is aggregator-controlled free text (its DTO does not constrain it) and this platform
+     * must not throw on input it did not generate. That is a stricter posture than it looks -- an
+     * unparseable reference means we have no handle at all, which is precisely "not found".
+     */
+    private GatewayCallbackOutcome applyByMerchantReference(String merchantReference, String gatewayReference,
+                                                            boolean succeeded, String reason) {
+        UUID ourOwnId = parseUuidOrNull(merchantReference);
+        if (ourOwnId == null) {
+            return GatewayCallbackOutcome.NOT_FOUND;
+        }
+        UUID disbursementTenantId = disbursementRepository.resolveTenantByDisbursementId(ourOwnId);
+        if (disbursementTenantId != null) {
+            // No COUNT(DISTINCT) / ambiguity check needed on this route, and none is possible:
+            // ourOwnId is a component of the ledger's PRIMARY KEY, so at most one row (and
+            // therefore at most one tenant) can match. See V4's section-2 comment.
+            withResolvedTenant(disbursementTenantId, () ->
+                applyToDisbursement(disbursementTenantId, ourOwnId, gatewayReference, succeeded, reason));
+            return GatewayCallbackOutcome.APPLIED;
+        }
+        UUID paymentTenantId = paymentTransactionRepository.resolveTenantByPaymentTransactionId(ourOwnId);
+        if (paymentTenantId != null) {
+            withResolvedTenant(paymentTenantId, () ->
+                applyToCollection(paymentTenantId, ourOwnId, gatewayReference, succeeded, reason));
+            return GatewayCallbackOutcome.APPLIED;
+        }
         return GatewayCallbackOutcome.NOT_FOUND;
+    }
+
+    /** Shared by both resolution routes so the two can never drift into applying different
+     * outcomes for the same reported result. Reached only from inside
+     * {@code withResolvedTenant}, i.e. with TenantContext set and a fresh REQUIRES_NEW transaction
+     * already open -- see applyGatewayCallback's javadoc on why that ordering is load-bearing. */
+    private void applyToDisbursement(UUID tenantId, UUID disbursementId, String gatewayReference,
+                                      boolean succeeded, String reason) {
+        if (succeeded) {
+            completeDisbursement(tenantId, disbursementId, gatewayReference);
+        } else {
+            failDisbursement(tenantId, disbursementId, gatewayReference, reasonOrDefault(reason));
+        }
+    }
+
+    private void applyToCollection(UUID tenantId, UUID paymentTransactionId, String gatewayReference,
+                                    boolean succeeded, String reason) {
+        if (succeeded) {
+            confirmCollection(tenantId, paymentTransactionId, gatewayReference);
+        } else {
+            failCollection(tenantId, paymentTransactionId, gatewayReference, reasonOrDefault(reason));
+        }
+    }
+
+    private static UUID parseUuidOrNull(String candidate) {
+        if (candidate == null || candidate.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(candidate.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /** Review fix (Important 3): distinguishes "a real cross-tenant collision on this

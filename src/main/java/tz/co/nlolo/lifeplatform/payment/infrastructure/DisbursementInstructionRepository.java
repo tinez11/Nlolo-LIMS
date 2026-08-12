@@ -39,4 +39,24 @@ public interface DisbursementInstructionRepository
      */
     @Query(value = "SELECT payment.disbursement_gateway_reference_is_ambiguous(:gatewayReference)", nativeQuery = true)
     boolean isGatewayReferenceAmbiguous(@Param("gatewayReference") String gatewayReference);
+
+    /**
+     * Review fix (C1): the SECOND tenant-resolution route, keyed on OUR OWN disbursement id rather
+     * than the aggregator's gateway_reference. Needed because the rows most likely to require
+     * webhook recovery are exactly the ones with {@code gateway_reference IS NULL} -- a transport
+     * failure or an ACCEPTED-without-reference response leaves nothing for
+     * {@link #resolveTenantByGatewayReference} to key on, so those rows were permanently
+     * unreachable by any later callback. The callback's own {@code reference} field carries this id
+     * back to us (it is the merchant reference this platform generated and sent to the rail;
+     * see PaymentRequestListener's {@code disbursementId.toString()}).
+     *
+     * <p>Strictly narrower than {@link #resolveTenantByGatewayReference}: this key is a PK
+     * component, so cross-tenant ambiguity is structurally impossible and no
+     * {@code COUNT(DISTINCT ...)} guard is needed -- see db-migrations/payment/V4's section-2
+     * comment for why that difference is a property of the input column, not a missing guard.
+     * Same "never widen beyond a tenant id" rule applies as to the gateway_reference resolvers.
+     * Returns null when no row carries this id.
+     */
+    @Query(value = "SELECT payment.resolve_disbursement_tenant_by_id(:disbursementId)", nativeQuery = true)
+    UUID resolveTenantByDisbursementId(@Param("disbursementId") UUID disbursementId);
 }

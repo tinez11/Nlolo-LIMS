@@ -13,6 +13,7 @@ import tz.co.nlolo.lifeplatform.payment.infrastructure.MobileMoneyGatewayAdapter
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -138,7 +139,11 @@ class PaymentRequestListenerIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
-            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            // M5 final-review fix wave (C2): V4 widens both ledgers' status CHECK to admit
+            // IN_DOUBT. Load-bearing for the two indeterminate-outcome tests below -- without it
+            // they fail with a check-constraint violation rather than passing.
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
     }
 
     @AfterAll
@@ -149,6 +154,7 @@ class PaymentRequestListenerIntegrationTest {
     @Autowired private DisbursementInstructionRepository disbursementRepository;
     @Autowired private AuditLogRepository auditLogRepository;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private MeterRegistry meterRegistry;
 
     private TransactionTemplate transactionTemplate;
 
@@ -158,13 +164,24 @@ class PaymentRequestListenerIntegrationTest {
         wireMock.resetAll();
     }
 
-    private void publishLoanDisbursementRequested(DomainEventEnvelope<Map<String, Object>> envelope) {
+    /** Review fix (C2): the counter is the ONLY externally-visible signal for an IN_DOUBT outcome,
+     * since no domain event is published for it -- so asserting its delta is asserting that the
+     * alerting path actually works, not merely that a column changed. */
+    private double inDoubtCounterValue(String kind) {
+        return meterRegistry.counter("lifeplatform_payment_in_doubt_total", "kind", kind).count();
+    }
+
+    private TransactionTemplate transactionTemplate() {
         if (transactionTemplate == null) {
             transactionTemplate = new TransactionTemplate(transactionManager);
         }
+        return transactionTemplate;
+    }
+
+    private void publishLoanDisbursementRequested(DomainEventEnvelope<Map<String, Object>> envelope) {
         // AFTER_COMMIT listeners run synchronously on the same thread once this commit returns,
         // so nothing further (no await/sleep) is needed after this call.
-        transactionTemplate.executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
+        transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
     }
 
     private DomainEventEnvelope<Map<String, Object>> loanDisbursementRequested(
@@ -236,14 +253,28 @@ class PaymentRequestListenerIntegrationTest {
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
     }
 
+    /**
+     * Review fix (C2). This test previously asserted {@code FAILED} plus a published
+     * {@code payment.DisbursementFailed} carrying {@code GATEWAY_UNAVAILABLE}. That was the bug: a
+     * 5xx (like a read timeout) means the request WAS sent and the rail may have paid, so recording
+     * it as a definitive failure and announcing it drove policyloan's {@code markDisbursementFailed}
+     * -- a REVERSAL loan transaction plus {@code releaseEncumbrance} -- for a payout that may have
+     * succeeded, and then silently discarded any later genuine SUCCESS callback (because
+     * {@code markCompleted} throws on a FAILED row and the callback controller swallows it).
+     *
+     * <p>Now: IN_DOUBT, and NO event at all. Both halves are asserted, and the second half is the
+     * important one -- asserting only the status would pass even if a {@code *Failed} event were
+     * still being published, which is the half that causes the false compensation.
+     */
     @Test
-    void gateway500FailsTheInstructionWithGatewayUnavailableAndDoesNotRetry() throws Exception {
+    void gateway500RecordsTheInstructionInDoubtAndPublishesNoFailedEvent() throws Exception {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(serverError()));
 
         UUID tenantId = UUID.randomUUID();
         UUID loanId = UUID.randomUUID();
         String idempotencyKey = "loan-" + loanId;
         Instant before = Instant.now();
+        double inDoubtBefore = inDoubtCounterValue("disbursement");
 
         publishLoanDisbursementRequested(
             loanDisbursementRequested(tenantId, idempotencyKey, loanId, "MPESA-0711111111", "30000.00", "TZS"));
@@ -251,17 +282,29 @@ class PaymentRequestListenerIntegrationTest {
         DisbursementInstruction instruction = disbursementRepository
             .findByIdempotencyKeyAndTenantId(idempotencyKey, tenantId)
             .orElseThrow(() -> new AssertionError("Expected a disbursement_instruction row for key " + idempotencyKey));
-        assertThat(instruction.getStatus()).isEqualTo("FAILED");
+        assertThat(instruction.getStatus()).as("indeterminate, not definitively failed").isEqualTo("IN_DOUBT");
+        // The row is NOT left at PENDING either: reconciliation must be able to tell "never
+        // attempted" from "attempted, outcome unknown". That distinction is the reason IN_DOUBT is a
+        // separate state rather than a swallow-back-to-PENDING.
+        assertThat(instruction.getStatus()).isNotEqualTo("PENDING");
 
-        List<AuditLogEntry> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
-            tenantId, "payment.DisbursementFailed", before.minusSeconds(5), Instant.now().plusSeconds(5));
-        assertThat(auditRows).hasSize(1);
-        JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
-        assertThat(payload.path("reason").asText()).isEqualTo("GATEWAY_UNAVAILABLE");
+        // The half that matters most: NO *Failed event was published, so policyloan never
+        // compensates for a payout that may have succeeded.
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+                tenantId, "payment.DisbursementFailed", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .as("no DisbursementFailed may be published for an indeterminate outcome").isEmpty();
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+                tenantId, "payment.DisbursementCompleted", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .as("and certainly no DisbursementCompleted").isEmpty();
+
+        // Because no event is published, the counter IS the alert signal -- without it this state
+        // would be invisible to anyone not reading logs line by line.
+        assertThat(inDoubtCounterValue("disbursement")).isEqualTo(inDoubtBefore + 1);
 
         // No retry: exactly one attempt reached the rail despite the 500.
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
     }
+
 
     @Test
     void rejectedDisbursementWithNoReasonInGatewayResponseStillFailsAndPublishes() throws Exception {
@@ -292,13 +335,18 @@ class PaymentRequestListenerIntegrationTest {
         assertThat(payload.path("reason").asText()).isEqualTo("GATEWAY_REJECTED");
     }
 
+    /**
+     * Review fix (C2). The most clear-cut indeterminate case of all: the rail has literally SAID it
+     * accepted the payout, it just gave us nothing to reconcile it against. This previously landed
+     * FAILED with a published {@code DisbursementFailed} -- i.e. the platform compensated for a
+     * payout the rail claimed to have taken. Now IN_DOUBT with no event.
+     *
+     * <p>Also asserts {@code gatewayReference} stays null, which is the exact condition that made
+     * C1's id-keyed resolver necessary: this row cannot be found by gateway_reference by any later
+     * callback, so the merchant reference is its only recovery handle.
+     */
     @Test
-    void acceptedResponseWithNoGatewayReferenceIsTreatedAsATransportFailureNotASuccess() throws Exception {
-        // Finding 1's mirror case, worse because the rail may have actually moved money: an
-        // ACCEPTED with nothing to reconcile against must never be persisted as COMPLETED.
-        // MobileMoneyGatewayAdapter now throws GatewayException for this shape, which
-        // PaymentRequestListener's existing catch(GatewayException) branch already turns into a
-        // FAILED row plus a published event -- the same path scenario 3 (gateway 500) proves.
+    void acceptedResponseWithNoGatewayReferenceIsRecordedInDoubtNotFailed() throws Exception {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson("{\"status\":\"ACCEPTED\"}")));
 
         UUID tenantId = UUID.randomUUID();
@@ -312,17 +360,56 @@ class PaymentRequestListenerIntegrationTest {
         DisbursementInstruction instruction = disbursementRepository
             .findByIdempotencyKeyAndTenantId(idempotencyKey, tenantId)
             .orElseThrow(() -> new AssertionError("Expected a disbursement_instruction row for key " + idempotencyKey));
-        assertThat(instruction.getStatus()).isEqualTo("FAILED");
+        assertThat(instruction.getStatus()).isEqualTo("IN_DOUBT");
+        // Still COMPLETED-free: an ACCEPTED with no reference must never be persisted as a success.
         assertThat(instruction.getGatewayReference()).isNull();
 
-        List<AuditLogEntry> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
-            tenantId, "payment.DisbursementFailed", before.minusSeconds(5), Instant.now().plusSeconds(5));
-        assertThat(auditRows).hasSize(1);
-        JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
-        assertThat(payload.path("reason").asText()).isEqualTo("GATEWAY_UNAVAILABLE");
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+                tenantId, "payment.DisbursementFailed", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .as("the rail said it accepted -- publishing DisbursementFailed here would compensate for "
+                + "a payout that probably succeeded").isEmpty();
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+                tenantId, "payment.DisbursementCompleted", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .isEmpty();
 
         // No retry, same invariant as the plain-500 scenario.
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /**
+     * The control that keeps the two C2 cases from being collapsed into one. An EXPLICIT rail
+     * decline is definite knowledge that no money moved, so it must STILL be FAILED with a published
+     * {@code DisbursementFailed} -- otherwise policyloan never learns to release the encumbrance and
+     * a genuinely-rejected loan sits at DISBURSEMENT_REQUESTED forever. The
+     * {@code rejectedDisbursement...} tests above already assert that; this one asserts the
+     * NEGATIVE side specifically, i.e. that a decline does NOT get routed to IN_DOUBT by an
+     * over-broad version of this fix.
+     */
+    @Test
+    void anExplicitRailDeclineIsStillFailedAndNeverInDoubt() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"REJECTED\",\"reason\":\"INSUFFICIENT_FLOAT\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        UUID loanId = UUID.randomUUID();
+        String idempotencyKey = "loan-" + loanId;
+        Instant before = Instant.now();
+        double inDoubtBefore = inDoubtCounterValue("disbursement");
+
+        publishLoanDisbursementRequested(
+            loanDisbursementRequested(tenantId, idempotencyKey, loanId, "MPESA-0766666666", "15000.00", "TZS"));
+
+        DisbursementInstruction instruction = disbursementRepository
+            .findByIdempotencyKeyAndTenantId(idempotencyKey, tenantId)
+            .orElseThrow(() -> new AssertionError("Expected a disbursement_instruction row for key " + idempotencyKey));
+        assertThat(instruction.getStatus()).isEqualTo("FAILED");
+
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+                tenantId, "payment.DisbursementFailed", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .as("a real business rejection must still be announced so the requester compensates")
+            .hasSize(1);
+        // And it must not have been counted as indeterminate.
+        assertThat(inDoubtCounterValue("disbursement")).isEqualTo(inDoubtBefore);
     }
 
     @Test

@@ -67,6 +67,7 @@ class MobileMoneyCallbackIntegrationTest {
     private static final String APP_ROLE_PASSWORD = "callback_it_password";
     private static final String HMAC_SECRET = "dev-only-placeholder-secret"; // application.yml default
     private static final String AMBIGUOUS_COUNTER = "lifeplatform_payment_callback_ambiguous_total";
+    private static final String UNKNOWN_STATUS_COUNTER = "lifeplatform_payment_callback_unknown_status_total";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
@@ -84,7 +85,10 @@ class MobileMoneyCallbackIntegrationTest {
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
-            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql");
+            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            // M5 final-review fix wave: V4 adds the id-keyed resolvers C1's fallback calls, and
+            // widens both status CHECKs for C2's IN_DOUBT. Both are load-bearing below.
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -273,8 +277,146 @@ class MobileMoneyCallbackIntegrationTest {
             .isLessThan(Duration.ofSeconds(3));
     }
 
+    /**
+     * Review fix (C1), the whole point of it. An IN_DOUBT row with {@code gateway_reference = NULL}
+     * -- the state a transport failure leaves behind, and the population most likely to need webhook
+     * recovery -- must be resolvable by the aggregator's later notification. The PRIMARY route
+     * cannot possibly work: {@code resolve_disbursement_tenant} keys on {@code gateway_reference},
+     * which is null here, and V2's supporting index is literally
+     * {@code WHERE gateway_reference IS NOT NULL}. Before this fix the callback resolved to nothing,
+     * logged a WARN, acked 200, and the payout was unrecoverable forever.
+     *
+     * <p>The fallback uses the callback's own {@code reference} field -- the merchant reference THIS
+     * PLATFORM generated and sent to the rail, i.e. {@code disbursementId.toString()}. Asserts three
+     * things, because the first alone would be satisfied by several wrong implementations: the row
+     * reaches COMPLETED (so C2's IN_DOUBT is genuinely non-terminal, not a dead end), the
+     * aggregator's reference is now PERSISTED (so a redelivery resolves via the primary route from
+     * here on -- the fix repairs the row rather than depending on the fallback forever), and the
+     * whole thing ran under real app_role RLS.
+     */
+    @Test
+    void anInDoubtRowWithNoGatewayReferenceIsRecoveredViaTheCallbacksOwnMerchantReference() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID disbursementId = insertDisbursementWithStatusAndNoGatewayReference(tenantId, "it-key-indoubt", "IN_DOUBT");
+
+        // gatewayReference is a value NO row carries -- so the primary resolver must resolve to
+        // nothing and the fallback must be what rescues this. If the assertion below passed while
+        // the fallback were absent, this test would be proving nothing.
+        String body = callbackBody("SUCCESS", disbursementId.toString(), "GW-NEVER-SEEN-BEFORE", null);
+        ResponseEntity<String> response = postSigned(body);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        var row = readDisbursementById(tenantId, disbursementId);
+        assertThat(row.get("status")).as("an IN_DOUBT row must be recoverable, not stranded").isEqualTo("COMPLETED");
+        assertThat(row.get("gatewayReference"))
+            .as("the aggregator's reference must be written on the way through, repairing the null")
+            .isEqualTo("GW-NEVER-SEEN-BEFORE");
+    }
+
+    /** The same fallback for a PENDING row (the C3 scenario: a pool timeout inside phase 3 leaves a
+     * PENDING row with no gateway_reference after the rail already accepted). Separate from the
+     * IN_DOUBT case above because the two arise from different failures and a fix that only handled
+     * one would leave a real hole. */
+    @Test
+    void aPendingRowWithNoGatewayReferenceIsAlsoRecoverableViaTheMerchantReference() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID disbursementId = insertDisbursementWithStatusAndNoGatewayReference(tenantId, "it-key-pending-null", "PENDING");
+
+        ResponseEntity<String> response = postSigned(
+            callbackBody("FAILED", disbursementId.toString(), "GW-LATE-DECLINE", "INSUFFICIENT_FLOAT"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        var row = readDisbursementById(tenantId, disbursementId);
+        assertThat(row.get("status")).isEqualTo("FAILED");
+        assertThat(row.get("gatewayReference")).isEqualTo("GW-LATE-DECLINE");
+    }
+
+    /**
+     * Review fix (C1): the fallback must NOT mask a genuine ambiguity. Two tenants share one
+     * gateway_reference (AMBIGUOUS), and the callback ALSO carries a perfectly resolvable merchant
+     * reference pointing at a third, unrelated row. The correct behaviour is to refuse everything:
+     * report AMBIGUOUS, increment the ambiguous counter, and leave all three rows untouched --
+     * because a reference collision means we cannot trust which row this notification is about at
+     * all, regardless of what else in the payload happens to resolve.
+     */
+    @Test
+    void anAmbiguousGatewayReferenceIsStillAmbiguousEvenWhenTheMerchantReferenceWouldResolve() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        UUID tenantC = UUID.randomUUID();
+        insertDisbursement(tenantA, "it-key-amb-mask-a", "GW-SHARED-MASK");
+        insertDisbursement(tenantB, "it-key-amb-mask-b", "GW-SHARED-MASK");
+        UUID unrelatedId = insertDisbursementWithStatusAndNoGatewayReference(tenantC, "it-key-amb-mask-c", "IN_DOUBT");
+
+        double before = ambiguousCounterValue();
+
+        ResponseEntity<String> response = postSigned(
+            callbackBody("SUCCESS", unrelatedId.toString(), "GW-SHARED-MASK", null));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(ambiguousCounterValue()).as("the ambiguity must still be reported").isEqualTo(before + 1);
+        assertThat(readDisbursement(tenantA, "GW-SHARED-MASK").get("status")).isEqualTo("PENDING");
+        assertThat(readDisbursement(tenantB, "GW-SHARED-MASK").get("status")).isEqualTo("PENDING");
+        assertThat(readDisbursementById(tenantC, unrelatedId).get("status"))
+            .as("the fallback must not have quietly applied the outcome to the row the merchant "
+                + "reference points at -- an ambiguous callback is not trustworthy for ANY row")
+            .isEqualTo("IN_DOUBT");
+    }
+
+    /**
+     * Review fix (C2, second half). {@code isSuccess} used to be
+     * {@code "SUCCESS".equalsIgnoreCase(status)} with every other value treated as a TERMINAL
+     * FAILURE, on an unvalidated {@code @NotBlank String}. So a vendor code, a typo, or an
+     * aggregator's renamed status silently drove a real financial transition to FAILED -- publishing
+     * {@code DisbursementFailed} and making policyloan write a REVERSAL and release the encumbrance.
+     *
+     * <p>Now: nothing is applied, and the ERROR is counted so a dialect drift is visible rather than
+     * silent. Asserts the row is genuinely untouched (still PENDING) AND the counter moved -- the
+     * status assertion alone would also pass if the request had 500'd before reaching any logic.
+     */
+    @Test
+    void anUnrecognizedCallbackStatusAppliesNothingAndIncrementsTheUnknownStatusCounter() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        insertDisbursement(tenantId, "it-key-unknown-status", "GW-UNKNOWN-STATUS");
+
+        double before = unknownStatusCounterValue();
+
+        // A plausible vendor-specific status this platform has never heard of.
+        ResponseEntity<String> response = postSigned(
+            callbackBody("TXN_QUEUED_AT_SWITCH", "ref-unknown", "GW-UNKNOWN-STATUS", null));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(readDisbursement(tenantId, "GW-UNKNOWN-STATUS").get("status"))
+            .as("an unrecognized status string must never drive a financial state transition")
+            .isEqualTo("PENDING");
+        assertThat(unknownStatusCounterValue()).isEqualTo(before + 1);
+    }
+
+    /** A recognized NON-TERMINAL status (a "still processing" notification) must also apply nothing,
+     * but must NOT be alerted on -- otherwise the unknown-status alert fires on normal traffic, gets
+     * muted, and then no longer works for the case it was written for. */
+    @Test
+    void aRecognizedNonTerminalCallbackStatusAppliesNothingAndDoesNotAlert() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        insertDisbursement(tenantId, "it-key-processing", "GW-PROCESSING");
+
+        double before = unknownStatusCounterValue();
+
+        ResponseEntity<String> response = postSigned(
+            callbackBody("PROCESSING", "ref-processing", "GW-PROCESSING", null));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(readDisbursement(tenantId, "GW-PROCESSING").get("status")).isEqualTo("PENDING");
+        assertThat(unknownStatusCounterValue()).as("recognized non-terminal statuses are not alerts")
+            .isEqualTo(before);
+    }
+
     private double ambiguousCounterValue() {
         return meterRegistry.counter(AMBIGUOUS_COUNTER).count();
+    }
+
+    private double unknownStatusCounterValue() {
+        return meterRegistry.counter(UNKNOWN_STATUS_COUNTER).count();
     }
 
     private static String callbackBody(String status, String reference, String gatewayReference, String reason) {
@@ -316,6 +458,51 @@ class MobileMoneyCallbackIntegrationTest {
             insert.setString(2, idempotencyKey);
             insert.setString(3, gatewayReference);
             assertThat(insert.executeUpdate()).isEqualTo(1);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /** Seeds the exact row shape C1 is about: NO gateway_reference at all, which is what a transport
+     * failure (or a pool timeout inside phase 3) leaves behind. Returns the generated
+     * disbursement_id, because that id -- echoed back by the aggregator as the callback's
+     * {@code reference} -- is the ONLY handle such a row has. Asserts the insert's affected-row count
+     * before trusting the state, per this project's own vacuous-test rule. */
+    private UUID insertDisbursementWithStatusAndNoGatewayReference(UUID tenantId, String idempotencyKey, String status)
+            throws Exception {
+        TenantContext.set(tenantId);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO payment.disbursement_instruction (tenant_id, idempotency_key, payee_ref, " +
+                 "amount, currency, purpose, source_ref, status, gateway_reference) " +
+                 "VALUES (?, ?, 'MPESA-IT', 1.00, 'TZS', 'LOAN_DISBURSEMENT', 'it-source', ?, NULL) " +
+                 "RETURNING disbursement_id")) {
+            insert.setObject(1, tenantId);
+            insert.setString(2, idempotencyKey);
+            insert.setString(3, status);
+            try (ResultSet rs = insert.executeQuery()) {
+                assertThat(rs.next()).as("insert must have produced exactly one row").isTrue();
+                return rs.getObject(1, UUID.class);
+            }
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private java.util.Map<String, String> readDisbursementById(UUID tenantId, UUID disbursementId) throws Exception {
+        TenantContext.set(tenantId);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT status, gateway_reference FROM payment.disbursement_instruction " +
+                 "WHERE tenant_id = ? AND disbursement_id = ?")) {
+            select.setObject(1, tenantId);
+            select.setObject(2, disbursementId);
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("row for tenant %s / id %s not found", tenantId, disbursementId).isTrue();
+                String reference = rs.getString(2);
+                return java.util.Map.of("status", rs.getString(1),
+                    "gatewayReference", reference == null ? "<null>" : reference);
+            }
         } finally {
             TenantContext.clear();
         }

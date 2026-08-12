@@ -86,8 +86,20 @@ public class MobileMoneyGatewayAdapter implements PaymentGatewayPort {
                 // An ACCEPTED with nothing to reconcile against is untrustworthy, not a success --
                 // the caller's completeDisbursement/confirmCollection persists gatewayReference as
                 // the durable proof the rail took the money, so a null here can never be returned
-                // as a genuine accept. Treated as a transport-level failure (same family as a 5xx
-                // or an empty body above), never as GatewayResult(accepted=true, null, ...).
+                // as a genuine accept. Treated as INDETERMINATE (same family as a 5xx or an empty
+                // body above), never as GatewayResult(accepted=true, null, ...).
+                //
+                // Review fix (C2): this is the case that most obviously must not be recorded as
+                // definitive FAILED -- the rail has just SAID it accepted the payout. Raising
+                // GatewayException routes it through PaymentRequestListener's
+                // catch(GatewayException), which now records IN_DOUBT and publishes no *Failed
+                // event, instead of triggering policyloan's REVERSAL + encumbrance release for a
+                // payout the rail claims it took. Note the counter tag below stays "FAILED": its
+                // name and tag values are fixed by the already-shipped alert expression in
+                // observability/alert-rules.yml:52-57, and "this gateway REQUEST did not produce a
+                // usable result" is still true and still exactly what that error-rate alert is
+                // about. The IN_DOUBT distinction lives on the ledger row and on its own separate
+                // counter (lifeplatform_payment_in_doubt_total), not by retagging this one.
                 meterRegistry.counter(COUNTER, "status", "FAILED").increment();
                 throw new GatewayException("Mobile money gateway returned ACCEPTED with no gatewayReference for " + path);
             }

@@ -9,9 +9,10 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * An outbound payout instruction with a real lifecycle (PENDING -> COMPLETED/FAILED), NOT an
- * append-only ledger row -- see db-migrations/payment/V2's section-1 comment for why the
- * append-only REVOKE was dropped in M5 rather than the mutable status.
+ * An outbound payout instruction with a real lifecycle (PENDING -> IN_DOUBT -> COMPLETED/FAILED,
+ * or PENDING -> COMPLETED/FAILED directly), NOT an append-only ledger row -- see
+ * db-migrations/payment/V2's section-1 comment for why the append-only REVOKE was dropped in M5
+ * rather than the mutable status.
  *
  * <p>markCompleted/markFailed are deliberately IDEMPOTENT on re-entry into the same terminal
  * state and reject a conflicting one. That asymmetry is copied from the reserve/confirm/release
@@ -20,6 +21,16 @@ import java.util.UUID;
  * is an explicit idempotent no-op ("so a caller retrying after a network timeout ... doesn't get
  * a spurious error"). An at-least-once gateway callback is exactly that retrying caller, so a
  * repeat of the SAME outcome must be silent; a contradictory outcome must not be.
+ *
+ * <p><b>IN_DOUBT (review finding C2)</b> is a NON-terminal state meaning "we sent this to the rail
+ * and do not know whether money moved" -- a read timeout, or an ACCEPTED response carrying no
+ * gatewayReference to reconcile against. It is deliberately NOT the same thing as FAILED, which
+ * means "the rail definitely did not pay": recording an unknown outcome as FAILED published
+ * payment.DisbursementFailed and drove a real REVERSAL plus encumbrance release in policyloan --
+ * a compensation for a payout that may well have succeeded. See db-migrations/payment/V4's
+ * section-1 comment for the full write-up. Because IN_DOUBT is non-terminal, it is an accepted
+ * SOURCE state for both terminal transitions below: that is precisely what makes the state
+ * recoverable by a later genuine callback rather than merely better-labelled.
  */
 @Entity
 @Table(name = "disbursement_instruction", schema = "payment")
@@ -84,7 +95,7 @@ public class DisbursementInstruction {
         if ("COMPLETED".equals(status)) {
             return; // idempotent: a redelivered success callback is not an error
         }
-        if (!"PENDING".equals(status)) {
+        if (!isResolvable()) {
             throw new IllegalStateException("Disbursement " + disbursementId + " is " + status + ", cannot mark COMPLETED");
         }
         this.status = "COMPLETED";
@@ -95,11 +106,50 @@ public class DisbursementInstruction {
         if ("FAILED".equals(status)) {
             return; // idempotent, same reasoning as markCompleted
         }
-        if (!"PENDING".equals(status)) {
+        if (!isResolvable()) {
             throw new IllegalStateException("Disbursement " + disbursementId + " is " + status + ", cannot mark FAILED");
         }
         this.status = "FAILED";
         this.gatewayReference = gatewayReference;
+    }
+
+    /**
+     * Records "sent to the rail, outcome unknown" (review finding C2). Non-terminal, and
+     * deliberately NOT accompanied by any published event -- see
+     * {@code PaymentApiImpl.markDisbursementInDoubt}.
+     *
+     * <p>Only PENDING -> IN_DOUBT is legal. Idempotent on repeat (the same indeterminate outcome
+     * observed twice is not an error), and it must never pull a row BACK out of a terminal state:
+     * once the rail has told us definitively, a later ambiguity does not un-tell us.
+     * {@code gatewayReference} is accepted (and only ever written when non-null) because the one
+     * indeterminate case that DOES carry a reference must not lose it -- and because overwriting a
+     * previously-recorded reference with null would destroy the very correlation handle
+     * {@code resolve_disbursement_tenant} needs.
+     */
+    public void markInDoubt(String gatewayReference) {
+        if ("IN_DOUBT".equals(status)) {
+            if (gatewayReference != null) {
+                this.gatewayReference = gatewayReference;
+            }
+            return;
+        }
+        if (!"PENDING".equals(status)) {
+            throw new IllegalStateException("Disbursement " + disbursementId + " is " + status + ", cannot mark IN_DOUBT");
+        }
+        this.status = "IN_DOUBT";
+        if (gatewayReference != null) {
+            this.gatewayReference = gatewayReference;
+        }
+    }
+
+    /** PENDING (never attempted, or attempted with no outcome yet) and IN_DOUBT (attempted,
+     * outcome unknown) are the two NON-terminal states, so both are legal sources for a terminal
+     * transition. Admitting IN_DOUBT here is the whole point of C2's fix: without it a genuine
+     * SUCCESS/FAILED callback arriving later for an in-doubt payout would throw, and
+     * MobileMoneyCallbackController would swallow that and ack 200, so the aggregator would stop
+     * retrying and the row would be stranded forever. */
+    private boolean isResolvable() {
+        return "PENDING".equals(status) || "IN_DOUBT".equals(status);
     }
 
     public void assignToBatch(UUID batchId) { this.batchId = batchId; }

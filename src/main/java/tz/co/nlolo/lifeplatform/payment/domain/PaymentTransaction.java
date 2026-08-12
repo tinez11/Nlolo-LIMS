@@ -9,9 +9,16 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * An inbound payment transaction with a real lifecycle (PENDING -> CONFIRMED/FAILED), NOT an
- * append-only ledger row -- see db-migrations/payment/V2's section-1 comment for why the
- * append-only REVOKE was dropped in M5 rather than the mutable status.
+ * An inbound payment transaction with a real lifecycle (PENDING -> IN_DOUBT -> CONFIRMED/FAILED,
+ * or PENDING -> CONFIRMED/FAILED directly), NOT an append-only ledger row -- see
+ * db-migrations/payment/V2's section-1 comment for why the append-only REVOKE was dropped in M5
+ * rather than the mutable status.
+ *
+ * <p><b>IN_DOUBT (review finding C2)</b> means "we sent this to the rail and do not know whether
+ * money moved" and is deliberately distinct from FAILED ("the rail definitely did not collect").
+ * See {@link DisbursementInstruction}'s javadoc and db-migrations/payment/V4's section-1 comment
+ * for the full reasoning; the collection ledger carries the identical state for the identical
+ * reason, with CONFIRMED as its success value rather than COMPLETED (V1's own asymmetry).
  *
  * <p>markConfirmed/markFailed are deliberately IDEMPOTENT on re-entry into the same terminal
  * state and reject a conflicting one. That asymmetry is copied from the reserve/confirm/release
@@ -77,7 +84,7 @@ public class PaymentTransaction {
         if ("CONFIRMED".equals(status)) {
             return; // idempotent: a redelivered success callback is not an error
         }
-        if (!"PENDING".equals(status)) {
+        if (!isResolvable()) {
             throw new IllegalStateException("Payment " + paymentTransactionId + " is " + status + ", cannot mark CONFIRMED");
         }
         this.status = "CONFIRMED";
@@ -88,11 +95,38 @@ public class PaymentTransaction {
         if ("FAILED".equals(status)) {
             return; // idempotent, same reasoning as markConfirmed
         }
-        if (!"PENDING".equals(status)) {
+        if (!isResolvable()) {
             throw new IllegalStateException("Payment " + paymentTransactionId + " is " + status + ", cannot mark FAILED");
         }
         this.status = "FAILED";
         this.gatewayReference = gatewayReference;
+    }
+
+    /** Records "sent to the rail, outcome unknown" (review finding C2). Non-terminal, publishes
+     * nothing. Mirrors {@link DisbursementInstruction#markInDoubt} exactly -- same legal source
+     * state (PENDING only, never a walk-back out of a terminal state), same idempotent repeat,
+     * same never-null-over-an-existing-reference rule. */
+    public void markInDoubt(String gatewayReference) {
+        if ("IN_DOUBT".equals(status)) {
+            if (gatewayReference != null) {
+                this.gatewayReference = gatewayReference;
+            }
+            return;
+        }
+        if (!"PENDING".equals(status)) {
+            throw new IllegalStateException("Payment " + paymentTransactionId + " is " + status + ", cannot mark IN_DOUBT");
+        }
+        this.status = "IN_DOUBT";
+        if (gatewayReference != null) {
+            this.gatewayReference = gatewayReference;
+        }
+    }
+
+    /** See {@link DisbursementInstruction}'s equivalent: PENDING and IN_DOUBT are the two
+     * non-terminal states, so both are legal sources for a terminal transition -- which is what
+     * makes an IN_DOUBT row recoverable by a later genuine callback. */
+    private boolean isResolvable() {
+        return "PENDING".equals(status) || "IN_DOUBT".equals(status);
     }
 
     public UUID getPaymentTransactionId() { return paymentTransactionId; }

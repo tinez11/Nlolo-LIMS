@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.payment.domain.GatewayException;
 import tz.co.nlolo.lifeplatform.payment.domain.PaymentGatewayPort;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -55,24 +56,52 @@ import java.util.UUID;
  * <p>Failure posture differs from every other listener too. Elsewhere a caught exception is
  * logged and dropped, which is safe because audit has already durably recorded the raw event and
  * the missed side effect is manually recoverable. Here a dropped event means money never moved,
- * so a gateway failure is persisted as a FAILED row plus a published *Failed event — the
- * requesting module finds out and compensates. Only a failure to even record the request (a DB
- * error before the first commit) is logged and dropped, and in that case nothing was promised to
- * anyone: no row, no gateway call, no event.
+ * so a gateway outcome is always persisted, never left in a log line alone. Only a failure to even
+ * record the request (a DB error before the first commit) is logged and dropped, and in that case
+ * nothing was promised to anyone: no row, no gateway call, no event.
+ *
+ * <p><b>Three outcomes, not two (review fix C2).</b> The plan's Global Constraints said "a gateway
+ * failure must land the row in FAILED with a published *Failed event" -- correct for a rail that
+ * DECLINES, and wrong for a rail that says nothing:
+ * <ul>
+ *   <li><b>accepted</b> -> COMPLETED/CONFIRMED + {@code *Completed}/{@code *Confirmed} event.</li>
+ *   <li><b>explicitly declined</b> (a business rejection like INSUFFICIENT_FLOAT) -> FAILED +
+ *       {@code *Failed} event, so the requesting module compensates. Unchanged.</li>
+ *   <li><b>indeterminate</b> ({@link GatewayException}: read timeout, 5xx, empty body, or ACCEPTED
+ *       with no gatewayReference) -> IN_DOUBT, and NO event at all. Publishing {@code *Failed} here
+ *       drove a real REVERSAL plus encumbrance release in policyloan for a payout that may have
+ *       succeeded. The signal instead is an ERROR log plus the
+ *       {@code lifeplatform_payment_in_doubt_total} counter -- see {@link #recordIndeterminate}.</li>
+ * </ul>
+ * Routing on the right condition matters: the decline case is {@code !result.accepted()}, the
+ * indeterminate case is {@code catch (GatewayException)}. Collapsing the two back together
+ * reintroduces the bug in whichever direction it is collapsed.
  */
 @Component
 public class PaymentRequestListener {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentRequestListener.class);
 
+    /** Review fix (C2): the alertable signal for an IN_DOUBT outcome, which by design publishes no
+     * domain event at all and would otherwise be invisible to anyone not reading logs line by line.
+     * Tagged {@code kind=disbursement|collection} so the two money directions can be alerted on
+     * separately if ever needed, while the untagged total still works in a single alert expression.
+     * Follows MobileMoneyGatewayAdapter's and MobileMoneyCallbackController's existing
+     * {@code lifeplatform_payment_*_total} naming convention; observability/alert-rules.yml carries
+     * the matching rule. */
+    private static final String IN_DOUBT_COUNTER = "lifeplatform_payment_in_doubt_total";
+
     private final PaymentApiImpl paymentApiImpl;
     private final PaymentGatewayPort gateway;
+    private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public PaymentRequestListener(PaymentApiImpl paymentApiImpl, PaymentGatewayPort gateway,
+                                   MeterRegistry meterRegistry,
                                    PlatformTransactionManager transactionManager) {
         this.paymentApiImpl = paymentApiImpl;
         this.gateway = gateway;
+        this.meterRegistry = meterRegistry;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -168,13 +197,24 @@ public class PaymentRequestListener {
                     paymentApiImpl.failDisbursement(tenantId, disbursementId, result.gatewayReference(), reason));
             }
         } catch (GatewayException e) {
-            // Transport failure. The instruction is already committed as PENDING, so this is
-            // recorded as FAILED and announced -- never left as a silent PENDING row nobody
-            // will ever look at again. No gatewayReference here is genuinely correct -- there is
-            // no `result` at all when the rail never responded.
-            log.error("Gateway transport failure disbursing {} for tenant {}", disbursementId, tenantId, e);
-            requiresNewTransactionTemplate.executeWithoutResult(status ->
-                paymentApiImpl.failDisbursement(tenantId, disbursementId, null, "GATEWAY_UNAVAILABLE"));
+            // INDETERMINATE, not failed (review fix C2). A GatewayException means one of: a read
+            // timeout (mobile-money.read-timeout-ms: 10000 -- the request was sent and the rail may
+            // have paid before the socket went quiet), a 5xx, an empty body, or an ACCEPTED
+            // response with no gatewayReference (MobileMoneyGatewayAdapter's own check). In none of
+            // those cases do we know whether money moved -- which is exactly the consequence
+            // judgment call 4 (no retry) predicted for this adapter and which was not carried into
+            // the state machine until now.
+            //
+            // Note what is NOT here: the `else` branch above, an explicit rail DECLINE, still goes
+            // to FAILED with a published event. That distinction is the whole fix -- "the rail said
+            // no" and "the rail said nothing" are different facts, and only the first one justifies
+            // policyloan's REVERSAL + releaseEncumbrance compensation.
+            //
+            // No gatewayReference is passed: there is no `result` at all when the rail never gave
+            // us a usable response. That is exactly why C1's id-keyed callback resolver exists --
+            // otherwise this row could never be resolved by any later notification.
+            recordIndeterminate("disbursement", disbursementId, tenantId, e, () ->
+                paymentApiImpl.markDisbursementInDoubt(tenantId, disbursementId, null));
         }
     }
 
@@ -196,10 +236,34 @@ public class PaymentRequestListener {
                     paymentApiImpl.failCollection(tenantId, transactionId, result.gatewayReference(), reason));
             }
         } catch (GatewayException e) {
-            log.error("Gateway transport failure collecting {} for tenant {}", transactionId, tenantId, e);
-            requiresNewTransactionTemplate.executeWithoutResult(status ->
-                paymentApiImpl.failCollection(tenantId, transactionId, null, "GATEWAY_UNAVAILABLE"));
+            // Same C2 routing as submitDisbursement's catch, same reasoning: indeterminate ->
+            // IN_DOUBT with no published event; an explicit decline (the else-branch above) still
+            // goes to FAILED with one.
+            recordIndeterminate("collection", transactionId, tenantId, e, () ->
+                paymentApiImpl.markCollectionInDoubt(tenantId, transactionId, null));
         }
+    }
+
+    /**
+     * The alertable signal for an IN_DOUBT outcome (review fix C2). Because no {@code *Failed}
+     * event is published for this state -- deliberately; see
+     * {@code PaymentApiImpl.markDisbursementInDoubt}'s javadoc for why publishing one causes a
+     * false financial compensation in policyloan -- the requesting module hears nothing at all, so
+     * without this the state would be genuinely invisible outside the row itself. Two signals, both
+     * required: an ERROR log naming the id an operator needs in order to reconcile against the
+     * aggregator's statement, and a Micrometer counter
+     * ({@value #IN_DOUBT_COUNTER}) that observability/alert-rules.yml alerts on.
+     *
+     * <p>The state transition runs in its own REQUIRES_NEW transaction, exactly as the FAILED and
+     * COMPLETED transitions above do, and for the same reason (an AFTER_COMMIT listener cannot open
+     * a transaction through a plain REQUIRED call -- see this class's own javadoc).
+     */
+    private void recordIndeterminate(String kind, UUID id, UUID tenantId, GatewayException cause, Runnable transition) {
+        log.error("INDETERMINATE gateway outcome for {} {} (tenant {}): recorded as IN_DOUBT, NOT as FAILED -- "
+            + "money may or may not have moved, so no *Failed event is published and no compensation is "
+            + "triggered. Requires reconciliation against the aggregator's statement.", kind, id, tenantId, cause);
+        meterRegistry.counter(IN_DOUBT_COUNTER, "kind", kind).increment();
+        requiresNewTransactionTemplate.executeWithoutResult(status -> transition.run());
     }
 
     private record Money(BigDecimal amount, String currency) {}

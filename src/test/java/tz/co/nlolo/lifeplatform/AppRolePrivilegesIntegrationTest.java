@@ -149,7 +149,18 @@ class AppRolePrivilegesIntegrationTest {
             // needs payment's own schema/grants -- V1 alone had zero GRANT statements anywhere
             // in the file, the exact M1 failure mode this class exists to catch.
             "db-migrations/payment/V1__create_payment_schema.sql",
-            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            // M5 final-review fix wave (I2). payment/V3 and V4 issue SIX `GRANT EXECUTE ... TO
+            // app_role` statements between them -- the only function grants anywhere in this
+            // platform -- and this class is the dedicated guard for exactly the bug class of "a
+            // migration adds a database object app_role cannot actually reach". Until now those
+            // grants were exercised only FUNCTIONALLY (MobileMoneyCallbackIntegrationTest happens to
+            // call the functions), never by the test built to catch a missing grant, so a future
+            // migration that added a SECURITY DEFINER function and forgot its GRANT could slip past
+            // the one test written for that failure mode. See
+            // appRoleCanExecuteEveryPaymentCallbackResolverFunction below.
+            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -357,14 +368,66 @@ class AppRolePrivilegesIntegrationTest {
         // version relied on nothing happening to listen on the application.yml default port,
         // which the real infra/docker-compose.yml mock-mobile-money service binds to on a
         // developer machine), the gateway call now deterministically fails, and policyloan's
-        // PaymentEventListener consumes the resulting payment.DisbursementFailed and drives the
-        // loan to DISBURSEMENT_FAILED, synchronously, before getLoan below ever runs. This is not
-        // a workaround -- it further strengthens this test's own point (app_role privileges
-        // through the app's DataSource): markDisbursementFailed additionally writes a REVERSAL
-        // loan_transaction row and updates policy.policy_account's encumbrance, both through
-        // app_role's own connection.
+        // PaymentEventListener consumes the outcome.
+        //
+        // M5 FINAL-REVIEW FIX WAVE (C2) CHANGED THIS TEST'S EXPECTED OUTCOME, and the change is the
+        // point rather than an accommodation. A connection to a dead address is a TRANSPORT failure
+        // -- indeterminate, not a rail decline -- so payment now records IN_DOUBT and publishes NO
+        // event at all, instead of recording FAILED and publishing payment.DisbursementFailed.
+        // policyloan therefore hears nothing and the loan correctly REMAINS at
+        // DISBURSEMENT_REQUESTED with its encumbrance intact, rather than being compensated
+        // (a REVERSAL loan_transaction plus releaseEncumbrance) for a payout whose fate is unknown.
+        // This assertion is the platform-level proof of the "no *Failed event for IN_DOUBT" half of
+        // C2: it observes the DOWNSTREAM MODULE's state, through the real cross-module event chain,
+        // rather than payment's own row.
+        //
+        // This still exercises app_role's own privileges through the app's DataSource (the whole
+        // point of this class) -- originateLoan itself writes policy_loan, loan_transaction and
+        // policy.policy_account rows, and payment's phase-1 insert plus its IN_DOUBT update both go
+        // through app_role too. What it no longer exercises is the compensation path; that is
+        // covered directly by policyloan's own tests.
         LoanView fetched = policyLoanApi.getLoan(loan.loanId());
-        assertThat(fetched.status()).isEqualTo(LoanStatus.DISBURSEMENT_FAILED);
+        assertThat(fetched.status())
+            .as("an indeterminate gateway outcome must NOT compensate -- the loan stays at "
+                + "DISBURSEMENT_REQUESTED with the encumbrance intact")
+            .isEqualTo(LoanStatus.DISBURSEMENT_REQUESTED);
+    }
+
+    /**
+     * Review fix (I2). This class is the platform's dedicated guard for "app_role cannot actually
+     * reach something a migration created", and it had a blind spot: db-migrations/payment/V3 and V4
+     * are the only migrations anywhere that {@code GRANT EXECUTE} on functions, and neither file was
+     * in this class's migration list at all -- so those six grants were covered only incidentally, by
+     * a different test that happens to call the functions through the webhook. A future migration
+     * adding a SECURITY DEFINER function and forgetting its GRANT would have slipped past the one
+     * test written for exactly that failure mode.
+     *
+     * <p>Calls all six through the application's OWN DataSource (real {@code app_role},
+     * NOSUPERUSER NOBYPASSRLS), which is what makes this non-vacuous: {@code has_function_privilege}
+     * would read the catalogue back, whereas an actual invocation proves the runtime identity can
+     * execute them. Deliberately calls with values that match nothing -- the assertion is about
+     * EXECUTE privilege, not about resolution behaviour (covered by
+     * MobileMoneyCallbackIntegrationTest), and a missing grant fails with
+     * "permission denied for function" regardless of arguments.
+     */
+    @Test
+    void appRoleCanExecuteEveryPaymentCallbackResolverFunction() throws Exception {
+        TenantContext.set(UUID.randomUUID());
+        UUID unmatchedId = UUID.randomUUID();
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            assertThat(connection.getMetaData().getUserName()).isEqualTo("app_role");
+            for (String call : List.of(
+                    "SELECT payment.resolve_disbursement_tenant('no-such-reference')",
+                    "SELECT payment.resolve_payment_transaction_tenant('no-such-reference')",
+                    "SELECT payment.disbursement_gateway_reference_is_ambiguous('no-such-reference')",
+                    "SELECT payment.payment_transaction_gateway_reference_is_ambiguous('no-such-reference')",
+                    "SELECT payment.resolve_disbursement_tenant_by_id('" + unmatchedId + "')",
+                    "SELECT payment.resolve_payment_transaction_tenant_by_id('" + unmatchedId + "')")) {
+                try (ResultSet rs = statement.executeQuery(call)) {
+                    assertThat(rs.next()).as("%s must return exactly one row", call).isTrue();
+                }
+            }
+        }
     }
 
     /**
