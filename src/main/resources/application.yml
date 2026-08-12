@@ -10,6 +10,58 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: none
+  datasource:
+    # =========================================================================================
+    # DO NOT "optimize" maximum-pool-size back down. It is deliberately much larger than the
+    # naive "one connection per in-flight request" mental model, and the reason is structural,
+    # not a workaround for slow queries.
+    #
+    # M5 made the nested AFTER_COMMIT chain three levels deep for the first time:
+    #   loan origination (policyloan)
+    #     -> payment.PaymentRequestListener phase 1/phase 3
+    #        -> policyloan.PaymentEventListener -> PolicyLoanApiImpl.markDisbursed
+    #           -> audit.DomainEventAuditListener
+    # EVERY level is PROPAGATION_REQUIRES_NEW, and Spring holds a SUSPENDED transaction's JDBC
+    # connection for as long as the OUTER transaction lives -- it does not release and re-acquire.
+    # So a single logical business operation occupies several pool slots simultaneously.
+    #
+    # MEASURED, not estimated: instrumenting HikariPoolMXBean.getActiveConnections() with a
+    # spin-sampling thread across one real loan origination driven all the way through the chain
+    # above (real Testcontainers Postgres, real WireMock rail returning ACCEPTED, loan reaching
+    # DISBURSED) peaked at 4 concurrent ACTIVE pooled connections for that ONE origination.
+    #
+    # Hikari's default maximum-pool-size is 10, which means THREE concurrent originations were
+    # enough to exhaust the pool and self-block -- reproduced as a hard
+    # "Connection is not available, request timed out" by constraining the pool. That failure is
+    # especially bad here rather than merely slow: a pool timeout thrown inside payment's phase 3
+    # is caught by PaymentRequestListener.withTenant's catch(Exception), which logs and moves on,
+    # leaving a PENDING row with no gateway_reference AFTER the rail has already accepted the
+    # payout -- i.e. money out of the door with no durable record of the outcome.
+    #
+    # 24 = the measured chain depth (4) x 6 concurrent originations, and the same headroom covers
+    # ordinary single-connection request traffic many times over. Deliberately expressed as
+    # "depth x concurrency" so a future reader re-derives it rather than guessing.
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAX_POOL_SIZE:24}
+      # Explicit, and it becomes necessary the moment maximum-pool-size is raised: Hikari DEFAULTS
+      # minimum-idle to maximum-pool-size, so setting the maximum alone would make every JVM eagerly
+      # open and then hold 24 Postgres connections for its entire life. maximum-pool-size is BURST
+      # headroom for the nested chain above; steady state needs nothing like it, and Postgres
+      # connections are not free (each is a backend process). Hikari grows the pool on demand up to
+      # the maximum, so raising the ceiling costs nothing while this floor stays low.
+      #
+      # Honest note on a claim an earlier draft of this comment made and this one does not: the
+      # "Surefire is going to kill self fork JVM" message in the build output is NOT caused by this
+      # setting. That was checked rather than assumed -- the full suite was re-run with these three
+      # properties removed entirely (245 tests, Hikari back to its own defaults) and the message
+      # appears identically, so it is pre-existing on this branch and unrelated to pool sizing.
+      minimum-idle: ${SPRING_DATASOURCE_HIKARI_MIN_IDLE:5}
+      # Hikari's default is 30s. Explicit and much shorter: 30s of silent queueing turns pool
+      # exhaustion into indistinguishable latency, and a request thread blocked that long on a
+      # connection is already a failed request. 10s is long enough to absorb a genuine burst of
+      # the nested chains above (each holds its slots for milliseconds, not seconds) and short
+      # enough that exhaustion surfaces as a visible error someone can act on.
+      connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT_MS:10000}
 
 app:
   security:
@@ -39,6 +91,31 @@ mobile-money:
   # accepting unsigned ones.
   callback-hmac-secret: ${MOBILE_MONEY_CALLBACK_HMAC_SECRET:dev-only-placeholder-secret}
   callback-replay-window-seconds: ${MOBILE_MONEY_CALLBACK_REPLAY_WINDOW_SECONDS:300}
+
+server:
+  tomcat:
+    # DEFENCE IN DEPTH ONLY -- the edge/ingress (its own request-timeout and body-read timeout) is
+    # and remains the PRIMARY mitigation for slow-client attacks. This closes a deferred finding
+    # (unauthenticated slow-body thread starvation) that the M5 final review judged pre-existing
+    # and non-blocking: Tomcat holds a worker thread during header/body parsing, BEFORE any Spring
+    # Security filter runs, so it was reachable platform-wide long before M5 rather than being a
+    # new door M5 opened. It is nearly free to harden, so it is hardened here.
+    #
+    # connection-timeout is how long Tomcat waits for the request line + headers after a connection
+    # is accepted. Tomcat's own default is 60s (20s in Boot's own reference config); 20s bounds a
+    # client that connects and then dribbles headers. The webhook path
+    # (POST /webhooks/mobile-money-callback) is the one permitAll, unauthenticated POST on this
+    # platform, and MobileMoneyHmacFilter's 64KB declared-Content-Length cap already bounds how
+    # much BODY such a caller can make the server read -- this bounds how long it can make the
+    # server wait.
+    connection-timeout: 20s
+    threads:
+      # Explicit rather than implicit. 200 is exactly Tomcat's/Boot's current default, so this
+      # changes NO behaviour today -- it is written down so that the thread budget is a visible,
+      # reviewable number next to the pool sizing above (a starvation analysis needs both), and so
+      # that a future change to it is a deliberate diff rather than an invisible framework-default
+      # shift.
+      max: 200
 
 management:
   endpoints:
