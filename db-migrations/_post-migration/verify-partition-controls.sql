@@ -3,7 +3,7 @@
 -- `rolsuper OR rolbypassrls` assertion: an automated guard, not a documented convention.
 --
 -- Why parent-vs-child parity rather than an absolute "every tenant_id table must have RLS":
--- billing/payment/finaccounting/claims are not built yet (M4+), so their parents legitimately
+-- billing/payment/finaccounting are not built yet (M4+), so their parents legitimately
 -- carry no RLS, no policy and no app_role grant at all. An absolute check would fail the
 -- build on those from day one and get switched off. Parity is the invariant that is true
 -- today for every schema and that the M3 final review found broken:
