@@ -86,7 +86,7 @@ public class PolicyApiImpl implements PolicyApi {
 
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(), request.productVersionId(),
             snapshot.category().name(), request.agentOfRecordId(), request.sumAssuredAmount(), request.sumAssuredCurrency(),
-            request.premiumAmount(), request.premiumCurrency(), request.premiumFrequency(), issuedBy);
+            request.premiumAmount(), request.premiumCurrency(), request.premiumFrequency(), underwritingCaseId, issuedBy);
         policy.activate(LocalDate.now());
         policyRepository.save(policy);
 
@@ -420,6 +420,39 @@ public class PolicyApiImpl implements PolicyApi {
             Map.of("policyNumber", policyNumber, "reinstatedAt", Instant.now().toString())));
     }
 
+    @Override
+    @Transactional
+    public void markMatured(String policyNumber, String maturedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        boolean alreadyMatured = "MATURED".equals(policy.getStatus());
+        policy.mature();
+        policyRepository.save(policy);
+        if (alreadyMatured) {
+            return; // idempotent on repeat -- no second event
+        }
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyMatured", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "maturedAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional
+    public void terminateForSettledClaim(String policyNumber, UUID claimId, String terminatedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        boolean alreadySurrendered = "SURRENDERED".equals(policy.getStatus());
+        policy.terminateForSettledClaim();
+        policyRepository.save(policy);
+        if (alreadySurrendered) {
+            return; // idempotent on repeat -- no second event
+        }
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "claimId", claimId,
+                   "surrenderedAt", Instant.now().toString())));
+    }
+
     private List<Beneficiary> validateAndBuildBeneficiaries(UUID tenantId, String policyNumber, List<BeneficiaryInput> inputs) {
         if (inputs == null || inputs.isEmpty()) {
             return List.of();
@@ -459,7 +492,7 @@ public class PolicyApiImpl implements PolicyApi {
             .map(b -> new BeneficiaryView(b.getBeneficiaryId(), BeneficiaryType.valueOf(b.getBeneficiaryType()), b.getPartyId(),
                 b.getFreeformDesignee(), b.getSharePercent(), b.isRevocable()))
             .toList();
-        return new PolicyView(policy.getPolicyNumber(), policy.getPolicyholderPartyId(), policy.getProductId(), policy.getProductVersionId(),
+        return new PolicyView(policy.getPolicyNumber(), policy.getUnderwritingCaseId(), policy.getPolicyholderPartyId(), policy.getProductId(), policy.getProductVersionId(),
             policy.getAgentOfRecordId(), PolicyStatus.valueOf(policy.getStatus()), policy.getIssueDate(),
             policy.getSumAssuredAmount(), policy.getSumAssuredCurrency(),
             account != null ? account.getCashValueAmount() : BigDecimal.ZERO,

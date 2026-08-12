@@ -73,6 +73,7 @@ class PolicyApiIntegrationTest {
             // computation to succeed (without it the listener catches the lookup failure, logs,
             // and issues nothing -- the test's retry loop would then find zero policies and fail).
             "db-migrations/policy/V3__premium_fields.sql",
+            "db-migrations/policy/V4__underwriting_case_id.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }

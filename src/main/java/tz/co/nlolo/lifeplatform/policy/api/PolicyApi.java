@@ -45,4 +45,11 @@ public interface PolicyApi {
     void resumeSuspendedPolicy(String policyNumber, String resumedBy);
     void lapsePolicy(String policyNumber, String lapsedBy);
     void reinstatePolicy(String policyNumber, String reinstatedBy);
+
+    /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
+    void markMatured(String policyNumber, String maturedBy);
+
+    /** A DEATH/DISABILITY/CRITICAL_ILLNESS claim settled: coverage is discharged, no further
+     * premium is due. Terminal; idempotent on repeat. */
+    void terminateForSettledClaim(String policyNumber, UUID claimId, String terminatedBy);
 }

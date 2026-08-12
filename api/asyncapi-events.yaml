@@ -68,7 +68,14 @@ channels:
     publish:
       message: { $ref: '#/components/messages/PolicySuspended' }
   policy.PolicyMatured:
-    description: "Producer: policy. Consumers: finaccounting, regreporting, communication, audit."
+    description: >
+      Producer: policy (PolicyApi.markMatured, M6 Task 2 -- a MATURITY claim settled, or the
+      policy reached term). Consumers: billing (must stop invoicing this policy), finaccounting,
+      audit, regreporting. Of the 6 surrender/maturity events originally declared in this file,
+      this is one of only two with a real producer; policy.PolicySurrenderInitiated,
+      policy.PolicyMaturityInitiated, policy.SurrenderPayoutRequested and
+      policy.MaturityPayoutRequested remain unimplemented -- do not assume the whole
+      surrender/maturity choreography has landed.
     publish:
       message: { $ref: '#/components/messages/PolicyMatured' }
   policy.BeneficiaryChanged:
@@ -88,7 +95,15 @@ channels:
     publish:
       message: { $ref: '#/components/messages/PolicyMaturityInitiated' }
   policy.PolicySurrendered:
-    description: "Producer: policy. Consumers: finaccounting, regreporting, communication, audit. Final, net-of-loan proceeds."
+    description: >
+      Producer: policy (PolicyApi.terminateForSettledClaim, M6 Task 2 -- a DEATH/DISABILITY/
+      CRITICAL_ILLNESS claim settled, discharging coverage; reuses the SURRENDERED status since
+      policy.policy's CHECK offers no CLAIM_SETTLED value). Consumers: billing (must stop
+      invoicing this policy), finaccounting, audit, regreporting. Of the 6 surrender/maturity
+      events originally declared in this file, this is one of only two with a real producer;
+      policy.PolicySurrenderInitiated, policy.PolicyMaturityInitiated,
+      policy.SurrenderPayoutRequested and policy.MaturityPayoutRequested remain unimplemented --
+      do not assume the whole surrender/maturity choreography has landed.
     publish:
       message: { $ref: '#/components/messages/PolicySurrendered' }
   policy.SurrenderPayoutRequested:
@@ -399,10 +414,15 @@ components:
         - type: object
           properties: { policyNumber: {type: string}, suspendedAt: {type: string, format: date-time}, reason: {type: string} }
     PolicyMaturedPayload:
+      description: >
+        Real producer as of M6 Task 2 (PolicyApiImpl.markMatured) -- fields below are exactly
+        what that Map.of(...) publishes today. No netProceeds: the surrender/maturity
+        loan-netting choreography (PolicyMaturityInitiated -> ... -> MaturityPayoutRequested)
+        that would compute a net figure remains unimplemented, so this event fires standalone.
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { policyNumber: {type: string}, maturedAt: {type: string, format: date-time}, netProceeds: {type: object} }
+          properties: { policyNumber: {type: string}, maturedAt: {type: string, format: date-time} }
     BeneficiaryChangedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
@@ -424,10 +444,17 @@ components:
         - type: object
           properties: { policyNumber: {type: string}, grossProceeds: {type: object} }
     PolicySurrenderedPayload:
+      description: >
+        Real producer as of M6 Task 2 (PolicyApiImpl.terminateForSettledClaim) -- fields below
+        are exactly what that Map.of(...) publishes today. Despite the event name, this producer
+        fires for a settled DEATH/DISABILITY/CRITICAL_ILLNESS claim, not a policyholder-initiated
+        surrender; claimId is the correlating claims.claim_id. No netProceeds: the policyholder-
+        surrender loan-netting choreography (PolicySurrenderInitiated -> ... ->
+        SurrenderPayoutRequested) that would compute a net figure remains unimplemented.
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { policyNumber: {type: string}, netProceeds: {type: object}, surrenderedAt: {type: string, format: date-time} }
+          properties: { policyNumber: {type: string}, claimId: {type: string, format: uuid}, surrenderedAt: {type: string, format: date-time} }
     SurrenderPayoutRequestedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

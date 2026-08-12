@@ -77,6 +77,9 @@ public class Policy {
     @Column(name = "lapsed_at")
     private Instant lapsedAt;
 
+    @Column(name = "underwriting_case_id")
+    private UUID underwritingCaseId;
+
     @Version
     private Long version;
 
@@ -96,7 +99,8 @@ public class Policy {
 
     public Policy(String policyNumber, UUID tenantId, UUID policyholderPartyId, UUID productId, UUID productVersionId,
                   String productCategory, UUID agentOfRecordId, BigDecimal sumAssuredAmount, String sumAssuredCurrency,
-                  BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency, String createdBy) {
+                  BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency, UUID underwritingCaseId,
+                  String createdBy) {
         this.policyNumber = policyNumber;
         this.tenantId = tenantId;
         this.policyholderPartyId = policyholderPartyId;
@@ -109,6 +113,7 @@ public class Policy {
         this.premiumAmount = premiumAmount;
         this.premiumCurrency = premiumCurrency;
         this.premiumFrequency = premiumFrequency;
+        this.underwritingCaseId = underwritingCaseId;
         this.createdBy = createdBy;
     }
 
@@ -129,6 +134,7 @@ public class Policy {
     public Instant getSuspendedAt() { return suspendedAt; }
     public String getSuspensionReason() { return suspensionReason; }
     public Instant getLapsedAt() { return lapsedAt; }
+    public UUID getUnderwritingCaseId() { return underwritingCaseId; }
 
     public void activate(LocalDate issueDate) {
         if (!"PROPOSED".equals(status)) {
@@ -178,5 +184,29 @@ public class Policy {
 
     public boolean isInForce() {
         return "ACTIVE".equals(status) || "REINSTATED".equals(status);
+    }
+
+    /** A MATURITY claim settled, or the policy reached term. Terminal. */
+    public void mature() {
+        if ("MATURED".equals(status)) {
+            return; // idempotent on repeat
+        }
+        if (!"ACTIVE".equals(status) && !"REINSTATED".equals(status)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE or REINSTATED to MATURE (current: " + status + ")");
+        }
+        this.status = "MATURED";
+    }
+
+    /** A DEATH/DISABILITY/CRITICAL_ILLNESS claim settled: coverage is discharged. Terminal.
+     * Uses SURRENDERED because policy.policy's CHECK offers no CLAIM_SETTLED value and
+     * "coverage discharged, no further premium due" is the operative meaning both share. */
+    public void terminateForSettledClaim() {
+        if ("SURRENDERED".equals(status)) {
+            return; // idempotent on repeat
+        }
+        if (!"ACTIVE".equals(status) && !"REINSTATED".equals(status)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE or REINSTATED to terminate for a settled claim (current: " + status + ")");
+        }
+        this.status = "SURRENDERED";
     }
 }
