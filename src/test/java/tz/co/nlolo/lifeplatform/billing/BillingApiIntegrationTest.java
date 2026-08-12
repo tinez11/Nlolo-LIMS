@@ -43,6 +43,7 @@ import java.util.UUID;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(classes = Application.class)
 @Testcontainers
@@ -89,7 +90,13 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
-            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            // M5 final-review fix wave: V3's callback resolvers and V4's widened status CHECK
+            // (IN_DOUBT). This class drives real payment.PaymentRequestListener chains, so its
+            // payment schema must match production's -- without V4 an indeterminate collection
+            // outcome would fail the CHECK here while working in a real deployment.
+            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
     }
 
     @AfterAll
@@ -306,7 +313,7 @@ class BillingApiIntegrationTest {
         // By the time this call returns, the AFTER_COMMIT chain above has already run
         // synchronously and committed -- no await/sleep, same reasoning as
         // LoanDisbursementEndToEndTest's own class-level Javadoc.
-        billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340001");
+        billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340001", "billing-it-paid-01-attempt-1");
 
         PremiumInvoice reloaded = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
             .orElseThrow(() -> new AssertionError("expected the invoice to still exist"));
@@ -314,6 +321,80 @@ class BillingApiIntegrationTest {
         assertThat(reloaded.getAmountPaid()).isEqualByComparingTo("15000.00");
 
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/collect")));
+    }
+
+    /**
+     * Review fix (I1), the domain-level proof. Counts REAL gateway calls, because that is the only
+     * thing that distinguishes the fixed behaviour from the broken behaviour: before the fix, both
+     * the first attempt and the retry returned HTTP 202 / completed normally at the Java level, and
+     * only WireMock's request count revealed that the retry reached the rail zero times.
+     *
+     * <p>Three attempts against ONE invoice, in one test, so the two rules are proven against each
+     * other rather than in isolation:
+     * <ol>
+     *   <li>attempt 1 with key A -> the rail is called (1 call);</li>
+     *   <li>attempt 2 with key A AGAIN -> deduplicated by payment's
+     *       {@code (tenant_id, idempotency_key)} registry, the rail is NOT called again (still 1) --
+     *       so this fix did not simply disable idempotency, which is the obvious way to "fix" the
+     *       original bug and would be much worse (a double-clicked operator collects twice);</li>
+     *   <li>attempt 3 with a NEW key B -> a genuine new attempt, the rail IS called again (2) --
+     *       the behaviour that was impossible before, forever, for the entire life of the invoice.</li>
+     * </ol>
+     * The rail declines every attempt here ({@code INSUFFICIENT_FUNDS}), which is exactly the
+     * scenario an operator retries after, and keeps the invoice out of a terminal PAID state so all
+     * three attempts are individually meaningful.
+     */
+    @Test
+    void aRetryWithANewIdempotencyKeyReachesTheRailAgainWhileARepeatedKeyDoesNot() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-PAYMENT-RETRY-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        wireMock.stubFor(post(urlPathEqualTo("/collect")).willReturn(okJson(
+            "{\"status\":\"REJECTED\",\"reason\":\"INSUFFICIENT_FUNDS\"}")));
+
+        TenantContext.set(tenantId);
+        String keyA = "billing-it-retry-01-attempt-1";
+        String keyB = "billing-it-retry-01-attempt-2";
+
+        billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340002", keyA);
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/collect")));
+
+        // Same key = same intent. Must NOT reach the rail a second time.
+        billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340002", keyA);
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/collect")));
+
+        // New key = new attempt. MUST reach the rail. This is the line that fails outright if
+        // idempotencyKey goes back to being derived from invoiceId.
+        billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340002", keyB);
+        wireMock.verify(exactly(2), postRequestedFor(urlPathEqualTo("/collect")));
+    }
+
+    /** Review fix (I1): the key is validated in the published API method too, not only in the
+     * controller -- a future non-HTTP caller (a batch collection run) must not be able to slip a
+     * blank key through to payment, where PaymentRequestListener.requireKey would throw inside an
+     * AFTER_COMMIT listener and be swallowed, presenting as a successful request that reached the
+     * rail zero times. */
+    @Test
+    void requestPaymentForInvoiceRejectsABlankIdempotencyKeyAtTheApiLevel() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-PAYMENT-RETRY-02");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        wireMock.stubFor(post(urlPathEqualTo("/collect")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-SHOULD-NOT-HAPPEN\"}")));
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340003", "  "))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Idempotency-Key");
+        assertThatThrownBy(() -> billingApi.requestPaymentForInvoice(invoice.invoiceId(), "MPESA-0712340003", null))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        // Falsifiable: nothing was published and therefore nothing reached the rail.
+        wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/collect")));
     }
 
     @Test

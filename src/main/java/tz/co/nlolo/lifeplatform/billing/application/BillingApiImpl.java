@@ -89,8 +89,19 @@ public class BillingApiImpl implements BillingApi {
 
     @Override
     @Transactional
-    public void requestPaymentForInvoice(UUID invoiceId, String payerRef) {
+    public void requestPaymentForInvoice(UUID invoiceId, String payerRef, String idempotencyKey) {
         UUID tenantId = TenantContext.get();
+        // Review fix (I1): validated here as well as at the HTTP layer, not only there. This is a
+        // published API method on BillingApi, so a future non-HTTP caller (a batch collection run,
+        // a scheduled retry) must hit the same rule; and a blank key silently forwarded to payment
+        // would be rejected there by PaymentRequestListener.requireKey inside an AFTER_COMMIT
+        // listener, where the exception is swallowed and logged -- i.e. it would look like a
+        // successful request that reached the rail zero times, which is the exact failure shape
+        // this whole fix exists to eliminate.
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key is required to request payment for an invoice: "
+                + "the same key means the same attempt (deduped), a new key means a new attempt");
+        }
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PaymentRequested", tenantId,
@@ -98,7 +109,11 @@ public class BillingApiImpl implements BillingApi {
                    "payerRef", payerRef,
                    "amount", Map.of("amount", invoice.getAmount().toPlainString(),
                                     "currencyCode", invoice.getCurrency()),
-                   "idempotencyKey", invoiceId.toString())));
+                   // NOT invoiceId.toString() -- see BillingApi.requestPaymentForInvoice's javadoc.
+                   // payment's registry PK is (tenant_id, idempotency_key), so whatever lands here
+                   // is the ONLY thing standing between "safe duplicate, drop it" and "genuine
+                   // retry, send it".
+                   "idempotencyKey", idempotencyKey)));
     }
 
     @Override

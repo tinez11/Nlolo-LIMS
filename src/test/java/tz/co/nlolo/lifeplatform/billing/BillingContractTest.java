@@ -349,6 +349,7 @@ class BillingContractTest {
         mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
                 .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "contract-payreq-01-attempt-1")
                 .content("""
                     {"payerRef":"MPESA-0712345678"}
                     """))
@@ -370,6 +371,7 @@ class BillingContractTest {
         mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
                 .with(agentOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "contract-payreq-02-attempt-1")
                 .content("""
                     {"payerRef":"MPESA-0712345679"}
                     """))
@@ -390,6 +392,7 @@ class BillingContractTest {
         mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
                 .with(customerOf(fixture.tenantId(), fixture.policyholderPartyId()))
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "contract-payreq-03-attempt-1")
                 .content("""
                     {"payerRef":"MPESA-0712345680"}
                     """))
@@ -403,6 +406,7 @@ class BillingContractTest {
         mockMvc.perform(post("/invoices/" + UUID.randomUUID() + "/payment-request")
                 .with(staffOf(UUID.randomUUID()))
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "contract-payreq-04-attempt-1")
                 .content("""
                     {"payerRef":"MPESA-0712345681"}
                     """))
@@ -426,11 +430,99 @@ class BillingContractTest {
         mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
                 .with(staffOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "contract-payreq-05-attempt-1")
                 .content("""
                     {"payerRef":""}
                     """))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+    }
+
+    /**
+     * Review fix (I1). The {@code Idempotency-Key} header is REQUIRED on this endpoint and must be
+     * rejected with 400 rather than defaulted to anything, because every candidate default
+     * reintroduces a real bug: defaulting to the invoice id is the original single-shot-forever bug
+     * (payment claims {@code (tenant_id, key)} once and drops every later attempt, so an operator
+     * retry after an {@code INSUFFICIENT_FUNDS} decline reaches the rail zero times while this
+     * endpoint still answers 202), and defaulting to a fresh random value silently discards
+     * duplicate-submission protection for a double-clicking operator.
+     *
+     * <p>Asserts the openApi validity of the 400 as well as its status, since openapi-billing.yaml
+     * now declares the header {@code required: true} -- so the spec and the implementation are
+     * pinned to each other in both directions rather than only the happy path.
+     */
+    @Test
+    void requestPaymentForInvoiceWithoutAnIdempotencyKeyHeaderIsRejectedWith400() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-PAYREQ-06");
+        String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
+
+        // No Idempotency-Key header at all.
+        mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
+                .with(staffOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"payerRef":"MPESA-0712345682"}
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+
+        // Present but blank is the same rejection, via the same single code path -- a header that
+        // exists with an empty value must not slip through a presence-only check.
+        mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
+                .with(staffOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "   ")
+                .content("""
+                    {"payerRef":"MPESA-0712345682"}
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+    }
+
+    /**
+     * Review fix (I1), the other half: a RETRY with a NEW key is accepted. Before the fix this was
+     * impossible at the domain level -- the first attempt permanently consumed the invoice's only
+     * key -- and impossible to express at the HTTP level, since there was no way for a client to say
+     * "this is a new attempt, not a redelivery of the old one". Both requests here target the SAME
+     * invoice with DIFFERENT keys and both must be accepted.
+     *
+     * <p>This test proves the HTTP contract admits the retry. The domain-level proof that a new key
+     * actually reaches the rail a second time while a repeated key does not lives in
+     * {@code BillingApiIntegrationTest.aRetryWithANewIdempotencyKeyReachesTheRailAgainWhileARepeatedKeyDoesNot},
+     * which counts real gateway calls -- an HTTP 202 alone cannot distinguish those two, which is
+     * precisely how the original bug went unnoticed.
+     */
+    @Test
+    void requestPaymentForInvoiceAcceptsARetryWithADifferentIdempotencyKey() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-PAYREQ-07");
+        String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
+
+        mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
+                .with(staffOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "contract-payreq-07-attempt-1")
+                .content("""
+                    {"payerRef":"MPESA-0712345683"}
+                    """))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        // A genuine second attempt against the same invoice, distinguished only by its key.
+        mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
+                .with(staffOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Idempotency-Key", "contract-payreq-07-attempt-2")
+                .content("""
+                    {"payerRef":"MPESA-0712345683"}
+                    """))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
     // --- POST /agents/{agentId}/field-receipts -----------------------------------------------

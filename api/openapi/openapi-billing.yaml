@@ -96,6 +96,22 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+        # Deliberately NOT a $ref to openapi-common.yaml#/components/parameters/IdempotencyKey:
+        # that shared parameter is `required: false` (the platform-wide "accepted, not enforced"
+        # convention), and on THIS endpoint the header is required and genuinely enforced. It is the
+        # value that reaches payment's (tenant_id, idempotency_key) registry, so it decides whether a
+        # request is a deduplicated duplicate or a real new collection attempt. Same header name,
+        # same client-supplied semantics, stricter requiredness.
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1 }
+          description: >
+            Client-generated key identifying this collection ATTEMPT, not the invoice. Reusing a key
+            is deduplicated by payment, so a double-submit is safe; supplying a NEW key starts a new
+            attempt, which is what makes an operator retry after a decline (or a PARTIALLY_PAID
+            top-up) possible at all. There is no default — a missing or blank value is a 400, because
+            any default would either make retry impossible or discard duplicate protection.
       requestBody:
         required: true
         content:

@@ -58,10 +58,36 @@ public class BillingController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * Review fix (I1): {@code Idempotency-Key} is REQUIRED on this one endpoint, and is genuinely
+     * enforced rather than "accepted, not enforced" as it is on every other endpoint on this
+     * platform (PolicyController, PolicyLoanController, UnderwritingController all take it as an
+     * optional header and ignore it, a documented per-milestone scope cut). Here it is the value
+     * that reaches {@code payment}'s {@code (tenant_id, idempotency_key)} registry and therefore
+     * decides whether a request is a safe duplicate or a genuine retry -- see
+     * {@code BillingApi.requestPaymentForInvoice}'s javadoc for the single-shot-forever bug that
+     * made this necessary.
+     *
+     * <p>Declared {@code required = false} at the Spring level and then rejected explicitly, rather
+     * than {@code required = true}: that gives ONE code path (and one message) for both a missing
+     * header and a present-but-blank one, instead of a framework
+     * {@code MissingRequestHeaderException} for the first and a separate check for the second. Both
+     * land on {@code GlobalExceptionHandler}'s {@code IllegalArgumentException} handler as a 400
+     * {@code VALIDATION_ERROR} ProblemDetails, which is what openapi-billing.yaml declares.
+     */
     @PostMapping("/invoices/{invoiceId}/payment-request")
     @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
-    public ResponseEntity<Void> requestPaymentForInvoice(@PathVariable UUID invoiceId, @Valid @RequestBody PaymentRequestDto request) {
-        billingApi.requestPaymentForInvoice(invoiceId, request.payerRef());
+    public ResponseEntity<Void> requestPaymentForInvoice(@PathVariable UUID invoiceId,
+                                                          @Valid @RequestBody PaymentRequestDto request,
+                                                          @RequestHeader(value = "Idempotency-Key", required = false)
+                                                          String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key header is required on this endpoint: the same key "
+                + "is treated as the same collection attempt (deduplicated), a new key as a new attempt. There is "
+                + "deliberately no default -- any default would make a genuine operator retry after a decline "
+                + "impossible.");
+        }
+        billingApi.requestPaymentForInvoice(invoiceId, request.payerRef(), idempotencyKey);
         return ResponseEntity.accepted().build();
     }
 
