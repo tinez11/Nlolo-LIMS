@@ -127,6 +127,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/policy/V4__underwriting_case_id.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
+            "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
         try (Connection connection = DriverManager.getConnection(

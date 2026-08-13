@@ -27,10 +27,13 @@ import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -40,12 +43,11 @@ import java.util.UUID;
 
 /**
  * Task 4 implements {@link #registerClaim} and {@link #getClaim}; Task 5 adds
- * {@link #submitAssessment}, {@link #decideSettlement}, and {@link #reopenClaim}; Task 8 (this
- * task) adds {@link #attachEvidence} and {@link #listEvidence}. {@link ClaimsApi}'s remaining
- * method, {@code searchClaims}, is declared (the module's published surface was fixed by this
- * plan's authoring so {@code omnichannel} has a stable target) but not yet bodied here -- it
- * belongs to a later task and still throws {@link UnsupportedOperationException} rather than
- * faking a result, so a caller finds out immediately rather than silently getting a wrong answer.
+ * {@link #submitAssessment}, {@link #decideSettlement}, and {@link #reopenClaim}; Task 8 adds
+ * {@link #attachEvidence} and {@link #listEvidence}; Task 9 (this task) adds
+ * {@link #searchClaims} (the REST layer's {@code GET /claims} needs it) and closes the
+ * registration-idempotency gap in {@link #registerClaim} (see that method's own comments).
+ * {@link ClaimsApi}'s full published surface is now bodied.
  */
 @Service
 public class ClaimsApiImpl implements ClaimsApi {
@@ -61,12 +63,13 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final UnderwritingApi underwritingApi;
     private final DocumentApi documentApi;
     private final ApplicationEventPublisher eventPublisher;
+    private final TransactionTemplate requiresNewTransactionTemplate;
 
     public ClaimsApiImpl(ClaimRepository claimRepository, ClaimAssessmentRepository claimAssessmentRepository,
                           SettlementDecisionRepository settlementDecisionRepository,
                           ClaimEvidenceRepository claimEvidenceRepository, PolicyApi policyApi,
                           PartyApi partyApi, UnderwritingApi underwritingApi, DocumentApi documentApi,
-                          ApplicationEventPublisher eventPublisher) {
+                          ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager) {
         this.claimRepository = claimRepository;
         this.claimAssessmentRepository = claimAssessmentRepository;
         this.settlementDecisionRepository = settlementDecisionRepository;
@@ -76,12 +79,31 @@ public class ClaimsApiImpl implements ClaimsApi {
         this.underwritingApi = underwritingApi;
         this.documentApi = documentApi;
         this.eventPublisher = eventPublisher;
+        // REQUIRES_NEW, mirroring PaymentEventListener/PartyApiImpl's own precedent for a
+        // constraint-violation-on-insert race: isolating the attempted INSERT in registerClaim
+        // (below) to its OWN physical transaction means a caught unique-constraint violation on
+        // claims/V3's partial index rolls back ONLY that inner transaction. A plain save() inside
+        // this method's ambient @Transactional would instead leave the single shared Postgres
+        // transaction aborted after the violation -- any further statement on it (the fallback
+        // re-query this method performs next) would fail with "current transaction is aborted",
+        // not the clean "return the existing claim" this method is written to do.
+        this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
     @Override
     @Transactional
     public ClaimView registerClaim(RegisterClaimRequest request, String idempotencyKey, String registeredBy) {
         UUID tenantId = TenantContext.get();
+
+        // 0. Registration idempotency key required (Task 9 review fix). Defense in depth, same
+        //    shape as BillingApiImpl.requestPaymentForInvoice's own check: ClaimController rejects
+        //    a missing/blank Idempotency-Key header before ever reaching here, but this method is
+        //    ClaimsApi's own published contract, reachable by any future non-HTTP caller too, and a
+        //    blank key would otherwise silently disable claims/V3's dedup index for that call.
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new ClaimValidationException("A registration idempotency key is required to register a claim");
+        }
 
         // 1. Claimant must exist. PartyNotFoundException propagates as-is (404 at the boundary).
         partyApi.getParty(request.claimantPartyId());
@@ -126,23 +148,48 @@ public class ClaimsApiImpl implements ClaimsApi {
         //    (Claim.java:107-113) already checks details.claimType() == claimType and throws
         //    ClaimValidationException on mismatch -- not duplicated here, that would be dead code.
         Claim claim = new Claim(tenantId, request.policyNumber(), request.claimantPartyId(),
-            request.claimType(), request.dateOfEvent(), request.details(), registeredBy);
-        claimRepository.save(claim);
+            request.claimType(), request.dateOfEvent(), request.details(), registeredBy, idempotencyKey);
 
-        // Payload matches api/asyncapi-events.yaml's ClaimRegisteredPayload field-for-field
-        // (claimId, policyNumber, claimantPartyId, claimType, dateOfEvent), plus one field
-        // ClaimRegisteredPayload does not declare: requiresContestabilityReview. The payload is
-        // an untyped Map (no schema is enforced at runtime) and the schema does not forbid
-        // additional properties, so adding it here is the only way -- short of a migration out
-        // of Task 1's scope -- for the assessor-facing consumer of this event to see the outcome
-        // without re-deriving it itself.
-        eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimRegistered", tenantId,
-            Map.of("claimId", claim.getClaimId(),
-                   "policyNumber", claim.getPolicyNumber(),
-                   "claimantPartyId", claim.getClaimantPartyId(),
-                   "claimType", claim.getClaimType().name(),
-                   "dateOfEvent", claim.getDateOfEvent().toString(),
-                   "requiresContestabilityReview", requiresContestabilityReview)));
+        // 6. Attempt the insert in its OWN transaction (see the constructor's comment on
+        //    requiresNewTransactionTemplate for why). The event publish happens INSIDE that same
+        //    inner transaction -- not after it -- so the insert and the ClaimRegistered publish
+        //    commit together atomically; a downstream AFTER_COMMIT listener then fires against
+        //    THIS transaction's commit, exactly like claims.application.PaymentEventListener's own
+        //    "producer's write must be durable first" convention, rather than racing a separate
+        //    outer commit that does nothing else.
+        //
+        //    A repeat of the SAME idempotency key hits claims/V3's partial unique index and this
+        //    catches it specifically, re-queries by key, and returns the EXISTING claim's view --
+        //    "same key = same intent = deduped", matching this platform's idempotency semantics
+        //    everywhere else (a repeat with the same key returns the prior result, it does not
+        //    error). No event is published on that path -- ClaimRegistered already fired once, for
+        //    the original attempt. A DIFFERENT key for what might be the same real-world event is
+        //    deliberately treated as a genuinely new registration attempt -- see the
+        //    two-distinct-claims test for why that is correct, not a gap, mirroring billing's
+        //    retry-with-a-new-key idempotency pattern.
+        try {
+            requiresNewTransactionTemplate.executeWithoutResult(status -> {
+                claimRepository.saveAndFlush(claim);
+                // Payload matches api/asyncapi-events.yaml's ClaimRegisteredPayload field-for-field
+                // (claimId, policyNumber, claimantPartyId, claimType, dateOfEvent), plus one field
+                // ClaimRegisteredPayload does not declare: requiresContestabilityReview. The
+                // payload is an untyped Map (no schema is enforced at runtime) and the schema does
+                // not forbid additional properties, so adding it here is the only way -- short of a
+                // migration out of Task 1's scope -- for the assessor-facing consumer of this event
+                // to see the outcome without re-deriving it itself.
+                eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimRegistered", tenantId,
+                    Map.of("claimId", claim.getClaimId(),
+                           "policyNumber", claim.getPolicyNumber(),
+                           "claimantPartyId", claim.getClaimantPartyId(),
+                           "claimType", claim.getClaimType().name(),
+                           "dateOfEvent", claim.getDateOfEvent().toString(),
+                           "requiresContestabilityReview", requiresContestabilityReview)));
+            });
+        } catch (DataIntegrityViolationException e) {
+            Claim existing = claimRepository.findByTenantIdAndRegistrationIdempotencyKey(tenantId, idempotencyKey)
+                .orElseThrow(() -> e); // a genuinely different constraint violation -- do not mask it
+            return toView(existing, deriveContestabilityReview(existing));
+        }
 
         return toView(claim, requiresContestabilityReview);
     }
@@ -153,9 +200,24 @@ public class ClaimsApiImpl implements ClaimsApi {
         return toView(claim, deriveContestabilityReview(claim));
     }
 
+    /** Mirrors {@code PolicyApiImpl.searchPolicies}'s exact structure (four-way branch on which
+     * optional filters are present, {@code status.name()} passed as the String parameter a
+     * derived-query method expects against the enum-typed column, exactly as
+     * {@code PolicyRepository.findByTenantIdAndStatus} already does for {@code Policy.status}). */
     @Override
     public Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Pageable pageable) {
-        throw new UnsupportedOperationException("searchClaims is implemented in a later task of this plan");
+        UUID tenantId = TenantContext.get();
+        Page<Claim> page;
+        if (claimantPartyId != null && status != null) {
+            page = claimRepository.findByTenantIdAndClaimantPartyIdAndStatus(tenantId, claimantPartyId, status.name(), pageable);
+        } else if (claimantPartyId != null) {
+            page = claimRepository.findByTenantIdAndClaimantPartyId(tenantId, claimantPartyId, pageable);
+        } else if (status != null) {
+            page = claimRepository.findByTenantIdAndStatus(tenantId, status.name(), pageable);
+        } else {
+            page = claimRepository.findByTenantId(tenantId, pageable);
+        }
+        return page.map(claim -> toView(claim, deriveContestabilityReview(claim)));
     }
 
     @Override

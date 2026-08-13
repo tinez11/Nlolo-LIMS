@@ -81,7 +81,8 @@ class ClaimsApiIntegrationTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
-            "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql");
+            "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
+            "db-migrations/claims/V3__registration_idempotency_key.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -493,5 +494,59 @@ class ClaimsApiIntegrationTest {
         claimsApi.reopenClaim(claimId, "Dispute raised", "manager-8");
 
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REOPENED);
+    }
+
+    // ---- Task 9 review fix (Part B): registration idempotency ------------------------------
+
+    @Test
+    void registrationRejectsABlankOrMissingIdempotencyKey() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REGIDEM-BLANK-01");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        TenantContext.set(tenantId);
+
+        ClaimsApi.RegisterClaimRequest request = deathRequest(policyNumber, fixture.applicantId(), LocalDate.now());
+        assertThrows(ClaimValidationException.class, () -> claimsApi.registerClaim(request, null, "claims-staff"));
+        assertThrows(ClaimValidationException.class, () -> claimsApi.registerClaim(request, "   ", "claims-staff"));
+    }
+
+    /** The exact double-payout path Task 9's review surfaced: two independently-created Claim
+     * rows for the same real-world event could each be independently assessed and settled.
+     * Repeating the SAME registration idempotency key must return the SAME claim -- not error,
+     * not create a second row -- matching this platform's idempotency semantics everywhere else. */
+    @Test
+    void repeatingTheSameRegistrationIdempotencyKeyReturnsTheSameClaimAndCreatesOnlyOneRow() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REGIDEM-SAME-01");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        TenantContext.set(tenantId);
+
+        ClaimsApi.RegisterClaimRequest request = deathRequest(policyNumber, fixture.applicantId(), LocalDate.now().minusDays(1));
+        ClaimView first = claimsApi.registerClaim(request, "regidem-same-key-01", "claims-staff");
+        ClaimView second = claimsApi.registerClaim(request, "regidem-same-key-01", "claims-staff");
+
+        assertThat(second.claimId()).isEqualTo(first.claimId());
+        // Falsifiable: without the dedup fix in ClaimsApiImpl.registerClaim, this repeated call
+        // would throw claims/V3's unique-constraint violation as an uncaught 500, or (before V3
+        // existed at all) would silently insert a SECOND row -- this asserts there is exactly one.
+        assertThat(claimRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(1);
+    }
+
+    /** A DIFFERENT key for what might be the same real-world event is a deliberate, correct
+     * design choice -- NOT a gap -- mirroring billing's retry-with-a-new-key idempotency pattern.
+     * Asserted explicitly so a future reader does not "fix" this into single-claim-per-policy. */
+    @Test
+    void registeringTwiceWithDifferentKeysForTheSameEventCreatesTwoDistinctClaims() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REGIDEM-DIFF-01");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        TenantContext.set(tenantId);
+
+        ClaimsApi.RegisterClaimRequest request = deathRequest(policyNumber, fixture.applicantId(), LocalDate.now().minusDays(1));
+        ClaimView first = claimsApi.registerClaim(request, "regidem-diff-key-A", "claims-staff");
+        ClaimView second = claimsApi.registerClaim(request, "regidem-diff-key-B", "claims-staff");
+
+        assertThat(second.claimId()).isNotEqualTo(first.claimId());
+        assertThat(claimRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(2);
     }
 }

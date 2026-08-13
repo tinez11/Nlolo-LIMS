@@ -73,7 +73,8 @@ class ClaimEvidenceIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
-            "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql");
+            "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
+            "db-migrations/claims/V3__registration_idempotency_key.sql");
 
         minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -104,7 +105,7 @@ class ClaimEvidenceIntegrationTest {
      * on evidence linkage rather than re-deriving the whole approval workflow. */
     private Claim registerClaim(UUID tenantId) {
         Claim claim = new Claim(tenantId, "POL-EVIDENCE-TEST", UUID.randomUUID(), ClaimType.MATURITY,
-            LocalDate.now().minusDays(1), new MaturityClaimDetails(LocalDate.now().minusDays(1)), "test-registrar");
+            LocalDate.now().minusDays(1), new MaturityClaimDetails(LocalDate.now().minusDays(1)), "test-registrar", null);
         return claimRepository.save(claim);
     }
 

@@ -75,6 +75,16 @@ public class Claim {
     @Column(name = "approved_currency")
     private String approvedCurrency;
 
+    /** Claims/V3 -- set ONLY at construction (registration is the single point a Claim comes
+     * into existence, unlike settlementIdempotencyKey below which is set by a later transition).
+     * Backs the partial unique index on (tenant_id, registration_idempotency_key) that
+     * ClaimsApiImpl.registerClaim relies on to dedupe a repeated registration attempt instead of
+     * creating a second Claim row for the same real-world event. May be null: rows created before
+     * V3 existed, and any future creation path that omits it, are not duplicates of one another
+     * just because they share the same (absent) key -- see V3's own comment. */
+    @Column(name = "registration_idempotency_key")
+    private String registrationIdempotencyKey;
+
     @Column(name = "settlement_idempotency_key")
     private String settlementIdempotencyKey;
 
@@ -105,7 +115,8 @@ public class Claim {
      * is the aggregate's single creation point.
      */
     public Claim(UUID tenantId, String policyNumber, UUID claimantPartyId, ClaimType claimType,
-                 LocalDate dateOfEvent, ClaimDetails details, String createdBy) {
+                 LocalDate dateOfEvent, ClaimDetails details, String createdBy,
+                 String registrationIdempotencyKey) {
         if (details == null || details.claimType() != claimType) {
             throw new ClaimValidationException(
                 "Claim details type " + (details == null ? "null" : details.claimType())
@@ -118,6 +129,7 @@ public class Claim {
         this.dateOfEvent = dateOfEvent;
         this.details = details;
         this.createdBy = createdBy;
+        this.registrationIdempotencyKey = registrationIdempotencyKey;
     }
 
     /** First assessment submitted. REGISTERED or REOPENED -> UNDER_ASSESSMENT. */
@@ -229,6 +241,7 @@ public class Claim {
     public ClaimDetails getDetails() { return details; }
     public BigDecimal getApprovedAmount() { return approvedAmount; }
     public String getApprovedCurrency() { return approvedCurrency; }
+    public String getRegistrationIdempotencyKey() { return registrationIdempotencyKey; }
     public String getSettlementIdempotencyKey() { return settlementIdempotencyKey; }
     public String getSettlementFailureReason() { return settlementFailureReason; }
     public long getVersion() { return version; }

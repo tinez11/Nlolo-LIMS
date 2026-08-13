@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Claims Management API
-  version: "0.1.0-draft"
+  version: "0.2.0"
   description: >
     External REST surface of the `claims` module. Settlement is asynchronous
     (ClaimSettlementRequested → payment → ClaimSettled, Deliverable 2 Rev 2 A3) —
@@ -17,7 +17,16 @@ paths:
         - agentsAuth: [agent]
         - staffAuth: []
       parameters:
-        - $ref: 'openapi-common.yaml#/components/parameters/IdempotencyKey'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+          description: >
+            Client-generated key for safe retry of this registration. A repeat call with the
+            SAME key returns the ALREADY-registered claim instead of creating a second one
+            (claims/V3's registration-idempotency index); a DIFFERENT key is always treated as
+            a genuinely new registration attempt, even for what might be the same real-world
+            event.
       requestBody:
         required: true
         content:
@@ -25,18 +34,61 @@ paths:
             schema: { $ref: '#/components/schemas/RegisterClaimRequest' }
       responses:
         '201':
-          description: Claim registered
+          description: "Claim registered, or -- on a repeated Idempotency-Key -- the already-registered claim"
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ClaimView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '422':
-          description: claimType inconsistent with the policy's active coverage as of dateOfEvent
+          description: "claimType inconsistent with the policy's active coverage as of dateOfEvent, or the policy is not in force, or the details payload's own claimType does not match"
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: List claims
+      description: >
+        Customers are always scoped to their own claims regardless of any claimantPartyId
+        supplied (docs/04-api-contracts.md §3) — agents/staff may filter by any claimantPartyId,
+        or omit it to see all claims in their scope.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [REGISTERED, UNDER_ASSESSMENT, APPROVED, REJECTED, SETTLEMENT_REQUESTED, SETTLED, REOPENED] }
+        - name: claimantPartyId
+          in: query
+          required: false
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+          description: "Ignored, and overridden with the caller's own party_id claim, for customers-realm tokens"
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimSearchResponse' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /claims/{claimId}:
     get:
       summary: Get claim detail
+      description: >
+        A customers-realm token may only read a claim whose claimantPartyId matches its own
+        party_id claim (docs/04-api-contracts.md §3) — any other customer gets 403, not 200 and
+        not 404.
       security:
         - customersAuth: [profile]
         - agentsAuth: [agent]
@@ -52,7 +104,9 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ClaimView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /claims/{claimId}/assessments:
     post:
       summary: Submit a claim assessment (staff — CLAIMS_ASSESSOR role)
@@ -73,10 +127,76 @@ paths:
           description: Assessment recorded
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ClaimView' }
+              schema: { $ref: '#/components/schemas/ClaimAssessmentView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: "Claim is not in a status that can begin assessment (must be REGISTERED or REOPENED, or already UNDER_ASSESSMENT)"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /claims/{claimId}/settlement-decision:
     post:
       summary: Approve or reject the claim (staff — CLAIMS_MANAGER role only; distinct from CLAIMS_ASSESSOR)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+          description: >
+            Required on every call to this operation, but only load-bearing when approved is
+            true: it becomes claim.settlement_idempotency_key, the value payment's own
+            (tenant_id, idempotency_key) registry dedupes the resulting disbursement request
+            against.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved]
+              properties:
+                approved: { type: boolean }
+                approvedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+                rejectionReason: { type: string, nullable: true }
+                payeeRef:
+                  type: string
+                  nullable: true
+                  description: "Mobile-money destination for the payout. Required when approved is true; ignored (may be null) when approved is false"
+      responses:
+        '202':
+          description: >
+            Decision recorded; if approved, ClaimSettlementRequested is published and
+            settlement completes asynchronously via payment's request/confirm loop.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: "Claim requires at least one completed assessment first (except MATURITY, which auto-approves — Deliverable 3 Rev 2, Cl3), or is not in a status that can be decided"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: "approved is true but payeeRef or Idempotency-Key is missing/blank, or the same person both assessed and is deciding this claim (separation of duties)"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /claims/{claimId}/reopen:
+    post:
+      summary: Reopen a rejected or settled claim (staff — CLAIMS_MANAGER role only)
+      description: >
+        REJECTED or SETTLED → REOPENED. Deliberately does not clear a prior approvedAmount —
+        the previous decision stays on the record until a new one is made.
       security:
         - staffAuth: []
       parameters:
@@ -90,24 +210,87 @@ paths:
           application/json:
             schema:
               type: object
-              required: [approved]
+              required: [reason]
               properties:
-                approved: { type: boolean }
-                approvedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-                rejectionReason: { type: string, nullable: true }
+                reason: { type: string }
       responses:
-        '202':
-          description: >
-            Decision recorded; if approved, ClaimSettlementRequested is published and
-            settlement completes asynchronously via payment's request/confirm loop.
+        '200':
+          description: Claim reopened
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ClaimView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409':
-          description: Claim requires at least one completed assessment first (except MATURITY, which auto-approves — Deliverable 3 Rev 2, Cl3)
+          description: "Claim is not REJECTED or SETTLED (only those two statuses can be reopened)"
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /claims/{claimId}/evidence:
+    post:
+      summary: Attach evidence to a claim
+      description: >
+        Uploads a document (photo, certificate, report) and links it to the claim as evidence.
+        Rejected once the claim is SETTLED — reopen it first.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                description: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Evidence attached
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimEvidenceView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: "Claim is SETTLED — reopen it before attaching evidence"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: List evidence attached to a claim
+      description: >
+        Same object-level ownership check as GET /claims/{claimId} — a customers-realm token may
+        only list evidence for a claim whose claimantPartyId matches its own party_id claim.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ClaimEvidenceView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
 components:
   schemas:
     RegisterClaimRequest:
@@ -118,12 +301,56 @@ components:
         claimantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         claimType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY] }
         dateOfEvent: { type: string, format: date }
-        details:
-          type: object
-          description: >
-            Polymorphic by claimType — modeled server-side as a sealed ClaimDetails
-            hierarchy (Deliverable 3 Rev 2, Cl2); concrete per-type schemas to be
-            finalized in Deliverable 6 alongside DDL.
+        details: { $ref: '#/components/schemas/ClaimDetails' }
+    ClaimDetails:
+      description: "Polymorphic by claimType — modeled server-side as a sealed ClaimDetails hierarchy (Deliverable 3 Rev 2, Cl2)"
+      oneOf:
+        - $ref: '#/components/schemas/DeathClaimDetails'
+        - $ref: '#/components/schemas/DisabilityClaimDetails'
+        - $ref: '#/components/schemas/CriticalIllnessClaimDetails'
+        - $ref: '#/components/schemas/MaturityClaimDetails'
+      discriminator:
+        propertyName: claimType
+        mapping:
+          DEATH: '#/components/schemas/DeathClaimDetails'
+          DISABILITY: '#/components/schemas/DisabilityClaimDetails'
+          CRITICAL_ILLNESS: '#/components/schemas/CriticalIllnessClaimDetails'
+          MATURITY: '#/components/schemas/MaturityClaimDetails'
+    DeathClaimDetails:
+      type: object
+      required: [claimType, causeOfDeath, placeOfDeath, dateOfDeath, attendingPhysician]
+      properties:
+        claimType: { type: string, enum: [DEATH] }
+        causeOfDeath: { type: string }
+        placeOfDeath: { type: string }
+        dateOfDeath: { type: string, format: date }
+        attendingPhysician: { type: string }
+    DisabilityClaimDetails:
+      type: object
+      required: [claimType, disabilityType, onsetDate, permanent, impairmentPercent]
+      properties:
+        claimType: { type: string, enum: [DISABILITY] }
+        disabilityType: { type: string }
+        onsetDate: { type: string, format: date }
+        permanent: { type: boolean }
+        impairmentPercent:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: "Decimal string 0-100 — never a binary float, matching openapi-common.yaml's Money convention"
+    CriticalIllnessClaimDetails:
+      type: object
+      required: [claimType, diagnosis, diagnosisDate, icdCode]
+      properties:
+        claimType: { type: string, enum: [CRITICAL_ILLNESS] }
+        diagnosis: { type: string }
+        diagnosisDate: { type: string, format: date }
+        icdCode: { type: string }
+    MaturityClaimDetails:
+      type: object
+      required: [claimType, maturityDate]
+      properties:
+        claimType: { type: string, enum: [MATURITY] }
+        maturityDate: { type: string, format: date }
     SubmitClaimAssessmentRequest:
       type: object
       required: [findings, recommendedAmount]
@@ -133,13 +360,47 @@ components:
         fraudIndicator:
           type: boolean
           default: false
-          description: Scrutiny/reporting signal only — does not itself reject the claim (Deliverable 3 Rev 2, Cl1).
+          description: "Scrutiny/reporting signal only — does not itself reject the claim (Deliverable 3 Rev 2, Cl1)"
+    ClaimAssessmentView:
+      type: object
+      required: [claimAssessmentId, claimId, assessor, findings, recommendedAmount, fraudIndicator, createdAt]
+      properties:
+        claimAssessmentId: { type: string, format: uuid }
+        claimId: { type: string, format: uuid }
+        assessor: { type: string }
+        findings: { type: string }
+        recommendedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        fraudIndicator: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    ClaimEvidenceView:
+      type: object
+      required: [claimEvidenceId, claimId, documentRef, uploadedBy, uploadedAt]
+      properties:
+        claimEvidenceId: { type: string, format: uuid }
+        claimId: { type: string, format: uuid }
+        documentRef: { type: string }
+        description: { type: string, nullable: true }
+        uploadedBy: { type: string }
+        uploadedAt: { type: string, format: date-time }
     ClaimView:
       type: object
+      required: [claimId, policyNumber, claimantPartyId, claimType, status, dateOfEvent, details, requiresContestabilityReview]
       properties:
         claimId: { type: string, format: uuid }
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        claimantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         claimType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY] }
         status: { type: string, enum: [REGISTERED, UNDER_ASSESSMENT, APPROVED, REJECTED, SETTLEMENT_REQUESTED, SETTLED, REOPENED] }
         dateOfEvent: { type: string, format: date }
+        details: { $ref: '#/components/schemas/ClaimDetails' }
         approvedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        requiresContestabilityReview:
+          type: boolean
+          description: "True when the claim falls inside the policy's contestability window and needs a non-disclosure review before approval — re-derived fresh on every read, not a stored column"
+    ClaimSearchResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ClaimView' }
+        page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
