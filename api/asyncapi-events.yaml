@@ -562,7 +562,8 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { claimId: {type: string, format: uuid}, payeeRef: {type: string}, amount: {type: object}, idempotencyKey: {type: string} }
+          required: [claimId, payeeRef, amount, idempotencyKey]
+          properties: { claimId: {type: string, format: uuid}, payeeRef: {type: string}, amount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}}, idempotencyKey: {type: string, description: "M6: payment.PaymentRequestListener.handleClaimSettlement derives disbursement_instruction.purpose=CLAIM_SETTLEMENT and source_ref=claimId from this event; no purpose field is carried on the payload itself."} }
     ClaimSettledPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

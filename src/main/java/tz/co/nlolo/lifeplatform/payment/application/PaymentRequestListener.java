@@ -111,10 +111,11 @@ public class PaymentRequestListener {
         switch (envelope.eventType()) {
             case "policyloan.LoanDisbursementRequested" -> withTenant(envelope, this::handleLoanDisbursement);
             case "billing.PaymentRequested" -> withTenant(envelope, this::handlePremiumCollection);
-            // claims.ClaimSettlementRequested (M6) and distribution.CommissionPayoutRequested
-            // (M7) belong here as one case each once those modules exist and actually publish
-            // them. purpose already has CLAIM_SETTLEMENT/COMMISSION_PAYOUT values; no branch is
-            // written speculatively for a producer that does not exist (see Global Constraints).
+            case "claims.ClaimSettlementRequested" -> withTenant(envelope, this::handleClaimSettlement);
+            // distribution.CommissionPayoutRequested (M7) belongs here as one case once that
+            // module exists and actually publishes it. purpose already has a COMMISSION_PAYOUT
+            // value; no branch is written speculatively for a producer that does not exist (see
+            // Global Constraints).
             default -> { /* not payment-relevant */ }
         }
     }
@@ -157,6 +158,28 @@ public class PaymentRequestListener {
         disbursementId.ifPresentOrElse(
             id -> submitDisbursement(tenantId, id, payeeRef, money),
             () -> log.info("Dropping duplicate LoanDisbursementRequested for tenant {} key {}", tenantId, idempotencyKey));
+    }
+
+    /** M6: claims' settlement payout. Mirrors {@link #handleLoanDisbursement} exactly -- the
+     * request is committed before the rail is called, the rail call runs in NO transaction, and
+     * the outcome lands in its own transaction. {@code purpose=CLAIM_SETTLEMENT} is already an
+     * allowed value in {@code disbursement_instruction.purpose}'s CHECK constraint.
+     *
+     * <p>Unlike {@code handleLoanDisbursement}, no {@code payeeRef == null} guard is needed here:
+     * {@code claims.ClaimsApiImpl.decideSettlement} already rejects a blank {@code payeeRef}
+     * before this event is ever published, so a null payee cannot legitimately arrive on this
+     * path -- reproducing that guard here would be dead code, not defense in depth. */
+    private void handleClaimSettlement(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String idempotencyKey = requireKey(payload);
+        UUID claimId = (UUID) payload.get("claimId");
+        String payeeRef = (String) payload.get("payeeRef");
+        Money money = money(payload);
+        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
+            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), "CLAIM_SETTLEMENT", claimId.toString()));
+        disbursementId.ifPresentOrElse(
+            id -> submitDisbursement(tenantId, id, payeeRef, money),
+            () -> log.info("Dropping duplicate ClaimSettlementRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 
     private void handlePremiumCollection(Map<String, Object> payload) {
