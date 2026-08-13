@@ -70,6 +70,7 @@ services:
       mc mb -p local/policy-documents;
       mc mb -p local/kyc-evidence;
       mc mb -p local/underwriting-evidence;
+      mc mb -p local/claim-evidence;
       exit 0;
       "
 

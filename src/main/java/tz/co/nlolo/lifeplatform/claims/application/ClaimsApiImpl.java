@@ -14,9 +14,12 @@ import tz.co.nlolo.lifeplatform.claims.api.InvalidClaimStateException;
 import tz.co.nlolo.lifeplatform.claims.domain.Claim;
 import tz.co.nlolo.lifeplatform.claims.domain.ClaimAssessment;
 import tz.co.nlolo.lifeplatform.claims.domain.SettlementDecision;
+import tz.co.nlolo.lifeplatform.claims.domain.ClaimEvidence;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimAssessmentRepository;
+import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimEvidenceRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.SettlementDecisionRepository;
+import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
@@ -36,13 +39,13 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Task 4 implements {@link #registerClaim} and {@link #getClaim}; Task 5 (this task) adds
- * {@link #submitAssessment}, {@link #decideSettlement}, and {@link #reopenClaim}. The remaining
- * {@link ClaimsApi} methods are declared (the module's published surface was fixed by this
- * plan's authoring so {@code omnichannel} has a stable target) but not yet bodied here --
- * {@code attachEvidence}/{@code listEvidence}/{@code searchClaims} belong to a later task. Each
- * throws {@link UnsupportedOperationException} rather than faking a result, so a caller finds
- * out immediately rather than silently getting a wrong answer.
+ * Task 4 implements {@link #registerClaim} and {@link #getClaim}; Task 5 adds
+ * {@link #submitAssessment}, {@link #decideSettlement}, and {@link #reopenClaim}; Task 8 (this
+ * task) adds {@link #attachEvidence} and {@link #listEvidence}. {@link ClaimsApi}'s remaining
+ * method, {@code searchClaims}, is declared (the module's published surface was fixed by this
+ * plan's authoring so {@code omnichannel} has a stable target) but not yet bodied here -- it
+ * belongs to a later task and still throws {@link UnsupportedOperationException} rather than
+ * faking a result, so a caller finds out immediately rather than silently getting a wrong answer.
  */
 @Service
 public class ClaimsApiImpl implements ClaimsApi {
@@ -52,20 +55,26 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final ClaimRepository claimRepository;
     private final ClaimAssessmentRepository claimAssessmentRepository;
     private final SettlementDecisionRepository settlementDecisionRepository;
+    private final ClaimEvidenceRepository claimEvidenceRepository;
     private final PolicyApi policyApi;
     private final PartyApi partyApi;
     private final UnderwritingApi underwritingApi;
+    private final DocumentApi documentApi;
     private final ApplicationEventPublisher eventPublisher;
 
     public ClaimsApiImpl(ClaimRepository claimRepository, ClaimAssessmentRepository claimAssessmentRepository,
-                          SettlementDecisionRepository settlementDecisionRepository, PolicyApi policyApi,
-                          PartyApi partyApi, UnderwritingApi underwritingApi, ApplicationEventPublisher eventPublisher) {
+                          SettlementDecisionRepository settlementDecisionRepository,
+                          ClaimEvidenceRepository claimEvidenceRepository, PolicyApi policyApi,
+                          PartyApi partyApi, UnderwritingApi underwritingApi, DocumentApi documentApi,
+                          ApplicationEventPublisher eventPublisher) {
         this.claimRepository = claimRepository;
         this.claimAssessmentRepository = claimAssessmentRepository;
         this.settlementDecisionRepository = settlementDecisionRepository;
+        this.claimEvidenceRepository = claimEvidenceRepository;
         this.policyApi = policyApi;
         this.partyApi = partyApi;
         this.underwritingApi = underwritingApi;
+        this.documentApi = documentApi;
         this.eventPublisher = eventPublisher;
     }
 
@@ -257,13 +266,39 @@ public class ClaimsApiImpl implements ClaimsApi {
     }
 
     @Override
+    @Transactional
     public ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy) {
-        throw new UnsupportedOperationException("attachEvidence is implemented in a later task of this plan");
+        UUID tenantId = TenantContext.get();
+        Claim claim = findOrThrow(claimId, tenantId);
+
+        // Evidence is only meaningful while the claim can still be assessed or reopened.
+        if (claim.getStatus() == ClaimStatus.SETTLED) {
+            throw new InvalidClaimStateException(
+                "Claim " + claimId + " is SETTLED; reopen it before attaching evidence");
+        }
+
+        // Confirms the ref exists AND belongs to this tenant -- DocumentApiImpl.findOrThrow
+        // reports a cross-tenant ref identically to "doesn't exist" (DocumentApiImpl.java:67-74),
+        // so this call both validates the ref and closes a cross-tenant reference hole in one go.
+        // NoSuchElementException propagates as-is (404 at the boundary).
+        documentApi.getMetadata(documentRef);
+
+        ClaimEvidence evidence = new ClaimEvidence(tenantId, claimId, documentRef, description, uploadedBy);
+        claimEvidenceRepository.save(evidence);
+
+        return toEvidenceView(evidence);
     }
 
     @Override
     public List<ClaimEvidenceView> listEvidence(UUID claimId) {
-        throw new UnsupportedOperationException("listEvidence is implemented in a later task of this plan");
+        UUID tenantId = TenantContext.get();
+        // Confirms the claim exists and belongs to this tenant before listing -- otherwise an
+        // unknown/cross-tenant claimId would silently return an empty list instead of 404ing.
+        findOrThrow(claimId, tenantId);
+
+        return claimEvidenceRepository.findByClaimIdAndTenantIdOrderByUploadedAtDesc(claimId, tenantId).stream()
+            .map(this::toEvidenceView)
+            .toList();
     }
 
     /**
@@ -331,5 +366,10 @@ public class ClaimsApiImpl implements ClaimsApi {
         return new ClaimAssessmentView(assessment.getClaimAssessmentId(), assessment.getClaimId(),
             assessment.getAssessor(), assessment.getFindings(), assessment.getRecommendedAmount(),
             assessment.getRecommendedCurrency(), assessment.isFraudIndicator(), assessment.getCreatedAt());
+    }
+
+    private ClaimEvidenceView toEvidenceView(ClaimEvidence evidence) {
+        return new ClaimEvidenceView(evidence.getClaimEvidenceId(), evidence.getClaimId(), evidence.getDocumentRef(),
+            evidence.getDescription(), evidence.getUploadedBy(), evidence.getUploadedAt());
     }
 }
