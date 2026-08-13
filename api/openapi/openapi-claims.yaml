@@ -303,19 +303,22 @@ components:
         dateOfEvent: { type: string, format: date }
         details: { $ref: '#/components/schemas/ClaimDetails' }
     ClaimDetails:
-      description: "Polymorphic by claimType — modeled server-side as a sealed ClaimDetails hierarchy (Deliverable 3 Rev 2, Cl2)"
+      description: >-
+        Polymorphic by claimType — modeled server-side as a sealed ClaimDetails hierarchy
+        (Deliverable 3 Rev 2, Cl2). Deliberately NO `discriminator` keyword: verified empirically
+        against a real swagger-request-validator 2.46.0 instance (the exact library Task 10's
+        contract tests use) that ANY discriminator+oneOf shape here -- discriminator on the base
+        with siblings, discriminator on the base with allOf-composed subtypes, tried both -- fails
+        the same internal syntax check (err.swaggerv2.discriminator.wrongType) on every schema that
+        references ClaimDetails, before a single test request is even evaluated. A bare `oneOf`
+        with no discriminator validates correctly: each branch's claimType enum already restricts
+        it to exactly one value, so the oneOf is unambiguous without a discriminator hint --
+        `discriminator` is a codegen/dispatch optimization, not a validation requirement.
       oneOf:
         - $ref: '#/components/schemas/DeathClaimDetails'
         - $ref: '#/components/schemas/DisabilityClaimDetails'
         - $ref: '#/components/schemas/CriticalIllnessClaimDetails'
         - $ref: '#/components/schemas/MaturityClaimDetails'
-      discriminator:
-        propertyName: claimType
-        mapping:
-          DEATH: '#/components/schemas/DeathClaimDetails'
-          DISABILITY: '#/components/schemas/DisabilityClaimDetails'
-          CRITICAL_ILLNESS: '#/components/schemas/CriticalIllnessClaimDetails'
-          MATURITY: '#/components/schemas/MaturityClaimDetails'
     DeathClaimDetails:
       type: object
       required: [claimType, causeOfDeath, placeOfDeath, dateOfDeath, attendingPhysician]
