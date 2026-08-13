@@ -1,0 +1,239 @@
+package tz.co.nlolo.lifeplatform.claims.domain;
+
+import tz.co.nlolo.lifeplatform.claims.api.ClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
+import tz.co.nlolo.lifeplatform.claims.api.InvalidClaimStateException;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.UUID;
+
+/**
+ * Aggregate root for {@code claims.claim}. The seven-state machine declared in this plan's
+ * header is enforced HERE and only here -- every transition below follows the idempotent-on-
+ * repeat / reject-on-conflict shape of {@code payment.domain.DisbursementInstruction.markCompleted}:
+ * a repeat of the SAME outcome is a silent no-op, a call from any other source state throws.
+ *
+ * <p>{@code details} is stored as JSONB (see {@code db-migrations/claims/V1:15}) and mapped
+ * directly as the sealed {@link ClaimDetails} type, following the same
+ * {@code @JdbcTypeCode(SqlTypes.JSON)} shape {@code policy.domain.Endorsement} uses for its own
+ * JSONB {@code changes} column -- but typed as the polymorphic interface rather than
+ * {@code Map<String,Object>}. Hibernate 6's JSON type support resolves the concrete subtype via
+ * the Jackson {@code ObjectMapper} on the classpath, which already carries {@code ClaimDetails}'s
+ * {@code @JsonTypeInfo}/{@code @JsonSubTypes} discriminator -- verified against a real Postgres
+ * container in {@code ClaimDetailsJsonbSmokeTest} rather than merely compiling.
+ */
+@Entity
+@Table(name = "claim", schema = "claims")
+public class Claim {
+
+    @Id
+    @UuidGenerator
+    @Column(name = "claim_id")
+    private UUID claimId;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
+    @Column(name = "policy_number", nullable = false)
+    private String policyNumber;
+
+    @Column(name = "claimant_party_id", nullable = false)
+    private UUID claimantPartyId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "claim_type", nullable = false)
+    private ClaimType claimType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private ClaimStatus status = ClaimStatus.REGISTERED;
+
+    @Column(name = "date_of_event", nullable = false)
+    private LocalDate dateOfEvent;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "details", nullable = false, columnDefinition = "jsonb")
+    private ClaimDetails details;
+
+    @Column(name = "approved_amount")
+    private BigDecimal approvedAmount;
+
+    @Column(name = "approved_currency")
+    private String approvedCurrency;
+
+    @Column(name = "settlement_idempotency_key")
+    private String settlementIdempotencyKey;
+
+    @Column(name = "settlement_failure_reason")
+    private String settlementFailureReason;
+
+    @Version
+    private long version;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt = Instant.now();
+
+    @Column(name = "created_by")
+    private String createdBy;
+
+    @Column(name = "updated_at")
+    private Instant updatedAt;
+
+    @Column(name = "updated_by")
+    private String updatedBy;
+
+    protected Claim() {}
+
+    /**
+     * Registers a new claim. Validates that {@code details}' own {@link ClaimDetails#claimType()}
+     * matches {@code claimType} -- the invariant {@link ClaimDetails}'s javadoc requires ("a
+     * DEATH claim can never carry DisabilityClaimDetails"), enforced here since this constructor
+     * is the aggregate's single creation point.
+     */
+    public Claim(UUID tenantId, String policyNumber, UUID claimantPartyId, ClaimType claimType,
+                 LocalDate dateOfEvent, ClaimDetails details, String createdBy) {
+        if (details == null || details.claimType() != claimType) {
+            throw new ClaimValidationException(
+                "Claim details type " + (details == null ? "null" : details.claimType())
+                    + " does not match claim type " + claimType);
+        }
+        this.tenantId = tenantId;
+        this.policyNumber = policyNumber;
+        this.claimantPartyId = claimantPartyId;
+        this.claimType = claimType;
+        this.dateOfEvent = dateOfEvent;
+        this.details = details;
+        this.createdBy = createdBy;
+    }
+
+    /** First assessment submitted. REGISTERED or REOPENED -> UNDER_ASSESSMENT. */
+    public void beginAssessment() {
+        if (status == ClaimStatus.UNDER_ASSESSMENT) {
+            return;
+        }
+        if (status != ClaimStatus.REGISTERED && status != ClaimStatus.REOPENED) {
+            throw new InvalidClaimStateException(
+                "Claim " + claimId + " is " + status + ", cannot begin assessment");
+        }
+        this.status = ClaimStatus.UNDER_ASSESSMENT;
+    }
+
+    /** Settlement decision approved. UNDER_ASSESSMENT -> APPROVED, or REGISTERED -> APPROVED for
+     * MATURITY only (auto-approval, docs/03-aggregate-design.md:134 / Cl3). */
+    public void approve(BigDecimal approvedAmount, String approvedCurrency) {
+        if (status == ClaimStatus.APPROVED) {
+            return;
+        }
+        boolean maturityAutoApproval = claimType == ClaimType.MATURITY && status == ClaimStatus.REGISTERED;
+        if (status != ClaimStatus.UNDER_ASSESSMENT && !maturityAutoApproval) {
+            throw new InvalidClaimStateException(
+                "Claim " + claimId + " is " + status + ", cannot approve");
+        }
+        if (approvedAmount == null || approvedAmount.signum() <= 0) {
+            throw new ClaimValidationException("Approved amount must be positive");
+        }
+        this.status = ClaimStatus.APPROVED;
+        this.approvedAmount = approvedAmount;
+        this.approvedCurrency = approvedCurrency;
+    }
+
+    /** Settlement decision rejected. UNDER_ASSESSMENT -> REJECTED. Note MATURITY has no
+     * auto-rejection counterpart: auto-approval is the only automatic transition. */
+    public void reject() {
+        if (status == ClaimStatus.REJECTED) {
+            return;
+        }
+        if (status != ClaimStatus.UNDER_ASSESSMENT) {
+            throw new InvalidClaimStateException(
+                "Claim " + claimId + " is " + status + ", cannot reject");
+        }
+        this.status = ClaimStatus.REJECTED;
+    }
+
+    /** ClaimSettlementRequested published. APPROVED -> SETTLEMENT_REQUESTED. */
+    public void markSettlementRequested(String idempotencyKey) {
+        if (status == ClaimStatus.SETTLEMENT_REQUESTED) {
+            return;
+        }
+        if (status != ClaimStatus.APPROVED) {
+            throw new InvalidClaimStateException(
+                "Claim " + claimId + " is " + status + ", cannot request settlement");
+        }
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new ClaimValidationException("A settlement idempotency key is required");
+        }
+        this.status = ClaimStatus.SETTLEMENT_REQUESTED;
+        this.settlementIdempotencyKey = idempotencyKey;
+        this.settlementFailureReason = null; // a fresh attempt clears the previous failure
+    }
+
+    /** payment.DisbursementCompleted. SETTLEMENT_REQUESTED -> SETTLED. Terminal unless reopened. */
+    public void markSettled() {
+        if (status == ClaimStatus.SETTLED) {
+            return;
+        }
+        if (status != ClaimStatus.SETTLEMENT_REQUESTED) {
+            throw new InvalidClaimStateException(
+                "Claim " + claimId + " is " + status + ", cannot mark settled");
+        }
+        this.status = ClaimStatus.SETTLED;
+    }
+
+    /** payment.DisbursementFailed. SETTLEMENT_REQUESTED -> APPROVED, preserving the reason so the
+     * claim lands on a staff retry worklist (docs/02-module-architecture.md:125) rather than being
+     * silently retried. The decision itself still stands, so APPROVED is the correct resting
+     * state, and the CHECK constraint offers no SETTLEMENT_FAILED value. */
+    public void markSettlementFailed(String reason) {
+        if (status != ClaimStatus.SETTLEMENT_REQUESTED) {
+            return; // a redelivered failure after a manual retry already moved it on
+        }
+        this.status = ClaimStatus.APPROVED;
+        this.settlementFailureReason = reason;
+    }
+
+    /** CLAIMS_MANAGER reopen. REJECTED or SETTLED -> REOPENED (new evidence, or a dispute).
+     * Deliberately does NOT clear approvedAmount: the prior decision stays on the record, and a
+     * new decision overwrites it only when one is actually made. */
+    public void reopen() {
+        if (status == ClaimStatus.REOPENED) {
+            return;
+        }
+        if (status != ClaimStatus.REJECTED && status != ClaimStatus.SETTLED) {
+            throw new InvalidClaimStateException(
+                "Claim " + claimId + " is " + status + ", only a REJECTED or SETTLED claim can be reopened");
+        }
+        this.status = ClaimStatus.REOPENED;
+    }
+
+    public UUID getClaimId() { return claimId; }
+    public UUID getTenantId() { return tenantId; }
+    public String getPolicyNumber() { return policyNumber; }
+    public UUID getClaimantPartyId() { return claimantPartyId; }
+    public ClaimType getClaimType() { return claimType; }
+    public ClaimStatus getStatus() { return status; }
+    public LocalDate getDateOfEvent() { return dateOfEvent; }
+    public ClaimDetails getDetails() { return details; }
+    public BigDecimal getApprovedAmount() { return approvedAmount; }
+    public String getApprovedCurrency() { return approvedCurrency; }
+    public String getSettlementIdempotencyKey() { return settlementIdempotencyKey; }
+    public String getSettlementFailureReason() { return settlementFailureReason; }
+    public long getVersion() { return version; }
+    public Instant getCreatedAt() { return createdAt; }
+    public String getCreatedBy() { return createdBy; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public String getUpdatedBy() { return updatedBy; }
+}
