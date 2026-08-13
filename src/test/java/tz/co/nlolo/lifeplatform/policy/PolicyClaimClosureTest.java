@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.policy.domain.Policy;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -79,10 +80,17 @@ class PolicyClaimClosureTest {
     private record Fixture(UUID applicantId, UUID productId, UUID productVersionId) {}
 
     private Fixture buildFixture(UUID tenantId, String productCode) {
+        return buildFixture(tenantId, productCode, ProductCategory.TERM_LIFE);
+    }
+
+    /** Category overload, mirroring {@code BillingApiIntegrationTest.buildFixture}'s own: only
+     * GROUP_LIFE is seeded into POLICY_SUSPENSION_ELIGIBLE_CATEGORIES (refdata/V2), so a test that
+     * needs a genuinely SUSPENDED policy cannot use the TERM_LIFE default. */
+    private Fixture buildFixture(UUID tenantId, String productCode, ProductCategory category) {
         TenantContext.set(tenantId);
         PartyView applicant = partyApi.registerIndividual("Claim Closure Test Applicant " + productCode, LocalDate.of(1990, 1, 1),
             "+25571400" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
-        ProductSummaryView product = productApi.createProduct(productCode, "Claim Closure Test Product", ProductCategory.TERM_LIFE, "TZS", "actuary");
+        ProductSummaryView product = productApi.createProduct(productCode, "Claim Closure Test Product", category, "TZS", "actuary");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
@@ -191,26 +199,104 @@ class PolicyClaimClosureTest {
         assertThat(auditRows).hasSize(1);
     }
 
+    // ============================================================================================
+    // M6 final-review fix (C1, part 2): the accepted source states are now ACTIVE, REINSTATED,
+    // LAPSED and SUSPENDED, and EITHER terminal status satisfies the post-condition.
+    //
+    // The two tests below replace earlier ones that asserted the OPPOSITE for LAPSED
+    // (markMaturedRejectsAnAlreadyLapsedPolicy / terminateForSettledClaimRejectsAnAlreadyLapsedPolicy).
+    // That old behaviour was the Critical: PolicyLapseRecommendedEventListener lapses a policy
+    // unattended at dunning level >= 5, a deceased policyholder stops paying premiums, so any death
+    // claim whose assessment outlasted dunning escalation hit the throw -- and inside claims'
+    // settlement listener that exception rolled back the claim's own SETTLED transition after the
+    // money had already left. Rejecting a LAPSED policy also left billing invoicing a policy whose
+    // claim had been paid out, which is the exact condition closing the policy exists to prevent.
+    // ============================================================================================
+
     @Test
-    void markMaturedRejectsAnAlreadyLapsedPolicy() {
+    void markMaturedClosesAnAlreadyLapsedPolicy() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIM-CLOSURE-MATURE-LAPSED-01");
         String policyNumber = issueDirectly(tenantId, fixture, UUID.randomUUID());
 
         TenantContext.set(tenantId);
         policyApi.lapsePolicy(policyNumber, "test-staff");
-        assertThrows(InvalidPolicyStateException.class, () -> policyApi.markMatured(policyNumber, "test-staff"));
+        policyApi.markMatured(policyNumber, "test-staff");
+
+        assertEquals(PolicyStatus.MATURED, policyApi.getPolicy(policyNumber).status());
     }
 
     @Test
-    void terminateForSettledClaimRejectsAnAlreadyLapsedPolicy() {
+    void terminateForSettledClaimClosesAnAlreadyLapsedPolicy() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIM-CLOSURE-TERM-LAPSED-01");
         String policyNumber = issueDirectly(tenantId, fixture, UUID.randomUUID());
 
         TenantContext.set(tenantId);
         policyApi.lapsePolicy(policyNumber, "test-staff");
-        UUID claimId = UUID.randomUUID();
-        assertThrows(InvalidPolicyStateException.class, () -> policyApi.terminateForSettledClaim(policyNumber, claimId, "test-staff"));
+        policyApi.terminateForSettledClaim(policyNumber, UUID.randomUUID(), "test-staff");
+
+        assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());
+    }
+
+    @Test
+    void terminateForSettledClaimClosesASuspendedPolicy() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIM-CLOSURE-TERM-SUSP-01", ProductCategory.GROUP_LIFE);
+        String policyNumber = issueDirectly(tenantId, fixture, UUID.randomUUID());
+
+        TenantContext.set(tenantId);
+        policyApi.suspendPolicy(policyNumber, "Under investigation", "test-staff");
+        policyApi.terminateForSettledClaim(policyNumber, UUID.randomUUID(), "test-staff");
+
+        assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());
+    }
+
+    /** The sibling-terminal-status case: a SECOND claim settling against a policy the FIRST one
+     * already closed must be a silent no-op, not an error. Previously each method no-opped only on
+     * its OWN target status and threw on the other one -- which, from inside claims' settlement
+     * listener, was the same Critical as the LAPSED case above. Asserts BOTH directions and that
+     * neither publishes a second closure event announcing a transition that did not happen. */
+    @Test
+    void eitherClosureMethodIsASilentNoOpOnAnAlreadyClosedPolicy() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIM-CLOSURE-XTERMINAL-01");
+        String maturedFirst = issueDirectly(tenantId, fixture, UUID.randomUUID());
+        String surrenderedFirst = issueDirectly(tenantId, fixture, UUID.randomUUID());
+
+        TenantContext.set(tenantId);
+        Instant before = Instant.now();
+
+        policyApi.markMatured(maturedFirst, "test-staff");
+        policyApi.terminateForSettledClaim(maturedFirst, UUID.randomUUID(), "test-staff"); // no-op
+        assertEquals(PolicyStatus.MATURED, policyApi.getPolicy(maturedFirst).status());
+
+        policyApi.terminateForSettledClaim(surrenderedFirst, UUID.randomUUID(), "test-staff");
+        policyApi.markMatured(surrenderedFirst, "test-staff"); // no-op
+        assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(surrenderedFirst).status());
+
+        // One PolicyMatured and one PolicySurrendered across all four calls -- the no-ops must not
+        // announce a closure they did not perform.
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicyMatured", before.minusSeconds(5), Instant.now().plusSeconds(5))).hasSize(1);
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicySurrendered", before.minusSeconds(5), Instant.now().plusSeconds(5))).hasSize(1);
+    }
+
+    /** The guards were WIDENED, not removed: a genuinely nonsensical source state still throws.
+     * PROPOSED is unreachable for an issued policy through any published API (issuePolicy activates
+     * immediately and nothing transitions back), so this asserts against the domain object directly
+     * -- a pure unit assertion, deliberately in this class rather than a new one, so the widened and
+     * the still-rejected states are read side by side. */
+    @Test
+    void neitherClosureMethodAcceptsAProposedPolicy() {
+        Policy proposed = new Policy("POL-PROPOSED-01", UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+            UUID.randomUUID(), "TERM_LIFE", null, new BigDecimal("1000000"), "TZS",
+            new BigDecimal("50000.00"), "TZS", "MONTHLY", null, "test-staff");
+
+        assertEquals("PROPOSED", proposed.getStatus());
+        assertThrows(InvalidPolicyStateException.class, proposed::mature);
+        assertThrows(InvalidPolicyStateException.class, proposed::terminateForSettledClaim);
+        assertEquals("PROPOSED", proposed.getStatus());
     }
 }

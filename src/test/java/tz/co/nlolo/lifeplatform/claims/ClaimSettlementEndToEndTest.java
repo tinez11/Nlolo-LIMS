@@ -151,6 +151,8 @@ class ClaimSettlementEndToEndTest {
     @Autowired private AuditLogRepository auditLogRepository;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ClaimRepository claimRepository;
+    /** For the C1 part-3 assertion that the policy-closure failure is genuinely alertable. */
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     private TransactionTemplate transactionTemplate;
 
@@ -412,5 +414,290 @@ class ClaimSettlementEndToEndTest {
             .isEqualTo(PolicyStatus.ACTIVE);
 
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    // ============================================================================================
+    // M6 final-review fix wave: C1 (a settled claim on a non-ACTIVE policy), I1 (duplicate
+    // ClaimSettled on redelivery), I2 (a re-decided amount diverging from the record), and the
+    // purpose-filter cross-contamination guard.
+    // ============================================================================================
+
+    /**
+     * <b>The direct regression guard for the Critical (C1).</b> A death claim whose policy has since
+     * LAPSED -- which happens unattended, because {@code PolicyLapseRecommendedEventListener} lapses
+     * a policy on {@code billing.PolicyLapseRecommended} at dunning level >= 5 and a deceased
+     * policyholder stops paying premiums -- must settle normally: the claim genuinely reaches
+     * SETTLED and the policy genuinely reaches SURRENDERED.
+     *
+     * <p>Before the fix, {@code Policy.terminateForSettledClaim()} threw for a LAPSED source state
+     * from inside {@code PaymentEventListener.handleCompleted}'s single transaction, which rolled
+     * back the claim's OWN SETTLED transition after the disbursement had already COMPLETED: money
+     * gone, claim wedged back at SETTLEMENT_REQUESTED with a NULL failure reason, no ClaimSettled
+     * event, and no way back out through any existing transition. Both halves are asserted below --
+     * the claim (proving the transition was not reverted) and the policy (proving the widened guard
+     * actually accepts LAPSED rather than the claim merely surviving a swallowed failure).
+     */
+    @Test
+    void aSettledDeathClaimClosesAPolicyThatHasSinceLapsed() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-CLAIM-E2E-LAPSED\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-LAPSED");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        // Registered while the policy is still ACTIVE (registerClaim's isPolicyInForce check would
+        // otherwise 422 -- see ClaimsApiImpl's step 2 comment on that known policy gap, I3), then
+        // lapsed the way dunning would while the claim was still being assessed.
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "e2e-lapsed-reg-01", "assessor-lapsed-01");
+        TenantContext.set(tenantId);
+        policyApi.lapsePolicy(policyNumber, "billing-dunning-simulated");
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.LAPSED);
+
+        String settleKey = "e2e-settle-lapsed-" + claimId;
+        Instant before = Instant.now();
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "MPESA-0712000020", settleKey, "manager-lapsed-01");
+
+        // 1. The claim really reached SETTLED and STAYED there -- read back from the database, which
+        //    is where the rollback used to be visible.
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status())
+            .as("a settled claim must never be rolled back by a policy precondition")
+            .isEqualTo(ClaimStatus.SETTLED);
+        Claim claim = claimRepository.findByClaimIdAndTenantId(claimId, tenantId).orElseThrow();
+        assertThat(claim.getSettlementFailureReason()).isNull();
+
+        // 2. claims.ClaimSettled was really published (it was not, before the fix).
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "claims.ClaimSettled", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .hasSize(1);
+
+        // 3. The money really moved, which is what makes the claim's SETTLED state non-negotiable.
+        DisbursementInstruction instruction = disbursementRepository
+            .findByIdempotencyKeyAndTenantId(settleKey, tenantId).orElseThrow();
+        assertThat(instruction.getStatus()).isEqualTo("COMPLETED");
+        assertThat(instruction.getGatewayReference()).isEqualTo("MM-CLAIM-E2E-LAPSED");
+
+        // 4. And the LAPSED policy was genuinely closed, not left for billing to keep invoicing.
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.SURRENDERED);
+    }
+
+    /**
+     * The other half of C1: the phase separation itself, proven against a policy-closure failure
+     * that genuinely throws. With the widened guards, every state a policy can legitimately be in
+     * when a claim settles (ACTIVE, REINSTATED, LAPSED, SUSPENDED, or already closed) now succeeds,
+     * so this test manufactures the residual case -- a PROPOSED policy, which
+     * {@code Policy.terminateForSettledClaim()} still rejects on purpose -- by writing the status
+     * directly with a superuser connection. That is deliberate: the point is not that PROPOSED is
+     * reachable in production, it is that <b>ANY</b> failure of the policy call must leave the
+     * claim's settled-and-paid fact intact and raise an alertable signal instead.
+     *
+     * <p>Asserts all three parts of the fix at once: the claim stays SETTLED (phase 1 committed
+     * independently), {@code claims.ClaimSettled} was still published, and
+     * {@code lifeplatform_claims_policy_closure_failed_total} incremented (the residual case is
+     * visible, not swallowed into a single ERROR line).
+     */
+    @Test
+    void aPolicyClosureFailureLeavesTheClaimSettledAndIncrementsTheAlertableCounter() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-CLAIM-E2E-CLOSEFAIL\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-CLOSEFAIL");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "e2e-closefail-reg-01", "assessor-closefail-01");
+
+        // Force the one source state the closure guard still refuses. Done over a superuser
+        // connection (not the app's app_role datasource) because no published API can put an issued
+        // policy back to PROPOSED -- by design.
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE policy.policy SET status = 'PROPOSED' WHERE policy_number = '" + policyNumber + "'");
+        }
+
+        double closureFailuresBefore = policyClosureFailureCount();
+        Instant before = Instant.now();
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "MPESA-0712000021", "e2e-settle-closefail-" + claimId, "manager-closefail-01");
+
+        // The claim is SETTLED and final -- the disbursement COMPLETED, so this is the only correct
+        // outcome. This is the assertion that fails if the two phases are ever merged back into one
+        // transaction: the InvalidPolicyStateException would unwind this transition too.
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLED);
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "claims.ClaimSettled", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .hasSize(1);
+        assertThat(disbursementRepository.findByIdempotencyKeyAndTenantId("e2e-settle-closefail-" + claimId, tenantId)
+            .orElseThrow().getStatus()).isEqualTo("COMPLETED");
+
+        // The policy really was left unclosed -- so the counter is the ONLY signal, and it fired.
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.PROPOSED);
+        assertThat(policyClosureFailureCount())
+            .as("the residual case must be alertable, not silent")
+            .isEqualTo(closureFailuresBefore + 1);
+    }
+
+    private double policyClosureFailureCount() {
+        io.micrometer.core.instrument.Counter counter =
+            meterRegistry.find("lifeplatform_claims_policy_closure_failed_total").counter();
+        return counter == null ? 0d : counter.count();
+    }
+
+    /**
+     * I1: a redelivered {@code payment.DisbursementCompleted} must publish exactly ONE
+     * {@code claims.ClaimSettled}. {@code Claim.markSettled()} was already idempotent, but the
+     * publish ran unconditionally after it, so the audit rows went 1 -> 2 on republishing the same
+     * envelope. Declared consumers are finaccounting (journal posting), communication and
+     * regreporting -- a duplicate journal entry is the version of this bug that costs money.
+     */
+    @Test
+    void aRedeliveredDisbursementCompletedPublishesExactlyOneClaimSettled() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-CLAIM-E2E-REDELIVER\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-REDELIVER");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "e2e-redeliver-reg-01", "assessor-redeliver-01");
+        String settleKey = "e2e-settle-redeliver-" + claimId;
+
+        Instant before = Instant.now();
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "MPESA-0712000022", settleKey, "manager-redeliver-01");
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLED);
+
+        // A real at-least-once redelivery of payment's OWN DisbursementCompleted envelope, built
+        // field-for-field from PaymentApiImpl.completeDisbursement's published payload (not an
+        // invented shape) using the real disbursement row this settlement just produced.
+        DisbursementInstruction instruction = disbursementRepository
+            .findByIdempotencyKeyAndTenantId(settleKey, tenantId).orElseThrow();
+        var envelope = tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("payment.DisbursementCompleted", tenantId,
+            java.util.Map.of("disbursementId", instruction.getDisbursementId(),
+                "idempotencyKey", settleKey,
+                "sourceRef", claimId.toString(),
+                "purpose", "CLAIM_SETTLEMENT",
+                "gatewayReference", "MM-CLAIM-E2E-REDELIVER",
+                "amount", java.util.Map.of("amount", "2000000", "currencyCode", "TZS"),
+                "completedAt", Instant.now().toString()));
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
+
+        // Exactly one ClaimSettled across BOTH deliveries -- two before the fix.
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "claims.ClaimSettled", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .hasSize(1);
+        // Exactly one PolicySurrendered too: the redelivery skips the policy call as well, keeping
+        // both idempotent halves of handleCompleted consistent with each other.
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicySurrendered", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .hasSize(1);
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLED);
+    }
+
+    /**
+     * The purpose-filter cross-contamination guard (escalation-list item, folded into this wave).
+     * {@code payment.DisbursementCompleted} is a shared event type: policyloan's loan payouts ride it
+     * too. Both listeners filter on {@code purpose}, and both are correct today -- nothing would
+     * catch a future regression where claims' listener stopped filtering and started settling claims
+     * off another module's payout.
+     *
+     * <p>Non-vacuous by construction: the claim is parked at SETTLEMENT_REQUESTED (the ONE status
+     * from which {@code markSettled()} would actually succeed), so if the {@code purpose} check were
+     * removed this event WOULD settle it and close the policy. Parking it there uses the real
+     * indeterminate path -- a 500 from the rail is a {@code GatewayException}, which payment records
+     * as IN_DOUBT and deliberately publishes no event for, leaving the claim exactly where a
+     * genuinely unknown outcome leaves it.
+     */
+    @Test
+    void aLoanDisbursementCompletedNeverTouchesAClaimAwaitingSettlement() {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(aResponse().withStatus(500)));
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-PURPOSE");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "e2e-purpose-reg-01", "assessor-purpose-01");
+
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "MPESA-0712000023", "e2e-settle-purpose-" + claimId, "manager-purpose-01");
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status())
+            .as("an indeterminate rail outcome must leave the claim awaiting settlement")
+            .isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
+
+        // Another module's payout, riding the same event type, carrying THIS claim's id as its
+        // sourceRef -- the worst case, and still not claims' business.
+        var envelope = tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("payment.DisbursementCompleted", tenantId,
+            java.util.Map.of("disbursementId", UUID.randomUUID(),
+                "idempotencyKey", "e2e-purpose-loan-" + claimId,
+                "sourceRef", claimId.toString(),
+                "purpose", "LOAN_DISBURSEMENT",
+                "gatewayReference", "MM-LOAN-NOT-A-CLAIM",
+                "amount", java.util.Map.of("amount", "2000000", "currencyCode", "TZS"),
+                "completedAt", Instant.now().toString()));
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
+
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status())
+            .as("a LOAN_DISBURSEMENT payout must never settle a claim")
+            .isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.ACTIVE);
+    }
+
+    /**
+     * I2: on this plan's own designed retry path (rail declines -> the claim returns to APPROVED ->
+     * staff retry with a NEW idempotency key), a retry carrying a DIFFERENT approvedAmount used to
+     * reach the event and the real disbursement while {@code claim.approved_amount} silently kept the
+     * ORIGINAL value -- the reviewer measured a claim recording 2,000,000 against 9,999,999 actually
+     * disbursed. It is now rejected with 409 rather than silently re-applied, because changing an
+     * approved settlement amount must be explicit in the audit trail.
+     *
+     * <p>Asserts both directions, so this cannot pass by simply blocking all retries: the differing
+     * amount is refused AND never reaches the rail, and the SAME amount with a new key still settles
+     * normally.
+     */
+    @Test
+    void aSettlementRetryCannotSilentlyChangeTheApprovedAmountButMayRepeatIt() {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"REJECTED\",\"reason\":\"INSUFFICIENT_FLOAT\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-RETRY-AMOUNT");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "e2e-retry-reg-01", "assessor-retry-01");
+
+        // The rail declines, so the claim returns to APPROVED -- the real state a staff retry starts
+        // from, not a contrived one.
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "MPESA-0712000024", "e2e-settle-retry-a-" + claimId, "manager-retry-01");
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.APPROVED);
+
+        // A retry with a DIFFERENT amount: 409, and nothing reaches the rail.
+        assertThrows(tz.co.nlolo.lifeplatform.claims.api.InvalidClaimStateException.class,
+            () -> claimsApi.decideSettlement(claimId, true, new BigDecimal("9999999"), "TZS", null,
+                "MPESA-0712000024", "e2e-settle-retry-b-" + claimId, "manager-retry-01"));
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).approvedAmount())
+            .as("the recorded approved amount must never diverge from what is disbursed")
+            .isEqualByComparingTo("2000000");
+        assertThat(disbursementRepository.findByIdempotencyKeyAndTenantId("e2e-settle-retry-b-" + claimId, tenantId))
+            .as("a rejected re-decision must not reach payment at all")
+            .isEmpty();
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
+
+        // A retry with the SAME amount (scale deliberately different -- 2000000.00 is the same
+        // amount, not a conflict) and a new key still works, all the way to SETTLED.
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-CLAIM-E2E-RETRY-OK\"}")));
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000.00"), "TZS", null,
+            "MPESA-0712000024", "e2e-settle-retry-c-" + claimId, "manager-retry-01");
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLED);
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.SURRENDERED);
     }
 }

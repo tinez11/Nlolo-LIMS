@@ -16,10 +16,16 @@ import java.util.UUID;
  * (TenantContext.get()'s fail-loud guard also throws IllegalStateException, for an unrelated
  * reason, and would be misclassified as a 409 app-wide if this class threw the same type).
  *
- * SURRENDERED and MATURED are valid enum values (the DB CHECK and every view type must be
- * able to represent a policy that reaches them via a later milestone) but no method on this
- * class transitions into either -- the surrender/maturity choreography is deferred wholesale
- * (see plan header). There is deliberately no surrender()/matureTo() method here.
+ * SURRENDERED and MATURED are the two terminal statuses. M6 added the only two transitions into
+ * them -- {@link #mature()} and {@link #terminateForSettledClaim()}, both driven by a SETTLED claim
+ * (a settled claim discharges the coverage, so the policy must stop being invoiced). The wider
+ * surrender/maturity choreography (customer-initiated surrender, term expiry) is still deferred;
+ * there is deliberately no general-purpose surrender() entry point here.
+ *
+ * <p><b>Both terminal statuses are one-way.</b> {@link #reinstate()} requires LAPSED, so nothing on
+ * this class can move a policy back out of MATURED/SURRENDERED -- see
+ * {@code claims.domain.Claim.reopen()}'s javadoc for the documented consequence (M6 final-review
+ * I6): reopening a SETTLED claim cannot reverse the policy closure its settlement caused.
  */
 @Entity
 @Table(name = "policy", schema = "policy")
@@ -186,27 +192,79 @@ public class Policy {
         return "ACTIVE".equals(status) || "REINSTATED".equals(status);
     }
 
-    /** A MATURITY claim settled, or the policy reached term. Terminal. */
+    /**
+     * A MATURITY claim settled, or the policy reached term. Terminal.
+     *
+     * <p><b>Accepted source states: ACTIVE, REINSTATED, LAPSED, SUSPENDED</b> (see
+     * {@link #closeableBySettledClaim()}). Already-closed (MATURED <i>or</i> SURRENDERED) is a
+     * satisfied post-condition and returns silently (see {@link #alreadyClosed()}); every other
+     * status -- PROPOSED above all -- still throws, because "a claim settled against a policy that
+     * was never issued" is nonsense, not a state to absorb.
+     */
     public void mature() {
-        if ("MATURED".equals(status)) {
-            return; // idempotent on repeat
+        if (alreadyClosed()) {
+            return;
         }
-        if (!"ACTIVE".equals(status) && !"REINSTATED".equals(status)) {
-            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE or REINSTATED to MATURE (current: " + status + ")");
+        if (!closeableBySettledClaim()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE, REINSTATED, LAPSED or SUSPENDED to MATURE (current: " + status + ")");
         }
         this.status = "MATURED";
     }
 
-    /** A DEATH/DISABILITY/CRITICAL_ILLNESS claim settled: coverage is discharged. Terminal.
+    /**
+     * A DEATH/DISABILITY/CRITICAL_ILLNESS claim settled: coverage is discharged. Terminal.
      * Uses SURRENDERED because policy.policy's CHECK offers no CLAIM_SETTLED value and
-     * "coverage discharged, no further premium due" is the operative meaning both share. */
+     * "coverage discharged, no further premium due" is the operative meaning both share.
+     *
+     * <p><b>Accepted source states: ACTIVE, REINSTATED, LAPSED, SUSPENDED</b> (see
+     * {@link #closeableBySettledClaim()}). Already-closed (SURRENDERED <i>or</i> MATURED) is a
+     * satisfied post-condition and returns silently (see {@link #alreadyClosed()}); every other
+     * status -- PROPOSED above all -- still throws.
+     */
     public void terminateForSettledClaim() {
-        if ("SURRENDERED".equals(status)) {
-            return; // idempotent on repeat
+        if (alreadyClosed()) {
+            return;
         }
-        if (!"ACTIVE".equals(status) && !"REINSTATED".equals(status)) {
-            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE or REINSTATED to terminate for a settled claim (current: " + status + ")");
+        if (!closeableBySettledClaim()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE, REINSTATED, LAPSED or SUSPENDED to terminate for a settled claim (current: " + status + ")");
         }
         this.status = "SURRENDERED";
+    }
+
+    /**
+     * M6 final-review fix (C1, part 2). Either terminal status satisfies the post-condition both
+     * closure methods exist to achieve -- "this policy is closed, so billing must stop generating
+     * premium invoices against it" -- so reaching the OTHER one is a silent no-op, not an error.
+     *
+     * <p>Before this fix each method only no-opped on its own target status and threw on its
+     * sibling: a second claim settling against an already-closed policy (e.g. a DEATH claim
+     * settling after a MATURITY claim already matured the policy) threw
+     * {@code InvalidPolicyStateException} from inside claims' settlement listener, where -- until
+     * the same fix isolated that call -- it rolled back the claim's own SETTLED transition after
+     * the money had already left. Nothing is gained by failing here: the goal is already met.
+     */
+    private boolean alreadyClosed() {
+        return "MATURED".equals(status) || "SURRENDERED".equals(status);
+    }
+
+    /**
+     * M6 final-review fix (C1, part 2). LAPSED and SUSPENDED are accepted alongside
+     * ACTIVE/REINSTATED, because a settled claim discharges the coverage whether or not premiums
+     * were still being paid:
+     * <ul>
+     *   <li><b>LAPSED</b> is reached automatically and unattended --
+     *       {@code policy.application.PolicyLapseRecommendedEventListener} calls
+     *       {@code lapsePolicy} on {@code billing.PolicyLapseRecommended} at dunning level >= 5.
+     *       A deceased policyholder stops paying premiums, so ANY death claim whose assessment
+     *       outlasts dunning escalation arrives here. Refusing to close such a policy left billing
+     *       invoicing a policy whose claim had already been paid out -- the exact bug closing the
+     *       policy exists to prevent.</li>
+     *   <li><b>SUSPENDED</b> for the same reason: coverage on hold is not coverage discharged, and
+     *       "stop invoicing this policy" is equally correct once a claim against it has paid.</li>
+     * </ul>
+     */
+    private boolean closeableBySettledClaim() {
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status)
+            || "LAPSED".equals(status) || "SUSPENDED".equals(status);
     }
 }

@@ -425,10 +425,15 @@ public class PolicyApiImpl implements PolicyApi {
     public void markMatured(String policyNumber, String maturedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
-        boolean alreadyMatured = "MATURED".equals(policy.getStatus());
+        // Either terminal status, not just MATURED (M6 final-review C1, part 2): Policy.mature()
+        // now treats an already-SURRENDERED policy as a satisfied post-condition and leaves the
+        // status alone, so publishing PolicyMatured for it would announce a transition that did not
+        // happen. "Already closed" is the condition that suppresses the event, exactly as "already
+        // in MY target status" did before the guards were widened.
+        boolean alreadyClosed = "MATURED".equals(policy.getStatus()) || "SURRENDERED".equals(policy.getStatus());
         policy.mature();
         policyRepository.save(policy);
-        if (alreadyMatured) {
+        if (alreadyClosed) {
             return; // idempotent on repeat -- no second event
         }
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyMatured", tenantId,
@@ -441,10 +446,12 @@ public class PolicyApiImpl implements PolicyApi {
     public void terminateForSettledClaim(String policyNumber, UUID claimId, String terminatedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
-        boolean alreadySurrendered = "SURRENDERED".equals(policy.getStatus());
+        // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning
+        // as markMatured above (a policy already MATURED stays MATURED, so no PolicySurrendered).
+        boolean alreadyClosed = "SURRENDERED".equals(policy.getStatus()) || "MATURED".equals(policy.getStatus());
         policy.terminateForSettledClaim();
         policyRepository.save(policy);
-        if (alreadySurrendered) {
+        if (alreadyClosed) {
             return; // idempotent on repeat -- no second event
         }
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,

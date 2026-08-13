@@ -108,9 +108,27 @@ public class ClaimsApiImpl implements ClaimsApi {
         // 1. Claimant must exist. PartyNotFoundException propagates as-is (404 at the boundary).
         partyApi.getParty(request.claimantPartyId());
 
-        // 2. Policy must exist and have been in force on the date of the event -- not "now". A
-        //    death claim filed after the policy lapsed is still valid if the death preceded the
-        //    lapse. PolicyNotFoundException propagates as-is.
+        // 2. Policy must exist, and must be in force. PolicyNotFoundException propagates as-is.
+        //
+        //    KNOWN GAP, stated accurately here because the comment that used to sit on these lines
+        //    described the intended contract as if it were the implemented one (M6 final-review I3).
+        //    What SHOULD hold is "in force ON THE DATE OF THE EVENT" -- a death claim filed after
+        //    the policy lapsed is still valid if the death itself preceded the lapse. What ACTUALLY
+        //    happens is a "currently ACTIVE-or-REINSTATED" status read: PolicyApiImpl
+        //    .isPolicyInForce accepts asOf and, by its own comment there, never consults it. The
+        //    dateOfEvent below is therefore passed for the contract's sake and ignored downstream.
+        //
+        //    CONSEQUENCE: a legitimate claim registered after the policy has lapsed -- including
+        //    after billing's dunning lapses it automatically at level >= 5, which a deceased
+        //    policyholder's unpaid premiums cause -- is rejected with a 422 here, the exact opposite
+        //    of the intended rule. Staff must reinstate the policy before the claim can be filed.
+        //
+        //    NOT fixed in claims, deliberately: the fix is a date-bounded coverage query inside
+        //    policy (was the policy in force at date D, using lapsedAt/issueDate and the coverage
+        //    rows), which is policy's own scope and a behaviour change for every existing caller of
+        //    isPolicyInForce. Tracked as an open policy follow-up. Do not "fix" it here by widening
+        //    the check to accept lapsed policies unconditionally -- that would let a claim be filed
+        //    for an event that genuinely happened after coverage ended.
         PolicyView policy = policyApi.getPolicy(request.policyNumber());
         if (!policyApi.isPolicyInForce(request.policyNumber(), request.dateOfEvent())) {
             throw new ClaimValidationException("Policy " + request.policyNumber()
@@ -280,6 +298,37 @@ public class ClaimsApiImpl implements ClaimsApi {
                 // Global Constraints: a blank idempotency key would silently reach the payment
                 // rail zero times rather than failing loudly here.
                 throw new ClaimValidationException("A settlement idempotency key is required to approve a claim");
+            }
+
+            // M6 final-review fix (I2). Claim.approve() is idempotent -- it early-returns when the
+            // claim is ALREADY APPROVED -- which is exactly what this plan's designed retry path
+            // needs: a rail decline returns the claim to APPROVED, and staff retry with a NEW
+            // idempotency key. But a retry carrying a DIFFERENT approvedAmount used to reach the
+            // published event, and therefore payment's real disbursement, while the claim's own
+            // approved_amount silently kept the ORIGINAL value. Reviewer's empirical result: the
+            // claim recorded 2,000,000 while 9,999,999 was actually disbursed and the claim reached
+            // SETTLED -- the authoritative record understating the real payout by ~8M.
+            //
+            // Rejected rather than re-applied, on purpose: silently changing an approved settlement
+            // amount on a retry is precisely what a financial audit needs to be explicit about, and
+            // there is a clean path for a genuine change (reopen the claim, re-assess, decide
+            // afresh). InvalidClaimStateException -> 409 CLAIM_INVALID_STATE, not
+            // ClaimValidationException -> 422: the request is not malformed, it conflicts with the
+            // claim's current recorded state, which is what 409 means and what
+            // openapi-claims.yaml already declares for this operation ("...or is not in a status
+            // that can be decided"). A retry with the SAME amount still passes straight through, so
+            // idempotent redelivery keeps working. compareTo, not equals, so 2000000 and 2000000.00
+            // are the same amount rather than a spurious conflict.
+            if (claim.getStatus() == ClaimStatus.APPROVED) {
+                boolean amountDiffers = approvedAmount == null || claim.getApprovedAmount() == null
+                    || claim.getApprovedAmount().compareTo(approvedAmount) != 0;
+                boolean currencyDiffers = !java.util.Objects.equals(claim.getApprovedCurrency(), approvedCurrency);
+                if (amountDiffers || currencyDiffers) {
+                    throw new InvalidClaimStateException("Claim " + claimId + " is already APPROVED for "
+                        + claim.getApprovedAmount() + " " + claim.getApprovedCurrency()
+                        + " and cannot be re-decided for " + approvedAmount + " " + approvedCurrency
+                        + "; reopen the claim to change the approved settlement amount");
+                }
             }
 
             settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, true,

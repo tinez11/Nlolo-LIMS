@@ -182,7 +182,12 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409':
-          description: "Claim requires at least one completed assessment first (except MATURITY, which auto-approves — Deliverable 3 Rev 2, Cl3), or is not in a status that can be decided"
+          description: >
+            Claim requires at least one completed assessment first (except MATURITY, which
+            auto-approves — Deliverable 3 Rev 2, Cl3), or is not in a status that can be decided, or
+            is already APPROVED for a DIFFERENT approvedAmount/currency than this request carries
+            (a settlement retry must repeat the amount already on the record; reopen the claim to
+            change it).
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
