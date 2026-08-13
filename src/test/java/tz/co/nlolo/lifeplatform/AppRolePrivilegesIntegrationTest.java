@@ -146,6 +146,14 @@ class AppRolePrivilegesIntegrationTest {
             // class's own policy-issuing tests trigger (via billing's PolicyEventListener ->
             // generateInvoicesAhead) would otherwise fail against a table missing this column.
             "db-migrations/billing/V3__amount_paid.sql",
+            // M6 (Task 1) additions: appRoleCanReadWriteAndUpdateAClaim below needs claims' own
+            // schema/grants -- V1 alone had zero GRANT statements anywhere in the file (again),
+            // the exact M1/M5 failure mode this class exists to catch, and RLS on only 1 of its
+            // 3 original tables. Ordered before payment here to match scripts/migrate.sh's real
+            // deployment order (claims applies before payment).
+            "db-migrations/claims/V1__create_claims_schema.sql",
+            "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
+            "db-migrations/claims/V3__registration_idempotency_key.sql",
             // M5 (Task 1) additions: appRoleCanReadWriteAndUpdateDisbursementInstruction below
             // needs payment's own schema/grants -- V1 alone had zero GRANT statements anywhere
             // in the file, the exact M1 failure mode this class exists to catch.
@@ -553,6 +561,56 @@ class AppRolePrivilegesIntegrationTest {
             assertThat(update.executeUpdate()).isEqualTo(1);
         } catch (SQLException e) {
             fail("app_role could not update payment.disbursement_instruction: " + e.getMessage());
+        }
+    }
+
+    /**
+     * M6 (Task 1) addition: direct SQL round-trip through app_role's own restricted connection --
+     * proves the GRANT block in claims/V2 actually took effect under the real runtime identity,
+     * not just the migration/superuser identity this suite's other integration tests use. Same
+     * "app_role, not just the migration text" proof this class exists for, applied to claims'
+     * grants for the first time -- this class had zero claims coverage until now (Task 11's own
+     * final-verification pass found the gap and reported it rather than letting it merge silently,
+     * which is exactly the vacuous-verification trap this class was built to close for every prior
+     * module). The UPDATE assertion proves claim.status is genuinely mutable under app_role (the
+     * claim state machine transitions many times over a real claim's life), unlike the genuinely
+     * append-only policy.endorsement tested above.
+     */
+    @Test
+    void appRoleCanReadWriteAndUpdateAClaim() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO claims.claim (tenant_id, policy_number, claimant_party_id, claim_type, date_of_event, details) " +
+                 "VALUES (?, ?, ?, 'MATURITY', ?, ?::jsonb)")) {
+            insert.setObject(1, tenantId);
+            insert.setString(2, "APPROLE-CLAIM-01");
+            insert.setObject(3, UUID.randomUUID());
+            insert.setObject(4, LocalDate.of(2026, 1, 1));
+            insert.setString(5, "{\"claimType\":\"MATURITY\",\"maturityDate\":\"2026-01-01\"}");
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into claims.claim: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT status FROM claims.claim WHERE policy_number = ?")) {
+            select.setString(1, "APPROLE-CLAIM-01");
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getString(1)).isEqualTo("REGISTERED");
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from claims.claim: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE claims.claim SET status = 'APPROVED' WHERE policy_number = ?")) {
+            update.setString(1, "APPROLE-CLAIM-01");
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not update claims.claim: " + e.getMessage());
         }
     }
 }
