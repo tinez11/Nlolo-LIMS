@@ -542,7 +542,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { claimId: {type: string, format: uuid}, policyNumber: {type: string}, claimantPartyId: {type: string, format: uuid}, claimType: {type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY]}, dateOfEvent: {type: string, format: date} }
+          properties: { claimId: {type: string, format: uuid}, policyNumber: {type: string}, claimantPartyId: {type: string, format: uuid}, claimType: {type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY]}, dateOfEvent: {type: string, format: date}, requiresContestabilityReview: {type: boolean, description: "True when the claim falls inside the contestability window (or the policy's underwriting case cannot be resolved -- fails closed) and therefore needs a non-disclosure review before approval."} }
     ClaimAssessedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
