@@ -1,0 +1,723 @@
+package tz.co.nlolo.lifeplatform.claims;
+
+import tz.co.nlolo.lifeplatform.Application;
+import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
+import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.MaturityClaimDetails;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.product.api.*;
+import com.atlassian.oai.validator.mockmvc.OpenApiValidationMatchers;
+import com.jayway.jsonpath.JsonPath;
+import io.minio.MakeBucketArgs;
+import io.minio.MinioClient;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.web.MockPart;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.MinIOContainer;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/**
+ * Task 10: HTTP-level contract coverage for {@code ClaimController}/{@code ClaimEvidenceController}
+ * against {@code api/openapi/openapi-claims.yaml} -- the falsifiability gate for the whole claims
+ * REST surface built across Tasks 4-9. Follows {@code PaymentContractTest}'s structure exactly:
+ * {@code @Testcontainers} + {@code @AutoConfigureMockMvc} + {@code @SpringBootTest} +
+ * {@code SecurityMockMvcRequestPostProcessors.jwt()} + {@code OpenApiValidationMatchers.openApi()
+ * .isValid(SPEC_PATH)}.
+ *
+ * <p>Fixtures are seeded two ways, mirroring existing precedent rather than reinventing one:
+ * policy/product/party setup goes through {@code PartyApi}/{@code ProductApi}/{@code PolicyApi}
+ * directly (copied verbatim from {@code ClaimsApiIntegrationTest.buildFixture}/
+ * {@code issuePolicyWithNullUnderwritingCase}), and claim fixtures needed only as SETUP for an
+ * endpoint under test (not the endpoint itself) go through {@code ClaimsApi} directly too (same
+ * idiom {@code PaymentContractTest} uses for its own fixtures) -- only the operation actually being
+ * asserted on goes through real HTTP. Every 403 test seeds a REAL, valid claim first, so a broken
+ * {@code @PreAuthorize}/ownership check would return 200/201/202, not an incidental 404.
+ *
+ * <p><b>Two verified, load-bearing facts about the current contract, not assumptions:</b>
+ * <ul>
+ *   <li>{@code ClaimDetails} in the current {@code openapi-claims.yaml} is a bare {@code oneOf}
+ *       with NO {@code discriminator} keyword (confirmed by reading the file directly) -- an
+ *       earlier discriminator+oneOf shape failed swagger-request-validator's own internal syntax
+ *       check on every schema referencing it, which would have blocked every test below touching
+ *       a request or response body that carries {@code ClaimDetails}. That failure mode is not
+ *       reproduced by any test here, confirming the fix holds.</li>
+ *   <li>{@code POST /claims} declares NO {@code 404} response in the spec (only 201/400/401/403/
+ *       422), even though an unknown {@code policyNumber} genuinely reaches
+ *       {@code PolicyNotFoundException} -> 404 at runtime. This is a real, pre-existing OpenAPI
+ *       contract gap (the spec under-declares a reachable status), not a runtime bug -- see
+ *       {@code registerClaimReturns404ForAnUnknownPolicy} below, which omits the
+ *       {@code openApi().isValid(SPEC_PATH)} matcher for exactly this reason and asserts status/
+ *       errorCode only, the same way a schema-invalid REQUEST body would have to.</li>
+ * </ul>
+ */
+@Testcontainers
+@AutoConfigureMockMvc
+@SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+class ClaimsContractTest {
+
+    private static final String SPEC_PATH = "api/openapi/openapi-claims.yaml";
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+
+    @Container
+    static final MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("minio.endpoint", MINIO::getS3URL);
+        registry.add("minio.access-key", MINIO::getUserName);
+        registry.add("minio.secret-key", MINIO::getPassword);
+    }
+
+    @BeforeAll
+    static void applyMigrationsAndCreateBuckets() throws Exception {
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
+            "db-migrations/party/V1__create_party_schema.sql",
+            "db-migrations/product/V1__create_product_schema.sql",
+            "db-migrations/underwriting/V1__create_underwriting_schema.sql",
+            "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql",
+            "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/document/V1__create_document_schema.sql",
+            "db-migrations/claims/V1__create_claims_schema.sql",
+            "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
+            "db-migrations/claims/V3__registration_idempotency_key.sql");
+
+        // Only "claim-evidence" is needed here (MinioDocumentStorage.bucketFor routes
+        // DocumentType.CLAIM_EVIDENCE there) -- unlike ClaimEvidenceIntegrationTest, this class
+        // never uploads a KYC/underwriting/general document, so the other three buckets that
+        // infra/docker-compose.yml's minio-init job would otherwise create are omitted.
+        MinioClient minioClient = MinioClient.builder()
+            .endpoint(MINIO.getS3URL())
+            .credentials(MINIO.getUserName(), MINIO.getPassword())
+            .build();
+        minioClient.makeBucket(MakeBucketArgs.builder().bucket("claim-evidence").build());
+    }
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private PartyApi partyApi;
+    @Autowired private ProductApi productApi;
+    @Autowired private PolicyApi policyApi;
+    @Autowired private ClaimsApi claimsApi;
+
+    @AfterEach
+    void clearTenant() {
+        TenantContext.clear();
+    }
+
+    // --- Fixture plumbing, copied verbatim from ClaimsApiIntegrationTest ----------------------
+
+    private record Fixture(UUID applicantId, UUID productId, UUID productVersionId) {}
+
+    private Fixture buildFixture(UUID tenantId, String productCode) {
+        TenantContext.set(tenantId);
+        PartyView applicant = partyApi.registerIndividual("Claims Contract Test Applicant " + productCode,
+            LocalDate.of(1985, 3, 1), "+25571600" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)),
+            null, "test-agent");
+        ProductSummaryView product = productApi.createProduct(productCode, "Claims Contract Test Product",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        TenantContext.clear();
+        return new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());
+    }
+
+    private String issuePolicy(UUID tenantId, Fixture fixture) {
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS",
+            "MONTHLY", null, List.of(), "Claims contract test");
+        String policyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        TenantContext.clear();
+        return policyNumber;
+    }
+
+    /** Registers a real DEATH claim directly through {@link ClaimsApi} (bypassing HTTP) -- the
+     * fixture technique for every test below whose target endpoint is NOT {@code POST /claims}
+     * itself. Returns the claim's id with {@link TenantContext} cleared afterwards. */
+    private UUID registerDeathClaim(UUID tenantId, UUID claimantId, String policyNumber) {
+        TenantContext.set(tenantId);
+        LocalDate dateOfEvent = LocalDate.now().minusDays(1);
+        ClaimView view = claimsApi.registerClaim(
+            new ClaimsApi.RegisterClaimRequest(policyNumber, claimantId, ClaimType.DEATH, dateOfEvent,
+                new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test")),
+            "ct-reg-" + UUID.randomUUID(), "claims-staff-fixture");
+        TenantContext.clear();
+        return view.claimId();
+    }
+
+    /** MATURITY needs no assessment to reach SETTLEMENT_REQUESTED/SETTLED, but here it is used
+     * simply as a REGISTERED claim for the evidence tests, which need no particular claim type. */
+    private UUID registerMaturityClaim(UUID tenantId, UUID claimantId, String policyNumber) {
+        TenantContext.set(tenantId);
+        LocalDate dateOfEvent = LocalDate.now().minusDays(1);
+        ClaimView view = claimsApi.registerClaim(
+            new ClaimsApi.RegisterClaimRequest(policyNumber, claimantId, ClaimType.MATURITY, dateOfEvent,
+                new MaturityClaimDetails(dateOfEvent)),
+            "ct-reg-" + UUID.randomUUID(), "claims-staff-fixture");
+        TenantContext.clear();
+        return view.claimId();
+    }
+
+    private void submitAssessmentDirectly(UUID tenantId, UUID claimId, String assessor) {
+        TenantContext.set(tenantId);
+        claimsApi.submitAssessment(claimId, "Fixture findings", new BigDecimal("2000000"), "TZS", false, assessor);
+        TenantContext.clear();
+    }
+
+    private void decideSettlementDirectly(UUID tenantId, UUID claimId, boolean approved, String decidedBy) {
+        TenantContext.set(tenantId);
+        if (approved) {
+            claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+                "payee-ref-fixture", "ct-settle-" + UUID.randomUUID(), decidedBy);
+        } else {
+            claimsApi.decideSettlement(claimId, false, null, null, "Fixture rejection reason", null, null, decidedBy);
+        }
+        TenantContext.clear();
+    }
+
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor staffOf(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+    }
+
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor customerOf(UUID tenantId, UUID partyId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("party_id", partyId.toString()));
+    }
+
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor assessorOf(UUID tenantId, String subject) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(builder -> builder.subject(subject).claim("tenant_id", tenantId.toString()));
+    }
+
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor managerOf(UUID tenantId, String subject) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_CLAIMS_MANAGER"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(builder -> builder.subject(subject).claim("tenant_id", tenantId.toString()));
+    }
+
+    // ============================================================================================
+    // POST /claims
+    // ============================================================================================
+
+    @Test
+    void registerClaimReturns201ForAValidDeathClaim() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-REG-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        LocalDate dateOfEvent = LocalDate.now().minusDays(2);
+
+        mockMvc.perform(post("/claims")
+                .with(staffOf(tenantId))
+                .header("Idempotency-Key", "ct-http-reg-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyNumber":"%s","claimantPartyId":"%s","claimType":"DEATH","dateOfEvent":"%s",
+                     "details":{"claimType":"DEATH","causeOfDeath":"Cardiac arrest","placeOfDeath":"Dar es Salaam",
+                     "dateOfDeath":"%s","attendingPhysician":"Dr. Kessy"}}
+                    """.formatted(policyNumber, fixture.applicantId(), dateOfEvent, dateOfEvent)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.policyNumber").value(policyNumber))
+            .andExpect(jsonPath("$.claimantPartyId").value(fixture.applicantId().toString()))
+            .andExpect(jsonPath("$.claimType").value("DEATH"))
+            .andExpect(jsonPath("$.status").value("REGISTERED"))
+            .andExpect(jsonPath("$.details.causeOfDeath").value("Cardiac arrest"));
+    }
+
+    @Test
+    void registerClaimReturns422WhenPolicyNotInForceOnDateOfEvent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-LAPSE-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        TenantContext.set(tenantId);
+        policyApi.lapsePolicy(policyNumber, "test-staff"); // isPolicyInForce now returns false
+        TenantContext.clear();
+
+        mockMvc.perform(post("/claims")
+                .with(staffOf(tenantId))
+                .header("Idempotency-Key", "ct-http-lapse-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyNumber":"%s","claimantPartyId":"%s","claimType":"DEATH","dateOfEvent":"%s",
+                     "details":{"claimType":"DEATH","causeOfDeath":"Cardiac arrest","placeOfDeath":"Dar es Salaam",
+                     "dateOfDeath":"%s","attendingPhysician":"Dr. Kessy"}}
+                    """.formatted(policyNumber, fixture.applicantId(), LocalDate.now(), LocalDate.now())))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_VALIDATION_FAILED"));
+    }
+
+    @Test
+    void registerClaimReturns422WhenDetailsClaimTypeDisagreesWithDeclaredType() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-MISMATCH-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        LocalDate dateOfEvent = LocalDate.now().minusDays(1);
+
+        // Top-level claimType says DEATH, details.claimType says DISABILITY -- Claim's own
+        // constructor (Claim.java:120-124) must reject this with a 422, not a 400/500.
+        mockMvc.perform(post("/claims")
+                .with(staffOf(tenantId))
+                .header("Idempotency-Key", "ct-http-mismatch-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyNumber":"%s","claimantPartyId":"%s","claimType":"DEATH","dateOfEvent":"%s",
+                     "details":{"claimType":"DISABILITY","disabilityType":"Loss of limb","onsetDate":"%s",
+                     "permanent":true,"impairmentPercent":"50"}}
+                    """.formatted(policyNumber, fixture.applicantId(), dateOfEvent, dateOfEvent)))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_VALIDATION_FAILED"));
+    }
+
+    /** See this class's javadoc: {@code POST /claims} declares no {@code 404} response in
+     * openapi-claims.yaml at all, even though {@code PolicyNotFoundException} genuinely produces
+     * one at runtime for an unknown policyNumber -- a real spec-completeness gap, verified by the
+     * fact that including {@code openApi().isValid(SPEC_PATH)} here fails with "No response is
+     * defined for status 404" against an otherwise entirely correct response. Asserts status/
+     * errorCode only, exactly the workaround the schema-invalid-REQUEST gotcha elsewhere in this
+     * file already documents, just triggered from the response side instead of the request side.
+     * The claimant party is real (registered via buildFixture) so this genuinely isolates "unknown
+     * policy", not "unknown party" -- a PartyNotFoundException would look identical at this
+     * assertion's granularity if the claimant were fake instead. */
+    @Test
+    void registerClaimReturns404ForAnUnknownPolicy() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-NOPOLICY-01");
+
+        mockMvc.perform(post("/claims")
+                .with(staffOf(tenantId))
+                .header("Idempotency-Key", "ct-http-nopolicy-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyNumber":"POL-NOTFOUND01","claimantPartyId":"%s","claimType":"DEATH","dateOfEvent":"%s",
+                     "details":{"claimType":"DEATH","causeOfDeath":"Cardiac arrest","placeOfDeath":"Dar es Salaam",
+                     "dateOfDeath":"%s","attendingPhysician":"Dr. Kessy"}}
+                    """.formatted(fixture.applicantId(), LocalDate.now(), LocalDate.now())))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("POLICY_NOT_FOUND"));
+    }
+
+    /** Also covered at a narrower granularity by {@code ClaimControllerValidationContractTest}
+     * (which asserts only the error shape); included here too, alongside this file's other
+     * {@code POST /claims} scenarios, so this file stands alone as the full-surface falsifiability
+     * gate the task brief calls for. {@code Idempotency-Key} is spec-required (openapi-claims.yaml
+     * marks the header {@code required: true}), so a request that omits it entirely is itself
+     * schema-invalid -- {@code openApi().isValid(SPEC_PATH)} is omitted for exactly the same reason
+     * the brief's own schema-invalid-body gotcha describes, just on the request's header instead
+     * of its body. */
+    @Test
+    void registerClaimReturns400WhenIdempotencyKeyHeaderIsMissing() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-NOIDEM-01");
+
+        mockMvc.perform(post("/claims")
+                .with(staffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyNumber":"POL-DOESNOTEXIST","claimantPartyId":"%s","claimType":"DEATH","dateOfEvent":"%s",
+                     "details":{"claimType":"DEATH","causeOfDeath":"Cardiac arrest","placeOfDeath":"Dar es Salaam",
+                     "dateOfDeath":"%s","attendingPhysician":"Dr. Kessy"}}
+                    """.formatted(fixture.applicantId(), LocalDate.now(), LocalDate.now())))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+            .andExpect(jsonPath("$.traceId").exists());
+    }
+
+    // ============================================================================================
+    // GET /claims/{claimId}
+    // ============================================================================================
+
+    @Test
+    void getClaimReturns200ForStaff() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-GET-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(get("/claims/" + claimId).with(staffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.claimId").value(claimId.toString()))
+            .andExpect(jsonPath("$.status").value("REGISTERED"));
+    }
+
+    @Test
+    void getClaimReturns200ForTheOwningCustomer() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-GET-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(get("/claims/" + claimId).with(customerOf(tenantId, fixture.applicantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.claimId").value(claimId.toString()));
+    }
+
+    /** Non-vacuous: the claim genuinely exists and belongs to a DIFFERENT party in the SAME
+     * tenant, so a broken/missing {@code enforceCustomerOwnClaimOnly} would return 200, not an
+     * incidental 404. This is the highest-value security assertion in this file. */
+    @Test
+    void getClaimReturns403ForADifferentCustomerSameTenant() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-GET-03");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(get("/claims/" + claimId).with(customerOf(tenantId, UUID.randomUUID())))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+
+    @Test
+    void getClaimReturns404ForAnUnknownId() throws Exception {
+        mockMvc.perform(get("/claims/" + UUID.randomUUID()).with(staffOf(UUID.randomUUID())))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_NOT_FOUND"));
+    }
+
+    /** Mirrors {@code PolicyContractTest.getPolicyRejectsCrossTenantReadWithNotFoundForAntiEnumeration}
+     * exactly, applied to claims: a SAME-tenant ownership mismatch (above) is a 403, but a
+     * DIFFERENT-tenant read of someone else's claim must be a 404, NOT a 403 -- a 403 across a
+     * tenant boundary would leak "this claimId exists (just not for you)". The customer's
+     * party_id claim below deliberately MATCHES the real claimant -- proving the 404 comes from
+     * {@code ClaimsApiImpl.findOrThrow}'s tenant-scoped query (a different tenantId finds no row
+     * at all) and not from {@code enforceCustomerOwnClaimOnly}, which this JWT would otherwise
+     * pass. */
+    @Test
+    void getClaimRejectsCrossTenantReadWithNotFoundForAntiEnumeration() throws Exception {
+        UUID ownerTenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(ownerTenantId, "CLAIMS-CT-GET-04");
+        String policyNumber = issuePolicy(ownerTenantId, fixture);
+        UUID claimId = registerDeathClaim(ownerTenantId, fixture.applicantId(), policyNumber);
+        UUID otherTenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/claims/" + claimId).with(customerOf(otherTenantId, fixture.applicantId())))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_NOT_FOUND"));
+    }
+
+    // ============================================================================================
+    // GET /claims
+    // ============================================================================================
+
+    @Test
+    void listClaimsReturns200WithStatusFilterMatchingOnlyTheFilteredClaim() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-LIST-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+
+        UUID registeredClaimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID underAssessmentClaimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        submitAssessmentDirectly(tenantId, underAssessmentClaimId, "assessor-list-fixture");
+
+        mockMvc.perform(get("/claims")
+                .queryParam("status", "UNDER_ASSESSMENT")
+                .queryParam("claimantPartyId", fixture.applicantId().toString())
+                .with(staffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items[?(@.claimId == '" + underAssessmentClaimId + "')]").exists())
+            .andExpect(jsonPath("$.items[?(@.claimId == '" + registeredClaimId + "')]").doesNotExist());
+    }
+
+    // ============================================================================================
+    // POST /claims/{claimId}/assessments
+    // ============================================================================================
+
+    @Test
+    void submitAssessmentReturns201ForClaimsAssessor() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-ASSESS-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(post("/claims/" + claimId + "/assessments")
+                .with(assessorOf(tenantId, "assessor-http-1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"findings":"Consistent with cause of death",
+                     "recommendedAmount":{"amount":"2000000.00","currencyCode":"TZS"},"fraudIndicator":false}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.claimId").value(claimId.toString()))
+            .andExpect(jsonPath("$.assessor").value("assessor-http-1"))
+            .andExpect(jsonPath("$.recommendedAmount.amount").value("2000000.00"));
+    }
+
+    /** Non-vacuous: the claim is real and REGISTERED, so a missing/broken
+     * {@code @PreAuthorize("hasRole('CLAIMS_ASSESSOR')")} would return 201, not an incidental 404. */
+    @Test
+    void submitAssessmentReturns403ForACustomerToken() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-ASSESS-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(post("/claims/" + claimId + "/assessments")
+                .with(customerOf(tenantId, fixture.applicantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"findings":"Should be rejected before reaching the service layer",
+                     "recommendedAmount":{"amount":"2000000.00","currencyCode":"TZS"},"fraudIndicator":false}
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+
+    // ============================================================================================
+    // POST /claims/{claimId}/settlement-decision
+    // ============================================================================================
+
+    @Test
+    void decideSettlementReturns202ForClaimsManager() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-DECIDE-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        submitAssessmentDirectly(tenantId, claimId, "assessor-decide-01");
+
+        mockMvc.perform(post("/claims/" + claimId + "/settlement-decision")
+                .with(managerOf(tenantId, "manager-decide-01")) // distinct from the assessor above -- SoD
+                .header("Idempotency-Key", "ct-http-settle-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"approved":true,"approvedAmount":{"amount":"2000000.00","currencyCode":"TZS"},
+                     "payeeRef":"MPESA-0712340009"}
+                    """))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("SETTLEMENT_REQUESTED"))
+            .andExpect(jsonPath("$.approvedAmount.amount").value("2000000.00"));
+    }
+
+    /** Non-vacuous: the claim is real and genuinely assessed (ready for a decision), so a
+     * missing/broken {@code @PreAuthorize("hasRole('CLAIMS_MANAGER')")} would return 202, not an
+     * incidental 404 -- and proves CLAIMS_ASSESSOR/CLAIMS_MANAGER are genuinely distinct roles,
+     * not both just "staff". */
+    @Test
+    void decideSettlementReturns403ForClaimsAssessor() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-DECIDE-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        submitAssessmentDirectly(tenantId, claimId, "assessor-decide-02");
+
+        mockMvc.perform(post("/claims/" + claimId + "/settlement-decision")
+                .with(assessorOf(tenantId, "assessor-decide-02b"))
+                .header("Idempotency-Key", "ct-http-settle-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"approved":true,"approvedAmount":{"amount":"2000000.00","currencyCode":"TZS"},
+                     "payeeRef":"MPESA-0712340010"}
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+
+    @Test
+    void decideSettlementReturns409WhenApprovingWithNoPriorAssessmentOnANonMaturityClaim() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-DECIDE-03");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber); // no assessment
+
+        mockMvc.perform(post("/claims/" + claimId + "/settlement-decision")
+                .with(managerOf(tenantId, "manager-decide-03"))
+                .header("Idempotency-Key", "ct-http-settle-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"approved":true,"approvedAmount":{"amount":"2000000.00","currencyCode":"TZS"},
+                     "payeeRef":"MPESA-0712340011"}
+                    """))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_INVALID_STATE"));
+    }
+
+    /**
+     * DEVIATION FROM THE TASK BRIEF, verified empirically rather than assumed: the brief predicts
+     * "400 for a missing Idempotency-Key" on this operation, mirroring {@code POST /claims}'s own
+     * genuine 400. That does not hold here -- {@code ClaimController.decideSettlement} declares
+     * the header {@code required = false} and never rejects it itself (see that method's own
+     * javadoc: "not rejected here for being absent on a REJECTION, since decideSettlement only
+     * requires it when approved is true -- already enforced, with the correct 422, by
+     * ClaimsApiImpl itself"). openapi-claims.yaml agrees: this operation's response set is
+     * 202/401/403/404/409/422 -- 400 is not even a documented possibility. The genuinely reachable
+     * status for a missing key on an APPROVAL is 422 CLAIM_VALIDATION_FAILED, asserted below.
+     * {@code openApi().isValid(SPEC_PATH)} is omitted because the header is spec-required
+     * ({@code required: true}), so a request that omits it is itself schema-invalid -- the same
+     * schema-invalid-request gotcha as {@code registerClaimReturns400WhenIdempotencyKeyHeaderIsMissing}.
+     * The claim is genuinely assessed (count > 0) and decided by someone other than the assessor,
+     * isolating this from the 409 count-guard and the separation-of-duties 422 above it in
+     * {@code ClaimsApiImpl.decideSettlement}'s check order.
+     */
+    @Test
+    void decideSettlementReturns422WhenIdempotencyKeyHeaderIsMissingOnApproval() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-DECIDE-04");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        submitAssessmentDirectly(tenantId, claimId, "assessor-decide-04");
+
+        mockMvc.perform(post("/claims/" + claimId + "/settlement-decision")
+                .with(managerOf(tenantId, "manager-decide-04")) // distinct from the assessor -- SoD
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"approved":true,"approvedAmount":{"amount":"2000000.00","currencyCode":"TZS"},
+                     "payeeRef":"MPESA-0712340012"}
+                    """))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_VALIDATION_FAILED"));
+    }
+
+    // ============================================================================================
+    // POST /claims/{claimId}/reopen
+    // ============================================================================================
+
+    @Test
+    void reopenClaimReturns200ForClaimsManagerOnARejectedClaim() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-REOPEN-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        submitAssessmentDirectly(tenantId, claimId, "assessor-reopen-01");
+        decideSettlementDirectly(tenantId, claimId, false, "manager-reopen-01"); // -> REJECTED
+
+        mockMvc.perform(post("/claims/" + claimId + "/reopen")
+                .with(managerOf(tenantId, "manager-reopen-01b"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"New evidence submitted"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("REOPENED"));
+    }
+
+    @Test
+    void reopenClaimReturns409OnARegisteredClaim() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-REOPEN-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber); // still REGISTERED
+
+        mockMvc.perform(post("/claims/" + claimId + "/reopen")
+                .with(managerOf(tenantId, "manager-reopen-02"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"Attempted reopen of a claim that was never rejected or settled"}
+                    """))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_INVALID_STATE"));
+    }
+
+    // ============================================================================================
+    // POST /claims/{claimId}/evidence, GET /claims/{claimId}/evidence
+    // ============================================================================================
+
+    @Test
+    void attachEvidenceReturns201ForMultipartUploadAndListsItAfterward() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        // openApi().isValid(SPEC_PATH) is deliberately omitted on this POST: verified empirically
+        // that com.atlassian.oai.validator's MockMvc adapter cannot introspect a multipart/
+        // form-data request body at all here -- it reports "validation.request.body.missing: A
+        // request body is required but none found" even though a real file part is genuinely
+        // present and the upload genuinely succeeds (confirmed by the assertions below and by the
+        // follow-up GET, which DOES carry the matcher since it is an ordinary JSON response with
+        // no multipart request to introspect). A known limitation of that MockMvc integration
+        // with multipart bodies, not an application defect -- the same class of "matcher can't
+        // see this" gap as the schema-invalid-body gotcha elsewhere in this file, just triggered
+        // by the library's multipart handling instead of a deliberately invalid payload.
+        String response = mockMvc.perform(multipart("/claims/" + claimId + "/evidence")
+                .file(new MockMultipartFile("file", "maturity-certificate.pdf", "application/pdf",
+                    "evidence-bytes".getBytes(StandardCharsets.UTF_8)))
+                .part(new MockPart("description", "Maturity certificate scan".getBytes(StandardCharsets.UTF_8)))
+                .with(customerOf(tenantId, fixture.applicantId())))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.claimId").value(claimId.toString()))
+            .andExpect(jsonPath("$.description").value("Maturity certificate scan"))
+            .andReturn().getResponse().getContentAsString();
+        String documentRef = JsonPath.read(response, "$.documentRef");
+
+        mockMvc.perform(get("/claims/" + claimId + "/evidence").with(customerOf(tenantId, fixture.applicantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].documentRef").value(documentRef));
+    }
+
+    /** Non-vacuous: the claim is real, and the multipart body is well-formed (a valid file part
+     * is present), so a missing/broken {@code enforceCustomerOwnClaimOnly} in
+     * {@code ClaimEvidenceController.attachEvidence} would return 201, not an incidental 404/400. */
+    @Test
+    void attachEvidenceReturns403ForANonOwningCustomer() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        // openApi().isValid(SPEC_PATH) omitted here too -- same multipart-body-introspection
+        // limitation as the 201 test above, verified the same way.
+        mockMvc.perform(multipart("/claims/" + claimId + "/evidence")
+                .file(new MockMultipartFile("file", "maturity-certificate.pdf", "application/pdf",
+                    "evidence-bytes".getBytes(StandardCharsets.UTF_8)))
+                .with(customerOf(tenantId, UUID.randomUUID()))) // a DIFFERENT party, same tenant
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+}

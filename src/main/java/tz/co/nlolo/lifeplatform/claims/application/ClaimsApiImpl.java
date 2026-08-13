@@ -200,20 +200,23 @@ public class ClaimsApiImpl implements ClaimsApi {
         return toView(claim, deriveContestabilityReview(claim));
     }
 
-    /** Mirrors {@code PolicyApiImpl.searchPolicies}'s exact structure (four-way branch on which
-     * optional filters are present, {@code status.name()} passed as the String parameter a
-     * derived-query method expects against the enum-typed column, exactly as
-     * {@code PolicyRepository.findByTenantIdAndStatus} already does for {@code Policy.status}). */
+    /** Mirrors {@code PolicyApiImpl.searchPolicies}'s exact four-way branch on which optional
+     * filters are present. Task 10 review fix: passes {@code status} itself (the {@link ClaimStatus}
+     * enum), NOT {@code status.name()} -- see {@code ClaimRepository}'s own javadoc for why a
+     * {@code String} argument throws {@code QueryArgumentException} unconditionally against
+     * Hibernate 6.5's Criteria-derived query for this {@code @Enumerated(STRING)} column, a defect
+     * {@code ClaimsContractTest} caught (this method had never once been called with a non-null
+     * {@code status} by any prior test). */
     @Override
     public Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<Claim> page;
         if (claimantPartyId != null && status != null) {
-            page = claimRepository.findByTenantIdAndClaimantPartyIdAndStatus(tenantId, claimantPartyId, status.name(), pageable);
+            page = claimRepository.findByTenantIdAndClaimantPartyIdAndStatus(tenantId, claimantPartyId, status, pageable);
         } else if (claimantPartyId != null) {
             page = claimRepository.findByTenantIdAndClaimantPartyId(tenantId, claimantPartyId, pageable);
         } else if (status != null) {
-            page = claimRepository.findByTenantIdAndStatus(tenantId, status.name(), pageable);
+            page = claimRepository.findByTenantIdAndStatus(tenantId, status, pageable);
         } else {
             page = claimRepository.findByTenantId(tenantId, pageable);
         }
