@@ -3,18 +3,26 @@ package tz.co.nlolo.lifeplatform.claims;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
+import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.MaturityClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.domain.Claim;
+import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.payment.domain.DisbursementInstruction;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementInstructionRepository;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.product.api.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -35,6 +43,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -54,9 +63,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * {@code PaymentRequestListenerIntegrationTest}/{@code LoanDisbursementEndToEndTest}) ->
  * {@code payment.disbursement_instruction} row with {@code purpose = 'CLAIM_SETTLEMENT'}.
  *
- * <p>This test does NOT assert the claim ever reaches SETTLED -- that hop (payment's completion
- * event closing the loop back to claims) is Task 7's job, out of scope here. It stops at
- * SETTLEMENT_REQUESTED plus a real payment row, exactly as Task 6's own brief describes.
+ * <p>Task 7 extends this class to close the final hop: {@code payment.DisbursementCompleted}/
+ * {@code DisbursementFailed} -> {@code claims.application.PaymentEventListener} -> the claim
+ * reaches {@code SETTLED} (publishing {@code claims.ClaimSettled}, verified via the real
+ * {@code audit.audit_log} row -- the same idiom {@code PolicyClaimClosureTest} and
+ * {@code PaymentRequestListenerIntegrationTest} already use) or reverts to {@code APPROVED}, and
+ * -- ONLY on a genuine settlement -- the underlying policy leaves {@code ACTIVE}.
  *
  * <p>Runs against real Postgres as {@code app_role} (NOSUPERUSER NOBYPASSRLS), copying
  * {@code ClaimsApiIntegrationTest}'s bootstrap, so RLS on both {@code claims.claim} and
@@ -135,6 +147,9 @@ class ClaimSettlementEndToEndTest {
     @Autowired private DisbursementInstructionRepository disbursementRepository;
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private AuditLogRepository auditLogRepository;
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private ClaimRepository claimRepository;
 
     private TransactionTemplate transactionTemplate;
 
@@ -186,6 +201,15 @@ class ClaimSettlementEndToEndTest {
         return claimId;
     }
 
+    /** Registers a fresh MATURITY claim, ready to approve without any assessment -- MATURITY
+     * auto-approves REGISTERED -> APPROVED (Claim.approve, Cl3), unlike DEATH. */
+    private UUID registerMaturityClaim(UUID tenantId, Fixture fixture, String policyNumber, String regKey) {
+        TenantContext.set(tenantId);
+        ClaimsApi.RegisterClaimRequest request = new ClaimsApi.RegisterClaimRequest(policyNumber, fixture.applicantId(),
+            ClaimType.MATURITY, LocalDate.now(), new MaturityClaimDetails(LocalDate.now()));
+        return claimsApi.registerClaim(request, regKey, "claims-staff").claimId();
+    }
+
     @Test
     void approvingAClaimRunsTheRealChainThroughToARealDisbursementInstructionRow() throws Exception {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
@@ -203,9 +227,11 @@ class ClaimSettlementEndToEndTest {
         claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
             "MPESA-0712000001", settleKey, "manager-e2e-01");
 
-        // 2. The claim itself only reaches SETTLEMENT_REQUESTED -- Task 7 owns the hop to SETTLED.
+        // 2. Task 7 wires claims.application.PaymentEventListener into this same AFTER_COMMIT
+        // chain, so by the time decideSettlement returns, the claim has already gone all the way
+        // to SETTLED -- not merely SETTLEMENT_REQUESTED as it did before this task existed.
         ClaimView view = claimsApi.getClaim(claimId);
-        assertThat(view.status()).isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
+        assertThat(view.status()).isEqualTo(ClaimStatus.SETTLED);
 
         // 3. A REAL payment.disbursement_instruction row exists, with purpose=CLAIM_SETTLEMENT
         // and source_ref=claimId -- not merely "some row", the specific correlation Task 7 needs.
@@ -277,5 +303,113 @@ class ClaimSettlementEndToEndTest {
             .isNotEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
 
         wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /**
+     * Task 7's central proof: the FULL real chain, not just to SETTLEMENT_REQUESTED as the tests
+     * above stop at, but all the way through payment's confirmation back into claims and out to
+     * policy. Approve (real API) -> claims.ClaimSettlementRequested (real event) -> payment
+     * requests a disbursement against the real (WireMock) rail -> the rail ACCEPTs ->
+     * payment.DisbursementCompleted (real event) -> claims.application.PaymentEventListener ->
+     * Claim.markSettled() -> claims.ClaimSettled (real event, verified via the real
+     * audit.audit_log row) -> PolicyApi.terminateForSettledClaim (DEATH is not MATURITY) ->
+     * policy.status read back from the database == SURRENDERED.
+     */
+    @Test
+    void aSuccessfulDisbursementSettlesTheDeathClaimAndSurrendersThePolicy() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-CLAIM-E2E-SETTLE-DEATH\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-SETTLE-DEATH");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "e2e-settle-reg-01", "assessor-settle-01");
+        String settleKey = "e2e-settle-death-" + claimId;
+
+        Instant before = Instant.now();
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "MPESA-0712000010", settleKey, "manager-settle-01");
+
+        // The claim reached SETTLED, not merely SETTLEMENT_REQUESTED -- the hop this task adds.
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLED);
+
+        // claims.ClaimSettled was really published -- read back from the real audit_log row, not
+        // assumed from the claim's own state.
+        List<AuditLogEntry> settledRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "claims.ClaimSettled", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(settledRows).hasSize(1);
+        JsonNode payload = objectMapper.readTree(settledRows.get(0).getPayload());
+        assertThat(payload.path("claimId").asText()).isEqualTo(claimId.toString());
+
+        // The falsifiable proof this milestone's user decision closed a real bug: the policy left
+        // ACTIVE. DEATH is not MATURITY, so the policy must be SURRENDERED, not MATURED -- read
+        // back from the database via the real published API, not inferred from any event.
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.SURRENDERED);
+
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /** Same chain as above, but for a MATURITY claim (auto-approved, no assessment) -- exercises
+     * the OTHER branch of PaymentEventListener.handleCompleted's claim-type dispatch, proving
+     * markMatured (not terminateForSettledClaim) is the one actually called for this claim type. */
+    @Test
+    void aSuccessfulDisbursementSettlesTheMaturityClaimAndMaturesThePolicy() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-CLAIM-E2E-SETTLE-MATURITY\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-SETTLE-MATURITY");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerMaturityClaim(tenantId, fixture, policyNumber, "e2e-maturity-reg-01");
+        String settleKey = "e2e-settle-maturity-" + claimId;
+
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "MPESA-0712000011", settleKey, "manager-settle-02");
+
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLED);
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.MATURED);
+
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /**
+     * The negative half of Task 7's central proof, and the one that would catch handleFailed
+     * ever being miswired to also close the policy: a genuine rail DECLINE (not a timeout/
+     * indeterminate outcome) must revert the claim to APPROVED with the reason recorded, and must
+     * leave the policy untouched at ACTIVE.
+     */
+    @Test
+    void aFailedDisbursementRevertsTheClaimToApprovedAndLeavesThePolicyActive() throws Exception {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"REJECTED\",\"reason\":\"INSUFFICIENT_FLOAT\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-SETTLE-FAIL");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerAndAssessDeathClaim(tenantId, fixture, policyNumber, "e2e-fail-reg-01", "assessor-fail-01");
+        String settleKey = "e2e-settle-fail-" + claimId;
+
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
+            "MPESA-0712000012", settleKey, "manager-fail-01");
+
+        // Reverted, not settled: SETTLEMENT_REQUESTED -> APPROVED, reason preserved for the staff
+        // retry worklist. settlementFailureReason is not on the published ClaimView (Task 4's
+        // fixed field set) so this reads the aggregate directly, same idiom ClaimStateMachineTest
+        // already uses.
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.APPROVED);
+        Claim claim = claimRepository.findByClaimIdAndTenantId(claimId, tenantId)
+            .orElseThrow(() -> new AssertionError("Expected claim " + claimId + " to exist"));
+        assertThat(claim.getSettlementFailureReason()).isEqualTo("INSUFFICIENT_FLOAT");
+
+        // The danger this test exists to catch: handleFailed must NEVER touch the policy. Still
+        // ACTIVE, read back from the database via the real published API.
+        assertThat(policyApi.getPolicy(policyNumber).status())
+            .as("a failed disbursement must not close the policy")
+            .isEqualTo(PolicyStatus.ACTIVE);
+
+        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
     }
 }
