@@ -368,6 +368,59 @@ class ClaimsContractTest {
             .andExpect(jsonPath("$.traceId").exists());
     }
 
+    /**
+     * M6 final-review fix (I4): the ONLY test in the suite that puts a valid
+     * {@code DisabilityClaimDetails} on the wire in BOTH directions with
+     * {@code openApi().isValid(SPEC_PATH)} applied. The pre-existing DISABILITY payload in this file
+     * ({@code registerClaimReturns422WhenDetailsClaimTypeDisagreesWithDeclaredType}) is a
+     * deliberately-invalid 422 REQUEST, so it never exercised the response side at all -- which is
+     * how {@code impairmentPercent} came to serialize as a JSON number ({@code 50.00}) while
+     * openapi-claims.yaml declares {@code type: string, pattern: '^\d+(\.\d{1,2})?$'}, in line with
+     * openapi-common.yaml's Money convention of never putting a decimal on the wire as a binary
+     * float. Requests worked (Jackson coerces String -> BigDecimal inbound), so nothing failed; every
+     * response silently violated the spec.
+     *
+     * <p>Both halves are asserted deliberately: the 201 response body from {@code POST /claims}, and
+     * a fresh {@code GET /claims/{id}} that re-reads the value back out of JSONB (proving the string
+     * form round-trips through persistence, not just through one in-memory serialization). The
+     * jsonPath assertions compare against a STRING, so a regression to a bare number fails here even
+     * if the validator's pattern check were ever relaxed.
+     */
+    @Test
+    void registerAndGetADisabilityClaimBothValidateAgainstTheSpec() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-DISABILITY-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        LocalDate onsetDate = LocalDate.now().minusDays(3);
+
+        String created = mockMvc.perform(post("/claims")
+                .with(staffOf(tenantId))
+                .header("Idempotency-Key", "ct-http-disability-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyNumber":"%s","claimantPartyId":"%s","claimType":"DISABILITY","dateOfEvent":"%s",
+                     "details":{"claimType":"DISABILITY","disabilityType":"Loss of limb","onsetDate":"%s",
+                     "permanent":true,"impairmentPercent":"62.50"}}
+                    """.formatted(policyNumber, fixture.applicantId(), onsetDate, onsetDate)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.claimType").value("DISABILITY"))
+            .andExpect(jsonPath("$.details.claimType").value("DISABILITY"))
+            // A JSON string, not a number: jsonPath's value() is type-strict, so 62.50-as-number
+            // fails this even before the spec validator's pattern check gets a look in.
+            .andExpect(jsonPath("$.details.impairmentPercent").value("62.50"))
+            .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        String claimId = JsonPath.read(created, "$.claimId");
+
+        mockMvc.perform(get("/claims/" + claimId).with(staffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.details.impairmentPercent").value("62.50"))
+            .andExpect(jsonPath("$.details.permanent").value(true))
+            .andExpect(jsonPath("$.details.disabilityType").value("Loss of limb"));
+    }
+
     // ============================================================================================
     // GET /claims/{claimId}
     // ============================================================================================
