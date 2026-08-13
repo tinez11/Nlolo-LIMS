@@ -159,6 +159,19 @@ class ClaimsApiIntegrationTest {
         claimRepository.save(claim);
     }
 
+    /** Forces UNDER_ASSESSMENT with NO ClaimAssessment row, bypassing submitAssessment (which
+     * always inserts one). Exists to isolate decideSettlement's assessment-count guard from
+     * Claim.approve()'s own state-machine guard: with a REGISTERED claim, either guard throws
+     * InvalidClaimStateException, so a REGISTERED-claim test alone cannot tell which one fired --
+     * a review of this task found exactly that ambiguity and confirmed by mutation that removing
+     * the count guard entirely still left the suite green. */
+    private void beginAssessmentDirectlyWithNoAssessmentRow(UUID claimId, UUID tenantId) {
+        TenantContext.set(tenantId);
+        Claim claim = claimRepository.findByClaimIdAndTenantId(claimId, tenantId).orElseThrow();
+        claim.beginAssessment();
+        claimRepository.save(claim);
+    }
+
     @Test
     void registersADeathClaimAndPublishesRegistrationWithFailClosedContestabilityFlagged() {
         UUID tenantId = UUID.randomUUID();
@@ -303,6 +316,25 @@ class ClaimsApiIntegrationTest {
         // transition itself (still REGISTERED), but the assessment-count guard must fire first.
         assertThrows(InvalidClaimStateException.class, () -> claimsApi.decideSettlement(claimId, true,
             new BigDecimal("2000000"), "TZS", null, "payee-ref-1", "settle-idem-noassess-01", "manager-1"));
+    }
+
+    /** Isolates the assessment-count guard from Claim.approve()'s own state-machine guard: unlike
+     * approvalWithoutAnyAssessmentThrowsForDeath (still REGISTERED, so EITHER guard could be the
+     * one throwing), this claim is genuinely UNDER_ASSESSMENT with zero ClaimAssessment rows --
+     * approve()'s state check alone would allow this transition, so only the count guard can be
+     * the cause if this still throws. */
+    @Test
+    void approvalWithZeroAssessmentRowsThrowsForDeathEvenWhenUnderAssessment() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-NOASSESS-02");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-noassess-02");
+
+        beginAssessmentDirectlyWithNoAssessmentRow(claimId, tenantId);
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
+
+        assertThrows(InvalidClaimStateException.class, () -> claimsApi.decideSettlement(claimId, true,
+            new BigDecimal("2000000"), "TZS", null, "payee-ref-1", "settle-idem-noassess-02", "manager-1"));
     }
 
     @Test
