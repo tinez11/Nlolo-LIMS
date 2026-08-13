@@ -105,6 +105,45 @@ groups:
           summary: "A mobile-money callback carried a status this platform does not recognize -- nothing was applied"
           description: "MobileMoneyCallbackController validates status against a known dialect and refuses to let an unknown string drive a financial transition. A sustained rate means the aggregator's vocabulary has drifted and confirmations are silently not landing; the recognized sets in that class must be updated deliberately. Search logs for 'carried an UNRECOGNIZED status'."
 
+      # M6 final-review fix (I5). claims.application.PaymentEventListener increments this on every
+      # genuine rail DECLINE of a claim settlement payout. The claim is deliberately reverted
+      # SETTLEMENT_REQUESTED -> APPROVED and left there: claims never retries a payout automatically
+      # (a second attempt at real money must be a human decision), so the claim sits on a staff
+      # worklist that nothing else announces. No domain event reaches an operator either --
+      # claims.ClaimSettled is only published on success.
+      #
+      # Any occurrence, not a rate: each one is a beneficiary who has NOT been paid and who is
+      # waiting. `medium` rather than high/critical because nothing incorrect happened and no money is
+      # unaccounted for -- the rail said no, cleanly, and the platform recorded exactly that.
+      - alert: ClaimSettlementDisbursementFailed
+        expr: increase(lifeplatform_claims_settlement_failed_total[15m]) > 0
+        for: 5m
+        labels: { severity: medium }
+        annotations:
+          summary: "A claim settlement payout was declined by the rail -- the claim is back at APPROVED awaiting a staff retry"
+          description: "The claim reverted to APPROVED with settlement_failure_reason recorded and will NOT be retried automatically. Find the claim (search logs for 'settlement disbursement FAILED'), resolve the cause named in the reason (e.g. INSUFFICIENT_FLOAT, a bad payeeRef), then re-issue the settlement decision with a NEW Idempotency-Key and the SAME approved amount -- a differing amount is rejected with 409 by design."
+
+      # M6 final-review fix (C1, part 3). The claim is SETTLED and its disbursement COMPLETED -- the
+      # money has genuinely left -- but the policy could not be closed, so billing will keep raising
+      # premium invoices against a policy whose claim has already paid out. That is the exact bug the
+      # policy-closure feature exists to prevent, silently reappearing for this one policy.
+      #
+      # THIS RULE IS THE ONLY AUTOMATED SIGNAL for that state. By design the claim is NOT rolled back
+      # (rolling it back after the money moved is the Critical this counter was introduced alongside),
+      # and claims.ClaimSettled IS published, so every downstream consumer sees a normal, complete
+      # settlement. Nothing else anywhere indicates the policy half never happened.
+      #
+      # Any occurrence: the legitimate source states (ACTIVE, REINSTATED, LAPSED, SUSPENDED, plus
+      # already-closed as a no-op) no longer throw at all, so if this fires the cause is genuinely
+      # unexpected -- a PROPOSED policy, a missing policy row, a lock timeout -- and needs a human.
+      - alert: ClaimSettledButPolicyNotClosed
+        expr: increase(lifeplatform_claims_policy_closure_failed_total[15m]) > 0
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "A claim settled and paid out, but its policy could not be closed -- billing will keep invoicing it"
+          description: "The claim is correct and final; only the policy closure failed. Search logs for 'could NOT be closed' to get the claimId and policyNumber, then close the policy manually (MATURED for a MATURITY claim, SURRENDERED otherwise) and reconcile any premium invoices raised against it after the settlement date. Do NOT reopen or un-settle the claim -- the disbursement really did complete."
+
       - alert: PostgresDiskSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
         for: 10m

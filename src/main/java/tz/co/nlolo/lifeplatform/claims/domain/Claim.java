@@ -217,9 +217,24 @@ public class Claim {
         this.settlementFailureReason = reason;
     }
 
-    /** CLAIMS_MANAGER reopen. REJECTED or SETTLED -> REOPENED (new evidence, or a dispute).
+    /**
+     * CLAIMS_MANAGER reopen. REJECTED or SETTLED -> REOPENED (new evidence, or a dispute).
      * Deliberately does NOT clear approvedAmount: the prior decision stays on the record, and a
-     * new decision overwrites it only when one is actually made. */
+     * new decision overwrites it only when one is actually made.
+     *
+     * <p><b>DOCUMENTED LIMITATION (M6 final-review I6): reopening a SETTLED claim does not, and
+     * currently cannot, reverse the policy closure that settlement caused.</b>
+     * {@code claims.application.PaymentEventListener} closes the underlying policy on settlement
+     * (MATURED for a MATURITY claim, SURRENDERED otherwise), and {@code policy.domain.Policy} has no
+     * transition OUT of either terminal status -- {@code reinstate()} requires LAPSED. So a claim
+     * reopened from SETTLED, and even subsequently re-REJECTED, leaves its policy permanently
+     * closed: coverage stays discharged and billing stays stopped for a claim that is no longer
+     * settled. Nothing here is broken by this -- the money really did move, and un-closing a policy
+     * silently would be worse -- but the asymmetry is real and is recorded rather than left to be
+     * rediscovered. Adding a policy-reversal path is deliberately a later-milestone decision: it
+     * needs its own domain event, its own audit story, and an answer for the premiums that went
+     * uninvoiced while the policy was closed. Do NOT add one as a drive-by fix.
+     */
     public void reopen() {
         if (status == ClaimStatus.REOPENED) {
             return;
