@@ -6,11 +6,17 @@ import tz.co.nlolo.lifeplatform.claims.api.ClaimAssessmentView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimEvidenceView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimNotFoundException;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
+import tz.co.nlolo.lifeplatform.claims.api.InvalidClaimStateException;
 import tz.co.nlolo.lifeplatform.claims.domain.Claim;
+import tz.co.nlolo.lifeplatform.claims.domain.ClaimAssessment;
+import tz.co.nlolo.lifeplatform.claims.domain.SettlementDecision;
+import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimAssessmentRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository;
+import tz.co.nlolo.lifeplatform.claims.infrastructure.SettlementDecisionRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
@@ -30,11 +36,11 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Task 4 implements {@link #registerClaim} and {@link #getClaim} only. The remaining
+ * Task 4 implements {@link #registerClaim} and {@link #getClaim}; Task 5 (this task) adds
+ * {@link #submitAssessment}, {@link #decideSettlement}, and {@link #reopenClaim}. The remaining
  * {@link ClaimsApi} methods are declared (the module's published surface was fixed by this
  * plan's authoring so {@code omnichannel} has a stable target) but not yet bodied here --
- * {@code submitAssessment} is Task 5's, {@code decideSettlement}/{@code reopenClaim} are Task
- * 9's, {@code attachEvidence}/{@code listEvidence}/{@code searchClaims} are Task 10's. Each
+ * {@code attachEvidence}/{@code listEvidence}/{@code searchClaims} belong to a later task. Each
  * throws {@link UnsupportedOperationException} rather than faking a result, so a caller finds
  * out immediately rather than silently getting a wrong answer.
  */
@@ -44,14 +50,19 @@ public class ClaimsApiImpl implements ClaimsApi {
     private static final Logger log = LoggerFactory.getLogger(ClaimsApiImpl.class);
 
     private final ClaimRepository claimRepository;
+    private final ClaimAssessmentRepository claimAssessmentRepository;
+    private final SettlementDecisionRepository settlementDecisionRepository;
     private final PolicyApi policyApi;
     private final PartyApi partyApi;
     private final UnderwritingApi underwritingApi;
     private final ApplicationEventPublisher eventPublisher;
 
-    public ClaimsApiImpl(ClaimRepository claimRepository, PolicyApi policyApi, PartyApi partyApi,
-                          UnderwritingApi underwritingApi, ApplicationEventPublisher eventPublisher) {
+    public ClaimsApiImpl(ClaimRepository claimRepository, ClaimAssessmentRepository claimAssessmentRepository,
+                          SettlementDecisionRepository settlementDecisionRepository, PolicyApi policyApi,
+                          PartyApi partyApi, UnderwritingApi underwritingApi, ApplicationEventPublisher eventPublisher) {
         this.claimRepository = claimRepository;
+        this.claimAssessmentRepository = claimAssessmentRepository;
+        this.settlementDecisionRepository = settlementDecisionRepository;
         this.policyApi = policyApi;
         this.partyApi = partyApi;
         this.underwritingApi = underwritingApi;
@@ -139,20 +150,110 @@ public class ClaimsApiImpl implements ClaimsApi {
     }
 
     @Override
+    @Transactional
     public ClaimAssessmentView submitAssessment(UUID claimId, String findings, BigDecimal recommendedAmount,
                                                  String recommendedCurrency, boolean fraudIndicator, String assessedBy) {
-        throw new UnsupportedOperationException("submitAssessment is implemented in a later task of this plan");
+        UUID tenantId = TenantContext.get();
+        Claim claim = findOrThrow(claimId, tenantId);
+
+        // REGISTERED or REOPENED -> UNDER_ASSESSMENT; a no-op if already UNDER_ASSESSMENT
+        // (second/third assessor on the same claim), throws from any other status.
+        claim.beginAssessment();
+
+        ClaimAssessment assessment = new ClaimAssessment(tenantId, claimId, assessedBy, findings,
+            recommendedAmount, recommendedCurrency, fraudIndicator);
+        claimAssessmentRepository.save(assessment);
+
+        // fraudIndicator is a SCRUTINY SIGNAL ONLY and must never itself reject the claim
+        // (docs/03-aggregate-design.md:131, Cl1; restated in openapi-claims.yaml:139). It is
+        // surfaced on the event so a fraud-review consumer can act on it, but nothing in this
+        // method -- or in decideSettlement below -- lets a true value block approval.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimAssessed", tenantId,
+            Map.of("claimId", claimId, "fraudIndicator", fraudIndicator)));
+
+        return toAssessmentView(assessment);
     }
 
     @Override
+    @Transactional
     public void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
                                   String rejectionReason, String payeeRef, String idempotencyKey, String decidedBy) {
-        throw new UnsupportedOperationException("decideSettlement is implemented in a later task of this plan");
+        UUID tenantId = TenantContext.get();
+        Claim claim = findOrThrow(claimId, tenantId);
+
+        // claims/V1:56-59 documents this invariant and explicitly asks that it not be mistaken
+        // for a missed validation: APPROVED requires >=1 assessment, EXCEPT MATURITY which may
+        // auto-progress REGISTERED -> APPROVED with none (docs/03-aggregate-design.md:134, Cl3).
+        if (approved && claim.getClaimType() != ClaimType.MATURITY
+                && claimAssessmentRepository.countByClaimIdAndTenantId(claimId, tenantId) == 0) {
+            throw new InvalidClaimStateException(
+                "Claim " + claimId + " requires at least one assessment before approval");
+        }
+
+        // CLAIMS_ASSESSOR vs CLAIMS_MANAGER are deliberately separate roles; the role gate lives
+        // at the controller (@PreAuthorize). This additionally blocks the same *person* from
+        // assessing and then deciding, which a role check alone cannot catch.
+        if (claimAssessmentRepository.existsByClaimIdAndTenantIdAndAssessor(claimId, tenantId, decidedBy)) {
+            throw new ClaimValidationException(
+                "Separation of duties: " + decidedBy + " assessed this claim and cannot also decide it");
+        }
+
+        if (approved) {
+            if (payeeRef == null || payeeRef.isBlank()) {
+                throw new ClaimValidationException("A payee reference is required to approve a claim");
+            }
+            if (idempotencyKey == null || idempotencyKey.isBlank()) {
+                // Global Constraints: a blank idempotency key would silently reach the payment
+                // rail zero times rather than failing loudly here.
+                throw new ClaimValidationException("A settlement idempotency key is required to approve a claim");
+            }
+
+            settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, true,
+                approvedAmount, approvedCurrency, null, payeeRef));
+
+            // UNDER_ASSESSMENT -> APPROVED, or REGISTERED -> APPROVED for MATURITY's
+            // auto-approval; also validates approvedAmount is positive.
+            claim.approve(approvedAmount, approvedCurrency);
+            eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId,
+                Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),
+                       "approvedAmount", Map.of("amount", approvedAmount.toPlainString(),
+                                                 "currencyCode", approvedCurrency))));
+
+            // APPROVED -> SETTLEMENT_REQUESTED. Task 6 owns turning this event into an actual
+            // payment request; this method's job ends at publishing it.
+            claim.markSettlementRequested(idempotencyKey);
+            eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettlementRequested", tenantId,
+                Map.of("claimId", claimId, "payeeRef", payeeRef,
+                       "amount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency),
+                       "idempotencyKey", idempotencyKey)));
+        } else {
+            settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, false,
+                null, null, rejectionReason, null));
+
+            claim.reject();
+            eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimRejected", tenantId,
+                Map.of("claimId", claimId, "reason", rejectionReason == null ? "" : rejectionReason)));
+        }
     }
 
+    /**
+     * {@code claim.reopen()} plus an audit trail. Deliberately publishes no new domain event:
+     * {@code api/asyncapi-events.yaml} declares no reopen channel, and inventing one is out of
+     * scope for this task. The reopen is logged at INFO with the reason and relies on
+     * {@code audit}'s generic event capture rather than a bespoke {@code claims.ClaimReopened}
+     * channel that no consumer subscribes to.
+     */
     @Override
+    @Transactional
     public void reopenClaim(UUID claimId, String reason, String reopenedBy) {
-        throw new UnsupportedOperationException("reopenClaim is implemented in a later task of this plan");
+        UUID tenantId = TenantContext.get();
+        Claim claim = findOrThrow(claimId, tenantId);
+
+        // REJECTED or SETTLED -> REOPENED; a no-op if already REOPENED, throws from any other
+        // status. Deliberately does not clear the prior approvedAmount (Claim.reopen's own doc).
+        claim.reopen();
+
+        log.info("Claim {} reopened by {}: {}", claimId, reopenedBy, reason);
     }
 
     @Override
@@ -224,5 +325,11 @@ public class ClaimsApiImpl implements ClaimsApi {
         return new ClaimView(claim.getClaimId(), claim.getPolicyNumber(), claim.getClaimantPartyId(),
             claim.getClaimType(), claim.getStatus(), claim.getDateOfEvent(), claim.getDetails(),
             claim.getApprovedAmount(), claim.getApprovedCurrency(), requiresContestabilityReview);
+    }
+
+    private ClaimAssessmentView toAssessmentView(ClaimAssessment assessment) {
+        return new ClaimAssessmentView(assessment.getClaimAssessmentId(), assessment.getClaimId(),
+            assessment.getAssessor(), assessment.getFindings(), assessment.getRecommendedAmount(),
+            assessment.getRecommendedCurrency(), assessment.isFraudIndicator(), assessment.getCreatedAt());
     }
 }
