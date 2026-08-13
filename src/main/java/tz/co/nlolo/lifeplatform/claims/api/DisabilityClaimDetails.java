@@ -12,10 +12,19 @@ import java.time.LocalDate;
  * convention {@code openapi-common.yaml}'s {@code Money} schema establishes, and which this field's
  * own spec description invokes by name. Without {@link JsonFormat} Jackson emitted {@code 50.00} as
  * a bare number, so REQUESTS worked (Jackson coerces String -> BigDecimal inbound) while every
- * RESPONSE carrying {@code DisabilityClaimDetails} silently violated the spec and would fail
- * {@code openApi().isValid(...)}. Nothing caught it: the only DISABILITY payload in the contract
- * tests was a deliberately-invalid 422 request, which omits the validator matcher. Now guarded by
- * {@code ClaimsContractTest.registerAndGetADisabilityClaimBothValidateAgainstTheSpec}.
+ * RESPONSE carrying {@code DisabilityClaimDetails} silently violated the spec.
+ *
+ * <p><b>What actually guards this, corrected after the fix wave's own re-review empirically
+ * disproved the first version of this comment:</b> {@code openApi().isValid(...)} does NOT catch it.
+ * The re-review reverted this annotation and observed the matcher PASS on a response body carrying
+ * a bare {@code 62.50} number against this very {@code type: string} declaration -- so
+ * swagger-request-validator does not enforce string-vs-number for body properties, and claiming it
+ * would have left a false sense of coverage here (and, more broadly, across the nine contract-test
+ * classes that lean on that matcher). The real regression guard is the type-strict
+ * {@code jsonPath("$.details.impairmentPercent").value("62.50")} assertion in
+ * {@code ClaimsContractTest.registerAndGetADisabilityClaimBothValidateAgainstTheSpec}, which fails
+ * on {@code 62.5} vs {@code "62.50"}. Pair a strict jsonPath with {@code isValid} for any
+ * string-typed decimal; do not rely on {@code isValid} alone.
  *
  * <p>{@code Claim.details} is persisted as JSONB through the same {@code ObjectMapper}, so the
  * stored JSON carries the string form too and round-trips back to {@link BigDecimal} on read.
