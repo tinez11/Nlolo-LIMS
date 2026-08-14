@@ -57,10 +57,17 @@
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
     <!-- Without this registry, micrometer-core records every lifeplatform_* counter/gauge into a
-         no-op registry and /actuator/prometheus does not exist at all, so observability/
-         alert-rules.yml's rules could never fire, however correct their expressions. Version is
+         no-op registry and /actuator/prometheus does not exist at all, so no observability/
+         alert-rules.yml rule could fire regardless of how correct its expression was. Version is
          managed by spring-boot-starter-parent. Verified by ActuatorExposureTest, which asserts the
-         real counter names appear in a real scrape rather than merely that the endpoint answers. -->
+         real counter names appear in a real scrape rather than merely that the endpoint answers.
+
+         SCOPE, corrected after review: this unblocks the TRANSPORT for all rules, but only the 7
+         rules whose metrics this application actually registers become live. Six others reference
+         metrics with no producer reachable by observability/prometheus.yml and remain silent.
+         See AlertRuleMetricProducerTest, which enumerates both sets and fails if a new rule
+         references an unproduced metric without classifying it. Do not read this dependency as
+         "the alerting is now working end to end". -->
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-registry-prometheus</artifactId>

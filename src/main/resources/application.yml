@@ -122,15 +122,35 @@ management:
   #
   # WHY A SEPARATE PORT, not just a permitAll() rule on 8080: infra/docker-compose.yml publishes
   # "8080:8080" to the host, so anything reachable on 8080 is reachable from outside the Docker
-  # network. Prometheus scrapes with no credentials at all (observability/prometheus.yml declares
-  # no basic_auth/bearer_token), and this app authenticates via Keycloak-issued JWTs, which a
-  # scraper cannot practically obtain or refresh -- so "expose it on 8080 and require auth" and
-  # "expose it on 8080 and permitAll" are the only two variants of that shape, and the second
-  # publishes operational volumes (payment/claim/gateway counters, JVM and HTTP-request metrics)
-  # to anyone who can reach the host. Binding actuator to 9090 and NOT publishing 9090 in compose
-  # keeps the metrics reachable from inside the Docker network (where Prometheus lives) and
-  # absent from the host entirely -- there is no endpoint to attack on 8080 rather than a
-  # protected one.
+  # network. Prometheus scrapes with no credentials (observability/prometheus.yml declares none),
+  # and this app authenticates via Keycloak-issued JWTs, which a scraper cannot practically obtain
+  # or refresh. A dedicated scrape credential IS technically a third option -- Prometheus supports
+  # basic_auth/authorization in a scrape config -- but it means provisioning and rotating a
+  # credential whose only purpose is to reach an endpoint that does not need to leave the network
+  # at all. Binding actuator to 9090 and NOT publishing 9090 keeps the metrics reachable from
+  # inside the Docker network (where Prometheus lives) and absent from the host entirely: on 8080
+  # there is no endpoint to attack rather than a protected one.
+  #
+  # WHAT A SCRAPE ACTUALLY DISCLOSES, measured from a real 141-series exposition rather than
+  # assumed, because "it's just metrics" is how this gets under-estimated: the lifeplatform_*
+  # business counters (payment/claim/gateway volumes); full JVM and HTTP-request metrics; the
+  # exact patch-level JVM build (jvm_info version/vendor -- useful for CVE targeting); the
+  # deployment's absolute filesystem path (disk_free_bytes{path=...}); main_application_class;
+  # and the complete custom security-filter inventory WITH chain ordering, by class name
+  # (spring_security_filterchains_MobileMoneyHmacFilter_*, ..._TenantContextFilter_*), plus
+  # anonymous-authorization failure volumes. All reconnaissance-grade rather than
+  # credential-or-PII: verified no series carries a tenant/party/policy identifier (every
+  # http_server_requests uri tag is a TEMPLATE like /policies/{policyNumber}, and unmatched paths
+  # collapse to UNKNOWN), and no JDBC/Hikari series carries a connection string. That inventory is
+  # the argument FOR the unpublished port, not a reason to relax it.
+  #
+  # THE ISOLATION RESTS ON ONE LINE, so know which one: the management connector binds all
+  # interfaces (confirmed reachable on several host-side addresses when the port IS published), so
+  # what actually keeps it off the host is the absence of a 9090 entry under the app service's
+  # `ports:` in infra/docker-compose.yml. Two deployments where that protection does NOT apply and
+  # a second layer is needed: running the jar directly on a host (application-local.yml supports
+  # this) serves unauthenticated metrics to the LAN, and under Kubernetes every container port is
+  # cluster-reachable regardless of any Service definition -- use a NetworkPolicy there.
   #
   # Verified, not assumed: ActuatorExposureTest asserts /actuator/prometheus is genuinely absent
   # from the main port, present on the management port, and that the sensitive endpoints below
@@ -139,10 +159,21 @@ management:
   # DEPLOYMENT IMPACT -- read before rolling this out. management.server.port moves EVERY actuator
   # endpoint, health and info included; Spring Boot cannot split them across two ports. So
   # container/Kubernetes liveness and readiness probes must target 9090, not 8080:
-  # /actuator/health on 8080 is now a 404. Nothing in this repository depended on it (checked: no
-  # app-service healthcheck in infra/docker-compose.yml, no CI workflow, no script -- the only
+  # /actuator/health on 8080 is now a 404. Nothing in this repository depended on it (checked
+  # repo-wide: no app-service healthcheck in infra/docker-compose.yml, no HEALTHCHECK in either
+  # Dockerfile, no reference in .github/workflows/ci-cd.yml or scripts/ -- the only
   # 8080/actuator/health references are in historical docs/superpowers/plans/ records), so this
   # change breaks nothing here, but a real deployment's probe configuration must move with it.
+  #
+  # Probe paths that actually work on 9090: /actuator/health, /actuator/health/liveness and
+  # /actuator/health/readiness. The two group paths needed their own entries in SecurityConfig's
+  # permitAll list -- the "/actuator/health" literal does not match them, so both answered 401
+  # until a review of this very commit caught that this guidance did not work as written.
+  # ActuatorExposureTest now asserts all three, so the guidance and the code cannot drift apart.
+  #
+  # infra/app/Dockerfile deliberately still declares only EXPOSE 8080. EXPOSE is metadata, so
+  # nothing breaks -- and ADDING 9090 would be actively harmful, because `docker run -P` publishes
+  # every EXPOSEd port and would hand the management port to the host.
   server:
     port: 9090
   endpoints:

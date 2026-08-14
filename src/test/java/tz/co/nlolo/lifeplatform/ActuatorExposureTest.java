@@ -22,6 +22,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Guards the platform's metrics-exposure posture, which is a security boundary rather than a
  * convenience setting.
  *
+ * <p><b>Scope note, corrected after review.</b> This class guards the TRANSPORT: that metrics are
+ * exported, reachable where Prometheus scrapes, and unreachable where they should not be. It says
+ * nothing about whether a given alert rule has a producer, and fixing the transport did NOT make
+ * all 13 rules live -- only the 7 whose metrics this application registers. The other 6 reference
+ * metrics nothing emits and remain silent; {@link AlertRuleMetricProducerTest} owns that half and
+ * enumerates both sets. Read the two together before concluding "alerting works".
+ *
  * <p><b>Why this test exists.</b> M6's final whole-branch review found that NO
  * {@code observability/alert-rules.yml} rule could fire -- all 13 of them, across every milestone
  * back to M4 -- because {@code micrometer-registry-prometheus} was absent from the classpath and
@@ -141,6 +148,35 @@ class ActuatorExposureTest {
             .as("an incremented lifeplatform_* counter must reach the scrape, or its alert rule "
                 + "in observability/alert-rules.yml can never fire")
             .contains("lifeplatform_payment_in_doubt_total");
+    }
+
+    /** The probe paths application.yml's deployment-impact comment tells operators to use. All
+     * three must actually answer on the management port -- a review of this branch found the two
+     * GROUP paths returned 401, because SecurityConfig's "/actuator/health" literal does not match
+     * them, so the guidance was wrong as written. This pins guidance and code together. */
+    @Test
+    void allThreeDocumentedProbePathsAnswerOnTheManagementPort() {
+        for (String probe : List.of("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness")) {
+            assertThat(rest.getForEntity("http://localhost:" + managementPort + probe, String.class)
+                    .getStatusCode().value())
+                .as("%s is documented as a probe path in application.yml and must be reachable "
+                    + "on the management port", probe)
+                .isEqualTo(200);
+        }
+    }
+
+    /** Permitting the two health GROUP paths must not have opened per-component health paths,
+     * which is why SecurityConfig lists exact literals rather than /actuator/health/**. */
+    @Test
+    void perComponentHealthPathsRemainUnreachable() {
+        for (String component : List.of("db", "diskSpace", "ping", "minio", "redis")) {
+            assertThat(rest.getForEntity(
+                    "http://localhost:" + managementPort + "/actuator/health/" + component, String.class)
+                    .getStatusCode().value())
+                .as("/actuator/health/%s must not be reachable -- only the two documented group "
+                    + "paths are permitted", component)
+                .isNotEqualTo(200);
+        }
     }
 
     @Test

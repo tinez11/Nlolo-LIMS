@@ -151,9 +151,19 @@ groups:
         annotations:
           summary: "Postgres data volume below 15% free space"
 
+      # NOT YET LIVE -- corrected after a review found this annotation was asserting a producer
+      # that does not exist. Neither gauge below is emitted by anything: `git grep` for either
+      # name returns only this file. The failure mode is real and Deliverable 6 did discover it
+      # during validation, but today it is caught ONLY in CI and by
+      # AppRolePrivilegesIntegrationTest / RowLevelSecurityIntegrationTest -- nothing checks it in
+      # a running deployment, so this critical rule cannot fire. Closing it needs a scheduled
+      # pg_roles query publishing these two gauges; note a Java @Scheduled thread has no
+      # TenantContext (RLS shows it zero rows), so follow billing's pg_cron + SECURITY DEFINER
+      # pattern in db-migrations/_post-migration/configure-billing-sweep.sql. Tracked by
+      # AlertRuleMetricProducerTest, which fails if this claim silently changes either way.
       - alert: RlsBypassRoleDetected
         expr: lifeplatform_app_role_has_bypassrls == 1 or lifeplatform_app_role_is_superuser == 1
         labels: { severity: critical }
         annotations:
           summary: "The application's runtime DB role has BYPASSRLS or superuser -- every Row-Level Security policy is silently inactive"
-          description: "Deliverable 6 discovered this exact failure mode during validation; this metric is emitted by a scheduled query against pg_roles specifically to catch it in production, not just in testing."
+          description: "Deliverable 6 discovered this exact failure mode during validation. NOTE: no producer emits these gauges yet, so this rule is currently inert -- the property is enforced in CI and by the app_role/RLS integration tests, not in production. See AlertRuleMetricProducerTest."

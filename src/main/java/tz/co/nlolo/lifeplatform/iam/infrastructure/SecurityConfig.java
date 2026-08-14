@@ -144,7 +144,17 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(authorize -> authorize
-                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                // The two health GROUP paths are listed explicitly. management.endpoint.health
+                // .probes.enabled=true creates /actuator/health/liveness and /readiness, but
+                // neither is matched by the "/actuator/health" literal, so both were 401 -- which
+                // made this branch's own deployment guidance ("move probes to 9090") wrong until
+                // a review caught it. Two exact literals rather than "/actuator/health/**":
+                // a prefix wildcard would also admit per-component paths (/actuator/health/db and
+                // friends), and this file's convention throughout is an exact path, never a
+                // prefix. Safe to permit: the health body carries no `components` block because
+                // management.endpoint.health.show-details is left at its default of `never`.
+                .requestMatchers("/actuator/health", "/actuator/health/liveness",
+                                 "/actuator/health/readiness", "/actuator/info").permitAll()
                 // Prometheus scrapes with no credentials at all (observability/prometheus.yml
                 // declares no basic_auth/bearer_token) and cannot obtain or refresh a Keycloak
                 // JWT, so the scrape endpoint must be permitAll SOMEWHERE. What bounds it is
