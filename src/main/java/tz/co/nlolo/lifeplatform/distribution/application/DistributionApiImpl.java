@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.distribution.api.CommissionAccrualView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanNotFoundException;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionRuleView;
+import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementNotFoundException;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionValidationException;
@@ -36,7 +37,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.UUID;
 
 /**
@@ -46,13 +46,11 @@ import java.util.UUID;
  * out of scope here; this class only ever reads {@code CommissionStatement}/{@code
  * CommissionAccrual} rows, it never creates them.
  *
- * <p>No new {@code *NotFoundException} type was introduced for a statement lookup miss
- * ({@link #requestStatementPayout} / {@link #listAccruals}) -- Task 3 minted
- * {@link AgentNotFoundException} and {@link CommissionPlanNotFoundException} for the two lookups
- * it anticipated, but not a statement one. Rather than invent a bespoke exception this task was
- * not asked to add, a cross-tenant/unknown statementId propagates {@link NoSuchElementException},
- * mirroring {@code document.application.DocumentApiImpl.getMetadata} /
- * {@code refdata.application.ReferenceDataApiImpl}'s own precedent for the same situation.
+ * <p>{@link CommissionStatementNotFoundException} (review fix) is the third named not-found type
+ * alongside {@link AgentNotFoundException} and {@link CommissionPlanNotFoundException} -- every
+ * lookup-by-id in this class that can miss has its own dedicated, HTTP-mappable exception, since
+ * this module's whole purpose is to be Task 9's REST surface: a bare JDK exception here would
+ * silently 500 instead of 404 unless that task happened to remember to add a handler for it.
  */
 @Service
 public class DistributionApiImpl implements DistributionApi {
@@ -263,7 +261,7 @@ public class DistributionApiImpl implements DistributionApi {
         // Confirms the statement exists and belongs to this tenant first, same reasoning as
         // listStatements above.
         commissionStatementRepository.findByStatementIdAndTenantId(statementId, tenantId)
-            .orElseThrow(() -> new NoSuchElementException("Commission statement " + statementId + " not found"));
+            .orElseThrow(() -> new CommissionStatementNotFoundException("Commission statement " + statementId + " not found"));
 
         return commissionAccrualRepository.findByStatementIdAndTenantId(statementId, tenantId).stream()
             .map(this::toAccrualView)
@@ -275,7 +273,7 @@ public class DistributionApiImpl implements DistributionApi {
     public void requestStatementPayout(UUID statementId, String payeeRef, String idempotencyKey, String requestedBy) {
         UUID tenantId = TenantContext.get();
         CommissionStatement statement = commissionStatementRepository.findByStatementIdAndTenantId(statementId, tenantId)
-            .orElseThrow(() -> new NoSuchElementException("Commission statement " + statementId + " not found"));
+            .orElseThrow(() -> new CommissionStatementNotFoundException("Commission statement " + statementId + " not found"));
 
         // Validates non-blank payeeRef/idempotencyKey (and a positive total) BEFORE any event is
         // published -- a blank key forwarded to `payment` is swallowed inside its AFTER_COMMIT
