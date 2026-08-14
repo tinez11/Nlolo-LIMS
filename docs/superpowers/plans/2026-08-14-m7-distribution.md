@@ -385,12 +385,12 @@ INSERT INTO refdata.reference_code_set (code_set_key, code, label, value, jurisd
 
 - [ ] **Step 2: Verify and commit**
 
-Apply `refdata/V1-V4` against a disposable container and confirm both keys resolve via the same query shape `ReferenceDataApi.getValue` uses. Then:
+Apply `refdata/V1-V4` against a disposable container and confirm the key resolves via the same query shape `ReferenceDataApi.getValue` uses. Then run the **full suite** — Global Constraint #4 requires it here: `ReferenceDataApiIntegrationTest` already applies refdata's migration list, so V4 joins every other test's baseline the moment Flyway picks it up from the classpath, not just this one test's:
 
 ```bash
-./mvnw -B -o test -Dtest=ReferenceDataApiIntegrationTest
+./mvnw -B -o test
 git add db-migrations/refdata/V4__seed_distribution_parameters.sql
-git commit -m "feat: seed the flagged commission clawback and license-warning parameters"
+git commit -m "feat: seed the flagged commission clawback placeholder"
 ```
 
 ---
