@@ -21,9 +21,22 @@ Every task's requirements implicitly include this section.
 - **Build commands.** Always, on the host, in the FOREGROUND (never backgrounded — you will not receive a notification; never inside Docker — it breaks Testcontainers networking):
   ```bash
   export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64"
-  ./mvnw -B -o test
+  ./mvnw -B -o test -Dtest=SomeSpecificTest      # the normal case
+  ./mvnw -B -o test                              # only when the rule below says so
   ```
-- **Baseline before M7: 392 tests, 0 failures, 0 errors.**
+- **Run the NARROWEST test set that could actually detect a regression from your change.** Measured on this branch: the full suite is 392 tests in ~7 minutes, fully serial, and **36 of its 50 classes each start their own Postgres container** — so most of that time is container and Spring-context setup unrelated to whatever you changed. Running it after every task wastes roughly an hour across this plan and slows the feedback that catches real bugs.
+
+  **Run the FULL suite only when your task does at least one of these:**
+  1. changes production code **outside** `distribution` (Task 7 touches `billing`, Task 8 touches `payment`);
+  2. changes a **shared test class or test utility** (Task 10 edits `AppRolePrivilegesIntegrationTest` and `RowLevelSecurityIntegrationTest`, which every module's correctness leans on);
+  3. changes **shared config** — `pom.xml`, `src/main/resources/application.yml`, `SecurityConfig`;
+  4. adds or changes a **migration that some existing test's own migration list already applies** (a new `refdata` seed qualifies, because `ReferenceDataApiIntegrationTest` applies refdata's migrations);
+  5. is the final verification task (Task 11), where a full `clean verify` is the entire point.
+
+  **Otherwise run only your own new/changed tests plus any test that directly exercises the code you touched.** Adding new files inside `distribution` and their own tests does not require the other 17 modules to be re-verified.
+
+  Two rules that are not negotiable either way: **never report coverage you did not execute** — if you ran a subset, say so plainly and say why, so the reviewer is not left inferring it; and if a targeted run surfaces anything you did not expect, escalate to the full suite immediately rather than assuming it is unrelated.
+- **Baseline before M7: 392 tests, 0 failures, 0 errors.** Quote the count from whatever you actually ran, and label it (`full suite` vs `-Dtest=X`).
 - **Never edit an already-applied migration.** `distribution/V1`, `billing/V1-V3`, `refdata/V1-V3` are immutable; add new numbered files.
 - **Cross-module references are opaque columns, never FKs** (`docs/06-database-schema.md:29`). Intra-module FKs within `distribution` are fine and already exist.
 - **Money on the wire is a decimal STRING, never a float** (`docs/06:31`, `openapi-common.yaml`'s `Money`). All five existing `MoneyDto` records use `String amount`. `openapi-distribution.yaml` currently declares `rate` as `type: number` — Task 9 fixes that.
@@ -572,8 +585,9 @@ Both are plain JUnit — **no Spring, no containers** — so the state machine a
 - [ ] **Step 7: Run and commit**
 
 ```bash
+# Targeted only. This task adds new files inside `distribution` plus its own two unit tests, and
+# touches nothing shared -- none of the full-suite triggers in Global Constraints apply.
 ./mvnw -B -o test -Dtest='AgentProfileTest,CommissionStatementStateMachineTest'
-./mvnw -B -o test
 git add -A && git commit -m "feat: distribution domain, statement lifecycle, and the accrual/projection model"
 ```
 
@@ -732,8 +746,10 @@ A plain unit test (no Spring, no containers). It must cover, concretely:
 - [ ] **Step 3: Run and commit**
 
 ```bash
+# Targeted only -- a pure function plus its own unit test, nothing shared touched. Note this test
+# needs no container at all, so it should run in seconds; if it takes minutes something is wrong
+# with how it was written (it must not pull in a Spring context).
 ./mvnw -B -o test -Dtest=CommissionCalculatorTest
-./mvnw -B -o test
 git add -A && git commit -m "feat: the four-tier commission calculator, as a pure testable function"
 ```
 
@@ -840,8 +856,8 @@ Cover: successful onboarding; rejection when KYC is not VERIFIED; rejection for 
 - [ ] **Step 6: Run and commit**
 
 ```bash
+# Targeted only -- new application-layer code inside `distribution` plus its own integration test.
 ./mvnw -B -o test -Dtest=DistributionApiIntegrationTest
-./mvnw -B -o test
 git add -A && git commit -m "feat: agent onboarding, commission-plan authoring, and the distribution read surface"
 ```
 
@@ -898,8 +914,12 @@ Both Testcontainers, real `app_role`, real cross-module event chain (issue a pol
 - [ ] **Step 5: Run and commit**
 
 ```bash
-./mvnw -B -o test -Dtest='CommissionAccrualEndToEndTest,ClawbackIntegrationTest'
-./mvnw -B -o test
+# Targeted, PLUS AlertRuleMetricProducerTest -- this task adds metric names to that test's own
+# PRODUCED_BY_THIS_APPLICATION set, and it fails by design if a new alert rule names an
+# unclassified metric. It runs in milliseconds (no Spring, no container), so there is no reason
+# to skip it. Still short of a full-suite trigger: the only shared file touched is that
+# classification list, not production code outside `distribution`.
+./mvnw -B -o test -Dtest='CommissionAccrualEndToEndTest,ClawbackIntegrationTest,AlertRuleMetricProducerTest'
 git add -A && git commit -m "feat: accrue commission on issuance and claw it back on an early lapse"
 ```
 
@@ -948,6 +968,11 @@ In `CommissionAccrualEndToEndTest`: the **first** collected invoice for a policy
 - [ ] **Step 4: Run and commit**
 
 ```bash
+# FULL SUITE REQUIRED (Global Constraints trigger 1): this task changes production code in
+# `billing`, a module with its own listeners, sweep and contract tests. Publishing a new event
+# from inside applyConfirmedPayment's existing transaction can affect anything that consumes
+# billing's events or asserts on its published-event counts -- exactly what a targeted run would
+# miss. Expect 392 + your new tests.
 ./mvnw -B -o test
 git add -A && git commit -m "feat: publish billing.PremiumCollected and accrue renewal commission from it"
 ```
@@ -1006,6 +1031,11 @@ Testcontainers + real `app_role` + WireMock for the rail — copy `claims/ClaimS
 - [ ] **Step 5: Run and commit**
 
 ```bash
+# FULL SUITE REQUIRED (Global Constraints trigger 1): this task changes production code in
+# `payment` -- specifically PaymentRequestListener, the single switch every money movement on this
+# platform routes through. `policyloan`, `billing` and `claims` all depend on its behaviour, and
+# its history on this project (5 Critical + 6 Important findings across 3 fix rounds in M5) is the
+# reason a targeted run is not good enough here.
 ./mvnw -B -o test -Dtest=CommissionPayoutEndToEndTest
 ./mvnw -B -o test
 git add -A && git commit -m "feat: wire payment's reserved commission branch and close the payout loop"
@@ -1075,7 +1105,10 @@ Mirror `billing/BillingSweepPsqlTest`'s approach: apply the migrations plus the 
 - [ ] **Step 6: Run and commit**
 
 ```bash
-./mvnw -B -o test
+# Targeted. All new code is inside `distribution` (controllers, DTOs, exception handler) plus a new
+# post-migration SQL file and the distribution OpenAPI spec -- nothing shared, no other module's
+# production code. Run your own new tests and the psql sweep test:
+./mvnw -B -o test -Dtest='CommissionCloseSweepPsqlTest,DistributionApiIntegrationTest'
 git add -A && git commit -m "feat: the monthly close sweep, distribution REST layer, and contract completion"
 ```
 
@@ -1115,6 +1148,11 @@ Make every 403 non-vacuous by seeding a **real, valid** agent under the correct 
 - [ ] **Step 4: Run and commit**
 
 ```bash
+# FULL SUITE REQUIRED (Global Constraints trigger 2): this task edits
+# AppRolePrivilegesIntegrationTest and RowLevelSecurityIntegrationTest, two shared guard classes
+# that every module's tenant-isolation and runtime-privilege correctness leans on. Adding
+# migrations to their lists changes what they assert for EVERY schema, not just distribution's --
+# a targeted run cannot tell you whether you broke another module's coverage.
 ./mvnw -B -o test -Dtest=DistributionContractTest
 ./mvnw -B -o test
 git add -A && git commit -m "test: distribution contract tests, app_role/RLS coverage, and doc reconciliation"
