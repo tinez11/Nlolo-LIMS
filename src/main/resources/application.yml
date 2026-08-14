@@ -118,10 +118,43 @@ server:
       max: 200
 
 management:
+  # Actuator binds to its OWN port, deliberately different from server.port (8080).
+  #
+  # WHY A SEPARATE PORT, not just a permitAll() rule on 8080: infra/docker-compose.yml publishes
+  # "8080:8080" to the host, so anything reachable on 8080 is reachable from outside the Docker
+  # network. Prometheus scrapes with no credentials at all (observability/prometheus.yml declares
+  # no basic_auth/bearer_token), and this app authenticates via Keycloak-issued JWTs, which a
+  # scraper cannot practically obtain or refresh -- so "expose it on 8080 and require auth" and
+  # "expose it on 8080 and permitAll" are the only two variants of that shape, and the second
+  # publishes operational volumes (payment/claim/gateway counters, JVM and HTTP-request metrics)
+  # to anyone who can reach the host. Binding actuator to 9090 and NOT publishing 9090 in compose
+  # keeps the metrics reachable from inside the Docker network (where Prometheus lives) and
+  # absent from the host entirely -- there is no endpoint to attack on 8080 rather than a
+  # protected one.
+  #
+  # Verified, not assumed: ActuatorExposureTest asserts /actuator/prometheus is genuinely absent
+  # from the main port, present on the management port, and that the sensitive endpoints below
+  # are absent from BOTH.
+  #
+  # DEPLOYMENT IMPACT -- read before rolling this out. management.server.port moves EVERY actuator
+  # endpoint, health and info included; Spring Boot cannot split them across two ports. So
+  # container/Kubernetes liveness and readiness probes must target 9090, not 8080:
+  # /actuator/health on 8080 is now a 404. Nothing in this repository depended on it (checked: no
+  # app-service healthcheck in infra/docker-compose.yml, no CI workflow, no script -- the only
+  # 8080/actuator/health references are in historical docs/superpowers/plans/ records), so this
+  # change breaks nothing here, but a real deployment's probe configuration must move with it.
+  server:
+    port: 9090
   endpoints:
     web:
       exposure:
-        include: health,info
+        # Deliberately an explicit allow-list, never "*". The blast radius of the management port
+        # being reachable from any container on the Docker network is bounded by exactly this
+        # line: /actuator/env would disclose SPRING_DATASOURCE_PASSWORD and every Keycloak/MinIO
+        # credential in the compose environment, /actuator/heapdump would disclose live JWTs and
+        # decrypted row data, and /actuator/loggers is remotely writable. Adding an entry here is
+        # a security decision, not a convenience one.
+        include: health,info,prometheus
   endpoint:
     health:
       probes:

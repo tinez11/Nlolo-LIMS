@@ -145,6 +145,26 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                // Prometheus scrapes with no credentials at all (observability/prometheus.yml
+                // declares no basic_auth/bearer_token) and cannot obtain or refresh a Keycloak
+                // JWT, so the scrape endpoint must be permitAll SOMEWHERE. What bounds it is
+                // WHERE it exists, not this rule: application.yml binds actuator to its own port
+                // 9090, and infra/docker-compose.yml publishes only 8080 to the host -- so this
+                // rule can only ever take effect on a port that is unreachable from outside the
+                // Docker network. On 8080 the endpoint is a 404 regardless of what is permitted
+                // here, which ActuatorExposureTest asserts directly.
+                //
+                // A path literal, matching the two rules above, NOT EndpointRequest.to(...).
+                // Determined empirically, not by preference: this chain does apply to the
+                // management port (a scrape there returns 401 with WWW-Authenticate: Bearer,
+                // i.e. this chain's own oauth2ResourceServer entry point, and health/info return
+                // 200 via their path rules above) -- but an EndpointRequest matcher did NOT match
+                // there and left the scrape 401. Scoped to this ONE path, deliberately not a
+                // prefix wildcard and not toAnyEndpoint(), so that adding an entry to
+                // application.yml's exposure allow-list can never also make it anonymously
+                // readable. If management.endpoints.web.base-path is ever changed, this literal
+                // must change with it -- ActuatorExposureTest fails loudly if it does not.
+                .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                 // The mobile-money aggregator authenticates with its own HMAC signature scheme,
                 // not a Keycloak bearer token (openapi-payment.yaml declares security: [] for
                 // this one path). It is permitAll HERE only because mobileMoneyHmacFilter runs

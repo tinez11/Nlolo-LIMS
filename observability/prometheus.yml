@@ -11,10 +11,19 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 scrape_configs:
+  # Port 9090 is the app's MANAGEMENT port (management.server.port in application.yml), not its
+  # application port 8080. Actuator was moved off 8080 because infra/docker-compose.yml publishes
+  # 8080 to the host, and this scrape carries no credentials (see below) -- 9090 is reachable
+  # only from inside this compose network, which is where Prometheus runs.
+  #
+  # No basic_auth/bearer_token here, deliberately: the app authenticates with Keycloak-issued
+  # JWTs, which a scraper cannot practically obtain or refresh. SecurityConfig permitAll()s
+  # exactly this one path, and it exists only on the unpublished port. If this job is ever
+  # repointed at 8080, the scrape will 404 rather than silently expose anything.
   - job_name: "lifeplatform-app"
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["app:8080"]
+      - targets: ["app:9090"]
 
   - job_name: "postgres-exporter"
     static_configs:

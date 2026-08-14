@@ -133,6 +133,12 @@ services:
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
     ports:
+      # ONLY the application port is published to the host. Actuator binds to 9090
+      # (management.server.port in application.yml) and is deliberately NOT published here:
+      # prometheus reaches it as app:9090 over this compose network, while the host has no
+      # route to it at all. Publishing 9090 would defeat the entire reason actuator was moved
+      # off 8080 -- see application.yml's own comment, and ActuatorExposureTest, which asserts
+      # /actuator/prometheus is absent from the application port.
       - "8080:8080"
     depends_on:
       postgres:
