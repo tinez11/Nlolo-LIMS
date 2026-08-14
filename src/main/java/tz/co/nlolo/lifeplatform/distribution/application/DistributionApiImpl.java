@@ -13,8 +13,10 @@ import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionValidationException;
 import tz.co.nlolo.lifeplatform.distribution.api.PlanStatus;
+import tz.co.nlolo.lifeplatform.distribution.api.TierType;
 import tz.co.nlolo.lifeplatform.distribution.domain.AgentProfile;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionAccrual;
+import tz.co.nlolo.lifeplatform.distribution.domain.CommissionCalculator;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionPlan;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionRule;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionStatement;
@@ -32,25 +34,34 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
  * Task 5: {@link DistributionApi}'s full published surface -- agent onboarding, commission-plan
- * authoring, and the reads Task 9's REST layer exposes. Consumption/accrual of commission (Task
- * 6/7's {@code PolicyEventListener}, walking the hierarchy via {@code CommissionCalculator}) is
- * out of scope here; this class only ever reads {@code CommissionStatement}/{@code
- * CommissionAccrual} rows, it never creates them.
+ * authoring, and the reads Task 9's REST layer exposes.
  *
  * <p>{@link CommissionStatementNotFoundException} (review fix) is the third named not-found type
  * alongside {@link AgentNotFoundException} and {@link CommissionPlanNotFoundException} -- every
  * lookup-by-id in this class that can miss has its own dedicated, HTTP-mappable exception, since
  * this module's whole purpose is to be Task 9's REST surface: a bare JDK exception here would
  * silently 500 instead of 404 unless that task happened to remember to add a handler for it.
+ *
+ * <p><b>Task 6 addendum.</b> {@link #resolveAgentWithPlan} and {@link #persistAccrual} are
+ * package-private accrual plumbing that {@code PolicyEventListener} calls directly (injecting
+ * this concrete class, not just {@link DistributionApi} -- the same shape
+ * {@code billing.application.PolicyEventListener} already uses against {@code BillingApiImpl}):
+ * they are not part of the published surface, only a way to reuse this class's already-wired
+ * repositories instead of duplicating plan-resolution and statement bookkeeping in the listener.
+ * {@link #resolveApplicablePlan} is the plan-precedence rule shared between the two -- the same
+ * precedence {@link #getApplicablePlan} has always used, extracted rather than duplicated a
+ * second time.
  */
 @Service
 public class DistributionApiImpl implements DistributionApi {
@@ -223,6 +234,19 @@ public class DistributionApiImpl implements DistributionApi {
         UUID tenantId = TenantContext.get();
         AgentProfile agent = findAgentOrThrow(agentId, tenantId);
 
+        CommissionPlan plan = resolveApplicablePlan(tenantId, agent, productId);
+        if (plan == null) {
+            throw new CommissionPlanNotFoundException(
+                "No commission plan applies to agent " + agentId + " for product " + productId);
+        }
+        return toCommissionPlanView(plan);
+    }
+
+    /** The precedence rule itself, shared by {@link #getApplicablePlan} (throws when nothing
+     * resolves -- a human asked a direct question and deserves a 404) and {@link
+     * #resolveAgentWithPlan} (returns null -- an event listener accruing commission must never
+     * throw just because an agent has no plan configured; that is zero commission, not an error). */
+    private CommissionPlan resolveApplicablePlan(UUID tenantId, AgentProfile agent, UUID productId) {
         CommissionPlan plan = null;
         if (agent.getCommissionPlanId() != null) {
             plan = commissionPlanRepository.findByCommissionPlanIdAndTenantId(agent.getCommissionPlanId(), tenantId)
@@ -232,11 +256,93 @@ public class DistributionApiImpl implements DistributionApi {
             plan = commissionPlanRepository.findByTenantIdAndProductIdAndStatus(tenantId, productId, PlanStatus.ACTIVE)
                 .stream().findFirst().orElse(null);
         }
-        if (plan == null) {
-            throw new CommissionPlanNotFoundException(
-                "No commission plan applies to agent " + agentId + " for product " + productId);
+        return plan;
+    }
+
+    /**
+     * Task 6: resolves an agent plus the plan/rules {@link CommissionCalculator#calculate} needs,
+     * for one leg of the hierarchy walk (the seller, or one ancestor). Returns {@code null} when
+     * {@code agentId} does not resolve to a real row in this tenant -- defensive only, since every
+     * id this is called with either came from {@code policy.PolicyIssued}'s own
+     * {@code agentOfRecordId} (which {@code PolicyEventListener} already resolves the seller
+     * against before calling this) or from walking {@code hierarchy_parent_id}, a self-FK into
+     * this very table -- a vanished ancestor should not happen, but an event listener must never
+     * throw for it. Package-private: {@code PolicyEventListener} is this method's only caller.
+     */
+    CommissionCalculator.AgentWithPlan resolveAgentWithPlan(UUID tenantId, UUID agentId, UUID productId) {
+        AgentProfile agent = agentProfileRepository.findByAgentIdAndTenantId(agentId, tenantId).orElse(null);
+        if (agent == null) {
+            return null;
         }
-        return toCommissionPlanView(plan);
+        CommissionPlan plan = resolveApplicablePlan(tenantId, agent, productId);
+        List<CommissionRule> rules = plan == null ? List.of()
+            : commissionRuleRepository.findByCommissionPlanIdAndTenantId(plan.getCommissionPlanId(), tenantId);
+        return new CommissionCalculator.AgentWithPlan(agent, plan, rules);
+    }
+
+    /**
+     * Task 6's internal accrual primitive. Persists ONE {@link CommissionCalculator.Accrual} (an
+     * issuance line item) or ONE clawback reversal (when {@code reversesAccrualId} is non-null)
+     * into the agent's OPEN statement for {@code (period, currency)} -- creating that statement if
+     * none exists yet -- then recomputes the statement's total from its own full accrual list and
+     * saves it. Package-private: {@code PolicyEventListener} is this method's only caller, for
+     * both the issuance and the clawback path (a reversal is just an accrual whose amount is
+     * negative and whose {@code reversesAccrualId} is set -- same persistence shape, per {@link
+     * CommissionAccrual}'s own javadoc on why a clawback is a new row, never a mutation).
+     *
+     * <p><b>Idempotent on redelivery.</b> The pre-check below is a fast, cheap skip; the real
+     * backstop is the database itself -- {@code ux_commission_accrual_once} for an issuance line
+     * ({@code reversesAccrualId == null}) or {@code ux_commission_accrual_single_reversal} for a
+     * reversal -- caught here as {@link DataIntegrityViolationException} and treated identically
+     * to the pre-check finding a duplicate: {@link Optional#empty()}, no statement mutated, no
+     * event for the caller to publish.
+     *
+     * <p>Never called for a statement this method itself finds to be {@code PAID}: the caller
+     * (clawback path) always targets the CURRENTLY OPEN period, not the period of the accrual
+     * being reversed, so a paid statement is never the one this method writes into -- see
+     * {@code PolicyEventListener.handlePolicyLapsed}'s own javadoc for why that invariant holds
+     * rather than being re-checked here.
+     *
+     * @return the persisted accrual, or empty if this exact accrual (or reversal) already exists
+     */
+    Optional<CommissionAccrual> persistAccrual(UUID tenantId, UUID agentId, String policyNumber, TierType tierType,
+                                                BigDecimal amount, String currency, String period, String sourceRef,
+                                                UUID reversesAccrualId, String createdBy) {
+        boolean alreadyAccrued = reversesAccrualId == null
+            ? commissionAccrualRepository.existsByTenantIdAndAgentIdAndTierTypeAndSourceRefAndReversesAccrualIdIsNull(
+                  tenantId, agentId, tierType, sourceRef)
+            : commissionAccrualRepository.existsByTenantIdAndReversesAccrualId(tenantId, reversesAccrualId);
+        if (alreadyAccrued) {
+            return Optional.empty();
+        }
+
+        CommissionStatement statement = getOrCreateOpenStatement(tenantId, agentId, period, currency);
+        CommissionAccrual accrual = new CommissionAccrual(tenantId, agentId, policyNumber, tierType, amount,
+            currency, period, sourceRef, reversesAccrualId, createdBy);
+        accrual.attachToStatement(statement.getStatementId());
+        try {
+            commissionAccrualRepository.saveAndFlush(accrual);
+        } catch (DataIntegrityViolationException e) {
+            // The pre-check above is not the guarantee under concurrent redelivery -- the unique
+            // index is. Same idempotent-skip outcome either way.
+            return Optional.empty();
+        }
+
+        List<CommissionAccrual> lineItems = commissionAccrualRepository
+            .findByStatementIdAndTenantId(statement.getStatementId(), tenantId);
+        statement.recomputeTotal(lineItems);
+        commissionStatementRepository.save(statement);
+        return Optional.of(accrual);
+    }
+
+    /** Finds the agent's existing statement for this exact (period, currency) -- {@code
+     * ux_commission_statement_identity} guarantees at most one -- or creates a fresh OPEN one.
+     * Never returns a statement for a DIFFERENT period than asked: the clawback path relies on
+     * this to land a reversal in today's period even when the accrual being reversed lived in an
+     * older, possibly since-PAID, statement. */
+    private CommissionStatement getOrCreateOpenStatement(UUID tenantId, UUID agentId, String period, String currency) {
+        return commissionStatementRepository.findByTenantIdAndAgentIdAndPeriodAndTotalCurrency(tenantId, agentId, period, currency)
+            .orElseGet(() -> commissionStatementRepository.save(new CommissionStatement(tenantId, agentId, period, currency)));
     }
 
     @Override

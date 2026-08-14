@@ -144,6 +144,27 @@ groups:
           summary: "A claim settled and paid out, but its policy could not be closed -- billing will keep invoicing it"
           description: "The claim is correct and final; only the policy closure failed. Search logs for 'could NOT be closed' to get the claimId and policyNumber, then close the policy manually (MATURED for a MATURITY claim, SURRENDERED otherwise) and reconcile any premium invoices raised against it after the settlement date. Do NOT reopen or un-settle the claim -- the disbursement really did complete."
 
+      # M7 Task 6. distribution.application.PolicyEventListener.handlePolicyLapsed increments this
+      # on every genuine clawback -- a FIRST_YEAR commission accrual reversed because the policy
+      # lapsed within TZ_COMMISSION_CLAWBACK_MONTHS of issue. This is a BUSINESS signal, not a
+      # platform malfunction: the reversal itself is correct, expected behaviour (the whole point
+      # of the clawback window), so a single occurrence needs no attention at all.
+      #
+      # `info`, not `medium`/`high`/`critical`, and deliberately not paged like the payment/claims
+      # counters above: nothing here is broken, no money is unaccounted for, and no staff action is
+      # implied. A SUSTAINED increase, though, is a distribution-quality signal worth a human
+      # noticing -- it means a meaningful share of recently-issued business is not persisting past
+      # its early months, which points at agent conduct, product-fit, or onboarding quality, not at
+      # this platform. Rate-based (not "any occurrence", unlike the payment/claims counters above)
+      # precisely because occasional clawbacks are the healthy, designed-for case.
+      - alert: DistributionClawbackRateElevated
+        expr: increase(lifeplatform_distribution_clawback_total[24h]) > 10
+        for: 30m
+        labels: { severity: info }
+        annotations:
+          summary: "More than 10 commission clawbacks in the last 24h -- an early-lapse rate worth a look"
+          description: "Each clawback is individually correct (a FIRST_YEAR accrual reversed because its policy lapsed within TZ_COMMISSION_CLAWBACK_MONTHS of issue) -- this rule only flags the AGGREGATE rate. Search logs for 'Clawed back' to see which agents/policies are driving it; a concentration on a few agents may indicate churn-selling, a concentration on one product may indicate a pricing or suitability problem. Not a page -- a weekly-review item."
+
       - alert: PostgresDiskSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
         for: 10m

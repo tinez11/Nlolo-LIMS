@@ -56,7 +56,11 @@ channels:
     publish:
       message: { $ref: '#/components/messages/PolicyEndorsed' }
   policy.PolicyLapsed:
-    description: "Producer: policy. Consumers: finaccounting, communication, regreporting, audit."
+    description: >
+      Producer: policy. Consumers: finaccounting, communication, regreporting, audit, distribution
+      (M7 Task 6 -- claws back FIRST_YEAR commission when the lapse falls inside
+      TZ_COMMISSION_CLAWBACK_MONTHS of issue; previously undeclared here despite a real consumer
+      existing, the same drift class Task 6 also fixes on policy.PolicyIssued's payload below).
     publish:
       message: { $ref: '#/components/messages/PolicyLapsed' }
   policy.PolicyReinstated:
@@ -389,10 +393,15 @@ components:
           properties: { caseId: {type: string, format: uuid}, outcome: {type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED]}, loadingPercent: {type: number, nullable: true}, decidedAt: {type: string, format: date-time} }
 
     PolicyIssuedPayload:
+      description: >
+        M7 Task 6 fix: PolicyApiImpl.issuePolicy's Map.of(...) has always published `premium` and
+        `premiumFrequency` (billing.application.PolicyEventListener has consumed both since M4) --
+        this schema declared neither, the same under-declaration class M5/M6 each corrected once
+        already. Purely additive (both fields already existed on the wire); no schemaVersion bump.
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, issueDate: {type: string, format: date}, agentOfRecordId: {type: string, format: uuid, nullable: true} }
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, issueDate: {type: string, format: date}, premium: {type: object}, premiumFrequency: {type: string}, agentOfRecordId: {type: string, format: uuid, nullable: true} }
     PolicyEndorsedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

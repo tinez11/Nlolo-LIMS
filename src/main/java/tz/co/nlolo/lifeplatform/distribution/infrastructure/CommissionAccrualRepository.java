@@ -16,4 +16,9 @@ public interface CommissionAccrualRepository extends JpaRepository<CommissionAcc
         UUID tenantId, String policyNumber, TierType tierType);
     boolean existsByTenantIdAndAgentIdAndTierTypeAndSourceRefAndReversesAccrualIdIsNull(
         UUID tenantId, UUID agentId, TierType tierType, String sourceRef);
+    /** Task 6's clawback idempotency pre-check: {@code ux_commission_accrual_single_reversal}'s
+     * own application-layer mirror, so a redelivered {@code PolicyLapsed} does not even attempt a
+     * second reversal row for the same original accrual (the unique index is the real backstop
+     * under concurrent delivery). */
+    boolean existsByTenantIdAndReversesAccrualId(UUID tenantId, UUID reversesAccrualId);
 }
