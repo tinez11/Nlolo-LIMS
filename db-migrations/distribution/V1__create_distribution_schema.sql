@@ -1,5 +1,5 @@
 -- Module: distribution (Distribution & Channel Management) -- Deliverable 3 Rev 2 §7.2
--- Owns: agent_profile, agency_hierarchy, commission_plan, commission_rule, commission_statement
+-- Owns: agent_profile (hierarchy via self-FK hierarchy_parent_id), commission_plan, commission_rule, commission_statement
 
 CREATE SCHEMA IF NOT EXISTS distribution;
 
