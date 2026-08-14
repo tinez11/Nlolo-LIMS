@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.claims;
 
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.SpecTypeConformance;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
@@ -385,6 +386,13 @@ class ClaimsContractTest {
      * form round-trips through persistence, not just through one in-memory serialization). The
      * jsonPath assertions compare against a STRING, so a regression to a bare number fails here even
      * if the validator's pattern check were ever relaxed.
+     *
+     * <p>Both halves also carry {@link SpecTypeConformance#matchesDeclaredTypes} alongside
+     * {@code openApi().isValid(SPEC_PATH)}: measured empirically, {@code isValid} enforces
+     * required/enum/pattern/additionalProperties but NOT primitive JSON types -- a {@code type:
+     * string} field emitted as a number, or a {@code type: boolean} emitted as a string, both report
+     * {@code hasErrors=false}. That matcher covers exactly that difference, generically, for every
+     * field of the schema rather than the hand-picked ones asserted below; see its javadoc.
      */
     @Test
     void registerAndGetADisabilityClaimBothValidateAgainstTheSpec() throws Exception {
@@ -404,6 +412,7 @@ class ClaimsContractTest {
                     """.formatted(policyNumber, fixture.applicantId(), onsetDate, onsetDate)))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "ClaimView"))
             .andExpect(jsonPath("$.claimType").value("DISABILITY"))
             .andExpect(jsonPath("$.details.claimType").value("DISABILITY"))
             // A JSON string, not a number: jsonPath's value() is type-strict, so 62.50-as-number
@@ -416,6 +425,7 @@ class ClaimsContractTest {
         mockMvc.perform(get("/claims/" + claimId).with(staffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "ClaimView"))
             .andExpect(jsonPath("$.details.impairmentPercent").value("62.50"))
             .andExpect(jsonPath("$.details.permanent").value(true))
             .andExpect(jsonPath("$.details.disabilityType").value("Loss of limb"));

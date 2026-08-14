@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.billing;
 
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.SpecTypeConformance;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.FieldReceiptRepository;
@@ -188,6 +189,11 @@ class BillingContractTest {
                 .with(staffOf(fixture.tenantId())))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // openApi().isValid() does NOT check primitive JSON types (measured: a type:string field
+            // emitted as a number reports hasErrors=false). Named schema is the ELEMENT type here,
+            // since this response is a bare JSON array -- every one of the 12 invoices is checked,
+            // covering amount.amount (decimal string) and the nullable integer dunningLevel.
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "InvoiceView"))
             // 12-month schedule horizon / MONTHLY frequency, same math as
             // BillingApiIntegrationTest.issuingAPolicyGeneratesAnActiveScheduleAndInvoicesAhead.
             .andExpect(jsonPath("$.length()").value(12))

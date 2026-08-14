@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.policyloan;
 
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.SpecTypeConformance;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.policyloan.api.PolicyLoanApi;
 import com.atlassian.oai.validator.mockmvc.OpenApiValidationMatchers;
@@ -235,6 +236,11 @@ class PolicyLoanContractTest {
                 .content(ORIGINATE_BODY))
             .andExpect(status().isAccepted())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // openApi().isValid() does NOT check primitive JSON types (measured: a type:string field
+            // emitted as a number reports hasErrors=false). LoanView is the densest money surface in
+            // the platform -- two Money objects whose amounts must stay decimal STRINGS, plus
+            // currentInterestRate, which conversely must stay a JSON number.
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "LoanView"))
             .andExpect(jsonPath("$.status").value("DISBURSEMENT_REQUESTED"))
             .andExpect(jsonPath("$.policyNumber").value(fixture.policyNumber()))
             .andExpect(jsonPath("$.principalAmount.amount").value("200000.00"))

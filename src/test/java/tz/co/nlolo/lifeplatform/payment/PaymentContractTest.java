@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.payment;
 
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.SpecTypeConformance;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.payment.domain.DisbursementInstruction;
 import tz.co.nlolo.lifeplatform.payment.domain.PaymentTransaction;
@@ -155,6 +156,10 @@ class PaymentContractTest {
                 .with(staffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // openApi().isValid() does NOT check primitive JSON types (measured: a type:string field
+            // emitted as a number reports hasErrors=false) -- this covers that difference, and here
+            // it guards Money.amount, which must stay a decimal STRING and never become a float.
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "PaymentStatusView"))
             .andExpect(jsonPath("$.id").value(transaction.getPaymentTransactionId().toString()))
             .andExpect(jsonPath("$.kind").value("PAYMENT"))
             .andExpect(jsonPath("$.status").value("PENDING"))
