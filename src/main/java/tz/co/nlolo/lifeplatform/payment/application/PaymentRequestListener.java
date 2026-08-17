@@ -112,10 +112,7 @@ public class PaymentRequestListener {
             case "policyloan.LoanDisbursementRequested" -> withTenant(envelope, this::handleLoanDisbursement);
             case "billing.PaymentRequested" -> withTenant(envelope, this::handlePremiumCollection);
             case "claims.ClaimSettlementRequested" -> withTenant(envelope, this::handleClaimSettlement);
-            // distribution.CommissionPayoutRequested (M7) belongs here as one case once that
-            // module exists and actually publishes it. purpose already has a COMMISSION_PAYOUT
-            // value; no branch is written speculatively for a producer that does not exist (see
-            // Global Constraints).
+            case "distribution.CommissionPayoutRequested" -> withTenant(envelope, this::handleCommissionPayout);
             default -> { /* not payment-relevant */ }
         }
     }
@@ -180,6 +177,30 @@ public class PaymentRequestListener {
         disbursementId.ifPresentOrElse(
             id -> submitDisbursement(tenantId, id, payeeRef, money),
             () -> log.info("Dropping duplicate ClaimSettlementRequested for tenant {} key {}", tenantId, idempotencyKey));
+    }
+
+    /** M7: distribution's commission payout to an agent. Structurally identical to {@link
+     * #handleClaimSettlement} -- request committed, rail called outside any transaction, outcome
+     * committed separately -- with {@code statementId} in place of {@code claimId}.
+     * {@code purpose=COMMISSION_PAYOUT} is already an allowed value in {@code
+     * disbursement_instruction.purpose}'s CHECK constraint (payment/V1:54-55, re-asserted in
+     * payment/V2), so M7 adds no payment migration.
+     *
+     * <p>No {@code payeeRef} null-guard, for the same reason {@code handleClaimSettlement} has
+     * none: {@code CommissionStatement.markPayoutRequested} rejects a blank {@code payeeRef} (and a
+     * blank idempotency key, and a non-positive total) before the event is ever published, so a
+     * null payee cannot legitimately arrive here. */
+    private void handleCommissionPayout(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String idempotencyKey = requireKey(payload);
+        UUID statementId = (UUID) payload.get("statementId");
+        String payeeRef = (String) payload.get("payeeRef");
+        Money money = money(payload);
+        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
+            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), "COMMISSION_PAYOUT", statementId.toString()));
+        disbursementId.ifPresentOrElse(
+            id -> submitDisbursement(tenantId, id, payeeRef, money),
+            () -> log.info("Dropping duplicate CommissionPayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 
     private void handlePremiumCollection(Map<String, Object> payload) {

@@ -86,6 +86,17 @@ ALTER TABLE distribution.commission_rule
 --    neither PENDING nor PAID, and a DisbursementFailed has nowhere to land.
 --    Direct analogue of claims' markSettlementRequested/markSettlementFailed.
 -- =============================================================================
+-- Widen BEFORE re-pointing the CHECK. V1 sized this column VARCHAR(15) for its own
+-- two-state vocabulary ('PENDING','PAID'), and 'PAYOUT_REQUESTED' is 16 characters.
+-- Without this the CHECK would happily ADMIT a value the column type cannot physically
+-- store, so every payout request would die at the INSERT with "value too long for type
+-- character varying(15)" -- a constraint and a type disagreeing about the same column.
+-- Caught in Task 8 by the first test that actually persisted a PAYOUT_REQUESTED row;
+-- Task 5 shipped requestStatementPayout with no test that reached the database, which
+-- is why the suite stayed green over a payout path that could never have worked.
+-- 20 leaves headroom over the longest current value without inviting a novel.
+ALTER TABLE distribution.commission_statement
+    ALTER COLUMN status TYPE VARCHAR(20);
 ALTER TABLE distribution.commission_statement
     DROP CONSTRAINT commission_statement_status_check;
 ALTER TABLE distribution.commission_statement
