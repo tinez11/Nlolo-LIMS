@@ -4,9 +4,17 @@
 -- which owns every table in this schema), bypassing RLS by virtue of table ownership -- the
 -- exact same class of DB-internal, non-app_role privilege db-migrations/policyloan/
 -- V2__partition_tenant_controls.sql's ddl_command_end event trigger already established and
--- passed M3's final review for. app_role itself is never granted EXECUTE on this function and
--- never bypasses RLS at any point -- this is infrastructure automation, not a request-path
--- privilege escalation. See the M4 plan's Global Constraints for the full reasoning and the
+-- passed M3's final review for.
+--
+-- M7 correction: this comment claimed "app_role itself is never granted EXECUTE on this function"
+-- from M4 until now, and that claim was FALSE. Postgres grants EXECUTE on a newly created function
+-- to PUBLIC by default -- unlike tables, where a bare CREATE grants nothing -- and nothing here
+-- ever revoked it, so app_role (and every other role) could call this SECURITY DEFINER function
+-- directly the whole time. Found while adding distribution's equivalent close sweep in M7 and
+-- checking this file for the same class of gap. Fixed below with an explicit REVOKE; the actual
+-- caller is unaffected, because pg_cron records each job's scheduling role in cron.job.username
+-- (verified empirically as 'postgres', the migration-applying role), never app_role.
+-- See the M4 plan's Global Constraints for the full reasoning and the
 -- honest split this design makes between guaranteed-on-time state (this function) and
 -- eventually-consistent notification (BillingApiImpl.publishPendingNotifications, Task 4).
 CREATE OR REPLACE FUNCTION billing.sweep_billing_state() RETURNS void
@@ -75,6 +83,11 @@ BEGIN
     UPDATE billing.overdue_metrics_snapshot SET field_receipt_overdue_count = v_overdue_receipt_count, computed_at = now() WHERE id = 1;
 END;
 $$;
+
+-- See the correction above this function's own header: Postgres grants EXECUTE to PUBLIC by
+-- default on every new function, and this REVOKE never existed until M7. Safe to add now --
+-- verified pg_cron calls this as 'postgres' (cron.job.username), never as app_role.
+REVOKE EXECUTE ON FUNCTION billing.sweep_billing_state() FROM PUBLIC;
 
 -- Every 15 minutes -- tighter than pg_partman's daily maintenance cadence, since a 24-hour SLA
 -- needs sub-hour granularity to be meaningfully enforced, and the alert rule's own `for: 10m`

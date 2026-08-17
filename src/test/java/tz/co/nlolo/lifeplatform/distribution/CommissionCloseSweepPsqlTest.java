@@ -58,6 +58,31 @@ class CommissionCloseSweepPsqlTest {
         }
     }
 
+    /**
+     * Postgres grants EXECUTE on a newly created function to PUBLIC by default -- unlike tables,
+     * where a bare CREATE grants nothing -- so without an explicit REVOKE, app_role could call
+     * this SECURITY DEFINER function directly despite being NOSUPERUSER NOBYPASSRLS, which is
+     * exactly the request-path privilege escalation the function's own header comment says must
+     * never be possible. Verified empirically against a real image before this REVOKE existed:
+     * {@code has_function_privilege('app_role', ...)} answered true. app_role is not bootstrapped
+     * as a role in this bare-postgres container (only MigrationTestSupport's placeholder), so this
+     * checks PUBLIC directly -- REVOKE ... FROM PUBLIC is what an app_role-specific check would
+     * also depend on, and PUBLIC is the actual mechanism that was silently granting the access.
+     */
+    @Test
+    void appRoleHasNoExecutePrivilegeOnTheCloseFunction() throws Exception {
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT has_function_privilege('public', 'distribution.close_commission_statements()', 'EXECUTE')")) {
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getBoolean(1))
+                    .as("PUBLIC (and therefore app_role) must not be able to execute this SECURITY DEFINER function directly")
+                    .isFalse();
+            }
+        }
+    }
+
     /** An agent_profile row is required: commission_statement.agent_id is a real FK. */
     private static UUID seedAgent(Connection connection, UUID tenantId, String tag) throws Exception {
         UUID agentId = UUID.randomUUID();

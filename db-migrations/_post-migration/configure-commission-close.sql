@@ -34,6 +34,17 @@ BEGIN
 END;
 $$;
 
+-- Postgres grants EXECUTE on a newly created function to PUBLIC by default -- unlike tables,
+-- where a bare CREATE grants nothing. Every role, including app_role, could otherwise call this
+-- SECURITY DEFINER function directly, which is precisely the request-path privilege escalation
+-- the header comment above says must never be possible: app_role is NOSUPERUSER NOBYPASSRLS, but
+-- this function's OWNER (the migration-applying role) is not, and SECURITY DEFINER runs with the
+-- owner's privileges regardless of who calls it. Revoking PUBLIC's default closes that gap
+-- without affecting the real caller: pg_cron records each job's scheduling role in cron.job
+-- .username (verified empirically -- 'postgres' here, since the migration applies as that role),
+-- not app_role, so the actual cron.schedule(...) call below is unaffected.
+REVOKE EXECUTE ON FUNCTION distribution.close_commission_statements() FROM PUBLIC;
+
 -- Daily at 01:00. A month boundary is crossed once, so daily is ample; the OPEN-only predicate
 -- above is what makes the other 30 runs a no-op rather than a repeated write.
 --

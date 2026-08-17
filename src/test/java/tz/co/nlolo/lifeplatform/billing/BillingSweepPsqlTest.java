@@ -81,6 +81,30 @@ class BillingSweepPsqlTest {
         }
     }
 
+    /**
+     * M7: Postgres grants EXECUTE on a newly created function to PUBLIC by default, and this
+     * file's own header comment claimed "app_role itself is never granted EXECUTE on this
+     * function" from M4 until M7 -- that claim was false, verified empirically against a real
+     * image (has_function_privilege('app_role', ...) answered true). A REVOKE now closes it. Not
+     * hypothetical: without it, app_role -- NOSUPERUSER NOBYPASSRLS -- could call this SECURITY
+     * DEFINER function directly, the exact request-path privilege escalation the comment says must
+     * never be possible. app_role is not bootstrapped in this bare container, so this checks
+     * PUBLIC, the actual mechanism that was granting the access.
+     */
+    @Test
+    void appRoleHasNoExecutePrivilegeOnTheSweepFunction() throws Exception {
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT has_function_privilege('public', 'billing.sweep_billing_state()', 'EXECUTE')")) {
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getBoolean(1))
+                    .as("PUBLIC (and therefore app_role) must not be able to execute this SECURITY DEFINER function directly")
+                    .isFalse();
+            }
+        }
+    }
+
     @Test
     void sweepBillingStateTransitionsOverdueInvoicesAndEscalatesDunning() throws Exception {
         UUID tenantId = UUID.randomUUID();
