@@ -16,6 +16,8 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,8 +25,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Proves billing.sweep_billing_state()'s own transition logic directly against a bare
  * postgres:16 container -- pg_cron is not installed there, so only the CREATE OR REPLACE
  * FUNCTION statement from configure-billing-sweep.sql is applied, not its trailing
- * cron.schedule(...) line. Task 8 separately verifies the real cron.schedule(...) registration
- * against the actual infra/postgres/Dockerfile image, which does have pg_cron installed.
+ * cron.schedule(...) line.
+ *
+ * <p><b>This class's javadoc used to claim "Task 8 separately verifies the real cron.schedule(...)
+ * registration against the actual infra/postgres/Dockerfile image". That was false</b> -- no test
+ * anywhere in this repository referenced cron.schedule, and M4's verification confirmed only that
+ * the job REGISTERS, which pg_cron will happily do for a command string it can never execute. The
+ * cost of the false claim was three milestones of a broken sweep: the registered command was
+ * {@code CALL billing.sweep_billing_state()}, and CALL is for PROCEDUREs, so every 15-minute tick
+ * failed with "is not a procedure". Fixed to SELECT in M7, and
+ * {@link #theScheduledCommandStringActuallyExecutes} now pins it here.
  */
 @Testcontainers
 class BillingSweepPsqlTest {
@@ -46,6 +56,28 @@ class BillingSweepPsqlTest {
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
             statement.execute(functionOnly);
+        }
+    }
+
+    /**
+     * Executes the EXACT command string pg_cron is registered to run, parsed out of
+     * configure-billing-sweep.sql rather than retyped, so the thing under test is the thing that
+     * ships. Needs no pg_cron in the container: what broke was the command string itself, not the
+     * scheduling. Reverting that line to CALL fails this immediately with "is not a procedure".
+     */
+    @Test
+    void theScheduledCommandStringActuallyExecutes() throws Exception {
+        String fullFile = Files.readString(Path.of("db-migrations/_post-migration/configure-billing-sweep.sql"));
+        Matcher matcher = Pattern.compile("cron\\.schedule\\([^$]*\\$\\$(.*?)\\$\\$", Pattern.DOTALL).matcher(fullFile);
+        assertThat(matcher.find())
+            .as("configure-billing-sweep.sql must register a cron job with a $$-quoted command")
+            .isTrue();
+        String scheduledCommand = matcher.group(1).trim();
+        assertThat(scheduledCommand).contains("billing.sweep_billing_state()");
+
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute(scheduledCommand);
         }
     }
 

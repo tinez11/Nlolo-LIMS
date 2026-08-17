@@ -79,4 +79,20 @@ $$;
 -- Every 15 minutes -- tighter than pg_partman's daily maintenance cadence, since a 24-hour SLA
 -- needs sub-hour granularity to be meaningfully enforced, and the alert rule's own `for: 10m`
 -- window implies the underlying metric is expected to move on a similar timescale.
-SELECT cron.schedule('billing-sweep', '*/15 * * * *', $$CALL billing.sweep_billing_state()$$);
+--
+-- M7 fix: this line said CALL until now, and CALL was wrong. sweep_billing_state is a FUNCTION
+-- (RETURNS void, declared above); Postgres reserves CALL for PROCEDUREs and rejects it with
+-- "billing.sweep_billing_state() is not a procedure. HINT: To call a function, use SELECT."
+-- (verified against a real postgres:16). So this job has been failing on EVERY 15-minute tick
+-- since M4 -- meaning none of billing's guaranteed-on-time state ever ran in a deployed
+-- environment: no invoice reached IN_GRACE or OVERDUE by sweep, no ArrearsCase was opened or
+-- escalated, no field receipt hit RECONCILIATION_OVERDUE, and PolicyLapseRecommended (which fires
+-- at dunning level >= 5) could never be reached.
+--
+-- Three things hid it. The CALL idiom was copied from configure-pg-partman.sql, where it is
+-- correct because partman.run_maintenance_proc() genuinely IS a procedure. BillingSweepPsqlTest
+-- invokes the function directly with SELECT and strips this line, so the command string pg_cron
+-- actually runs was never executed by any test. And pg_cron_job_failed_total is on
+-- AlertRuleMetricProducerTest's KNOWINGLY_UNPRODUCED list, so a job failing forever raises
+-- nothing -- the failure is recorded only in cron.job_run_details, which nothing reads.
+SELECT cron.schedule('billing-sweep', '*/15 * * * *', $$SELECT billing.sweep_billing_state()$$);
