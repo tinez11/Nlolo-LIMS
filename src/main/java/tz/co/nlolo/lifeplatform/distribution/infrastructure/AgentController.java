@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.distribution.infrastructure;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.distribution.api.AgentView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanView;
+import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementNotFoundException;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.distribution.domain.AgentProfile;
@@ -131,12 +132,35 @@ public class AgentController {
             .map(CommissionStatementResponseDto::from).toList());
     }
 
+    /**
+     * <b>Security fix, found during the whole-branch review, before merge.</b> {@code
+     * DistributionApi.listAccruals(UUID statementId)} takes no {@code agentId} at all -- it is a
+     * pure statement-to-accruals lookup, correctly tenant-scoped but agent-agnostic by design (see
+     * its own javadoc). The URL nests {@code statementId} under {@code agentId}, but nesting in a
+     * path is not authorization: checking only that the CALLER may read {@code agentId} and then
+     * trusting {@code statementId} without verifying it actually belongs to that same agent is a
+     * same-tenant IDOR -- any agent (or its supervisor, or any staff token) reading their OWN
+     * legitimately-accessible record could pair it with a DIFFERENT agent's real statement id and
+     * read that agent's commission line items: policy number, tier, amount.
+     *
+     * <p>Fixed by resolving {@code agentId}'s OWN statements (already tenant- and agent-scoped)
+     * and requiring {@code statementId} to be among them before ever calling {@code
+     * listAccruals}. A mismatch 404s -- matching this platform's convention that a resource
+     * belonging to someone else is reported as not found under the path implying it is yours,
+     * rather than confirming its existence with a 403.
+     */
     @GetMapping("/agents/{agentId}/commission-statements/{statementId}/accruals")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<List<CommissionAccrualResponseDto>> listAccruals(@PathVariable UUID agentId,
             @PathVariable UUID statementId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         distributionApi.getAgent(agentId);
         enforceAgentReadAccess(agentId, jwt, authentication);
+        boolean statementBelongsToAgent = distributionApi.listStatements(agentId, null).stream()
+            .anyMatch(s -> s.statementId().equals(statementId));
+        if (!statementBelongsToAgent) {
+            throw new CommissionStatementNotFoundException(
+                "Commission statement " + statementId + " not found for agent " + agentId);
+        }
         return ResponseEntity.ok(distributionApi.listAccruals(statementId).stream()
             .map(CommissionAccrualResponseDto::from).toList());
     }
@@ -150,6 +174,18 @@ public class AgentController {
      * <p>A retry after a failed payout MUST use a NEW {@code Idempotency-Key}: {@code payment}
      * dedupes on it and would silently drop a resubmission carrying the old one.
      */
+    /**
+     * <b>Consistency fix, same shape as {@link #listAccruals}'s security fix above.</b> {@code
+     * DistributionApi.requestStatementPayout} also takes no {@code agentId} -- it acts purely on
+     * {@code statementId}. This is not the same class of defect as {@code listAccruals}'s (this
+     * endpoint is FINANCE_OFFICER/ADMIN-only, and staff are already authorized to pay out ANY
+     * agent's statement in the tenant by design, so a mismatched path leaks nothing an authorized
+     * caller could not already do directly), but leaving the URL's implied agentId/statementId
+     * pairing unenforced is still a real operator-safety gap: a fat-fingered {@code agentId} in a
+     * UI would silently pay out a DIFFERENT agent's statement with no warning, since nothing
+     * confirms the path's two ids actually go together. Fixed identically -- verify the statement
+     * is among the named agent's own before acting, 404 on a mismatch.
+     */
     @PostMapping("/agents/{agentId}/commission-statements/{statementId}/payout")
     @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
     public ResponseEntity<Void> requestPayout(@PathVariable UUID agentId, @PathVariable UUID statementId,
@@ -157,6 +193,13 @@ public class AgentController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @AuthenticationPrincipal Jwt jwt) {
         requireIdempotencyKey(idempotencyKey);
+        distributionApi.getAgent(agentId);
+        boolean statementBelongsToAgent = distributionApi.listStatements(agentId, null).stream()
+            .anyMatch(s -> s.statementId().equals(statementId));
+        if (!statementBelongsToAgent) {
+            throw new CommissionStatementNotFoundException(
+                "Commission statement " + statementId + " not found for agent " + agentId);
+        }
         distributionApi.requestStatementPayout(statementId, request.payeeRef(), idempotencyKey, jwt.getSubject());
         return ResponseEntity.accepted().build();
     }

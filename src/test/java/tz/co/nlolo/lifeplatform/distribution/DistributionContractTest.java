@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.SpecTypeConformance;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.distribution.api.StatementStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.TierType;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionStatement;
 import tz.co.nlolo.lifeplatform.distribution.infrastructure.CommissionStatementRepository;
@@ -57,6 +58,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -541,6 +543,40 @@ class DistributionContractTest {
             .andExpect(jsonPath("$.length()").value(0));
     }
 
+    /**
+     * Whole-branch review finding, confirmed before being fixed: {@code
+     * DistributionApi.listAccruals(UUID statementId)} takes no {@code agentId} at all, and the
+     * controller checks only that the CALLER may read the path's {@code agentId} -- it never
+     * checks that the {@code statementId} in the same path actually belongs to that agent. So any
+     * agent (or supervisor, or staff token) who can read their OWN record could pair their own
+     * valid {@code agentId} with a DIFFERENT agent's real {@code statementId} and read that
+     * agent's commission line items -- policy number, tier, amount -- same-tenant IDOR via a
+     * path that merely nests one resource under another without verifying the nesting.
+     */
+    @Test
+    void listAccrualsReturns404WhenTheStatementBelongsToADifferentAgent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-IDOR");
+        createPlan(tenantId, productId);
+        Agent owner = onboardAgent(tenantId, "IDOR-OWNER", null);
+        Agent caller = onboardAgent(tenantId, "IDOR-CALLER", null);
+        UUID ownersStatementId = statementFor(tenantId, productId, owner.agentId(), "IDOR-OWNER");
+
+        // caller reads its OWN agentId (a legitimate 200 for the agentId check alone) but asks
+        // for OWNER's real statementId nested underneath it.
+        mockMvc.perform(get("/agents/{agentId}/commission-statements/{statementId}/accruals",
+                    caller.agentId(), ownersStatementId)
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isNotFound());
+
+        // Same probe from the agent realm too -- caller reading its own record, someone else's
+        // statement id.
+        mockMvc.perform(get("/agents/{agentId}/commission-statements/{statementId}/accruals",
+                    caller.agentId(), ownersStatementId)
+                .with(agentOf(tenantId, caller.partyId())))
+            .andExpect(status().isNotFound());
+    }
+
     @Test
     void listAccrualsReturns200WithTheLineItems() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -696,6 +732,37 @@ class DistributionContractTest {
         // The statement must be untouched and the rail unreached -- a 400 that had already moved
         // the statement to PAYOUT_REQUESTED would be worse than no validation at all.
         wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /**
+     * Same consistency fix as {@code listAccrualsReturns404WhenTheStatementBelongsToADifferentAgent}:
+     * the path's {@code agentId} and {@code statementId} must actually go together, or a
+     * fat-fingered {@code agentId} would silently pay out a different agent's money.
+     */
+    @Test
+    void requestPayoutReturns404WhenTheStatementBelongsToADifferentAgent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-PAYOUT-IDOR");
+        createPlan(tenantId, productId);
+        Agent owner = onboardAgent(tenantId, "PAYOUT-IDOR-OWNER", null);
+        Agent other = onboardAgent(tenantId, "PAYOUT-IDOR-OTHER", null);
+        UUID ownersStatementId = statementFor(tenantId, productId, owner.agentId(), "PAYOUT-IDOR-OWNER");
+        closeStatement(tenantId, ownersStatementId);
+
+        mockMvc.perform(post("/agents/{agentId}/commission-statements/{statementId}/payout",
+                    other.agentId(), ownersStatementId)
+                .with(financeStaffOf(tenantId))
+                .header("Idempotency-Key", "ct-payout-idor-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"payeeRef\":\"MPESA-0715000099\"}"))
+            .andExpect(status().isNotFound());
+
+        // And the owner's statement must be untouched -- still CLOSED and payable, not silently
+        // consumed by the mismatched request.
+        TenantContext.set(tenantId);
+        assertThat(commissionStatementRepository.findByStatementIdAndTenantId(ownersStatementId, tenantId)
+            .orElseThrow().getStatus()).isEqualTo(StatementStatus.CLOSED);
+        TenantContext.clear();
     }
 
     @Test
