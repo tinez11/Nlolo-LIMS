@@ -191,7 +191,16 @@ CREATE TABLE distribution.policy_projection (
     premium_amount     NUMERIC(19,2) NOT NULL CHECK (premium_amount > 0),
     premium_currency   CHAR(3) NOT NULL,
     issue_date         DATE NOT NULL,
-    first_invoice_collected BOOLEAN NOT NULL DEFAULT false,
+    -- WHICH invoice was the policy's first collection, not merely THAT one happened.
+    -- Issuance already pays FIRST_YEAR, so the first collected invoice must accrue no
+    -- RENEWAL or the seller is paid twice for the same premium. A boolean cannot carry
+    -- that guard safely: once flipped, a REDELIVERED PremiumCollected for that very same
+    -- first invoice would read as "not the first any more" and accrue the RENEWAL the
+    -- guard exists to prevent -- and sourceRef dedup cannot catch it, because the first
+    -- collection deliberately writes no accrual row to collide with. Storing the UUID
+    -- makes the guard idempotent: NULL means none yet, equal means a redelivery, and
+    -- anything else is a genuine renewal.
+    first_invoice_id   UUID,
     lapsed_at          TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, policy_number)

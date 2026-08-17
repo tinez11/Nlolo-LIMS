@@ -50,8 +50,12 @@ public class PolicyProjection {
     @Column(name = "issue_date", nullable = false)
     private LocalDate issueDate;
 
-    @Column(name = "first_invoice_collected", nullable = false)
-    private boolean firstInvoiceCollected = false;
+    /** The policy's first collected invoice, or null when none has been collected yet. Holds the
+     * identity rather than a boolean so that a redelivered {@code billing.PremiumCollected} for
+     * that same first invoice is still recognisable as the first -- see the column's own comment
+     * in V2 section 8, and {@code PremiumEventListener}'s guard. */
+    @Column(name = "first_invoice_id")
+    private UUID firstInvoiceId;
 
     @Column(name = "lapsed_at")
     private Instant lapsedAt;
@@ -72,8 +76,14 @@ public class PolicyProjection {
         this.issueDate = issueDate;
     }
 
-    public void markFirstInvoiceCollected() { this.firstInvoiceCollected = true; }
+    public void markFirstInvoiceCollected(UUID invoiceId) { this.firstInvoiceId = invoiceId; }
     public void markLapsed(Instant lapsedAt) { this.lapsedAt = lapsedAt; }
+
+    /** True when {@code invoiceId} is this policy's first collection, INCLUDING a redelivery of
+     * it -- the distinction that makes the RENEWAL guard idempotent. */
+    public boolean isFirstCollection(UUID invoiceId) {
+        return firstInvoiceId == null || firstInvoiceId.equals(invoiceId);
+    }
 
     public UUID getTenantId() { return tenantId; }
     public String getPolicyNumber() { return policyNumber; }
@@ -82,7 +92,7 @@ public class PolicyProjection {
     public BigDecimal getPremiumAmount() { return premiumAmount; }
     public String getPremiumCurrency() { return premiumCurrency; }
     public LocalDate getIssueDate() { return issueDate; }
-    public boolean isFirstInvoiceCollected() { return firstInvoiceCollected; }
+    public UUID getFirstInvoiceId() { return firstInvoiceId; }
     public Instant getLapsedAt() { return lapsedAt; }
     public Instant getCreatedAt() { return createdAt; }
 }

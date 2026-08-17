@@ -122,10 +122,41 @@ public class BillingApiImpl implements BillingApi {
         UUID tenantId = TenantContext.get();
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
+        String statusBefore = invoice.getStatus();
         invoice.applyPayment(amount);
         premiumInvoiceRepository.save(invoice);
         arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoiceId, tenantId)
             .ifPresent(ArrearsCase::resolve);
+        // M7: until now this method recorded a premium as paid and published NOTHING at all, so no
+        // module could react to a premium actually being collected -- payment.PaymentConfirmed
+        // carries only sourceRef = invoiceId, with no policyNumber, which is why `distribution`
+        // could not attribute renewal commission from it and `finaccounting` (M9) will need this
+        // event too.
+        //
+        // Fires ONLY on the DUE/IN_GRACE/PARTIALLY_PAID -> PAID edge, deliberately:
+        //   * applyPayment is a no-op that writes nothing when the invoice is already PAID or
+        //     WAIVED (PremiumInvoice:91-93), so publishing unconditionally would announce a
+        //     collection that provably never touched amountPaid -- e.g. a late payment against a
+        //     waived invoice, which aPaymentAgainstAWaivedInvoiceLeavesItWaived pins as a real
+        //     path. That false event would accrue commission on money that never arrived.
+        //   * a PARTIALLY_PAID under-payment is not yet a collected premium. Consumers dedupe on
+        //     invoiceId, so emitting on the first partial would attribute commission to the part
+        //     amount and silently swallow the completing top-up. Waiting for PAID keeps invoiceId
+        //     a sound idempotency key and keeps the event's meaning unambiguous: this invoice's
+        //     premium is now fully collected. (User-approved fork, 2026-08-17.)
+        boolean becamePaid = !"PAID".equals(statusBefore) && "PAID".equals(invoice.getStatus());
+        if (becamePaid) {
+            // The invoice's OWN amount/currency, not the `amount`/`currency` arguments: an
+            // overpayment leaves amountPaid above the premium due, and commission must follow the
+            // premium, not the surplus. (This method has always ignored both arguments beyond
+            // applyPayment's running total; the invoice is the authoritative record.)
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId,
+                Map.of("invoiceId", invoiceId,
+                       "policyNumber", invoice.getPolicyNumber(),
+                       "amount", Map.of("amount", invoice.getAmount().toPlainString(),
+                                        "currencyCode", invoice.getCurrency()),
+                       "collectedAt", Instant.now().toString())));
+        }
         return toView(invoice);
     }
 

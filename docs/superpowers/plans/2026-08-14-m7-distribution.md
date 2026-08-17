@@ -302,7 +302,7 @@ CREATE TABLE distribution.policy_projection (
     premium_amount     NUMERIC(19,2) NOT NULL CHECK (premium_amount > 0),
     premium_currency   CHAR(3) NOT NULL,
     issue_date         DATE NOT NULL,
-    first_invoice_collected BOOLEAN NOT NULL DEFAULT false,
+    first_invoice_id   UUID,   -- amended in Task 7: was first_invoice_collected BOOLEAN; see Task 7 Step 2
     lapsed_at          TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, policy_number)
@@ -955,9 +955,11 @@ git add -A && git commit -m "feat: accrue commission on issuance and claw it bac
 
 `@Component("distributionPremiumEventListener")`. Same `AFTER_COMMIT` + `REQUIRES_NEW` mechanics.
 
-The **first-invoice guard is the load-bearing logic** here: `policy_projection.first_invoice_collected` starts false. On the first `PremiumCollected` for a policy, set it true and accrue **nothing** — the issuance already paid `FIRST_YEAR`, so accruing `RENEWAL` too would double-pay. On any subsequent collection, accrue `RENEWAL` for the seller only (no override tiers — Task 4's documented rule). No projection row means a pre-M7 policy: log at INFO, return.
+The **first-invoice guard is the load-bearing logic** here. On the first `PremiumCollected` for a policy, record it and accrue **nothing** — the issuance already paid `FIRST_YEAR`, so accruing `RENEWAL` too would double-pay. On any subsequent collection, accrue `RENEWAL` for the seller only (no override tiers — Task 4's documented rule). No projection row means a pre-M7 policy: log at INFO, return.
 
 Use `sourceRef = invoiceId.toString()` so `ux_commission_accrual_once` makes a redelivered collection idempotent.
+
+**Amended during implementation — the guard stores `first_invoice_id UUID`, not a `first_invoice_collected` boolean.** As originally specified this task had a hole: once the boolean flipped, a *redelivered* `PremiumCollected` for that same first invoice would read as "not the first any more" and accrue exactly the RENEWAL the guard exists to prevent. `sourceRef` dedup cannot cover it, because the first collection deliberately writes no accrual row to collide with. Storing the identity makes the guard idempotent (null = none yet, equal = redelivery, otherwise a genuine renewal). `distribution/V2` is this branch's own unreleased migration and is not on the immutable list, so the column was amended in place. Proven with a negative control: reverting `isFirstCollection` to boolean semantics fails `aRedeliveredFirstCollectionStillAccruesNoRenewal` and only that test.
 
 - [ ] **Step 3: Extend the tests**
 
@@ -1204,7 +1206,9 @@ Do not merge. Report the aggregate test count, the acceptance-criteria mapping, 
 
 1. **"Actual production" is premium, not sum assured.** Every rate-based accrual multiplies the *premium*. If Actuarial intends sum-assured-based first-year commission, every rate value and the calculator's core line change together.
 2. **Tier selection is by trigger, with no precedence table and no rule stacking.** Exactly one direct-agent rule fires per event. A plan with two `FIRST_YEAR` rules silently uses the first found — arguably it should be rejected at authoring time.
-3. **A first-invoice collection accrues nothing**, to avoid double-paying against `FIRST_YEAR`. This makes `policy_projection.first_invoice_collected` load-bearing state, and a missed or duplicated `PremiumCollected` shifts which invoice counts as "first".
+3. **A first-invoice collection accrues nothing**, to avoid double-paying against `FIRST_YEAR`. This makes `policy_projection.first_invoice_id` load-bearing state, and a *missed* `PremiumCollected` still shifts which invoice counts as "first" (a duplicate no longer does — see Task 7's amendment).
+3a. **`billing.PremiumCollected` fires only on the edge INTO `PAID`** (user-approved during Task 7). A partial collection therefore earns no renewal commission at all until the invoice is topped up, and an invoice left permanently `PARTIALLY_PAID` earns none ever. The alternative — emitting per collection and accruing per collection — is arguably more faithful to "commission on premium actually collected", but needs an idempotency key other than `invoiceId` (the direct-call path can pass a null `paymentReference`). Worth challenging if the business expects commission to track part-payments.
+3b. **The event carries the invoice's own amount and currency, not the tendered ones.** An overpayment therefore does not inflate commission, and the `amount`/`currency` arguments to `applyConfirmedPayment` remain as unused as they have always been. If a gateway can ever confirm in a different currency than the invoice, that mismatch is currently invisible here.
 4. **Overrides fire only on issuance, never on renewal.** Plausible either way; a real plan might pay supervisors on renewal too.
 5. **Each ancestor is paid from its own plan, and earns nothing silently if it has none.** The alternative (inherit the seller's plan) would pay more people by default.
 6. **The hierarchy walk is capped at 2 levels.** That is all the tier vocabulary needs, but a real agency hierarchy is deeper, and a 3-level agency earns nothing above the grandparent.

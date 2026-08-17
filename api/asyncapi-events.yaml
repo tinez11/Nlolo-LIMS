@@ -148,6 +148,18 @@ channels:
     description: "Producer: billing. Consumers: finaccounting, communication, audit."
     publish:
       message: { $ref: '#/components/messages/PremiumInvoiceGenerated' }
+  billing.PremiumCollected:
+    description: >-
+      Producer: billing. Consumers: distribution (RENEWAL commission attribution), finaccounting.
+      Added in M7. Fires ONLY on the transition INTO PAID -- a partial payment (PARTIALLY_PAID) and
+      a no-op payment against an already-PAID or WAIVED invoice both publish nothing, so this event
+      means "this invoice's premium is now fully collected", never "some money arrived". `amount` is
+      the invoice's own premium amount, not the tendered amount, so an overpayment does not inflate
+      it. `invoiceId` is a sound idempotency key for consumers because of that once-only edge.
+      Exists because payment.PaymentConfirmed carries only sourceRef = invoiceId with no
+      policyNumber, leaving consumers unable to attribute a collection to a policy.
+    publish:
+      message: { $ref: '#/components/messages/PremiumCollected' }
   billing.PremiumOverdue:
     description: "Producer: billing. Consumers: communication, audit."
     publish:
@@ -305,6 +317,7 @@ components:
     LoanForcedLapseTriggered: { messageId: LoanForcedLapseTriggered, name: LoanForcedLapseTriggered, payload: { $ref: '#/components/schemas/LoanForcedLapseTriggeredPayload' } }
     LoanSettledForPayout: { messageId: LoanSettledForPayout, name: LoanSettledForPayout, payload: { $ref: '#/components/schemas/LoanSettledForPayoutPayload' } }
     PremiumInvoiceGenerated: { messageId: PremiumInvoiceGenerated, name: PremiumInvoiceGenerated, payload: { $ref: '#/components/schemas/PremiumInvoiceGeneratedPayload' } }
+    PremiumCollected: { messageId: PremiumCollected, name: PremiumCollected, payload: { $ref: '#/components/schemas/PremiumCollectedPayload' } }
     PremiumOverdue: { messageId: PremiumOverdue, name: PremiumOverdue, payload: { $ref: '#/components/schemas/PremiumOverduePayload' } }
     GracePeriodTriggered: { messageId: GracePeriodTriggered, name: GracePeriodTriggered, payload: { $ref: '#/components/schemas/GracePeriodTriggeredPayload' } }
     GracePeriodExpiring: { messageId: GracePeriodExpiring, name: GracePeriodExpiring, payload: { $ref: '#/components/schemas/GracePeriodExpiringPayload' } }
@@ -511,6 +524,11 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, dueDate: {type: string, format: date}, amount: {type: object} }
+    PremiumCollectedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object}, collectedAt: {type: string, format: date-time} }
     PremiumOverduePayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

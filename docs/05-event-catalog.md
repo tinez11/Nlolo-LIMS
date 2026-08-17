@@ -22,7 +22,7 @@ Every message payload is `allOf: [EventEnvelopeMeta, <event-specific fields>]` �
 | `underwriting` | 2 | policy, communication, audit, regreporting |
 | `policy` | 13 | billing, distribution, reinsurance, policyloan, claims, finaccounting, regreporting, communication, payment, audit |
 | `policyloan` | 6 | policy, payment, finaccounting, communication, audit |
-| `billing` | 8 | policy, payment, finaccounting, communication, audit |
+| `billing` | 9 | policy, payment, distribution, finaccounting, communication, audit |
 | `claims` | 6 | reinsurance, payment, finaccounting, communication, regreporting, audit |
 | `distribution` | 5 | payment, finaccounting, communication, audit |
 | `payment` | 4 | billing, policyloan, claims, distribution, policy, finaccounting, communication, audit |
@@ -31,7 +31,7 @@ Every message payload is `allOf: [EventEnvelopeMeta, <event-specific fields>]` �
 | `communication` | 2 | audit |
 | `document` | 1 | audit |
 
-`audit` and `communication` are the two broadest fan-in consumers (audit takes literally all 57; communication takes roughly two-thirds — anything customer-visible). Neither appears as a "consumer" column entry needing its own row above, per Deliverable 3's §9 clarification that this is a structural fan-in, not an oversight.
+`audit` and `communication` are the two broadest fan-in consumers (audit takes literally all 58; communication takes roughly two-thirds — anything customer-visible). Neither appears as a "consumer" column entry needing its own row above, per Deliverable 3's §9 clarification that this is a structural fan-in, not an oversight.
 
 ---
 

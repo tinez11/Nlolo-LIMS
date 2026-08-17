@@ -40,6 +40,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.LinkedHashMap;
@@ -154,6 +155,7 @@ class CommissionAccrualEndToEndTest {
 
         distributionApi.createCommissionPlan(product.productId(), List.of(
             new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.10"), null, null),
+            new DistributionApi.CommissionRuleInput(TierType.RENEWAL, new BigDecimal("0.03"), null, null),
             new DistributionApi.CommissionRuleInput(TierType.OVERRIDE, new BigDecimal("0.05"), null, null),
             new DistributionApi.CommissionRuleInput(TierType.SUPERVISOR_OVERRIDE, new BigDecimal("0.02"), null, null)),
             "actuary");
@@ -309,5 +311,152 @@ class CommissionAccrualEndToEndTest {
                 .as("a direct-sold policy must accrue zero %s commission", tierType)
                 .isEmpty();
         }
+    }
+
+    // =========================================================================================
+    // Task 7 -- RENEWAL accrual driven by billing.PremiumCollected
+    // =========================================================================================
+
+    /**
+     * A real {@code billing.PremiumCollected} envelope, built field-for-field from {@code
+     * BillingApiImpl.applyConfirmedPayment}'s published payload shape -- not an invented one.
+     * Published directly rather than driven through {@code BillingApi} because this class
+     * deliberately does not apply {@code billing}'s migrations; {@code BillingApiIntegrationTest}
+     * owns the proof that the producer really emits this shape, on the right edge, and this class
+     * owns the proof of what {@code distribution} does with it.
+     */
+    private void collectPremium(UUID tenantId, String policyNumber, UUID invoiceId, BigDecimal amount) {
+        Map<String, Object> payload = Map.of(
+            "invoiceId", invoiceId,
+            "policyNumber", policyNumber,
+            "amount", Map.of("amount", amount.toPlainString(), "currencyCode", CURRENCY),
+            "collectedAt", Instant.now().toString());
+        var envelope = DomainEventEnvelope.of("billing.PremiumCollected", tenantId, payload);
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
+    }
+
+    private List<CommissionAccrual> accruals(UUID tenantId, String policyNumber, TierType tierType) {
+        TenantContext.set(tenantId);
+        return commissionAccrualRepository
+            .findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(tenantId, policyNumber, tierType);
+    }
+
+    @Test
+    void theFirstCollectedPremiumAccruesNoRenewalAndRecordsWhichInvoiceItWas() {
+        UUID tenantId = UUID.randomUUID();
+        Hierarchy hierarchy = buildHierarchy(tenantId, "RENEW-FIRST");
+        String policyNumber = issuePolicy(tenantId, hierarchy, hierarchy.sellerId(), new BigDecimal("100000.00"), "RENEW-FIRST-01");
+        UUID firstInvoiceId = UUID.randomUUID();
+
+        collectPremium(tenantId, policyNumber, firstInvoiceId, new BigDecimal("100000.00"));
+
+        // Issuance already paid FIRST_YEAR on this premium -- a RENEWAL here would pay twice.
+        assertThat(accruals(tenantId, policyNumber, TierType.RENEWAL))
+            .as("the first collected premium must accrue no RENEWAL")
+            .isEmpty();
+        // The falsifiable half: the projection records WHICH invoice, not merely that one landed.
+        TenantContext.set(tenantId);
+        PolicyProjection projection = policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)
+            .orElseThrow(() -> new AssertionError("Expected a policy_projection row for " + policyNumber));
+        assertThat(projection.getFirstInvoiceId()).isEqualTo(firstInvoiceId);
+    }
+
+    @Test
+    void aSecondCollectedPremiumAccruesExactlyOneRenewalForTheSellerAndNoOverrides() {
+        UUID tenantId = UUID.randomUUID();
+        Hierarchy hierarchy = buildHierarchy(tenantId, "RENEW-SECOND");
+        BigDecimal premium = new BigDecimal("100000.00");
+        String policyNumber = issuePolicy(tenantId, hierarchy, hierarchy.sellerId(), premium, "RENEW-SECOND-01");
+
+        collectPremium(tenantId, policyNumber, UUID.randomUUID(), premium);
+        UUID secondInvoiceId = UUID.randomUUID();
+        collectPremium(tenantId, policyNumber, secondInvoiceId, premium);
+
+        // Exactly one RENEWAL, for the SELLER, at 3% of 100000.00, keyed on the invoice.
+        List<CommissionAccrual> renewals = accruals(tenantId, policyNumber, TierType.RENEWAL);
+        assertThat(renewals).hasSize(1);
+        assertThat(renewals.get(0).getAgentId()).isEqualTo(hierarchy.sellerId());
+        assertThat(renewals.get(0).getAmount()).isEqualByComparingTo(new BigDecimal("3000.00"));
+        assertThat(renewals.get(0).getCurrency()).isEqualTo(CURRENCY);
+        assertThat(renewals.get(0).getSourceRef()).isEqualTo(secondInvoiceId.toString());
+
+        // A renewal does NOT re-pay the hierarchy (CommissionCalculator's documented rule): the
+        // override tiers must still hold exactly the ONE accrual each that issuance created, so
+        // this fails if a renewal ever starts walking ancestors.
+        assertThat(accruals(tenantId, policyNumber, TierType.OVERRIDE))
+            .as("a renewal must not re-pay the parent").hasSize(1);
+        assertThat(accruals(tenantId, policyNumber, TierType.SUPERVISOR_OVERRIDE))
+            .as("a renewal must not re-pay the grandparent").hasSize(1);
+    }
+
+    /**
+     * The guard that a boolean {@code first_invoice_collected} flag could not provide. Once the
+     * first collection had flipped a boolean, a redelivery of that SAME event would read as a
+     * second invoice and accrue the RENEWAL the first-invoice guard exists to prevent -- and
+     * {@code sourceRef} dedup could not catch it, because the first collection deliberately writes
+     * no accrual row to collide with. Storing {@code first_invoice_id} is what closes it.
+     */
+    @Test
+    void aRedeliveredFirstCollectionStillAccruesNoRenewal() {
+        UUID tenantId = UUID.randomUUID();
+        Hierarchy hierarchy = buildHierarchy(tenantId, "RENEW-REDELIVER-FIRST");
+        BigDecimal premium = new BigDecimal("100000.00");
+        String policyNumber = issuePolicy(tenantId, hierarchy, hierarchy.sellerId(), premium, "RENEW-RD-FIRST-01");
+        UUID firstInvoiceId = UUID.randomUUID();
+
+        collectPremium(tenantId, policyNumber, firstInvoiceId, premium);
+        // Negative control: the guard is genuinely armed before the redelivery, so this test is not
+        // vacuously passing against a policy whose first collection never registered.
+        TenantContext.set(tenantId);
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)
+            .orElseThrow().getFirstInvoiceId()).isEqualTo(firstInvoiceId);
+
+        collectPremium(tenantId, policyNumber, firstInvoiceId, premium);
+
+        assertThat(accruals(tenantId, policyNumber, TierType.RENEWAL))
+            .as("a redelivered FIRST collection must never accrue RENEWAL")
+            .isEmpty();
+    }
+
+    @Test
+    void aRedeliveredLaterCollectionAccruesNoSecondRenewalAndLeavesTheTotalUnchanged() {
+        UUID tenantId = UUID.randomUUID();
+        Hierarchy hierarchy = buildHierarchy(tenantId, "RENEW-REDELIVER-LATER");
+        BigDecimal premium = new BigDecimal("100000.00");
+        String policyNumber = issuePolicy(tenantId, hierarchy, hierarchy.sellerId(), premium, "RENEW-RD-LATER-01");
+        UUID secondInvoiceId = UUID.randomUUID();
+
+        collectPremium(tenantId, policyNumber, UUID.randomUUID(), premium);
+        collectPremium(tenantId, policyNumber, secondInvoiceId, premium);
+
+        List<CommissionAccrual> before = accruals(tenantId, policyNumber, TierType.RENEWAL);
+        assertThat(before).hasSize(1);
+        TenantContext.set(tenantId);
+        BigDecimal totalBefore = commissionStatementRepository
+            .findByStatementIdAndTenantId(before.get(0).getStatementId(), tenantId).orElseThrow().getTotalAmount();
+
+        collectPremium(tenantId, policyNumber, secondInvoiceId, premium);
+
+        List<CommissionAccrual> after = accruals(tenantId, policyNumber, TierType.RENEWAL);
+        assertThat(after).hasSize(1);
+        assertThat(after.get(0).getAccrualId()).isEqualTo(before.get(0).getAccrualId());
+        TenantContext.set(tenantId);
+        assertThat(commissionStatementRepository
+            .findByStatementIdAndTenantId(before.get(0).getStatementId(), tenantId).orElseThrow().getTotalAmount())
+            .isEqualByComparingTo(totalBefore);
+    }
+
+    @Test
+    void aPremiumCollectedForAPolicyWithNoProjectionRowAccruesNothingAndDoesNotThrow() {
+        UUID tenantId = UUID.randomUUID();
+        buildHierarchy(tenantId, "RENEW-PRE-M7");
+
+        // A pre-M7 policy: never issued through this module's listener, so it has no projection.
+        collectPremium(tenantId, "POL-PRE-M7-0001", UUID.randomUUID(), new BigDecimal("100000.00"));
+
+        assertThat(accruals(tenantId, "POL-PRE-M7-0001", TierType.RENEWAL)).isEmpty();
+        TenantContext.set(tenantId);
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, "POL-PRE-M7-0001")).isEmpty();
     }
 }

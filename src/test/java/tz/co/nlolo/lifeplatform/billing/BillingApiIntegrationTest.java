@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.billing;
 
 import tz.co.nlolo.lifeplatform.Application;
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
@@ -25,8 +26,13 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -38,14 +44,20 @@ import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+// EventRecorderConfiguration must be @Import-ed explicitly: a nested @TestConfiguration is
+// auto-detected only when @SpringBootTest supplies no explicit `classes`, and this class pins
+// classes = Application.class.
 @SpringBootTest(classes = Application.class)
+@Import(BillingApiIntegrationTest.EventRecorderConfiguration.class)
 @Testcontainers
 class BillingApiIntegrationTest {
 
@@ -105,6 +117,32 @@ class BillingApiIntegrationTest {
 
     @AfterEach
     void resetWireMock() { wireMock.resetAll(); }
+
+    /**
+     * M7: this class had no way to assert on published events, so Task 7 adds the minimum one --
+     * an AFTER_COMMIT recorder, the same phase the real consumers subscribe on, so it sees exactly
+     * what they see and nothing that was rolled back.
+     */
+    @TestConfiguration
+    static class EventRecorderConfiguration {
+        @Bean
+        EventRecorder billingTestEventRecorder() { return new EventRecorder(); }
+    }
+
+    static class EventRecorder {
+        private final List<DomainEventEnvelope<?>> received = new CopyOnWriteArrayList<>();
+
+        @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+        void record(DomainEventEnvelope<?> envelope) { received.add(envelope); }
+
+        void clear() { received.clear(); }
+
+        List<DomainEventEnvelope<?>> ofType(String eventType) {
+            return received.stream().filter(e -> eventType.equals(e.eventType())).toList();
+        }
+    }
+
+    @Autowired private EventRecorder eventRecorder;
 
     @Autowired private PolicyApi policyApi;
     @Autowired private BillingApi billingApi;
@@ -420,6 +458,104 @@ class BillingApiIntegrationTest {
         // buggy applyPayment that flips status without ever writing amountPaid would still pass
         // an assertion that only checked the status.
         assertThat(reloaded.getAmountPaid()).isEqualByComparingTo("5000.00");
+    }
+
+    // =========================================================================================
+    // M7 Task 7 -- billing.PremiumCollected. Before this milestone applyConfirmedPayment recorded
+    // a premium as paid and published NOTHING, so no module could react to a collection.
+    // =========================================================================================
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> payloadOf(DomainEventEnvelope<?> envelope) {
+        return (Map<String, Object>) envelope.payload();
+    }
+
+    @Test
+    void collectingAnInvoiceInFullPublishesExactlyOnePremiumCollectedCarryingThePolicyNumber() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-COLLECTED-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        eventRecorder.clear();
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "MM-COLLECTED-01");
+
+        List<DomainEventEnvelope<?>> collected = eventRecorder.ofType("billing.PremiumCollected");
+        assertThat(collected).hasSize(1);
+        assertThat(collected.get(0).tenantId()).isEqualTo(tenantId);
+        Map<String, Object> payload = payloadOf(collected.get(0));
+        // policyNumber is the whole reason this event exists -- payment.PaymentConfirmed carries
+        // only sourceRef = invoiceId, leaving distribution unable to attribute the collection.
+        assertThat(payload.get("policyNumber")).isEqualTo(policyNumber);
+        assertThat(payload.get("invoiceId")).isEqualTo(invoice.invoiceId());
+        assertThat((Map<String, Object>) payload.get("amount"))
+            .containsEntry("amount", "15000.00")
+            .containsEntry("currencyCode", "TZS");
+        assertThat(payload.get("collectedAt")).isNotNull();
+    }
+
+    @Test
+    void anUnderPaymentPublishesNoPremiumCollectedUntilTheInvoiceIsToppedUpToPaid() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-COLLECTED-PARTIAL-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        eventRecorder.clear();
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("5000.00"), "TZS", "MM-PART-A");
+
+        // A PARTIALLY_PAID invoice is not a collected premium. Consumers dedupe on invoiceId, so
+        // emitting here would attribute renewal commission to the 5000 part-amount and then
+        // silently swallow the completing 10000 -- the agent underpaid, permanently.
+        assertThat(eventRecorder.ofType("billing.PremiumCollected")).isEmpty();
+
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("10000.00"), "TZS", "MM-PART-B");
+
+        List<DomainEventEnvelope<?>> collected = eventRecorder.ofType("billing.PremiumCollected");
+        assertThat(collected).as("exactly one event, on the edge into PAID").hasSize(1);
+        // The FULL premium, not the 10000 that happened to complete it.
+        assertThat((Map<String, Object>) payloadOf(collected.get(0)).get("amount"))
+            .containsEntry("amount", "15000.00");
+    }
+
+    @Test
+    void aRepeatedPaymentAgainstAnAlreadyPaidInvoicePublishesNoSecondPremiumCollected() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-COLLECTED-REPEAT-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        eventRecorder.clear();
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "MM-REPEAT-A");
+        assertThat(eventRecorder.ofType("billing.PremiumCollected")).hasSize(1);
+
+        // applyPayment is a no-op once PAID (PremiumInvoice:91-93) -- it writes nothing, so a
+        // second event here would announce a collection that never touched amountPaid.
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "MM-REPEAT-B");
+        assertThat(eventRecorder.ofType("billing.PremiumCollected")).hasSize(1);
+    }
+
+    @Test
+    void aLatePaymentAgainstAWaivedInvoicePublishesNoPremiumCollected() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-COLLECTED-WAIVED-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+        InvoiceView invoice = billingApi.listInvoices(policyNumber, null).get(0);
+
+        TenantContext.set(tenantId);
+        billingApi.waiveInvoice(invoice.invoiceId(), "Contract test waiver before a late payment", "test-staff");
+        // Negative control: genuinely WAIVED before the late payment, so this is not vacuous.
+        assertThat(premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoice.invoiceId(), tenantId)
+            .orElseThrow().getStatus()).isEqualTo("WAIVED");
+
+        eventRecorder.clear();
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), new BigDecimal("15000.00"), "TZS", "MM-WAIVED-LATE");
+
+        // WAIVED is terminal and applyPayment writes nothing, so no premium was collected.
+        assertThat(eventRecorder.ofType("billing.PremiumCollected")).isEmpty();
     }
 
     @Test
