@@ -4,8 +4,13 @@ import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.distribution.api.AgentNotFoundException;
 import tz.co.nlolo.lifeplatform.distribution.api.AgentView;
+import tz.co.nlolo.lifeplatform.distribution.api.CommissionAccrualView;
+import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementNotFoundException;
+import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.distribution.api.StatementStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.TierType;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionAccrual;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionStatement;
@@ -49,6 +54,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Task 6, Step 4 -- the real end-to-end proof that issuing a policy through the actual
@@ -311,6 +317,88 @@ class CommissionAccrualEndToEndTest {
                 .as("a direct-sold policy must accrue zero %s commission", tierType)
                 .isEmpty();
         }
+    }
+
+    // =========================================================================================
+    // DistributionApi's two read methods. Added after Task 8: an audit of the module's public
+    // surface found listStatements and listAccruals had ZERO test call sites anywhere in the
+    // suite, the same gap that let requestStatementPayout ship over a column too narrow to store
+    // its own status. Exercised here rather than in DistributionApiIntegrationTest because this
+    // class produces real statements and accruals through the real event chain, so the reads are
+    // asserted against genuinely-produced rows rather than hand-built ones.
+    // =========================================================================================
+
+    @Test
+    void listStatementsReturnsTheAgentsStatementAndFiltersByPeriod() {
+        UUID tenantId = UUID.randomUUID();
+        Hierarchy hierarchy = buildHierarchy(tenantId, "LIST-STMT");
+        String policyNumber = issuePolicy(tenantId, hierarchy, hierarchy.sellerId(), new BigDecimal("100000.00"), "LIST-STMT-01");
+        String period = YearMonth.now().toString();
+
+        TenantContext.set(tenantId);
+        List<CommissionStatementView> all = distributionApi.listStatements(hierarchy.sellerId(), null);
+        assertThat(all).hasSize(1);
+        assertThat(all.get(0).agentId()).isEqualTo(hierarchy.sellerId());
+        assertThat(all.get(0).period()).isEqualTo(period);
+        assertThat(all.get(0).totalAmount()).isEqualByComparingTo(new BigDecimal("10000.00"));
+        assertThat(all.get(0).totalCurrency()).isEqualTo(CURRENCY);
+        assertThat(all.get(0).status()).isEqualTo(StatementStatus.OPEN);
+        assertThat(all.get(0).closedAt()).isNull();
+        assertThat(all.get(0).paidAt()).isNull();
+
+        TenantContext.set(tenantId);
+        assertThat(distributionApi.listStatements(hierarchy.sellerId(), period)).hasSize(1);
+        // The falsifiable half: a filter that ignored its argument would return the row here too.
+        TenantContext.set(tenantId);
+        assertThat(distributionApi.listStatements(hierarchy.sellerId(), "1999-01")).isEmpty();
+
+        assertThat(policyNumber).isNotBlank();
+    }
+
+    @Test
+    void listStatementsThrowsForAnAgentThatDoesNotExistInThisTenant() {
+        UUID tenantId = UUID.randomUUID();
+        buildHierarchy(tenantId, "LIST-STMT-404");
+
+        TenantContext.set(tenantId);
+        UUID unknownAgentId = UUID.randomUUID();
+        // Not an empty list: an unknown or cross-tenant agentId must 404 rather than look like an
+        // agent who simply earned nothing.
+        assertThrows(AgentNotFoundException.class, () -> distributionApi.listStatements(unknownAgentId, null));
+    }
+
+    @Test
+    void listAccrualsReturnsTheStatementsLineItems() {
+        UUID tenantId = UUID.randomUUID();
+        Hierarchy hierarchy = buildHierarchy(tenantId, "LIST-ACCR");
+        String policyNumber = issuePolicy(tenantId, hierarchy, hierarchy.sellerId(), new BigDecimal("100000.00"), "LIST-ACCR-01");
+
+        TenantContext.set(tenantId);
+        UUID statementId = distributionApi.listStatements(hierarchy.sellerId(), null).get(0).statementId();
+
+        TenantContext.set(tenantId);
+        List<CommissionAccrualView> accruals = distributionApi.listAccruals(statementId);
+        assertThat(accruals).hasSize(1);
+        CommissionAccrualView accrual = accruals.get(0);
+        assertThat(accrual.statementId()).isEqualTo(statementId);
+        assertThat(accrual.agentId()).isEqualTo(hierarchy.sellerId());
+        assertThat(accrual.policyNumber()).isEqualTo(policyNumber);
+        assertThat(accrual.tierType()).isEqualTo(TierType.FIRST_YEAR);
+        assertThat(accrual.amount()).isEqualByComparingTo(new BigDecimal("10000.00"));
+        assertThat(accrual.currency()).isEqualTo(CURRENCY);
+        assertThat(accrual.sourceRef()).isEqualTo(policyNumber);
+        assertThat(accrual.reversesAccrualId()).isNull();
+    }
+
+    @Test
+    void listAccrualsThrowsForAStatementThatDoesNotExistInThisTenant() {
+        UUID tenantId = UUID.randomUUID();
+        buildHierarchy(tenantId, "LIST-ACCR-404");
+
+        TenantContext.set(tenantId);
+        UUID unknownStatementId = UUID.randomUUID();
+        assertThrows(CommissionStatementNotFoundException.class,
+            () -> distributionApi.listAccruals(unknownStatementId));
     }
 
     // =========================================================================================

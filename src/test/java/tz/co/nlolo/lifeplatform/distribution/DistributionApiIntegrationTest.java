@@ -214,6 +214,50 @@ class DistributionApiIntegrationTest {
 
     // ---- createCommissionPlan -----------------------------------------------------------------
 
+    /**
+     * A FLAT rule is a first-class half of the rate-XOR-flat invariant, and until this test no
+     * test anywhere persisted one -- the only {@code flatAmount} in the suite was the NEGATIVE
+     * case asserting that rate+flat together is rejected. So the whole flat branch (V2's
+     * {@code commission_rule_rate_xor_flat} and {@code commission_rule_flat_currency_paired}
+     * CHECKs, the CHAR(3) {@code flat_currency} column, and the view mapping) had never once run
+     * against a database. Added after Task 8 found a payout path that could never have worked for
+     * exactly this reason.
+     */
+    @Test
+    void aFlatAmountRulePersistsAndRoundTripsThroughGetApplicablePlan() {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-IT-FLAT");
+        PartyView party = registerVerifiedParty(tenantId, "AGT-FLAT-01");
+        AgentView agent = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party.partyId(), "LIC-FLAT-01", LocalDate.now().plusYears(1), null), "staff-1");
+
+        distributionApi.createCommissionPlan(productId, List.of(
+            new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, null, new BigDecimal("25000.00"), "TZS")),
+            "actuary");
+
+        CommissionPlanView plan = distributionApi.getApplicablePlan(agent.agentId(), productId);
+        assertThat(plan.rules()).hasSize(1);
+        assertThat(plan.rules().get(0).tierType()).isEqualTo(TierType.FIRST_YEAR);
+        assertThat(plan.rules().get(0).rate()).isNull();
+        assertThat(plan.rules().get(0).flatAmount()).isEqualByComparingTo("25000.00");
+        // CHAR(3) -- a bpchar round-trip that silently pads would surface right here.
+        assertThat(plan.rules().get(0).flatCurrency()).isEqualTo("TZS");
+    }
+
+    @Test
+    void createCommissionPlanRejectsARuleWithNeitherARateNorAFlatAmount() {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-IT-NEITHER");
+
+        // The other half of the XOR. V1 left both columns nullable with no constraint, so such a
+        // rule was insertable and would silently accrue nothing forever -- V2 added the CHECK, and
+        // the application layer should reject it before the database has to.
+        List<DistributionApi.CommissionRuleInput> rules = List.of(
+            new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, null, null, null));
+        assertThrows(DistributionValidationException.class,
+            () -> distributionApi.createCommissionPlan(productId, rules, "actuary"));
+    }
+
     @Test
     void createCommissionPlanRejectsAThresholdBonusRule() {
         UUID tenantId = UUID.randomUUID();
