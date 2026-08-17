@@ -1,70 +1,89 @@
 openapi: 3.1.0
 info:
   title: Distribution & Channel Management API
-  version: "0.1.0-draft"
+  version: "1.0.0"
   description: >
     External REST surface of the `distribution` module. CommissionPlan/CommissionRule
     (Deliverable 3 Rev 2, Di1) are staff/finance-authored; agents only ever read their
     applicable plan and their own statements.
+
+
+    Two authorization decisions are recorded here because the security schemes below
+    constrain less than they appear to. Write endpoints require the staff realm AND the
+    fine-grained FINANCE_OFFICER or ADMIN role: there is no AGENCY_MANAGER role in the staff
+    realm, and commission is money owed to agents. Supervisor access to another agent's record
+    is decided by the agency hierarchy itself rather than by a distinct scope, because the
+    agents realm defines no roles at all; being a supervisor of an agent IS being above that
+    agent in the hierarchy, per docs/04-api-contracts.md:43. The walk is depth-capped at two
+    levels, matching the OVERRIDE/SUPERVISOR_OVERRIDE tier vocabulary.
+
+
+    Money is always a decimal string, never a JSON number - and so is `rate`, which multiplies
+    money and is exactly the kind of value a float round-trip corrupts.
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
   /agents:
     post:
       summary: Onboard an agent (requires the referenced Party to already have KYC VERIFIED)
+      description: >
+        Staff/finance only. Creates an agent identity, so `Idempotency-Key` is required: a
+        retried POST must not silently create a second agent for the same party.
       security:
         - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [partyId, licenseNumber, licenseExpiryDate]
-              properties:
-                partyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
-                licenseNumber: { type: string }
-                licenseExpiryDate: { type: string, format: date }
-                hierarchyParentId: { type: string, format: uuid, nullable: true }
+            schema: { $ref: '#/components/schemas/OnboardAgentRequest' }
       responses:
         '201':
           description: Onboarded
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AgentView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '422':
-          description: Referenced party does not have KYC status VERIFIED
+          description: "Party is not KYC VERIFIED, the licence number is already used in this tenant, the licence has already expired, or the hierarchy parent does not exist in this tenant"
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /agents/{agentId}:
     get:
       summary: Get agent detail
+      description: >
+        Staff read any agent. An agents-realm token reads itself or an agent below it in its
+        hierarchy; anything else is 403. An agent belonging to another tenant is 404, never
+        403, so that cross-tenant existence is not leaked.
       security:
         - agentsAuth: [agent, supervisor]
         - staffAuth: []
       parameters:
-        - name: agentId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/AgentId'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AgentView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /agents/{agentId}/commission-plan:
     get:
       summary: Get the agent's applicable commission plan for a product
+      description: >
+        Resolves the agent's own assigned plan if it has one, otherwise the product's ACTIVE
+        plan. 404 when neither applies.
       security:
-        - agentsAuth: [agent]
+        - agentsAuth: [agent, supervisor]
         - staffAuth: []
       parameters:
-        - name: agentId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/AgentId'
         - name: productId
           in: query
           required: true
@@ -75,6 +94,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CommissionPlanView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: No plan applies to this agent for this product, or the agent does not exist in this tenant
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /agents/{agentId}/commission-statements:
     get:
       summary: List an agent's commission statements
@@ -82,13 +108,12 @@ paths:
         - agentsAuth: [agent, supervisor]
         - staffAuth: []
       parameters:
-        - name: agentId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/AgentId'
         - name: period
           in: query
-          schema: { type: string, description: "YYYY-MM" }
+          required: false
+          description: "Filter to a single accounting period, formatted YYYY-MM"
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
       responses:
         '200':
           description: OK
@@ -97,33 +122,277 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/CommissionStatementView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /agents/{agentId}/commission-statements/{statementId}/accruals:
+    get:
+      summary: List the individual accrual line items a statement totals
+      description: >
+        A line item with a non-null `reversesAccrualId` is a clawback, and its `amount` is
+        negative. A statement's total may therefore legitimately be zero or negative.
+      security:
+        - agentsAuth: [agent, supervisor]
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/StatementId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CommissionAccrualView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /agents/{agentId}/commission-statements/{statementId}/payout:
+    post:
+      summary: Request payout of a closed commission statement
+      description: >
+        Staff/finance only. Moves the statement to PAYOUT_REQUESTED and publishes
+        distribution.CommissionPayoutRequested; the money settles asynchronously through the
+        payment module, so this returns 202 and the statement reaches PAID later.
+
+
+        A retry after PAYOUT_FAILED MUST use a NEW `Idempotency-Key`. The payment module
+        deduplicates on that key and would silently drop a resubmission carrying the old one,
+        which looks identical to a request that reached the rail zero times.
+
+
+        An indeterminate rail outcome publishes no event at all, so a statement can rest at
+        PAYOUT_REQUESTED indefinitely; that condition is alerted on by the payment module.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/StatementId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RequestPayoutRequest' }
+      responses:
+        '202':
+          description: Payout requested; settlement is asynchronous
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: "Statement is not payable in its current status - it is still OPEN, already PAYOUT_REQUESTED, or already PAID - or its total is zero or negative"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /commission-plans:
+    post:
+      summary: Author a commission plan for a product
+      description: >
+        Staff/finance only. Exactly one of `rate` or `flatAmount` must be set on each rule.
+        THRESHOLD_BONUS rules are rejected: the threshold_condition input format is specified
+        nowhere, so M7 deliberately does not invent one.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCommissionPlanRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommissionPlanView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Product does not exist, or has no active version
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: "Rule list is empty, a rule sets both rate and flatAmount or neither, or a rule is of the unsupported THRESHOLD_BONUS tier"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
+  parameters:
+    AgentId:
+      name: agentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StatementId:
+      name: statementId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        Required. The same key is treated as the same attempt and deduplicated; a new key is a
+        genuinely new attempt. There is deliberately no default.
+      schema: { type: string, minLength: 1 }
+  responses:
+    BadRequest:
+      description: "Malformed request body, or a missing or blank Idempotency-Key"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Forbidden:
+      description: "Authenticated but not permitted - wrong realm, missing FINANCE_OFFICER/ADMIN role, or an agent reading an agent outside its own hierarchy"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    NotFound:
+      description: No such resource in this tenant. Also returned for a resource belonging to another tenant, so that cross-tenant existence is not leaked.
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   schemas:
+    OnboardAgentRequest:
+      type: object
+      required: [partyId, licenseNumber, licenseExpiryDate]
+      properties:
+        partyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        licenseNumber: { type: string, minLength: 1, maxLength: 50 }
+        licenseExpiryDate: { type: string, format: date }
+        hierarchyParentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Omitted or null for an agent at the top of its hierarchy.
     AgentView:
       type: object
+      required: [agentId, partyId, licenseNumber, licenseStatus, licenseExpiryDate]
       properties:
         agentId: { type: string, format: uuid }
         partyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         licenseNumber: { type: string }
         licenseStatus: { type: string, enum: [ACTIVE, EXPIRED, SUSPENDED] }
+        licenseExpiryDate: { type: string, format: date }
         hierarchyParentId: { type: string, format: uuid, nullable: true }
-    CommissionPlanView:
+        commissionPlanId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The agent's own assigned plan, if any. Null means the product's active plan applies instead.
+    CreateCommissionPlanRequest:
       type: object
+      required: [productId, rules]
       properties:
-        planId: { type: string, format: uuid }
         productId: { type: string, format: uuid }
         rules:
           type: array
-          items:
-            type: object
-            properties:
-              tierType: { type: string, enum: [FIRST_YEAR, RENEWAL, OVERRIDE, SUPERVISOR_OVERRIDE, THRESHOLD_BONUS] }
-              rate: { type: number, nullable: true }
-              flatAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+          minItems: 1
+          items: { $ref: '#/components/schemas/CommissionRuleInput' }
+    CommissionRuleInput:
+      type: object
+      required: [tierType]
+      description: Exactly one of rate or flatAmount must be present.
+      properties:
+        tierType: { $ref: '#/components/schemas/TierType' }
+        rate:
+          type: string
+          nullable: true
+          pattern: '^\d+(\.\d{1,4})?$'
+          description: "Decimal string, never a JSON number - a rate multiplies money. 0.10 means 10%."
+        flatAmount:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+    CommissionPlanView:
+      type: object
+      required: [planId, productId, status, rules]
+      properties:
+        planId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        status: { type: string, enum: [ACTIVE, RETIRED] }
+        rules:
+          type: array
+          items: { $ref: '#/components/schemas/CommissionRuleView' }
+    CommissionRuleView:
+      type: object
+      required: [commissionRuleId, tierType]
+      properties:
+        commissionRuleId: { type: string, format: uuid }
+        tierType: { $ref: '#/components/schemas/TierType' }
+        rate:
+          type: string
+          nullable: true
+          pattern: '^\d+(\.\d{1,4})?$'
+          description: "Decimal string, never a JSON number. Null when this is a flat-amount rule."
+        flatAmount:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
     CommissionStatementView:
       type: object
+      required: [statementId, agentId, period, totalAmount, status]
       properties:
         statementId: { type: string, format: uuid }
-        period: { type: string }
-        totalAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        status: { type: string, enum: [PENDING, PAID] }
+        agentId: { type: string, format: uuid }
+        period: { type: string, pattern: '^\d{4}-\d{2}$' }
+        totalAmount:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          description: "May legitimately be zero or negative when clawbacks meet or exceed the period's accruals."
+        status:
+          type: string
+          enum: [OPEN, CLOSED, PAYOUT_REQUESTED, PAID, PAYOUT_FAILED]
+          description: >
+            The full request/confirm lifecycle. OPEN accrues; the monthly close sweep moves it to
+            CLOSED; requesting payout moves it to PAYOUT_REQUESTED; the payment rail's outcome
+            moves it to PAID or PAYOUT_FAILED. A PAYOUT_FAILED statement can be retried with a new
+            idempotency key.
+        closedAt: { type: string, format: date-time, nullable: true }
+        paidAt: { type: string, format: date-time, nullable: true }
+    CommissionAccrualView:
+      type: object
+      required: [accrualId, agentId, statementId, policyNumber, tierType, amount, period, sourceRef]
+      properties:
+        accrualId: { type: string, format: uuid }
+        agentId: { type: string, format: uuid }
+        statementId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        tierType: { $ref: '#/components/schemas/TierType' }
+        amount:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          description: Negative for a clawback reversal.
+        period: { type: string, pattern: '^\d{4}-\d{2}$' }
+        sourceRef:
+          type: string
+          description: "The policy number for an issuance accrual, the invoice id for a renewal, or the reversed accrual's id for a clawback."
+        reversesAccrualId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Non-null exactly for a clawback row.
+    RequestPayoutRequest:
+      type: object
+      required: [payeeRef]
+      properties:
+        payeeRef:
+          type: string
+          minLength: 1
+          description: "The agent's mobile-money MSISDN. Cannot be derived - the party module exposes no MSISDN - which is why closing a statement is automated but paying one is not."
+    TierType:
+      type: string
+      enum: [FIRST_YEAR, RENEWAL, OVERRIDE, SUPERVISOR_OVERRIDE, THRESHOLD_BONUS]
+      description: >
+        THRESHOLD_BONUS is accepted by the database CHECK for forward compatibility but is
+        rejected at authoring time and never computed: its threshold_condition input format is
+        specified in no document, so M7 declines to invent one.

@@ -1,0 +1,217 @@
+package tz.co.nlolo.lifeplatform.distribution.infrastructure;
+
+import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.distribution.api.AgentView;
+import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanView;
+import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
+import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.distribution.domain.AgentProfile;
+import tz.co.nlolo.lifeplatform.distribution.domain.CommissionCalculator;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.UUID;
+import java.util.function.Function;
+
+/**
+ * The {@code /agents*} surface. Role gates follow docs/04-api-contracts.md:57, whose matrix row is
+ * {@code | distribution | — | read own commission/plan | onboard, administer | — |}.
+ *
+ * <p><b>Two recorded decisions, because the spec constrains less than it appears to.</b>
+ *
+ * <p>(1) <b>FINANCE_OFFICER/ADMIN gate the write endpoints.</b> There is no {@code AGENCY_MANAGER}
+ * role in the staff realm -- the six that exist are UNDERWRITER, CLAIMS_ASSESSOR, CLAIMS_MANAGER,
+ * FINANCE_OFFICER, CUSTOMER_SERVICE_REP, ADMIN -- and openapi-distribution.yaml's bare
+ * {@code staffAuth: []} names none of them, so "onboard, administer" had to be mapped to something.
+ * Commission is money owed to agents, which makes FINANCE_OFFICER the closest existing fit, with
+ * ADMIN as the universal escape hatch. Gated on the fine-grained role name, following
+ * {@code UnderwritingController}'s {@code hasRole('UNDERWRITER')} idiom.
+ *
+ * <p>(2) <b>Supervisor access is decided by the HIERARCHY ITSELF, not by a separate scope.</b>
+ * openapi-distribution.yaml declares {@code agentsAuth: [agent, supervisor]}, but
+ * {@code keycloak/agents-realm.json} defines NO roles whatsoever, so there is no {@code supervisor}
+ * role to hold -- requiring one would make descendant reads permanently 403 for every real token
+ * until someone invents realm config with no business input behind it. docs/04-api-contracts.md:43
+ * says an agents token is scoped to "policies where the agent is agentOfRecord, or within their
+ * agency hierarchy for supervisors", and being a supervisor of X IS being above X in the hierarchy.
+ * So {@link #resolveAgentAccess} authorises on ancestry. Flagged for the final review: if the
+ * business wants supervision to require an explicit grant rather than follow from the org chart,
+ * this becomes a realm role plus an extra {@code hasRole} conjunct here.
+ *
+ * <p><b>404 for cross-tenant, 403 for a same-tenant mismatch.</b> Every read resolves the agent
+ * through {@code DistributionApi} FIRST -- whose lookups are tenant-scoped, so another tenant's
+ * agentId throws {@code AgentNotFoundException} (404) -- and only then applies the ownership check
+ * (403). Getting that order wrong would leak the existence of other tenants' agents, the same
+ * distinction {@code PolicyContractTest} already pins for policy.
+ */
+@RestController
+public class AgentController {
+
+    /** Two levels is what the tier vocabulary supports (OVERRIDE, SUPERVISOR_OVERRIDE), so a
+     * supervisor's readable downline is exactly the population they can earn override commission
+     * on. Reusing {@link CommissionCalculator#resolveAncestorIds}' cycle-safe walk rather than a
+     * second hand-rolled one matters: {@code agent_profile.hierarchy_parent_id} is a self-FK with
+     * NO cycle constraint in the DDL, so an unguarded walk would not terminate. */
+    private final DistributionApi distributionApi;
+    private final AgentProfileRepository agentProfileRepository;
+
+    public AgentController(DistributionApi distributionApi, AgentProfileRepository agentProfileRepository) {
+        this.distributionApi = distributionApi;
+        this.agentProfileRepository = agentProfileRepository;
+    }
+
+    /**
+     * {@code Idempotency-Key} is required and genuinely enforced, copying
+     * {@code ClaimController.registerClaim}'s shape: declared {@code required = false} at the
+     * Spring level and rejected explicitly here, so a missing header and a present-but-blank one
+     * land on one {@code ProblemDetails} path instead of a framework
+     * {@code MissingRequestHeaderException} for the first only.
+     *
+     * <p>Onboarding creates an identity, and a retried POST that silently created a second agent
+     * for the same party would corrupt the hierarchy. Note the honest limit, matching the
+     * platform-wide posture: the key is REQUIRED but not yet a dedup registry here --
+     * {@code ux_agent_license} on {@code (tenant_id, license_number)} is what actually prevents
+     * the duplicate, surfacing as a clean 422 rather than a 500 (pinned by
+     * DistributionApiIntegrationTest).
+     */
+    @PostMapping("/agents")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<AgentResponseDto> onboardAgent(@Valid @RequestBody OnboardAgentRequestDto request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @AuthenticationPrincipal Jwt jwt) {
+        requireIdempotencyKey(idempotencyKey);
+        AgentView view = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            request.partyId(), request.licenseNumber(), request.licenseExpiryDate(), request.hierarchyParentId()),
+            jwt.getSubject());
+        return ResponseEntity.status(HttpStatus.CREATED).body(AgentResponseDto.from(view));
+    }
+
+    @GetMapping("/agents/{agentId}")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<AgentResponseDto> getAgent(@PathVariable UUID agentId,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        AgentView view = distributionApi.getAgent(agentId);   // 404s cross-tenant, before any 403
+        enforceAgentReadAccess(agentId, jwt, authentication);
+        return ResponseEntity.ok(AgentResponseDto.from(view));
+    }
+
+    @GetMapping("/agents/{agentId}/commission-plan")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<CommissionPlanResponseDto> getApplicablePlan(@PathVariable UUID agentId,
+            @RequestParam UUID productId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        distributionApi.getAgent(agentId);
+        enforceAgentReadAccess(agentId, jwt, authentication);
+        CommissionPlanView view = distributionApi.getApplicablePlan(agentId, productId);
+        return ResponseEntity.ok(CommissionPlanResponseDto.from(view));
+    }
+
+    @GetMapping("/agents/{agentId}/commission-statements")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<CommissionStatementResponseDto>> listStatements(@PathVariable UUID agentId,
+            @RequestParam(required = false) String period,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        distributionApi.getAgent(agentId);
+        enforceAgentReadAccess(agentId, jwt, authentication);
+        return ResponseEntity.ok(distributionApi.listStatements(agentId, period).stream()
+            .map(CommissionStatementResponseDto::from).toList());
+    }
+
+    @GetMapping("/agents/{agentId}/commission-statements/{statementId}/accruals")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<CommissionAccrualResponseDto>> listAccruals(@PathVariable UUID agentId,
+            @PathVariable UUID statementId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        distributionApi.getAgent(agentId);
+        enforceAgentReadAccess(agentId, jwt, authentication);
+        return ResponseEntity.ok(distributionApi.listAccruals(statementId).stream()
+            .map(CommissionAccrualResponseDto::from).toList());
+    }
+
+    /**
+     * 202, not 201 or 200: the payout is REQUESTED here and settles asynchronously through
+     * {@code payment}'s request/confirm loop, so no resource is complete when this returns. The
+     * statement moves CLOSED (or PAYOUT_FAILED) -> PAYOUT_REQUESTED synchronously; PAID arrives
+     * later via {@code payment.DisbursementCompleted}.
+     *
+     * <p>A retry after a failed payout MUST use a NEW {@code Idempotency-Key}: {@code payment}
+     * dedupes on it and would silently drop a resubmission carrying the old one.
+     */
+    @PostMapping("/agents/{agentId}/commission-statements/{statementId}/payout")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<Void> requestPayout(@PathVariable UUID agentId, @PathVariable UUID statementId,
+            @Valid @RequestBody RequestPayoutRequestDto request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @AuthenticationPrincipal Jwt jwt) {
+        requireIdempotencyKey(idempotencyKey);
+        distributionApi.requestStatementPayout(statementId, request.payeeRef(), idempotencyKey, jwt.getSubject());
+        return ResponseEntity.accepted().build();
+    }
+
+    private static void requireIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key header is required: the same key is treated as "
+                + "the same attempt and deduplicated by payment, a new key as a genuinely new attempt. There is "
+                + "deliberately no default -- any default would make that dedup meaningless.");
+        }
+    }
+
+    /**
+     * Staff read anyone. An agents-realm token reads itself, or an agent below it in the
+     * hierarchy. Anything else is 403.
+     *
+     * <p>The caller is resolved from the token's {@code party_id} claim rather than trusted from
+     * the path -- {@code tenant_id}/{@code party_id} never come from client input
+     * (docs/04-api-contracts.md:39). {@code findByTenantIdAndPartyId} returns a list because
+     * nothing constrains one party to one agent profile (the unique index is on
+     * {@code (tenant_id, license_number)}), so ANY profile the caller owns granting access is
+     * sufficient.
+     */
+    private void enforceAgentReadAccess(UUID requestedAgentId, Jwt jwt, Authentication authentication) {
+        if (hasAuthority(authentication, "ROLE_REALM_STAFF")) {
+            return;
+        }
+        UUID tenantId = TenantContext.get();
+        String partyIdClaim = jwt.getClaimAsString("party_id");
+        if (partyIdClaim == null) {
+            throw new AccessDeniedException("Agent token carries no party_id claim");
+        }
+        List<AgentProfile> callerProfiles = agentProfileRepository
+            .findByTenantIdAndPartyId(tenantId, UUID.fromString(partyIdClaim));
+        if (callerProfiles.isEmpty()) {
+            throw new AccessDeniedException("Token's party is not an agent in this tenant");
+        }
+        if (callerProfiles.stream().anyMatch(p -> p.getAgentId().equals(requestedAgentId))) {
+            return;
+        }
+        // Ancestry check, walking UP from the REQUESTED agent: if the caller appears among its
+        // ancestors, the caller supervises it. Walking up is both cheaper than enumerating a
+        // downline and reuses the calculator's existing depth-capped, cycle-safe walk verbatim.
+        Function<UUID, UUID> parentOf = id -> agentProfileRepository.findByAgentIdAndTenantId(id, tenantId)
+            .map(AgentProfile::getHierarchyParentId)
+            .orElse(null);
+        List<UUID> ancestors = CommissionCalculator.resolveAncestorIds(requestedAgentId, parentOf);
+        if (callerProfiles.stream().anyMatch(p -> ancestors.contains(p.getAgentId()))) {
+            return;
+        }
+        throw new AccessDeniedException("Agent may only read its own record or one below it in its hierarchy");
+    }
+
+    private static boolean hasAuthority(Authentication authentication, String authority) {
+        return authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch(authority::equals);
+    }
+}
