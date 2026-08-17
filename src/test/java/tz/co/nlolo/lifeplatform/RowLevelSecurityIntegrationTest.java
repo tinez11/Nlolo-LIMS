@@ -104,7 +104,13 @@ class RowLevelSecurityIntegrationTest {
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.
             "db-migrations/payment/V1__create_payment_schema.sql",
-            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            // M7 (Task 10) additions. distribution/V1 enabled RLS on NONE of its four tables and
+            // granted app_role nothing; V2 is what adds both, plus commission_accrual and
+            // policy_projection with their own policies. Until now no test in this class or
+            // AppRolePrivilegesIntegrationTest touched the module at all.
+            "db-migrations/distribution/V1__create_distribution_schema.sql",
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -559,6 +565,102 @@ class RowLevelSecurityIntegrationTest {
                 assertThat(resultSet.next()).isTrue();
                 assertThat(resultSet.getString(1)).isEqualTo(tenantA.toString());
                 assertThat(resultSet.next()).isFalse();
+            }
+        }
+    }
+
+    /**
+     * M7 addition: proves distribution's two money-bearing tables are genuinely tenant-isolated.
+     * Both are asserted in one test because an accrual only exists inside a statement, so the same
+     * two-tenant fixture serves both -- and checking the accrual as well as its parent matters:
+     * {@code commission_accrual} is created by V2 (not V1) and therefore carries a separately
+     * written policy that could have been omitted without any other test noticing.
+     */
+    @Test
+    @Order(9)
+    void commissionStatementAndAccrualAreTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        UUID agentA = UUID.randomUUID();
+        UUID agentB = UUID.randomUUID();
+        UUID statementA = UUID.randomUUID();
+        UUID statementB = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            try (PreparedStatement insertAgent = connection.prepareStatement(
+                    "INSERT INTO distribution.agent_profile (agent_id, tenant_id, party_id, license_number, "
+                    + "license_expiry_date) VALUES (?, ?, ?, ?, DATE '2030-01-01')")) {
+                insertAgent.setObject(1, agentA);
+                insertAgent.setObject(2, tenantA);
+                insertAgent.setObject(3, UUID.randomUUID());
+                insertAgent.setString(4, "RLS-LIC-A");
+                assertThat(insertAgent.executeUpdate()).isEqualTo(1);
+                insertAgent.setObject(1, agentB);
+                insertAgent.setObject(2, tenantB);
+                insertAgent.setObject(3, UUID.randomUUID());
+                insertAgent.setString(4, "RLS-LIC-B");
+                assertThat(insertAgent.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertStatement = connection.prepareStatement(
+                    "INSERT INTO distribution.commission_statement (statement_id, tenant_id, agent_id, period, "
+                    + "total_amount, total_currency, status) VALUES (?, ?, ?, '2026-01', 10000.00, 'TZS', 'OPEN')")) {
+                insertStatement.setObject(1, statementA);
+                insertStatement.setObject(2, tenantA);
+                insertStatement.setObject(3, agentA);
+                assertThat(insertStatement.executeUpdate()).isEqualTo(1);
+                insertStatement.setObject(1, statementB);
+                insertStatement.setObject(2, tenantB);
+                insertStatement.setObject(3, agentB);
+                assertThat(insertStatement.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertAccrual = connection.prepareStatement(
+                    "INSERT INTO distribution.commission_accrual (tenant_id, agent_id, statement_id, policy_number, "
+                    + "tier_type, amount, currency, period, source_ref) "
+                    + "VALUES (?, ?, ?, ?, 'FIRST_YEAR', 10000.00, 'TZS', '2026-01', ?)")) {
+                insertAccrual.setObject(1, tenantA);
+                insertAccrual.setObject(2, agentA);
+                insertAccrual.setObject(3, statementA);
+                insertAccrual.setString(4, "RLS-DIST-A");
+                insertAccrual.setString(5, "RLS-DIST-A");
+                assertThat(insertAccrual.executeUpdate()).isEqualTo(1);
+                insertAccrual.setObject(1, tenantB);
+                insertAccrual.setObject(2, agentB);
+                insertAccrual.setObject(3, statementB);
+                insertAccrual.setString(4, "RLS-DIST-B");
+                insertAccrual.setString(5, "RLS-DIST-B");
+                assertThat(insertAccrual.executeUpdate()).isEqualTo(1);
+            }
+        }
+
+        // Negative control: both tenants' rows really are present when RLS is not in play.
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement select = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM distribution.commission_accrual WHERE tenant_id IN (?, ?)")) {
+            select.setObject(1, tenantA);
+            select.setObject(2, tenantB);
+            try (ResultSet resultSet = select.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT period FROM distribution.commission_statement")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.next()).as("tenant B's statement must be invisible").isFalse();
+            }
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT policy_number FROM distribution.commission_accrual")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("RLS-DIST-A");
+                assertThat(resultSet.next()).as("tenant B's accrual must be invisible").isFalse();
             }
         }
     }

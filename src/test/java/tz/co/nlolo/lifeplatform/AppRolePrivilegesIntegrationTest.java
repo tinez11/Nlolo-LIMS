@@ -169,7 +169,14 @@ class AppRolePrivilegesIntegrationTest {
             // the one test written for that failure mode. See
             // appRoleCanExecuteEveryPaymentCallbackResolverFunction below.
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
-            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            // M7 (Task 10) additions: distribution appeared in NEITHER this class nor
+            // RowLevelSecurityIntegrationTest until now -- the same gap claims had entering M6.
+            // distribution/V1 has zero GRANT statements (the recurring V1 pattern this class
+            // exists to catch); V2 is what grants app_role anything at all here.
+            "db-migrations/refdata/V4__seed_distribution_parameters.sql",
+            "db-migrations/distribution/V1__create_distribution_schema.sql",
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -611,6 +618,66 @@ class AppRolePrivilegesIntegrationTest {
             assertThat(update.executeUpdate()).isEqualTo(1);
         } catch (SQLException e) {
             fail("app_role could not update claims.claim: " + e.getMessage());
+        }
+    }
+
+    /**
+     * M7 (Task 10). The UPDATE half is the point: {@code commission_statement.status} mutates
+     * repeatedly over a statement's life (OPEN -> CLOSED -> PAYOUT_REQUESTED -> PAID, or ->
+     * PAYOUT_FAILED and round again on a retry), so a grant that allowed only INSERT/SELECT would
+     * leave the whole lifecycle dead in production while every superuser-connected test passed.
+     *
+     * <p>It also writes {@code PAYOUT_REQUESTED} specifically -- the longest value in the status
+     * vocabulary at 16 characters. V1 sized the column VARCHAR(15) for its old two-state
+     * vocabulary and V2's CHECK swap did not widen it, so this exact write failed with "value too
+     * long for type character varying(15)" until M7 fixed it. Writing the longest value rather
+     * than a convenient short one is what keeps that regression caught here too.
+     */
+    @Test
+    void appRoleCanReadWriteAndUpdateACommissionStatement() {
+        UUID tenantId = UUID.randomUUID();
+        UUID agentId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insertAgent = connection.prepareStatement(
+                 "INSERT INTO distribution.agent_profile (agent_id, tenant_id, party_id, license_number, "
+                 + "license_expiry_date) VALUES (?, ?, ?, 'APPROLE-LIC-01', ?)")) {
+            insertAgent.setObject(1, agentId);
+            insertAgent.setObject(2, tenantId);
+            insertAgent.setObject(3, UUID.randomUUID());
+            insertAgent.setObject(4, LocalDate.of(2030, 1, 1));
+            assertThat(insertAgent.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into distribution.agent_profile: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO distribution.commission_statement (tenant_id, agent_id, period, total_amount, "
+                 + "total_currency, status) VALUES (?, ?, '2026-01', 10000.00, 'TZS', 'OPEN')")) {
+            insert.setObject(1, tenantId);
+            insert.setObject(2, agentId);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into distribution.commission_statement: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT status FROM distribution.commission_statement WHERE agent_id = ?")) {
+            select.setObject(1, agentId);
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getString(1)).isEqualTo("OPEN");
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from distribution.commission_statement: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE distribution.commission_statement SET status = 'PAYOUT_REQUESTED' WHERE agent_id = ?")) {
+            update.setObject(1, agentId);
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not update distribution.commission_statement: " + e.getMessage());
         }
     }
 }

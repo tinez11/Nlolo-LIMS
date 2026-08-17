@@ -66,6 +66,24 @@ import java.util.UUID;
 @Service
 public class DistributionApiImpl implements DistributionApi {
 
+    /** Mirrors {@code agent_profile.license_number VARCHAR(50)} (distribution/V1) and
+     * openapi-distribution.yaml's declared maxLength. Checked in Java so an over-long value is a
+     * clear 422 rather than an integrity violation the layer below has to guess at. */
+    private static final int MAX_LICENSE_NUMBER_LENGTH = 50;
+
+    /** True only when the violation really is {@code ux_agent_license}. Postgres names the index
+     * in its error, and Spring keeps the driver exception as the cause chain, so matching on the
+     * index name is both specific and stable -- unlike catching the exception type alone, which
+     * says nothing about WHICH constraint failed. */
+    private static boolean mentionsLicenseIndex(Throwable throwable) {
+        for (Throwable current = throwable; current != null; current = current.getCause()) {
+            if (current.getMessage() != null && current.getMessage().contains("ux_agent_license")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private final AgentProfileRepository agentProfileRepository;
     private final CommissionPlanRepository commissionPlanRepository;
     private final CommissionRuleRepository commissionRuleRepository;
@@ -122,6 +140,19 @@ public class DistributionApiImpl implements DistributionApi {
                 "License expiry " + request.licenseExpiryDate() + " is not in the future");
         }
 
+        // 4. Length is checked HERE rather than left to the column, because
+        //    agent_profile.license_number is VARCHAR(50) and an over-long value would otherwise
+        //    reach the database as a DataIntegrityViolationException -- which the catch below
+        //    used to report, wrongly, as "already in use". Matches openapi-distribution.yaml's
+        //    declared maxLength.
+        if (request.licenseNumber() == null || request.licenseNumber().isBlank()) {
+            throw new DistributionValidationException("A license number is required");
+        }
+        if (request.licenseNumber().length() > MAX_LICENSE_NUMBER_LENGTH) {
+            throw new DistributionValidationException("License number is " + request.licenseNumber().length()
+                + " characters; the maximum is " + MAX_LICENSE_NUMBER_LENGTH);
+        }
+
         AgentProfile agent = new AgentProfile(tenantId, request.partyId(), request.licenseNumber(),
             request.licenseExpiryDate(), request.hierarchyParentId(), null, onboardedBy);
 
@@ -136,8 +167,18 @@ public class DistributionApiImpl implements DistributionApi {
         try {
             agentProfileRepository.saveAndFlush(agent);
         } catch (DataIntegrityViolationException e) {
-            throw new DistributionValidationException(
-                "License number '" + request.licenseNumber() + "' is already in use in this tenant");
+            // Narrowed to the licence index specifically. This catch used to convert EVERY
+            // integrity violation into "License number '...' is already in use", which meant a
+            // value-too-long, a NOT NULL violation or a bad FK all reported a duplicate that did
+            // not exist -- a 422 with a confidently false explanation, and a genuinely misleading
+            // one to debug (found while writing the contract test, where an over-long licence
+            // number reported itself as a duplicate of a UUID nothing else had ever used).
+            // Anything that is NOT the licence collision rethrows and surfaces honestly.
+            if (mentionsLicenseIndex(e)) {
+                throw new DistributionValidationException(
+                    "License number '" + request.licenseNumber() + "' is already in use in this tenant");
+            }
+            throw e;
         }
 
         // Matches api/asyncapi-events.yaml's AgentOnboardedPayload field-for-field.
