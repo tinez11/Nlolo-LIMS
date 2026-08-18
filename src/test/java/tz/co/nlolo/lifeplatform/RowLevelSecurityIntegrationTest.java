@@ -110,7 +110,14 @@ class RowLevelSecurityIntegrationTest {
             // policy_projection with their own policies. Until now no test in this class or
             // AppRolePrivilegesIntegrationTest touched the module at all.
             "db-migrations/distribution/V1__create_distribution_schema.sql",
-            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            // M8 (Task 9) additions. reinsurance/V1 enabled RLS on only ONE of its three tables
+            // (reinsurance_treaty) and granted app_role nothing; V2 is what adds both cession's and
+            // claim_recovery's policies, plus the grants that let app_role reach the schema at all.
+            // Until now no test in this class or AppRolePrivilegesIntegrationTest touched the
+            // module at all.
+            "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
+            "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -661,6 +668,110 @@ class RowLevelSecurityIntegrationTest {
                 assertThat(resultSet.next()).isTrue();
                 assertThat(resultSet.getString(1)).isEqualTo("RLS-DIST-A");
                 assertThat(resultSet.next()).as("tenant B's accrual must be invisible").isFalse();
+            }
+        }
+    }
+
+    /**
+     * M8 addition: proves the two tables reinsurance/V2 protects for the first time -- {@code
+     * cession} and {@code claim_recovery} -- are genuinely tenant-isolated. V1 enabled RLS on
+     * {@code reinsurance_treaty} only; these two carried {@code tenant_id NOT NULL} and no policy
+     * at all, so app_role could read every tenant's ceded amounts and recoveries. Checked together
+     * because a {@code claim_recovery} row only makes sense once its parent treaty exists, and the
+     * same two-tenant fixture serves both.
+     */
+    @Test
+    @Order(10)
+    void cessionAndClaimRecoveryAreTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        UUID treatyA = UUID.randomUUID();
+        UUID treatyB = UUID.randomUUID();
+        UUID cessionA = UUID.randomUUID();
+        UUID cessionB = UUID.randomUUID();
+        UUID recoveryA = UUID.randomUUID();
+        UUID recoveryB = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            try (PreparedStatement insertTreaty = connection.prepareStatement(
+                    "INSERT INTO reinsurance.reinsurance_treaty (treaty_id, tenant_id, reinsurer_name, "
+                    + "treaty_type, retention_limit_amount, retention_limit_currency, effective_from) "
+                    + "VALUES (?, ?, 'Africa Re', 'XOL', 1500000.00, 'TZS', CURRENT_DATE)")) {
+                insertTreaty.setObject(1, treatyA);
+                insertTreaty.setObject(2, tenantA);
+                assertThat(insertTreaty.executeUpdate()).isEqualTo(1);
+                insertTreaty.setObject(1, treatyB);
+                insertTreaty.setObject(2, tenantB);
+                assertThat(insertTreaty.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertCession = connection.prepareStatement(
+                    "INSERT INTO reinsurance.cession (cession_id, tenant_id, policy_number, treaty_id, "
+                    + "ceded_amount, ceded_currency) VALUES (?, ?, ?, ?, 500000.00, 'TZS')")) {
+                insertCession.setObject(1, cessionA);
+                insertCession.setObject(2, tenantA);
+                insertCession.setString(3, "RLS-RI-POL-A");
+                insertCession.setObject(4, treatyA);
+                assertThat(insertCession.executeUpdate()).isEqualTo(1);
+                insertCession.setObject(1, cessionB);
+                insertCession.setObject(2, tenantB);
+                insertCession.setString(3, "RLS-RI-POL-B");
+                insertCession.setObject(4, treatyB);
+                assertThat(insertCession.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertRecovery = connection.prepareStatement(
+                    "INSERT INTO reinsurance.claim_recovery (recovery_id, tenant_id, claim_id, treaty_id, "
+                    + "recoverable_amount, recoverable_currency) VALUES (?, ?, ?, ?, 250000.00, 'TZS')")) {
+                insertRecovery.setObject(1, recoveryA);
+                insertRecovery.setObject(2, tenantA);
+                insertRecovery.setObject(3, UUID.randomUUID());
+                insertRecovery.setObject(4, treatyA);
+                assertThat(insertRecovery.executeUpdate()).isEqualTo(1);
+                insertRecovery.setObject(1, recoveryB);
+                insertRecovery.setObject(2, tenantB);
+                insertRecovery.setObject(3, UUID.randomUUID());
+                insertRecovery.setObject(4, treatyB);
+                assertThat(insertRecovery.executeUpdate()).isEqualTo(1);
+            }
+        }
+
+        // Negative control: both tenants' rows really are present when RLS is not in play.
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement selectCessions = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM reinsurance.cession WHERE tenant_id IN (?, ?)");
+             PreparedStatement selectRecoveries = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM reinsurance.claim_recovery WHERE tenant_id IN (?, ?)")) {
+            selectCessions.setObject(1, tenantA);
+            selectCessions.setObject(2, tenantB);
+            try (ResultSet resultSet = selectCessions.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
+            selectRecoveries.setObject(1, tenantA);
+            selectRecoveries.setObject(2, tenantB);
+            try (ResultSet resultSet = selectRecoveries.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT policy_number FROM reinsurance.cession")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("RLS-RI-POL-A");
+                assertThat(resultSet.next()).as("tenant B's cession must be invisible").isFalse();
+            }
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT recovery_id FROM reinsurance.claim_recovery")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo(recoveryA.toString());
+                assertThat(resultSet.next()).as("tenant B's recovery must be invisible").isFalse();
             }
         }
     }

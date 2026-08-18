@@ -176,7 +176,13 @@ class AppRolePrivilegesIntegrationTest {
             // exists to catch); V2 is what grants app_role anything at all here.
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
-            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            // M8 (Task 9) additions: reinsurance appeared in NEITHER this class nor
+            // RowLevelSecurityIntegrationTest until now -- the same gap distribution had entering
+            // M7. reinsurance/V1 has zero GRANT statements (the recurring V1 pattern this class
+            // exists to catch); V2 is what grants app_role anything at all here.
+            "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
+            "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -678,6 +684,65 @@ class AppRolePrivilegesIntegrationTest {
             assertThat(update.executeUpdate()).isEqualTo(1);
         } catch (SQLException e) {
             fail("app_role could not update distribution.commission_statement: " + e.getMessage());
+        }
+    }
+
+    /**
+     * M8 (Task 9). The UPDATE half is the point: {@code confirmed_at} is stamped strictly AFTER the
+     * row is written -- a recovery is calculated first (event-driven, on claim settlement) and
+     * confirmed later, sometime after, once staff verify the reinsurer actually paid -- so a grant
+     * allowing only INSERT/SELECT would leave recovery confirmation dead in production while every
+     * superuser-connected test stayed green. {@code claim_recovery.treaty_id} is a real FK, so a
+     * treaty is inserted first.
+     */
+    @Test
+    void appRoleCanReadWriteAndUpdateAClaimRecovery() {
+        UUID tenantId = UUID.randomUUID();
+        UUID treatyId = UUID.randomUUID();
+        UUID claimId = UUID.randomUUID();
+        UUID recoveryId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insertTreaty = connection.prepareStatement(
+                 "INSERT INTO reinsurance.reinsurance_treaty (treaty_id, tenant_id, reinsurer_name, treaty_type, "
+                 + "retention_limit_amount, retention_limit_currency, effective_from) "
+                 + "VALUES (?, ?, 'Africa Re', 'XOL', 1500000.00, 'TZS', CURRENT_DATE)")) {
+            insertTreaty.setObject(1, treatyId);
+            insertTreaty.setObject(2, tenantId);
+            assertThat(insertTreaty.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into reinsurance.reinsurance_treaty: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO reinsurance.claim_recovery (recovery_id, tenant_id, claim_id, treaty_id, "
+                 + "recoverable_amount, recoverable_currency) VALUES (?, ?, ?, ?, 500000.00, 'TZS')")) {
+            insert.setObject(1, recoveryId);
+            insert.setObject(2, tenantId);
+            insert.setObject(3, claimId);
+            insert.setObject(4, treatyId);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into reinsurance.claim_recovery: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT confirmed_at FROM reinsurance.claim_recovery WHERE recovery_id = ?")) {
+            select.setObject(1, recoveryId);
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getTimestamp(1)).as("confirmed_at must start null").isNull();
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from reinsurance.claim_recovery: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE reinsurance.claim_recovery SET confirmed_at = now() WHERE recovery_id = ?")) {
+            update.setObject(1, recoveryId);
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not update reinsurance.claim_recovery: " + e.getMessage());
         }
     }
 }
