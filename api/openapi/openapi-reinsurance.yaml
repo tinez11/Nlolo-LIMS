@@ -47,7 +47,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422':
-          description: "Reinsurer name is blank or too long, retention limit is negative, cessionPercent is missing for QUOTA_SHARE or present for SURPLUS/XOL, cessionPercent is out of the (0, 100] range, or effectiveTo is before effectiveFrom"
+          description: "Reinsurer name is too long, retention limit is negative, cessionPercent is missing for QUOTA_SHARE or present for SURPLUS/XOL, cessionPercent is out of the (0, 100] range, or effectiveTo is before effectiveFrom. A blank reinsurer name is a 400 (see BadRequest), not a 422."
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -160,7 +160,7 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
         '409':
-          description: "Recovery is already confirmed"
+          description: "Either the recovery is already confirmed (errorCode REINSURANCE_INVALID_STATE), or a genuine concurrent double-confirm lost an optimistic-locking race on ClaimRecovery's @Version column (errorCode CONCURRENT_MODIFICATION, see GlobalExceptionHandler.handleOptimisticLockingFailure) -- re-read the resource and retry in that second case."
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }

@@ -1,7 +1,7 @@
 # Deliverable 4 — API Contract Specification
 **Digital Life Insurance Core Platform — Tanzania (Phase 0, Artifact 4 of 8)**
 
-> Companion OpenAPI 3.1 files (delivered alongside this document): `openapi-common.yaml`, `openapi-underwriting.yaml`, `openapi-policy.yaml`, `openapi-policyloan.yaml`, `openapi-billing.yaml`, `openapi-claims.yaml`, `openapi-product.yaml`, `openapi-party.yaml`, `openapi-distribution.yaml`, `openapi-payment.yaml`, `openapi-regreporting-document-refdata.yaml` (three documents in one file, split before tooling use — noted in-file).
+> Companion OpenAPI 3.1 files (delivered alongside this document): `openapi-common.yaml`, `openapi-underwriting.yaml`, `openapi-policy.yaml`, `openapi-policyloan.yaml`, `openapi-billing.yaml`, `openapi-claims.yaml`, `openapi-product.yaml`, `openapi-party.yaml`, `openapi-distribution.yaml`, `openapi-payment.yaml`, `openapi-reinsurance.yaml`, `openapi-regreporting-document-refdata.yaml` (three documents in one file, split before tooling use — noted in-file).
 
 ---
 
@@ -18,7 +18,7 @@ What follows, therefore, is only the subset of each module's behavior that an ex
 | `omnichannel` | It's a caller of other modules' APIs, not a callee — USSD/SMS session logic lives here but nothing external calls *into* this module directly. |
 | `iam` | Authentication is Keycloak's own OIDC endpoints, not a contract this platform defines. |
 | `audit` | Pure event listener; even its read API (`getTrail`) is exposed as a query capability inside the staff back-office and regulator surfaces conceptually, but there's no independent "audit service" a channel talks to directly in Phase 0 — revisit if a dedicated compliance-investigation UI is needed later. |
-| `reinsurance` | Entirely back-office/treaty-administration; in Phase 0 this is staff-portal CRUD indistinguishable in shape from `product`'s authoring endpoints — a full spec adds no new pattern, so it's deferred rather than padded out here. Flag if you want it specified explicitly before Deliverable 6. |
+| `reinsurance` | ~~Entirely back-office/treaty-administration; deferred rather than padded out here.~~ **M8 specified and built this surface**: six staff/finance-only endpoints (treaty authoring, treaty read/list, cession and recovery listing, recovery confirmation). See `api/openapi/openapi-reinsurance.yaml`. |
 | `communication` | Triggered exclusively by domain events; no channel calls "send a notification" directly. A staff-facing dispatch-history view could be added later if support teams need to check delivery status per customer — not specified now since it wasn't asked for. |
 | `finaccounting` | Internal-only in Phase 0 (staff never call it directly; it's consumed by `regreporting`) and its aggregate design itself is still gated on C1 — an OpenAPI contract here would be built on a foundation that's explicitly not final. |
 

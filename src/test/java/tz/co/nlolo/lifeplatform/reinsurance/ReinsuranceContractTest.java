@@ -327,9 +327,9 @@ class ReinsuranceContractTest {
      * 422, so the service's own "A reinsurer name is required" branch is genuinely unreachable via
      * HTTP (it IS reached by {@code ReinsuranceApiIntegrationTest.rejectsABlankReinsurerName}, which
      * calls {@code ReinsuranceApi} directly). This test asserts the real, reachable status rather
-     * than the brief's literal guess -- openapi-reinsurance.yaml's 422 description text listing
-     * "blank" alongside "too long" is imprecise for this one sub-case; the DTO/spec-string mismatch
-     * is a pre-existing documentation nit, not something this task's scope covers fixing.
+     * than the brief's literal guess. Final review (M2) corrected openapi-reinsurance.yaml's 422
+     * description, which used to list "blank" as a cause alongside "too long" despite blank being
+     * unreachable via HTTP; it now says a blank name is a 400, matching this test.
      */
     @Test
     void createTreatyReturns400ForABlankReinsurerName() throws Exception {

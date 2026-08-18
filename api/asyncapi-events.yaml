@@ -599,7 +599,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { claimId: {type: string, format: uuid}, policyNumber: {type: string}, settledAmount: {type: object}, settledAt: {type: string, format: date-time} }
+          properties: { claimId: {type: string, format: uuid}, policyNumber: {type: string}, settledAmount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}}, settledAt: {type: string, format: date-time} }
 
     AgentOnboardedPayload:
       allOf:
@@ -717,7 +717,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { cessionId: {type: string, format: uuid}, policyNumber: {type: string}, treatyId: {type: string, format: uuid}, cededAmount: {type: object}, cededPremium: {type: object, nullable: true} }
+          properties: { cessionId: {type: string, format: uuid}, policyNumber: {type: string}, treatyId: {type: string, format: uuid}, cededAmount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}}, cededPremium: {type: object, nullable: true, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
     RecoveryCalculatedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
