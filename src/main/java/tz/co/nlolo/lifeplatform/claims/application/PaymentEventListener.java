@@ -202,8 +202,20 @@ public class PaymentEventListener {
             claim.markSettled();
             claimRepository.save(claim);
             if (!alreadySettled) {
+                // M8: policyNumber and settledAmount added. Until now this event carried only
+                // claimId + settledAt, so no consumer could attribute a settlement to a policy or
+                // know what was paid -- reinsurance needs both to compute a claim recovery, and
+                // finaccounting (M9) needs the amount for its journal posting. Both values are
+                // already on the loaded Claim, so this is purely additive; the alternative
+                // (triggering recovery from claims.ClaimApproved, which does carry them) was
+                // rejected because approval precedes the rail and a settlement can still fail,
+                // and a recoverable booked against money that never moved overstates assets.
                 eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettled", tenantId,
-                    Map.of("claimId", claimId, "settledAt", Instant.now().toString())));
+                    Map.of("claimId", claimId,
+                           "policyNumber", claim.getPolicyNumber(),
+                           "settledAmount", Map.of("amount", claim.getApprovedAmount().toPlainString(),
+                                                    "currencyCode", claim.getApprovedCurrency()),
+                           "settledAt", Instant.now().toString())));
             }
             return new SettledClaimFacts(alreadySettled, claim.getClaimType(), claim.getPolicyNumber());
         });

@@ -210,7 +210,11 @@ channels:
     publish:
       message: { $ref: '#/components/messages/ClaimSettlementRequested' }
   claims.ClaimSettled:
-    description: "Producer: claims (confirmation, after consuming payment.DisbursementCompleted). Consumers: finaccounting, communication, audit, regreporting."
+    description: >-
+      "Producer: claims (confirmation, after consuming payment.DisbursementCompleted). Consumers:
+      reinsurance (claim recovery), finaccounting, communication, audit, regreporting. policyNumber
+      and settledAmount were added in M8: without them no consumer could attribute a settlement to
+      a policy or know what was paid."
     publish:
       message: { $ref: '#/components/messages/ClaimSettled' }
 
@@ -595,7 +599,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { claimId: {type: string, format: uuid}, settledAt: {type: string, format: date-time} }
+          properties: { claimId: {type: string, format: uuid}, policyNumber: {type: string}, settledAmount: {type: object}, settledAt: {type: string, format: date-time} }
 
     AgentOnboardedPayload:
       allOf:
@@ -713,7 +717,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { cessionId: {type: string, format: uuid}, policyNumber: {type: string}, treatyId: {type: string, format: uuid}, cededAmount: {type: object} }
+          properties: { cessionId: {type: string, format: uuid}, policyNumber: {type: string}, treatyId: {type: string, format: uuid}, cededAmount: {type: object}, cededPremium: {type: object, nullable: true} }
     RecoveryCalculatedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
