@@ -1,0 +1,80 @@
+package tz.co.nlolo.lifeplatform.reinsurance.domain;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.IdClass;
+import jakarta.persistence.Table;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.UUID;
+
+/**
+ * Maps {@code reinsurance.policy_projection} (V2 section 11) -- reinsurance's OWN state, not a
+ * cache of policy's. `policy` is not in this module's allowedDependencies, so this projection
+ * (built solely from {@code policy.PolicyIssued}) is how reinsurance learns a policy's sum assured
+ * and premium without ever calling {@code PolicyApi}.
+ *
+ * <p>Composite primary key {@code (tenant_id, policy_number)} -- see {@link PolicyProjectionId}.
+ */
+@Entity
+@Table(name = "policy_projection", schema = "reinsurance")
+@IdClass(PolicyProjectionId.class)
+public class PolicyProjection {
+
+    @Id
+    @Column(name = "tenant_id")
+    private UUID tenantId;
+
+    @Id
+    @Column(name = "policy_number")
+    private String policyNumber;
+
+    @Column(name = "product_id", nullable = false)
+    private UUID productId;
+
+    @Column(name = "sum_assured_amount", nullable = false)
+    private BigDecimal sumAssuredAmount;
+
+    @Column(name = "sum_assured_currency", nullable = false)
+    private String sumAssuredCurrency;
+
+    @Column(name = "premium_amount", nullable = false)
+    private BigDecimal premiumAmount;
+
+    @Column(name = "premium_currency", nullable = false)
+    private String premiumCurrency;
+
+    @Column(name = "issue_date", nullable = false)
+    private LocalDate issueDate;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt = Instant.now();
+
+    protected PolicyProjection() {}
+
+    public PolicyProjection(UUID tenantId, String policyNumber, UUID productId,
+                             BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                             BigDecimal premiumAmount, String premiumCurrency, LocalDate issueDate) {
+        this.tenantId = tenantId;
+        this.policyNumber = policyNumber;
+        this.productId = productId;
+        this.sumAssuredAmount = sumAssuredAmount;
+        this.sumAssuredCurrency = sumAssuredCurrency;
+        this.premiumAmount = premiumAmount;
+        this.premiumCurrency = premiumCurrency;
+        this.issueDate = issueDate;
+    }
+
+    public UUID getTenantId() { return tenantId; }
+    public String getPolicyNumber() { return policyNumber; }
+    public UUID getProductId() { return productId; }
+    public BigDecimal getSumAssuredAmount() { return sumAssuredAmount; }
+    public String getSumAssuredCurrency() { return sumAssuredCurrency; }
+    public BigDecimal getPremiumAmount() { return premiumAmount; }
+    public String getPremiumCurrency() { return premiumCurrency; }
+    public LocalDate getIssueDate() { return issueDate; }
+    public Instant getCreatedAt() { return createdAt; }
+}
