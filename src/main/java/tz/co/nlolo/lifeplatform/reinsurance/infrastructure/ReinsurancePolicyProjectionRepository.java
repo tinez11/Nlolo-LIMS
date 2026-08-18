@@ -7,6 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface PolicyProjectionRepository extends JpaRepository<PolicyProjection, PolicyProjectionId> {
+public interface ReinsurancePolicyProjectionRepository extends JpaRepository<PolicyProjection, PolicyProjectionId> {
     Optional<PolicyProjection> findByTenantIdAndPolicyNumber(UUID tenantId, String policyNumber);
 }
