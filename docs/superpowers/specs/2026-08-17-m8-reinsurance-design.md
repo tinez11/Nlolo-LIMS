@@ -46,7 +46,7 @@ claims.ClaimSettled  ──► ClaimEventListener  ──► ClaimRecovery      
 (staff REST confirm) ──► ReinsuranceApiImpl  ──► confirmed_at               ──► RecoveryConfirmed
 ```
 
-**Why a local projection.** Cession needs the policy's sum assured; recovery needs to find the policy's cession from a claim. `PolicyApi` is unreachable from here. `reinsurance.policy_projection` (policyNumber → sumAssured, currency, productId, issueDate) is built solely from `policy.PolicyIssued` and is this module's own state, deliberately not reconciled against `policy`. A policy issued before M8 has no projection row, so it cedes nothing and recovers nothing — correct, since those policies predate reinsurance tracking. Fail-silent-and-log, never fail-loud.
+**Why a local projection.** Cession needs the policy's sum assured and premium; recovery needs to find the policy's cession from a claim. `PolicyApi` is unreachable from here. `reinsurance.policy_projection` (policyNumber → sumAssured, premium, their currencies, productId, issueDate) is built solely from `policy.PolicyIssued` and is this module's own state, deliberately not reconciled against `policy`. A policy issued before M8 has no projection row, so it cedes nothing and recovers nothing — correct, since those policies predate reinsurance tracking. Fail-silent-and-log, never fail-loud.
 
 `reinsurance/api/package-info.java` is currently **missing** `@NamedInterface("api")`, exactly as `distribution`'s was entering M7. It is added here; without it any future module declaring `reinsurance::api` fails Modulith verification.
 
@@ -70,6 +70,7 @@ claims.ClaimSettled  ──► ClaimEventListener  ──► ClaimRecovery      
 **New columns**
 - `reinsurer_name VARCHAR(200) NOT NULL` on the treaty (with a backfill for any existing row, though none exist in practice)
 - `status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','EXPIRED'))` on the treaty
+- `ceded_premium_amount NUMERIC(19,2)` + `ceded_premium_currency CHAR(3)` on `cession`, with `ceded_premium_amount > 0` and the two travelling together or not at all (the same paired-nullability CHECK `distribution.commission_rule` uses for its flat amount). Nullable rather than `NOT NULL` because a cession's ceded *risk* is the primary fact and a treaty may legitimately cede risk without a modelled premium share — see §5.
 - Audit columns (`created_by`, `updated_at`, `updated_by`) per `docs/06`'s convention
 
 **New table** — `reinsurance.policy_projection` (composite PK `(tenant_id, policy_number)`, RLS, grants), mirroring `distribution.policy_projection`.
@@ -82,15 +83,21 @@ claims.ClaimSettled  ──► ClaimEventListener  ──► ClaimRecovery      
 
 `PolicyEventListener` — `@Component("reinsurancePolicyEventListener")` (three modules already declare a `PolicyEventListener`), `@TransactionalEventListener(AFTER_COMMIT)`, one reusable `PROPAGATION_REQUIRES_NEW` `TransactionTemplate`, `TenantContext` save/set/restore. One transaction per handler: nothing here calls another module.
 
-1. Write the projection row (unconditionally, before any treaty logic — it is the only place this module ever learns the sum assured).
+1. Write the projection row (unconditionally, before any treaty logic — it is the only place this module ever learns the sum assured *and the premium*).
 2. Resolve the applicable treaty (§2.5). None → log INFO, return.
-3. `CessionCalculator.calculate(treaty, sumAssured, currency)`:
-   - **QUOTA_SHARE** → `cession_percent / 100 × sumAssured`, `HALF_UP` to 2dp
-   - **SURPLUS** → `max(0, sumAssured − retentionLimit)`; a sum assured at or below retention cedes **nothing**, which is the correct and expected outcome, not an error
-   - **XOL** → returns empty with a logged reason; XOL participates only in recovery
-   - Currency mismatch between treaty and policy → cede nothing rather than convert (no FX table exists anywhere on this platform; inventing a rate is worse than not ceding)
-4. Persist the cession; a zero result persists nothing (the `> 0` CHECK would reject it anyway, and "ceded nothing" is not a financial record).
-5. Publish `CessionRecorded` **only when a row was actually written** — a redelivery writes nothing and so publishes nothing, consistent with every idempotent listener on this platform.
+3. `CessionCalculator.calculate(treaty, sumAssured, premium, currency)` returns ceded **risk** and ceded **premium** together:
+
+   | Treaty | Ceded risk | Ceded premium |
+   |---|---|---|
+   | QUOTA_SHARE | `cession_percent / 100 × sumAssured` | `cession_percent / 100 × premium` — the same share of both, which is what a quota-share treaty means |
+   | SURPLUS | `max(0, sumAssured − retentionLimit)` | `premium × (cededRisk / sumAssured)` — proportional to the risk actually ceded |
+   | XOL | none (rejected at issuance, §2.3) | none — an XOL treaty's reinsurance premium is separately negotiated, not a share of the cedent's premium, so inventing one here would be wrong rather than merely incomplete |
+
+   All amounts `HALF_UP` to 2dp. A sum assured at or below a SURPLUS retention cedes **nothing** — correct and expected, not an error. Currency mismatch between treaty and policy → cede nothing rather than convert (no FX table exists anywhere on this platform; inventing a rate is worse than not ceding). Ceded premium uses the policy's premium currency, which `PolicyIssued` carries independently of the sum-assured currency.
+4. Persist the cession; a zero ceded risk persists nothing (the `> 0` CHECK would reject it anyway, and "ceded nothing" is not a financial record).
+5. Publish `CessionRecorded` — payload gains `cededPremium` alongside the existing `cededAmount` — **only when a row was actually written**. A redelivery writes nothing and so publishes nothing, consistent with every idempotent listener on this platform.
+
+**Why ceded premium is in M8 rather than deferred.** `finaccounting` (M9) needs ceded premium for its IFRS 17 ceded-business entries, and `policy.PolicyIssued` already carries `premium` — so the input is present today and the marginal cost is two columns plus one calculator return value. Retrofitting it later would mean a migration, a re-derivation for every cession already written, and a second version of `CessionRecorded`. The *proportionality rule* remains invented and flagged (§8); only the decision to model it at all is settled here.
 
 ---
 
@@ -131,7 +138,7 @@ claims.ClaimSettled  ──► ClaimEventListener  ──► ClaimRecovery      
 Money **and `cessionPercent`** are decimal strings on the wire, never JSON numbers (`docs/06-database-schema.md:32`; a percent multiplies money exactly as a commission rate does). Every nested path verifies the two ids actually belong together before acting — the IDOR class found in M7's final review.
 
 **Tests**
-- `CessionCalculatorTest` — pure, container-free: QS, SURPLUS above/at/below retention, XOL rejection at issuance, currency mismatch, rounding
+- `CessionCalculatorTest` — pure, container-free: QS, SURPLUS above/at/below retention, XOL rejection at issuance, currency mismatch, rounding, **and ceded premium for both implemented tiers** (including that a quota-share cedes the same percent of premium as of risk, and a surplus cedes premium in proportion to the risk it actually ceded)
 - `RecoveryCalculatorTest` — pure: proportional recovery from a cession, XOL excess-over-retention with no cession, a loss below XOL retention recovering nothing, currency mismatch
 - `TreatySelectionTest` — overlapping windows, expired treaties, no match
 - `CessionEndToEndTest` — issues a real policy via `PolicyApi` against real Postgres as `app_role`, asserts real rows
@@ -147,7 +154,7 @@ Money **and `cessionPercent`** are decimal strings on the wire, never JSON numbe
 - The entire cession algorithm (both implemented tier types)
 - The recovery share formula (`settledAmount × cededAmount / sumAssured`) — proportional recovery is the ordinary treaty convention, but no document on this platform states it
 - Treaty selection (one treaty, newest effective window)
-- Ceding on sum assured rather than premium — a real quota-share treaty typically cedes *premium* as well as *risk*, and no ceded-premium concept exists here at all
+- The ceded-premium proportionality rule (§5's table). Modelling ceded premium at all is a settled decision; *how* it is derived — the same percent for quota-share, risk-proportional for surplus — is the invented part. An XOL treaty's separately-negotiated reinsurance premium is deliberately not modelled.
 
 **Deferred deliberately, recorded so the next reader does not rediscover them:**
 - **XOL cession at issuance** — conceptually wrong; XOL is claim-level, and it does recover at claim time (§6), so XOL is *partially* supported rather than absent
@@ -155,7 +162,6 @@ Money **and `cessionPercent`** are decimal strings on the wire, never JSON numbe
 - **Product-scoped treaties** — invents a schema dimension no document mentions
 - **Reinsurer as a `party`** — needs a party type that does not exist and a dependency edge the architecture withholds
 - **Payment integration for recovery settlement** — inbound money is a different flow from anything `payment` models today
-- **Ceded premium** — only ceded *risk* is modelled; `finaccounting` (M9) will likely need ceded premium for IFRS 17
 
 ---
 
