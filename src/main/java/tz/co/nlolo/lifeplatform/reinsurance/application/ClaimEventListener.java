@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.reinsurance.domain.RecoveryCalculator;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.ReinsuranceTreaty;
 import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.CessionRepository;
 import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.ReinsurancePolicyProjectionRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -37,27 +38,53 @@ import java.util.function.Consumer;
  * {@code billing.PremiumCollected}.
  *
  * <p>Mechanics and bean-naming rationale: see {@link PolicyEventListener}.
+ *
+ * <p><b>Known gap (I2, final review) -- XOL recovery resolution is not pinned to the treaty in
+ * force at issuance.</b> For QUOTA_SHARE/SURPLUS, the {@link Cession} row written at issuance
+ * pins which treaty applies, so this listener's recovery-time lookup is stable and correct. For
+ * XOL, there is deliberately no cession (§2.3/§6 of the design spec -- XOL does not cede at
+ * issuance), so PATH 2 below re-runs {@code selectApplicableTreaty} at CLAIM-SETTLEMENT time and
+ * requires the result to be XOL. This can resolve a DIFFERENT treaty than was actually in force
+ * when the policy was issued: for example, if a newer QUOTA_SHARE (or another XOL) treaty was
+ * authored later with a later {@code effectiveFrom} that also covers the original issue date, that
+ * newer treaty now wins the lookup -- either silently changing which treaty is credited, or, if
+ * the newer treaty is not XOL, causing the claim to recover NOTHING under the XOL cover that was
+ * genuinely in force at issuance. This is a genuine architectural gap, not a quick fix: the real
+ * fix is persisting the issuance-time-resolved {@code treaty_id} on {@code policy_projection} (a
+ * migration + a producer change here + a consumer change here), which is deliberately NOT done in
+ * this fix wave -- see the design spec's §8 for the recorded deferral. A future milestone should
+ * persist the issuance-time-resolved treaty id rather than re-resolving it at claim time.
  */
 @Component("reinsuranceClaimEventListener")
 public class ClaimEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(ClaimEventListener.class);
 
+    /** Final review (I5): the catch-all in {@link #withTenant} used to be log-only, so a listener
+     * failure (a malformed payload, an unexpected runtime exception) was invisible to anything but
+     * someone reading logs after the fact. Same naming convention as {@code
+     * claims.application.PaymentEventListener}'s counters; tagged with the event type so a failure
+     * can be attributed to a specific producer without grepping logs first. */
+    private static final String EVENT_PROCESSING_FAILED_COUNTER = "lifeplatform_reinsurance_event_processing_failed_total";
+
     private final ReinsurancePolicyProjectionRepository policyProjectionRepository;
     private final CessionRepository cessionRepository;
     private final ReinsuranceApiImpl reinsuranceApiImpl;
     private final ApplicationEventPublisher eventPublisher;
+    private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public ClaimEventListener(ReinsurancePolicyProjectionRepository policyProjectionRepository,
                                CessionRepository cessionRepository,
                                ReinsuranceApiImpl reinsuranceApiImpl,
                                ApplicationEventPublisher eventPublisher,
+                               MeterRegistry meterRegistry,
                                PlatformTransactionManager transactionManager) {
         this.policyProjectionRepository = policyProjectionRepository;
         this.cessionRepository = cessionRepository;
         this.reinsuranceApiImpl = reinsuranceApiImpl;
         this.eventPublisher = eventPublisher;
+        this.meterRegistry = meterRegistry;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -78,6 +105,7 @@ public class ClaimEventListener {
             Map<String, Object> payload = (Map<String, Object>) envelope.payload();
             requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
         } catch (Exception e) {
+            meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("reinsurance failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
         } finally {
             if (previousTenant != null) {
@@ -108,7 +136,11 @@ public class ClaimEventListener {
 
         // PATH 1 -- the policy was ceded at issuance (QUOTA_SHARE or SURPLUS): the reinsurer's
         // share of this loss is the same fraction it took of the sum assured.
-        List<Cession> cessions = cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
+        // Ordered by createdAt so which row is picked is deterministic rather than dependent on
+        // database row order -- moot today under the one-treaty-per-policy design (at most one
+        // cession row can exist per policy at all, backstopped by ux_cession_once), but cheap
+        // insurance if that invariant is ever relaxed (M5, final review).
+        List<Cession> cessions = cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber);
         if (!cessions.isEmpty()) {
             Cession cession = cessions.get(0);   // one treaty per policy -- see selectApplicableTreaty
             RecoveryCalculator.proportional(cession, projection.getSumAssuredAmount(), settledAmount, settledCurrency)

@@ -185,6 +185,24 @@ groups:
           summary: "An agent's commission payout was declined by the rail and is awaiting a staff retry"
           description: "The statement is at PAYOUT_FAILED with the rail's reason recorded, and no automatic retry will happen. Search logs for 'Commission payout FAILED' to get the statementId and reason. Common causes are a bad or unregistered payee MSISDN and insufficient float. Fix the underlying cause, then request payout again -- the retry MUST use a new idempotency key, or payment will dedupe it away silently."
 
+      # M8 final-review fix (I5). reinsurance.application.PolicyEventListener and
+      # ClaimEventListener each wrap their event handling in a catch-all that used to be log-only:
+      # a malformed payload or an unexpected runtime exception during cession or recovery
+      # processing was invisible to anything but someone reading logs after the fact, exactly the
+      # class of gap M6's I5/C1 and M7's equivalent fixes closed for claims/distribution.
+      #
+      # Any occurrence: a cession or recovery that fails to process is a missed financial record
+      # (ceded risk never booked, or a reinsurance recoverable never booked) with no other signal
+      # anywhere -- there is no compensating retry, and the redelivery/idempotency machinery here
+      # only protects against DUPLICATE processing, not against a processing failure being silent.
+      - alert: ReinsuranceEventProcessingFailed
+        expr: increase(lifeplatform_reinsurance_event_processing_failed_total[15m]) > 0
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "reinsurance failed to process a domain event -- a cession or recovery may be missing"
+          description: "PolicyEventListener or ClaimEventListener threw while handling policy.PolicyIssued or claims.ClaimSettled. Search logs for 'reinsurance failed to process' to get the event type and tenant, then inspect whether the expected cession/recovery row exists and investigate the underlying cause (a malformed payload, a database error) before deciding whether to replay the event."
+
       - alert: PostgresDiskSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
         for: 10m

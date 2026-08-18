@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.reinsurance.domain.CessionCalculator;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.PolicyProjection;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.ReinsuranceTreaty;
 import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.ReinsurancePolicyProjectionRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -50,18 +51,28 @@ public class PolicyEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(PolicyEventListener.class);
 
+    /** Final review (I5): the catch-all in {@link #withTenant} used to be log-only, so a listener
+     * failure (a malformed payload, an unexpected runtime exception) was invisible to anything but
+     * someone reading logs after the fact. Same naming convention as {@code
+     * claims.application.PaymentEventListener}'s counters; tagged with the event type so a failure
+     * can be attributed to a specific producer without grepping logs first. */
+    private static final String EVENT_PROCESSING_FAILED_COUNTER = "lifeplatform_reinsurance_event_processing_failed_total";
+
     private final ReinsurancePolicyProjectionRepository policyProjectionRepository;
     private final ReinsuranceApiImpl reinsuranceApiImpl;
     private final ApplicationEventPublisher eventPublisher;
+    private final MeterRegistry meterRegistry;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public PolicyEventListener(ReinsurancePolicyProjectionRepository policyProjectionRepository,
                                 ReinsuranceApiImpl reinsuranceApiImpl,
                                 ApplicationEventPublisher eventPublisher,
+                                MeterRegistry meterRegistry,
                                 PlatformTransactionManager transactionManager) {
         this.policyProjectionRepository = policyProjectionRepository;
         this.reinsuranceApiImpl = reinsuranceApiImpl;
         this.eventPublisher = eventPublisher;
+        this.meterRegistry = meterRegistry;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -82,6 +93,7 @@ public class PolicyEventListener {
             Map<String, Object> payload = (Map<String, Object>) envelope.payload();
             requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
         } catch (Exception e) {
+            meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("reinsurance failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
         } finally {
             if (previousTenant != null) {
