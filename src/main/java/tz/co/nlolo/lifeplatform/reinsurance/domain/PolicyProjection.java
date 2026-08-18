@@ -19,7 +19,14 @@ import java.util.UUID;
  *
  * <p>Composite primary key {@code (tenant_id, policy_number)} -- see {@link PolicyProjectionId}.
  */
-@Entity
+// Explicit entity name: distribution's own PolicyProjection entity shares this simple class name
+// (same reasoning as ReinsurancePolicyProjectionRepository's rename -- Hibernate derives an
+// entity's name from the simple class name by default, and two distinct @Entity classes on the
+// classpath sharing one name is a hard DuplicateMappingException at context refresh). Qualifying
+// the JPA entity name (not the Java class/file) is enough: nothing in this codebase references
+// either entity by JPQL name string (checked before this change), so this is a safe, isolated fix
+// on reinsurance's side only -- distribution's already-shipped entity stays untouched.
+@Entity(name = "ReinsurancePolicyProjection")
 @Table(name = "policy_projection", schema = "reinsurance")
 @IdClass(PolicyProjectionId.class)
 public class PolicyProjection {
