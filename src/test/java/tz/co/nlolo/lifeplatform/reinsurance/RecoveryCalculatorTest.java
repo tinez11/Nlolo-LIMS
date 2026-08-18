@@ -40,6 +40,22 @@ class RecoveryCalculatorTest {
             .contains(new BigDecimal("33.33"));
     }
 
+    /** Final review (I3, safe half). {@code claims.Claim.approve} does not cap {@code
+     * approvedAmount} at the policy's sum assured, so a settled amount CAN legitimately exceed the
+     * sum assured this formula divides by -- without a cap, {@code settledAmount x cededAmount /
+     * sumAssured} then returns MORE than what was actually ceded, which would book the reinsurer
+     * for more risk than it agreed to cover under this cession. Here: 1,500,000 of a 2,000,000 sum
+     * assured was ceded (75%), but the claim settled at 3,000,000 (150% of sum assured) -- an
+     * uncapped formula would compute 4,500,000, strictly greater than the 1,500,000 actually ceded.
+     * The recovery must be capped at cededAmount instead. */
+    @Test
+    void proportionalRecoveryIsCappedAtTheCededAmountWhenSettledExceedsSumAssured() {
+        assertThat(RecoveryCalculator.proportional(cession("1500000.00", "TZS"),
+            new BigDecimal("2000000.00"), new BigDecimal("3000000.00"), "TZS"))
+            .as("the reinsurer can never owe more than what it agreed to cover")
+            .contains(new BigDecimal("1500000.00"));
+    }
+
     @Test
     void proportionalRecoveryIsEmptyOnACurrencyMismatch() {
         assertThat(RecoveryCalculator.proportional(cession("1500000.00", "TZS"),

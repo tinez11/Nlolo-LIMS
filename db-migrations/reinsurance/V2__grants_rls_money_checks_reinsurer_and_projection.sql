@@ -142,9 +142,21 @@ ALTER TABLE reinsurance.cession
 --     the same facts, double-counting ceded risk and recoverables. These indexes
 --     are the real backstop; the application-layer checks in Tasks 4 and 5 are a
 --     convenience early-return, not the source of truth.
+--
+--     Keyed on (tenant, policy) / (tenant, claim) ONLY, deliberately WITHOUT
+--     treaty_id -- the design is exactly one treaty per policy (deterministic
+--     newest-effective-from selection, ReinsuranceApiImpl.selectApplicableTreaty),
+--     never one per (policy, treaty) pair. Keying on treaty_id as well was a final-
+--     review defect (I1): staff authoring a NEW treaty with a later effective_from
+--     changes which treaty a repeat lookup resolves to, so a redelivered event would
+--     resolve a different treaty_id than the original cession/recovery, find no
+--     existing row for THAT treaty_id, and silently write a second, double-booked
+--     financial record for the same policy/claim. Keying on the policy/claim alone
+--     makes "already recorded for this policy/claim" the real invariant, matching
+--     the one-treaty-per-policy design.
 -- =============================================================================
-CREATE UNIQUE INDEX ux_cession_once ON reinsurance.cession (tenant_id, policy_number, treaty_id);
-CREATE UNIQUE INDEX ux_recovery_once ON reinsurance.claim_recovery (tenant_id, claim_id, treaty_id);
+CREATE UNIQUE INDEX ux_cession_once ON reinsurance.cession (tenant_id, policy_number);
+CREATE UNIQUE INDEX ux_recovery_once ON reinsurance.claim_recovery (tenant_id, claim_id);
 
 -- =============================================================================
 -- 11. policy_projection -- reinsurance's OWN state, not a cache of policy's.

@@ -123,7 +123,7 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
     @Override
     public List<CessionView> listCessionsForPolicy(String policyNumber) {
         UUID tenantId = TenantContext.get();
-        return cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).stream()
+        return cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber).stream()
             .map(this::toCessionView).toList();
     }
 
@@ -156,23 +156,27 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
 
     /**
      * Exactly one ACTIVE treaty whose effective window covers {@code issueDate}. Where several
-     * match, the newest {@code effective_from} wins and a tie on that is broken by {@code treatyId}
-     * so selection is fully deterministic rather than dependent on row order -- an invented rule,
-     * flagged, and the reason multi-treaty layering is deferred (see the design spec).
+     * match, the newest {@code effective_from} wins and a tie on that is broken by {@code
+     * createdAt} (most recently authored wins) so selection is fully deterministic rather than
+     * dependent on row order -- an invented rule, flagged, and the reason multi-treaty layering is
+     * deferred (see the design spec). {@code createdAt} is a semantically meaningful tie-break
+     * ("most recently authored wins"); the treaty's random UUID primary key, used previously, has
+     * no relation to authoring order and was arbitrary.
      */
     Optional<ReinsuranceTreaty> selectApplicableTreaty(UUID tenantId, LocalDate issueDate) {
         return treatyRepository.findByTenantIdAndStatusOrderByEffectiveFromDesc(tenantId, TreatyStatus.ACTIVE)
             .stream()
             .filter(t -> t.isActiveOn(issueDate))
             .max(Comparator.comparing(ReinsuranceTreaty::getEffectiveFrom)
-                .thenComparing(ReinsuranceTreaty::getTreatyId));
+                .thenComparing(ReinsuranceTreaty::getCreatedAt));
     }
 
-    /** @return the persisted cession, or empty if one already exists for this (policy, treaty) --
-     * making a redelivered PolicyIssued a no-op. {@code ux_cession_once} is the real backstop. */
+    /** @return the persisted cession, or empty if one already exists for this policy -- making a
+     * redelivered PolicyIssued a no-op. {@code ux_cession_once} (keyed on (tenant, policy) only,
+     * matching the one-treaty-per-policy design) is the real backstop. */
     Optional<Cession> persistCession(UUID tenantId, String policyNumber, ReinsuranceTreaty treaty,
                                       CessionCalculator.CededAmounts amounts) {
-        if (cessionRepository.existsByTenantIdAndPolicyNumberAndTreatyId(tenantId, policyNumber, treaty.getTreatyId())) {
+        if (cessionRepository.existsByTenantIdAndPolicyNumber(tenantId, policyNumber)) {
             return Optional.empty();
         }
         Cession cession = new Cession(tenantId, policyNumber, treaty.getTreatyId(),
@@ -181,10 +185,12 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
         return Optional.of(cession);
     }
 
-    /** @return the persisted recovery, or empty if one already exists for this (claim, treaty). */
+    /** @return the persisted recovery, or empty if one already exists for this claim. {@code
+     * ux_recovery_once} (keyed on (tenant, claim) only, matching the one-treaty-per-policy design)
+     * is the real backstop. */
     Optional<ClaimRecovery> persistRecovery(UUID tenantId, UUID claimId, UUID treatyId,
                                              BigDecimal amount, String currency, String createdBy) {
-        if (claimRecoveryRepository.existsByTenantIdAndClaimIdAndTreatyId(tenantId, claimId, treatyId)) {
+        if (claimRecoveryRepository.existsByTenantIdAndClaimId(tenantId, claimId)) {
             return Optional.empty();
         }
         ClaimRecovery recovery = new ClaimRecovery(tenantId, claimId, treatyId, amount, currency, createdBy);

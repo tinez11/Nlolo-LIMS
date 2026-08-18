@@ -16,7 +16,17 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
-/** Maps {@code reinsurance.reinsurance_treaty} (V1 + V2). */
+/**
+ * Maps {@code reinsurance.reinsurance_treaty} (V1 + V2).
+ *
+ * <p><b>Treaty capacity/layer limits are NOT modelled (I3, final review).</b> A real SURPLUS
+ * treaty has a finite line capacity and a real XOL treaty is "N excess of M" -- a layer with an
+ * upper limit -- but this entity carries no capacity/limit column of any kind, and nothing
+ * enforces one: see {@link RecoveryCalculator#excessOfLoss} for the concrete consequence (XOL
+ * cover is effectively unlimited above retention as implemented). A missing concept, not a bug in
+ * what exists; deferred in the design spec's §8 pending an actual business rule for what happens
+ * above capacity, which no document on this platform currently defines.
+ */
 @Entity
 @Table(name = "reinsurance_treaty", schema = "reinsurance")
 public class ReinsuranceTreaty {

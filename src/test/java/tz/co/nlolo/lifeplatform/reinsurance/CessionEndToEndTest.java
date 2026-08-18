@@ -196,7 +196,7 @@ class CessionEndToEndTest {
         String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("2000000"), new BigDecimal("100000.00"));
 
         TenantContext.set(tenantId);
-        List<Cession> cessions = cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
+        List<Cession> cessions = cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber);
         assertThat(cessions).hasSize(1);
         Cession cession = cessions.get(0);
         assertThat(cession.getCededAmount()).isEqualByComparingTo("600000.00");
@@ -214,7 +214,7 @@ class CessionEndToEndTest {
         String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("2000000"), new BigDecimal("100000.00"));
 
         TenantContext.set(tenantId);
-        List<Cession> cessions = cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
+        List<Cession> cessions = cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber);
         assertThat(cessions).hasSize(1);
         assertThat(cessions.get(0).getCededAmount()).isEqualByComparingTo("1500000.00");
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).hasSize(1);
@@ -230,7 +230,7 @@ class CessionEndToEndTest {
         String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("2000000"), new BigDecimal("100000.00"));
 
         TenantContext.set(tenantId);
-        assertThat(cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).isEmpty();
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber)).isEmpty();
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).isEmpty();
     }
 
@@ -244,7 +244,7 @@ class CessionEndToEndTest {
         String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("2000000"), new BigDecimal("100000.00"));
 
         TenantContext.set(tenantId);
-        assertThat(cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).isEmpty();
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber)).isEmpty();
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).isEmpty();
 
         TenantContext.set(tenantId);
@@ -262,7 +262,7 @@ class CessionEndToEndTest {
         String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("2000000"), new BigDecimal("100000.00"));
 
         TenantContext.set(tenantId);
-        assertThat(cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).isEmpty();
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber)).isEmpty();
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).isEmpty();
         TenantContext.set(tenantId);
         assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).isPresent();
@@ -285,7 +285,7 @@ class CessionEndToEndTest {
 
         String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("2000000"), new BigDecimal("100000.00"));
         TenantContext.set(tenantId);
-        assertThat(cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(1);
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber)).hasSize(1);
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).hasSize(1);
 
         // policy.PolicyIssued, field-for-field from PolicyApiImpl's published shape -- only the
@@ -301,7 +301,7 @@ class CessionEndToEndTest {
         transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
 
         TenantContext.set(tenantId);
-        assertThat(cessionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber))
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber))
             .as("a redelivered PolicyIssued must not double-cede")
             .hasSize(1);
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded"))

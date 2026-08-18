@@ -30,10 +30,19 @@ public final class RecoveryCalculator {
     private RecoveryCalculator() {}
 
     /**
-     * {@code settledAmount x (cededAmount / sumAssured)}. Proportional recovery is the ordinary
-     * treaty convention, but no document on this platform states it -- flagged.
+     * {@code settledAmount x (cededAmount / sumAssured)}, capped at the cession's own {@code
+     * cededAmount}. Proportional recovery is the ordinary treaty convention, but no document on
+     * this platform states it -- flagged.
      *
-     * @return the reinsurer's share, or empty on a currency mismatch or a zero result
+     * <p><b>Capped, deliberately (I3, final review).</b> {@code claims.Claim.approve} does not cap
+     * {@code approvedAmount} at the policy's sum assured, so a settled amount CAN legitimately
+     * exceed the sum assured this formula divides by. Without the cap, that produces a recoverable
+     * strictly greater than {@code cededAmount} -- the reinsurer would be booked for more than the
+     * risk it actually accepted under the cession, which is never correct: a reinsurer's exposure
+     * on a proportional treaty cannot exceed the risk it agreed to cover.
+     *
+     * @return the reinsurer's share (never more than {@code cession.getCededAmount()}), or empty on
+     *         a currency mismatch or a zero result
      */
     public static Optional<BigDecimal> proportional(Cession cession, BigDecimal sumAssured,
                                                      BigDecimal settledAmount, String settledCurrency) {
@@ -45,12 +54,26 @@ public final class RecoveryCalculator {
         }                              // per V2's CHECK, but dividing by it would be unrecoverable
         BigDecimal recoverable = settledAmount
             .multiply(cession.getCededAmount())
-            .divide(sumAssured, 2, RoundingMode.HALF_UP);
+            .divide(sumAssured, 2, RoundingMode.HALF_UP)
+            .min(cession.getCededAmount());
         return recoverable.signum() > 0 ? Optional.of(recoverable) : Optional.empty();
     }
 
     /**
      * {@code max(0, settledAmount - retentionLimit)}.
+     *
+     * <p><b>Treaty capacity/layer limits are NOT modelled (I3, final review, the other half).</b> A
+     * real XOL treaty is "N excess of M" -- a layer with a finite upper limit, not unlimited cover
+     * above retention -- and a real SURPLUS treaty has a finite line capacity. Neither concept
+     * exists on {@link ReinsuranceTreaty} (no capacity/limit column) or is enforced here: this
+     * method computes the excess over retention with NO upper bound, so an XOL treaty is
+     * effectively unlimited cover above retention as implemented, and a SURPLUS treaty's cession
+     * (see {@code CessionCalculator}) is likewise not capped against any modelled capacity. This is
+     * a missing concept, not a bug in what exists -- the formula above is exactly what IS
+     * implemented; it never claims to model a layer limit. See the design spec's §8 for the
+     * recorded deferral: this needs an actual capacity/limit column and a business rule for what
+     * happens above it, neither of which any document on this platform defines, so nothing is
+     * invented here to fill that gap.
      *
      * @return the excess over retention, or empty when the loss falls entirely within retention
      *         (the ordinary case) or the currency does not match
