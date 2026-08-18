@@ -1,0 +1,284 @@
+openapi: 3.1.0
+info:
+  title: Reinsurance API
+  version: "1.0.0"
+  description: >
+    External REST surface of the `reinsurance` module: treaty authoring (staff/finance-only),
+    the read paths over cessions and claim recoveries, and the one imperative action -- confirming
+    a recovery -- that back-office staff need. Cession and recovery CALCULATION are not exposed
+    here at all: both are event-driven internally, so there is no create endpoint for either.
+
+
+    Every endpoint requires the staff realm AND the fine-grained FINANCE_OFFICER or ADMIN role,
+    the same decision M7 recorded for `distribution`: there is no reinsurance-specific staff role,
+    docs/04-api-contracts.md:21 deferred this surface entirely, and reinsurance is a
+    finance-adjacent back-office concern.
+
+
+    `cessionPercent` is always a decimal string, never a JSON number - it multiplies money exactly
+    as a commission rate does, and this platform forbids floats anywhere in the wire format.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /treaties:
+    post:
+      summary: Author a reinsurance treaty
+      description: >
+        Staff/finance only. Creates a treaty, so `Idempotency-Key` is required: a retried POST
+        must not silently create a duplicate treaty. `cessionPercent` must be present for
+        QUOTA_SHARE and absent otherwise - enforced downstream as a 422, not here, so a malformed
+        request gets exactly one status code regardless of which layer notices first.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTreatyRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TreatyView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: "Reinsurer name is blank or too long, retention limit is negative, cessionPercent is missing for QUOTA_SHARE or present for SURPLUS/XOL, cessionPercent is out of the (0, 100] range, or effectiveTo is before effectiveFrom"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: List treaties, optionally filtered by status
+      security:
+        - staffAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/TreatyStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TreatyView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /treaties/{treatyId}:
+    get:
+      summary: Get treaty detail
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TreatyId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TreatyView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /policies/{policyNumber}/cessions:
+    get:
+      summary: List the cessions recorded against a policy
+      description: >
+        Empty rather than 404 when the policy carries no cession, or does not exist in this
+        tenant - this endpoint has no authority over policy existence, only over cession rows.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CessionView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /claims/{claimId}/recoveries:
+    get:
+      summary: List the reinsurance recoveries recorded against a claim
+      description: >
+        Empty rather than 404 when the claim carries no recovery, or does not exist in this
+        tenant - this endpoint has no authority over claim existence, only over recovery rows.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ClaimRecoveryView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /claims/{claimId}/recoveries/{recoveryId}/confirm:
+    post:
+      summary: Confirm that the reinsurer actually paid a recovery
+      description: >
+        Stamps `confirmedAt` and publishes `reinsurance.RecoveryConfirmed`, but only on the
+        genuine transition, so a repeated call emits no second event and instead 409s. The path
+        nests `recoveryId` under `claimId`; the server verifies `recoveryId` genuinely belongs to
+        `claimId` and 404s on a mismatch, rather than trusting the nesting. 202, not 200: this is
+        an imperative staff action whose downstream journal entry (finaccounting) settles
+        asynchronously off the published event.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+        - $ref: '#/components/parameters/RecoveryId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimRecoveryView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: "No such recovery in this tenant, or the recovery exists but does not belong to the named claim"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '409':
+          description: "Recovery is already confirmed"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+components:
+  parameters:
+    TreatyId:
+      name: treatyId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ClaimId:
+      name: claimId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RecoveryId:
+      name: recoveryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        Required. The same key is treated as the same attempt and deduplicated; a new key is a
+        genuinely new attempt. There is deliberately no default.
+      schema: { type: string, minLength: 1 }
+  responses:
+    BadRequest:
+      description: "Malformed request body, or a missing or blank Idempotency-Key"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Forbidden:
+      description: "Authenticated but not permitted - wrong realm, or missing FINANCE_OFFICER/ADMIN role"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    NotFound:
+      description: No such resource in this tenant. Also returned for a resource belonging to another tenant, so that cross-tenant existence is not leaked.
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  schemas:
+    TreatyType:
+      type: string
+      enum: [QUOTA_SHARE, SURPLUS, XOL]
+      description: >
+        XOL is accepted by the schema and by treaty authoring, but cedes nothing at issuance -
+        excess-of-loss is a claim-level treaty, so automatic cession calculation on new business
+        does not apply to it. It participates only in recovery.
+    TreatyStatus:
+      type: string
+      enum: [ACTIVE, EXPIRED]
+      description: Only ACTIVE treaties are eligible for cession selection.
+    CreateTreatyRequest:
+      type: object
+      required: [reinsurerName, treatyType, retentionLimit, effectiveFrom]
+      properties:
+        reinsurerName: { type: string, minLength: 1, maxLength: 200 }
+        treatyType: { $ref: '#/components/schemas/TreatyType' }
+        retentionLimit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        cessionPercent:
+          type: string
+          nullable: true
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: "Decimal string, never a JSON number. Required for QUOTA_SHARE, must be absent otherwise."
+        effectiveFrom: { type: string, format: date }
+        effectiveTo:
+          type: string
+          format: date
+          nullable: true
+          description: Omitted or null for a treaty with no known end date.
+    TreatyView:
+      type: object
+      required: [treatyId, reinsurerName, treatyType, status, retentionLimit, effectiveFrom]
+      properties:
+        treatyId: { type: string, format: uuid }
+        reinsurerName: { type: string }
+        treatyType: { $ref: '#/components/schemas/TreatyType' }
+        status: { $ref: '#/components/schemas/TreatyStatus' }
+        retentionLimit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        cessionPercent:
+          type: string
+          nullable: true
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: "Decimal string, never a JSON number. Non-null exactly for QUOTA_SHARE."
+        effectiveFrom: { type: string, format: date }
+        effectiveTo: { type: string, format: date, nullable: true }
+    CessionView:
+      type: object
+      required: [cessionId, policyNumber, treatyId, cededAmount]
+      properties:
+        cessionId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        treatyId: { type: string, format: uuid }
+        cededAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        cededPremium:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+          description: "Null for a treaty type that cedes risk without a modelled premium share."
+    ClaimRecoveryView:
+      type: object
+      required: [recoveryId, claimId, treatyId, recoverableAmount]
+      properties:
+        recoveryId: { type: string, format: uuid }
+        claimId: { type: string, format: uuid }
+        treatyId: { type: string, format: uuid }
+        recoverableAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: "Null until staff confirm the reinsurer actually paid."
