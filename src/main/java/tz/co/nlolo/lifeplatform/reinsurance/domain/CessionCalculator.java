@@ -37,8 +37,9 @@ public final class CessionCalculator {
     private CessionCalculator() {}
 
     /** What the caller should persist. Both premium fields are non-null together (V2's
-     * {@code cession_ceded_premium_paired}); this calculator always populates them for the two
-     * ceding treaty types. */
+     * {@code cession_ceded_premium_paired}), or both null when the ceded premium rounds to
+     * zero -- V2's {@code cession_ceded_premium_positive} forbids persisting a zero premium row,
+     * so callers (Task 6/7) must not assume {@code cededPremium()} is always populated. */
     public record CededAmounts(BigDecimal cededRisk, String riskCurrency,
                                 BigDecimal cededPremium, String premiumCurrency) {}
 

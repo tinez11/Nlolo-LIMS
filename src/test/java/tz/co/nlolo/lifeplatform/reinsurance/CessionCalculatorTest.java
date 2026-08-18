@@ -102,4 +102,21 @@ class CessionCalculatorTest {
         assertThat(result.get().cededPremium()).isEqualByComparingTo("3.33");
         assertThat(result.get().cededPremium().scale()).isEqualTo(2);
     }
+
+    /** cededRisk is meaningfully positive (1,000.00) while cededPremium rounds to exactly 0.00
+     * (0.01% of 40.00 = 0.004 -> 0.00 HALF_UP). V2's cession_ceded_premium_positive CHECK forbids
+     * persisting a zero premium row, so the calculator must substitute null rather than
+     * BigDecimal.ZERO here -- this test guards that substitution against regressing to a literal
+     * zero. */
+    @Test
+    void cededPremiumIsNullRatherThanZeroWhenItRoundsToZeroButRiskIsStillCeded() {
+        Optional<CessionCalculator.CededAmounts> result = CessionCalculator.calculate(
+            treaty(TreatyType.QUOTA_SHARE, "0", "0.01"),
+            new BigDecimal("10000000.00"), "TZS", new BigDecimal("40.00"), "TZS");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().cededRisk()).isEqualByComparingTo("1000.00");
+        assertThat(result.get().cededPremium()).isNull();
+        assertThat(result.get().premiumCurrency()).isNull();
+    }
 }
