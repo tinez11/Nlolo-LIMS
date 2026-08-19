@@ -56,7 +56,7 @@ These six were adjudicated before design and are settled. Do not re-litigate dur
 
 3. **`gl_posting.group_id` becomes nullable**; postings carry `policy_number` and `source_ref` instead. Creating a sentinel "ungrouped" group was rejected because `group_of_contracts.measurement_model`'s CHECK forces a GMM/PAA value — smuggling in the exact decision being deferred.
 
-4. **Post only from money-movement events** (~7 listeners), not all ~48 declared ones. `BeneficiaryChanged`, `PolicySuspended`, and `SurrenderValueCalculated` are documented as deliberately non-posting — `docs/02-module-architecture.md:145` already calls the last of these "quote-only, informational — does not itself trigger a posting."
+4. **Post only from money-movement events** (8 posting paths, ~5 listener classes grouped by producing module), not all ~48 declared ones. `BeneficiaryChanged`, `PolicySuspended`, and `SurrenderValueCalculated` are documented as deliberately non-posting — `docs/02-module-architecture.md:145` already calls the last of these "quote-only, informational — does not itself trigger a posting."
 
 5. **Synchronous `AFTER_COMMIT`, matching every other module.** `docs/05-event-catalog.md:62` warns that async fan-in breaks ordering and that "`finaccounting` rolling forward CSM needs `PolicyIssued` before a later `PolicyEndorsed`... processing them backwards would corrupt the roll-forward." That hazard is specific to *roll-forward*, which M9 defers; independent double-entry postings are order-insensitive. Recorded explicitly: whoever implements measurement must revisit async/ordering before enabling it.
 
@@ -67,13 +67,14 @@ These six were adjudicated before design and are settled. Do not re-litigate dur
 ## 4. Architecture
 
 ```
-billing.PremiumCollected     ─┐
-claims.ClaimSettled           │
-distribution.CommissionPaid   ├─► event listeners ─► GlPostingCalculator ─► JournalEntry (DR+CR) ─► GlPostingRecorded
-reinsurance.CessionRecorded   │                         (pure function)      2 balanced gl_posting rows
-reinsurance.RecoveryConfirmed │
-policyloan.LoanDisbursed      │
-policyloan.LoanRepaid        ─┘
+billing.PremiumInvoiceGenerated ─┐
+billing.PremiumCollected         │
+claims.ClaimSettled              │
+distribution.CommissionPaid      ├─► event listeners ─► GlPostingCalculator ─► JournalEntry (DR+CR) ─► GlPostingRecorded
+reinsurance.CessionRecorded      │                        (pure function)      2 balanced gl_posting rows
+reinsurance.RecoveryConfirmed    │
+policyloan.LoanDisbursed         │
+policyloan.LoanRepaid           ─┘
 ```
 
 Listener mechanics are the platform's established pattern, unchanged: `@TransactionalEventListener(AFTER_COMMIT)`, one reusable `PROPAGATION_REQUIRES_NEW` `TransactionTemplate` (a plain `@Transactional` from an AFTER_COMMIT callback silently joins the already-committed producer transaction and never commits — empirically confirmed on this project), `TenantContext` save/set/restore rather than an unconditional clear, and **explicit `@Component` bean names** (`finaccountingPolicyEventListener` etc.) since several modules already declare classes with these simple names.
@@ -113,7 +114,7 @@ Listener mechanics are the platform's established pattern, unchanged: `@Transact
 
 **New table — `chart_of_account`**
 
-`(tenant_id, account_code)` composite PK, RLS, grants. Columns: `account_code VARCHAR(20)`, `name VARCHAR(200)`, `account_type VARCHAR(20) CHECK (... IN ('ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'))`, `normal_balance VARCHAR(2) CHECK (... IN ('DR','CR'))`, audit columns. Seeded per tenant with the minimum accounts M9's seven posting paths need, **every row commented as a placeholder pending Finance sign-off**.
+`(tenant_id, account_code)` composite PK, RLS, grants. Columns: `account_code VARCHAR(20)`, `name VARCHAR(200)`, `account_type VARCHAR(20) CHECK (... IN ('ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'))`, `normal_balance VARCHAR(2) CHECK (... IN ('DR','CR'))`, audit columns. Seeded per tenant with the minimum accounts M9's eight posting paths need — `1000`, `1200`, `1300`, `1400`, `2200`, `2300`, `5000`, `5100`, `5200` — **every row commented as a placeholder pending Finance sign-off**. No `4xxx` income account is seeded, deliberately: M9 never credits income (see §6's accrual note), and seeding an account nothing posts to would imply coverage this milestone does not have.
 
 ---
 
@@ -121,17 +122,24 @@ Listener mechanics are the platform's established pattern, unchanged: `@Transact
 
 Every mapping below is **invented and flagged for Finance sign-off** — no document on this platform specifies account codes or their debit/credit treatment. Each is a balanced pair.
 
+**Account codes follow the conventional five-block numbering scheme** (1xxx ASSET, 2xxx LIABILITY, 3xxx EQUITY, 4xxx INCOME, 5xxx EXPENSE). Using a near-universal convention rather than ad-hoc codes means Finance's eventual real chart is more likely to be a re-mapping of familiar blocks than a wholesale redesign — and the codes below live in `chart_of_account` as data, so replacing them is a seed change, not a code change.
+
 | Event | Debit | Credit |
 |---|---|---|
-| `billing.PremiumCollected` | Cash / Mobile Money (ASSET) | Premium Income (INCOME) |
-| `claims.ClaimSettled` | Claims Expense (EXPENSE) | Cash / Mobile Money (ASSET) |
-| `distribution.CommissionPaid` | Commission Expense (EXPENSE) | Cash / Mobile Money (ASSET) |
-| `reinsurance.CessionRecorded` | Reinsurance Ceded Premium (EXPENSE) | Reinsurance Payable (LIABILITY) |
-| `reinsurance.RecoveryConfirmed` | Reinsurance Recoverable (ASSET) | Claims Expense (EXPENSE) |
-| `policyloan.LoanDisbursed` | Policy Loan Receivable (ASSET) | Cash / Mobile Money (ASSET) |
-| `policyloan.LoanRepaid` | Cash / Mobile Money (ASSET) | Policy Loan Receivable (ASSET) |
+| `billing.PremiumInvoiceGenerated` | `1200` Premium Receivable (ASSET) | `2200` Unearned Premium (LIABILITY) |
+| `billing.PremiumCollected` | `1000` Cash / Mobile Money (ASSET) | `1200` Premium Receivable (ASSET) |
+| `claims.ClaimSettled` | `5000` Claims Expense (EXPENSE) | `1000` Cash / Mobile Money (ASSET) |
+| `distribution.CommissionPaid` | `5100` Commission Expense (EXPENSE) | `1000` Cash / Mobile Money (ASSET) |
+| `reinsurance.CessionRecorded` | `5200` Reinsurance Ceded Premium (EXPENSE) | `2300` Reinsurance Payable (LIABILITY) |
+| `reinsurance.RecoveryConfirmed` | `1300` Reinsurance Recoverable (ASSET) | `5000` Claims Expense (EXPENSE) |
+| `policyloan.LoanDisbursed` | `1400` Policy Loan Receivable (ASSET) | `1000` Cash / Mobile Money (ASSET) |
+| `policyloan.LoanRepaid` | `1000` Cash / Mobile Money (ASSET) | `1400` Policy Loan Receivable (ASSET) |
 
-**`policy.PolicyIssued` deliberately produces no posting.** Contract recognition without a premium movement has no cash or accrual consequence under the flat (non-measurement) model M9 builds — recognising it belongs to LRC/CSM initial recognition, which is C1-blocked. Recorded so its absence reads as deliberate rather than forgotten.
+**This is an accrual ledger, not a cash-basis one — which is why premium takes two postings, not one.** An earlier draft of this spec mapped `PremiumCollected` directly to `DR Cash / CR Premium Income`, recognising income at the moment cash arrived and never modelling the receivable at all. That is cash-basis accounting and wrong for an insurer. The obligation arises when the invoice is *generated*, so `PremiumInvoiceGenerated` raises `Premium Receivable` against `Unearned Premium`, and `PremiumCollected` then settles the receivable against cash. Neither posting touches an income account: **premium income is only earned as coverage is provided**, and that earning pattern is LRC release — C1-governed, and therefore deliberately absent from M9 (see §9). `2200 Unearned Premium` is consequently a liability that M9 only ever grows; the milestone that implements LRC release is the one that starts draining it.
+
+`billing.PremiumInvoiceGenerated` needs **no enrichment** — verified in code at `billing/application/BillingApiImpl.java:280-282`, it already carries `invoiceId`, `policyNumber`, and `amount`.
+
+**`policy.PolicyIssued` deliberately produces no posting, and the receivable is why.** Issuing a policy creates no cash movement and no *immediate* obligation — the obligation attaches per invoice, which is what `PremiumInvoiceGenerated` above now captures. The IFRS 17 entry that genuinely belongs at issuance is LRC/CSM initial recognition, which is C1-blocked. So nothing is lost by posting nothing here: the accrual an accountant would look for arrives one event later, from the module that actually knows the amount. Recorded so its absence reads as deliberate rather than forgotten.
 
 **Currency:** a posting inherits its source event's currency. Postings are never converted (no FX table exists anywhere on this platform), and both legs of one journal entry always share one currency — asserted, not assumed.
 
@@ -158,7 +166,8 @@ Each change lands inside its existing idempotency guard (all three publish only 
 **`api/openapi/openapi-finaccounting.yaml`** (new — none exists). Read-only, staff/finance-gated (`hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))`) — the same decision recorded in M7 and M8, for the same reason: no finance-specific staff role exists. Endpoints: `GET /gl-postings` (filterable by period/policy), `GET /gl-postings/{journalEntryId}` (both legs), `GET /chart-of-accounts`. **No write endpoints** — postings are derived from events only, never hand-entered; that is what makes the ledger trustworthy. Money on the wire is a decimal string, never a JSON number.
 
 **Tests**
-- `GlPostingCalculatorTest` — pure, container-free: every one of the seven mappings, each asserted **balanced** (DR total = CR total), plus currency propagation and the deliberate `PolicyIssued` no-op
+- `GlPostingCalculatorTest` — pure, container-free: every one of the eight mappings, each asserted **balanced** (DR total = CR total), plus currency propagation and the deliberate `PolicyIssued` no-op
+- A test asserting the **premium receivable round-trips to zero**: an invoice generated then collected leaves `1200 Premium Receivable` net flat (DR then CR, same amount), which is the single assertion that proves the two-posting accrual split is coherent rather than double-counting
 - `JournalEntryBalanceTest` — an unbalanced entry cannot be constructed or persisted; this is the ledger's core invariant
 - One end-to-end test per posting path, driving the **real** producer chain (a real premium collection, a real claim settlement, a real commission payout) against real Postgres as `app_role`, asserting real `gl_posting` rows — not hand-published payloads
 - A redelivery test per path: the same event twice produces exactly one journal entry (`ux_gl_posting_once`) and one `GlPostingRecorded`
@@ -178,7 +187,7 @@ Each change lands inside its existing idempotency guard (all three publish only 
 **Blocked on C1 (Actuarial), not invented, not guessed:**
 - GMM vs PAA per product line
 - Cohort/grouping rules and `cohort_year`'s boundary (annual vs quarterly)
-- All CSM roll-forward, LRC, and LIC computation
+- All CSM roll-forward, LRC, and LIC computation — **including premium income recognition itself**, since earning premium as coverage is provided *is* LRC release. M9 therefore accumulates `2200 Unearned Premium` and never credits a `4xxx` income account; the milestone that implements LRC release is the one that starts recognising income and draining that liability. An accountant reading M9's output should expect a growing unearned-premium balance and zero earned premium, by design.
 
 **Deferred deliberately, recorded so the next reader does not rediscover them:**
 - The ~40 declared events that produce no posting (documented, not silently dropped)
@@ -193,7 +202,7 @@ Each change lands inside its existing idempotency guard (all three publish only 
 
 `docs/08-implementation-roadmap.md:180` — the milestone "cannot be finalized until C1 resolves," and names what *can* proceed: "the event-consumption plumbing, a provisional flat GL posting structure (no cohort grouping), and the module's own DDL/aggregate skeleton — all designed so that adding cohort/grouping logic later is additive, not a rewrite."
 
-- **Event-consumption plumbing** → seven listeners, each with an end-to-end test driving the real producer chain
+- **Event-consumption plumbing** → eight posting paths across ~5 listener classes, each with an end-to-end test driving the real producer chain
 - **Provisional flat GL posting structure (no cohort grouping)** → `gl_posting` with `account_code`/`direction`/`journal_entry_id`, `group_id` nullable and unused
 - **DDL/aggregate skeleton** → `V2` hardening plus `chart_of_account`; the three measurement ledgers present, empty, and marked `C1-BLOCKED`
 - **Additive, not a rewrite** → postings carry `policy_number` and `source_ref`, so a later milestone can assign `group_id` and compute measurement on top of existing rows without restating them
