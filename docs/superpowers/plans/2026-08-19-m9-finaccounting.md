@@ -36,7 +36,8 @@ Every task's requirements implicitly include this section.
 
   **Never report coverage you did not execute.** If you ran a subset, say so plainly and say why. If a targeted run surfaces anything unexpected, escalate to the full suite immediately.
 - **Baseline before M9: 563 tests, 0 failures, 0 errors.** Quote the count from whatever you actually ran and label it (`full suite` vs `-Dtest=X`).
-- **Never edit an already-applied migration.** `finaccounting/V1` is immutable — it is applied by four existing test classes. Add `V2`.
+- **Never edit an already-applied migration.** `finaccounting/V1` is immutable regardless of whether any test yet applies it (none did before this milestone — see the pre-flight scan finding above). Add `V2`.
+- **Every real-Postgres `finaccounting` test needs `policyloan/V1` and `policyloan/V2` in its migration list, even when nothing in the test touches a loan.** `gl_posting` is `PARTITION BY RANGE (created_at)` with two hand-written partitions from V1; Postgres does not cascade RLS, policies, or GRANT/REVOKE from a partitioned parent onto its partitions, and `policyloan/V2` installs the one mechanism on this platform (`trg_partition_controls`, a database-wide event trigger) that mirrors those controls onto them — its own code comment names `finaccounting.gl_posting` as a table it protects. Verified empirically during Task 1's review: omitting `policyloan/V2` leaves `gl_posting`'s partitions with RLS disabled and `UPDATE`/`DELETE` still granted to `app_role`, reachable by any session naming a partition directly; applying migrations in the platform's real order (`scripts/migrate.sh`, where `policyloan` precedes `finaccounting`) closes it completely. This governs Tasks 5, 6, 7, and 9's real-Postgres tests, each noted individually where it applies.
 - **Cross-module references are opaque columns, never FKs** (`docs/06-database-schema.md:29`). `journal_entry.policy_number` and `gl_posting.policy_number` have no FK. Intra-module FKs (`gl_posting.account_code` → `chart_of_account`) are fine.
 - **Money on the wire is a decimal STRING, never a float** (`docs/06-database-schema.md:32`). Internally `BigDecimal`.
 - **Event payload money shape is always** `Map.of("amount", <BigDecimal>.toPlainString(), "currencyCode", <String>)`. Use `toPlainString()`, never `toString()`.
@@ -1373,7 +1374,9 @@ git commit -m "feat: the GL posting calculator -- every mapped event yields one 
 
 - [ ] **Step 1: Write the failing integration test**
 
-Real Postgres as `app_role`, migration list: `audit/V1`, `refdata/V1`, `product/V1`, `finaccounting/V1`, `finaccounting/V2`. Bootstrap `app_role` with `ALTER ROLE ... NOSUPERUSER NOBYPASSRLS` exactly as `ReinsuranceApiIntegrationTest` does (read that file for the harness).
+Real Postgres as `app_role`, migration list: `audit/V1`, `refdata/V1`, `product/V1`, `policyloan/V1`, `policyloan/V2`, `finaccounting/V1`, `finaccounting/V2`. Bootstrap `app_role` with `ALTER ROLE ... NOSUPERUSER NOBYPASSRLS` exactly as `ReinsuranceApiIntegrationTest` does (read that file for the harness).
+
+**`policyloan/V1` and `V2` are required here even though this test never touches a loan.** `gl_posting` is `PARTITION BY RANGE (created_at)`; Postgres does not cascade RLS/GRANT/REVOKE from a partitioned parent onto its own hand-written partitions, and `policyloan/V2` installs the one mechanism on this platform (`trg_partition_controls`, a database-wide event trigger, not schema-scoped) that mirrors those controls — verified empirically during Task 1's review that omitting it leaves `gl_posting`'s two partitions with RLS disabled and `UPDATE`/`DELETE` still granted to `app_role`. Every `finaccounting` integration test from here on needs both migrations present for that reason.
 
 Assert:
 1. `postEntry` on a balanced entry writes one `journal_entry` and two `gl_posting` rows, readable back through `getJournalEntry` with both legs present.
@@ -1484,7 +1487,9 @@ Same mechanics, same explicit-bean-name rule, one event each:
 
 The highest-value test in the milestone: it proves the accrual pair against the **real** billing chain, not hand-published payloads.
 
-Migration list: `audit/V1`, `refdata/V1`-`V3`, `party/V1`, `product/V1`, `underwriting/V1`, `policy/V1`-`V4`, `billing/V1`-`V3`, `finaccounting/V1`-`V2`. Real Postgres as `app_role`. Issue a real policy through `PolicyApi` (which makes `billing` generate invoices, publishing `PremiumInvoiceGenerated`), then drive a real collection through `BillingApi.applyConfirmedPayment`.
+Migration list: `audit/V1`, `refdata/V1`-`V3`, `party/V1`, `product/V1`, `underwriting/V1`, `policy/V1`-`V4`, `billing/V1`-`V3`, `policyloan/V1`, `policyloan/V2`, `finaccounting/V1`-`V2`. Real Postgres as `app_role`. Issue a real policy through `PolicyApi` (which makes `billing` generate invoices, publishing `PremiumInvoiceGenerated`), then drive a real collection through `BillingApi.applyConfirmedPayment`.
+
+**`policyloan/V1`/`V2` again required for the same reason as `FinaccountingApiIntegrationTest`** — `gl_posting`'s two hand-written partitions only inherit RLS/append-only privileges through `policyloan/V2`'s cross-module event trigger; see that test's note.
 
 Assert:
 1. Issuing the policy produces `journal_entry` rows for `billing.PremiumInvoiceGenerated`, each with two balanced legs, DR `1200` / CR `2200`.
@@ -1566,9 +1571,9 @@ Update each event's channel description to name `finaccounting` as a consumer th
 
 - [ ] **Step 5: Write the two remaining end-to-end tests**
 
-`ClaimAndCommissionPostingEndToEndTest` — drives a real claim to settlement (copy `ClaimSettlementEndToEndTest`'s WireMock harness, since settlement goes through `payment`'s request/confirm loop) and a real commission payout to PAID, then asserts: one balanced entry per event with the right accounts (DR `5000`/CR `1000`, and DR `5100`/CR `1000`), and a redelivery of each adds nothing.
+`ClaimAndCommissionPostingEndToEndTest` — drives a real claim to settlement (copy `ClaimSettlementEndToEndTest`'s WireMock harness, since settlement goes through `payment`'s request/confirm loop) and a real commission payout to PAID, then asserts: one balanced entry per event with the right accounts (DR `5000`/CR `1000`, and DR `5100`/CR `1000`), and a redelivery of each adds nothing. **Its migration list must include `policyloan/V1` and `policyloan/V2` even though no loan is exercised in this test** — `gl_posting`'s two hand-written partitions only inherit RLS/append-only privileges through `policyloan/V2`'s cross-module `trg_partition_controls` event trigger (see `FinaccountingApiIntegrationTest`'s note in Task 5); every real-Postgres `finaccounting` test needs it for that structural reason, independent of what the test is actually exercising.
 
-`ReinsuranceAndLoanPostingEndToEndTest` — drives a real cession (via policy issuance under a real treaty), a real recovery confirmation, and a real loan disbursement and repayment. Asserts the four corresponding entries balance with the right accounts, and that **`1400 Policy Loan Receivable` nets to zero** across disburse-then-repay of the same amount — the loan-side mirror of the premium receivable invariant.
+`ReinsuranceAndLoanPostingEndToEndTest` — drives a real cession (via policy issuance under a real treaty), a real recovery confirmation, and a real loan disbursement and repayment. Asserts the four corresponding entries balance with the right accounts, and that **`1400 Policy Loan Receivable` nets to zero** across disburse-then-repay of the same amount — the loan-side mirror of the premium receivable invariant. Its migration list already needs `policyloan/V1`-`V4` for the loan scenario itself, so it inherits the `trg_partition_controls` protection incidentally — but include `policyloan/V2` in that list deliberately rather than relying on it riding along.
 
 - [ ] **Step 6: Run the FULL suite and commit**
 
@@ -1652,6 +1657,8 @@ git commit -m "feat: the finaccounting read-only REST layer, OpenAPI contract an
 
 Follow `ReinsuranceContractTest`'s structure exactly: `@Testcontainers` + `@AutoConfigureMockMvc` + `@SpringBootTest(classes = Application.class, webEnvironment = MOCK)`, `jwt()` post-processors (`financeStaffOf`, `underwriterStaffOf` for the wrong-role case, `agentOf`), and `openApi().isValid(SPEC_PATH)` **paired with** `SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "<Schema>")` on every decimal-carrying response.
 
+Migration list: `audit/V1`, `refdata/V1`, `party/V1`, `product/V1`, `policyloan/V1`, `policyloan/V2`, `finaccounting/V1`-`V2` via `MigrationTestSupport.applyMigration(...)`, exactly `ReinsuranceContractTest`'s own pattern. `policyloan/V1`/`V2` are required for the same structural reason as every other real-Postgres `finaccounting` test in this plan (Task 5's note): `gl_posting`'s hand-written partitions only inherit RLS/append-only privileges through `policyloan/V2`'s cross-module event trigger.
+
 One test per reachable status:
 - `GET /gl-postings`: 200 with the array; the `period` and `policyNumber` filters each genuinely narrowing (assert a non-matching value returns empty); 403 for `underwriterStaffOf`; 403 for `agentOf`
 - `GET /gl-postings/{journalEntryId}`: 200 with **both legs** present and their DR/CR totals equal; 404 unknown; **404 cross-tenant** (not 403 — a 403 confirms the id exists elsewhere)
@@ -1659,19 +1666,20 @@ One test per reachable status:
 
 Seed real postings first (through `FinaccountingApiImpl.postEntry` directly — the fixture technique, since the endpoint under test is the read path), so every 403 has a real target and a broken `@PreAuthorize` returns 200 rather than an incidental 404.
 
-- [ ] **Step 2: Add `finaccounting` to `AppRolePrivilegesIntegrationTest`**
+- [ ] **Step 2: Add `finaccounting` to `AppRolePrivilegesIntegrationTest`, and prove the cross-module partition-control mirror actually protects a newly created partition**
 
-Read the file in full first; append only. Add `finaccounting/V1` and `V2` to its migration list (note `finaccounting/V1` may already be present — check, and do not duplicate it).
+Read the file in full first; append only. Add `finaccounting/V1` and `V2` to its migration list.
 
-Then add a test proving, through the app's own `DataSource`:
+**Also add `db-migrations/policyloan/V2__partition_tenant_controls.sql` to the same migration list, before `finaccounting/V1`.** This is required, not incidental. `gl_posting` (from `finaccounting/V1`) is `PARTITION BY RANGE (created_at)` with two hand-written partitions; Postgres does **not** cascade RLS, policies, or GRANT/REVOKE from a partitioned parent onto its partitions — each partition is an independent relation with its own privilege ACL and its own row-security flag. `policyloan/V2` installs `trg_partition_controls`, a database-wide (not schema-scoped) event trigger that mirrors a partitioned parent's controls onto its partitions on every relevant DDL event, plus a backfill sweep over every partitioned table already in the database. Its own code comment names `finaccounting.gl_posting` explicitly as a table it will protect "when those milestones land." **Without `policyloan/V2` in this test's migration list, `gl_posting_2026_08`/`_09` would show RLS disabled and `UPDATE`/`DELETE` still granted to `app_role`, reachable by any session naming the partition directly** — this was found and empirically verified during Task 1's review: in isolation (`finaccounting/V1`+`V2` only) the drift is real; applying `policyloan/V1`-`V3` first (the platform's real deployment order — confirmed in `scripts/migrate.sh`, where `policyloan` precedes `finaccounting`) closes it completely, verified against a disposable Postgres 16 container. This is a genuine, previously-missing piece of cross-module test coverage, not decoration.
+
+Then add three tests proving, through the app's own `DataSource`:
 1. `app_role` **can** INSERT and SELECT a `journal_entry` row and a `gl_posting` row.
-2. `app_role` **cannot** UPDATE or DELETE either — assert the `SQLException`/permission failure explicitly.
-
-The second half is the point: V1's `REVOKE` without a prior `GRANT` means this platform's append-only ledger has **never once been verified**, and the append-only guarantee is a real audit property, not a convention.
+2. `app_role` **cannot** UPDATE or DELETE either — assert the `SQLException`/permission failure explicitly. V1's `REVOKE` without a prior `GRANT` means this platform's append-only ledger has **never once been verified**, and the append-only guarantee is a real audit property, not a convention.
+3. **The mirroring mechanism itself, proven against a NEW partition created after migration — the actual pg_partman scenario, not the two hand-written ones.** Issue `CREATE TABLE finaccounting.gl_posting_2026_10 PARTITION OF finaccounting.gl_posting FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');` directly (as the superuser/migration role, mirroring what pg_partman's maintenance job does), then assert — querying `pg_class`/`pg_policy`/`has_table_privilege` exactly as `verify-partition-controls.sql` does — that the new partition immediately has RLS enabled, one policy, and `app_role` holding neither `UPDATE` nor `DELETE`, with **no manual step in between**. This is the first test anywhere on the platform that proves `trg_partition_controls` protects a partition it did not exist to backfill — `policyloan` itself has never had this proven, only the two-hand-written-partitions backfill case. Record this explicitly in the test's javadoc: it is closing a gap in the mechanism's own coverage, not just adding `finaccounting` to an existing pattern.
 
 - [ ] **Step 3: Add `finaccounting` to `RowLevelSecurityIntegrationTest`**
 
-Append the same migrations, then add a test at the next unused `@Order` number (read the file to find it — do not assume). Seed a `journal_entry` + `gl_posting` + `chart_of_account` row in each of two tenants as the superuser; assert both tenants' rows are visible without RLS (the negative control, proving the seed worked); then read through a genuinely restricted `app_role` connection (`SET ROLE app_role; SET app.current_tenant_id = '<tenantA>'`) and assert only tenant A's rows are visible on **all three** tables.
+Append the same migrations **including `policyloan/V2__partition_tenant_controls.sql` before `finaccounting/V1`** (Step 2's rationale applies identically here — without it, `gl_posting`'s own partitions would fail a direct-partition RLS check even though the parent enforces it correctly). Then add a test at the next unused `@Order` number (read the file to find it — do not assume). Seed a `journal_entry` + `gl_posting` + `chart_of_account` row in each of two tenants as the superuser; assert both tenants' rows are visible without RLS (the negative control, proving the seed worked); then read through a genuinely restricted `app_role` connection (`SET ROLE app_role; SET app.current_tenant_id = '<tenantA>'`) and assert only tenant A's rows are visible on **all three** tables.
 
 - [ ] **Step 4: Reconcile `docs/06-database-schema.md`**
 
