@@ -59,7 +59,8 @@ class AlertRuleMetricProducerTest {
         "lifeplatform_field_receipt_overdue_count",
         "lifeplatform_distribution_clawback_total",
         "lifeplatform_distribution_payout_failed_total",
-        "lifeplatform_reinsurance_event_processing_failed_total");
+        "lifeplatform_reinsurance_event_processing_failed_total",
+        "lifeplatform_finaccounting_event_processing_failed_total");
 
     /**
      * Metrics referenced by a rule that NOTHING currently produces, each with the reason. Every

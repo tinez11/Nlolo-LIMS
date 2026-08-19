@@ -203,6 +203,26 @@ groups:
           summary: "reinsurance failed to process a domain event -- a cession or recovery may be missing"
           description: "PolicyEventListener or ClaimEventListener threw while handling policy.PolicyIssued or claims.ClaimSettled. Search logs for 'reinsurance failed to process' to get the event type and tenant, then inspect whether the expected cession/recovery row exists and investigate the underlying cause (a malformed payload, a database error) before deciding whether to replay the event."
 
+      # Task 6, Step 6 (M9 finaccounting). BillingEventListener/ClaimsEventListener/
+      # DistributionEventListener/ReinsuranceEventListener/PolicyLoanEventListener each wrap their
+      # event handling in the same catch-all shape M8's reinsurance listeners use (see
+      # ReinsuranceEventProcessingFailed above) -- previously log-only, now alertable.
+      #
+      # Financially consequential, specifically: a swallowed exception here means a business event
+      # (an invoice generated or collected, a claim settled, a commission paid, a cession or
+      # recovery recorded, a policy loan disbursed or repaid) already moved -- or was recorded as
+      # having moved -- real money in its OWN module, but no corresponding journal entry was ever
+      # written in finaccounting. There is no compensating retry and no other signal: the ledger
+      # falls silently out of sync with the systems of record it exists to reconcile, and every
+      # day it goes unnoticed is a day the general ledger silently misstates the business.
+      - alert: FinaccountingEventProcessingFailed
+        expr: increase(lifeplatform_finaccounting_event_processing_failed_total[15m]) > 0
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "finaccounting failed to post a journal entry -- the ledger may be silently incomplete"
+          description: "One of BillingEventListener/ClaimsEventListener/DistributionEventListener/ReinsuranceEventListener/PolicyLoanEventListener threw while handling a domain event. Search logs for 'finaccounting failed to process' to get the event type and tenant, then check whether the expected journal_entry/gl_posting rows exist for that source event before deciding whether to replay it. A swallowed exception here means money moved but the general ledger was never told."
+
       - alert: PostgresDiskSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
         for: 10m
