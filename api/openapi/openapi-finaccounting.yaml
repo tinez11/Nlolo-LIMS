@@ -1,0 +1,180 @@
+openapi: 3.1.0
+info:
+  title: Finaccounting API
+  version: "1.0.0"
+  description: >
+    External REST surface of the `finaccounting` module: read-only access to the double-entry
+    general ledger -- journal entries with their two legs (GL postings), and the chart of
+    accounts. This surface exposes GL POSTINGS ONLY. IFRS 17 measurement (CSM roll-forward, LRC,
+    LIC) is NOT YET IMPLEMENTED -- it is blocked on C1 (Actuarial) -- so a consumer of this spec
+    should not expect a CSM, LRC, or LIC endpoint to exist anywhere below.
+
+
+    There is deliberately no write endpoint anywhere in this file. Every journal entry is derived
+    from a domain event by finaccounting's own listeners; nothing is hand-entered. A correction is
+    a future reversal entry (deferred, see the design spec's section 9), never an edit to an
+    existing one. That absence is what makes the ledger trustworthy.
+
+
+    Every endpoint requires the staff realm AND the fine-grained FINANCE_OFFICER or ADMIN role,
+    the same decision M7 recorded for `distribution` and M8/M9 recorded for `reinsurance`: there
+    is no finaccounting-specific staff role, and finaccounting is itself a finance/back-office
+    concern.
+
+
+    Every money field is a pattern-constrained decimal string, never a JSON number -- this
+    platform forbids floats anywhere in the wire format.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /gl-postings:
+    get:
+      summary: List journal entries (GL postings), optionally filtered by period and/or policy number
+      description: >
+        Each item is one journal entry with BOTH of its legs -- an entry always has exactly two
+        legs in M9, and their DR and CR totals are always equal. Omitting both filters returns
+        every journal entry visible to the caller's tenant.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Period'
+        - $ref: '#/components/parameters/PolicyNumberFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/JournalEntryView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /gl-postings/{journalEntryId}:
+    get:
+      summary: Get one journal entry, with both legs
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/JournalEntryId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JournalEntryView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /chart-of-accounts:
+    get:
+      summary: List the chart of accounts
+      description: >
+        Every account on this platform is currently a PLACEHOLDER pending Finance sign-off. Rows
+        are seeded, not authored through this API -- there is no create endpoint here either.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChartOfAccountView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+components:
+  parameters:
+    JournalEntryId:
+      name: journalEntryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Period:
+      name: period
+      in: query
+      required: false
+      description: "Filter to one accounting period, formatted YYYY-MM"
+      schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+    PolicyNumberFilter:
+      name: policyNumber
+      in: query
+      required: false
+      schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Forbidden:
+      description: "Authenticated but not permitted - wrong realm, or missing FINANCE_OFFICER/ADMIN role"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    NotFound:
+      description: "No such journal entry in this tenant. Also returned for a journal entry belonging to another tenant, so that cross-tenant existence is not leaked."
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  schemas:
+    PostingDirection:
+      type: string
+      enum: [DR, CR]
+      description: "Carries the SIGN of a posting. gl_posting.amount is always a positive magnitude; a reversal is a new journal entry with the two directions swapped, never a negative amount on the original."
+    AccountType:
+      type: string
+      enum: [ASSET, LIABILITY, EQUITY, INCOME, EXPENSE]
+    GlPostingView:
+      type: object
+      required: [postingId, journalEntryId, accountCode, direction, amount, period, sourceEvent, sourceRef]
+      properties:
+        postingId: { type: string, format: uuid }
+        journalEntryId: { type: string, format: uuid }
+        accountCode: { type: string }
+        direction: { $ref: '#/components/schemas/PostingDirection' }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        period:
+          type: string
+          description: "Accounting period, formatted YYYY-MM"
+        policyNumber:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef'
+          nullable: true
+          description: "Null for a posting not tied to a specific policy."
+        sourceEvent:
+          type: string
+          description: "The domain event this posting was derived from, e.g. billing.PremiumInvoiceGenerated"
+        sourceRef:
+          type: string
+          description: "The source event's own idempotency key -- pairs with sourceEvent and this entry's tenant to make a redelivery a no-op."
+    JournalEntryView:
+      type: object
+      required: [journalEntryId, sourceEvent, sourceRef, period, postedAt, postings]
+      properties:
+        journalEntryId: { type: string, format: uuid }
+        sourceEvent:
+          type: string
+          description: "The domain event this entry was derived from, e.g. billing.PremiumInvoiceGenerated"
+        sourceRef: { type: string }
+        period:
+          type: string
+          description: "Accounting period, formatted YYYY-MM"
+        policyNumber:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef'
+          nullable: true
+          description: "Null for an entry not tied to a specific policy."
+        postedAt: { type: string, format: date-time }
+        postings:
+          type: array
+          description: "Always exactly two legs in M9, one DR and one CR, with equal totals."
+          items: { $ref: '#/components/schemas/GlPostingView' }
+    ChartOfAccountView:
+      type: object
+      required: [accountCode, name, accountType, normalBalance]
+      properties:
+        accountCode: { type: string }
+        name: { type: string }
+        accountType: { $ref: '#/components/schemas/AccountType' }
+        normalBalance: { $ref: '#/components/schemas/PostingDirection' }
