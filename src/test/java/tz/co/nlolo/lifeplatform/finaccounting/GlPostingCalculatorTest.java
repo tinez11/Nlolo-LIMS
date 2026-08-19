@@ -113,6 +113,9 @@ class GlPostingCalculatorTest {
         assertThat(entry.getPeriod()).isEqualTo("2026-08");
         assertThat(entry.getPolicyNumber()).isEqualTo("POL-0001");
         assertThat(entry.getLegs()).allMatch(l -> "TZS".equals(l.currency()));
+        entry.getLegs().forEach(l ->
+            assertThat(l.amount()).isEqualByComparingTo(new BigDecimal("500.00"))
+        );
     }
 
     @Test
