@@ -31,7 +31,7 @@ Every task's requirements implicitly include this section.
   1. changes production code **outside** `finaccounting` (Task 7 touches `distribution`, `reinsurance`, `policyloan`);
   2. changes a **shared test class or utility** (Task 9 edits `AppRolePrivilegesIntegrationTest` and `RowLevelSecurityIntegrationTest`, which every module's correctness leans on);
   3. changes **shared config** — `pom.xml`, `application.yml`, `SecurityConfig`;
-  4. adds a migration some existing test's own migration list already applies (`finaccounting/V1` is already applied by `ClaimSettlementEndToEndTest`, `NoCrossModuleJoinTest`, `PolicyNegativeAmountDefenceTest`, and `ReinsuranceContractTest` — so **any change to finaccounting's migrations requires the full suite**);
+  4. changes a migration that some existing test's own migration list applies. **For `finaccounting` specifically, no such test exists yet** — verified with `grep -rn "finaccounting" src/test/java`, which returns only four passing *comments* and one ArchUnit string list; not one test applies `finaccounting/V1`. That is precisely why V1's missing `GRANT` survived unnoticed since it was written. So Tasks 1's migration needs no Maven run at all (see Task 1 Step 5), and the schema comes under automated test for the first time in Tasks 5 and 9. Once Task 9 lands, this trigger becomes live for any later finaccounting migration change;
   5. is the final verification task (Task 10).
 
   **Never report coverage you did not execute.** If you ran a subset, say so plainly and say why. If a targeted run surfaces anything unexpected, escalate to the full suite immediately.
@@ -266,6 +266,20 @@ ALTER TABLE finaccounting.gl_posting ADD COLUMN policy_number VARCHAR(20);
 ALTER TABLE finaccounting.gl_posting ADD COLUMN source_event VARCHAR(60);
 ALTER TABLE finaccounting.gl_posting ADD COLUMN source_ref VARCHAR(100);
 
+-- posting_type MUST be widened, and this is not cosmetic. V1 declared it VARCHAR(30);
+-- GlPosting populates it with the source event name (V1 made it NOT NULL with no default and
+-- V1 is immutable, so it cannot simply be left unset), and 'billing.PremiumInvoiceGenerated'
+-- is 31 characters -- MEASURED, not estimated. Left at 30, the single most important posting
+-- path on the platform would fail at runtime with
+--   value too long for type character varying(30)
+-- while every pure unit test stayed green, because none of them touch the database.
+--
+-- This is exactly the defect class documented at docs/06-database-schema.md:30's sub-bullet
+-- (M7's VARCHAR(15) column admitting a 16-character CHECK value, which made a whole payout
+-- path unwritable). It is being fixed here rather than discovered in Task 6.
+-- 60 matches source_event's width, so the two columns cannot drift apart again.
+ALTER TABLE finaccounting.gl_posting ALTER COLUMN posting_type TYPE VARCHAR(60);
+
 -- Added nullable above then constrained here: no rows exist (nothing has ever
 -- written this table -- app_role could not), but a bare NOT NULL ADD COLUMN on a
 -- populated table would fail, and succeeding only because the table happens to be
@@ -377,20 +391,17 @@ VALUES ('11111111-1111-1111-1111-111111111111', gen_random_uuid(), '2026-08', 5.
 
 Expected in order: insert OK; `duplicate key value violates unique constraint "ux_journal_entry_once"`; `permission denied for table journal_entry`; `violates check constraint "gl_posting_amount_positive"`; `violates check constraint "gl_posting_direction_check"`.
 
-- [ ] **Step 5: Clean up, run the FULL suite, and commit**
+- [ ] **Step 5: Clean up and commit**
 
 ```bash
 docker rm -f m9verify
-# FULL SUITE REQUIRED (Global Constraints trigger 4): finaccounting/V1 is already applied by
-# ClaimSettlementEndToEndTest, NoCrossModuleJoinTest, PolicyNegativeAmountDefenceTest and
-# ReinsuranceContractTest. Adding V2 does not change their migration lists, but the schema they
-# build changes underneath them -- notably gl_posting gaining NOT NULL columns.
-./mvnw -B -o test
 git add db-migrations/finaccounting/
 git commit -m "feat: finaccounting V2 -- grants, RLS, chart of accounts, journal_entry and real double-entry posting columns"
 ```
 
-Expected: 563 tests, 0 failures (this task adds no tests).
+**No Maven run for this task, and that is a considered choice rather than a shortcut.** This task changes no Java and no shared config, and — verified with `grep -rn "finaccounting" src/test/java` — **not one existing test applies `finaccounting/V1`**, so there is no test whose behaviour could change. Running 563 tests for ten minutes to prove that would be theatre. Steps 3 and 4's real Postgres verification IS this task's verification, which is why they are non-negotiable and why their output must be pasted rather than summarised.
+
+Report this plainly: state that no Maven run was performed, why, and that the schema comes under automated test for the first time in Tasks 5 and 9.
 
 ---
 
@@ -812,8 +823,9 @@ public class GlPosting {
         this.period = period;
         this.policyNumber = policyNumber;
         // V1 declares posting_type NOT NULL with no default. It predates account_code/direction and
-        // is redundant now, but the column is immutable (V1 is applied), so it is populated with
-        // the source event rather than left to fail the NOT NULL.
+        // is redundant now, but V1 is immutable, so it is populated with the source event rather
+        // than left to fail the NOT NULL. V2 widens it from VARCHAR(30) to VARCHAR(60) to match
+        // source_event -- required, not tidying: 'billing.PremiumInvoiceGenerated' is 31 characters.
         this.postingType = sourceEvent;
         this.sourceEvent = sourceEvent;
         this.sourceRef = sourceRef;
@@ -1732,7 +1744,9 @@ Do not merge. Report the aggregate count, the acceptance mapping, every deviatio
 2. **Premium takes two entries, and neither credits income.** The receivable/unearned-premium split is standard accrual accounting, but the *absence* of income recognition is a direct consequence of deferring LRC release. M9's trial balance will show a growing `2200` and zero earned premium — correct by design, and surprising to anyone who does not know why.
 3. **`policy.PolicyIssued` posts nothing.** Justified by the receivable arriving at invoice generation instead, but it is the one place where deferring measurement visibly removes a posting an accountant might expect.
 4. **Idempotency moved to `journal_entry`** because a unique index on the partitioned `gl_posting` is impossible (empirically verified). A consequence worth noting: two *different* events that happen to share a `source_ref` would collide. Today `source_ref` is always an id from the producing module and `source_event` disambiguates, so this cannot occur — but the constraint's correctness depends on that.
-5. **`GlPosting.postingType` is populated with the source event name** purely to satisfy V1's `NOT NULL` on a column that `account_code`/`direction` have made redundant. V1 is immutable, so the column cannot be dropped; a later milestone could.
+5. **`GlPosting.postingType` is populated with the source event name** purely to satisfy V1's `NOT NULL` on a column that `account_code`/`direction` have made redundant. V1 is immutable, so the column cannot be dropped; a later milestone could. *(V2 must widen it to `VARCHAR(60)`: caught in the pre-flight scan, because `billing.PremiumInvoiceGenerated` is 31 characters against V1's `VARCHAR(30)` — the plan's own warned-about defect class, reproduced in the plan, and it would have broken the platform's most important posting path at runtime with every unit test green.)*
+
+12. **No test has ever applied `finaccounting/V1`** — so this schema has had zero automated coverage since it was written, which is the root cause of the missing-`GRANT` defect surviving. Tasks 5 and 9 are therefore doing more load-bearing work than their size suggests: they are the first automated exercise of this schema, not an incremental addition to existing coverage.
 6. **`JournalEntry` holds `@Transient` `Leg` VALUES, not JPA-mapped `GlPosting` entities.** Deliberate on two counts — `gl_posting` is append-only with a partition-aware composite key that a cascading `@OneToMany` would fight, and `journalEntryId` is `@GeneratedValue`, so legs built at `addLeg` time could not carry a non-null `journal_entry_id`. The consequence: the aggregate never loads its own legs, and `FinaccountingApiImpl` fetches them explicitly on read. A reader expecting a managed collection will be surprised. *(This was caught in the plan's own self-review — the first draft had `addLeg` construct `GlPosting` directly against a null generated id, which would have failed the `NOT NULL` at runtime while every pure unit test stayed green.)*
 7. **`GlPostingRecordedPayload`'s declared shape is per-posting, but M9 publishes per-entry.** Inherited from a pre-M9 provisional schema; Task 7 reconciles the AsyncAPI. Flagged because the mismatch was discovered during implementation rather than designed.
 8. **Five listeners, not one.** Grouped by producing module to keep each class small; the alternative (one listener with an eight-branch switch) would concentrate all eight paths in one file.
