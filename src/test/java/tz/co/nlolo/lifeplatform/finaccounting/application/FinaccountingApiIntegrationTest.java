@@ -188,6 +188,12 @@ class FinaccountingApiIntegrationTest {
         assertThrows(IllegalStateException.class, () -> finaccountingApiImpl.postEntry(entry));
 
         assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId)).isEmpty();
+        // The GL-posting half of the same guarantee: confirm no leg was written either, keyed on the
+        // would-be leg's own account code and period since the throw happens before a journal_entry_id
+        // is ever minted. A future reordering of the balance check relative to the posting-construction
+        // loop would show up here even though it could never show up in the journal_entry-only check above.
+        assertThat(glPostingRepository.findByTenantIdAndAccountCodeAndPeriod(
+            tenantId, PostingRule.CLAIMS_EXPENSE, "2026-08")).isEmpty();
     }
 
     @Test
