@@ -1,0 +1,138 @@
+package tz.co.nlolo.lifeplatform.finaccounting.domain;
+
+import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Maps {@code finaccounting.journal_entry} -- the aggregate root of a double-entry transaction,
+ * and where idempotency lives: {@code ux_journal_entry_once (tenant_id, source_event, source_ref)}
+ * makes a redelivered event a no-op.
+ *
+ * <p><b>Why the unique index is here and not on {@code gl_posting}.</b> {@code gl_posting} is
+ * {@code PARTITION BY RANGE (created_at)}, and Postgres requires every unique index on a
+ * partitioned table to include all partition-key columns -- verified empirically. Omitting
+ * {@code created_at} is rejected outright; including it would apply cleanly and then silently
+ * permit a double-post, since a redelivered event at a different timestamp satisfies it.
+ *
+ * <p>Legs are held {@link Transient} as plain {@link Leg} values rather than as a JPA
+ * {@code @OneToMany} of {@link GlPosting}: {@code gl_posting} is append-only with a composite
+ * partition-aware key, and a cascading collection would fight both. It also keeps the balance
+ * invariant testable without a database.
+ *
+ * <p>Holding VALUES rather than entities is what avoids a null-id window: {@code journalEntryId} is
+ * {@code @GeneratedValue} (this codebase's convention -- see {@code reinsurance.Cession}), so it does
+ * not exist until the entry is persisted, while {@code gl_posting.journal_entry_id} is
+ * {@code NOT NULL}. {@code FinaccountingApiImpl.postEntry} therefore saves the entry first and builds
+ * {@link GlPosting} rows from these legs afterwards, when the id is real.
+ */
+@Entity
+@Table(name = "journal_entry", schema = "finaccounting")
+public class JournalEntry {
+
+    @Id
+    @GeneratedValue
+    @Column(name = "journal_entry_id")
+    private UUID journalEntryId;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
+    @Column(name = "source_event", nullable = false)
+    private String sourceEvent;
+
+    @Column(name = "source_ref", nullable = false)
+    private String sourceRef;
+
+    @Column(name = "period", nullable = false)
+    private String period;
+
+    @Column(name = "policy_number")
+    private String policyNumber;
+
+    @Column(name = "posted_at", nullable = false)
+    private Instant postedAt = Instant.now();
+
+    @Column(name = "created_by")
+    private String createdBy;
+
+    /** One leg's facts, before it becomes a persistent {@link GlPosting} row. */
+    public record Leg(String accountCode, PostingDirection direction, BigDecimal amount, String currency) {}
+
+    @Transient
+    private final List<Leg> legs = new ArrayList<>();
+
+    protected JournalEntry() {}
+
+    public JournalEntry(UUID tenantId, String sourceEvent, String sourceRef, String period,
+                         String policyNumber, String createdBy) {
+        this.tenantId = tenantId;
+        this.sourceEvent = sourceEvent;
+        this.sourceRef = sourceRef;
+        this.period = period;
+        this.policyNumber = policyNumber;
+        this.createdBy = createdBy;
+    }
+
+    /**
+     * @throws IllegalArgumentException if the amount is not a positive magnitude (the direction
+     *         carries the sign -- see V2's {@code gl_posting_amount_positive}), or if the currency
+     *         differs from an existing leg's (no FX table exists on this platform, so a
+     *         mixed-currency entry could never be meaningfully balanced)
+     */
+    public void addLeg(String accountCode, PostingDirection direction, BigDecimal amount, String currency) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("A posting amount must be a positive magnitude; "
+                + "direction carries the sign. Got: " + amount);
+        }
+        if (!legs.isEmpty() && !legs.get(0).currency().equals(currency)) {
+            throw new IllegalArgumentException("All legs of one journal entry must share a currency; "
+                + "entry is " + legs.get(0).currency() + ", leg is " + currency);
+        }
+        legs.add(new Leg(accountCode, direction, amount, currency));
+    }
+
+    /**
+     * True only when there is at least one leg on EACH side and the two sides' totals are equal.
+     * The at-least-one-per-side requirement matters: an entry with no legs would otherwise report
+     * balanced on 0 == 0, and an entry with two same-side legs would report balanced only if both
+     * were zero (which addLeg forbids) -- both are invalid entries, not balanced ones.
+     */
+    public boolean isBalanced() {
+        BigDecimal debits = total(PostingDirection.DR);
+        BigDecimal credits = total(PostingDirection.CR);
+        if (debits.signum() == 0 || credits.signum() == 0) {
+            return false;
+        }
+        return debits.compareTo(credits) == 0;
+    }
+
+    private BigDecimal total(PostingDirection direction) {
+        return legs.stream()
+            .filter(l -> l.direction() == direction)
+            .map(Leg::amount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public List<Leg> getLegs() { return Collections.unmodifiableList(legs); }
+
+    public UUID getJournalEntryId() { return journalEntryId; }
+    public UUID getTenantId() { return tenantId; }
+    public String getSourceEvent() { return sourceEvent; }
+    public String getSourceRef() { return sourceRef; }
+    public String getPeriod() { return period; }
+    public String getPolicyNumber() { return policyNumber; }
+    public Instant getPostedAt() { return postedAt; }
+    public String getCreatedBy() { return createdBy; }
+}
