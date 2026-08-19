@@ -1,0 +1,343 @@
+package tz.co.nlolo.lifeplatform.finaccounting;
+
+import tz.co.nlolo.lifeplatform.Application;
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
+import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
+import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
+import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
+import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.product.api.BenefitType;
+import tz.co.nlolo.lifeplatform.product.api.FactorType;
+import tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel;
+import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
+import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
+import tz.co.nlolo.lifeplatform.product.api.ProductSummaryView;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Task 6, Step 4 -- the highest-value test in the milestone: it proves the premium accrual pair
+ * against the REAL billing chain rather than hand-published payloads. {@code
+ * PolicyApi.issuePolicy} (real API) -> {@code policy.PolicyIssued} (real event) -> {@code
+ * billing.application.PolicyEventListener} generates a real invoice, publishing a real {@code
+ * billing.PremiumInvoiceGenerated} -> {@code finaccounting.application.BillingEventListener}
+ * posts DR {@code 1200}/CR {@code 2200}. Then a real {@code BillingApi.applyConfirmedPayment}
+ * collects that invoice in full, publishing a real {@code billing.PremiumCollected} -> the same
+ * listener posts DR {@code 1000}/CR {@code 1200}.
+ *
+ * <p>Issued with an ANNUALLY premium frequency deliberately: {@code
+ * BillingApiImpl.generateInvoicesAhead}'s 12-month horizon then produces EXACTLY ONE invoice
+ * (first due date == horizon), keeping the accrual pair traceable to one, unambiguous invoice
+ * rather than a batch of twelve.
+ *
+ * <p>Runs against real Postgres as {@code app_role} (NOSUPERUSER NOBYPASSRLS), mirroring {@code
+ * ClaimSettlementEndToEndTest}/{@code CessionEndToEndTest}'s bootstrap and fixture pattern.
+ * {@code policyloan/V1}/{@code V2} are required for the same reason {@code
+ * FinaccountingApiIntegrationTest} needs them: {@code gl_posting}'s two hand-written partitions
+ * only inherit RLS/append-only privileges through {@code policyloan/V2}'s cross-module event
+ * trigger.
+ *
+ * <p>{@code @TransactionalEventListener(phase = AFTER_COMMIT)} chains are synchronous, same
+ * thread: each producer's own {@code @Transactional} commits when its call returns, firing the
+ * next listener in the chain before control comes back to this test. No await/sleep anywhere here.
+ */
+@Testcontainers
+@SpringBootTest(classes = Application.class)
+@Import(PremiumPostingEndToEndTest.EventRecorderConfiguration.class)
+class PremiumPostingEndToEndTest {
+
+    private static final String APP_ROLE_PASSWORD = "premium_posting_e2e_password";
+    private static final String CURRENCY = "TZS";
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+
+    @DynamicPropertySource
+    static void datasourceProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", () -> "app_role");
+        registry.add("spring.datasource.password", () -> APP_ROLE_PASSWORD);
+    }
+
+    @BeforeAll
+    static void applyMigrationsAndBootstrapAppRole() throws Exception {
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
+            "db-migrations/refdata/V3__seed_billing_parameters.sql",
+            "db-migrations/party/V1__create_party_schema.sql",
+            "db-migrations/product/V1__create_product_schema.sql",
+            "db-migrations/underwriting/V1__create_underwriting_schema.sql",
+            "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql",
+            "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/billing/V1__create_billing_schema.sql",
+            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            "db-migrations/billing/V3__amount_paid.sql",
+            "db-migrations/policyloan/V1__create_policyloan_schema.sql",
+            "db-migrations/policyloan/V2__partition_tenant_controls.sql",
+            "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
+            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql");
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("ALTER ROLE app_role LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '"
+                + APP_ROLE_PASSWORD + "'");
+        }
+    }
+
+    /** Records every published domain event so "exactly one posting, and none on redelivery" is
+     * assertable directly rather than inferred from state -- same pattern as
+     * {@code CessionEndToEndTest}/{@code CommissionPayoutEndToEndTest}. */
+    @TestConfiguration
+    static class EventRecorderConfiguration {
+        @Bean
+        EventRecorder premiumPostingTestEventRecorder() { return new EventRecorder(); }
+    }
+
+    static class EventRecorder {
+        private final List<DomainEventEnvelope<?>> received = new CopyOnWriteArrayList<>();
+
+        @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+        void record(DomainEventEnvelope<?> envelope) { received.add(envelope); }
+
+        void clear() { received.clear(); }
+
+        List<DomainEventEnvelope<?>> ofType(String eventType) {
+            return received.stream().filter(e -> eventType.equals(e.eventType())).toList();
+        }
+    }
+
+    @Autowired private PartyApi partyApi;
+    @Autowired private ProductApi productApi;
+    @Autowired private PolicyApi policyApi;
+    @Autowired private BillingApi billingApi;
+    @Autowired private JournalEntryRepository journalEntryRepository;
+    @Autowired private GlPostingRepository glPostingRepository;
+    @Autowired private ApplicationEventPublisher eventPublisher;
+    @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private EventRecorder eventRecorder;
+
+    private TransactionTemplate transactionTemplate;
+
+    @AfterEach
+    void resetAfterEach() { TenantContext.clear(); }
+
+    private TransactionTemplate transactionTemplate() {
+        if (transactionTemplate == null) {
+            transactionTemplate = new TransactionTemplate(transactionManager);
+        }
+        return transactionTemplate;
+    }
+
+    private record Fixture(UUID applicantId, UUID productId, UUID productVersionId) {}
+
+    /** Mirrors ClaimSettlementEndToEndTest.buildFixture/CessionEndToEndTest.buildFixture. */
+    private Fixture buildFixture(UUID tenantId, String productCode) {
+        TenantContext.set(tenantId);
+        PartyView applicant = partyApi.registerIndividual("Premium Posting E2E Applicant " + productCode,
+            LocalDate.of(1985, 3, 1), "+25571800" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)),
+            null, "test-agent");
+        ProductSummaryView product = productApi.createProduct(productCode, "Premium Posting E2E Product",
+            ProductCategory.TERM_LIFE, CURRENCY, "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        return new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());
+    }
+
+    /** ANNUALLY, deliberately -- see class javadoc: this is the one frequency for which the
+     * billing schedule's 12-month look-ahead horizon produces exactly one invoice. */
+    private String issueAnnualPolicy(UUID tenantId, Fixture fixture, BigDecimal sumAssured, BigDecimal premium) {
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), sumAssured, CURRENCY, premium, CURRENCY, "ANNUALLY", null, List.of(),
+            "Premium posting E2E test");
+        return policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+    }
+
+    @Test
+    void issuingAPolicyThenCollectingItsInvoiceProvesTheAccrualPairEndToEnd() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "PREMIUM-E2E-1");
+        BigDecimal premium = new BigDecimal("120000.00");
+        eventRecorder.clear();
+
+        // ---- Act 1: issue the policy for real. billing generates exactly one invoice and
+        // publishes billing.PremiumInvoiceGenerated; finaccounting posts DR 1200 / CR 2200. ----
+        String policyNumber = issueAnnualPolicy(tenantId, fixture, new BigDecimal("2000000"), premium);
+
+        TenantContext.set(tenantId);
+        InvoiceView invoice = billingApi.getNextDueInvoice(policyNumber);
+        assertThat(invoice).as("billing must have generated exactly one invoice for an ANNUALLY policy "
+            + "within its 12-month look-ahead horizon").isNotNull();
+        assertThat(invoice.amount()).isEqualByComparingTo(premium);
+
+        // ---- Assertion 1: the invoice-generated journal entry, DR 1200 / CR 2200. ----
+        TenantContext.set(tenantId);
+        List<JournalEntry> generatedEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+            .filter(e -> "billing.PremiumInvoiceGenerated".equals(e.getSourceEvent()))
+            .toList();
+        assertThat(generatedEntries).hasSize(1);
+        JournalEntry generatedEntry = generatedEntries.get(0);
+        assertThat(generatedEntry.getSourceRef()).isEqualTo(invoice.invoiceId().toString());
+        assertThat(generatedEntry.getPolicyNumber()).isEqualTo(policyNumber);
+
+        TenantContext.set(tenantId);
+        List<GlPosting> generatedLegs = glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
+            tenantId, generatedEntry.getJournalEntryId());
+        assertThat(generatedLegs).as("must have exactly two balanced legs").hasSize(2);
+        assertThat(generatedLegs).extracting(GlPosting::getAccountCode)
+            .containsExactlyInAnyOrder(PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM);
+        assertThat(legFor(generatedLegs, PostingRule.PREMIUM_RECEIVABLE).getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(generatedLegs, PostingRule.UNEARNED_PREMIUM).getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(generatedLegs, PostingRule.PREMIUM_RECEIVABLE).getAmount()).isEqualByComparingTo(premium);
+
+        // ---- Act 2: collect the invoice in full for real. finaccounting posts DR 1000 / CR 1200. ----
+        TenantContext.set(tenantId);
+        billingApi.applyConfirmedPayment(invoice.invoiceId(), premium, CURRENCY, "test-payment-ref-1");
+
+        // ---- Assertion 2: the collected journal entry, DR 1000 / CR 1200. ----
+        TenantContext.set(tenantId);
+        List<JournalEntry> collectedEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+            .filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent()))
+            .toList();
+        assertThat(collectedEntries).hasSize(1);
+        JournalEntry collectedEntry = collectedEntries.get(0);
+        assertThat(collectedEntry.getSourceRef()).isEqualTo(invoice.invoiceId().toString());
+
+        TenantContext.set(tenantId);
+        List<GlPosting> collectedLegs = glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
+            tenantId, collectedEntry.getJournalEntryId());
+        assertThat(collectedLegs).as("must have exactly two balanced legs").hasSize(2);
+        assertThat(collectedLegs).extracting(GlPosting::getAccountCode)
+            .containsExactlyInAnyOrder(PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE);
+        assertThat(legFor(collectedLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.DR);
+        assertThat(legFor(collectedLegs, PostingRule.PREMIUM_RECEIVABLE).getDirection()).isEqualTo(PostingDirection.CR);
+        assertThat(legFor(collectedLegs, PostingRule.PREMIUM_RECEIVABLE).getAmount()).isEqualByComparingTo(premium);
+
+        // ---- Assertion 3: 1200 Premium Receivable nets to zero across the pair, for THIS invoice. ----
+        BigDecimal netReceivable = BigDecimal.ZERO;
+        for (GlPosting leg : generatedLegs) {
+            if (PostingRule.PREMIUM_RECEIVABLE.equals(leg.getAccountCode())) {
+                netReceivable = leg.getDirection() == PostingDirection.DR
+                    ? netReceivable.add(leg.getAmount()) : netReceivable.subtract(leg.getAmount());
+            }
+        }
+        for (GlPosting leg : collectedLegs) {
+            if (PostingRule.PREMIUM_RECEIVABLE.equals(leg.getAccountCode())) {
+                netReceivable = leg.getDirection() == PostingDirection.DR
+                    ? netReceivable.add(leg.getAmount()) : netReceivable.subtract(leg.getAmount());
+            }
+        }
+        assertThat(netReceivable).as("1200 Premium Receivable must net to zero across the accrual pair")
+            .isEqualByComparingTo(BigDecimal.ZERO);
+
+        // ---- Assertion 4: no gl_posting row anywhere has a 4xxx (income) account code. ----
+        TenantContext.set(tenantId);
+        List<JournalEntry> allEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId);
+        for (JournalEntry entry : allEntries) {
+            TenantContext.set(tenantId);
+            List<GlPosting> legs = glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
+                tenantId, entry.getJournalEntryId());
+            assertThat(legs).as("M9 recognises no income -- no leg of %s may post to a 4xxx account",
+                entry.getSourceEvent()).noneMatch(l -> l.getAccountCode().startsWith("4"));
+        }
+
+        // ---- Assertion 5: a redelivered billing.PremiumCollected is a genuine no-op -- no second
+        // entry, no second posting pair, and no second finaccounting.GlPostingRecorded. ----
+        eventRecorder.clear();
+        Map<String, Object> redeliveredPayload = Map.of(
+            "invoiceId", invoice.invoiceId(),
+            "policyNumber", policyNumber,
+            "amount", Map.of("amount", premium.toPlainString(), "currencyCode", CURRENCY),
+            "collectedAt", Instant.now().toString());
+        var envelope = DomainEventEnvelope.of("billing.PremiumCollected", tenantId, redeliveredPayload);
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
+
+        TenantContext.set(tenantId);
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+                .filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent())).toList())
+            .as("a redelivered PremiumCollected must not double-post").hasSize(1);
+        TenantContext.set(tenantId);
+        assertThat(glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
+                tenantId, collectedEntry.getJournalEntryId()))
+            .as("a redelivered PremiumCollected must not add a second posting pair").hasSize(2);
+        assertThat(eventRecorder.ofType("finaccounting.GlPostingRecorded"))
+            .as("a redelivered PremiumCollected must not publish a second GlPostingRecorded -- an "
+                + "idempotent write that still re-announces itself would mislead every downstream consumer")
+            .isEmpty();
+
+        // ---- Assertion 6: the C1 scope boundary -- csm_ledger, lrc_ledger and lic_ledger are
+        // still all empty. Queried with the container's own superuser credentials (the same ones
+        // used to apply migrations), bypassing RLS entirely, so this is a genuine "no rows exist
+        // anywhere" check rather than one that could pass vacuously because app_role's RLS hid
+        // rows belonging to another tenant. ----
+        assertThat(countAllRows("finaccounting.csm_ledger")).as("csm_ledger must remain empty -- CSM roll-forward is C1-blocked").isZero();
+        assertThat(countAllRows("finaccounting.lrc_ledger")).as("lrc_ledger must remain empty -- LRC release is C1-blocked").isZero();
+        assertThat(countAllRows("finaccounting.lic_ledger")).as("lic_ledger must remain empty -- IFRS 17 measurement is C1-blocked").isZero();
+    }
+
+    private static GlPosting legFor(List<GlPosting> legs, String accountCode) {
+        return legs.stream().filter(l -> accountCode.equals(l.getAccountCode())).findFirst()
+            .orElseThrow(() -> new AssertionError("No leg found for account " + accountCode));
+    }
+
+    private static long countAllRows(String qualifiedTable) {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery("SELECT count(*) FROM " + qualifiedTable)) {
+            rs.next();
+            return rs.getLong(1);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
