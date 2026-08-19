@@ -77,6 +77,8 @@ policyloan.LoanDisbursed         │
 policyloan.LoanRepaid           ─┘
 ```
 
+One event produces one `journal_entry` (the aggregate root, carrying the idempotency key) plus exactly two `gl_posting` lines (its DR and CR legs), all in one transaction. `GlPostingRecorded` is published only when the entry was genuinely written.
+
 Listener mechanics are the platform's established pattern, unchanged: `@TransactionalEventListener(AFTER_COMMIT)`, one reusable `PROPAGATION_REQUIRES_NEW` `TransactionTemplate` (a plain `@Transactional` from an AFTER_COMMIT callback silently joins the already-committed producer transaction and never commits — empirically confirmed on this project), `TenantContext` save/set/restore rather than an unconditional clear, and **explicit `@Component` bean names** (`finaccountingPolicyEventListener` etc.) since several modules already declare classes with these simple names.
 
 `finaccounting/api/package-info.java` is currently **missing** `@NamedInterface("api")` — verified; the same gap `distribution` had entering M7 and `reinsurance` had entering M8. Added here.
@@ -106,9 +108,26 @@ Listener mechanics are the platform's established pattern, unchanged: `@Transact
 - `+ account_code VARCHAR(20) NOT NULL` — FK to `chart_of_account`
 - `+ direction VARCHAR(2) NOT NULL CHECK (direction IN ('DR','CR'))`
 - `+ policy_number VARCHAR(20)` — opaque ref, never an FK (`docs/06-database-schema.md:29`)
-- `+ journal_entry_id UUID NOT NULL` — groups the two legs of one entry
-- `+ source_event VARCHAR(60) NOT NULL`, `+ source_ref VARCHAR(100) NOT NULL` — traceability back to the triggering event, and the idempotency key
-- `ux_gl_posting_once` on `(tenant_id, source_event, source_ref, account_code, direction)` — a redelivered event cannot double-post. Both `CommissionPaid`'s and `RecoveryConfirmed`'s own comments name a duplicate journal entry as the feared outcome; this is the constraint that prevents it.
+- `+ journal_entry_id UUID NOT NULL` — groups the two legs of one entry (see the new `journal_entry` table below, which is where idempotency is actually enforced)
+
+**New table — `journal_entry`, and it is where idempotency lives**
+
+`gl_posting` is `PARTITION BY RANGE (created_at)` with `PRIMARY KEY (posting_id, created_at)`. **Postgres requires every unique index on a partitioned table to include all partition-key columns** — verified empirically against `postgres:16`, not assumed:
+
+```
+ERROR:  unique constraint on partitioned table must include all partitioning columns
+DETAIL:  UNIQUE constraint on table "p" lacks column "created_at" which is part of the partition key.
+```
+
+So an idempotency index directly on `gl_posting` is impossible: omitting `created_at` is rejected outright, and *including* it would defeat the purpose entirely, since a redelivered event arriving at a different timestamp would satisfy the constraint and double-post.
+
+The fix is also the better model: a **non-partitioned `journal_entry` table** is the aggregate root, and `gl_posting` rows are its lines.
+
+- `journal_entry_id UUID PRIMARY KEY`, `tenant_id`, `source_event VARCHAR(60) NOT NULL`, `source_ref VARCHAR(100) NOT NULL`, `period VARCHAR(7) NOT NULL`, `policy_number VARCHAR(20)`, `posted_at TIMESTAMPTZ NOT NULL`, audit columns, RLS, grants
+- `ux_journal_entry_once` on `(tenant_id, source_event, source_ref)` — verified working, and verified to actually reject a duplicate. This is the real backstop that makes a redelivered event a no-op; both `CommissionPaid`'s and `RecoveryConfirmed`'s own code comments name a duplicate journal entry as the feared outcome.
+- `journal_entry` is append-only too: `GRANT SELECT, INSERT` then `REVOKE UPDATE, DELETE`, matching `gl_posting`.
+
+`gl_posting` keeps `source_event`/`source_ref` as denormalised traceability columns (so a single posting row is self-describing in a query without a join), but they carry no uniqueness — the constraint lives on the parent entry.
 
 > **Column widths are checked against their CHECK vocabularies in the same migration.** M7 shipped a CHECK admitting a 16-character value into a `VARCHAR(15)`, making a whole payout path unwritable while every test stayed green. `direction VARCHAR(2)` vs `'DR'`/`'CR'` (2) and every new enum column are verified to fit.
 
@@ -170,10 +189,11 @@ Each change lands inside its existing idempotency guard (all three publish only 
 - A test asserting the **premium receivable round-trips to zero**: an invoice generated then collected leaves `1200 Premium Receivable` net flat (DR then CR, same amount), which is the single assertion that proves the two-posting accrual split is coherent rather than double-counting
 - `JournalEntryBalanceTest` — an unbalanced entry cannot be constructed or persisted; this is the ledger's core invariant
 - One end-to-end test per posting path, driving the **real** producer chain (a real premium collection, a real claim settlement, a real commission payout) against real Postgres as `app_role`, asserting real `gl_posting` rows — not hand-published payloads
-- A redelivery test per path: the same event twice produces exactly one journal entry (`ux_gl_posting_once`) and one `GlPostingRecorded`
+- A redelivery test per path: the same event twice produces exactly one `journal_entry`, exactly two `gl_posting` rows, and one `GlPostingRecorded` (guarded by `ux_journal_entry_once`)
+- A test proving the partition-key constraint is genuinely handled: assert `ux_journal_entry_once` rejects a duplicate `(tenant, source_event, source_ref)` even when the two attempts land at different `created_at` timestamps — the exact case an index on the partitioned `gl_posting` could not have caught
 - `FinaccountingContractTest` — one test per reachable status, `openApi().isValid(...)` **paired with** `SpecTypeConformance.matchesDeclaredTypes(...)` on every decimal-carrying response
 - `FinaccountingSpecParsesTest` — container-free spec load with `setResolve(true)`
-- `finaccounting` added to `AppRolePrivilegesIntegrationTest` (**including that `gl_posting` INSERT/SELECT succeed while UPDATE/DELETE are rejected** — the append-only guarantee, which V1's missing GRANT means has never once been verified) and `RowLevelSecurityIntegrationTest` (cross-tenant invisibility on `gl_posting` and `chart_of_account`)
+- `finaccounting` added to `AppRolePrivilegesIntegrationTest` (**including that INSERT/SELECT succeed while UPDATE/DELETE are rejected on BOTH `gl_posting` and `journal_entry`** — the append-only guarantee, which V1's missing GRANT means has never once been verified) and `RowLevelSecurityIntegrationTest` (cross-tenant invisibility on `gl_posting`, `journal_entry`, and `chart_of_account`)
 
 ---
 
