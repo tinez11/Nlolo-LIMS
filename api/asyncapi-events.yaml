@@ -511,7 +511,26 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { loanId: {type: string, format: uuid}, amount: {type: object}, repaidAt: {type: string, format: date-time}, outstandingBalance: {type: object} }
+          required: [loanTransactionId]
+          properties:
+            loanId: {type: string, format: uuid}
+            loanTransactionId:
+              type: string
+              format: uuid
+              description: "This ONE repayment's own loan_transaction id. Partial repayments repeat against a single loanId, so loanId alone cannot identify a repayment: finaccounting keys its journal-entry idempotency on THIS field, and keying it on loanId silently discarded every repayment after the first."
+            amount:
+              type: object
+              required: [amount, currencyCode]
+              properties:
+                amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}
+                currencyCode: {type: string}
+            repaidAt: {type: string, format: date-time}
+            outstandingBalance:
+              type: object
+              required: [amount, currencyCode]
+              properties:
+                amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}
+                currencyCode: {type: string}
     LoanForcedLapseTriggeredPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

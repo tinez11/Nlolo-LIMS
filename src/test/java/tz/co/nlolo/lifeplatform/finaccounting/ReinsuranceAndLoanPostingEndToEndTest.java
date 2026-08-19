@@ -19,6 +19,7 @@ import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policyloan.api.LoanStatus;
 import tz.co.nlolo.lifeplatform.policyloan.api.LoanView;
 import tz.co.nlolo.lifeplatform.policyloan.api.PolicyLoanApi;
+import tz.co.nlolo.lifeplatform.policyloan.infrastructure.LoanTransactionRepository;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
 import tz.co.nlolo.lifeplatform.product.api.FactorType;
 import tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel;
@@ -74,8 +75,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Task 7, Step 5 -- the real end-to-end proof that the two Task 7 enrichments {@code
  * reinsurance.RecoveryConfirmed} and {@code policyloan.LoanDisbursed} actually drive GL posting
  * all the way through the real chains, and that {@code 1400 Policy Loan Receivable} nets to zero
- * across a disburse/repay pair for the same amount -- the loan-side mirror of the premium
- * receivable invariant {@code PremiumPostingEndToEndTest} already proved for {@code 1200}.
+ * across a disbursement and the TWO PARTIAL repayments that clear it -- the loan-side mirror of the
+ * premium receivable invariant {@code PremiumPostingEndToEndTest} already proved for {@code 1200}.
+ * The two-partial-repayment shape arrived with M9's final-review fix wave; see the note below.
  *
  * <p><b>Cession + recovery leg:</b> {@code PolicyApi.issuePolicy} under a real 50% QUOTA_SHARE
  * treaty (real API) -> {@code policy.PolicyIssued} -> {@code
@@ -94,10 +96,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * WireMock rail -> {@code payment.DisbursementCompleted} -> {@code
  * policyloan.application.PaymentEventListener} -> the Task 7-enriched {@code
  * policyloan.LoanDisbursed} -> {@code finaccounting.application.PolicyLoanEventListener} posts DR
- * {@code 1400}/CR {@code 1000}. Then {@code PolicyLoanApi.recordRepayment} (real API, M3's
- * immediately-confirmed simplification -- no gateway hop) for the SAME amount -> {@code
- * policyloan.LoanRepaid} (already amount-bearing) -> {@code PolicyLoanEventListener} posts DR
- * {@code 1000}/CR {@code 1400}.
+ * {@code 1400}/CR {@code 1000}. Then <b>TWO</b> {@code PolicyLoanApi.recordRepayment} calls (real
+ * API, M3's immediately-confirmed simplification -- no gateway hop), each for HALF the principal ->
+ * two {@code policyloan.LoanRepaid} events -> {@code PolicyLoanEventListener} posts DR {@code
+ * 1000}/CR {@code 1400} <b>twice</b>.
+ *
+ * <p><b>The two-partial-repayment shape is the point, not incidental detail.</b> This test
+ * originally drove one full-principal repayment in a single call, which is the only repayment shape
+ * under which M9's Critical bug could not manifest: {@code PolicyLoanEventListener} keyed the
+ * posting's idempotency on {@code loanId}, identical across every repayment of one loan, so the
+ * second partial repayment was silently discarded as a false redelivery and {@code 1400 Policy Loan
+ * Receivable} never cleared -- while this test's net-to-zero assertion passed vacuously. The fix
+ * (enriching {@code LoanRepaid} with the repayment's own {@code loanTransactionId}) is falsifiable
+ * only against two repayments, so that is what this test now drives.
  *
  * <p>Runs against real Postgres as {@code app_role} (NOSUPERUSER NOBYPASSRLS). {@code
  * policyloan/V1}-{@code V4} are needed for the loan scenario itself, and {@code policyloan/V2} is
@@ -203,6 +214,9 @@ class ReinsuranceAndLoanPostingEndToEndTest {
     @Autowired private PolicyApi policyApi;
     @Autowired private ReinsuranceApi reinsuranceApi;
     @Autowired private PolicyLoanApi policyLoanApi;
+    /** Read directly for the same reason CessionRepository/ClaimRecoveryRepository are below: this
+     * test has to assert against the REAL rows a producer wrote, not just against its API view. */
+    @Autowired private LoanTransactionRepository loanTransactionRepository;
     @Autowired private CessionRepository cessionRepository;
     @Autowired private ClaimRecoveryRepository claimRecoveryRepository;
     @Autowired private JournalEntryRepository journalEntryRepository;
@@ -336,7 +350,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
     }
 
     @Test
-    void cessionRecoveryAndLoanDisburseThenRepayEachPostOneBalancedEntryAndTheLoanReceivableNetsToZero() throws Exception {
+    void cessionRecoveryAndLoanDisburseThenTwoPartialRepaymentsEachPostTheirOwnBalancedEntryAndTheLoanReceivableNetsToZero() throws Exception {
         wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
             "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-REINS-LOAN-E2E\"}")));
 
@@ -412,28 +426,104 @@ class ReinsuranceAndLoanPostingEndToEndTest {
         assertThat(legFor(disbursedLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.CR);
         assertThat(legFor(disbursedLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getAmount()).isEqualByComparingTo(principal);
 
-        // Full repayment of the SAME amount -- M3's immediately-confirmed simplification, no
-        // gateway hop (PolicyLoanApiImpl.recordRepayment's own javadoc).
+        // ---- TWO PARTIAL repayments, each for HALF the principal -- M3's immediately-confirmed
+        // simplification, no gateway hop (PolicyLoanApiImpl.recordRepayment's own javadoc), and the
+        // real repayment shape PolicyLoanApiIntegrationTest
+        // .repaymentReducesOutstandingBalanceAndSettlesAtZero already exercised on the policyloan
+        // side (200,000 then 300,000 against a 500,000 loan).
+        //
+        // THIS IS THE CASE THE ORIGINAL VERSION OF THIS TEST COULD NOT SEE. It drove one
+        // full-principal repayment in a single call, so exactly one LoanRepaid was ever published
+        // and its net-to-zero proof held vacuously. Meanwhile finaccounting keyed that posting's
+        // idempotency on loanId, which is IDENTICAL across every repayment of one loan -- so the
+        // second partial repayment was misread as a redelivery of the first and dropped on
+        // postEntry's fast-path: silently, with no exception, no
+        // lifeplatform_finaccounting_event_processing_failed_total increment and no alert, leaving
+        // 1400 Policy Loan Receivable permanently half-open on a fully-repaid loan while the trial
+        // balance still balanced. Fixed by keying on the repayment's own loanTransactionId; the
+        // "two separate journal entries" assertion below is what makes that fix falsifiable.
+        BigDecimal half = new BigDecimal("250000");
+        assertThat(half.add(half)).as("the two partial repayments must sum to exactly the principal")
+            .isEqualByComparingTo(principal);
+
         TenantContext.set(tenantId);
-        policyLoanApi.recordRepayment(originated.loanId(), principal, CURRENCY, "repay-ref-reins-loan-e2e", "finance-officer-reins-loan-01");
+        LoanView afterFirstHalf = policyLoanApi.recordRepayment(originated.loanId(), half, CURRENCY,
+            "repay-ref-reins-loan-e2e-1", "finance-officer-reins-loan-01");
+        assertThat(afterFirstHalf.status())
+            .as("a partial repayment leaves the loan REPAYING, not SETTLED").isEqualTo(LoanStatus.REPAYING);
+        assertThat(afterFirstHalf.outstandingBalance()).isEqualByComparingTo(half);
 
-        // ---- Assertion 4: the loan-repaid journal entry, DR 1000 / CR 1400. ----
-        JournalEntry repaidEntry = singleEntryFor(tenantId, "policyloan.LoanRepaid", originated.loanId().toString());
-        List<GlPosting> repaidLegs = legsFor(tenantId, repaidEntry);
-        assertThat(repaidLegs).hasSize(2);
-        assertThat(repaidLegs).extracting(GlPosting::getAccountCode)
-            .containsExactlyInAnyOrder(PostingRule.CASH, PostingRule.POLICY_LOAN_RECEIVABLE);
-        assertThat(legFor(repaidLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.DR);
-        assertThat(legFor(repaidLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getDirection()).isEqualTo(PostingDirection.CR);
-        assertThat(legFor(repaidLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getAmount()).isEqualByComparingTo(principal);
+        // Exactly ONE entry so far: proves the second assertion below is measuring a real second
+        // posting rather than something that was already there.
+        assertThat(repaidEntriesFor(tenantId))
+            .as("the first partial repayment must post exactly one journal entry").hasSize(1);
 
-        // ---- Assertion 5: 1400 Policy Loan Receivable nets to zero across disburse-then-repay of
-        // the same amount -- the loan-side mirror of PremiumPostingEndToEndTest's 1200 invariant. ----
-        BigDecimal netLoanReceivable = netFor(disbursedLegs, PostingRule.POLICY_LOAN_RECEIVABLE)
-            .add(netFor(repaidLegs, PostingRule.POLICY_LOAN_RECEIVABLE));
-        assertThat(netLoanReceivable).as("1400 Policy Loan Receivable must net to zero across disburse-then-repay")
+        TenantContext.set(tenantId);
+        LoanView afterSecondHalf = policyLoanApi.recordRepayment(originated.loanId(), half, CURRENCY,
+            "repay-ref-reins-loan-e2e-2", "finance-officer-reins-loan-01");
+        assertThat(afterSecondHalf.status())
+            .as("the repayment that clears the balance settles the loan").isEqualTo(LoanStatus.SETTLED);
+        assertThat(afterSecondHalf.outstandingBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+
+        // ---- Assertion 4: TWO separate policyloan.LoanRepaid journal entries exist -- one per
+        // partial repayment, not one, not zero. This is the assertion that would have caught the
+        // Critical. ----
+        List<JournalEntry> repaidEntries = repaidEntriesFor(tenantId);
+        assertThat(repaidEntries)
+            .as("each partial repayment must post its OWN journal entry -- one entry here means the "
+                + "second repayment was silently swallowed as a false redelivery")
+            .hasSize(2);
+
+        // ...and each is keyed on its own repayment's loan_transaction id, which is what makes the
+        // two distinguishable in the first place. Asserted against the real REPAYMENT rows rather
+        // than against "two distinct strings", so a fix that keyed on something merely unique (a
+        // random UUID per publish, say) would fail here -- such a key would break real redelivery
+        // idempotency, which is the other half of what this sourceRef has to do.
+        TenantContext.set(tenantId);
+        List<String> repaymentTransactionIds = loanTransactionRepository
+            .findByLoanIdOrderByOccurredAt(originated.loanId()).stream()
+            .filter(t -> "REPAYMENT".equals(t.getTransactionType()))
+            .map(t -> t.getLoanTransactionId().toString())
+            .toList();
+        assertThat(repaymentTransactionIds).as("two REPAYMENT loan_transaction rows must exist").hasSize(2);
+        assertThat(repaidEntries).extracting(JournalEntry::getSourceRef)
+            .as("each LoanRepaid entry's sourceRef must be its own repayment's loanTransactionId")
+            .containsExactlyInAnyOrderElementsOf(repaymentTransactionIds);
+
+        // Both entries are balanced DR 1000 Cash / CR 1400 Policy Loan Receivable for their half.
+        for (JournalEntry repaidEntry : repaidEntries) {
+            List<GlPosting> repaidLegs = legsFor(tenantId, repaidEntry);
+            assertThat(repaidLegs).hasSize(2);
+            assertThat(repaidLegs).extracting(GlPosting::getAccountCode)
+                .containsExactlyInAnyOrder(PostingRule.CASH, PostingRule.POLICY_LOAN_RECEIVABLE);
+            assertThat(legFor(repaidLegs, PostingRule.CASH).getDirection()).isEqualTo(PostingDirection.DR);
+            assertThat(legFor(repaidLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getDirection()).isEqualTo(PostingDirection.CR);
+            assertThat(legFor(repaidLegs, PostingRule.POLICY_LOAN_RECEIVABLE).getAmount()).isEqualByComparingTo(half);
+        }
+
+        // ---- Assertion 5: 1400 Policy Loan Receivable nets to EXACTLY zero across the disbursement
+        // and BOTH partial repayments -- the loan-side mirror of PremiumPostingEndToEndTest's 1200
+        // invariant, now proven under the case that actually exercises the fix. Before it, this
+        // summed to +250,000: half the loan stayed on the balance sheet forever. ----
+        BigDecimal netLoanReceivable = netFor(disbursedLegs, PostingRule.POLICY_LOAN_RECEIVABLE);
+        for (JournalEntry repaidEntry : repaidEntries) {
+            netLoanReceivable = netLoanReceivable.add(netFor(legsFor(tenantId, repaidEntry), PostingRule.POLICY_LOAN_RECEIVABLE));
+        }
+        assertThat(netLoanReceivable)
+            .as("1400 Policy Loan Receivable must net to zero across disburse plus BOTH partial repayments")
             .isEqualByComparingTo(BigDecimal.ZERO);
 
         wireMock.verify(exactly(2), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /** Every {@code policyloan.LoanRepaid} journal entry in this tenant. The tenant id is freshly
+     * random per test and exactly one loan is repaid in it, so this is "the entries for that loan"
+     * -- and it deliberately does NOT filter on a sourceRef, since the whole point of the fix under
+     * test is that a LoanRepaid entry is no longer keyed by the loan id. */
+    private List<JournalEntry> repaidEntriesFor(UUID tenantId) {
+        TenantContext.set(tenantId);
+        return journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+            .filter(e -> "policyloan.LoanRepaid".equals(e.getSourceEvent()))
+            .toList();
     }
 }

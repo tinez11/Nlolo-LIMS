@@ -36,7 +36,10 @@ import java.util.function.Consumer;
  *   null amount as "no accounting consequence" by its own contract -- correctly posted nothing;
  *   this handler needed no code change once Task 7 landed, only a real amount to act on.</li>
  *   <li>{@code policyloan.LoanRepaid} -- books DR {@code 1000 Cash} / CR {@code 1400 Policy Loan
- *   Receivable}, keyed by {@code loanId}, amount already present on the payload today.</li>
+ *   Receivable}, amount already present on the payload today, keyed by <b>{@code
+ *   loanTransactionId}</b> (the repayment's own {@code LoanTransaction} id) and NOT by {@code
+ *   loanId}: partial repayments repeat against one loan, so a loan-keyed idempotency check silently
+ *   swallowed every repayment after the first. See {@link #handleLoanRepaid}.</li>
  * </ul>
  *
  * <p><b>{@code policyNumber} is not on either event's payload.</b> A policy loan is keyed by
@@ -109,14 +112,38 @@ public class PolicyLoanEventListener {
         post("policyloan.LoanDisbursed", String.valueOf(loanId), amount, currency);
     }
 
+    /**
+     * <b>Keyed on {@code loanTransactionId}, NOT {@code loanId} -- deliberately, and this is the
+     * one place in this module where that distinction is load-bearing.</b>
+     *
+     * <p>A policy loan accepts REPEATABLE PARTIAL repayments ({@code
+     * PolicyLoanApiIntegrationTest.repaymentReducesOutstandingBalanceAndSettlesAtZero}: 200,000 then
+     * 300,000 against a 500,000 loan), and {@code PolicyLoanApiImpl.recordRepayment} publishes one
+     * {@code LoanRepaid} per repayment -- correctly, since cash really did arrive twice. Keying
+     * {@code sourceRef} on {@code loanId} (as M9's plan originally specified) therefore made the
+     * SECOND partial repayment indistinguishable from a redelivery of the first: {@link
+     * FinaccountingApiImpl#postEntry}'s {@code existsByTenantIdAndSourceEventAndSourceRef}
+     * fast-path dropped it silently -- no exception, no {@code
+     * lifeplatform_finaccounting_event_processing_failed_total} increment (the drop happens before
+     * that catch block), no alert -- and {@code 1400 Policy Loan Receivable} never cleared for a
+     * partially-repaid loan while the trial balance still balanced. Found by M9's final whole-branch
+     * review; fixed by enriching the event with the repayment's own {@code LoanTransaction} id,
+     * which is unique per repayment yet stable across a genuine redelivery of that same repayment.
+     *
+     * <p>{@link #handleLoanDisbursed} still keys on {@code loanId} and must keep doing so: a loan is
+     * disbursed exactly once, so no per-transaction key is needed or wanted there.
+     */
     private void handleLoanRepaid(Map<String, Object> payload) {
-        Object loanId = payload.get("loanId");
+        // Cast, not String.valueOf: a missing id must fail loudly into withTenant's catch (metric +
+        // alert), never post the literal sourceRef "null" and risk colliding with another id-less
+        // LoanRepaid. Matches BillingEventListener/ClaimsEventListener's established pattern.
+        UUID loanTransactionId = (UUID) payload.get("loanTransactionId");
         @SuppressWarnings("unchecked")
         Map<String, Object> amountMap = (Map<String, Object>) payload.get("amount");
         BigDecimal amount = amountMap == null ? null : new BigDecimal((String) amountMap.get("amount"));
         String currency = amountMap == null ? null : (String) amountMap.get("currencyCode");
 
-        post("policyloan.LoanRepaid", String.valueOf(loanId), amount, currency);
+        post("policyloan.LoanRepaid", loanTransactionId.toString(), amount, currency);
     }
 
     private void post(String eventType, String sourceRef, BigDecimal amount, String currency) {

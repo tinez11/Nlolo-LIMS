@@ -191,7 +191,13 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         // M3 simplification (Global Constraints): every repayment is treated as immediately
         // confirmed. The real trigger per Module Architecture is consuming
         // payment.PaymentConfirmed (M5, not built) -- this makes the success path testable now.
-        loanTransactionRepository.save(new LoanTransaction(tenantId, loanId, "REPAYMENT", amount, currency, paymentReference));
+        // The saved transaction is CAPTURED, not discarded: its loanTransactionId is the only
+        // stable, per-repayment identity this event can carry, and finaccounting needs one (see
+        // the publish below). LoanTransaction.loanTransactionId is application-assigned in the
+        // constructor via UUID.randomUUID() -- NOT @GeneratedValue -- so it is already real and
+        // non-null here, whether or not Hibernate has flushed the INSERT yet.
+        LoanTransaction repayment = loanTransactionRepository.save(
+            new LoanTransaction(tenantId, loanId, "REPAYMENT", amount, currency, paymentReference));
         loan.markRepaying();
         BigDecimal outstanding = computeOutstandingBalance(loan);
         if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
@@ -199,8 +205,28 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         }
         policyLoanRepository.save(loan);
 
+        // loanTransactionId added by M9's final-review fix wave, and it is NOT cosmetic --
+        // it closes a silent financial misstatement.
+        //
+        // This publish is deliberately UNGUARDED (unlike markDisbursed/markDisbursementFailed
+        // above, which each publish only on a real transition) because the loan model genuinely
+        // supports REPEATABLE PARTIAL repayments: PolicyLoanApiIntegrationTest
+        // .repaymentReducesOutstandingBalanceAndSettlesAtZero pays 200,000 then 300,000 against a
+        // 500,000 loan, and BOTH are real accounting events -- cash arrived twice. Every partial
+        // repayment therefore must and does emit its own LoanRepaid.
+        //
+        // The bug that made this field necessary: finaccounting's PolicyLoanEventListener keyed its
+        // journal-entry idempotency (FinaccountingApiImpl.postEntry's
+        // existsByTenantIdAndSourceEventAndSourceRef fast-path) on loanId alone. loanId is stable
+        // across every repayment of the same loan, so the SECOND partial repayment looked exactly
+        // like a redelivery of the first and was silently dropped -- no exception, no failure
+        // metric, no alert, and 1400 Policy Loan Receivable never cleared. loanTransactionId is
+        // unique per repayment yet stable across a genuine redelivery of the same repayment, which
+        // is precisely the idempotency key that path needs. LoanDisbursed keeps keying on loanId:
+        // a loan is disbursed exactly once, so there that key is still correct.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanRepaid", tenantId,
-            Map.of("loanId", loanId, "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
+            Map.of("loanId", loanId, "loanTransactionId", repayment.getLoanTransactionId(),
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency),
                    "repaidAt", Instant.now().toString(),
                    "outstandingBalance", Map.of("amount", outstanding.max(BigDecimal.ZERO).toPlainString(), "currencyCode", loan.getPrincipalCurrency()))));
 
