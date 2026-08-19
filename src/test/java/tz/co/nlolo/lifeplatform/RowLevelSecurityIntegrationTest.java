@@ -84,6 +84,15 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
+            // M9 (Task 9) addition: policyloan/V2 (trg_partition_controls) was never in this
+            // class's migration list either, harmless until now because nothing after V1 in this
+            // list creates a new partitioned table. finaccounting/V1 below does
+            // (finaccounting.gl_posting) and must land after this, so the event trigger is already
+            // active and mirrors gl_posting's RLS/policy/ACL onto its partitions live as
+            // finaccounting/V2 runs -- without it, journalEntryGlPostingAndChartOfAccountAreTenantIsolatedUnderRls
+            // below would fail its own RLS check on the gl_posting_2026_08 partition even though the
+            // parent enforces it correctly.
+            "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
@@ -117,7 +126,14 @@ class RowLevelSecurityIntegrationTest {
             // Until now no test in this class or AppRolePrivilegesIntegrationTest touched the
             // module at all.
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
-            "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql");
+            "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
+            // M9 (Task 9) additions. finaccounting/V1 enabled RLS on NONE of its five original
+            // tables and granted app_role nothing at all (worse: it REVOKEs UPDATE/DELETE on
+            // gl_posting from a role that never held anything); V2 is what adds both RLS and the
+            // grants, for chart_of_account/journal_entry/gl_posting among others. Until now no test
+            // in this class or AppRolePrivilegesIntegrationTest touched the module at all.
+            "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
+            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -772,6 +788,124 @@ class RowLevelSecurityIntegrationTest {
                 assertThat(resultSet.next()).isTrue();
                 assertThat(resultSet.getString(1)).isEqualTo(recoveryA.toString());
                 assertThat(resultSet.next()).as("tenant B's recovery must be invisible").isFalse();
+            }
+        }
+    }
+
+    /**
+     * M9 addition: proves the three tables finaccounting/V2 protects for the first time --
+     * {@code chart_of_account}, {@code journal_entry} and {@code gl_posting} -- are genuinely
+     * tenant-isolated. V1 enabled RLS on none of them and granted app_role nothing at all (see this
+     * class's own migration-list comment above); V2 is what adds both. Rows are seeded directly via
+     * SQL as the superuser -- {@code FinaccountingApi} is READ-ONLY by design (every real posting is
+     * derived from a domain event by the module's own listeners, never hand-entered), so there is no
+     * synchronous write API to drive fixtures through, same situation as payment's and distribution's
+     * own tables above. {@code gl_posting}'s row lands in the {@code gl_posting_2026_08} partition
+     * (this suite runs in August 2026), which is only correctly protected because of this class's own
+     * {@code policyloan/V2} migration-list addition.
+     */
+    @Test
+    @Order(11)
+    void journalEntryGlPostingAndChartOfAccountAreTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        UUID journalEntryA = UUID.randomUUID();
+        UUID journalEntryB = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            try (PreparedStatement insertEntry = connection.prepareStatement(
+                    "INSERT INTO finaccounting.journal_entry (journal_entry_id, tenant_id, source_event, "
+                    + "source_ref, period, policy_number) VALUES (?, ?, 'billing.PremiumInvoiceGenerated', ?, "
+                    + "'2026-08', ?)")) {
+                insertEntry.setObject(1, journalEntryA);
+                insertEntry.setObject(2, tenantA);
+                insertEntry.setString(3, "rls-je-a");
+                insertEntry.setString(4, "RLS-FA-POL-A");
+                assertThat(insertEntry.executeUpdate()).isEqualTo(1);
+                insertEntry.setObject(1, journalEntryB);
+                insertEntry.setObject(2, tenantB);
+                insertEntry.setString(3, "rls-je-b");
+                insertEntry.setString(4, "RLS-FA-POL-B");
+                assertThat(insertEntry.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertPosting = connection.prepareStatement(
+                    "INSERT INTO finaccounting.gl_posting (tenant_id, journal_entry_id, account_code, direction, "
+                    + "amount, currency, period, policy_number, posting_type, source_event, source_ref) "
+                    + "VALUES (?, ?, '1000', 'DR', 15000.00, 'TZS', '2026-08', ?, "
+                    + "'billing.PremiumInvoiceGenerated', 'billing.PremiumInvoiceGenerated', ?)")) {
+                insertPosting.setObject(1, tenantA);
+                insertPosting.setObject(2, journalEntryA);
+                insertPosting.setString(3, "RLS-FA-POL-A");
+                insertPosting.setString(4, "rls-je-a");
+                assertThat(insertPosting.executeUpdate()).isEqualTo(1);
+                insertPosting.setObject(1, tenantB);
+                insertPosting.setObject(2, journalEntryB);
+                insertPosting.setString(3, "RLS-FA-POL-B");
+                insertPosting.setString(4, "rls-je-b");
+                assertThat(insertPosting.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertAccount = connection.prepareStatement(
+                    "INSERT INTO finaccounting.chart_of_account (tenant_id, account_code, name, account_type, "
+                    + "normal_balance) VALUES (?, '1000', 'Cash / Mobile Money', 'ASSET', 'DR')")) {
+                insertAccount.setObject(1, tenantA);
+                assertThat(insertAccount.executeUpdate()).isEqualTo(1);
+                insertAccount.setObject(1, tenantB);
+                assertThat(insertAccount.executeUpdate()).isEqualTo(1);
+            }
+        }
+
+        // Negative control: both tenants' rows really are present when RLS is not in play.
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement selectEntries = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM finaccounting.journal_entry WHERE tenant_id IN (?, ?)");
+             PreparedStatement selectPostings = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM finaccounting.gl_posting WHERE tenant_id IN (?, ?)");
+             PreparedStatement selectAccounts = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM finaccounting.chart_of_account WHERE tenant_id IN (?, ?)")) {
+            selectEntries.setObject(1, tenantA);
+            selectEntries.setObject(2, tenantB);
+            try (ResultSet resultSet = selectEntries.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
+            selectPostings.setObject(1, tenantA);
+            selectPostings.setObject(2, tenantB);
+            try (ResultSet resultSet = selectPostings.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
+            selectAccounts.setObject(1, tenantA);
+            selectAccounts.setObject(2, tenantB);
+            try (ResultSet resultSet = selectAccounts.executeQuery()) {
+                resultSet.next();
+                assertThat(resultSet.getInt(1)).isEqualTo(2);
+            }
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT policy_number FROM finaccounting.journal_entry")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("RLS-FA-POL-A");
+                assertThat(resultSet.next()).as("tenant B's journal entry must be invisible").isFalse();
+            }
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT policy_number FROM finaccounting.gl_posting")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("RLS-FA-POL-A");
+                assertThat(resultSet.next()).as("tenant B's gl_posting must be invisible").isFalse();
+            }
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT account_code FROM finaccounting.chart_of_account")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("1000");
+                assertThat(resultSet.next()).as("tenant B's chart_of_account row must be invisible").isFalse();
             }
         }
     }

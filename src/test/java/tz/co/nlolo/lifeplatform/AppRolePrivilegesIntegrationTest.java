@@ -130,6 +130,15 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
+            // M9 (Task 9) addition: policyloan/V2 (trg_partition_controls, a database-wide event
+            // trigger) was never in this class's migration list at all, even though V1 was --
+            // harmless until now because nothing after V1 in this list creates a NEW partitioned
+            // table. finaccounting/V1 below does (finaccounting.gl_posting), and it must land
+            // AFTER this so the trigger is already active and mirrors gl_posting's RLS/policy/ACL
+            // onto its partitions live, as finaccounting/V2's own ALTER TABLE/CREATE POLICY/GRANT/
+            // REVOKE statements execute -- not merely via V2's one-time backfill sweep, which would
+            // run too early to see a schema that does not exist yet.
+            "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
@@ -182,7 +191,17 @@ class AppRolePrivilegesIntegrationTest {
             // M7. reinsurance/V1 has zero GRANT statements (the recurring V1 pattern this class
             // exists to catch); V2 is what grants app_role anything at all here.
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
-            "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql");
+            "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
+            // M9 (Task 9) additions: finaccounting appeared in NEITHER this class nor
+            // RowLevelSecurityIntegrationTest until now -- the same gap reinsurance had entering
+            // M8. finaccounting/V1 has zero GRANT statements and ends with a REVOKE UPDATE, DELETE
+            // with NO PRIOR GRANT anywhere in the file (app_role therefore had NO privileges on the
+            // ledger at all -- worse than the recurring "V1 grants nothing" pattern, since V1 here
+            // also actively revokes on a role that never held anything); V2 is what grants app_role
+            // anything at all and is the first point this platform's append-only ledger becomes
+            // genuinely writable.
+            "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
+            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -743,6 +762,170 @@ class AppRolePrivilegesIntegrationTest {
             assertThat(update.executeUpdate()).isEqualTo(1);
         } catch (SQLException e) {
             fail("app_role could not update reinsurance.claim_recovery: " + e.getMessage());
+        }
+    }
+
+    /**
+     * M9 (Task 9). Direct SQL round-trip through app_role's own restricted connection -- proves the
+     * GRANT block in finaccounting/V2 actually took effect under the real runtime identity, not
+     * just the migration/superuser identity this suite's other integration tests use. This matters
+     * more here than for any prior module: V1's {@code REVOKE UPDATE, DELETE ON
+     * finaccounting.gl_posting FROM app_role} ran with NO PRIOR GRANT anywhere in the file, so
+     * app_role had NO privileges on the ledger at all -- this platform's append-only GL had never
+     * once been verified as WRITABLE before V2 (see V2's own javadoc, which records this same
+     * history). Proves INSERT and SELECT on both {@code journal_entry} (the aggregate root) and
+     * {@code gl_posting} (its legs, landing in the {@code gl_posting_2026_08} partition since this
+     * suite runs in August 2026 -- itself only correctly protected because of this class's own
+     * {@code policyloan/V2} migration-list fix above).
+     */
+    @Test
+    void appRoleCanInsertAndSelectAJournalEntryAndAGlPosting() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        UUID journalEntryId = null;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insertEntry = connection.prepareStatement(
+                 "INSERT INTO finaccounting.journal_entry (tenant_id, source_event, source_ref, period, policy_number) "
+                 + "VALUES (?, 'billing.PremiumInvoiceGenerated', 'approle-je-01', '2026-08', 'APPROLE-GL-01') "
+                 + "RETURNING journal_entry_id")) {
+            insertEntry.setObject(1, tenantId);
+            try (ResultSet rs = insertEntry.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not insert into finaccounting.journal_entry").isTrue();
+                journalEntryId = (UUID) rs.getObject(1);
+            }
+        } catch (SQLException e) {
+            fail("app_role could not insert into finaccounting.journal_entry: " + e.getMessage());
+        }
+
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insertPosting = connection.prepareStatement(
+                 "INSERT INTO finaccounting.gl_posting (tenant_id, journal_entry_id, account_code, direction, "
+                 + "amount, currency, period, policy_number, posting_type, source_event, source_ref) "
+                 + "VALUES (?, ?, '1000', 'DR', 15000.00, 'TZS', '2026-08', 'APPROLE-GL-01', "
+                 + "'billing.PremiumInvoiceGenerated', 'billing.PremiumInvoiceGenerated', 'approle-je-01')")) {
+            insertPosting.setObject(1, tenantId);
+            insertPosting.setObject(2, journalEntryId);
+            assertThat(insertPosting.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into finaccounting.gl_posting: " + e.getMessage());
+        }
+
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT account_code FROM finaccounting.gl_posting WHERE journal_entry_id = ?")) {
+            select.setObject(1, journalEntryId);
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getString(1)).isEqualTo("1000");
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from finaccounting.gl_posting: " + e.getMessage());
+        }
+    }
+
+    /**
+     * M9 (Task 9). The append-only counterpart to
+     * {@link #appRoleCanInsertAndSelectAJournalEntryAndAGlPosting}: proves app_role can genuinely
+     * NOT update or delete either table, under its own real restricted connection -- V1's REVOKE
+     * ran against a role that held nothing, so this guarantee had literally never been exercised
+     * before V2 existed. Mirrors {@link #appRoleCannotUpdateOrDeletePolicyEndorsementsBecauseTheLedgerIsAppendOnly}'s
+     * shape: a positive-control SELECT first (proving app_role does have real access to both
+     * tables), then the two denials, so the failure is specific to UPDATE/DELETE rather than a
+     * blanket permission problem.
+     */
+    @Test
+    void appRoleCannotUpdateOrDeleteAJournalEntryOrAGlPostingBecauseTheLedgerIsAppendOnly() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        UUID journalEntryId;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insertEntry = connection.prepareStatement(
+                 "INSERT INTO finaccounting.journal_entry (tenant_id, source_event, source_ref, period, policy_number) "
+                 + "VALUES (?, 'claims.ClaimSettled', 'approle-je-02', '2026-08', 'APPROLE-GL-02') "
+                 + "RETURNING journal_entry_id")) {
+            insertEntry.setObject(1, tenantId);
+            try (ResultSet rs = insertEntry.executeQuery()) {
+                rs.next();
+                journalEntryId = (UUID) rs.getObject(1);
+            }
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insertPosting = connection.prepareStatement(
+                 "INSERT INTO finaccounting.gl_posting (tenant_id, journal_entry_id, account_code, direction, "
+                 + "amount, currency, period, policy_number, posting_type, source_event, source_ref) "
+                 + "VALUES (?, ?, '5000', 'DR', 25000.00, 'TZS', '2026-08', 'APPROLE-GL-02', "
+                 + "'claims.ClaimSettled', 'claims.ClaimSettled', 'approle-je-02')")) {
+            insertPosting.setObject(1, tenantId);
+            insertPosting.setObject(2, journalEntryId);
+            insertPosting.executeUpdate();
+        }
+
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            assertThat(connection.getMetaData().getUserName()).isEqualTo("app_role");
+
+            statement.execute("SELECT count(*) FROM finaccounting.journal_entry");   // positive control
+            statement.execute("SELECT count(*) FROM finaccounting.gl_posting");      // positive control
+
+            assertThatThrownBy(() -> statement.execute("UPDATE finaccounting.journal_entry SET policy_number = "
+                    + "'tamper' WHERE journal_entry_id = '" + journalEntryId + "'"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.execute(
+                    "DELETE FROM finaccounting.journal_entry WHERE journal_entry_id = '" + journalEntryId + "'"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.execute("UPDATE finaccounting.gl_posting SET account_code = "
+                    + "'9999' WHERE journal_entry_id = '" + journalEntryId + "'"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.execute(
+                    "DELETE FROM finaccounting.gl_posting WHERE journal_entry_id = '" + journalEntryId + "'"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("permission denied");
+        }
+    }
+
+    /**
+     * M9 (Task 9). <b>Closes a gap in {@code trg_partition_controls}'s OWN test coverage, not just
+     * a finaccounting gap.</b> Every existing proof of that mechanism -- policyloan's own, and this
+     * class's insert/select/update/delete tests above -- only ever exercises the BACKFILL path:
+     * partitions that already existed at the moment {@code policyloan/V2} ran. Nothing anywhere on
+     * this platform had, until this test, created a partition <em>after</em> the event trigger was
+     * already installed and asserted it was protected with zero manual steps -- which is exactly
+     * the real pg_partman maintenance-job scenario {@code policyloan/V2}'s own code comment
+     * describes and names {@code finaccounting.gl_posting} as a future beneficiary of.
+     *
+     * <p>Issues {@code CREATE TABLE ... PARTITION OF} directly as the superuser/migration role
+     * (mirroring what pg_partman's maintenance job does under its own configured role), then reads
+     * back through the exact {@code pg_class}/{@code pg_policy}/{@code has_table_privilege} shape
+     * {@code db-migrations/_post-migration/verify-partition-controls.sql} uses in production.
+     */
+    @Test
+    void newlyCreatedGlPostingPartitionInheritsRlsPolicyAndAppendOnlyPrivilegesWithNoManualStep() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE finaccounting.gl_posting_2026_10 PARTITION OF finaccounting.gl_posting "
+                + "FOR VALUES FROM ('2026-10-01') TO ('2026-11-01')");
+
+            try (ResultSet rs = statement.executeQuery(
+                    "SELECT relrowsecurity FROM pg_class WHERE oid = 'finaccounting.gl_posting_2026_10'::regclass")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getBoolean(1)).as("RLS must be enabled on a brand-new partition with zero manual steps")
+                    .isTrue();
+            }
+            try (ResultSet rs = statement.executeQuery(
+                    "SELECT count(*) FROM pg_policy WHERE polrelid = 'finaccounting.gl_posting_2026_10'::regclass")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getInt(1)).as("exactly one tenant-isolation policy must be mirrored").isEqualTo(1);
+            }
+            try (ResultSet rs = statement.executeQuery(
+                    "SELECT has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'UPDATE'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'DELETE')")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getBoolean(1)).as("app_role must NOT hold UPDATE on a brand-new partition").isFalse();
+                assertThat(rs.getBoolean(2)).as("app_role must NOT hold DELETE on a brand-new partition").isFalse();
+            }
         }
     }
 }
