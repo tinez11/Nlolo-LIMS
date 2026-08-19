@@ -15,6 +15,8 @@ import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountRepos
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Implements {@link FinaccountingApi} (three read methods -- the module publishes no write
@@ -116,21 +119,45 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         return Optional.of(entry);
     }
 
+    /**
+     * See {@link FinaccountingApi#listJournalEntries} for why this is paged and why both filters are
+     * applied in the database.
+     *
+     * <p><b>Legs are fetched for the whole page in ONE query, not one query per entry.</b> The
+     * obvious implementation -- mapping each entry through {@link #toView(JournalEntry)}, which
+     * loads its own legs -- is a textbook N+1: a 100-entry page cost 101 queries. Since every entry
+     * on a page needs exactly the same shape of child rows, they are batch-loaded by entry id and
+     * grouped in memory. Grouping in memory is fine here in a way that FILTERING in memory was not:
+     * it happens strictly after the page has been selected, so it cannot change which entries the
+     * page contains.
+     */
     @Override
-    public List<JournalEntryView> listJournalEntries(String period, String policyNumber) {
+    public Page<JournalEntryView> listJournalEntries(String period, String policyNumber, Pageable pageable) {
         UUID tenantId = TenantContext.get();
-        List<JournalEntry> entries;
-        if (period != null) {
-            entries = journalEntryRepository.findByTenantIdAndPeriodOrderByPostedAtDesc(tenantId, period);
-            if (policyNumber != null) {
-                entries = entries.stream().filter(e -> policyNumber.equals(e.getPolicyNumber())).toList();
-            }
+        Page<JournalEntry> entries;
+        if (period != null && policyNumber != null) {
+            entries = journalEntryRepository.findByTenantIdAndPeriodAndPolicyNumberOrderByPostedAtDesc(
+                tenantId, period, policyNumber, pageable);
+        } else if (period != null) {
+            entries = journalEntryRepository.findByTenantIdAndPeriodOrderByPostedAtDesc(tenantId, period, pageable);
         } else if (policyNumber != null) {
-            entries = journalEntryRepository.findByTenantIdAndPolicyNumberOrderByPostedAtDesc(tenantId, policyNumber);
+            entries = journalEntryRepository.findByTenantIdAndPolicyNumberOrderByPostedAtDesc(
+                tenantId, policyNumber, pageable);
         } else {
-            entries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId);
+            entries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, pageable);
         }
-        return entries.stream().map(this::toView).toList();
+        if (entries.isEmpty()) {
+            // Short-circuited on purpose: an `IN ()` with an empty collection is a needless round
+            // trip, and some dialects reject it outright.
+            return entries.map(entry -> toView(entry, List.of()));
+        }
+        Map<UUID, List<GlPosting>> legsByEntry = glPostingRepository
+            .findByTenantIdAndJournalEntryIdInOrderByJournalEntryIdAscDirectionAsc(tenantId,
+                entries.map(JournalEntry::getJournalEntryId).toList())
+            .stream()
+            .collect(Collectors.groupingBy(GlPosting::getJournalEntryId, LinkedHashMap::new, Collectors.toList()));
+        return entries.map(entry -> toView(entry,
+            legsByEntry.getOrDefault(entry.getJournalEntryId(), List.of())));
     }
 
     @Override
@@ -148,12 +175,17 @@ public class FinaccountingApiImpl implements FinaccountingApi {
             .map(this::toView).toList();
     }
 
+    /** Single-entry form: loads this entry's own legs. Used by {@link #getJournalEntry}, where one
+     * extra query IS the whole query -- never by the list path, which batches instead. */
     private JournalEntryView toView(JournalEntry entry) {
-        List<GlPostingView> postings = glPostingRepository
-            .findByTenantIdAndJournalEntryIdOrderByDirectionAsc(entry.getTenantId(), entry.getJournalEntryId())
-            .stream().map(this::toView).toList();
+        return toView(entry, glPostingRepository
+            .findByTenantIdAndJournalEntryIdOrderByDirectionAsc(entry.getTenantId(), entry.getJournalEntryId()));
+    }
+
+    private JournalEntryView toView(JournalEntry entry, List<GlPosting> legs) {
         return new JournalEntryView(entry.getJournalEntryId(), entry.getSourceEvent(), entry.getSourceRef(),
-            entry.getPeriod(), entry.getPolicyNumber(), entry.getPostedAt(), postings);
+            entry.getPeriod(), entry.getPolicyNumber(), entry.getPostedAt(),
+            legs.stream().map(this::toView).toList());
     }
 
     private GlPostingView toView(GlPosting posting) {

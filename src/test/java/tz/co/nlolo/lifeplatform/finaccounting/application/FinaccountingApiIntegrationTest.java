@@ -19,6 +19,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -139,7 +142,7 @@ class FinaccountingApiIntegrationTest {
         assertThat(view.postings()).extracting(GlPostingView::accountCode)
             .containsExactlyInAnyOrder(PostingRule.CASH, PostingRule.PREMIUM_RECEIVABLE);
 
-        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId)).hasSize(1);
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())).hasSize(1);
         assertThat(glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenantId, journalEntryId))
             .hasSize(2);
     }
@@ -159,7 +162,7 @@ class FinaccountingApiIntegrationTest {
             balancedEntry(tenantId, "billing.PremiumCollected", "inv-dup-1", "2026-08", "POL-0002"));
         assertThat(second).isEmpty();
 
-        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId)).hasSize(1);
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())).hasSize(1);
         assertThat(glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(tenantId, journalEntryId))
             .hasSize(2);
 
@@ -185,7 +188,7 @@ class FinaccountingApiIntegrationTest {
             SQLException violation = assertThrows(SQLException.class, insert::executeUpdate);
             assertThat(violation.getMessage()).contains("ux_journal_entry_once");
         }
-        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId)).hasSize(1);
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())).hasSize(1);
     }
 
     @Test
@@ -199,7 +202,7 @@ class FinaccountingApiIntegrationTest {
 
         assertThrows(IllegalStateException.class, () -> finaccountingApiImpl.postEntry(entry));
 
-        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId)).isEmpty();
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged())).isEmpty();
         // The GL-posting half of the same guarantee: confirm no leg was written either, keyed on the
         // would-be leg's own account code and period since the throw happens before a journal_entry_id
         // is ever minted. A future reordering of the balance check relative to the posting-construction
@@ -239,19 +242,62 @@ class FinaccountingApiIntegrationTest {
             balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-list-2", "2026-09", "POL-LIST-B"));
 
         TenantContext.set(tenantId);
-        assertThat(finaccountingApi.listJournalEntries("2026-08", null))
+        assertThat(finaccountingApi.listJournalEntries("2026-08", null, Pageable.unpaged()))
             .extracting(JournalEntryView::sourceRef).containsExactly("inv-list-1");
         // The falsifiable half -- a filter that ignored its argument would return both rows here too.
         TenantContext.set(tenantId);
-        assertThat(finaccountingApi.listJournalEntries("2026-09", null))
+        assertThat(finaccountingApi.listJournalEntries("2026-09", null, Pageable.unpaged()))
             .extracting(JournalEntryView::sourceRef).containsExactly("inv-list-2");
 
         TenantContext.set(tenantId);
-        assertThat(finaccountingApi.listJournalEntries(null, "POL-LIST-A"))
+        assertThat(finaccountingApi.listJournalEntries(null, "POL-LIST-A", Pageable.unpaged()))
             .extracting(JournalEntryView::sourceRef).containsExactly("inv-list-1");
         TenantContext.set(tenantId);
-        assertThat(finaccountingApi.listJournalEntries(null, "POL-LIST-B"))
+        assertThat(finaccountingApi.listJournalEntries(null, "POL-LIST-B", Pageable.unpaged()))
             .extracting(JournalEntryView::sourceRef).containsExactly("inv-list-2");
+
+        // ---- BOTH filters together, resolved in the database (finding M8). The old implementation
+        // ran a period-only query and filtered policyNumber in memory afterwards; combined with
+        // paging that would have filtered WITHIN a page and returned short pages. Both directions are
+        // asserted, so a combined finder that silently dropped one of its two arguments fails here. ----
+        TenantContext.set(tenantId);
+        assertThat(finaccountingApi.listJournalEntries("2026-08", "POL-LIST-A", Pageable.unpaged()))
+            .extracting(JournalEntryView::sourceRef).containsExactly("inv-list-1");
+        TenantContext.set(tenantId);
+        assertThat(finaccountingApi.listJournalEntries("2026-08", "POL-LIST-B", Pageable.unpaged()))
+            .as("period and policyNumber must BOTH constrain -- these two rows disagree on period")
+            .isEmpty();
+        TenantContext.set(tenantId);
+        assertThat(finaccountingApi.listJournalEntries("2026-09", "POL-LIST-B", Pageable.unpaged()))
+            .extracting(JournalEntryView::sourceRef).containsExactly("inv-list-2");
+    }
+
+    /** Finding I3: with no filters this used to return every journal entry the tenant had ever
+     * posted. The page size must genuinely bound the result while totalElements still reports the
+     * true count, and the legs must still arrive on every item -- they are now batch-loaded for the
+     * whole page in one query rather than one query per entry, and a grouping bug there would show up
+     * as entries with zero legs. */
+    @Test
+    void listJournalEntriesHonoursItsPageSizeAndStillCarriesBothLegsOnEveryEntry() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        for (int i = 1; i <= 5; i++) {
+            TenantContext.set(tenantId);
+            finaccountingApiImpl.postEntry(balancedEntry(tenantId, "billing.PremiumInvoiceGenerated",
+                "inv-page-" + i, "2026-08", "POL-PAGE"));
+        }
+
+        TenantContext.set(tenantId);
+        Page<JournalEntryView> firstPage = finaccountingApi.listJournalEntries(null, null, PageRequest.of(0, 2));
+        assertThat(firstPage.getContent()).as("a page of 2 must contain 2 entries, not all 5").hasSize(2);
+        assertThat(firstPage.getTotalElements()).as("totalElements must still report every match").isEqualTo(5);
+        assertThat(firstPage.getContent()).allSatisfy(view ->
+            assertThat(view.postings()).as("every entry on a batch-loaded page keeps both of its legs").hasSize(2));
+
+        TenantContext.set(tenantId);
+        Page<JournalEntryView> lastPage = finaccountingApi.listJournalEntries(null, null, PageRequest.of(2, 2));
+        assertThat(lastPage.getContent()).as("the final page holds the 5th entry alone").hasSize(1);
+        assertThat(lastPage.getContent().get(0).postings()).hasSize(2);
     }
 
     @Test

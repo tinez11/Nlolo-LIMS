@@ -2,6 +2,8 @@ package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,7 +11,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -35,13 +36,24 @@ public class GlPostingController {
         this.finaccountingApi = finaccountingApi;
     }
 
+    /**
+     * Paged since M9's final review (finding I3): with no filters this used to return every journal
+     * entry the tenant had ever posted, as a bare array, on the one table this platform guarantees
+     * grows without bound. {@code page}/{@code pageSize} defaults and the {@code Math.min} hard cap
+     * are copied deliberately from {@code ClaimController.listClaims} and {@code
+     * PolicyController.searchPolicies} rather than invented -- {@code pageSize} is a client hint, and
+     * the cap is what stops it being a denial-of-service knob.
+     */
     @GetMapping("/gl-postings")
     @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
-    public ResponseEntity<List<JournalEntryResponseDto>> listGlPostings(
+    public ResponseEntity<JournalEntrySearchResponseDto> listGlPostings(
             @RequestParam(required = false) String period,
-            @RequestParam(required = false) String policyNumber) {
-        List<JournalEntryView> views = finaccountingApi.listJournalEntries(period, policyNumber);
-        return ResponseEntity.ok(views.stream().map(JournalEntryResponseDto::from).toList());
+            @RequestParam(required = false) String policyNumber,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        Page<JournalEntryView> result = finaccountingApi.listJournalEntries(period, policyNumber,
+            PageRequest.of(page, Math.min(pageSize, 100)));
+        return ResponseEntity.ok(JournalEntrySearchResponseDto.from(result));
     }
 
     @GetMapping("/gl-postings/{journalEntryId}")

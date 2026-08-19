@@ -37,6 +37,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
@@ -325,7 +326,7 @@ class ClaimAndCommissionPostingEndToEndTest {
 
     private JournalEntry singleEntryFor(UUID tenantId, String sourceEvent, String sourceRef) {
         TenantContext.set(tenantId);
-        List<JournalEntry> entries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+        List<JournalEntry> entries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
             .filter(e -> sourceEvent.equals(e.getSourceEvent()) && sourceRef.equals(e.getSourceRef()))
             .toList();
         assertThat(entries).as("expected exactly one %s journal entry for sourceRef %s", sourceEvent, sourceRef).hasSize(1);
@@ -408,11 +409,11 @@ class ClaimAndCommissionPostingEndToEndTest {
         transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(commissionEnvelope));
 
         TenantContext.set(tenantId);
-        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
                 .filter(e -> "claims.ClaimSettled".equals(e.getSourceEvent())).toList())
             .as("a redelivered ClaimSettled must not double-post").hasSize(1);
         TenantContext.set(tenantId);
-        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
                 .filter(e -> "distribution.CommissionPaid".equals(e.getSourceEvent())).toList())
             .as("a redelivered CommissionPaid must not double-post").hasSize(1);
         assertThat(legsFor(tenantId, claimEntry)).as("no second posting pair for the claim entry").hasSize(2);

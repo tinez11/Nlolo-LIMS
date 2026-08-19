@@ -172,29 +172,52 @@ class FinaccountingContractTest {
         UUID tenantId = UUID.randomUUID();
         seedEntry(tenantId, "billing.PremiumInvoiceGenerated", "gl-ct-list-1", "2026-08", "POL-GL-A", "15000.00");
 
+        // The response is a paged envelope -- {items, page} -- not a bare array, since finding I3.
+        // SpecTypeConformance is pointed at the envelope schema so its walk covers the page meta as
+        // well as each item's money fields; it recurses into items itself.
         mockMvc.perform(get("/gl-postings").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "JournalEntryView"))
-            .andExpect(jsonPath("$.length()").value(1));
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "JournalEntrySearchResponse"))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.page.page").value(0))
+            .andExpect(jsonPath("$.page.pageSize").value(20))
+            .andExpect(jsonPath("$.page.totalElements").value(1));
 
         mockMvc.perform(get("/gl-postings").param("period", "2026-08").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(1));
+            .andExpect(jsonPath("$.items.length()").value(1));
 
         // The falsifiable half -- a filter that ignored its argument would still return the row.
         mockMvc.perform(get("/gl-postings").param("period", "2026-09").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(0));
+            .andExpect(jsonPath("$.items.length()").value(0))
+            .andExpect(jsonPath("$.page.totalElements").value(0));
 
         mockMvc.perform(get("/gl-postings").param("policyNumber", "POL-GL-A").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(1));
+            .andExpect(jsonPath("$.items.length()").value(1));
 
         // The falsifiable half for policyNumber too.
         mockMvc.perform(get("/gl-postings").param("policyNumber", "POL-GL-ZZ").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(0));
+            .andExpect(jsonPath("$.items.length()").value(0));
+
+        // Both filters at once, over the wire -- the combined DB-side finder (finding M8).
+        mockMvc.perform(get("/gl-postings").param("period", "2026-08").param("policyNumber", "POL-GL-A")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1));
+        mockMvc.perform(get("/gl-postings").param("period", "2026-09").param("policyNumber", "POL-GL-A")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0));
+
+        // pageSize is capped server-side at 100 no matter what a client asks for (finding I3): an
+        // uncapped pageSize is just the unbounded read again, spelled as a query parameter.
+        mockMvc.perform(get("/gl-postings").param("pageSize", "5000").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.pageSize").value(100));
     }
 
     @Test

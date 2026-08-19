@@ -33,20 +33,29 @@ paths:
       description: >
         Each item is one journal entry with BOTH of its legs -- an entry always has exactly two
         legs in M9, and their DR and CR totals are always equal. Omitting both filters returns
-        every journal entry visible to the caller's tenant.
+        every journal entry visible to the caller's tenant, ONE PAGE AT A TIME: journal_entry is
+        an append-only ledger fed by every money-moving event on the platform, so an unpaged
+        read of it has no upper bound. Newest entries first, by postedAt.
       security:
         - staffAuth: []
       parameters:
         - $ref: '#/components/parameters/Period'
         - $ref: '#/components/parameters/PolicyNumberFilter'
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: pageSize
+          in: query
+          required: false
+          description: "Capped server-side at 100 regardless of the value sent."
+          schema: { type: integer, minimum: 1, default: 20 }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/JournalEntryView' }
+              schema: { $ref: '#/components/schemas/JournalEntrySearchResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /gl-postings/{journalEntryId}:
@@ -148,6 +157,14 @@ components:
         sourceRef:
           type: string
           description: "The source event's own idempotency key -- pairs with sourceEvent and this entry's tenant to make a redelivery a no-op."
+    JournalEntrySearchResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/JournalEntryView' }
+        page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
     JournalEntryView:
       type: object
       required: [journalEntryId, sourceEvent, sourceRef, period, postedAt, postings]

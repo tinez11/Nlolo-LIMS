@@ -38,6 +38,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
@@ -331,7 +332,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
 
     private JournalEntry singleEntryFor(UUID tenantId, String sourceEvent, String sourceRef) {
         TenantContext.set(tenantId);
-        List<JournalEntry> entries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+        List<JournalEntry> entries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
             .filter(e -> sourceEvent.equals(e.getSourceEvent()) && sourceRef.equals(e.getSourceRef()))
             .toList();
         assertThat(entries).as("expected exactly one %s journal entry for sourceRef %s", sourceEvent, sourceRef).hasSize(1);
@@ -523,7 +524,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
      * test is that a LoanRepaid entry is no longer keyed by the loan id. */
     private List<JournalEntry> repaidEntriesFor(UUID tenantId) {
         TenantContext.set(tenantId);
-        return journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+        return journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
             .filter(e -> "policyloan.LoanRepaid".equals(e.getSourceEvent()))
             .toList();
     }

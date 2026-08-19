@@ -4,10 +4,19 @@ import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPostingId;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 public interface GlPostingRepository extends JpaRepository<GlPosting, GlPostingId> {
     List<GlPosting> findByTenantIdAndJournalEntryIdOrderByDirectionAsc(UUID tenantId, UUID journalEntryId);
+
+    /** The batched form of the finder above, for building a page of {@code JournalEntryView}s in TWO
+     * queries instead of one-per-entry (M9 final review, finding I3 -- the N+1 half). Ordered by
+     * entry then direction so each entry's legs arrive contiguous and CR-before-DR, matching the
+     * single-entry finder's ordering exactly; callers group by {@code journalEntryId}. */
+    List<GlPosting> findByTenantIdAndJournalEntryIdInOrderByJournalEntryIdAscDirectionAsc(
+        UUID tenantId, Collection<UUID> journalEntryIds);
+
     List<GlPosting> findByTenantIdAndAccountCodeAndPeriod(UUID tenantId, String accountCode, String period);
 }

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
@@ -221,7 +222,7 @@ class PremiumPostingEndToEndTest {
 
         // ---- Assertion 1: the invoice-generated journal entry, DR 1200 / CR 2200. ----
         TenantContext.set(tenantId);
-        List<JournalEntry> generatedEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+        List<JournalEntry> generatedEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
             .filter(e -> "billing.PremiumInvoiceGenerated".equals(e.getSourceEvent()))
             .toList();
         assertThat(generatedEntries).hasSize(1);
@@ -245,7 +246,7 @@ class PremiumPostingEndToEndTest {
 
         // ---- Assertion 2: the collected journal entry, DR 1000 / CR 1200. ----
         TenantContext.set(tenantId);
-        List<JournalEntry> collectedEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+        List<JournalEntry> collectedEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
             .filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent()))
             .toList();
         assertThat(collectedEntries).hasSize(1);
@@ -281,7 +282,7 @@ class PremiumPostingEndToEndTest {
 
         // ---- Assertion 4: no gl_posting row anywhere has a 4xxx (income) account code. ----
         TenantContext.set(tenantId);
-        List<JournalEntry> allEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId);
+        List<JournalEntry> allEntries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).getContent();
         for (JournalEntry entry : allEntries) {
             TenantContext.set(tenantId);
             List<GlPosting> legs = glPostingRepository.findByTenantIdAndJournalEntryIdOrderByDirectionAsc(
@@ -303,7 +304,7 @@ class PremiumPostingEndToEndTest {
         transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
 
         TenantContext.set(tenantId);
-        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId).stream()
+        assertThat(journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, Pageable.unpaged()).stream()
                 .filter(e -> "billing.PremiumCollected".equals(e.getSourceEvent())).toList())
             .as("a redelivered PremiumCollected must not double-post").hasSize(1);
         TenantContext.set(tenantId);
