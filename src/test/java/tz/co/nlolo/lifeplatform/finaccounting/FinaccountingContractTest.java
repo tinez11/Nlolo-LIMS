@@ -98,7 +98,8 @@ class FinaccountingContractTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
-            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql");
+            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
+            "db-migrations/finaccounting/V3__account_code_foreign_key.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -143,6 +144,12 @@ class FinaccountingContractTest {
      * {@code CASH} / CR {@code PREMIUM_RECEIVABLE} for the same amount. */
     private JournalEntry seedEntry(UUID tenantId, String sourceEvent, String sourceRef, String period,
                                     String policyNumber, String amount) {
+        TenantContext.set(tenantId);
+        // Required since finaccounting/V3: gl_posting.account_code is a real foreign key into
+        // chart_of_account (tenant_id, account_code), so a tenant with no chart has no postable
+        // account at all. Production seeds this in every listener before posting; this helper writes
+        // through the repositories directly, below that layer, so it seeds it here.
+        chartOfAccountSeeder.seedIfAbsent(tenantId, "system:test");
         TenantContext.set(tenantId);
         JournalEntry entry = new JournalEntry(tenantId, sourceEvent, sourceRef, period, policyNumber, "system:test");
         entry.addLeg(PostingRule.CASH, PostingDirection.DR, new BigDecimal(amount), CURRENCY);

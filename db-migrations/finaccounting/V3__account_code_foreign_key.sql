@@ -1,0 +1,42 @@
+-- Module: finaccounting V3 -- M9 final whole-branch review, finding I1.
+--
+-- The design spec (docs/superpowers/specs/2026-08-19-m9-finaccounting-design.md)
+-- described chart_of_account as the authority for account codes, and §6's own wording
+-- implied gl_posting was tied to it. It was not: V1 created gl_posting.account_code as
+-- a bare VARCHAR and V2 created chart_of_account as an independent table. Nothing in
+-- the database connected them, so a typo'd or unseeded account code was silently
+-- postable into the general ledger and would only surface as an orphaned balance that
+-- reconciles against nothing.
+--
+-- This is a real gap rather than a theoretical one, because nothing reads
+-- chart_of_account at posting time either: PostingRule holds the eight account codes as
+-- compiled Java Map.of(...) constants (corrected in the same fix wave -- the spec used
+-- to claim they were seed data), and ChartOfAccountSeeder merely seeds the table to
+-- MATCH those constants. This constraint is what makes that seeding load-bearing
+-- instead of decorative: from here on, a PostingRule code with no chart_of_account row
+-- fails the INSERT loudly rather than posting an unmappable leg.
+--
+-- The FK is composite, (tenant_id, account_code) -> (tenant_id, account_code), matching
+-- chart_of_account's own PRIMARY KEY. Keying on account_code alone would have been both
+-- impossible (no unique index on it) and wrong: each tenant owns its own chart, so the
+-- constraint must never let tenant A's posting satisfy itself against tenant B's
+-- account. Referential-integrity checks bypass row-level security by design in
+-- PostgreSQL, so the tenant_id column in the key -- not RLS -- is what keeps this
+-- tenant-safe.
+--
+-- Two notes for the next reader:
+--   * gl_posting is PARTITION BY RANGE (created_at). An OUTGOING foreign key from a
+--     partitioned table is supported (PostgreSQL 12+) and is inherited by every
+--     partition, existing and future, exactly like V2's RLS/privilege mirroring -- so
+--     no per-partition step is needed here and none should be added.
+--   * ON DELETE is left at the default NO ACTION deliberately. A chart_of_account row
+--     that has been posted against can no longer be deleted, which is the correct
+--     answer for an append-only ledger: the historical postings must stay mappable to
+--     the account they were booked to. Retiring an account is a future concern and
+--     wants a status/valid-to column, not a cascade.
+--
+-- V1 and V2 are immutable (already applied and reviewed), which is why this arrives as
+-- a third migration rather than an edit to V2's section 5.
+ALTER TABLE finaccounting.gl_posting
+    ADD CONSTRAINT fk_gl_posting_account_code
+    FOREIGN KEY (tenant_id, account_code) REFERENCES finaccounting.chart_of_account (tenant_id, account_code);

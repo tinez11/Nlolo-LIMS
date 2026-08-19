@@ -80,7 +80,8 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
-            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql");
+            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
+            "db-migrations/finaccounting/V3__account_code_foreign_key.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -98,6 +99,17 @@ class FinaccountingApiIntegrationTest {
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
 
+    /** Required since finaccounting/V3: {@code gl_posting.account_code} is now a real foreign key
+     * into {@code chart_of_account (tenant_id, account_code)}, so a tenant with no chart cannot have
+     * postings written for it at all. In production every listener already calls this before
+     * posting; these tests call {@code postEntry} directly, below that layer, so they must seed it
+     * themselves. That the FK bites here rather than being inert is the point of V3. */
+    private void seedChart(UUID tenantId) {
+        TenantContext.set(tenantId);
+        chartOfAccountSeeder.seedIfAbsent(tenantId, "system:test");
+        TenantContext.set(tenantId);
+    }
+
     private static JournalEntry balancedEntry(UUID tenantId, String sourceEvent, String sourceRef,
                                                String period, String policyNumber) {
         JournalEntry entry = new JournalEntry(tenantId, sourceEvent, sourceRef, period, policyNumber, "system:test");
@@ -109,7 +121,7 @@ class FinaccountingApiIntegrationTest {
     @Test
     void postEntryOnABalancedEntryWritesOneJournalEntryAndTwoGlPostingRowsReadableBackWithBothLegs() {
         UUID tenantId = UUID.randomUUID();
-        TenantContext.set(tenantId);
+        seedChart(tenantId);
 
         Optional<JournalEntry> saved = finaccountingApiImpl.postEntry(
             balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-1", "2026-08", "POL-0001"));
@@ -136,7 +148,7 @@ class FinaccountingApiIntegrationTest {
     void secondPostEntryForTheSameSourceReturnsEmptyAndWritesNothingFurtherEvenAcrossDifferingTimestamps()
             throws Exception {
         UUID tenantId = UUID.randomUUID();
-        TenantContext.set(tenantId);
+        seedChart(tenantId);
         Optional<JournalEntry> first = finaccountingApiImpl.postEntry(
             balancedEntry(tenantId, "billing.PremiumCollected", "inv-dup-1", "2026-08", "POL-0002"));
         assertThat(first).isPresent();
@@ -205,7 +217,7 @@ class FinaccountingApiIntegrationTest {
         UUID unknown = UUID.randomUUID();
         assertThrows(JournalEntryNotFoundException.class, () -> finaccountingApi.getJournalEntry(unknown));
 
-        TenantContext.set(tenantA);
+        seedChart(tenantA);
         UUID journalEntryId = finaccountingApiImpl.postEntry(
             balancedEntry(tenantA, "claims.ClaimSettled", "claim-cross-tenant", "2026-08", "POL-0004"))
             .orElseThrow().getJournalEntryId();
@@ -219,7 +231,7 @@ class FinaccountingApiIntegrationTest {
     @Test
     void listJournalEntriesFiltersByPeriodAndByPolicyNumberGenuinely() {
         UUID tenantId = UUID.randomUUID();
-        TenantContext.set(tenantId);
+        seedChart(tenantId);
         finaccountingApiImpl.postEntry(
             balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-list-1", "2026-08", "POL-LIST-A"));
         TenantContext.set(tenantId);

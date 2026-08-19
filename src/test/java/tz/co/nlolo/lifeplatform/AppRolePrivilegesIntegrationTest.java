@@ -201,7 +201,8 @@ class AppRolePrivilegesIntegrationTest {
             // anything at all and is the first point this platform's append-only ledger becomes
             // genuinely writable.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
-            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql");
+            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
+            "db-migrations/finaccounting/V3__account_code_foreign_key.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -782,6 +783,7 @@ class AppRolePrivilegesIntegrationTest {
     void appRoleCanInsertAndSelectAJournalEntryAndAGlPosting() {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
+        seedChartAccount(tenantId, "1000", "Cash / Mobile Money", "ASSET", "DR");
         UUID journalEntryId = null;
         try (Connection connection = dataSource.getConnection();
              PreparedStatement insertEntry = connection.prepareStatement(
@@ -837,6 +839,7 @@ class AppRolePrivilegesIntegrationTest {
     void appRoleCannotUpdateOrDeleteAJournalEntryOrAGlPostingBecauseTheLedgerIsAppendOnly() throws Exception {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
+        seedChartAccount(tenantId, "5000", "Claims Expense", "EXPENSE", "DR");
         UUID journalEntryId;
         try (Connection connection = dataSource.getConnection();
              PreparedStatement insertEntry = connection.prepareStatement(
@@ -919,13 +922,53 @@ class AppRolePrivilegesIntegrationTest {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getInt(1)).as("exactly one tenant-isolation policy must be mirrored").isEqualTo(1);
             }
+            // BOTH halves are asserted deliberately (M9 final review, finding M1). Checking only the
+            // two denials would let the exact defect this milestone exists to fix pass unnoticed:
+            // finaccounting/V1's REVOKE-with-no-prior-GRANT left app_role holding NOTHING on the
+            // ledger, which satisfies "no UPDATE, no DELETE" perfectly while making the append-only
+            // GL unwritable. A regression that revoked everything again would be invisible to a
+            // negative-only test.
             try (ResultSet rs = statement.executeQuery(
                     "SELECT has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'UPDATE'), "
-                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'DELETE')")) {
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'DELETE'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'SELECT'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'INSERT')")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getBoolean(1)).as("app_role must NOT hold UPDATE on a brand-new partition").isFalse();
                 assertThat(rs.getBoolean(2)).as("app_role must NOT hold DELETE on a brand-new partition").isFalse();
+                assertThat(rs.getBoolean(3))
+                    .as("app_role MUST still hold SELECT on a brand-new partition -- an append-only "
+                        + "ledger nobody can read is as broken as one nobody can write")
+                    .isTrue();
+                assertThat(rs.getBoolean(4))
+                    .as("app_role MUST still hold INSERT on a brand-new partition -- this is the exact "
+                        + "V1 defect (REVOKE with no prior GRANT) that finaccounting/V2 exists to fix")
+                    .isTrue();
             }
+        }
+    }
+
+    /** Since finaccounting/V3, {@code gl_posting.account_code} is a real foreign key into
+     * {@code chart_of_account (tenant_id, account_code)}, so a posting cannot be inserted for a
+     * tenant with no chart. Production seeds the chart in every listener before posting
+     * ({@code ChartOfAccountSeeder}); these direct-SQL privilege tests write one row by hand instead,
+     * since what they are asserting is privileges, not the seeder. Inserted through app_role's own
+     * restricted connection on purpose: doing so also confirms app_role really can write
+     * chart_of_account under RLS, which V2 grants and nothing else here exercises. */
+    private void seedChartAccount(UUID tenantId, String accountCode, String name, String accountType,
+                                  String normalBalance) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO finaccounting.chart_of_account (tenant_id, account_code, name, account_type, "
+                 + "normal_balance, created_by) VALUES (?, ?, ?, ?, ?, 'system:test')")) {
+            insert.setObject(1, tenantId);
+            insert.setString(2, accountCode);
+            insert.setString(3, name);
+            insert.setString(4, accountType);
+            insert.setString(5, normalBalance);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not seed finaccounting.chart_of_account: " + e.getMessage());
         }
     }
 }

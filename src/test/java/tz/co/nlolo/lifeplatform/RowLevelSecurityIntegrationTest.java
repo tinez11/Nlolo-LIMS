@@ -133,7 +133,8 @@ class RowLevelSecurityIntegrationTest {
             // grants, for chart_of_account/journal_entry/gl_posting among others. Until now no test
             // in this class or AppRolePrivilegesIntegrationTest touched the module at all.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
-            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql");
+            "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
+            "db-migrations/finaccounting/V3__account_code_foreign_key.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -829,6 +830,18 @@ class RowLevelSecurityIntegrationTest {
                 insertEntry.setString(4, "RLS-FA-POL-B");
                 assertThat(insertEntry.executeUpdate()).isEqualTo(1);
             }
+            // chart_of_account is seeded BEFORE gl_posting, and the order is now load-bearing rather
+            // than incidental: finaccounting/V3 makes gl_posting.account_code a real foreign key into
+            // chart_of_account (tenant_id, account_code), so account '1000' must exist for BOTH
+            // tenants before either tenant's posting can be written.
+            try (PreparedStatement insertAccount = connection.prepareStatement(
+                    "INSERT INTO finaccounting.chart_of_account (tenant_id, account_code, name, account_type, "
+                    + "normal_balance) VALUES (?, '1000', 'Cash / Mobile Money', 'ASSET', 'DR')")) {
+                insertAccount.setObject(1, tenantA);
+                assertThat(insertAccount.executeUpdate()).isEqualTo(1);
+                insertAccount.setObject(1, tenantB);
+                assertThat(insertAccount.executeUpdate()).isEqualTo(1);
+            }
             try (PreparedStatement insertPosting = connection.prepareStatement(
                     "INSERT INTO finaccounting.gl_posting (tenant_id, journal_entry_id, account_code, direction, "
                     + "amount, currency, period, policy_number, posting_type, source_event, source_ref) "
@@ -844,14 +857,6 @@ class RowLevelSecurityIntegrationTest {
                 insertPosting.setString(3, "RLS-FA-POL-B");
                 insertPosting.setString(4, "rls-je-b");
                 assertThat(insertPosting.executeUpdate()).isEqualTo(1);
-            }
-            try (PreparedStatement insertAccount = connection.prepareStatement(
-                    "INSERT INTO finaccounting.chart_of_account (tenant_id, account_code, name, account_type, "
-                    + "normal_balance) VALUES (?, '1000', 'Cash / Mobile Money', 'ASSET', 'DR')")) {
-                insertAccount.setObject(1, tenantA);
-                assertThat(insertAccount.executeUpdate()).isEqualTo(1);
-                insertAccount.setObject(1, tenantB);
-                assertThat(insertAccount.executeUpdate()).isEqualTo(1);
             }
         }
 
