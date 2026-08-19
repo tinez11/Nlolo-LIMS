@@ -40,11 +40,12 @@ import java.util.function.Consumer;
  *   confirmedAt}), and {@code finaccounting} has no synchronous dependency on {@code reinsurance}
  *   to look one up -- {@code null} is passed, which {@code journal_entry.policy_number} allows by
  *   design.
- *   <p><b>This event does not yet carry an {@code amount}</b> -- Task 7 (not yet run as of this
- *   task) adds it. Until then, {@code payload.get("amount")} is null, {@link
- *   GlPostingCalculator#calculate} treats a null amount as "no accounting consequence" by its own
- *   contract, and this handler correctly posts nothing. The code below is written against the
- *   event's intended eventual shape and requires no change once Task 7 lands.</li>
+ *   <p><b>{@code amount} was added by Task 7</b> ({@code ReinsuranceApiImpl.confirmRecovery} now
+ *   also publishes {@code recovery.getRecoverableAmount()}/{@code getRecoverableCurrency()}, purely
+ *   additively). Before Task 7 ran, {@code payload.get("amount")} was null and {@link
+ *   GlPostingCalculator#calculate} -- which treats a null amount as "no accounting consequence" by
+ *   its own contract -- correctly posted nothing; this handler needed no code change once Task 7
+ *   landed, only a real amount to act on.</li>
  * </ul>
  *
  * <p>Mechanics and bean-naming rationale: see {@link BillingEventListener}.

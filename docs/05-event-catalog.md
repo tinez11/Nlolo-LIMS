@@ -68,13 +68,13 @@ Spring's default in-process event dispatch preserves publish order for **synchro
 ## 6. Notable Choreographies (cross-referencing prior deliverables, not new design)
 
 - **Surrender/maturity loan-netting** (Deliverable 3 Rev 2 §12): `PolicySurrenderInitiated`/`PolicyMaturityInitiated` → `LoanSettledForPayout` → `PolicySurrendered`/`PolicyMatured` + `SurrenderPayoutRequested`/`MaturityPayoutRequested`. Camunda-orchestrated given the timeout/compensation needs already documented there.
-- **Request/confirm pattern** (Deliverable 2 Rev 2 §2): `PaymentRequested`/`LoanDisbursementRequested`/`ClaimSettlementRequested`/`CommissionPayoutRequested`/`SurrenderPayoutRequested`/`MaturityPayoutRequested` → `payment` → `PaymentConfirmed`/`PaymentFailed`/`DisbursementCompleted`/`DisbursementFailed`, closed by each originating module's own confirmation event (`LoanDisbursed`, `ClaimSettled`, `CommissionPaid`).
+- **Request/confirm pattern** (Deliverable 2 Rev 2 §2): `PaymentRequested`/`LoanDisbursementRequested`/`ClaimSettlementRequested`/`CommissionPayoutRequested`/`SurrenderPayoutRequested`/`MaturityPayoutRequested` → `payment` → `PaymentConfirmed`/`PaymentFailed`/`DisbursementCompleted`/`DisbursementFailed`, closed by each originating module's own confirmation event (`LoanDisbursed`, `ClaimSettled`, `CommissionPaid`). M9 Task 7: `LoanDisbursed`, `CommissionPaid` and reinsurance's `RecoveryConfirmed` were each enriched with an `amount` field so that `finaccounting` -- already a declared consumer of all three -- can post a journal entry from each (`policyloan.LoanDisbursed`: DR `1400`/CR `1000`; `distribution.CommissionPaid`: DR `5100`/CR `1000`; `reinsurance.RecoveryConfirmed`: DR `1300`/CR `5000`).
 
 ---
 
 ## 7. Open Items Before Deliverable 6 (Database Schema)
 
-1. `finaccounting`'s two events (`GlPostingRecorded`, `CsmRolledForward`) remain schematically provisional pending C1, consistent with every prior deliverable's treatment of that module.
+1. ~~`finaccounting`'s two events (`GlPostingRecorded`, `CsmRolledForward`) remain schematically provisional pending C1, consistent with every prior deliverable's treatment of that module.~~ Superseded by M9: `GlPostingRecorded` is real as of Task 5 (double-entry GL posting, one event per journal entry) and is no longer provisional. `CsmRolledForward` remains provisional -- IFRS 17 *measurement* (as opposed to GL posting mechanics) is still gated on C1.
 2. The `failed_event` dead-letter table and staff monitoring surface (§4) need a concrete schema and, likely, a Deliverable 7 (Infrastructure) observability tie-in — flagging now so it isn't lost between deliverables.
 3. Confirm the two-release-cycle migration window (§3) is the right default, or if you'd prefer a fixed calendar duration instead.
 

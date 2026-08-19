@@ -29,13 +29,12 @@ import java.util.function.Consumer;
  * <ul>
  *   <li>{@code policyloan.LoanDisbursed} -- books DR {@code 1400 Policy Loan Receivable} / CR
  *   {@code 1000 Cash}, keyed by {@code loanId}.
- *   <b>This event does not yet carry an {@code amount}</b> -- {@code
- *   PolicyLoanApiImpl.markDisbursed} publishes only {@code loanId} and {@code disbursedAt} today;
- *   Task 7 (not yet run as of this task) adds it. Until then, {@code payload.get("amount")} is
- *   null, {@link GlPostingCalculator#calculate} treats a null amount as "no accounting
- *   consequence" by its own contract, and this handler correctly posts nothing. The code below is
- *   written against the event's intended eventual shape and requires no change once Task 7
- *   lands.</li>
+ *   <b>{@code amount} was added by Task 7</b> ({@code PolicyLoanApiImpl.markDisbursed} now also
+ *   publishes {@code loan.getPrincipalAmount()}/{@code getPrincipalCurrency()}, purely additively,
+ *   inside the same {@code !alreadyDisbursed} guard). Before Task 7 ran, {@code
+ *   payload.get("amount")} was null and {@link GlPostingCalculator#calculate} -- which treats a
+ *   null amount as "no accounting consequence" by its own contract -- correctly posted nothing;
+ *   this handler needed no code change once Task 7 landed, only a real amount to act on.</li>
  *   <li>{@code policyloan.LoanRepaid} -- books DR {@code 1000 Cash} / CR {@code 1400 Policy Loan
  *   Receivable}, keyed by {@code loanId}, amount already present on the payload today.</li>
  * </ul>

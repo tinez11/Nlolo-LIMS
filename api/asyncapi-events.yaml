@@ -128,7 +128,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/LoanDisbursementRequested' }
   policyloan.LoanDisbursed:
-    description: "Producer: policyloan (confirmation, after consuming payment.DisbursementCompleted). Consumers: policy (encumbrance projection), communication, audit."
+    description: "Producer: policyloan (confirmation, after consuming payment.DisbursementCompleted). Consumers: policy (encumbrance projection), finaccounting (posts a journal entry, DR 1400/CR 1000), communication, audit."
     publish:
       message: { $ref: '#/components/messages/LoanDisbursed' }
   policyloan.LoanRepaid:
@@ -235,7 +235,7 @@ channels:
     publish:
       message: { $ref: '#/components/messages/CommissionPayoutRequested' }
   distribution.CommissionPaid:
-    description: "Producer: distribution (confirmation). Consumers: communication, audit."
+    description: "Producer: distribution (confirmation). Consumers: finaccounting (posts a journal entry, DR 5100/CR 1000), communication, audit."
     publish:
       message: { $ref: '#/components/messages/CommissionPaid' }
 
@@ -265,12 +265,12 @@ channels:
     publish:
       message: { $ref: '#/components/messages/RecoveryCalculated' }
   reinsurance.RecoveryConfirmed:
-    description: "Producer: reinsurance. Consumers: finaccounting, audit."
+    description: "Producer: reinsurance. Consumers: finaccounting (posts a journal entry, DR 1300/CR 5000), audit."
     publish:
       message: { $ref: '#/components/messages/RecoveryConfirmed' }
 
   finaccounting.GlPostingRecorded:
-    description: "Producer: finaccounting. Consumers: regreporting, audit. Schema provisional pending C1."
+    description: "Producer: finaccounting (Task 5, M9: real double-entry GL posting, one event per journal entry). Consumers: regreporting, audit. No longer provisional -- see GlPostingRecordedPayload's own description."
     publish:
       message: { $ref: '#/components/messages/GlPostingRecorded' }
   finaccounting.CsmRolledForward:
@@ -506,7 +506,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { loanId: {type: string, format: uuid}, disbursedAt: {type: string, format: date-time} }
+          properties: { loanId: {type: string, format: uuid}, disbursedAt: {type: string, format: date-time}, amount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
     LoanRepaidPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
@@ -625,7 +625,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { statementId: {type: string, format: uuid}, paidAt: {type: string, format: date-time} }
+          properties: { statementId: {type: string, format: uuid}, paidAt: {type: string, format: date-time}, amount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
 
     # M5 final-review fix (I2). All four payloads below previously omitted sourceRef, purpose and
     # gatewayReference -- the ONLY correlation and routing fields a consumer has. This architecture
@@ -727,14 +727,22 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { recoveryId: {type: string, format: uuid}, confirmedAt: {type: string, format: date-time} }
+          properties: { recoveryId: {type: string, format: uuid}, confirmedAt: {type: string, format: date-time}, amount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\"."}, currencyCode: {type: string}}} }
 
     GlPostingRecordedPayload:
-      description: "Provisional — finaccounting's aggregate design remains gated on C1 (Deliverable 3 Rev 2 §8)."
+      description: >-
+        GL posting is real as of M9 Task 5 (FinaccountingApiImpl.postEntry) -- only IFRS 17
+        MEASUREMENT (CsmRolledForward, below) remains gated on C1. postEntry publishes exactly ONE
+        event per journal ENTRY, not per posting/leg (every entry has exactly two legs, DR and CR,
+        which must balance for the entry to post at all): postingId is the entry's own
+        journalEntryId, amount is the entry's DR total (equal to its CR total by construction), and
+        groupId is always null because IFRS 17's group-of-contracts unit of account is itself
+        C1-blocked. Documented as what actually ships, not the per-posting shape this schema
+        originally assumed before finaccounting's aggregate design existed.
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { postingId: {type: string, format: uuid}, groupId: {type: string, format: uuid}, period: {type: string}, amount: {type: object}, postingType: {type: string} }
+          properties: { postingId: {type: string, format: uuid, description: "The journal entry's id -- one event is published per entry, not per leg."}, groupId: {type: string, format: uuid, nullable: true, description: "Always null in M9: the IFRS 17 group-of-contracts unit of account is C1-blocked."}, period: {type: string}, amount: {type: object, required: [amount, currencyCode], properties: {amount: {type: string, description: "Plain-string decimal, e.g. \"12500.00\". The entry's DR total."}, currencyCode: {type: string}}}, postingType: {type: string, description: "The entry's sourceEvent, e.g. claims.ClaimSettled."} }
     CsmRolledForwardPayload:
       description: "Provisional — see above."
       allOf:

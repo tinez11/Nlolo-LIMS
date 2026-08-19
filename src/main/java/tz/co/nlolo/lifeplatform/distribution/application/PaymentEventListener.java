@@ -154,8 +154,16 @@ public class PaymentEventListener {
                     statementId, tenantId);
                 return;
             }
+            // M9: amount added. finaccounting was already declared as this event's consumer above
+            // ("The declared consumer is finaccounting") but had nothing postable -- only
+            // statementId and paidAt, no amount -- so it could not actually post commission
+            // expense. statement is already loaded above; this is purely additive, and stays
+            // inside the wasAlreadyPaid guard, so a redelivered DisbursementCompleted still emits
+            // no second event.
             eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.CommissionPaid", tenantId,
-                Map.of("statementId", statementId, "paidAt", Instant.now().toString())));
+                Map.of("statementId", statementId, "paidAt", Instant.now().toString(),
+                       "amount", Map.of("amount", statement.getTotalAmount().toPlainString(),
+                                        "currencyCode", statement.getTotalCurrency()))));
         });
     }
 

@@ -149,8 +149,16 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
         recovery.confirm(Instant.now(), confirmedBy);
         claimRecoveryRepository.save(recovery);
 
+        // M9: amount added. finaccounting is already this event's declared consumer (see the
+        // comment above) but had nothing postable -- only recoveryId and confirmedAt, no amount --
+        // so it could not actually post the recovery. recovery is already loaded and mutated above;
+        // this is purely additive, and control still only reaches here on a genuine transition (a
+        // repeat throws InvalidRecoveryStateException before this line), so a double-confirm still
+        // cannot emit a second RecoveryConfirmed.
         eventPublisher.publishEvent(DomainEventEnvelope.of("reinsurance.RecoveryConfirmed", tenantId,
-            Map.of("recoveryId", recoveryId, "confirmedAt", recovery.getConfirmedAt().toString())));
+            Map.of("recoveryId", recoveryId, "confirmedAt", recovery.getConfirmedAt().toString(),
+                   "amount", Map.of("amount", recovery.getRecoverableAmount().toPlainString(),
+                                     "currencyCode", recovery.getRecoverableCurrency()))));
         return toRecoveryView(recovery);
     }
 

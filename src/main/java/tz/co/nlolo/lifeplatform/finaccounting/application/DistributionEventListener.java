@@ -32,11 +32,13 @@ import java.util.function.Consumer;
  * finaccounting} has no synchronous dependency on {@code distribution} to look one up. {@code
  * journal_entry.policy_number} is nullable precisely for cases like this one.
  *
- * <p><b>This event does not yet carry an {@code amount}</b> -- Task 7 (not yet run as of this
- * task) adds it. Until then, {@code payload.get("amount")} is null, {@link
- * GlPostingCalculator#calculate} treats a null amount as "no accounting consequence" by its own
- * contract, and this handler correctly posts nothing. The code below is written against the
- * event's intended eventual shape and requires no change once Task 7 lands.
+ * <p><b>{@code amount} was added by Task 7</b> ({@code
+ * distribution.application.PaymentEventListener.handleCompleted} now also publishes
+ * {@code statement.getTotalAmount()}/{@code getTotalCurrency()}, purely additively, inside the same
+ * {@code wasAlreadyPaid} guard). Before Task 7 ran, {@code payload.get("amount")} was null and
+ * {@link GlPostingCalculator#calculate} -- which treats a null amount as "no accounting consequence"
+ * by its own contract -- correctly posted nothing; this handler needed no code change once Task 7
+ * landed, only a real amount to act on.
  *
  * <p>Mechanics and bean-naming rationale: see {@link BillingEventListener}.
  */
@@ -104,7 +106,7 @@ public class DistributionEventListener {
             sourceRef, null, amount, currency, YearMonth.now().toString(), "system:distribution.CommissionPaid");
         if (maybeEntry.isEmpty()) {
             log.info("distribution.CommissionPaid for statement {} produced no journal entry (already "
-                + "posted, no accounting rule, or -- expected until Task 7 -- no amount on the payload yet)",
+                + "posted, no accounting rule, or a non-positive amount)",
                 statementId);
             return;
         }

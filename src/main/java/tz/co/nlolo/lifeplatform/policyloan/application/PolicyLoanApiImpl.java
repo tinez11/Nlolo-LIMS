@@ -220,8 +220,14 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
             // publish a second LoanDisbursed.
             loanTransactionRepository.save(new LoanTransaction(tenantId, loanId, "DISBURSEMENT", loan.getPrincipalAmount(), loan.getPrincipalCurrency(), gatewayReference));
             policyLoanRepository.save(loan);
+            // M9: amount added. finaccounting needs it to post the loan receivable -- only loanId
+            // and disbursedAt were carried before, no amount. loan is already loaded above; this is
+            // purely additive, and stays inside the !alreadyDisbursed guard, so a redelivered
+            // payment.DisbursementCompleted still emits no second event.
             eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanDisbursed", tenantId,
-                Map.of("loanId", loanId, "disbursedAt", disbursedAt.toString())));
+                Map.of("loanId", loanId, "disbursedAt", disbursedAt.toString(),
+                       "amount", Map.of("amount", loan.getPrincipalAmount().toPlainString(),
+                                        "currencyCode", loan.getPrincipalCurrency()))));
         }
         return toView(loan);
     }
