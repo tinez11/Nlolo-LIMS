@@ -215,13 +215,28 @@ groups:
       # written in finaccounting. There is no compensating retry and no other signal: the ledger
       # falls silently out of sync with the systems of record it exists to reconcile, and every
       # day it goes unnoticed is a day the general ledger silently misstates the business.
+      #
+      # THE RUNBOOK BELOW NO LONGER MENTIONS REPLAYING THE EVENT, corrected by M9's final
+      # whole-branch review (finding I4). It used to say "before deciding whether to replay it",
+      # which offered an operator a capability that does not exist: there is no dead-letter store,
+      # no retry scheduler and no replay endpoint for finaccounting -- or for any other consumer --
+      # anywhere on this platform. The event is an in-process AFTER_COMMIT Spring
+      # ApplicationEvent; once the listener's catch-all has swallowed it, the payload is GONE,
+      # surviving only as whatever audit.audit_log recorded and as the source module's own rows. An
+      # operator following that instruction at 2am would have burned the outage hunting for a
+      # replay button. The runbook now names the recovery that genuinely exists.
+      #
+      # The absent capability itself is tracked, not quietly dropped: the design spec's §9 records
+      # event replay/dead-lettering as an explicit finaccounting deferral, alongside
+      # docs/05-event-catalog.md §7 item 2, which has tracked the platform-wide failed_event table
+      # as an open item since Deliverable 5.
       - alert: FinaccountingEventProcessingFailed
         expr: increase(lifeplatform_finaccounting_event_processing_failed_total[15m]) > 0
         for: 5m
         labels: { severity: high }
         annotations:
           summary: "finaccounting failed to post a journal entry -- the ledger may be silently incomplete"
-          description: "One of BillingEventListener/ClaimsEventListener/DistributionEventListener/ReinsuranceEventListener/PolicyLoanEventListener threw while handling a domain event. Search logs for 'finaccounting failed to process' to get the event type and tenant, then check whether the expected journal_entry/gl_posting rows exist for that source event before deciding whether to replay it. A swallowed exception here means money moved but the general ledger was never told."
+          description: "One of BillingEventListener/ClaimsEventListener/DistributionEventListener/ReinsuranceEventListener/PolicyLoanEventListener threw while handling a domain event. Search logs for 'finaccounting failed to process' to get the event type and tenant, and the accompanying stack trace for the cause. THERE IS NO REPLAY OR DEAD-LETTER PATH for this event -- do not look for one. Recovery is manual: identify the source event's own record in its owning module (the invoice, claim, commission statement, cession, recovery or loan transaction) plus audit.audit_log, confirm from finaccounting.journal_entry that no entry exists for that (tenant, source_event, source_ref), and if none does, have Finance construct the missing balanced entry by direct database insert under audit and four-eyes approval. journal_entry and gl_posting are append-only (UPDATE/DELETE are revoked from app_role), so a wrong manual entry can only be corrected by a further reversal entry -- get it right the first time. A swallowed exception here means money moved but the general ledger was never told."
 
       - alert: PostgresDiskSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
