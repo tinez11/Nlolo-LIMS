@@ -1,66 +1,10 @@
-# This file groups three thin/lightweight modules' OpenAPI documents for convenience.
+# This file groups two thin/lightweight modules' OpenAPI documents for convenience.
 # Each "---"-separated block below is a COMPLETE, independent OpenAPI 3.1 document
-# and should be split into its own file (openapi-regreporting.yaml, openapi-document.yaml,
-# openapi-refdata.yaml) before being loaded into tooling that expects one document per file.
+# and should be split into its own file (openapi-document.yaml, openapi-refdata.yaml)
+# before being loaded into tooling that expects one document per file.
+# The third document formerly held here (Regulatory Reporting / TIRA API) has been
+# extracted to its own file, api/openapi/openapi-regreporting.yaml.
 
-openapi: 3.1.0
-info:
-  title: Regulatory Reporting (TIRA) API
-  version: "0.1.0-draft"
-  description: >
-    Read-only surface for the Regulator Read-Only Portal plus a staff-triggered
-    return-generation endpoint. ReturnType values are PLACEHOLDERS pending the
-    current TIRA circular (tracked as C2 since Deliverable 2) — do not treat the
-    enum below as final.
-servers:
-  - url: https://api.nlolo-lifeplatform.tz/v1
-paths:
-  /regulatory-returns:
-    post:
-      summary: Generate a return for a period (staff — FINANCE_OFFICER/ADMIN)
-      security:
-        - staffAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [returnType, period]
-              properties:
-                returnType:
-                  type: string
-                  enum: [QUARTERLY_PRUDENTIAL, ANNUAL_AUDITED, STATISTICAL]
-                  description: "PLACEHOLDER catalog — replace once TIRA circular is confirmed."
-                period: { type: string, description: "YYYY-Qn or YYYY" }
-      responses:
-        '202': { description: Return generation started (async — large reports) }
-  /regulatory-returns/{returnId}:
-    get:
-      summary: Fetch a generated return
-      security:
-        - staffAuth: []
-        - regulatorAuth: [read-only]
-      parameters:
-        - name: returnId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  returnId: { type: string, format: uuid }
-                  returnType: { type: string }
-                  period: { type: string }
-                  status: { type: string, enum: [GENERATING, READY] }
-                  documentRef: { type: string, nullable: true, description: "DocumentRef once READY" }
-
----
 openapi: 3.1.0
 info:
   title: Document & Content Management API

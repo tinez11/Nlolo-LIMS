@@ -1,0 +1,171 @@
+openapi: 3.1.0
+info:
+  title: Regulatory Reporting (TIRA) API
+  version: "0.1.0-draft"
+  description: >
+    Read-only surface for the Regulator Read-Only Portal plus a staff-triggered
+    return-generation endpoint. ReturnType values are PLACEHOLDERS pending the
+    current TIRA circular (tracked as C2 since Deliverable 2) -- do not treat the
+    enum below as final. documentRef is likewise always null pending that same
+    C2 blocker: rendering a submission artifact requires TIRA's file format,
+    which does not exist yet -- the field is exposed so a consumer sees it exists
+    rather than discovering later that it was silently omitted.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /regulatory-returns:
+    post:
+      summary: Generate a return for a period (staff -- FINANCE_OFFICER/ADMIN)
+      description: "Idempotent per (tenant, returnType, period): regenerating replaces the prior return's lines rather than accumulating duplicates, because a return is a derived artifact and re-deriving it must be safe."
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerateReturnRequest' }
+      responses:
+        '201':
+          description: "Created -- the generated (or regenerated) return, with its lines."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegulatoryReturnView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: "Unknown returnType (no such definition for this tenant), or period's format does not match that return type's declared periodKind (e.g. an annual period submitted against a QUARTERLY-kind definition)."
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: List generated returns, optionally filtered by period
+      security:
+        - staffAuth: []
+        - regulatorAuth: [read-only]
+      parameters:
+        - name: period
+          in: query
+          required: false
+          schema: { type: string }
+          description: "YYYY-Qn or YYYY. Omitted returns every return for the tenant."
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RegulatoryReturnView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /regulatory-returns/{returnId}:
+    get:
+      summary: Fetch a generated return
+      security:
+        - staffAuth: []
+        - regulatorAuth: [read-only]
+      parameters:
+        - name: returnId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegulatoryReturnView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  responses:
+    BadRequest:
+      description: "Malformed request body: returnType or period missing or blank."
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    Forbidden:
+      description: "Authenticated but not permitted -- wrong realm, or (for the staff-triggered generate/read paths) missing FINANCE_OFFICER/ADMIN role."
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    NotFound:
+      description: "No such return in this tenant. Also returned for a return belonging to another tenant, so that cross-tenant existence is not leaked."
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  schemas:
+    ReturnStatus:
+      type: string
+      enum: [GENERATING, READY]
+    MetricName:
+      type: string
+      description: "The metric a return line reports -- one of the seventeen enumerated members this module computes (e.g. POLICIES_IN_FORCE, PREMIUM_COLLECTED, CLAIMS_SETTLED_AMOUNT)."
+      enum:
+        - POLICIES_IN_FORCE
+        - SUM_ASSURED_IN_FORCE
+        - POLICIES_ISSUED
+        - POLICIES_REINSTATED
+        - POLICIES_LAPSED
+        - POLICIES_MATURED
+        - POLICIES_CLAIM_TERMINATED
+        - NEW_BUSINESS_SUM_ASSURED
+        - CLAIMS_REGISTERED
+        - CLAIMS_APPROVED
+        - CLAIMS_REJECTED
+        - CLAIMS_SETTLED
+        - CLAIMS_APPROVED_AMOUNT
+        - CLAIMS_SETTLED_AMOUNT
+        - PREMIUM_COLLECTED
+        - REINSURANCE_CEDED_RISK
+        - REINSURANCE_CEDED_PREMIUM
+    GenerateReturnRequest:
+      type: object
+      required: [returnType, period]
+      properties:
+        returnType:
+          type: string
+          enum: [QUARTERLY_PRUDENTIAL, ANNUAL_AUDITED, STATISTICAL]
+          description: "PLACEHOLDER catalog -- replace once TIRA circular is confirmed."
+        period:
+          type: string
+          description: "YYYY-Qn or YYYY, matching the return type's declared periodKind."
+    ReturnLineView:
+      type: object
+      required: [returnLineId, lineNo, lineCode, label, metricName, value]
+      properties:
+        returnLineId: { type: string, format: uuid }
+        lineNo: { type: integer }
+        lineCode: { type: string }
+        label: { type: string }
+        metricName: { $ref: '#/components/schemas/MetricName' }
+        value:
+          description: "A Money object when the metric is monetary, or a plain integer-valued decimal string otherwise -- never a raw JSON number."
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+            - type: string
+              pattern: '^-?\d+$'
+    RegulatoryReturnView:
+      type: object
+      required: [returnId, returnType, period, status, generatedAt, generatedBy, lines]
+      properties:
+        returnId: { type: string, format: uuid }
+        returnType: { type: string }
+        period: { type: string }
+        status: { $ref: '#/components/schemas/ReturnStatus' }
+        documentRef:
+          type: string
+          nullable: true
+          description: "Always null pending C2 -- see info.description."
+        generatedAt: { type: string, format: date-time }
+        generatedBy: { type: string }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/ReturnLineView' }
