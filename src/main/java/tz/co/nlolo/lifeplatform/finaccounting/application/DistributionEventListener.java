@@ -94,8 +94,14 @@ public class DistributionEventListener {
 
     private void handleCommissionPaid(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
-        Object statementId = payload.get("statementId");
-        String sourceRef = String.valueOf(statementId);
+        // (UUID) cast, not String.valueOf (M9 final review, finding M2): a missing id must blow up
+        // into onDomainEvent's catch-all -- incrementing the failure counter and firing
+        // FinaccountingEventProcessingFailed -- rather than quietly posting the literal sourceRef
+        // "null", which would additionally collide with any other id-less CommissionPaid and make
+        // the second one look like a redelivery of the first. Matches
+        // BillingEventListener/ClaimsEventListener, which already cast.
+        UUID statementId = (UUID) payload.get("statementId");
+        String sourceRef = statementId.toString();
         @SuppressWarnings("unchecked")
         Map<String, Object> amountMap = (Map<String, Object>) payload.get("amount");
         BigDecimal amount = amountMap == null ? null : new BigDecimal((String) amountMap.get("amount"));

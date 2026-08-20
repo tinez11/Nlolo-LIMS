@@ -3,7 +3,12 @@ package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountType;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Map;
 import java.util.UUID;
@@ -17,30 +22,86 @@ import java.util.UUID;
  * accounts per tenant during onboarding. This seeder exists so M9's own tests and any lazily
  * initialised dev/test tenant have a chart to post against without a migration hardcoding a
  * tenant id (V2 section 8 deliberately leaves the seed INSERT out of the migration for exactly
- * that reason).
+ * that reason). Since {@code finaccounting/V3} it is no longer merely convenient: {@code
+ * gl_posting.account_code} is a real foreign key into {@code chart_of_account}, so a tenant with no
+ * chart cannot have a posting written for it at all.
  */
 @Component
 public class ChartOfAccountSeeder {
 
-    private final ChartOfAccountRepository chartOfAccountRepository;
+    private static final Logger log = LoggerFactory.getLogger(ChartOfAccountSeeder.class);
 
-    public ChartOfAccountSeeder(ChartOfAccountRepository chartOfAccountRepository) {
+    private final ChartOfAccountRepository chartOfAccountRepository;
+    private final TransactionTemplate requiresNewTransactionTemplate;
+
+    public ChartOfAccountSeeder(ChartOfAccountRepository chartOfAccountRepository,
+                                 PlatformTransactionManager transactionManager) {
         this.chartOfAccountRepository = chartOfAccountRepository;
+        this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
-    /** No-op if {@code tenantId} already has any account -- never double-seeds. */
+    /**
+     * No-op if {@code tenantId} already has any account -- never double-seeds.
+     *
+     * <p><b>Seeds inside its OWN transaction, and swallows a concurrent-seeding collision</b> (M9
+     * final review, finding M3). Every caller is an event listener that already runs its posting in a
+     * {@code REQUIRES_NEW} transaction and calls this first, so without the isolation below a
+     * primary-key collision on {@code (tenant_id, account_code)} -- two events for a brand-new tenant
+     * arriving concurrently, both passing the {@code existsByTenantId} check, both inserting -- would
+     * abort THAT transaction in Postgres and take the journal entry down with it. Losing the posting
+     * to a chart-of-accounts race would be a genuine ledger gap, and the accounts themselves are
+     * identical either way, so it is worth nothing to fail over.
+     *
+     * <p><b>Why a {@link TransactionTemplate} rather than {@code @Transactional(REQUIRES_NEW)} on
+     * this method:</b> the {@code catch} has to sit OUTSIDE the new transaction's boundary to be able
+     * to recover at all. Postgres aborts the whole transaction on a constraint violation, so a
+     * {@code catch} placed inside the seeding transaction could swallow the exception and then still
+     * fail on the commit of an already-aborted transaction -- which is the exact defect the review
+     * identified in the previous arrangement (catching in the caller), just relocated one frame
+     * inwards. Wrapping the template call instead means the losing transaction is rolled back and
+     * discarded before the {@code catch} runs, and the caller's own transaction was suspended the
+     * whole time and is untouched. This is the same {@code REQUIRES_NEW} {@code TransactionTemplate}
+     * shape the five listeners in {@code finaccounting.application} already use.
+     *
+     * <p>The trade-off, stated: the chart now commits independently of the posting that triggered it,
+     * so a later posting failure leaves the seeded chart behind. That is harmless -- seeding is
+     * idempotent reference data and the next call no-ops -- and it is the price of not letting
+     * reference-data seeding be able to roll back a journal entry.
+     */
     public void seedIfAbsent(UUID tenantId, String seededBy) {
         if (chartOfAccountRepository.existsByTenantId(tenantId)) {
             return;
         }
-        for (Map.Entry<String, String> account : PostingRule.seedAccounts().entrySet()) {
-            String accountCode = account.getKey();
-            String name = account.getValue();
-            chartOfAccountRepository.save(new ChartOfAccount(
-                tenantId, accountCode, name,
-                accountTypeFor(accountCode),
-                PostingRule.normalBalanceFor(accountCode),
-                seededBy));
+        try {
+            requiresNewTransactionTemplate.executeWithoutResult(status -> {
+                // Re-checked inside the new transaction: the fast path above ran in the caller's
+                // transaction (or none), so it may have read a snapshot from before a concurrent
+                // seeder committed. This closes the common half of the race cheaply; the catch below
+                // handles the remainder, where the other thread has inserted but not yet committed
+                // and no SELECT anywhere can see it.
+                if (chartOfAccountRepository.existsByTenantId(tenantId)) {
+                    return;
+                }
+                for (Map.Entry<String, String> account : PostingRule.seedAccounts().entrySet()) {
+                    String accountCode = account.getKey();
+                    String name = account.getValue();
+                    // saveAndFlush, not save: the id is application-assigned via an @IdClass, so a
+                    // plain save() defers the write past this block and a violation would surface
+                    // only at commit -- outside where the catch below could see it. The same reason
+                    // PartyApiImpl.registerCorporate and ProductApiImpl.createProduct flush.
+                    chartOfAccountRepository.saveAndFlush(new ChartOfAccount(
+                        tenantId, accountCode, name,
+                        accountTypeFor(accountCode),
+                        PostingRule.normalBalanceFor(accountCode),
+                        seededBy));
+                }
+            });
+        } catch (DataIntegrityViolationException e) {
+            // Someone else seeded this tenant concurrently. The accounts are identical either way,
+            // so the outcome we wanted has happened -- log it and let the caller post.
+            log.info("Chart of accounts for tenant {} was seeded concurrently by another thread; "
+                + "treating the collision as already-seeded", tenantId);
         }
     }
 

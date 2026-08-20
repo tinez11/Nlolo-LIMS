@@ -103,13 +103,15 @@ public class PolicyLoanEventListener {
     }
 
     private void handleLoanDisbursed(Map<String, Object> payload) {
-        Object loanId = payload.get("loanId");
+        // (UUID) cast rather than String.valueOf: see handleLoanRepaid's own note. loanId stays the
+        // key here -- a loan is disbursed exactly once.
+        UUID loanId = (UUID) payload.get("loanId");
         @SuppressWarnings("unchecked")
         Map<String, Object> amountMap = (Map<String, Object>) payload.get("amount");
         BigDecimal amount = amountMap == null ? null : new BigDecimal((String) amountMap.get("amount"));
         String currency = amountMap == null ? null : (String) amountMap.get("currencyCode");
 
-        post("policyloan.LoanDisbursed", String.valueOf(loanId), amount, currency);
+        post("policyloan.LoanDisbursed", loanId.toString(), amount, currency);
     }
 
     /**

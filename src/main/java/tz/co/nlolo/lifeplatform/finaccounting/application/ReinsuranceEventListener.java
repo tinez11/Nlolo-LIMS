@@ -102,24 +102,30 @@ public class ReinsuranceEventListener {
     }
 
     private void handleCessionRecorded(Map<String, Object> payload) {
-        Object cessionId = payload.get("cessionId");
+        // (UUID) cast, not String.valueOf (M9 final review, finding M2): a missing id must blow up
+        // into onDomainEvent's catch-all -- incrementing the failure counter and firing
+        // FinaccountingEventProcessingFailed -- rather than quietly posting the literal sourceRef
+        // "null", which would additionally collide with any other id-less event of the same type and
+        // make the second one look like a redelivery of the first. Matches
+        // BillingEventListener/ClaimsEventListener, which already cast.
+        UUID cessionId = (UUID) payload.get("cessionId");
         String policyNumber = (String) payload.get("policyNumber");
         @SuppressWarnings("unchecked")
         Map<String, Object> cededAmount = (Map<String, Object>) payload.get("cededAmount");
         BigDecimal amount = cededAmount == null ? null : new BigDecimal((String) cededAmount.get("amount"));
         String currency = cededAmount == null ? null : (String) cededAmount.get("currencyCode");
 
-        post("reinsurance.CessionRecorded", String.valueOf(cessionId), policyNumber, amount, currency);
+        post("reinsurance.CessionRecorded", cessionId.toString(), policyNumber, amount, currency);
     }
 
     private void handleRecoveryConfirmed(Map<String, Object> payload) {
-        Object recoveryId = payload.get("recoveryId");
+        UUID recoveryId = (UUID) payload.get("recoveryId");   // (UUID) cast: see handleCessionRecorded
         @SuppressWarnings("unchecked")
         Map<String, Object> amountMap = (Map<String, Object>) payload.get("amount");
         BigDecimal amount = amountMap == null ? null : new BigDecimal((String) amountMap.get("amount"));
         String currency = amountMap == null ? null : (String) amountMap.get("currencyCode");
 
-        post("reinsurance.RecoveryConfirmed", String.valueOf(recoveryId), null, amount, currency);
+        post("reinsurance.RecoveryConfirmed", recoveryId.toString(), null, amount, currency);
     }
 
     private void post(String eventType, String sourceRef, String policyNumber, BigDecimal amount, String currency) {
