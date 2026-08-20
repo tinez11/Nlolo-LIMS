@@ -134,7 +134,13 @@ class RowLevelSecurityIntegrationTest {
             // in this class or AppRolePrivilegesIntegrationTest touched the module at all.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
-            "db-migrations/finaccounting/V3__account_code_foreign_key.sql");
+            "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
+            // M10 (Task 9) additions. regreporting/V1 enabled RLS on NEITHER of its two original
+            // tables and granted app_role nothing at all; V2 is what adds both, for
+            // policy_dimension/policy_movement/regulatory_return/return_line among others. Until now
+            // no test in this class or AppRolePrivilegesIntegrationTest touched the module at all.
+            "db-migrations/regreporting/V1__create_regreporting_schema.sql",
+            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -911,6 +917,150 @@ class RowLevelSecurityIntegrationTest {
                 assertThat(resultSet.next()).isTrue();
                 assertThat(resultSet.getString(1)).isEqualTo("1000");
                 assertThat(resultSet.next()).as("tenant B's chart_of_account row must be invisible").isFalse();
+            }
+        }
+    }
+
+    /**
+     * M10 addition: proves the four tables regreporting/V2 protects for the first time --
+     * {@code policy_dimension}, {@code policy_movement}, {@code regulatory_return} and
+     * {@code return_line} -- are genuinely tenant-isolated. V1 enabled RLS on neither original
+     * table and granted app_role nothing at all (see this class's own migration-list comment
+     * above). Rows are seeded directly via SQL as the superuser -- regreporting has no synchronous
+     * write API reachable from outside the module's own projections/return generation, same
+     * situation as payment's, distribution's, reinsurance's and finaccounting's own tables above.
+     */
+    @Test
+    @Order(12)
+    void policyDimensionPolicyMovementRegulatoryReturnAndReturnLineAreTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        UUID productA = UUID.randomUUID();
+        UUID productB = UUID.randomUUID();
+        UUID returnIdA;
+        UUID returnIdB;
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            try (PreparedStatement insertDimension = connection.prepareStatement(
+                    "INSERT INTO regreporting.policy_dimension (tenant_id, policy_number, product_id, "
+                    + "sum_assured_amount, issue_date) VALUES (?, ?, ?, 1000000.00, CURRENT_DATE)")) {
+                insertDimension.setObject(1, tenantA);
+                insertDimension.setString(2, "RLS-REG-POL-A");
+                insertDimension.setObject(3, productA);
+                assertThat(insertDimension.executeUpdate()).isEqualTo(1);
+                insertDimension.setObject(1, tenantB);
+                insertDimension.setString(2, "RLS-REG-POL-B");
+                insertDimension.setObject(3, productB);
+                assertThat(insertDimension.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertMovement = connection.prepareStatement(
+                    "INSERT INTO regreporting.policy_movement (tenant_id, period, product_id, policies_issued) "
+                    + "VALUES (?, '2026-Q3', ?, 1)")) {
+                insertMovement.setObject(1, tenantA);
+                insertMovement.setObject(2, productA);
+                assertThat(insertMovement.executeUpdate()).isEqualTo(1);
+                insertMovement.setObject(1, tenantB);
+                insertMovement.setObject(2, productB);
+                assertThat(insertMovement.executeUpdate()).isEqualTo(1);
+            }
+            try (PreparedStatement insertReturn = connection.prepareStatement(
+                    "INSERT INTO regreporting.regulatory_return (tenant_id, return_type, period, status) "
+                    + "VALUES (?, 'RLS_TEST_RETURN', '2026-Q3', 'READY') RETURNING return_id")) {
+                insertReturn.setObject(1, tenantA);
+                try (ResultSet rs = insertReturn.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    returnIdA = (UUID) rs.getObject(1);
+                }
+                insertReturn.setObject(1, tenantB);
+                try (ResultSet rs = insertReturn.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    returnIdB = (UUID) rs.getObject(1);
+                }
+            }
+            try (PreparedStatement insertLine = connection.prepareStatement(
+                    "INSERT INTO regreporting.return_line (return_id, tenant_id, line_no, line_code, label, "
+                    + "metric_name, numeric_value) VALUES (?, ?, 1, 'AR-01', ?, 'POLICIES_ISSUED', 1)")) {
+                insertLine.setObject(1, returnIdA);
+                insertLine.setObject(2, tenantA);
+                insertLine.setString(3, "RLS Test Line A");
+                assertThat(insertLine.executeUpdate()).isEqualTo(1);
+                insertLine.setObject(1, returnIdB);
+                insertLine.setObject(2, tenantB);
+                insertLine.setString(3, "RLS Test Line B");
+                assertThat(insertLine.executeUpdate()).isEqualTo(1);
+            }
+        }
+
+        // Negative control: both tenants' rows really are present when RLS is not in play -- this
+        // is what makes the restricted-connection assertions below meaningful rather than
+        // vacuously passing because the seed itself silently failed.
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement selectDimensions = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM regreporting.policy_dimension WHERE tenant_id IN (?, ?)");
+             PreparedStatement selectMovements = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM regreporting.policy_movement WHERE tenant_id IN (?, ?)");
+             PreparedStatement selectReturns = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM regreporting.regulatory_return WHERE tenant_id IN (?, ?)");
+             PreparedStatement selectLines = superuserConnection.prepareStatement(
+                 "SELECT COUNT(*) FROM regreporting.return_line WHERE tenant_id IN (?, ?)")) {
+            selectDimensions.setObject(1, tenantA);
+            selectDimensions.setObject(2, tenantB);
+            try (ResultSet rs = selectDimensions.executeQuery()) {
+                rs.next();
+                assertThat(rs.getInt(1)).isEqualTo(2);
+            }
+            selectMovements.setObject(1, tenantA);
+            selectMovements.setObject(2, tenantB);
+            try (ResultSet rs = selectMovements.executeQuery()) {
+                rs.next();
+                assertThat(rs.getInt(1)).isEqualTo(2);
+            }
+            selectReturns.setObject(1, tenantA);
+            selectReturns.setObject(2, tenantB);
+            try (ResultSet rs = selectReturns.executeQuery()) {
+                rs.next();
+                assertThat(rs.getInt(1)).isEqualTo(2);
+            }
+            selectLines.setObject(1, tenantA);
+            selectLines.setObject(2, tenantB);
+            try (ResultSet rs = selectLines.executeQuery()) {
+                rs.next();
+                assertThat(rs.getInt(1)).isEqualTo(2);
+            }
+        }
+
+        // app_role, restricted to tenant A via SET ROLE + the session variable every RLS policy
+        // checks, must see exactly tenant A's row on all four tables.
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT policy_number FROM regreporting.policy_dimension")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("RLS-REG-POL-A");
+                assertThat(resultSet.next()).as("tenant B's policy_dimension row must be invisible").isFalse();
+            }
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT product_id FROM regreporting.policy_movement")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo(productA.toString());
+                assertThat(resultSet.next()).as("tenant B's policy_movement row must be invisible").isFalse();
+            }
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT return_id FROM regreporting.regulatory_return")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo(returnIdA.toString());
+                assertThat(resultSet.next()).as("tenant B's regulatory_return row must be invisible").isFalse();
+            }
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT label FROM regreporting.return_line")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("RLS Test Line A");
+                assertThat(resultSet.next()).as("tenant B's return_line row must be invisible").isFalse();
             }
         }
     }

@@ -202,7 +202,17 @@ class AppRolePrivilegesIntegrationTest {
             // genuinely writable.
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
-            "db-migrations/finaccounting/V3__account_code_foreign_key.sql");
+            "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
+            // M10 (Task 9) additions: regreporting appeared in NEITHER this class nor
+            // RowLevelSecurityIntegrationTest until now -- the same gap finaccounting had entering
+            // M9. regreporting/V1 has zero GRANT statements and zero RLS on either of its two
+            // original tables (the recurring V1 pattern this class exists to catch); V2 is what
+            // grants app_role anything at all here and adds RLS everywhere -- and, unlike
+            // finaccounting's append-only ledger, V2 leaves UPDATE/DELETE genuinely granted, because
+            // nothing in this module is append-only (see
+            // appRoleCanInsertSelectUpdateAndDeleteRegreportingProjectionsAndReturnLines below).
+            "db-migrations/regreporting/V1__create_regreporting_schema.sql",
+            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -945,6 +955,168 @@ class AppRolePrivilegesIntegrationTest {
                         + "V1 defect (REVOKE with no prior GRANT) that finaccounting/V2 exists to fix")
                     .isTrue();
             }
+        }
+    }
+
+    /**
+     * M10 (Task 9). Direct SQL round-trip through app_role's own restricted connection -- proves
+     * the GRANT block in regreporting/V2 actually took effect under the real runtime identity, not
+     * just the migration/superuser identity this suite's other integration tests use.
+     *
+     * <p><b>Opposite polarity from finaccounting's append-only guard above, deliberately.</b>
+     * {@link #appRoleCannotUpdateOrDeleteAJournalEntryOrAGlPostingBecauseTheLedgerIsAppendOnly}
+     * above asserts UPDATE/DELETE are REVOKED, because finaccounting's GL is append-only. Nothing in
+     * regreporting is append-only: {@code policy_movement} (and its sibling fact tables) is upserted
+     * in place as events arrive, and {@code return_line} rows are deleted and rewritten wholesale
+     * every time a return is regenerated (design spec §7 -- generateReturn is idempotent per
+     * (tenant, return_type, period) and REPLACES its prior lines rather than accumulating
+     * duplicates). So THIS test asserts UPDATE and DELETE actually SUCCEED for app_role on all three
+     * tables below -- do NOT "fix" this into a REVOKE-style assertion to match the finaccounting
+     * shape above; that polarity would be wrong for this module.
+     */
+    @Test
+    void appRoleCanInsertSelectUpdateAndDeleteRegreportingProjectionsAndReturnLines() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        // --- policy_movement: upserted in place by projections, so UPDATE/DELETE must succeed. ---
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO regreporting.policy_movement (tenant_id, period, product_id, policies_issued) " +
+                 "VALUES (?, '2026-Q3', ?, 1)")) {
+            insert.setObject(1, tenantId);
+            insert.setObject(2, productId);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into regreporting.policy_movement: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT policies_issued FROM regreporting.policy_movement WHERE tenant_id = ? AND period = '2026-Q3' AND product_id = ?")) {
+            select.setObject(1, tenantId);
+            select.setObject(2, productId);
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getInt(1)).isEqualTo(1);
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from regreporting.policy_movement: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE regreporting.policy_movement SET policies_issued = 2 WHERE tenant_id = ? AND period = '2026-Q3' AND product_id = ?")) {
+            update.setObject(1, tenantId);
+            update.setObject(2, productId);
+            assertThat(update.executeUpdate())
+                .as("regreporting projections are upserted in place, not append-only -- UPDATE must succeed")
+                .isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not update regreporting.policy_movement: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement delete = connection.prepareStatement(
+                 "DELETE FROM regreporting.policy_movement WHERE tenant_id = ? AND period = '2026-Q3' AND product_id = ?")) {
+            delete.setObject(1, tenantId);
+            delete.setObject(2, productId);
+            assertThat(delete.executeUpdate())
+                .as("regreporting projections are upserted in place, not append-only -- DELETE must succeed")
+                .isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not delete from regreporting.policy_movement: " + e.getMessage());
+        }
+
+        // --- return_definition_line: the return catalog's data half, mutable by a seed change. ---
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO regreporting.return_definition_line (tenant_id, return_type, line_no, line_code, label, metric_name) " +
+                 "VALUES (?, 'APPROLE_TEST_RETURN', 1, 'AR-01', 'App Role Test Line', 'POLICIES_ISSUED')")) {
+            insert.setObject(1, tenantId);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into regreporting.return_definition_line: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT label FROM regreporting.return_definition_line WHERE tenant_id = ? AND return_type = 'APPROLE_TEST_RETURN' AND line_no = 1")) {
+            select.setObject(1, tenantId);
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getString(1)).isEqualTo("App Role Test Line");
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from regreporting.return_definition_line: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE regreporting.return_definition_line SET label = 'Updated Label' WHERE tenant_id = ? AND return_type = 'APPROLE_TEST_RETURN' AND line_no = 1")) {
+            update.setObject(1, tenantId);
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not update regreporting.return_definition_line: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement delete = connection.prepareStatement(
+                 "DELETE FROM regreporting.return_definition_line WHERE tenant_id = ? AND return_type = 'APPROLE_TEST_RETURN' AND line_no = 1")) {
+            delete.setObject(1, tenantId);
+            assertThat(delete.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not delete from regreporting.return_definition_line: " + e.getMessage());
+        }
+
+        // --- return_line: deleted and rewritten wholesale every time a return regenerates. Needs a
+        // parent regulatory_return row first -- return_id is a real FK, ON DELETE CASCADE. ---
+        UUID returnId;
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO regreporting.regulatory_return (tenant_id, return_type, period, status) " +
+                 "VALUES (?, 'APPROLE_TEST_RETURN', '2026-Q3', 'READY') RETURNING return_id")) {
+            insert.setObject(1, tenantId);
+            try (ResultSet rs = insert.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not insert into regreporting.regulatory_return").isTrue();
+                returnId = (UUID) rs.getObject(1);
+            }
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO regreporting.return_line (return_id, tenant_id, line_no, line_code, label, metric_name, numeric_value) " +
+                 "VALUES (?, ?, 1, 'AR-01', 'App Role Test Line', 'POLICIES_ISSUED', 1)")) {
+            insert.setObject(1, returnId);
+            insert.setObject(2, tenantId);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not insert into regreporting.return_line: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement(
+                 "SELECT numeric_value FROM regreporting.return_line WHERE return_id = ? AND line_no = 1")) {
+            select.setObject(1, returnId);
+            try (ResultSet rs = select.executeQuery()) {
+                assertThat(rs.next()).as("app_role could not read back the row it just inserted").isTrue();
+                assertThat(rs.getBigDecimal(1)).isEqualByComparingTo(BigDecimal.ONE);
+            }
+        } catch (SQLException e) {
+            fail("app_role could not select from regreporting.return_line: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE regreporting.return_line SET numeric_value = 2 WHERE return_id = ? AND line_no = 1")) {
+            update.setObject(1, returnId);
+            assertThat(update.executeUpdate())
+                .as("return_line must be genuinely mutable under app_role -- a regenerated return rewrites its lines, this is not an append-only ledger")
+                .isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not update regreporting.return_line: " + e.getMessage());
+        }
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement delete = connection.prepareStatement(
+                 "DELETE FROM regreporting.return_line WHERE return_id = ? AND line_no = 1")) {
+            delete.setObject(1, returnId);
+            assertThat(delete.executeUpdate())
+                .as("return_line must be genuinely deletable under app_role -- regeneration deletes and rewrites lines wholesale")
+                .isEqualTo(1);
+        } catch (SQLException e) {
+            fail("app_role could not delete from regreporting.return_line: " + e.getMessage());
         }
     }
 

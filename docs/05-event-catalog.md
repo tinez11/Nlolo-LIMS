@@ -22,16 +22,20 @@ Every message payload is `allOf: [EventEnvelopeMeta, <event-specific fields>]` �
 | `underwriting` | 2 | policy, communication, audit, regreporting |
 | `policy` | 13 | billing, distribution, reinsurance, policyloan, claims, finaccounting, regreporting, communication, payment, audit |
 | `policyloan` | 6 | policy, payment, finaccounting, communication, audit |
-| `billing` | 9 | policy, payment, distribution, finaccounting, communication, audit |
+| `billing` | 9 | policy, payment, distribution, finaccounting, regreporting, communication, audit |
 | `claims` | 6 | reinsurance, payment, finaccounting, communication, regreporting, audit |
 | `distribution` | 5 | payment, finaccounting, communication, audit |
 | `payment` | 4 | billing, policyloan, claims, distribution, policy, finaccounting, communication, audit |
-| `reinsurance` | 3 | finaccounting, audit |
-| `finaccounting` | 2 | regreporting, audit |
+| `reinsurance` | 3 | finaccounting, regreporting, audit |
+| `finaccounting` | 2 | audit |
 | `communication` | 2 | audit |
 | `document` | 1 | audit |
 
 `audit` and `communication` are the two broadest fan-in consumers (audit takes literally all 58; communication takes roughly two-thirds — anything customer-visible). Neither appears as a "consumer" column entry needing its own row above, per Deliverable 3's §9 clarification that this is a structural fan-in, not an oversight.
+
+**M10 reconciliation.** Every `regreporting` consumer entry above (`policy`, `claims`, `billing`, `reinsurance` rows) is now genuinely backed by a real event listener as of this milestone — `regreporting.application.{PolicyEventListener,ClaimsEventListener,BillingEventListener,ReinsuranceEventListener}` — rather than the design-intent placeholder it had been since Deliverable 3; `regreporting` is consequently now a real fan-in consumer for `policy.PolicyIssued`/`PolicyLapsed`/`PolicyMatured`/`PolicySurrendered`/`PolicyReinstated`, `claims.ClaimRegistered`/`ClaimApproved`/`ClaimRejected`/`ClaimSettled`, `billing.PremiumCollected`, and `reinsurance.CessionRecorded`. `regreporting` was **added** to the `billing` and `reinsurance` rows above, which previously omitted it entirely despite `billing.PremiumCollected` and `reinsurance.CessionRecorded` being exactly the events `regreporting`'s `premium_movement`/`reinsurance_movement` tables are fed from.
+
+**Correction to the `finaccounting` row.** It previously listed `regreporting` as a consumer of `finaccounting`'s two events; that was never true, and `regreporting`'s application package has no `FinaccountingEventListener` to prove otherwise. This is a deliberate deferral, not an oversight: `finaccounting.GlPostingRecorded`'s payload carries no account codes (only amounts/direction/period/policy_number at the posting grain), so the only figure a `regreporting` listener could derive from it is a coarse control total, with no way to attribute it to any reporting dimension this module's tables are keyed on — not worth a dedicated listener for that alone. `finaccounting.CsmRolledForward` remains C1-blocked with no producer at all yet, so it could not be genuinely consumed by anything.
 
 ---
 

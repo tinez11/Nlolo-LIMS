@@ -48,7 +48,11 @@ channels:
       message: { $ref: '#/components/messages/UnderwritingDecisionMade' }
 
   policy.PolicyIssued:
-    description: "Producer: policy. Consumers: billing, distribution, reinsurance, finaccounting, regreporting, communication, audit."
+    description: >-
+      Producer: policy. Consumers: billing, distribution, reinsurance, finaccounting, regreporting,
+      communication, audit. M10 (Task 3): regreporting's own PolicyEventListener genuinely projects
+      this event into policy_dimension and policy_movement (policies_issued/sum_assured_issued) --
+      previously listed here as a design placeholder with no listener behind it.
     publish:
       message: { $ref: '#/components/messages/PolicyIssued' }
   policy.PolicyEndorsed:
@@ -61,10 +65,15 @@ channels:
       (M7 Task 6 -- claws back FIRST_YEAR commission when the lapse falls inside
       TZ_COMMISSION_CLAWBACK_MONTHS of issue; previously undeclared here despite a real consumer
       existing, the same drift class Task 6 also fixes on policy.PolicyIssued's payload below).
+      M10 (Task 3): regreporting's own listener genuinely projects this into policy_movement's
+      policies_lapsed measure -- previously listed here as a design placeholder only.
     publish:
       message: { $ref: '#/components/messages/PolicyLapsed' }
   policy.PolicyReinstated:
-    description: "Producer: policy. Consumers: billing, finaccounting, communication, audit."
+    description: >-
+      Producer: policy. Consumers: billing, finaccounting, communication, audit, regreporting (M10
+      Task 3, newly added -- regreporting's own listener projects this into policy_movement's
+      policies_reinstated measure; previously absent from this list entirely).
     publish:
       message: { $ref: '#/components/messages/PolicyReinstated' }
   policy.PolicySuspended:
@@ -79,7 +88,9 @@ channels:
       this is one of only two with a real producer; policy.PolicySurrenderInitiated,
       policy.PolicyMaturityInitiated, policy.SurrenderPayoutRequested and
       policy.MaturityPayoutRequested remain unimplemented -- do not assume the whole
-      surrender/maturity choreography has landed.
+      surrender/maturity choreography has landed. M10 (Task 3): regreporting's own listener
+      genuinely projects this into policy_movement's policies_matured measure -- previously
+      listed here as a design placeholder only.
     publish:
       message: { $ref: '#/components/messages/PolicyMatured' }
   policy.BeneficiaryChanged:
@@ -107,7 +118,11 @@ channels:
       events originally declared in this file, this is one of only two with a real producer;
       policy.PolicySurrenderInitiated, policy.PolicyMaturityInitiated,
       policy.SurrenderPayoutRequested and policy.MaturityPayoutRequested remain unimplemented --
-      do not assume the whole surrender/maturity choreography has landed.
+      do not assume the whole surrender/maturity choreography has landed. M10 (Task 3):
+      regreporting's own listener genuinely consumes this -- despite the event's name, it maps to
+      policy_movement's policies_claim_terminated measure, not a "surrendered" column (this table
+      has none), because its real producer is a settled claim, not a policyholder-initiated
+      surrender; see PolicyEventListener's own javadoc.
     publish:
       message: { $ref: '#/components/messages/PolicySurrendered' }
   policy.SurrenderPayoutRequested:
@@ -150,14 +165,18 @@ channels:
       message: { $ref: '#/components/messages/PremiumInvoiceGenerated' }
   billing.PremiumCollected:
     description: >-
-      Producer: billing. Consumers: distribution (RENEWAL commission attribution), finaccounting.
-      Added in M7. Fires ONLY on the transition INTO PAID -- a partial payment (PARTIALLY_PAID) and
-      a no-op payment against an already-PAID or WAIVED invoice both publish nothing, so this event
-      means "this invoice's premium is now fully collected", never "some money arrived". `amount` is
-      the invoice's own premium amount, not the tendered amount, so an overpayment does not inflate
-      it. `invoiceId` is a sound idempotency key for consumers because of that once-only edge.
-      Exists because payment.PaymentConfirmed carries only sourceRef = invoiceId with no
-      policyNumber, leaving consumers unable to attribute a collection to a policy.
+      Producer: billing. Consumers: distribution (RENEWAL commission attribution), finaccounting,
+      regreporting (M10 Task 6, newly added). Added in M7. Fires ONLY on the transition INTO PAID --
+      a partial payment (PARTIALLY_PAID) and a no-op payment against an already-PAID or WAIVED
+      invoice both publish nothing, so this event means "this invoice's premium is now fully
+      collected", never "some money arrived". `amount` is the invoice's own premium amount, not the
+      tendered amount, so an overpayment does not inflate it. `invoiceId` is a sound idempotency key
+      for consumers because of that once-only edge. Exists because payment.PaymentConfirmed carries
+      only sourceRef = invoiceId with no policyNumber, leaving consumers unable to attribute a
+      collection to a policy. regreporting's own BillingEventListener projects this into
+      premium_movement's collected_amount, resolving the productId this event lacks through its own
+      policy_dimension (falling back to the UNKNOWN product sentinel on a miss) -- previously
+      absent from this list entirely.
     publish:
       message: { $ref: '#/components/messages/PremiumCollected' }
   billing.PremiumOverdue:
@@ -190,7 +209,11 @@ channels:
       message: { $ref: '#/components/messages/FieldReceiptReconciliationOverdue' }
 
   claims.ClaimRegistered:
-    description: "Producer: claims. Consumers: communication, audit, regreporting."
+    description: >-
+      Producer: claims. Consumers: communication, audit, regreporting. M10 (Task 6):
+      regreporting's own ClaimsEventListener genuinely projects this into claim_dimension and
+      claims_movement (registered_count), keyed by the envelope's occurredAt, not the payload's
+      dateOfEvent -- previously listed here as a design placeholder with no listener behind it.
     publish:
       message: { $ref: '#/components/messages/ClaimRegistered' }
   claims.ClaimAssessed:
@@ -198,11 +221,18 @@ channels:
     publish:
       message: { $ref: '#/components/messages/ClaimAssessed' }
   claims.ClaimApproved:
-    description: "Producer: claims. Consumers: reinsurance (recovery calc), finaccounting, communication, audit, regreporting."
+    description: >-
+      Producer: claims. Consumers: reinsurance (recovery calc), finaccounting, communication,
+      audit, regreporting. M10 (Task 6): regreporting's own listener genuinely projects this into
+      claims_movement's approved_count/approved_amount -- previously listed here as a design
+      placeholder only.
     publish:
       message: { $ref: '#/components/messages/ClaimApproved' }
   claims.ClaimRejected:
-    description: "Producer: claims. Consumers: communication, audit, regreporting."
+    description: >-
+      Producer: claims. Consumers: communication, audit, regreporting. M10 (Task 6):
+      regreporting's own listener genuinely projects this into claims_movement's rejected_count --
+      previously listed here as a design placeholder only.
     publish:
       message: { $ref: '#/components/messages/ClaimRejected' }
   claims.ClaimSettlementRequested:
@@ -214,7 +244,9 @@ channels:
       "Producer: claims (confirmation, after consuming payment.DisbursementCompleted). Consumers:
       reinsurance (claim recovery), finaccounting, communication, audit, regreporting. policyNumber
       and settledAmount were added in M8: without them no consumer could attribute a settlement to
-      a policy or know what was paid."
+      a policy or know what was paid. M10 (Task 6): regreporting's own listener genuinely projects
+      this into claims_movement's settled_count/settled_amount -- previously listed here as a
+      design placeholder only."
     publish:
       message: { $ref: '#/components/messages/ClaimSettled' }
 
@@ -257,7 +289,14 @@ channels:
       message: { $ref: '#/components/messages/DisbursementFailed' }
 
   reinsurance.CessionRecorded:
-    description: "Producer: reinsurance. Consumers: finaccounting, audit."
+    description: >-
+      Producer: reinsurance. Consumers: finaccounting, audit, regreporting (M10 Task 6, newly
+      added -- regreporting's own ReinsuranceEventListener projects this into
+      reinsurance_movement's ceded_risk_amount/ceded_premium_amount. Deliberately NOT attributed by
+      product: a cession arrives from reinsurance's own transaction reacting to PolicyIssued,
+      unordered against regreporting's own PolicyIssued listener, so keying by product would race
+      against the policy_dimension row a cession would need; previously absent from this list
+      entirely).
     publish:
       message: { $ref: '#/components/messages/CessionRecorded' }
   reinsurance.RecoveryCalculated:
@@ -270,7 +309,15 @@ channels:
       message: { $ref: '#/components/messages/RecoveryConfirmed' }
 
   finaccounting.GlPostingRecorded:
-    description: "Producer: finaccounting (Task 5, M9: real double-entry GL posting, one event per journal entry). Consumers: regreporting, audit. No longer provisional -- see GlPostingRecordedPayload's own description."
+    description: >-
+      Producer: finaccounting (Task 5, M9: real double-entry GL posting, one event per journal
+      entry). Consumer: audit. No longer provisional -- see GlPostingRecordedPayload's own
+      description. CORRECTION (M10 Task 9): this previously also listed regreporting as a consumer;
+      that was never true and no such listener exists (verified: regreporting's application package
+      has no FinaccountingEventListener). Deliberately not built, not merely missed: the payload
+      carries no account codes (see GlPostingRecordedPayload), so the only figure derivable from it
+      would be a coarse control total with no way to attribute it to a reporting dimension --
+      not worth a dedicated listener on its own. A deferral, not an oversight.
     publish:
       message: { $ref: '#/components/messages/GlPostingRecorded' }
   finaccounting.CsmRolledForward:
