@@ -159,6 +159,26 @@ COMMENT ON COLUMN regreporting.regulatory_return.document_ref IS
 ALTER TABLE regreporting.policy_in_force_summary RENAME TO policy_movement;
 ALTER INDEX regreporting.ux_policy_in_force_summary RENAME TO ux_policy_movement;
 
+-- Promote the composite business key to the PRIMARY KEY and drop V1's surrogate summary_id.
+--
+-- WHY THIS IS NECESSARY, not tidying: V1 made summary_id the PK and left
+-- (tenant_id, period, product_id) as a mere UNIQUE INDEX. Its three sibling fact tables in
+-- section 6 all use the composite AS the primary key, so without this the domain model would
+-- have to map policy_movement on a surrogate id while the other three use @IdClass -- an
+-- asymmetry with no upside, and the plan's Task 3 maps all four the same way.
+--
+-- WHY IT IS SAFE REGARDLESS OF EXISTING DATA -- which matters, because "it works because the
+-- table happens to be empty today" is exactly the reasoning that breaks on the first deployment
+-- that has rows: the columns being promoted are already NOT NULL, and ux_policy_movement is
+-- already a UNIQUE index over exactly this tuple, so the promotion cannot fail on either null
+-- or duplicate data. The uniqueness it depends on is already enforced.
+ALTER TABLE regreporting.policy_movement DROP CONSTRAINT policy_in_force_summary_pkey;
+ALTER TABLE regreporting.policy_movement DROP COLUMN summary_id;
+ALTER TABLE regreporting.policy_movement ADD PRIMARY KEY (tenant_id, period, product_id);
+-- ux_policy_movement is now redundant with the PK's own implicit unique index. Dropped rather
+-- than left as a second identical index that every write has to maintain.
+DROP INDEX regreporting.ux_policy_movement;
+
 ALTER TABLE regreporting.policy_movement RENAME COLUMN policy_count TO policies_issued;
 ALTER TABLE regreporting.policy_movement RENAME COLUMN total_sum_assured_amount TO sum_assured_issued;
 ALTER TABLE regreporting.policy_movement RENAME COLUMN total_sum_assured_currency TO currency;
@@ -426,7 +446,22 @@ WHERE n.nspname = 'regreporting' AND c.relkind = 'r'
 ORDER BY c.relname;"
 ```
 
-Expected: nine tables — `claim_dimension`, `claims_movement`, `policy_dimension`, `policy_movement`, `premium_movement`, `regulatory_return`, `reinsurance_movement`, `return_definition`, `return_definition_line`, `return_line` (ten rows) — every one `rls=t has_policy=t sel=t ins=t`. **`policy_in_force_summary` must NOT appear** (it was renamed). Paste the real table.
+Expected: ten tables — `claim_dimension`, `claims_movement`, `policy_dimension`, `policy_movement`, `premium_movement`, `regulatory_return`, `reinsurance_movement`, `return_definition`, `return_definition_line`, `return_line` — every one `rls=t has_policy=t sel=t ins=t`. **`policy_in_force_summary` must NOT appear** (it was renamed). Paste the real table.
+
+Also confirm the PK promotion landed, since Task 3's `@IdClass` mapping depends on it:
+
+```bash
+docker exec m10verify psql -U postgres -c "
+SELECT a.attname, i.indisprimary
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey)
+WHERE n.nspname='regreporting' AND c.relname='policy_movement' AND i.indisprimary
+ORDER BY a.attname;"
+```
+
+Expected exactly three rows — `period`, `product_id`, `tenant_id`, all `indisprimary = t` — and **no `summary_id` column anywhere on the table**.
 
 - [ ] **Step 4: Prove the constraints and the seed actually work**
 
