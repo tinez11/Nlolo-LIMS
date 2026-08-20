@@ -504,16 +504,42 @@ mappers are wrong, which is precisely the failure this deliverable exists to pre
   to clean state. Nothing documents this sequence today, and §9's blocker is partly a
   consequence of no one ever being asked to run it end to end.
 
-  **The runbook must call out that migrations are manual.** Verified: `pom.xml` contains
-  neither Flyway nor Liquibase, so nothing applies schema on application startup —
-  `scripts/migrate.sh` is the only path, and `docker compose up` on a fresh volume therefore
-  leaves an entirely empty database behind a running app. Every request then fails on
-  missing relations rather than anything that names the real cause. This is a five-minute
-  fix in a runbook and an afternoon lost without one.
-
   Also verified while checking the seeder's feasibility: `directAccessGrantsEnabled` is
   already `true` on all four realms' clients, so §12's password grant works without a realm
   change.
+
+- **`scripts/migrate.sh` needs a `local` mode, because today the documented startup sequence
+  dead-ends.** Found by checking what a developer would actually have to install. Three
+  independent problems, all verified in the file rather than assumed:
+
+  1. **It calls `psql` on the host** (`scripts/migrate.sh:39`), which is not installed on
+     this machine and should not need to be — the `postgres` container already ships it.
+     `local` mode runs `docker compose exec -T postgres psql` instead, piping each migration
+     in on stdin. (Piping rather than `docker cp` is deliberate: `docker cp` mangles Windows
+     paths on this machine, established during M10's verification work.)
+  2. **It accepts only `staging|production`** and requires `STAGING_DB_URL` /
+     `PRODUCTION_DB_URL`. There is no way to point it at the local stack at all, so the one
+     script that can create the schema cannot create the schema a developer needs.
+  3. **It is not idempotent** — its own header says "safe for a first migration run only …
+     plain CREATE TABLE/INDEX, no schema-history tracking," and notes that switching to
+     Flyway was an M1 follow-up. That follow-up never happened, and it matters more now than
+     it did then, because several modules have V2/V3 migrations, so a re-run fails partway
+     through rather than at the first statement.
+
+  **Decision: add `local` mode and keep the script simple — do not adopt Flyway in this
+  milestone.** Flyway is the right long-term answer and the script itself says so, but
+  retrofitting per-module schema history across 16 modules is a backend change of its own
+  size, and it would land in the same milestone as a security fix and two new APIs. `local`
+  mode fails loudly on a dirty database rather than pretending to be idempotent, and the
+  runbook documents the reset path — `docker compose down -v` to drop the volume, re-up,
+  re-migrate, re-seed — which is the honest workflow for a dev database anyway. Flyway is
+  recorded in §14 as deferred, with the reason it is now overdue rather than merely optional.
+
+  **The runbook must state plainly that migrations are manual.** `pom.xml` contains neither
+  Flyway nor Liquibase (verified), so nothing applies schema at application startup.
+  `docker compose up` on a fresh volume leaves an entirely empty database behind a running
+  app, and every request then fails on missing relations — an error that names nothing about
+  the real cause. Five minutes in a runbook; an afternoon without one.
 
 ## 14. Deliverable B — deliberately out of scope
 
@@ -528,3 +554,17 @@ mappers are wrong, which is precisely the failure this deliverable exists to pre
 - **Automated CI execution of the seeder.** It targets a long-lived local stack, not an
   ephemeral CI container. Making it CI-safe means solving idempotency properly (§12.3) and
   is not needed to unblock M12.
+- **Flyway (or any schema-history tracking), platform-wide.** `scripts/migrate.sh`'s own
+  header proposed this as an M1 follow-up and eleven milestones passed without it. It is now
+  overdue rather than optional: **`staging` and `production` share the same non-idempotent
+  script**, so any environment already carrying V1 cannot receive the V2/V3 migrations that
+  M4, M7, M9, M10 and this milestone added without hand-applying them in the right order and
+  hoping. That is a genuine deployment risk, but it is a deployment-process change affecting
+  all 16 modules, not something to bundle into a milestone that also ships a security fix and
+  two APIs. §13's `local` mode deliberately does not paper over it — a dirty local database
+  fails loudly, which keeps the real problem visible instead of hiding it behind a
+  convenience.
+- **Host-installed Postgres or Keycloak.** Neither should be installed natively: both run as
+  containers, and a host Postgres on 5432 or Keycloak on 8080 would collide with the compose
+  stack. Recorded because it is the first question a new developer asks, and the answer is
+  counterintuitive if you assume you need a database "installed."
