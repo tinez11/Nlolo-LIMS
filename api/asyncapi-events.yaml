@@ -28,22 +28,45 @@ channels:
       message: { $ref: '#/components/messages/PartyDetailsUpdated' }
 
   product.ProductDefinitionPublished:
-    description: "Producer: product. Consumers: finaccounting, regreporting, audit."
+    description: >-
+      Producer: product. Consumers: finaccounting, audit. CORRECTION (M10 final review, I5): this
+      previously also listed regreporting as a consumer; that was never true and no such listener
+      exists (verified: regreporting's application package declares exactly four listeners --
+      PolicyEventListener, ClaimsEventListener, BillingEventListener, ReinsuranceEventListener --
+      and none of them handles a product.* event type). Not a gap either: regreporting's fact tables
+      key on an OPAQUE product_id and never need a product's definition, name or version, so there
+      is nothing for a product listener to project.
     publish:
       message: { $ref: '#/components/messages/ProductDefinitionPublished' }
   product.ProductVersionRetired:
-    description: "Producer: product. Consumers: regreporting, audit."
+    description: >-
+      Producer: product. Consumers: audit. CORRECTION (M10 final review, I5): this previously also
+      listed regreporting as a consumer; that was never true and no such listener exists (same
+      verification as product.ProductDefinitionPublished above). Retiring a product version cannot
+      change a movement already recorded against that product in a closed period, so there would be
+      nothing for such a listener to do.
     publish:
       message: { $ref: '#/components/messages/ProductVersionRetired' }
 
   underwriting.UnderwritingCaseOpened:
-    description: "Producer: underwriting. Consumers: audit, regreporting."
+    description: >-
+      Producer: underwriting. Consumers: audit. CORRECTION (M10 final review, I5): this previously
+      also listed regreporting as a consumer; that was never true and no such listener exists
+      (verified: regreporting's four listeners handle no underwriting.* event type). Deliberate:
+      every regreporting measure is a POLICY/claim/premium/cession movement, and an underwriting
+      case is neither -- a case that is opened and then declined never becomes a policy at all, so
+      counting it would overstate new business.
     publish:
       message: { $ref: '#/components/messages/UnderwritingCaseOpened' }
   underwriting.UnderwritingDecisionMade:
     description: >
       Producer: underwriting. Consumers: policy (auto-issuance trigger on ACCEPT/LOADED
-      — the common issuance path, per Deliverable 4's framing note), communication, audit, regreporting.
+      — the common issuance path, per Deliverable 4's framing note), communication, audit.
+      CORRECTION (M10 final review, I5): this previously also listed regreporting as a consumer;
+      that was never true and no such listener exists (same verification as
+      underwriting.UnderwritingCaseOpened above). An ACCEPT/LOADED decision reaches regreporting
+      as policy.PolicyIssued, which its PolicyEventListener genuinely does consume; projecting the
+      decision as well would double-count the same new business.
     publish:
       message: { $ref: '#/components/messages/UnderwritingDecisionMade' }
 
@@ -56,7 +79,17 @@ channels:
     publish:
       message: { $ref: '#/components/messages/PolicyIssued' }
   policy.PolicyEndorsed:
-    description: "Producer: policy. Consumers: billing (schedule regen), finaccounting, regreporting, audit."
+    description: >-
+      Producer: policy. Consumers: billing (schedule regen), finaccounting, audit. CORRECTION (M10
+      final review, I5): this previously also listed regreporting as a consumer; that was never true
+      and no such listener exists (verified: regreporting's PolicyEventListener switches on
+      PolicyIssued/Lapsed/Matured/Surrendered/Reinstated only). This one is a REAL DEFERRAL rather
+      than a non-need, and worth being explicit about: an endorsement CAN change a policy's sum
+      assured, which policy_movement's sum_assured_issued/sum_assured_terminated measures would need
+      to reflect for SUM_ASSURED_IN_FORCE to stay exact. It is not built because the gross-movement
+      model has no "adjustment" cause to record a mid-period revision against, and inventing one
+      before TIRA says how a revision must be reported (C2) would be guessing. Consequence, stated
+      rather than hidden: SUM_ASSURED_IN_FORCE reflects sums assured AS ISSUED, not as endorsed.
     publish:
       message: { $ref: '#/components/messages/PolicyEndorsed' }
   policy.PolicyLapsed:
@@ -217,7 +250,14 @@ channels:
     publish:
       message: { $ref: '#/components/messages/ClaimRegistered' }
   claims.ClaimAssessed:
-    description: "Producer: claims. Consumers: audit, regreporting."
+    description: >-
+      Producer: claims. Consumers: audit. CORRECTION (M10 final review, I5): this previously also
+      listed regreporting as a consumer; that was never true and no such listener exists (verified:
+      regreporting's ClaimsEventListener switches on ClaimRegistered/Approved/Rejected/Settled
+      only). Deliberate: claims_movement's four counters are registered/approved/rejected/settled --
+      an assessment is an intermediate step between registration and the approve/reject decision,
+      with no measure of its own, and counting it would double-count a claim already counted at
+      registration.
     publish:
       message: { $ref: '#/components/messages/ClaimAssessed' }
   claims.ClaimApproved:
@@ -321,7 +361,15 @@ channels:
     publish:
       message: { $ref: '#/components/messages/GlPostingRecorded' }
   finaccounting.CsmRolledForward:
-    description: "Producer: finaccounting. Consumers: regreporting, audit. Schema provisional pending C1."
+    description: >-
+      Producer: finaccounting. Consumer: audit. Schema provisional pending C1. CORRECTION (M10 final
+      review, I5): this previously also listed regreporting as a consumer; that was never true and no
+      such listener exists (verified: regreporting's application package has no
+      FinaccountingEventListener). Same correction Task 9 already applied to
+      finaccounting.GlPostingRecorded above, and it left this channel CONTRADICTING
+      docs/05-event-catalog.md, which already stated correctly that regreporting consumes neither
+      finaccounting event. Doubly untrue here: CsmRolledForward is itself C1-BLOCKED with no producer
+      at all yet, so nothing could be genuinely consuming it.
     publish:
       message: { $ref: '#/components/messages/CsmRolledForward' }
 
