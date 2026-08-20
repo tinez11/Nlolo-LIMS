@@ -16,6 +16,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
@@ -61,7 +63,11 @@ public class ClaimsEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
-            case "claims.ClaimRegistered" -> withTenant(envelope, this::handleClaimRegistered);
+            // ClaimRegistered's period is the envelope's OWN occurredAt (when the claim was really
+            // registered/published), not the payload's dateOfEvent (when the underlying loss
+            // happened) -- see handleClaimRegistered's javadoc for why those two dates differ and
+            // which one this movement must use.
+            case "claims.ClaimRegistered" -> withTenant(envelope, payload -> handleClaimRegistered(payload, envelope.occurredAt()));
             case "claims.ClaimApproved" -> withTenant(envelope, this::handleClaimApproved);
             case "claims.ClaimRejected" -> withTenant(envelope, this::handleClaimRejected);
             case "claims.ClaimSettled" -> withTenant(envelope, this::handleClaimSettled);
@@ -88,12 +94,23 @@ public class ClaimsEventListener {
         }
     }
 
-    private void handleClaimRegistered(Map<String, Object> payload) {
+    /**
+     * {@code period} is derived from {@code envelope.occurredAt()} -- when this event was actually
+     * published, i.e. when the claim was administratively registered -- NOT from the payload's own
+     * {@code dateOfEvent}, which is the date of the underlying insured loss (e.g. date of death)
+     * and can legitimately precede registration by more than one quarter for a late-reported claim.
+     * Attributing {@code CLAIMS_REGISTERED} to {@code dateOfEvent} would silently misattribute a
+     * late-reported claim's movement to an earlier, possibly already-generated reporting period --
+     * a real regulatory-reporting correctness gap, not merely a stylistic difference (final review
+     * finding). Every other handler in this class keeps its own period derivation unchanged: {@code
+     * ClaimSettled} genuinely has its own settlement timestamp on the payload ({@code settledAt}),
+     * and {@code ClaimApproved}/{@code ClaimRejected} carry no timestamp at all.
+     */
+    private void handleClaimRegistered(Map<String, Object> payload, Instant occurredAt) {
         UUID tenantId = TenantContext.get();
         UUID claimId = (UUID) payload.get("claimId");
         String policyNumber = (String) payload.get("policyNumber");
         String claimType = (String) payload.get("claimType");
-        String dateOfEvent = (String) payload.get("dateOfEvent");
 
         // ClaimRegistered is the only event in the lifecycle that carries claimType -- the
         // dimension row every later lifecycle event's movement depends on.
@@ -101,7 +118,7 @@ public class ClaimsEventListener {
             claimDimensionRepository.save(new ClaimDimension(tenantId, claimId, claimType, policyNumber));
         }
 
-        String period = ProjectionSupport.quarterOfDate(dateOfEvent);
+        String period = ProjectionSupport.quarterOf(occurredAt.atZone(ZoneOffset.UTC).toLocalDate());
         ClaimsMovement movement = claimsMovementRepository
             .findByTenantIdAndPeriodAndClaimType(tenantId, period, claimType)
             .orElseGet(() -> new ClaimsMovement(tenantId, period, claimType, ProjectionSupport.UNKNOWN_CURRENCY));
