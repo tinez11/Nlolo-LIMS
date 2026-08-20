@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -44,8 +46,16 @@ public class MetricReaderRegistry {
     /**
      * Reads {@code metric} for {@code tenantId} as of {@code period}, optionally narrowed by
      * {@code dimensionFilter} (a product id for policy/premium metrics, a claim type for claims
-     * metrics; reinsurance metrics are never attributed by product -- see
-     * {@code ReinsuranceMovement}'s javadoc -- so a filter on them is simply not applied).
+     * metrics).
+     *
+     * <p><b>An unusable {@code dimensionFilter} is REJECTED, never ignored</b> (M10 final review,
+     * I2). A filter on a reinsurance metric used to be silently dropped, so a definition line
+     * asking for "ceded premium, product X" quietly reported the TENANT-WIDE total under a label
+     * saying otherwise -- an overstated figure on a return, which is strictly worse than a failed
+     * generation. A claim-type filter was likewise matched by plain string equality with no
+     * validation, so a typo'd or wrong-dimension value returned zero rather than erroring, unlike
+     * {@link #parseProductId} which has always thrown on a malformed UUID. Both now throw
+     * {@link RegreportingValidationException}.
      *
      * <p>STOCK metrics load every row with {@code period <= period}; FLOW metrics load only that
      * period's own rows. The switch below is deliberately exhaustive with no {@code default}: an
@@ -53,6 +63,7 @@ public class MetricReaderRegistry {
      * null at generation time.
      */
     public BigDecimal read(UUID tenantId, MetricName metric, String period, String dimensionFilter) {
+        rejectUnusableDimensionFilter(metric, dimensionFilter);
         return switch (metric) {
             case POLICIES_IN_FORCE -> {
                 List<PolicyMovement> movements = filterByProduct(
@@ -144,6 +155,36 @@ public class MetricReaderRegistry {
 
     // ---- dimension filtering ----------------------------------------------------------------
 
+    /**
+     * The claim-type vocabulary a {@code dimension_filter} on a claims metric may legitimately
+     * name: {@code claim_dimension.claim_type}'s CHECK vocabulary (db-migrations/regreporting/V2
+     * section 5) PLUS the {@code "UNKNOWN"} sentinel. The sentinel belongs here even though the
+     * CHECK does not admit it: it is a real, queryable value in {@code claims_movement.claim_type}
+     * (that column deliberately carries no CHECK -- see {@code ProjectionSupport}), so a return
+     * line filtering on it to surface unattributed claims is a legitimate thing to ask for.
+     */
+    private static final Set<String> FILTERABLE_CLAIM_TYPES =
+        Set.of("DEATH", "DISABILITY", "CRITICAL_ILLNESS", "MATURITY", "UNKNOWN");
+
+    /**
+     * Fails a {@code dimensionFilter} the requested metric cannot honour, BEFORE any row is read.
+     * Reinsurance metrics have no product (or any other) dimension to filter by at all -- {@code
+     * reinsurance_movement} is one row per {@code (tenant, period)} by design (see its own javadoc)
+     * -- so a filter on them cannot be satisfied, only ignored, and ignoring it would hand back a
+     * tenant-wide total labelled as a filtered one.
+     */
+    private static void rejectUnusableDimensionFilter(MetricName metric, String dimensionFilter) {
+        if (dimensionFilter == null) return;
+        if (metric == MetricName.REINSURANCE_CEDED_RISK || metric == MetricName.REINSURANCE_CEDED_PREMIUM) {
+            throw new RegreportingValidationException(
+                "dimensionFilter '" + dimensionFilter + "' cannot be applied to " + metric
+                + ": reinsurance movements carry no product dimension to filter by (reinsurance_movement "
+                + "is one row per tenant and period by design), so a filtered figure is not derivable "
+                + "-- remove the dimension_filter from this return definition line, or ask for a "
+                + "metric that is attributed by product");
+        }
+    }
+
     private static List<PolicyMovement> filterByProduct(List<PolicyMovement> movements, String dimensionFilter) {
         if (dimensionFilter == null) return movements;
         UUID productId = parseProductId(dimensionFilter);
@@ -156,8 +197,19 @@ public class MetricReaderRegistry {
         return movements.stream().filter(m -> productId.equals(m.getProductId())).toList();
     }
 
+    /** Validated against the real vocabulary, not matched blindly: an unrecognised claim type used
+     * to filter every row away and report zero, which on a return is indistinguishable from "no
+     * claims of this type happened" -- the exact silent-wrong-figure failure {@link #parseProductId}
+     * has always refused to allow for a malformed product id (M10 final review, I2). */
     private static List<ClaimsMovement> filterByClaimType(List<ClaimsMovement> movements, String dimensionFilter) {
         if (dimensionFilter == null) return movements;
+        if (!FILTERABLE_CLAIM_TYPES.contains(dimensionFilter)) {
+            throw new RegreportingValidationException(
+                "dimensionFilter '" + dimensionFilter + "' is not a known claim type -- expected one of "
+                + new TreeSet<>(FILTERABLE_CLAIM_TYPES) + " (claim_dimension.claim_type's CHECK "
+                + "vocabulary plus the UNKNOWN sentinel). An unrecognised value would report zero, "
+                + "which on a return is indistinguishable from a genuine zero");
+        }
         return movements.stream().filter(m -> dimensionFilter.equals(m.getClaimType())).toList();
     }
 

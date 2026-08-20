@@ -5,8 +5,15 @@ info:
   description: >
     Read-only surface for the Regulator Read-Only Portal plus a staff-triggered
     return-generation endpoint. ReturnType values are PLACEHOLDERS pending the
-    current TIRA circular (tracked as C2 since Deliverable 2) -- do not treat the
-    enum below as final. documentRef is likewise always null pending that same
+    current TIRA circular (tracked as C2 since Deliverable 2) -- the return catalog
+    is seeded data, and exactly ONE placeholder definition
+    (QUARTERLY_PRUDENTIAL, ten invented line codes) exists today, for the
+    well-known dev/test tenant only. GenerateReturnRequest.returnType deliberately
+    carries no enum for that reason (M10 final review C2/I4): the enum it used to
+    carry advertised ANNUAL_AUDITED and STATISTICAL as if supported when neither
+    has a definition or an implementation. Only QUARTERLY periodKind is
+    implemented -- an ANNUAL-kind definition is rejected, not aggregated.
+    documentRef is likewise always null pending that same
     C2 blocker: rendering a submission artifact requires TIRA's file format,
     which does not exist yet -- the field is exposed so a consumer sees it exists
     rather than discovering later that it was silently omitted.
@@ -34,7 +41,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422':
-          description: "Unknown returnType (no such definition for this tenant), or period's format does not match that return type's declared periodKind (e.g. an annual period submitted against a QUARTERLY-kind definition)."
+          description: "Unknown returnType (no such definition for this tenant), or period's format does not match that return type's declared periodKind (e.g. an annual period submitted against a QUARTERLY-kind definition), or the definition's own periodKind is ANNUAL -- unimplemented, because no annual movement periods exist to aggregate (M10 final review, C2)."
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -132,11 +139,23 @@ components:
       properties:
         returnType:
           type: string
-          enum: [QUARTERLY_PRUDENTIAL, ANNUAL_AUDITED, STATISTICAL]
-          description: "PLACEHOLDER catalog -- replace once TIRA circular is confirmed."
+          description: >-
+            PLACEHOLDER catalog -- replace once the TIRA circular is confirmed. Deliberately NOT a
+            closed enum (M10 final review, C2/I4): the catalog is DATA (seeded
+            regreporting.return_definition rows, per tenant), not code, so enumerating it here would
+            need a redeploy every time a definition is added -- and the enum this schema used to
+            carry (QUARTERLY_PRUDENTIAL, ANNUAL_AUDITED, STATISTICAL) advertised two values that
+            have no seeded definition for any tenant and no implementation behind them, which read
+            as "supported" at the contract layer while silently failing. The real gate is the
+            service layer: an unknown returnType, or a definition whose periodKind is the
+            unimplemented ANNUAL, is a 422.
         period:
           type: string
-          description: "YYYY-Qn or YYYY, matching the return type's declared periodKind."
+          description: >-
+            YYYY-Qn, matching the return type's declared periodKind. QUARTERLY is currently the only
+            implemented periodKind, so an annual YYYY period is always a 422 today -- either because
+            it contradicts a QUARTERLY definition, or because the definition's own periodKind is
+            ANNUAL, which is rejected outright (no annual movement periods exist to aggregate).
     ReturnLineView:
       type: object
       required: [returnLineId, lineNo, lineCode, label, metricName, value]

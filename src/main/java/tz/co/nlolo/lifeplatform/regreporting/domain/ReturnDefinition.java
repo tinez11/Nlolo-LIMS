@@ -16,6 +16,15 @@ import java.util.UUID;
  *
  * <p>{@code periodKind} pins a return type to one period format so an annual and a quarterly
  * period can never be cumulative-summed together.
+ *
+ * <p><b>{@code QUARTERLY} is the only IMPLEMENTED kind.</b> The DB CHECK (V2 section 7) also admits
+ * {@code 'ANNUAL'}, and that is deliberately retained as a SCHEMA-LEVEL PLACEHOLDER for a future
+ * capability -- but nothing in this module writes an annual-shaped period, so {@code ReturnGenerator}
+ * REJECTS an {@code ANNUAL} definition outright (M10 final review, C2) instead of silently reporting
+ * zeros for every flow metric and a year-stale position for every stock metric, which is what it did
+ * before. Implementing annual returns needs to know what TIRA's annual return actually asks for
+ * (C2-blocked), so do not seed an {@code ANNUAL} definition until that code exists. See
+ * regreporting/V3's {@code COMMENT ON COLUMN return_definition.period_kind}.
  */
 @Entity
 @Table(name = "return_definition", schema = "regreporting")

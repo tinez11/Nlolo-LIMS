@@ -127,7 +127,8 @@ class RegreportingContractTest {
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
-            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql");
+            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
+            "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -224,18 +225,20 @@ class RegreportingContractTest {
             .andExpect(jsonPath("$.lines[1].value.currencyCode").value("TZS"));
     }
 
-    /** {@code ANNUAL_AUDITED} is a valid {@code GenerateReturnRequest.returnType} enum member
-     * (openapi-regreporting.yaml) but has NO seeded {@code return_definition} row for any tenant
-     * (regreporting/V2 section 9 seeds only {@code QUARTERLY_PRUDENTIAL}) -- so this exercises the
-     * real 422 branch over the wire (an unrecognised-to-this-tenant return type) without also
-     * tripping the request-schema {@code enum} check, which a genuinely made-up string like
-     * {@code "NO_SUCH_RETURN_TYPE"} would trigger first (400, not 422) -- verified: that value was
-     * tried first and rejected by request-body schema validation before ever reaching the service. */
+    /** Uses a plainly made-up {@code "NO_SUCH_RETURN_TYPE"}, which is now the honest way to reach
+     * this branch. It used to send {@code "ANNUAL_AUDITED"} instead, precisely BECAUSE that was an
+     * advertised {@code GenerateReturnRequest.returnType} enum member with no seeded definition
+     * behind it -- so a made-up string was intercepted by request-schema validation as a 400 before
+     * ever reaching the service. The M10 final review (C2/I4) removed that enum: it advertised
+     * {@code ANNUAL_AUDITED}/{@code STATISTICAL} as supported when neither has a definition or an
+     * implementation, and the service layer's own "no definition found" check is the real gate. With
+     * the enum gone, request-schema validation no longer intercepts an unrecognised string and this
+     * test exercises the genuine 422 branch with a genuinely unknown value. */
     @Test
     void generateReturnReturns422ForAnUnknownReturnType() throws Exception {
         mockMvc.perform(post("/regulatory-returns").with(financeStaffOf(SEEDED_TENANT))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(generateReturnBody("ANNUAL_AUDITED", "2026")))
+                .content(generateReturnBody("NO_SUCH_RETURN_TYPE", "2026-Q1")))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("REGREPORTING_VALIDATION_FAILED"));

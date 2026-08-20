@@ -30,10 +30,9 @@ import java.util.regex.Pattern;
 @Component
 public class ReturnGenerator {
 
-    /** {@code YYYY-Qn}, n in 1..4 -- regreporting/V2 section 7's {@code period_kind = 'QUARTERLY'}. */
+    /** {@code YYYY-Qn}, n in 1..4 -- regreporting/V2 section 7's {@code period_kind = 'QUARTERLY'},
+     * and the ONLY implemented period kind (see {@link #validatePeriodMatchesKind}). */
     private static final Pattern QUARTERLY_PERIOD = Pattern.compile("^\\d{4}-Q[1-4]$");
-    /** {@code YYYY} -- regreporting/V2 section 7's {@code period_kind = 'ANNUAL'}. */
-    private static final Pattern ANNUAL_PERIOD = Pattern.compile("^\\d{4}$");
 
     /** Every fact table in this module defaults its currency column to TZS (regreporting/V2
      * sections 4-6) and none carries any other currency today -- this module has no source of a
@@ -69,8 +68,10 @@ public class ReturnGenerator {
      * constraint backs this, but the read path must not rely on hitting it).
      *
      * @throws RegreportingValidationException if no definition exists for {@code returnType}, if
-     *         {@code period}'s format does not match that definition's {@code periodKind}, or if
-     *         a definition line names a metric absent from {@link MetricName}
+     *         that definition's {@code periodKind} is {@code ANNUAL} (unsupported -- see
+     *         {@link #validatePeriodMatchesKind}), if {@code period}'s format does not match that
+     *         definition's {@code periodKind}, or if a definition line names a metric absent from
+     *         {@link MetricName}
      */
     @Transactional
     public RegulatoryReturn generate(UUID tenantId, String returnType, String period, String generatedBy) {
@@ -79,7 +80,9 @@ public class ReturnGenerator {
                 "No return definition exists for returnType '" + returnType + "'"));
 
         // Validated BEFORE anything else touches the registry or the lines table -- this is what
-        // stops a quarterly and an annual period ever being cumulative-summed together.
+        // stops a quarterly and an annual period ever being cumulative-summed together, and (M10
+        // final review C2) what rejects an ANNUAL-kind definition outright rather than reporting
+        // zeros and a year-stale position for it.
         validatePeriodMatchesKind(definition.getPeriodKind(), period);
 
         RegulatoryReturn regulatoryReturn = returnRepository
@@ -119,14 +122,37 @@ public class ReturnGenerator {
         return regulatoryReturn;
     }
 
+    /**
+     * <b>{@code ANNUAL} is REJECTED, not validated</b> (M10 final review, C2). {@code
+     * return_definition.period_kind}'s CHECK admits it and this method used to accept an
+     * annual-shaped {@code ^\d{4}$} period against it -- but NO listener in this module ever writes
+     * an annual-shaped period. Every movement is written {@code YYYY-Qn}. Generating against an
+     * ANNUAL-kind definition therefore produced, with no exception whatsoever:
+     * <ul>
+     *   <li>ZERO for every FLOW metric -- {@code period = '2026'} matches no movement row; and</li>
+     *   <li>a YEAR-STALE figure for every STOCK metric -- {@code period <= '2026'} excludes every
+     *       2026 quarter, because {@code '2026-Q1' > '2026'} LEXICALLY, so the "position as of
+     *       end-2026" was really the position as of end-2025.</li>
+     * </ul>
+     * A regulatory figure that is quietly wrong is worse than one that fails, so annual generation
+     * fails loudly instead. Implementing it properly (rolling four quarters up, or recording annual
+     * movements alongside quarterly ones) needs to know what TIRA's annual return actually asks
+     * for -- which is exactly what C2 has not supplied -- so building it now would be inventing a
+     * catalog, against this milestone's own minimalism principle. {@code 'ANNUAL'} stays in the DB
+     * CHECK as a schema-level placeholder; see regreporting/V3's comment on {@code period_kind}.
+     */
     private void validatePeriodMatchesKind(String periodKind, String period) {
-        Pattern expected = switch (periodKind) {
-            case "QUARTERLY" -> QUARTERLY_PERIOD;
-            case "ANNUAL" -> ANNUAL_PERIOD;
-            default -> throw new RegreportingValidationException(
+        if ("ANNUAL".equals(periodKind)) {
+            throw new RegreportingValidationException(
+                "annual returns are not supported yet -- no annual movement periods exist; this "
+                + "platform tracks only quarterly movements (period_kind 'ANNUAL' is a schema-level "
+                + "placeholder pending the TIRA return catalog, C2)");
+        }
+        if (!"QUARTERLY".equals(periodKind)) {
+            throw new RegreportingValidationException(
                 "Return definition has an unrecognised period_kind '" + periodKind + "'");
-        };
-        if (period == null || !expected.matcher(period).matches()) {
+        }
+        if (period == null || !QUARTERLY_PERIOD.matcher(period).matches()) {
             throw new RegreportingValidationException(
                 "period '" + period + "' does not match this return type's period_kind '" + periodKind + "'");
         }

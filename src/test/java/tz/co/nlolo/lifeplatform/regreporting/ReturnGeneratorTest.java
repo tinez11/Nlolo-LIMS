@@ -62,6 +62,10 @@ class ReturnGeneratorTest {
         return new ReturnDefinition(TENANT, RETURN_TYPE, "Test Return", null, "QUARTERLY");
     }
 
+    private static ReturnDefinition annualDefinition() {
+        return new ReturnDefinition(TENANT, RETURN_TYPE, "Test Annual Return", null, "ANNUAL");
+    }
+
     @Test
     void linesAreResolvedInLineNoOrderWithCodeLabelMetricCopiedAndCurrencyOnlyOnMoney() {
         when(definitionRepository.findByTenantIdAndReturnType(TENANT, RETURN_TYPE))
@@ -136,6 +140,35 @@ class ReturnGeneratorTest {
 
         assertThrows(RegreportingValidationException.class,
             () -> generator.generate(TENANT, RETURN_TYPE, "2026", "tester"));
+    }
+
+    /**
+     * M10 final review, C2 -- a DIFFERENT code path from
+     * {@link #anAnnualPeriodIsRejectedForAQuarterlyDefinitionBeforeAnyMetricIsRead} above, which
+     * rejects a mismatched PERIOD against a QUARTERLY definition. This one exercises a definition
+     * whose OWN {@code periodKind} is {@code ANNUAL} with a period that MATCHES it -- the
+     * combination that used to be accepted as legitimate and then silently reported zeros for every
+     * flow metric (no movement row is ever written with an annual-shaped period) and a year-stale
+     * figure for every stock metric ({@code '2026-Q1' > '2026'} lexically, so {@code period <=
+     * '2026'} excludes all of 2026). Annual generation must fail loudly until real annual
+     * aggregation exists.
+     *
+     * <p>As with the sibling test above, the definition-lines and metric mocks are deliberately
+     * never stubbed: if the generator reached past validation, this would fail on an unstubbed
+     * Mockito null rather than with the expected exception.
+     */
+    @Test
+    void anAnnualKindDefinitionIsRejectedOutrightEvenWithAMatchingAnnualPeriod() {
+        when(definitionRepository.findByTenantIdAndReturnType(TENANT, RETURN_TYPE))
+            .thenReturn(Optional.of(annualDefinition()));
+
+        RegreportingValidationException thrown = assertThrows(RegreportingValidationException.class,
+            () -> generator.generate(TENANT, RETURN_TYPE, "2026", "tester"));
+        assertThat(thrown.getMessage())
+            .as("the message must say annual returns are unsupported, not merely that the period "
+                + "mismatched -- the two are different failures and a caller has to be able to tell "
+                + "them apart")
+            .contains("annual returns are not supported yet");
     }
 
     @Test
