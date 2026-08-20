@@ -238,6 +238,20 @@ groups:
           summary: "finaccounting failed to post a journal entry -- the ledger may be silently incomplete"
           description: "One of BillingEventListener/ClaimsEventListener/DistributionEventListener/ReinsuranceEventListener/PolicyLoanEventListener threw while handling a domain event. Search logs for 'finaccounting failed to process' to get the event type and tenant, and the accompanying stack trace for the cause. THERE IS NO REPLAY OR DEAD-LETTER PATH for this event -- do not look for one. Recovery is manual: identify the source event's own record in its owning module (the invoice, claim, commission statement, cession, recovery or loan transaction) plus audit.audit_log, confirm from finaccounting.journal_entry that no entry exists for that (tenant, source_event, source_ref), and if none does, have Finance construct the missing balanced entry by direct database insert under audit and four-eyes approval. journal_entry and gl_posting are append-only (UPDATE/DELETE are revoked from app_role), so a wrong manual entry can only be corrected by a further reversal entry -- get it right the first time. A swallowed exception here means money moved but the general ledger was never told."
 
+      # Task 6 (M10) -- regreporting has no independent aggregate of its own; every one of its
+      # tables (policy_dimension/policy_movement, claim_dimension/claims_movement,
+      # premium_movement, reinsurance_movement) is a projection REBUILT from events, never a
+      # transactional source of truth. Same "no replay/dead-letter path" gap as
+      # FinaccountingEventProcessingFailed above (docs/05-event-catalog.md §7 item 2) -- an
+      # AFTER_COMMIT ApplicationEvent whose listener throws is gone once the catch-all swallows it.
+      - alert: RegreportingEventProcessingFailed
+        expr: increase(lifeplatform_regreporting_event_processing_failed_total[15m]) > 0
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "regreporting failed to apply a projection event -- the read model may have silently drifted from the business facts"
+          description: "One of PolicyEventListener/ClaimsEventListener/BillingEventListener/ReinsuranceEventListener threw while handling a domain event. Search logs for 'regreporting failed to process' to get the event type and tenant, and the accompanying stack trace for the cause. WHAT MAKES THIS CONSEQUENTIAL: a swallowed exception here does not fail loudly the way a rejected API call would -- it means the read model has silently drifted from the business facts, so a regulatory return generated afterwards is not obviously broken, it is quietly WRONG (a missing policy, claim or premium movement understating a figure), and nothing else on this platform will notice until a regulator or an auditor does. WHAT MAKES THIS DIFFERENT FROM finaccounting's EQUIVALENT ALERT ABOVE: finaccounting's journal_entry/gl_posting are the transactional source of truth for money moved, so its recovery is to hand-construct a correcting entry under four-eyes approval. Every regreporting table is instead DERIVED -- it has no independent facts of its own, only a copy of what policy/claims/billing/reinsurance already recorded -- so hand-editing a fact-table row here would not correct anything, it would just be a second guess sitting next to the real data. The correct remedy is to REPLAY OR REBUILD the affected tenant/period's projection from the owning module's own real records (there is no replay tooling for this today, the same platform-wide gap finaccounting's own alert records), never to directly edit policy_movement/claims_movement/premium_movement/reinsurance_movement by hand."
+
       - alert: PostgresDiskSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
         for: 10m
