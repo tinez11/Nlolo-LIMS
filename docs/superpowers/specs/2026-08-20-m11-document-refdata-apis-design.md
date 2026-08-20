@@ -1,9 +1,17 @@
-# M11 — `document` download and `refdata` read APIs
+# M11 — `document`/`refdata` APIs, and a local environment that can actually be logged into
 
 **Status:** design approved, pending implementation plan
 **Date:** 2026-08-20
 **Depends on:** M0–M10 (all merged to `main` at `f5f817e`, 642/642 tests green)
-**Blocks:** M12 (Customer Portal) — the portal's claim-evidence viewing depends on §3's endpoint 1
+**Blocks:** M12 (Customer Portal) — on both deliverables
+
+**Two deliverables, both prerequisites for the portal:**
+
+- **A. The last two API gaps** (§1–§8) — four endpoints, one migration, an OpenAPI split.
+- **B. A local environment a browser can log into** (§9) — added after a question about
+  whether frontend work would be able to see real database changes exposed a blocker that
+  642 passing tests cannot see: **no token Keycloak currently issues can call any endpoint
+  on this platform.** Detail in §9.
 
 ---
 
@@ -351,3 +359,172 @@ whose existing tests every claims path depends on.
   says they must not go live without Legal/Compliance/Product/Actuarial sign-off. Exposing
   them over HTTP does not change that, and the endpoint's OpenAPI description says so, so a
   frontend rendering "12% p.a." to a customer is rendering an unconfirmed number.
+
+---
+
+# Deliverable B — a local environment that can be logged into
+
+## 9. Why this is in scope, and why no test caught it
+
+The question "when building the frontend, will I be able to see changes in the database,
+since the tests ran in Docker?" turned out to have a much worse answer than expected.
+
+**The persistent stack exists and is fine.** `infra/docker-compose.yml` is a real
+development environment, entirely separate from the throwaway Testcontainers instances the
+test suite creates and destroys: Postgres on a named `postgres-data` volume (so data
+survives `docker compose down`), MinIO, Redis, Keycloak, Mailpit (catches outbound mail),
+a WireMock mobile-money gateway, the app on `:8080`, and pgAdmin on `:5050` behind
+`--profile tools` for browsing tables directly. A row written by the portal is visible in
+pgAdmin immediately. That half of the answer is simply yes.
+
+**But no token that Keycloak can currently issue will reach a single controller.** The four
+realm files (`keycloak/*-realm.json`) contain **zero protocol mappers** — verified by grep,
+not inferred. `TenantContextFilter` rejects any request whose token lacks a parseable
+`tenant_id` claim with a 403 `TENANT_CLAIM_MISSING`, before MVC dispatch. So every request
+made with a genuine Keycloak token 403s, on every endpoint, in every realm. The platform is
+unusable through its own identity provider.
+
+`keycloak/README.md` predicted exactly this and it was never followed up: *"No user
+federation, custom claim mappers (e.g. `party_id`, `agentOfRecord`), or production secrets
+are configured here — that lands with the modules that need them, starting M1."* Eleven
+milestones later, no module ever did.
+
+**Why 642 tests are green anyway.** Every test fabricates its own JWT
+(`jwt().authorities(…).jwt(builder -> builder.claim("tenant_id", …))`), so the tests prove
+the authorization *logic* is correct while never proving a *real issued token* can satisfy
+it. This is the M1 lesson recurring one layer up: back then, every test's DataSource
+connected as the Postgres superuser while the app's real runtime role had no privileges on
+any schema. Same shape — a synthetic test identity standing in for the real runtime one —
+now at the identity provider instead of the database. Worth recording as a standing check:
+**whenever a test constructs its own credential, something is unverified about the real
+one.**
+
+## 10. The claim mappers
+
+Exactly two custom claims are needed. Determined by enumerating every claim the codebase
+reads, rather than from the README's guess:
+
+| Claim | Read where | Consequence if absent |
+|---|---|---|
+| `tenant_id` | `TenantContextFilter` (1 site) | **403 on every request, every endpoint** |
+| `party_id` | 10 sites — customer object-level checks, and how an agent resolves its own agent identity (`AgentController:231`) | customer/agent endpoints 403; staff/regulator paths unaffected |
+| `realm_access` | `SecurityConfig` role synthesis | native Keycloak claim — **no mapper needed** |
+| `sub` | actor/`uploadedBy` attribution | standard OIDC — **no mapper needed** |
+
+The README's `agentOfRecord` is not real: nothing in `src/main/java` reads it. Agents are
+identified by `party_id` like customers. Not adding it.
+
+Per realm, therefore:
+
+| Realm | `tenant_id` | `party_id` | Why |
+|---|---|---|---|
+| `customers` | yes | yes | every customer endpoint does an object-level ownership check |
+| `agents` | yes | yes | `AgentController` resolves the calling agent from `party_id`, never from the path |
+| `staff` | yes | no | staff bypass ownership checks by role; no `party_id` is ever read for them |
+| `regulators` | yes | no | tenant-scoped by design (M10), but owns no objects |
+
+Both are `oidc-usermodel-attribute-mapper`s reading a user attribute of the same name into
+the access token, added to each realm's `lifeplatform-app` client.
+
+`tenant_id` is a fixed, well-known dev UUID hardcoded as a user attribute in the realm
+JSON. It needs no coordination with anything, because **this platform has no tenant
+directory** (established in M10) — a tenant is simply a UUID appearing in RLS-scoped rows.
+
+`party_id` cannot be static, because a party's UUID is generated by
+`POST /parties/individuals`. §12 handles that.
+
+## 11. Test users
+
+Multiple users per realm, not one, because the backend enforces distinctions a single
+account cannot exercise:
+
+- **`customers`: two users.** One owning policies/claims, one owning nothing. The second is
+  what makes it possible to manually confirm an object-level authorization check actually
+  denies — with one customer, every BOLA check passes trivially and a regression is
+  invisible.
+- **`agents`: two users** in a supervisor/subordinate relationship, since `AgentController`'s
+  read access walks the agent hierarchy and a flat single agent never exercises that walk.
+- **`staff`: four users** — `UNDERWRITER`, `CLAIMS_ASSESSOR`, `CLAIMS_MANAGER`,
+  `FINANCE_OFFICER`. Assessor and manager must be **distinct people**: claims enforces
+  separation of duties on the persisted assessor identity, so one account holding both roles
+  cannot complete a claim end-to-end and would misrepresent the real workflow. `ADMIN` is
+  omitted — `FINANCE_OFFICER` covers every finance-gated endpoint, and a dev `ADMIN`
+  encourages using it as a bypass.
+- **`regulators`: one user** with `TIRA_READ_ONLY`. Two endpoints, no object ownership.
+
+All passwords are obvious dev-only values, documented as such in `keycloak/README.md`
+alongside the existing note about `dev-secret-*` client secrets.
+
+## 12. Demo data — driven through the real APIs, not SQL inserts
+
+**This platform is too event-driven for `INSERT` statements to produce valid state.**
+Issuing a policy through `PolicyApi` causes `billing` to generate a schedule and invoices,
+`distribution` to accrue commission, `reinsurance` to record a cession, `finaccounting` to
+post journal entries, and `regreporting` to update four projections. A hand-inserted
+`policy` row has none of that: the portal would show a policy with no invoices and no
+premium due, which looks like a broken frontend rather than incomplete seed data — and
+debugging that costs far more than the seeder does.
+
+So `scripts/seed-dev-data.sh` drives real HTTP, in order:
+
+1. Obtain a `staff` token from Keycloak (password grant against the dev realm).
+2. Create the two customer parties and the two agents via `POST /parties/individuals` and
+   `POST /agents`, capturing the generated UUIDs.
+3. **Write those UUIDs back as `party_id` user attributes via the Keycloak Admin REST API**,
+   closing the loop §10 left open. This is why the seeder must own party creation rather
+   than the realm JSON carrying static `party_id` values — the API generates the id, so the
+   token's claim has to be set after the fact. It also means the seeder is not idempotent by
+   default: re-running it against an already-seeded stack would create duplicate parties, so
+   it detects existing seed state and exits rather than doubling it.
+4. Issue policies via `POST /policies/manual-issue` (staff), then let the event chain run.
+5. Collect a premium via the billing → payment request/confirm loop against the WireMock
+   gateway, so at least one policy shows a real payment history.
+6. Register and settle one claim (assessor then manager, exercising separation of duties),
+   with an evidence upload — which also gives Deliverable A's download endpoint real data
+   to serve.
+7. Originate one policy loan, so the loan screens have content.
+
+**The seeder is also the platform's first genuine end-to-end smoke test through the real
+identity provider.** If it completes, a real Keycloak token demonstrably works against
+every major write path — a claim no existing test can make. If it 403s at step 1, the claim
+mappers are wrong, which is precisely the failure this deliverable exists to prevent.
+
+## 13. Also worth fixing while here
+
+- **`redirectUris: ["*"]`** on every realm's `lifeplatform-app` client. Acceptable for a
+  confidential client in local dev, but the wildcard is replaced with explicit
+  `http://localhost:3000/*` (the portal) and `http://localhost:8080/*` entries, so the dev
+  config models the real one instead of teaching a habit that must be undone later.
+- **`lifeplatform-app` stays a confidential client** (`publicClient: false`). This suits the
+  Next.js choice: the authorization-code exchange happens server-side in the BFF, so the
+  client secret never reaches the browser. No second public client is needed, and adding one
+  would put a token in browser storage for no reason.
+- **A startup runbook**, as a new `docs/09-local-development.md`: bring the stack up, apply
+  migrations, seed, log in, where the pgAdmin/Mailpit/MinIO consoles live, and how to reset
+  to clean state. Nothing documents this sequence today, and §9's blocker is partly a
+  consequence of no one ever being asked to run it end to end.
+
+  **The runbook must call out that migrations are manual.** Verified: `pom.xml` contains
+  neither Flyway nor Liquibase, so nothing applies schema on application startup —
+  `scripts/migrate.sh` is the only path, and `docker compose up` on a fresh volume therefore
+  leaves an entirely empty database behind a running app. Every request then fails on
+  missing relations rather than anything that names the real cause. This is a five-minute
+  fix in a runbook and an afternoon lost without one.
+
+  Also verified while checking the seeder's feasibility: `directAccessGrantsEnabled` is
+  already `true` on all four realms' clients, so §12's password grant works without a realm
+  change.
+
+## 14. Deliverable B — deliberately out of scope
+
+- **Production Keycloak configuration.** Realm-per-tenant vs. shared realm, real user
+  federation, `party_id` provisioning at customer onboarding, token lifetimes, and secret
+  management are a deployment concern, not a local-dev one. This deliverable makes local
+  development possible and explicitly does not model production identity.
+- **How `party_id` gets onto a real customer's token in production.** The seeder sets it via
+  the Admin API for two dev users; a real onboarding flow must set it as part of registering
+  a party, which is an unbuilt integration between `party` and Keycloak. Recorded because
+  the portal will depend on it existing before any real deployment.
+- **Automated CI execution of the seeder.** It targets a long-lived local stack, not an
+  ephemeral CI container. Making it CI-safe means solving idempotency properly (§12.3) and
+  is not needed to unblock M12.
