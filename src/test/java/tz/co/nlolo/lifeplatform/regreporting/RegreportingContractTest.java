@@ -311,7 +311,9 @@ class RegreportingContractTest {
             .andExpect(status().isOk())
             .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "RegulatoryReturnView"))
             .andExpect(jsonPath("$.length()").value(1))
-            .andExpect(jsonPath("$[0].period").value("2026-Q2"));
+            .andExpect(jsonPath("$[0].period").value("2026-Q2"))
+            .andExpect(jsonPath("$[0].lines[0].value").isString())
+            .andExpect(jsonPath("$[0].lines[1].value").isMap());
 
         // The falsifiable half -- a filter that ignored its argument would still return the row
         // seeded above for 2026-Q2. No other test in this class ever generates this period.
@@ -355,7 +357,10 @@ class RegreportingContractTest {
             .andExpect(jsonPath("$.returnId").value(seeded.returnId().toString()))
             .andExpect(jsonPath("$.lines.length()").value(10))
             .andExpect(jsonPath("$.lines[0].lineNo").value(1))
-            .andExpect(jsonPath("$.lines[9].lineNo").value(10));
+            .andExpect(jsonPath("$.lines[9].lineNo").value(10))
+            .andExpect(jsonPath("$.lines[0].value").isString())
+            .andExpect(jsonPath("$.lines[1].value").isMap())
+            .andExpect(jsonPath("$.lines[1].value.amount").isString());
     }
 
     @Test
