@@ -69,6 +69,14 @@ public class RegulatoryReturn {
         this.generatedBy = generatedBy;
     }
 
+    /** Regeneration replaces this header's timestamps in place rather than creating a new row --
+     * see the class javadoc's {@code ux_regulatory_return_once} note. {@code status} stays
+     * {@code "READY"} and {@code documentRef} stays untouched (C2-blocked). */
+    public void regenerate(String generatedBy) {
+        this.generatedAt = Instant.now();
+        this.generatedBy = generatedBy;
+    }
+
     public UUID getReturnId() { return returnId; }
     public UUID getTenantId() { return tenantId; }
     public String getReturnType() { return returnType; }

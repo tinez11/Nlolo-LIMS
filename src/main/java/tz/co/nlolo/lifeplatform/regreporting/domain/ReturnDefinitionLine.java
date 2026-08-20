@@ -2,8 +2,6 @@ package tz.co.nlolo.lifeplatform.regreporting.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
@@ -13,9 +11,17 @@ import java.util.UUID;
 
 /**
  * Maps {@code regreporting.return_definition_line} -- one line's composition within a
- * {@link ReturnDefinition} (design spec §5, V2 section 7). {@code metricName} must name one of the
- * seventeen {@link MetricName} values -- a definition naming something absent from that enum must
- * fail loudly at generation time, never emit a null line.
+ * {@link ReturnDefinition} (design spec §5, V2 section 7). {@code metricName} is intentionally a
+ * plain {@code String} here, NOT the {@link MetricName} enum: the row is DATA (seeded, and later
+ * per-tenant onboarding data), so its value is only a candidate metric name until something
+ * resolves it. That resolution is {@code ReturnGenerator}'s job (Task 5) -- it calls
+ * {@code MetricName.valueOf(...)} itself and rethrows the enum's {@code IllegalArgumentException}
+ * as a {@code RegreportingValidationException} naming the bad metric. Mapping this field as
+ * {@code @Enumerated(EnumType.STRING) MetricName} instead (as {@link ReturnLine#getMetricName()}
+ * does, correctly, for its OWN already-validated value) would move that failure into Hibernate's
+ * own enum conversion inside the repository call, before generation-time code ever runs, and with
+ * an exception type generation-time code cannot cleanly catch and rename -- exactly the silent,
+ * hard-to-attribute failure this field must not produce.
  *
  * <p>{@code dimensionFilter} holds either a {@code product_id} (as a UUID string) or a
  * {@code claim_type}; null means unfiltered.
@@ -43,9 +49,10 @@ public class ReturnDefinitionLine {
     @Column(name = "label", nullable = false)
     private String label;
 
-    @Enumerated(EnumType.STRING)
+    /** A candidate {@link MetricName} name, unresolved -- see the class javadoc for why this is
+     * a {@code String} and not the enum itself. */
     @Column(name = "metric_name", nullable = false)
-    private MetricName metricName;
+    private String metricName;
 
     /** A product_id, or a claim_type; null = unfiltered. */
     @Column(name = "dimension_filter")
@@ -57,7 +64,7 @@ public class ReturnDefinitionLine {
     protected ReturnDefinitionLine() {}
 
     public ReturnDefinitionLine(UUID tenantId, String returnType, int lineNo, String lineCode,
-                                 String label, MetricName metricName, String dimensionFilter) {
+                                 String label, String metricName, String dimensionFilter) {
         this.tenantId = tenantId;
         this.returnType = returnType;
         this.lineNo = lineNo;
@@ -72,7 +79,7 @@ public class ReturnDefinitionLine {
     public int getLineNo() { return lineNo; }
     public String getLineCode() { return lineCode; }
     public String getLabel() { return label; }
-    public MetricName getMetricName() { return metricName; }
+    public String getMetricName() { return metricName; }
     public String getDimensionFilter() { return dimensionFilter; }
     public Instant getCreatedAt() { return createdAt; }
 }
