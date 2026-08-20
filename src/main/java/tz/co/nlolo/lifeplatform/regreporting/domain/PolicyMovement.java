@@ -69,6 +69,15 @@ public class PolicyMovement {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    /**
+     * Legacy column retained from V1's snapshot-model design ({@code policy_in_force_summary
+     * .computed_at}); V2's rename-and-reshape (section 4) never renamed or dropped it, so it
+     * still exists on the real table. Populated once at construction and never touched by later
+     * {@code apply*} calls -- a gross-movement row is never "recomputed in place", only added to.
+     */
+    @Column(name = "computed_at", nullable = false)
+    private Instant computedAt;
+
     protected PolicyMovement() {}
 
     /** Creates the row for {@code (tenantId, period, productId)} with every measure at zero. */
@@ -77,6 +86,7 @@ public class PolicyMovement {
         this.period = period;
         this.productId = productId;
         this.currency = currency;
+        this.computedAt = Instant.now();
     }
 
     public void applyIssued(BigDecimal sumAssured) {
@@ -120,4 +130,5 @@ public class PolicyMovement {
     public int getPoliciesClaimTerminated() { return policiesClaimTerminated; }
     public BigDecimal getSumAssuredTerminated() { return sumAssuredTerminated; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getComputedAt() { return computedAt; }
 }
