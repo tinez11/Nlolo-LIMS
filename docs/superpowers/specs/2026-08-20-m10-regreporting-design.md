@@ -74,14 +74,16 @@ Both exist because the attributes needed to attribute a movement arrive on one e
 
 ### Four fact tables, storing movements
 
-Every fact table stores **signed movements for the period in which the event occurred**, never an absolute balance. A stock metric for period P is the cumulative sum of all movements where `period <= P`.
+Every fact table stores **per-period movements for the period in which the event occurred**, never an absolute balance. A stock metric for period P is the cumulative sum of the relevant movements where `period <= P`.
 
 | Table | Key | Measures | Fed by |
 |---|---|---|---|
-| `policy_movement` | `(tenant_id, period, product_id)` | `policy_count_delta`, `sum_assured_delta` + currency | `PolicyIssued` (+1), `PolicyReinstated` (+1), `PolicyLapsed` (−1), `PolicyMatured` (−1), `PolicySurrendered` (−1, claim-driven) |
+| `policy_movement` | `(tenant_id, period, product_id)` | `policies_issued`, `policies_reinstated`, `policies_lapsed`, `policies_matured`, `policies_claim_terminated`, `sum_assured_issued`, `sum_assured_terminated` + currency | `PolicyIssued`, `PolicyReinstated`, `PolicyLapsed`, `PolicyMatured`, `PolicySurrendered` (claim-driven) |
 | `claims_movement` | `(tenant_id, period, claim_type)` | `registered_count`, `approved_count`, `rejected_count`, `settled_count`, `approved_amount`, `settled_amount` + currency | `ClaimRegistered`, `ClaimApproved`, `ClaimRejected`, `ClaimSettled` |
 | `premium_movement` | `(tenant_id, period, product_id)` | `collected_amount` + currency | `billing.PremiumCollected` |
 | `reinsurance_movement` | `(tenant_id, period)` | `ceded_risk_amount`, `ceded_premium_amount` + currency | `reinsurance.CessionRecorded` |
+
+**`policy_movement` stores GROSS movements per cause, not one net delta** — a correction made while enumerating §5's metric registry, which is exactly what surfaced it. A single signed `policy_count_delta` cannot distinguish "10 issued, 3 lapsed" from "7 issued, 0 lapsed": both net `+7`. Every prudential return needs gross new business and gross terminations as separate lines, so the causes are separate non-negative columns and the net movement is *derived* as `issued + reinstated − lapsed − matured − claim_terminated`. Storing the net and trying to recover the gross figures later is impossible; storing the gross and deriving the net is arithmetic. Same reasoning for `sum_assured_issued` versus `sum_assured_terminated`.
 
 **Why movements rather than snapshots.** A running counter answers "how many policies are in force *now*"; a return generated in Q4 for Q3 must answer "how many were in force at the end of Q3". Cumulative-sum-over-movements answers both, keeps every historical period correct permanently with no scheduled job, and puts a late-arriving event in its own period instead of corrupting the present. It is the same reasoning `finaccounting` already applies to its ledger: direction carries the sign, balances are derived.
 
@@ -109,9 +111,43 @@ This section exists because M9's spec got the equivalent claim wrong and its fin
 - `return_definition` — `(tenant_id, return_type)` → `label`, `description`, `period_kind` (`QUARTERLY` or `ANNUAL`, matching V1's `period VARCHAR(10)` comment "`'YYYY-Qn'` or `'YYYY'`"). `period_kind` is what §9's last bullet relies on to reject a period whose format does not match the return type — without it, an annual and a quarterly period could be cumulative-summed together, which would be silently wrong.
 - `return_definition_line` — `(tenant_id, return_type, line_no)` → `line_code`, `label`, `metric_name`, `unit`
 
-**The computation of a metric is CODE.** A registry of named `MetricReader`s, each resolving one `metric_name` against the projections (e.g. `POLICIES_IN_FORCE` cumulative-sums `policy_movement.policy_count_delta` where `period <= P`).
+**The computation of a metric is CODE.** A registry of named `MetricReader`s, each resolving one `metric_name` against the projections (e.g. `POLICIES_IN_FORCE` cumulative-sums `policies_issued + policies_reinstated − policies_lapsed − policies_matured − policies_claim_terminated` over `policy_movement` where `period <= P`).
 
 The consequence, in plain terms: **re-shaping a return out of metrics that already exist is a seed change. Asking for a number nobody computes yet is a Java change.** Replacing the placeholder catalog with TIRA's real one is the former to the extent TIRA asks for figures M10 already computes, and the latter for anything genuinely new. Neither this spec nor any code comment may claim the format is "just data".
+
+### The metric registry, enumerated
+
+"Easy to swap" is only a meaningful claim if a reader can see exactly what is available to compose from. M10 ships these seventeen metric names — and nothing else:
+
+| Metric name | Kind | Source |
+|---|---|---|
+| `POLICIES_IN_FORCE` | stock (cumulative) | `policy_movement`: cumsum of `issued + reinstated − lapsed − matured − claim_terminated` |
+| `SUM_ASSURED_IN_FORCE` | stock (cumulative) | `policy_movement`: cumsum of `sum_assured_issued − sum_assured_terminated` |
+| `POLICIES_ISSUED` | flow | `policy_movement.policies_issued` |
+| `POLICIES_REINSTATED` | flow | `policy_movement.policies_reinstated` |
+| `POLICIES_LAPSED` | flow | `policy_movement.policies_lapsed` |
+| `POLICIES_MATURED` | flow | `policy_movement.policies_matured` |
+| `POLICIES_CLAIM_TERMINATED` | flow | `policy_movement.policies_claim_terminated` |
+| `NEW_BUSINESS_SUM_ASSURED` | flow | `policy_movement.sum_assured_issued` |
+| `CLAIMS_REGISTERED` | flow | `claims_movement.registered_count` |
+| `CLAIMS_APPROVED` | flow | `claims_movement.approved_count` |
+| `CLAIMS_REJECTED` | flow | `claims_movement.rejected_count` |
+| `CLAIMS_SETTLED` | flow | `claims_movement.settled_count` |
+| `CLAIMS_APPROVED_AMOUNT` | flow | `claims_movement.approved_amount` |
+| `CLAIMS_SETTLED_AMOUNT` | flow | `claims_movement.settled_amount` |
+| `PREMIUM_COLLECTED` | flow | `premium_movement.collected_amount` |
+| `REINSURANCE_CEDED_RISK` | flow | `reinsurance_movement.ceded_risk_amount` |
+| `REINSURANCE_CEDED_PREMIUM` | flow | `reinsurance_movement.ceded_premium_amount` |
+
+Each is optionally restrictable by its fact table's own dimension (product for policy and premium metrics, claim type for claims metrics) via the definition line, so `CLAIMS_SETTLED_AMOUNT` filtered to `DEATH` is a seed change, not a new metric.
+
+So the swappability claim is precise and checkable: **any TIRA line that is one of the seventeen figures above, optionally filtered by product or claim type, is a seed change. Anything else is code** — and anything requiring a fact M10 does not project (commission, policy loans, a GL trial balance) additionally needs a new listener and a migration.
+
+### Metric definitions as data — considered and rejected
+
+The obvious next step would be to make the metrics themselves data too: a `metric_definition` table of `(metric_name → fact_table, measure_column, aggregation)`, with SQL built from those values, so even a new figure over an existing table became a seed change.
+
+Rejected deliberately, and recorded here so a later reader knows it was weighed rather than overlooked. The gain is narrow — over four fact tables with seventeen already-exposed measures, the only thing it buys is "sum a column nobody asked for yet" without a deploy. The cost is real: table and column names sourced from data mean dynamically-assembled SQL and an injection surface on the one module a *regulator* can read, the loss of compile-time safety on every metric, and a validation whitelist that has to be maintained in Java anyway — which puts the code back in the loop while removing the compiler's help. A ten-line `MetricReader` class per new metric is the cheaper and safer trade at this scale. Revisit only if the real TIRA catalog turns out to need many figures that are mechanical variations over these same tables.
 
 **M10 seeds exactly one definition**, `QUARTERLY_PRUDENTIAL`, with lines drawn from all four fact tables so every projection is exercised end to end. Every line code and label is an **invented placeholder pending C2** and carries a comment saying so.
 
@@ -128,7 +164,7 @@ The consequence, in plain terms: **re-shaping a return out of metrics that alrea
 3. **Renames `policy_in_force_summary` → `policy_movement`** and repurposes its measures as deltas. The rename is not cosmetic: under the movement model the name `..._in_force_summary` would actively misdescribe the contents, and a reader trusting it would compute in-force figures wrongly. Its existing unique index on `(tenant_id, period, product_id)` is already the correct grain for movements and is retained.
 4. **Creates** `policy_dimension`, `claim_dimension`, `claims_movement`, `premium_movement`, `reinsurance_movement`, `return_line`, `return_definition`, `return_definition_line`.
 5. **Adds audit columns and tenant indexes** where missing, per `docs/06-database-schema.md:25`.
-6. **Adds money guards.** All amounts are `NUMERIC(19,2)` + `CHAR(3)` per `:32`. Movement deltas are deliberately **signed** (a lapse is negative), so they take no positivity CHECK — unlike `finaccounting.gl_posting.amount`, where direction carries the sign. Counts are `INTEGER` and likewise signed. This difference is called out in the migration so nobody "fixes" it into a positivity constraint later.
+6. **Adds money and count guards.** All amounts are `NUMERIC(19,2)` + `CHAR(3)` per `:32`. Because every fact-table measure is a **gross** per-cause figure rather than a net delta (§4), all of them are non-negative and take a `CHECK (... >= 0)` — a negative `policies_lapsed` or `sum_assured_issued` is meaningless and should fail loudly rather than quietly skew a return. Note this is `>= 0`, not `> 0`: a period in which nothing happened for a given cause legitimately carries zero, and an upsert creates the row with zeros before incrementing one column. The contrast with `finaccounting.gl_posting.amount`'s strict `> 0` is deliberate and is called out in the migration: there, a separate `direction` column carries the sign and a zero-amount posting is meaningless; here, the cause *is* the column and zero is a normal value.
 7. **Widens nothing without checking.** Every new `VARCHAR` is sized against its CHECK vocabulary in the same migration — M7 shipped a CHECK admitting a 16-character value into a `VARCHAR(15)`, making a whole payout path unwritable while every test stayed green.
 
 **One inherited wart, documented rather than papered over.** `regulatory_return.status` is `VARCHAR(15)` with `CHECK (status IN ('GENERATING','READY'))`. Under synchronous generation (§7) `GENERATING` is unreachable — every return is complete when it is created. The CHECK is left as-is because dropping an unreachable enum value is not worth a migration, and V2 records that `READY` is the only value ever written. Note for whoever adds submission states after C2: `SUBMISSION_FAILED` is 17 characters and would need the column widened in the same migration that adds it.
@@ -211,6 +247,7 @@ Money on the wire is a decimal string via `MoneyDto`, never a JSON number.
 - **D3's reporting-database separation** remains a Phase 1/2 item (`docs/02-module-architecture.md:22`). This design does not foreclose it — the projections already live in their own schema, fed only by events, with no synchronous coupling to any transactional module.
 - **Commission and policy-loan projections** (`distribution.CommissionPaid`, `policyloan.LoanDisbursed`/`LoanRepaid`) are not built. Both are plausible return inputs; neither is justified before C2 says so.
 - **No period-locking.** Nothing prevents a movement landing in a period whose return has already been generated; regeneration is the remedy. Period-close semantics are deferred platform-wide (the same gap `finaccounting` recorded in M9).
+- **Scheduled/automatic filing, and its real blocker.** Not built — and the binding constraint is *not* C2. This platform has no tenant-directory table, so no background thread can enumerate tenants under fail-closed RLS (stated in `Application.java`'s header and again at `PolicyApiImpl:264`). A scheduler therefore needs an RLS-safe cross-tenant tenant enumeration first, which is a platform-level change on its own merits, and TIRA's filing calendar second. §11 sets out the three routes considered and why each is worse than deferring.
 - **`period` is a string** (`YYYY-Qn` or `YYYY`), matching V1. No calendar arithmetic is performed on it beyond lexical comparison, which is sound for cumulative sums because both formats sort correctly within their own kind — but a return mixing annual and quarterly periods in one cumulative sum would be wrong, so `ReturnDefinition` fixes the period *kind* per return type and the API rejects a mismatched period format.
 
 ---
@@ -223,14 +260,28 @@ Money on the wire is a decimal string via `MoneyDto`, never a JSON number.
 - **Generic report-generation mechanism** → `return_definition`/`return_definition_line` as data plus a `MetricReader` registry as code, with the boundary between them stated exactly (§5)
 - **Placeholder return format that's easy to swap** → one seeded `QUARTERLY_PRUDENTIAL` definition; re-shaping a return from existing metrics is a seed change, and §5 says plainly what still requires code
 - **Correct for historical periods** → movements plus cumulative sum, proven by `HistoricalPeriodReturnTest`, with no scheduled close job to fail
+- **"Scheduling", specifically** → the reusable generation mechanism a scheduler would drive is delivered; the scheduler itself is not, because this platform has no tenant-directory table and therefore cannot enumerate tenants from a background thread under fail-closed RLS. This is a platform constraint the codebase states about itself in two places, not a scoping choice — see §11 for the full reasoning, the three rejected routes, and the concrete prerequisite. Flagged here rather than left as a silent gap against the roadmap's wording.
 - **Explicitly NOT claimed:** a TIRA-compliant return. Every line code and label is invented and flagged, no submission path exists, and `document_ref` is unwritten. M10's honest Definition of Done is "the reporting infrastructure works and is exercised end to end; the return catalog awaits C2."
 
 ---
 
 ## 11. What "scheduling" means here, and why there is no scheduler
 
-The roadmap's phrase is "a generic report-**scheduling** mechanism". M10 delivers generation-on-demand, not a scheduler, and that is a deliberate reading rather than an oversight.
+The roadmap's phrase is "a generic report-**scheduling** mechanism" (`:183`). M10 delivers generation-on-demand and **no scheduler**. This is a structural constraint of the platform, not a scoping preference, and it is worth stating precisely because "we chose not to" and "the platform cannot" are very different claims.
 
-The platform's two existing scheduled mechanisms (`billing.sweep_billing_state()` and the commission close, both pg_cron + `SECURITY DEFINER`) exist because something *must* happen at a deadline without a human: dunning escalates, a commission period closes. A regulatory return has no such property — it is produced when a compliance officer files it, and because §4's movements make every historical period permanently reproducible, generating it late costs nothing and produces the identical figures.
+**The platform has no tenant-directory table.** It says so itself, in two places:
 
-Adding pg_cron here would mean inventing a filing calendar that C2 has not given us, and a mis-timed automatic filing is a worse failure than a manual one. When C2 supplies real filing deadlines, a scheduled trigger over this same `generateReturn` call is a small, contained addition — the mechanism it would drive is what M10 builds.
+- `Application.java`'s header, guarding the codebase's first `@Scheduled` use: "Every cross-tenant business-state sweep in this platform runs via pg_cron instead (never a plain Java `@Scheduled`) because a background thread with no `TenantContext` sees zero rows on every RLS-protected table and `app_role` must never bypass RLS."
+- `PolicyApiImpl:264`, rejecting exactly this pattern for loan-reservation expiry: "a true cross-tenant `@Scheduled` sweep is architecturally incompatible with this platform's fail-closed RLS design, since a background thread with no `TenantContext` sees zero rows on every RLS-protected table **and there is no tenant-directory table to iterate**."
+
+A scheduled return generator would have to answer "which tenants, and for which periods?" from a background thread. Under fail-closed RLS with no tenant directory, it cannot. That leaves exactly three routes, all of which are worse than not building it:
+
+1. **Duplicate generation in SQL** inside a pg_cron `SECURITY DEFINER` function. Technically possible — M10's metrics are aggregations over projection tables, which SQL can express — but it creates a second implementation of the return logic that will diverge from the Java one. The platform has already been bitten by two implementations of one vocabulary drifting apart (M5's `IN_DOUBT` status added to a ledger's state machine but not to `PayoutBatch.deriveStatus`, which enumerated the same vocabulary elsewhere).
+2. **Introduce a tenant-directory table.** A genuine platform-level addition affecting every module's RLS story and the `app_role` privilege model. Far outside a reporting milestone, and it should be designed on its own merits rather than as a side effect of M10.
+3. **Let `app_role` bypass RLS** for the scheduler. Directly contradicts the platform's central isolation control, which `Application.java` explicitly forbids.
+
+Two secondary reasons reinforce the same conclusion. A regulatory return has no unattended-deadline property of the kind that justifies `billing.sweep_billing_state()` (dunning escalates whether or not anyone is watching) — it is filed by a compliance officer. And because §4's movements make every historical period permanently reproducible, generating a return late produces *identical* figures to generating it on time, so lateness costs correctness nothing.
+
+**What M10 delivers against this criterion instead:** the generic, reusable *generation* mechanism a scheduler would drive — `generateReturn(returnType, period, generatedBy)`, idempotent, callable for any period at any time, with the return's line composition supplied as data. Whoever adds scheduling later writes a trigger, not a report engine.
+
+**Recorded as the concrete prerequisite:** a scheduled regulatory filing needs (a) a tenant-directory table or an equivalent RLS-safe cross-tenant tenant enumeration, and (b) TIRA's real filing calendar from C2. Both are outside M10, and (a) is the harder of the two.
