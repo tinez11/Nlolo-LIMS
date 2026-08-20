@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -70,6 +71,18 @@ public class PolicyMovement {
     private Instant updatedAt;
 
     /**
+     * Optimistic lock (regreporting/V3, M10 final review C1) -- the SAME pattern {@code
+     * RegulatoryReturn} uses. This row is maintained by read-modify-write (find -> {@code apply*}
+     * -> save) in {@code PolicyEventListener}, so without a version two concurrent events for the
+     * same {@code (tenant, period, product)} could both read the same counter, both increment it,
+     * and lose one write SILENTLY. The listener retries a bounded 3 attempts on the resulting
+     * {@code ObjectOptimisticLockingFailureException}, re-fetching fresh each time.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
+    /**
      * Legacy column retained from V1's snapshot-model design ({@code policy_in_force_summary
      * .computed_at}); V2's rename-and-reshape (section 4) never renamed or dropped it, so it
      * still exists on the real table. Populated once at construction and never touched by later
@@ -131,4 +144,5 @@ public class PolicyMovement {
     public BigDecimal getSumAssuredTerminated() { return sumAssuredTerminated; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getComputedAt() { return computedAt; }
+    public Long getVersion() { return version; }
 }

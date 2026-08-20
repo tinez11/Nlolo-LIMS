@@ -152,7 +152,8 @@ class ProjectionEndToEndTest {
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
-            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql");
+            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
+            "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

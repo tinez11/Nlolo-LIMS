@@ -140,7 +140,8 @@ class RowLevelSecurityIntegrationTest {
             // policy_dimension/policy_movement/regulatory_return/return_line among others. Until now
             // no test in this class or AppRolePrivilegesIntegrationTest touched the module at all.
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
-            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql");
+            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
+            "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());

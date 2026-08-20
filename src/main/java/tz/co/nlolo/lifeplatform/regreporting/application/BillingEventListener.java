@@ -68,7 +68,10 @@ public class BillingEventListener {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = (Map<String, Object>) envelope.payload();
-            requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
+            // Bounded optimistic-lock retry around the WHOLE transaction -- see
+            // ProjectionSupport.withOptimisticLockRetry (M10 final review, C1).
+            ProjectionSupport.withOptimisticLockRetry(envelope.eventType(), () ->
+                requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload)));
         } catch (Exception e) {
             meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("regreporting failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
@@ -96,6 +99,10 @@ public class BillingEventListener {
                 log.warn("billing.PremiumCollected for policy {} has no policy_dimension row -- "
                     + "attributing to the UNKNOWN product sentinel rather than dropping the movement",
                     policyNumber);
+                // Counted as well as logged (M10 final review, I3) -- see PolicyEventListener's
+                // equivalent branch.
+                meterRegistry.counter(ProjectionSupport.UNATTRIBUTED_MOVEMENT_COUNTER,
+                    "eventType", "billing.PremiumCollected").increment();
                 return ProjectionSupport.UNKNOWN_PRODUCT;
             });
 

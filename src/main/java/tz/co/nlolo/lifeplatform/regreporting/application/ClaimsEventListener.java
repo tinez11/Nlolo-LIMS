@@ -68,8 +68,11 @@ public class ClaimsEventListener {
             // happened) -- see handleClaimRegistered's javadoc for why those two dates differ and
             // which one this movement must use.
             case "claims.ClaimRegistered" -> withTenant(envelope, payload -> handleClaimRegistered(payload, envelope.occurredAt()));
-            case "claims.ClaimApproved" -> withTenant(envelope, this::handleClaimApproved);
-            case "claims.ClaimRejected" -> withTenant(envelope, this::handleClaimRejected);
+            // ClaimApproved/ClaimRejected carry NO business timestamp of their own (verified
+            // against asyncapi-events.yaml), so they take the envelope's own occurredAt for the
+            // same reason ClaimRegistered does -- never LocalDate.now() (M10 final review, I1).
+            case "claims.ClaimApproved" -> withTenant(envelope, payload -> handleClaimApproved(payload, envelope.occurredAt()));
+            case "claims.ClaimRejected" -> withTenant(envelope, payload -> handleClaimRejected(payload, envelope.occurredAt()));
             case "claims.ClaimSettled" -> withTenant(envelope, this::handleClaimSettled);
             default -> { /* not regreporting-relevant here */ }
         }
@@ -81,7 +84,10 @@ public class ClaimsEventListener {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = (Map<String, Object>) envelope.payload();
-            requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
+            // Bounded optimistic-lock retry around the WHOLE transaction -- see
+            // ProjectionSupport.withOptimisticLockRetry (M10 final review, C1).
+            ProjectionSupport.withOptimisticLockRetry(envelope.eventType(), () ->
+                requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload)));
         } catch (Exception e) {
             meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("regreporting failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
@@ -102,9 +108,11 @@ public class ClaimsEventListener {
      * Attributing {@code CLAIMS_REGISTERED} to {@code dateOfEvent} would silently misattribute a
      * late-reported claim's movement to an earlier, possibly already-generated reporting period --
      * a real regulatory-reporting correctness gap, not merely a stylistic difference (final review
-     * finding). Every other handler in this class keeps its own period derivation unchanged: {@code
-     * ClaimSettled} genuinely has its own settlement timestamp on the payload ({@code settledAt}),
-     * and {@code ClaimApproved}/{@code ClaimRejected} carry no timestamp at all.
+     * finding). {@code ClaimSettled} keeps its own derivation because it genuinely has a settlement
+     * timestamp on the payload ({@code settledAt}); {@code ClaimApproved}/{@code ClaimRejected}
+     * carry no timestamp at all and so were extended to use this same {@code occurredAt} in the
+     * final review (I1), replacing a {@code LocalDate.now()} fallback that would have refiled a
+     * replayed movement into the replay's own quarter.
      */
     private void handleClaimRegistered(Map<String, Object> payload, Instant occurredAt) {
         UUID tenantId = TenantContext.get();
@@ -126,23 +134,31 @@ public class ClaimsEventListener {
         claimsMovementRepository.save(movement);
     }
 
-    private void handleClaimApproved(Map<String, Object> payload) {
+    /**
+     * {@code period} comes from {@code envelope.occurredAt()}, NOT {@code LocalDate.now()}
+     * (M10 final review, I1). {@code ClaimApproved} carries no business timestamp of its own
+     * (verified against asyncapi-events.yaml), and the envelope's occurredAt is the closest
+     * truthful stand-in: it is UTC, deterministic, and -- decisively -- STABLE UNDER REPROCESSING.
+     * The alert rule for this module names "replay/rebuild the projection" as the recovery remedy
+     * for a failed projection, and a replay deriving its period from "today" would file the
+     * movement in the REPLAY's quarter instead of the original one, silently corrupting history.
+     */
+    private void handleClaimApproved(Map<String, Object> payload, Instant occurredAt) {
         UUID claimId = (UUID) payload.get("claimId");
         @SuppressWarnings("unchecked")
         Map<String, Object> approvedAmount = (Map<String, Object>) payload.get("approvedAmount");
         BigDecimal amount = new BigDecimal((String) approvedAmount.get("amount"));
         String currency = (String) approvedAmount.get("currencyCode");
-        // ClaimApproved carries no business timestamp (verified against asyncapi-events.yaml) --
-        // today's quarter, per the period-derivation rule's fallback.
-        applyAmountMovement(claimId, "claims.ClaimApproved", ProjectionSupport.currentQuarter(),
+        applyAmountMovement(claimId, "claims.ClaimApproved", ProjectionSupport.quarterOfOccurrence(occurredAt),
             amount, currency, ClaimsMovement::applyApproved);
     }
 
-    private void handleClaimRejected(Map<String, Object> payload) {
+    /** {@code ClaimRejected} carries neither a business timestamp nor an amount -- the envelope's
+     * own {@code occurredAt} (see {@link #handleClaimApproved}) and the {@code UNKNOWN_CURRENCY}
+     * fallback if a fresh row must be created. */
+    private void handleClaimRejected(Map<String, Object> payload, Instant occurredAt) {
         UUID claimId = (UUID) payload.get("claimId");
-        // ClaimRejected carries no business timestamp and no amount at all -- today's quarter and
-        // the UNKNOWN_CURRENCY fallback if a fresh row must be created.
-        applyCountOnlyMovement(claimId, "claims.ClaimRejected", ProjectionSupport.currentQuarter());
+        applyCountOnlyMovement(claimId, "claims.ClaimRejected", ProjectionSupport.quarterOfOccurrence(occurredAt));
     }
 
     private void handleClaimSettled(Map<String, Object> payload) {
@@ -161,6 +177,11 @@ public class ClaimsEventListener {
             .orElseGet(() -> {
                 log.warn("{} for claim {} has no claim_dimension row -- attributing to the UNKNOWN "
                     + "claim type sentinel rather than dropping the movement", eventType, claimId);
+                // Counted as well as logged (M10 final review, I3) -- see PolicyEventListener's
+                // equivalent branch. This one matters most: CL-03 in the seeded placeholder
+                // definition filters CLAIMS_SETTLED_AMOUNT on claim_type = 'DEATH', so every
+                // UNKNOWN-attributed settlement is a shilling missing from that line.
+                meterRegistry.counter(ProjectionSupport.UNATTRIBUTED_MOVEMENT_COUNTER, "eventType", eventType).increment();
                 return ProjectionSupport.UNKNOWN_CLAIM_TYPE;
             });
     }

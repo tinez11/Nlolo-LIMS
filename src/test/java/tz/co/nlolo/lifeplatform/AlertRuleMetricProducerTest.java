@@ -61,7 +61,12 @@ class AlertRuleMetricProducerTest {
         "lifeplatform_distribution_payout_failed_total",
         "lifeplatform_reinsurance_event_processing_failed_total",
         "lifeplatform_finaccounting_event_processing_failed_total",
-        "lifeplatform_regreporting_event_processing_failed_total");
+        "lifeplatform_regreporting_event_processing_failed_total",
+        // M10 final review, I3 -- RegreportingUnattributedMovements. Emitted by
+        // ProjectionSupport.UNATTRIBUTED_MOVEMENT_COUNTER, incremented in the three dimension-miss
+        // branches (PolicyEventListener.resolveDimension, ClaimsEventListener.resolveClaimType,
+        // BillingEventListener's PremiumCollected product lookup).
+        "lifeplatform_regreporting_unattributed_movement_total");
 
     /**
      * Metrics referenced by a rule that NOTHING currently produces, each with the reason. Every

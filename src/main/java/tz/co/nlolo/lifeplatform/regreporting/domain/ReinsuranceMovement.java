@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -44,6 +45,18 @@ public class ReinsuranceMovement {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    /**
+     * Optimistic lock (regreporting/V3, M10 final review C1). THE HIGHEST-CONTENTION of the four
+     * fact tables, precisely because of the no-product-grain decision above: this is ONE row per
+     * {@code (tenant, period)}, so every cession for a tenant-quarter read-modify-writes it. Without
+     * a version, two concurrent cessions could both read the same ceded totals, both add their own,
+     * and lose one silently. {@code ReinsuranceEventListener} retries a bounded 3 attempts on the
+     * resulting {@code ObjectOptimisticLockingFailureException}, re-fetching fresh each time.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected ReinsuranceMovement() {}
 
     /** Creates the row for {@code (tenantId, period)} with both measures at zero. */
@@ -65,4 +78,5 @@ public class ReinsuranceMovement {
     public BigDecimal getCededPremiumAmount() { return cededPremiumAmount; }
     public String getCurrency() { return currency; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Long getVersion() { return version; }
 }

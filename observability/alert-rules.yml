@@ -252,6 +252,27 @@ groups:
           summary: "regreporting failed to apply a projection event -- the read model may have silently drifted from the business facts"
           description: "One of PolicyEventListener/ClaimsEventListener/BillingEventListener/ReinsuranceEventListener threw while handling a domain event. Search logs for 'regreporting failed to process' to get the event type and tenant, and the accompanying stack trace for the cause. WHAT MAKES THIS CONSEQUENTIAL: a swallowed exception here does not fail loudly the way a rejected API call would -- it means the read model has silently drifted from the business facts, so a regulatory return generated afterwards is not obviously broken, it is quietly WRONG (a missing policy, claim or premium movement understating a figure), and nothing else on this platform will notice until a regulator or an auditor does. WHAT MAKES THIS DIFFERENT FROM finaccounting's EQUIVALENT ALERT ABOVE: finaccounting's journal_entry/gl_posting are the transactional source of truth for money moved, so its recovery is to hand-construct a correcting entry under four-eyes approval. Every regreporting table is instead DERIVED -- it has no independent facts of its own, only a copy of what policy/claims/billing/reinsurance already recorded -- so hand-editing a fact-table row here would not correct anything, it would just be a second guess sitting next to the real data. The correct remedy is to REPLAY OR REBUILD the affected tenant/period's projection from the owning module's own real records (there is no replay tooling for this today, the same platform-wide gap finaccounting's own alert records), never to directly edit policy_movement/claims_movement/premium_movement/reinsurance_movement by hand."
 
+      # M10 FINAL REVIEW, finding I3. The UNKNOWN sentinel (policy_movement.product_id =
+      # 00000000-0000-0000-0000-000000000000, claims_movement.claim_type = 'UNKNOWN') is how this
+      # module refuses to DROP a movement whose dimension row is missing -- a visibly-unattributed
+      # figure is strictly better than one that silently vanished from a return. But until this
+      # counter existed, a dimension miss only logged at WARN: nothing counted it, nothing alerted
+      # on it, and there was no way to notice unattributed movements accumulating without already
+      # suspecting a problem and going log-diving. LOW severity is deliberate and correct: this is
+      # "notice a pattern", not "something is broken". A single miss is a legitimate out-of-order
+      # delivery (a lapse arriving before this module has seen the issuance that carries productId).
+      # A SUSTAINED rate is a real projection gap: every unattributed movement is missing from any
+      # return line that filters on that dimension -- e.g. the seeded placeholder definition's CL-03
+      # filters CLAIMS_SETTLED_AMOUNT on claim_type = 'DEATH', so an UNKNOWN-attributed settlement
+      # is a shilling absent from that line while the tenant-wide total still contains it.
+      - alert: RegreportingUnattributedMovements
+        expr: increase(lifeplatform_regreporting_unattributed_movement_total[1h]) > 5
+        for: 30m
+        labels: { severity: low }
+        annotations:
+          summary: "regreporting is attributing movements to the UNKNOWN dimension sentinel -- dimension-filtered return lines are understated"
+          description: "One or more of PolicyEventListener/ClaimsEventListener/BillingEventListener could not resolve a movement's dimension row (policy_dimension for productId, claim_dimension for claimType) and attributed the movement to the UNKNOWN sentinel instead of dropping it. The eventType label says which event. NOT AN OUTAGE, AND NOT SILENT DATA LOSS: the movement IS recorded, and every tenant-wide (unfiltered) return line still counts it correctly -- only lines carrying a dimension_filter are affected, because an UNKNOWN-attributed row matches no real product id or claim type. Diagnose by cause, not by editing rows: a HANDFUL of misses is expected and benign (this module's listeners are unordered against each other, so a lapse/premium/claim decision can genuinely arrive before the PolicyIssued/ClaimRegistered event that writes the dimension row). A SUSTAINED rate means the dimension-writing event is not arriving at all for those keys -- check that policy.PolicyIssued and claims.ClaimRegistered are being published and that RegreportingEventProcessingFailed is not also firing (a failed dimension write shows up here as a knock-on). Remedy is the same as that alert's: REPLAY OR REBUILD the affected tenant/period's projection from the owning module's own records once the dimension rows exist, never hand-edit a fact table."
+
       - alert: PostgresDiskSpaceLow
         expr: (node_filesystem_avail_bytes{mountpoint="/var/lib/postgresql/data"} / node_filesystem_size_bytes{mountpoint="/var/lib/postgresql/data"}) < 0.15
         for: 10m

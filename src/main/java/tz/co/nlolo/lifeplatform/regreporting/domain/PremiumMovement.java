@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -42,6 +43,15 @@ public class PremiumMovement {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    /**
+     * Optimistic lock (regreporting/V3, M10 final review C1) -- see {@link PolicyMovement}'s
+     * {@code version} javadoc for the read-modify-write race this closes. {@code
+     * BillingEventListener} maintains this row the same way and retries the same bounded 3 attempts.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     protected PremiumMovement() {}
 
     /** Creates the row for {@code (tenantId, period, productId)} with the measure at zero. */
@@ -63,4 +73,5 @@ public class PremiumMovement {
     public BigDecimal getCollectedAmount() { return collectedAmount; }
     public String getCurrency() { return currency; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Long getVersion() { return version; }
 }

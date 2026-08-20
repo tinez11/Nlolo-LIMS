@@ -14,6 +14,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -30,8 +31,11 @@ import java.util.function.Consumer;
  * dimension row a cession would need.
  *
  * <p>{@code CessionRecorded} carries no business timestamp at all (verified against
- * asyncapi-events.yaml) -- every cession is attributed to today's quarter, the period-derivation
- * rule's fallback.
+ * asyncapi-events.yaml) -- every cession is attributed to the quarter of the ENVELOPE's own {@code
+ * occurredAt} (UTC), not to {@code LocalDate.now()} (M10 final review, I1). The difference is not
+ * cosmetic: this module's documented recovery remedy for a failed projection is to replay it, and a
+ * "today" fallback would land a replayed cession in the replay's quarter rather than the one it
+ * actually belongs to.
  *
  * <p>{@code cededPremium} is legitimately null on the wire (the producer's own javadoc: "cededPremium
  * is legitimately null when a ceded premium rounds to zero") -- treated as zero here rather than
@@ -60,7 +64,8 @@ public class ReinsuranceEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
-            case "reinsurance.CessionRecorded" -> withTenant(envelope, this::handleCessionRecorded);
+            case "reinsurance.CessionRecorded" ->
+                withTenant(envelope, payload -> handleCessionRecorded(payload, envelope.occurredAt()));
             default -> { /* not regreporting-relevant here */ }
         }
     }
@@ -71,7 +76,12 @@ public class ReinsuranceEventListener {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = (Map<String, Object>) envelope.payload();
-            requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
+            // Bounded optimistic-lock retry around the WHOLE transaction -- see
+            // ProjectionSupport.withOptimisticLockRetry (M10 final review, C1). This listener is
+            // the one that needs it most: reinsurance_movement is one row per (tenant, period), so
+            // every cession for a tenant-quarter contends on the same row.
+            ProjectionSupport.withOptimisticLockRetry(envelope.eventType(), () ->
+                requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload)));
         } catch (Exception e) {
             meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("regreporting failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
@@ -84,7 +94,7 @@ public class ReinsuranceEventListener {
         }
     }
 
-    private void handleCessionRecorded(Map<String, Object> payload) {
+    private void handleCessionRecorded(Map<String, Object> payload, Instant occurredAt) {
         UUID tenantId = TenantContext.get();
         @SuppressWarnings("unchecked")
         Map<String, Object> cededAmountMap = (Map<String, Object>) payload.get("cededAmount");
@@ -97,7 +107,7 @@ public class ReinsuranceEventListener {
             ? BigDecimal.ZERO
             : new BigDecimal((String) cededPremiumMap.get("amount"));
 
-        String period = ProjectionSupport.currentQuarter();
+        String period = ProjectionSupport.quarterOfOccurrence(occurredAt);
         ReinsuranceMovement movement = reinsuranceMovementRepository
             .findByTenantIdAndPeriod(tenantId, period)
             .orElseGet(() -> new ReinsuranceMovement(tenantId, period, currency));

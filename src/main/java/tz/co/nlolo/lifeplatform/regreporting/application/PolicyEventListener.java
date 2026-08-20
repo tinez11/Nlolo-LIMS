@@ -100,7 +100,11 @@ public class PolicyEventListener {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> payload = (Map<String, Object>) envelope.payload();
-            requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload));
+            // The retry wraps the WHOLE transaction, not the handler body -- see
+            // ProjectionSupport.withOptimisticLockRetry's javadoc for why that placement is
+            // load-bearing rather than stylistic (M10 final review, C1).
+            ProjectionSupport.withOptimisticLockRetry(envelope.eventType(), () ->
+                requiresNewTransactionTemplate.executeWithoutResult(status -> handler.accept(payload)));
         } catch (Exception e) {
             meterRegistry.counter(EVENT_PROCESSING_FAILED_COUNTER, "eventType", envelope.eventType()).increment();
             log.error("regreporting failed to process {} for tenant {}", envelope.eventType(), envelope.tenantId(), e);
@@ -192,6 +196,10 @@ public class PolicyEventListener {
                 log.warn("{} for policy {} has no policy_dimension row -- attributing to the UNKNOWN "
                     + "product sentinel with sum assured recorded as zero, rather than dropping the movement",
                     eventType, policyNumber);
+                // Counted, not merely logged (M10 final review, I3): a WARN nobody greps for is not
+                // observability, and unattributed movements accumulating is exactly the pattern
+                // that has to be visible before a regulator's figure is understated by it.
+                meterRegistry.counter(ProjectionSupport.UNATTRIBUTED_MOVEMENT_COUNTER, "eventType", eventType).increment();
                 return new DimensionAttribution(ProjectionSupport.UNKNOWN_PRODUCT, BigDecimal.ZERO, ProjectionSupport.UNKNOWN_CURRENCY);
             });
     }
