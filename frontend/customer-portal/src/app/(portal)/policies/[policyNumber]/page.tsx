@@ -70,6 +70,13 @@ const SURRENDER_NOT_AVAILABLE = mapApiError({
  * BeneficiaryForm before `onSave` is ever invoked, so this `Number()` is a single parse of an
  * already-validated value for serialization -- not a summing operation, and cannot reintroduce the
  * float rounding the integer-cents helper exists to avoid.
+ *
+ * `revocable` is round-tripped from whatever the row actually carries, NOT hardcoded to `true`: a
+ * beneficiary an agent set as irrevocable at manual issue must not be silently flipped to revocable
+ * just because the customer edited a different row's share or name. `?? true` only fills in the
+ * OpenAPI schema's own documented default for a row that never had the field set at all (e.g. a
+ * brand-new row added via "Add beneficiary" already carries `revocable: true` from `emptyRow()`, so
+ * this fallback is a defensive no-op in practice, not a real behavior change).
  */
 function toWireBeneficiaries(rows: BeneficiaryInput[]): ApiBeneficiaryInput[] {
   return rows.map((row) => ({
@@ -77,19 +84,25 @@ function toWireBeneficiaries(rows: BeneficiaryInput[]): ApiBeneficiaryInput[] {
     partyId: row.partyId,
     freeformDesignee: row.freeformDesignee ?? null,
     sharePercent: Number(row.sharePercentage),
-    revocable: true,
+    revocable: row.revocable ?? true,
   }));
 }
 
-/** The inverse mapping, for seeding the form from the policy the backend already returned. */
+/**
+ * The inverse mapping, for seeding the form from the policy the backend already returned. Reads
+ * the wire `revocable` field through unchanged (defaulting to `true` only when genuinely absent,
+ * matching the OpenAPI schema's own `default: true`) so an existing irrevocable designation stays
+ * irrevocable through an edit-and-save round trip.
+ */
 function fromWireBeneficiaries(rows: ApiBeneficiaryInput[] | undefined): BeneficiaryInput[] {
   if (!rows || rows.length === 0) {
-    return [{ freeformDesignee: '', sharePercentage: '' }];
+    return [{ freeformDesignee: '', sharePercentage: '', revocable: true }];
   }
   return rows.map((row) => ({
     partyId: row.partyId ?? undefined,
     freeformDesignee: row.freeformDesignee ?? undefined,
     sharePercentage: String(row.sharePercent),
+    revocable: row.revocable ?? true,
   }));
 }
 

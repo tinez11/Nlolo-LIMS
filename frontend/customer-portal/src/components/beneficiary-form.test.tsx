@@ -45,4 +45,14 @@ describe('BeneficiaryForm', () => {
 
     expect(await screen.findByText(/not valid/i)).toBeInTheDocument();
   });
+
+  it('carries an irrevocable designation through unchanged on save (no silent downgrade)', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const irrevocable = [{ freeformDesignee: 'Asha Juma', sharePercentage: '100', revocable: false }];
+    render(<BeneficiaryForm initial={irrevocable} onSave={onSave} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+
+    expect(onSave).toHaveBeenCalledWith([{ freeformDesignee: 'Asha Juma', sharePercentage: '100', revocable: false }]);
+  });
 });

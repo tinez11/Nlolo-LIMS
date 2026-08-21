@@ -10,6 +10,13 @@ export type BeneficiaryInput = {
   partyId?: string;
   freeformDesignee?: string;
   sharePercentage: string;
+  /**
+   * Carried through unedited in this v1 (no UI control): the backend's own default is `true` when
+   * absent, but an existing `false` (e.g. an irrevocable designation set by staff at manual issue)
+   * must never be silently flipped to `true` just because the customer edited another row. See
+   * `page.tsx`'s `toWireBeneficiaries`/`fromWireBeneficiaries` for the round-trip.
+   */
+  revocable?: boolean;
 };
 
 /**
@@ -30,7 +37,7 @@ function sharesSumToHundred(rows: BeneficiaryInput[]): boolean {
 }
 
 function emptyRow(): BeneficiaryInput {
-  return { freeformDesignee: '', sharePercentage: '' };
+  return { freeformDesignee: '', sharePercentage: '', revocable: true };
 }
 
 export function BeneficiaryForm({
