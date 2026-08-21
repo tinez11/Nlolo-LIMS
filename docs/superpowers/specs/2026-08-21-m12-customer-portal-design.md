@@ -98,19 +98,29 @@ in the request lifecycle.
 Every screen below is scoped to an endpoint verified reachable and correct during this session's
 platform-readiness review and M11. Nothing here is aspirational.
 
+Three endpoints marked **[prelude]** are reachable only after §7's backend authorization changes,
+which M12 makes first. Everything else is reachable by a customer token on `main` today —
+re-verified endpoint by endpoint against the real `@PreAuthorize` annotations, not the OpenAPI
+`security:` blocks, which turned out to disagree with each other in exactly the places that
+mattered.
+
 | Screen | Endpoint(s) | Notes |
 |---|---|---|
-| Dashboard | `GET /policies` | **Real pagination and filtering, verified against the spec**: `page`/`pageSize` and a `status` enum filter (`PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED`) both exist as query params. Build a real paginated list with status tabs/filter, not a client-side-sliced full fetch. Policy cards show status, next-due invoice via `GET /policies/{n}/invoices/next-due` |
-| Policy detail | `GET /policies/{n}`, `GET /policies/{n}/coverage-status`, `GET /policies/{n}/surrender-value` | Cash value / surrender quote rendered as-is (§6) |
+| Dashboard | `GET /policies` **[prelude]** | `page`/`pageSize` and a `status` enum filter (`PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED`) exist as query params. Build a real paginated list with status tabs/filter, not a client-side-sliced full fetch. The portal never sends `policyholderPartyId` — after §7 the backend force-scopes it to the token's own `party_id`. Policy cards show status, next-due invoice via `GET /policies/{n}/invoices/next-due` (customer-reachable today) |
+| Policy detail | `GET /policies/{n}`, `GET /policies/{n}/coverage-status` **[prelude]**, `GET /policies/{n}/surrender-value` | Cash value / surrender quote rendered as-is (§6) |
 | Beneficiaries | `PUT /policies/{n}/beneficiaries` | Update, not create-from-scratch — a policy always has beneficiaries from issuance |
-| Endorsements | `POST /policies/{n}/endorsements` | **No server-side idempotency — hard-guarded** (§6) |
-| Billing | `GET /policies/{n}/invoices`, `POST /invoices/{id}/payment-request` | `GET .../invoices` supports a `status` filter (`DUE, PARTIALLY_PAID, PAID, IN_GRACE, OVERDUE, WAIVED`) but **no pagination** — verified: the endpoint takes no `page`/`pageSize` params, and doesn't need them, since a policy's invoices are pre-generated ~12 months ahead (a bounded, small list by construction). Build status-filter tabs, not a pager. Payment-request idempotency IS enforced (§6) |
+| Billing | `GET /policies/{n}/invoices`, `POST /invoices/{id}/payment-request` **[prelude]** | `GET .../invoices` supports a `status` filter (`DUE, PARTIALLY_PAID, PAID, IN_GRACE, OVERDUE, WAIVED`) but **no pagination** — verified: the endpoint takes no `page`/`pageSize` params, and doesn't need them, since a policy's invoices are pre-generated ~12 months ahead (a bounded, small list by construction). Build status-filter tabs, not a pager. Payment-request idempotency IS enforced server-side (§6) |
 | Claims list/detail | `GET/POST /claims`, `GET /claims/{id}` | **Real pagination and filtering, verified against the spec**: `page`/`pageSize` (default `pageSize=20`, max `100`) and a `status` enum filter both exist. A `claimantPartyId` filter also exists but the spec itself documents it as ignored/overridden for customer tokens — the portal never sends it, since the backend always self-scopes a customer to their own claims regardless |
 | Claim evidence | `POST/GET /claims/{id}/evidence`, `GET /claims/{id}/evidence/{ref}` | The download endpoint M11 built. First real proof of the whole stack. |
 | Policy loan | `POST/GET /policies/{n}/loans`, `GET /loans/{id}`, `POST /loans/{id}/repayments` | **No server-side idempotency on either POST — hard-guarded** (§6). Currently always 409s (§6) — build the screen, expect it to be inert until the backend gap is fixed |
 | Reference info | `GET /reference-codes/{key}` for the 5 customer-readable keys | Informational only (§5) |
 
 **Explicitly not built, and why:**
+- **Policy endorsements.** `POST /policies/{n}/endorsements` is `hasRole('REALM_AGENTS') or
+  hasRole('REALM_STAFF')` — no customer path, and per explicit decision that restriction is treated
+  as correct and deliberate rather than a gap to open: a contract amendment is an assisted action,
+  and `EndorsementRequest.endorsementType` is free-form today, so admitting customers unrestricted
+  would let one submit any amendment. This is why §6's hard guard covers two endpoints, not three.
 - **Policy surrender action.** `GET /policies/{n}/surrender-value` (the quote) works and is built.
   `POST /policies/{n}/surrender` and `GET /policies/{n}/processes/{id}` both return a clean,
   well-formed `501 CHOREOGRAPHY_NOT_IMPLEMENTED` (Camunda decision still pending) — the button is
@@ -156,12 +166,13 @@ error state (a clean, readable "insufficient loan value" message from the real `
 do not fake a success path or skip the screen. This becomes live functionality the moment the
 backend gap closes, with no portal-side change needed.
 
-**No idempotency protection on policy loan origination, loan repayment, or policy endorsements.**
-Verified directly in `PolicyLoanController`/`PolicyLoanApiImpl` (`Idempotency-Key` accepted,
-never read) and `PolicyController.applyEndorsement`. A network-timeout retry on any of these three
-could create a duplicate loan, duplicate repayment, or duplicate endorsement — real financial
-duplicates, not cosmetic ones. Because the backend offers nothing here, **the portal supplies a
-two-layer hard guard, and a disabled button is explicitly not sufficient for either layer.**
+**No idempotency protection on policy loan origination or loan repayment.** Verified directly in
+`PolicyLoanController`/`PolicyLoanApiImpl`: `Idempotency-Key` is accepted and never read. A
+network-timeout retry on either could create a duplicate loan or a duplicate repayment — real
+financial duplicates, not cosmetic ones. (`PolicyController.applyEndorsement` has the same defect,
+but it is agent/staff-only and out of this portal's scope entirely — §4.) Because the backend offers
+nothing here, **the portal supplies a two-layer hard guard, and a disabled button is explicitly not
+sufficient for either layer.**
 
 *Layer 1 — client-side, a synchronous ref, not React state.* A `disabled` attribute driven by
 `useState`/`isPending` is set asynchronously: React batches the update, so two clicks (or a click
@@ -233,8 +244,9 @@ allowlist.
 
 **This is a portal-side mitigation, not a fix.** It closes the practical window for users coming
 through this portal; it does not make the endpoints idempotent, and it protects nothing that calls
-them directly. The real fix is server-side idempotency on all three endpoints, which belongs to a
-backend milestone — this design should be revisited (and Layer 2 likely deleted) once that lands.
+them directly. The real fix is server-side idempotency on the loan endpoints (and on endorsements,
+for the agent portal's sake), which belongs to a backend milestone — this design should be revisited
+(and Layer 2 likely deleted) once that lands.
 
 **Idempotency IS real** on claim registration, claim settlement-approval, and billing
 payment-requests (verified: real dedup registries / DB-backed keys). These may safely retry on a
@@ -246,7 +258,48 @@ when the second is harmless), never as a correctness requirement.
 staff/regulator/back-office concepts with no customer-facing analogue; not merely deferred, they
 belong to a different portal entirely.
 
-## 7. Error handling
+## 7. Backend prelude — three authorization changes M12 makes first
+
+This design was approved on a premise that turned out to be false: that every endpoint it needed was
+customer-reachable. It is not. Checking the real `@PreAuthorize` annotations (rather than the OpenAPI
+`security:` blocks, which disagree with the code in two of these three cases) found three endpoints
+that admit only `REALM_AGENTS`/`REALM_STAFF`. Without them the portal has no way to list a
+customer's policies, and no way for a customer to pay their own premium — which would gut the
+self-service scope this milestone exists to deliver. Per explicit decision, M12 opens by fixing
+them, then builds the portal against a backend that genuinely supports it.
+
+None of the three is a redesign; each mirrors a pattern already implemented and reviewed elsewhere
+in this codebase.
+
+**1. `GET /policies` — make it customer-reachable, force-scoped.** Currently
+`hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')`, with the OpenAPI description asserting "no bulk
+listing endpoint exists for the customers realm." Add `REALM_CUSTOMERS`, and scope the query itself
+exactly as `ClaimController.listClaims` already does for the identical problem: a client-supplied
+`policyholderPartyId` is **overridden**, never merely checked, with the token's own `party_id` claim
+when the caller is a customer. `policyApi.searchPolicies(policyholderPartyId, status, pageable)`
+already takes that filter, so the change is the annotation, the `Jwt`/`Authentication` parameters,
+and one line computing the effective party id. Scoping the query is the correct enforcement point
+for a list endpoint — there is no single resource to 403 on.
+
+**2. `POST /invoices/{id}/payment-request` — make it customer-reachable, ownership-checked.**
+Currently `hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')`. Add `REALM_CUSTOMERS` and gate it on
+the invoice's own policy: `BillingController` already injects `PolicyApi` and already performs
+exactly this `policy.policyholderPartyId()` comparison for the invoices list, so this reuses an
+in-file, already-reviewed helper rather than inventing a check. A customer requesting payment for
+someone else's invoice must get the same denial shape as any other cross-tenant attempt.
+
+**3. `GET /policies/{n}/coverage-status` — make it customer-reachable.** Currently
+`hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')`. Add `REALM_CUSTOMERS` and call the
+`enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication)` helper that
+already exists in `PolicyController` and already guards three sibling endpoints in the same file.
+
+Each change ships with a test proving a customer token reaches its own resource **and** a test
+proving `customer.other` (M11's owns-nothing fixture) is denied — the negative test is the
+load-bearing one. The OpenAPI `security:` blocks for all three must be corrected in the same
+commits, since they are now wrong in the opposite direction; the `GET /policies` description
+sentence quoted above has to go.
+
+## 8. Error handling
 
 Every backend error is an RFC 7807 `ProblemDetail` carrying an `errorCode` property. One shared
 `mapApiError(problem: ProblemDetail): UserMessage` function is the single place that turns an
@@ -256,7 +309,7 @@ exceptions get their own explicit UI state rather than falling into the generic 
 `INSUFFICIENT_LOAN_VALUE` (loan origination — worth its own clear message given §6's discovery that
 it currently fires on every attempt).
 
-## 8. Testing
+## 9. Testing
 
 **Vitest + React Testing Library** for component and form logic — money formatting,
 `ProblemDetail`-to-message mapping, and both guard layers from §6. The guards need tests that would
@@ -276,7 +329,7 @@ re-proves M11's headline claim on every CI run) and the natural template for eve
 coverage. `customer.other` (the user who owns nothing) is the fixture for every "this must be
 denied" test case, exactly as M11 seeded it for.
 
-## 9. Deferred / explicitly out of scope
+## 10. Deferred / explicitly out of scope
 
 - Agent, staff, and regulator portals — separate projects.
 - Swahili localization — §2, revisit if it becomes a real requirement.
