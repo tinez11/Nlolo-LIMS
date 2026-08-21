@@ -72,17 +72,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p><b>Migration list mirrors {@code ClaimsContractTest}'s full policy/product/party chain</b>
  * (party/product/underwriting/policy schemas), extended with {@code document/V1}-{@code V2} on top
  * of {@code ClaimEvidenceIntegrationTest}'s own document+claims list: a REAL claim registered
- * through {@code ClaimsApi.registerClaim} (not a repository shortcut, since {@code claims.domain}
- * is that module's INTERNAL package and unreachable from here) validates against a REAL, in-force
- * policy, which in turn needs a real product and applicant -- {@code buildFixture}/{@code
+ * through {@code ClaimsApi.registerClaim} (not a repository shortcut -- {@code claims.domain}/
+ * {@code claims.infrastructure} are {@code public} and technically reachable even from here, but
+ * going through {@code claims}'s named {@code .api} interface instead is this platform's own
+ * established convention, not something a compiler or a structural test enforces for test code;
+ * see below) validates against a REAL, in-force policy, which in turn needs a real product and
+ * applicant -- {@code buildFixture}/{@code
  * issuePolicy}/{@code registerMaturityClaim} below are copied verbatim from {@code
  * ClaimsContractTest}'s own identically-named helpers for exactly that reason, not reinvented.
  * {@code party::api}/{@code product::api}/{@code policy::api}/{@code claims::api} are all
- * NAMED-INTERFACE ({@code .api}) packages, and {@code document}'s {@code package-info.java}
- * declares no {@code allowedDependencies} restriction at all (unlike e.g. {@code finaccounting},
- * which explicitly locks itself to {@code refdata::api} only) -- so depending on those four
- * modules' public APIs from here does not trip {@code ModularityTests}, so long as only their
- * {@code .api} packages are touched and never their {@code .domain}/{@code .infrastructure} ones.
+ * NAMED-INTERFACE ({@code .api}) packages -- this is a design choice made to follow established
+ * platform convention (every {@code *ContractTest} on this platform seeds fixtures through public
+ * {@code .api} types, never a sibling module's {@code .domain}/{@code .infrastructure}), NOT
+ * something {@code ModularityTests} verifies either way. {@code ApplicationModules.of(...)} (and
+ * this platform's own {@code NoCrossModuleJoinTest}, which applies {@code
+ * ImportOption.Predefined.DO_NOT_INCLUDE_TESTS} explicitly) both scan main-source classes only --
+ * spring-modulith-core's {@code ApplicationModules} bakes in {@code ImportOption$DoNotIncludeTests}
+ * -- so {@code ModularityTests} cannot see this class, or any other test-source file, at all. It
+ * would pass identically whether this fixture seeded through {@code ClaimsApi} (what it does) or
+ * reached directly into {@code claims.domain.Claim}/{@code claims.infrastructure.ClaimRepository}
+ * (both {@code public}, so nothing would stop that either) -- test-source cross-module reaches are
+ * simply outside what Spring Modulith's structural checks enforce on this platform today.
  */
 @Testcontainers
 @AutoConfigureMockMvc
@@ -221,10 +231,19 @@ class DocumentContractTest {
         // type for these binary endpoints (application/octet-stream), and
         // FileDownloadResponses.fileResponse echoes back whatever content type was recorded at
         // upload verbatim -- a real upload with a specific media type is a genuine, correct
-        // runtime behaviour the spec simply does not model as an alternative, the same class of
-        // spec-vs-runtime gap ClaimsContractTest's own javadoc documents for multipart request
-        // bodies. Using octet-stream here keeps openApi().isValid(...) meaningful without
-        // asserting something the spec was never written to allow.
+        // runtime behaviour the spec simply does not model as an alternative.
+        //
+        // KNOWN SPEC DEFECT, flagged rather than fixed here: each of these two responses' own
+        // `description` says Content-Type "is the media type declared at upload, or
+        // application/octet-stream when unknown" (openapi-document.yaml:35,57), but the `content:`
+        // block right below that prose declares only application/octet-stream -- the two
+        // contradict each other, and a real non-octet-stream upload genuinely fails
+        // openApi().isValid(...) as a result (confirmed empirically: this fixture originally used
+        // "application/pdf"/"image/jpeg" and every isValid(...) assertion below failed with
+        // validation.response.contentType.notAllowed). Content-type preservation itself is already
+        // proven elsewhere (ClaimEvidenceDownloadTest), so working around it here with
+        // octet-stream is the right test-design choice for THIS class -- widening the spec's
+        // response schema is a separate, deliberate change this task does not make unilaterally.
         String ref = documentApi.upload("ops:fixture", DocumentType.POLICY_DOCUMENT, "test-uploader",
             new ByteArrayInputStream(content), content.length, "application/octet-stream", "statement.pdf");
         TenantContext.clear();

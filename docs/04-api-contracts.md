@@ -57,7 +57,7 @@ Standard response set reused via `$ref` in every module spec: `400` (validation)
 | `distribution` | — | read own commission/plan | onboard, administer | — |
 | `payment` | status by own reference | status scoped | full status + batches | — |
 | `regreporting` | — | — | generate, read | read-only |
-| `document` | read own claim evidence via the owning claim (object-level-checked); no upload endpoint | same, scoped to their own claims; no upload endpoint | read anything in-tenant (bare `REALM_STAFF`, no fine-grained role); no upload endpoint | — |
+| `document` | read own claim evidence via the owning claim (object-level-checked); no upload endpoint | unrestricted in-tenant read, same as staff -- no agent-of-record/agency scoping exists for claim evidence today (`enforceCustomerOwnClaimOnly` is a no-op for any non-customer caller); no upload endpoint | read anything in-tenant (bare `REALM_STAFF`, no fine-grained role); no upload endpoint | — |
 | `refdata` | read, allowlisted per key (a denied key 404s identically to a nonexistent one); no author/write endpoint | read, allowlisted per key (a different allowlist than customers'); no author/write endpoint | read every seeded key; no author/write endpoint | read, allowlisted (disclosed keys only); no author/write endpoint |
 
 ---
