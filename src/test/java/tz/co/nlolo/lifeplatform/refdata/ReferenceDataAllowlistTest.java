@@ -2,7 +2,9 @@ package tz.co.nlolo.lifeplatform.refdata;
 
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.SpecTypeConformance;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import com.atlassian.oai.validator.mockmvc.OpenApiValidationMatchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -39,15 +41,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * company's premium pricing basis. The draft OpenAPI document this milestone replaced carried a
  * blanket customers/agents/staff security block, which would have served exactly that to anyone.
  *
- * <p>No OpenAPI spec file exists for this one endpoint (Task 5 predates any refdata contract-test
- * task), so unlike {@code FinaccountingContractTest} there is no {@code openApi().isValid(...)}
- * assertion here -- this class checks status codes, JSON shape and the allowlist's realm/key
- * behaviour directly instead.
+ * <p>Task 5 predated any refdata OpenAPI spec, so this class originally checked only status codes,
+ * JSON shape and the allowlist's realm/key behaviour directly, with no {@code openApi().isValid(...)}
+ * assertion at all. Task 6 (this revision) adds spec-conformance coverage ON TOP of that proven
+ * allowlist logic -- deliberately NOT as a new, separate {@code RefdataContractTest} class, which
+ * would have re-implemented this same realm-token setup and re-tested the same 9-key x 4-realm
+ * matrix a second time. {@link #aCustomerCanReadTheLoanInterestRate} now also asserts {@code
+ * openApi().isValid(SPEC_PATH)} paired with {@link SpecTypeConformance#matchesDeclaredTypes} against
+ * {@code api/openapi/openapi-document.yaml}'s sibling, {@code api/openapi/openapi-refdata.yaml}
+ * (Task 2) -- chosen because it is already the one test in this class exercising a genuinely
+ * decimal-looking value ({@code "12.0"}), which is exactly the shape a wire-format regression
+ * (JSON string -> JSON number) would silently corrupt.
  */
 @Testcontainers
 @AutoConfigureMockMvc
 @SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class ReferenceDataAllowlistTest {
+
+    private static final String SPEC_PATH = "api/openapi/openapi-refdata.yaml";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
@@ -118,6 +129,12 @@ class ReferenceDataAllowlistTest {
         mockMvc.perform(get("/reference-codes/{codeSetKey}", "TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE")
                 .with(customerOf(tenantId)))
             .andExpect(status().isOk())
+            // Task 6: paired spec-conformance coverage on this specific response, chosen because
+            // "12.0" is the one genuinely decimal-looking value this class exercises -- exactly
+            // the shape isValid(...) alone would NOT catch if it silently became a JSON number
+            // (SpecTypeConformance's whole documented reason for existing).
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "ReferenceCodeSetView"))
             .andExpect(jsonPath("$.codeSetKey").value("TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE"))
             .andExpect(jsonPath("$.values.length()").value(1))
             .andExpect(jsonPath("$.values[0].code").value("DEFAULT"))

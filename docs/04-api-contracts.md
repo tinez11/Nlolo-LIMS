@@ -20,7 +20,7 @@ What follows, therefore, is only the subset of each module's behavior that an ex
 | `audit` | Pure event listener; even its read API (`getTrail`) is exposed as a query capability inside the staff back-office and regulator surfaces conceptually, but there's no independent "audit service" a channel talks to directly in Phase 0 — revisit if a dedicated compliance-investigation UI is needed later. |
 | `reinsurance` | ~~Entirely back-office/treaty-administration; deferred rather than padded out here.~~ **M8 specified and built this surface**: six staff/finance-only endpoints (treaty authoring, treaty read/list, cession and recovery listing, recovery confirmation). See `api/openapi/openapi-reinsurance.yaml`. |
 | `communication` | Triggered exclusively by domain events; no channel calls "send a notification" directly. A staff-facing dispatch-history view could be added later if support teams need to check delivery status per customer — not specified now since it wasn't asked for. |
-| `finaccounting` | Internal-only in Phase 0 (staff never call it directly; it's consumed by `regreporting`) and its aggregate design itself is still gated on C1 — an OpenAPI contract here would be built on a foundation that's explicitly not final. |
+| `finaccounting` | ~~Internal-only in Phase 0 (staff never call it directly; it's consumed by `regreporting`) and its aggregate design itself is still gated on C1 — an OpenAPI contract here would be built on a foundation that's explicitly not final.~~ **M9 specified and built this surface**: three staff/finance-only, read-only endpoints (`GET /chart-of-accounts`, `GET /gl-postings`, `GET /gl-postings/{journalEntryId}`), all gated `FINANCE_OFFICER`/`ADMIN` — no write endpoint exists or is planned, since every posting is derived from a domain event by the module's own listeners. See `api/openapi/openapi-finaccounting.yaml`. |
 
 ---
 
@@ -57,8 +57,8 @@ Standard response set reused via `$ref` in every module spec: `400` (validation)
 | `distribution` | — | read own commission/plan | onboard, administer | — |
 | `payment` | status by own reference | status scoped | full status + batches | — |
 | `regreporting` | — | — | generate, read | read-only |
-| `document` | own uploads/downloads | scoped | full | — |
-| `refdata` | read | read | read + author | — |
+| `document` | read own claim evidence via the owning claim (object-level-checked); no upload endpoint | same, scoped to their own claims; no upload endpoint | read anything in-tenant (bare `REALM_STAFF`, no fine-grained role); no upload endpoint | — |
+| `refdata` | read, allowlisted per key (a denied key 404s identically to a nonexistent one); no author/write endpoint | read, allowlisted per key (a different allowlist than customers'); no author/write endpoint | read every seeded key; no author/write endpoint | read, allowlisted (disclosed keys only); no author/write endpoint |
 
 ---
 
