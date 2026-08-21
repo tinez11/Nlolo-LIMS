@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform;
 
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
@@ -38,17 +39,51 @@ public final class FileDownloadResponses {
 
     private FileDownloadResponses() {}
 
+    /**
+     * Every branch below turns an untrustworthy stored value into a working response, because a
+     * download is a {@code GET} on a path that is entirely valid and must not fail on the shape of
+     * data recorded long ago by some other code path.
+     *
+     * <p><b>The {@code InvalidMediaTypeException} catch is not paranoia.</b> {@code contentType}
+     * originates as a client-supplied multipart header. {@code ClaimEvidenceController} now
+     * allowlists it at upload, so nothing malformed can enter through THAT door again -- but
+     * {@code DocumentController}'s generic staff download serves every document in the tenant,
+     * including rows written before that allowlist existed and rows from any future upload path
+     * {@code document} does not control. Without this catch, one such row 400s
+     * ({@code InvalidMediaTypeException extends IllegalArgumentException}, which
+     * {@code GlobalExceptionHandler} maps to 400 {@code VALIDATION_ERROR}) on every single request,
+     * forever, with a status code that blames the caller for a stored-data problem. A malformed
+     * value carries exactly as much information as a missing one -- namely none -- so both take the
+     * same {@code application/octet-stream} fallback.
+     *
+     * <p><b>Blank counts as absent.</b> {@code MultipartFile.getContentType()} and
+     * {@code getOriginalFilename()} can both be the empty string rather than {@code null}, and
+     * {@code ""} survives a plain null check: an empty {@code contentType} would have reached
+     * {@code parseMediaType("")} (which throws), and an empty {@code fileName} would have produced
+     * {@code Content-Disposition: attachment; filename=""} -- a header naming no file at all.
+     */
     public static ResponseEntity<byte[]> fileResponse(byte[] content, String contentType, String fileName,
             String documentRef) {
-        MediaType mediaType = contentType == null
-            ? MediaType.APPLICATION_OCTET_STREAM
-            : MediaType.parseMediaType(contentType);
-        String filename = fileName == null ? documentRef : fileName;
+        MediaType mediaType = parseOrOctetStream(contentType);
+        String filename = fileName == null || fileName.isBlank() ? documentRef : fileName;
 
         return ResponseEntity.ok()
             .contentType(mediaType)
             .header(HttpHeaders.CONTENT_DISPOSITION,
                 ContentDisposition.attachment().filename(filename).build().toString())
             .body(content);
+    }
+
+    private static MediaType parseOrOctetStream(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+        try {
+            return MediaType.parseMediaType(contentType);
+        } catch (InvalidMediaTypeException e) {
+            // A stored value we cannot parse tells us nothing about the bytes, exactly like a
+            // missing one -- so serve it as an opaque download instead of failing the request.
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
     }
 }

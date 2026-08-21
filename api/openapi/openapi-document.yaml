@@ -32,8 +32,18 @@ paths:
           schema: { type: string }
       responses:
         '200':
-          description: The file. Content-Type is the media type declared at upload, or application/octet-stream when unknown.
+          description: >-
+            The file. Content-Type is the media type recorded at upload, which is always one of the
+            four listed below -- uploads are allowlisted to exactly this closed set, and
+            application/octet-stream also covers a document whose media type is unknown or was
+            never recorded.
           content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            application/pdf:
+              schema: { type: string, format: binary }
             application/octet-stream:
               schema: { type: string, format: binary }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
@@ -54,8 +64,18 @@ paths:
           schema: { type: string }
       responses:
         '200':
-          description: The file. Content-Type is the media type declared at upload, or application/octet-stream when unknown.
+          description: >-
+            The file. Content-Type is the media type recorded at upload, which is always one of the
+            four listed below for anything uploaded through this platform's own endpoints;
+            application/octet-stream also covers a document whose media type is unknown, was never
+            recorded, or is not a parseable media type.
           content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            application/pdf:
+              schema: { type: string, format: binary }
             application/octet-stream:
               schema: { type: string, format: binary }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }

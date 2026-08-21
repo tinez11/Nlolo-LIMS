@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -31,11 +32,13 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -130,6 +133,15 @@ class ClaimEvidenceDownloadTest {
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("party_id", partyId.toString()));
     }
 
+    /** An agents-realm token carrying its own party_id -- the distinguishing feature versus
+     * {@code customerOf} is the REALM role, which is what {@code
+     * ClaimController.enforceCustomerOwnClaimOnly} branches on. */
+    private static SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor agentOf(UUID tenantId, UUID partyId) {
+        return SecurityMockMvcRequestPostProcessors.jwt()
+            .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("party_id", partyId.toString()));
+    }
+
     @Test
     void aDocumentFromAnotherClaimIsNotFoundEvenThoughTheCallerOwnsTheClaimInThePath() throws Exception {
         // Two claims, two different claimant parties, SAME tenant (so this is object-level
@@ -204,5 +216,138 @@ class ClaimEvidenceDownloadTest {
             .andReturn();
 
         assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content);
+    }
+
+    /**
+     * Final-review Finding 1. {@code MultipartFile.getContentType()} is an unvalidated client
+     * header, and whatever it says is echoed back verbatim by the download endpoints -- so an
+     * uploaded {@code text/html} "photo" would render as a page in the next viewer's browser
+     * (stored XSS through the document store), and the published contract would be lying about the
+     * media types it can return. Non-vacuous by construction: the SECOND half of this test sends a
+     * byte-for-byte identical request with only the content type changed and gets 201, so the 422
+     * cannot be an incidental failure of the fixture, the claim, or the multipart body.
+     */
+    @Test
+    void uploadRejectsADisallowedContentTypeWith422AndAcceptsAnAllowedOne() throws Exception {
+        UUID tenantId = TenantContext.get();
+        UUID partyId = UUID.randomUUID();
+        Claim claim = registerClaim(tenantId, partyId);
+        byte[] bytes = "<script>alert(1)</script>".getBytes(StandardCharsets.UTF_8);
+
+        mockMvc.perform(multipart("/claims/" + claim.getClaimId() + "/evidence")
+                .file(new MockMultipartFile("file", "evil.html", "text/html", bytes))
+                .with(customerOf(tenantId, partyId)))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_VALIDATION_FAILED"))
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("text/html")));
+
+        // Same claim, same caller, same bytes -- only the declared content type differs. Also
+        // proves normalization: an uppercase type with a charset parameter is STORED as the bare
+        // lowercase "image/jpeg", so document_record.content_type only ever holds one of the four
+        // short literals the OpenAPI spec declares.
+        String documentRef = com.jayway.jsonpath.JsonPath.read(
+            mockMvc.perform(multipart("/claims/" + claim.getClaimId() + "/evidence")
+                    .file(new MockMultipartFile("file", "photo.jpg", "IMAGE/JPEG; charset=utf-8", bytes))
+                    .with(customerOf(tenantId, partyId)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(),
+            "$.documentRef");
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT content_type FROM document.document_record WHERE document_ref = ?", String.class, documentRef))
+            .isEqualTo("image/jpeg");
+
+        mockMvc.perform(get("/claims/" + claim.getClaimId() + "/evidence/" + documentRef)
+                .with(customerOf(tenantId, partyId)))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", "image/jpeg"));
+    }
+
+    /**
+     * Final-review Finding 2. A stored {@code content_type} that is not a parseable media type
+     * used to make its document PERMANENTLY undownloadable: {@code MediaType.parseMediaType} throws
+     * {@code InvalidMediaTypeException extends IllegalArgumentException}, which
+     * {@code GlobalExceptionHandler} maps to 400 {@code VALIDATION_ERROR} -- on a {@code GET} whose
+     * path is entirely valid, so the caller is told their request is malformed forever. Finding 1's
+     * allowlist stops such values entering through the evidence upload, but {@code
+     * DocumentController} serves rows this module never wrote, so the fallback is still load-bearing.
+     * Both degenerate stored shapes are covered: unparseable, and blank-not-null (which the
+     * original {@code == null} check let through into {@code parseMediaType("")}).
+     */
+    @Test
+    void aRowWithAMalformedOrBlankStoredContentTypeStillDownloadsAsOctetStream() throws Exception {
+        UUID tenantId = TenantContext.get();
+        UUID partyId = UUID.randomUUID();
+        Claim claim = registerClaim(tenantId, partyId);
+
+        byte[] content = "malformed-content-type-row-bytes".getBytes();
+        String documentRef = documentApi.upload("claim:" + claim.getClaimId(), DocumentType.CLAIM_EVIDENCE,
+            "uploader", new ByteArrayInputStream(content), content.length, "image/jpeg", "photo.jpg");
+
+        // Written straight to the column, exactly as a pre-allowlist upload or a future producer
+        // outside this module could have left it. "not a media type" has a space, so it is not a
+        // valid type/subtype token and parseMediaType rejects it outright.
+        jdbcTemplate.update(
+            "UPDATE document.document_record SET content_type = 'not a media type' WHERE document_ref = ?",
+            documentRef);
+
+        MvcResult result = mockMvc.perform(get("/claims/" + claim.getClaimId() + "/evidence/" + documentRef)
+                .with(customerOf(tenantId, partyId)))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", "application/octet-stream"))
+            .andExpect(header().string("Content-Disposition",
+                org.hamcrest.Matchers.containsString("photo.jpg")))
+            .andReturn();
+        assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content);
+
+        // Empty string, not NULL: distinct from aPreV2RowWithNullContentTypeAndFileNameStillDownloads
+        // above, and the case a plain null check misses. The blank file_name must fall back to the
+        // documentRef too, rather than emitting `filename=""`.
+        jdbcTemplate.update(
+            "UPDATE document.document_record SET content_type = '', file_name = '   ' WHERE document_ref = ?",
+            documentRef);
+
+        mockMvc.perform(get("/claims/" + claim.getClaimId() + "/evidence/" + documentRef)
+                .with(customerOf(tenantId, partyId)))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", "application/octet-stream"))
+            .andExpect(header().string("Content-Disposition",
+                org.hamcrest.Matchers.containsString(documentRef)));
+    }
+
+    /**
+     * Final-review Finding 4. docs/04-api-contracts.md states agents get "unrestricted in-tenant
+     * read, same as staff" on claim evidence, and the code agrees --
+     * {@code ClaimController.enforceCustomerOwnClaimOnly} no-ops for any non-customer realm -- but
+     * nothing asserted it. The existing agent-related coverage is the OPPOSITE property (agents are
+     * 403'd on the staff-only generic {@code /documents/{ref}} endpoint), so deleting the
+     * {@code isCustomer} guard, or narrowing this endpoint's {@code @PreAuthorize} to drop
+     * {@code REALM_AGENTS}, would both have shipped green. The agent's own party_id is deliberately
+     * a THIRD, unrelated UUID: it matches neither the claimant nor anything on the claim, so a
+     * future "agents may only see their own book" check would fail here rather than pass by luck.
+     */
+    @Test
+    void anAgentMayDownloadEvidenceForAClaimBelongingToADifferentParty() throws Exception {
+        UUID tenantId = TenantContext.get();
+        UUID claimantPartyId = UUID.randomUUID();
+        UUID agentPartyId = UUID.randomUUID();
+        Claim claim = registerClaim(tenantId, claimantPartyId);
+
+        byte[] content = "agent-readable-evidence-bytes".getBytes();
+        String documentRef = documentApi.upload("claim:" + claim.getClaimId(), DocumentType.CLAIM_EVIDENCE,
+            "uploader", new ByteArrayInputStream(content), content.length, "application/pdf", "certificate.pdf");
+
+        MvcResult result = mockMvc.perform(get("/claims/" + claim.getClaimId() + "/evidence/" + documentRef)
+                .with(agentOf(tenantId, agentPartyId)))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", "application/pdf"))
+            .andReturn();
+        assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content);
+
+        // The contrast that makes the assertion above meaningful: the SAME request from a customer
+        // token whose party_id is that same unrelated UUID is denied. Only the realm differs.
+        mockMvc.perform(get("/claims/" + claim.getClaimId() + "/evidence/" + documentRef)
+                .with(customerOf(tenantId, agentPartyId)))
+            .andExpect(status().isForbidden());
     }
 }

@@ -55,8 +55,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @AutoConfigureMockMvc} + {@code @SpringBootTest(classes = Application.class, webEnvironment =
  * MOCK)}, {@code jwt()} post-processors, and {@code openApi().isValid(SPEC_PATH)} paired with
  * {@link SpecTypeConformance#matchesDeclaredTypes} on the one JSON response this spec declares
- * ({@code GET /documents/{ref}/metadata} -- the two download endpoints return raw
- * {@code application/octet-stream} bytes, so only {@code isValid(...)} applies to those).
+ * ({@code GET /documents/{ref}/metadata} -- the two download endpoints return raw bytes under one
+ * of the four allowed binary media types, so only {@code isValid(...)} applies to those).
  *
  * <p>Unlike {@code FinaccountingContractTest}, this class needs REAL object storage, not just
  * Postgres: {@code DocumentApiImpl.download}/{@code upload} go straight through {@code
@@ -226,26 +226,16 @@ class DocumentContractTest {
      * concern here. */
     private String seedGenericDocument(UUID tenantId, byte[] content) {
         TenantContext.set(tenantId);
-        // Content-type is deliberately "application/octet-stream" here, not a real media type
-        // like "application/pdf": openapi-document.yaml declares exactly ONE response content
-        // type for these binary endpoints (application/octet-stream), and
-        // FileDownloadResponses.fileResponse echoes back whatever content type was recorded at
-        // upload verbatim -- a real upload with a specific media type is a genuine, correct
-        // runtime behaviour the spec simply does not model as an alternative.
-        //
-        // KNOWN SPEC DEFECT, flagged rather than fixed here: each of these two responses' own
-        // `description` says Content-Type "is the media type declared at upload, or
-        // application/octet-stream when unknown" (openapi-document.yaml:35,57), but the `content:`
-        // block right below that prose declares only application/octet-stream -- the two
-        // contradict each other, and a real non-octet-stream upload genuinely fails
-        // openApi().isValid(...) as a result (confirmed empirically: this fixture originally used
-        // "application/pdf"/"image/jpeg" and every isValid(...) assertion below failed with
-        // validation.response.contentType.notAllowed). Content-type preservation itself is already
-        // proven elsewhere (ClaimEvidenceDownloadTest), so working around it here with
-        // octet-stream is the right test-design choice for THIS class -- widening the spec's
-        // response schema is a separate, deliberate change this task does not make unilaterally.
+        // A REAL media type, matching the "statement.pdf" filename. This fixture used to be
+        // application/octet-stream only because openapi-document.yaml's two binary 200 responses
+        // declared that single content type while their own prose promised the media type recorded
+        // at upload -- so a realistic fixture failed openApi().isValid(...) with
+        // validation.response.contentType.notAllowed. The spec now declares the same closed set
+        // ClaimEvidenceController's upload allowlist enforces (image/jpeg, image/png,
+        // application/pdf, application/octet-stream), so the workaround is gone and this class now
+        // validates a real media type against the spec, as it should have from the start.
         String ref = documentApi.upload("ops:fixture", DocumentType.POLICY_DOCUMENT, "test-uploader",
-            new ByteArrayInputStream(content), content.length, "application/octet-stream", "statement.pdf");
+            new ByteArrayInputStream(content), content.length, "application/pdf", "statement.pdf");
         TenantContext.clear();
         return ref;
     }
@@ -256,11 +246,12 @@ class DocumentContractTest {
      * this class's own target is the single-file download endpoint, not the upload one. */
     private String attachEvidence(UUID tenantId, UUID claimId, byte[] evidenceContent) {
         TenantContext.set(tenantId);
-        // application/octet-stream, not "image/jpeg" -- see seedGenericDocument's javadoc for why:
-        // the spec declares exactly one response content type for this binary download.
+        // image/jpeg, matching the .jpg filename and what the live seeded data actually holds --
+        // see seedGenericDocument's comment: the spec now declares the whole allowed set, so a
+        // realistic media type is validated here rather than worked around.
         String evidenceRef = documentApi.upload("claim:" + claimId, DocumentType.CLAIM_EVIDENCE,
             "test-uploader", new ByteArrayInputStream(evidenceContent), evidenceContent.length,
-            "application/octet-stream", "evidence.jpg");
+            "image/jpeg", "evidence.jpg");
         claimsApi.attachEvidence(claimId, evidenceRef, "Maturity certificate scan", "test-uploader");
         TenantContext.clear();
         return evidenceRef;
