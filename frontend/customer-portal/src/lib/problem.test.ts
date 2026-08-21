@@ -48,10 +48,10 @@ describe('mapApiError', () => {
     })).toMatch(/could not find/i);
   });
 
-  it('includes the traceId on a server error so support can look it up', () => {
+  it('gives a server error its own copy, distinct from the generic fallback', () => {
     expect(mapApiError({
       type: 'about:blank', title: 'Bad Gateway', status: 502, traceId: 't7',
-    })).toMatch(/t7/);
+    })).toMatch(/something went wrong on our side/i);
   });
 
   it('gives validation errors bespoke copy telling the customer to check the form', () => {
