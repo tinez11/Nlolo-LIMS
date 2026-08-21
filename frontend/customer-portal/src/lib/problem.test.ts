@@ -35,4 +35,29 @@ describe('mapApiError', () => {
       type: 'about:blank', title: 'Unauthorized', status: 401, traceId: 't4',
     })).toMatch(/session/i);
   });
+
+  it('distinguishes a 403 as an access problem, not a missing item', () => {
+    expect(mapApiError({
+      type: 'about:blank', title: 'Forbidden', status: 403, traceId: 't5',
+    })).toMatch(/do not have access/i);
+  });
+
+  it('distinguishes a 404 as a missing item', () => {
+    expect(mapApiError({
+      type: 'about:blank', title: 'Not Found', status: 404, traceId: 't6',
+    })).toMatch(/could not find/i);
+  });
+
+  it('includes the traceId on a server error so support can look it up', () => {
+    expect(mapApiError({
+      type: 'about:blank', title: 'Bad Gateway', status: 502, traceId: 't7',
+    })).toMatch(/t7/);
+  });
+
+  it('gives validation errors bespoke copy telling the customer to check the form', () => {
+    expect(mapApiError({
+      type: 'about:blank', title: 'Bad Request', status: 400,
+      errorCode: 'VALIDATION_ERROR', traceId: 't8',
+    })).toMatch(/check the form/i);
+  });
 });
