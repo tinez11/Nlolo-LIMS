@@ -41,6 +41,46 @@ token, not the ID token):
   nothing under `src/main/java` reads an `agentOfRecord` claim, so it is not
   mapped here or anywhere.
 
+## The `components` block — `unmanagedAttributePolicy: ADMIN_EDIT`
+
+**Do not reformat, "tidy", or delete the `components` block at the bottom of any
+of the four realm files without reading this section.** It is a single escaped
+JSON string on purpose (that is the shape Keycloak's realm importer expects for
+`kc.user.profile.config`), and it is the reason `party_id` can be written onto a
+user at all.
+
+Keycloak 24 enables the **declarative User Profile** for every realm and, by
+default, sets its unmanaged-attribute policy to *Disabled*. Under that default,
+any user attribute whose key is not declared in the profile is not merely
+rejected — it is **silently dropped**. An Admin-API `PUT
+/admin/realms/{realm}/users/{id}` carrying `"attributes": {"party_id": [...]}`
+returns `204 No Content`, and a follow-up `GET` on the same user shows no
+`party_id` at all. No error, no warning, nothing in the server log. This cost
+real debugging time during M11 Task 9: the seeder's write-back appeared to
+succeed on every run while the issued tokens never gained the claim, and the
+symptom surfaced far away as a `403` from an ownership check.
+
+`"unmanagedAttributePolicy": "ADMIN_EDIT"` is the fix: it permits attributes
+that the profile does not declare, readable and writable **by administrators
+only** (the Admin API and the admin console) — end users can neither see nor
+edit them through account/registration forms, so this is not the permissive
+`ENABLED` policy.
+
+- **`customers` / `agents` need it functionally.** `scripts/seed-dev-data.sh`
+  step 4 writes each user's `party_id` through the Admin API after the party is
+  created, because a party's UUID does not exist until seed time (see the note
+  under *Test users*). Remove the policy from either realm and that write-back
+  becomes a silent no-op, the `party_id` protocol mapper has nothing to project,
+  and every ownership-checked endpoint `403`s.
+- **`staff` / `regulators` carry it for consistency, not necessity.** Neither
+  realm needs a `party_id` write-back today. The policy is declared here anyway
+  so all four files state their behaviour explicitly instead of inheriting an
+  implicit Keycloak default that changed between major versions — and because
+  `tenant_id` is itself an unmanaged attribute on these users, so under
+  *Disabled* it is invisible and uneditable in the admin console, which is its
+  own footgun. Purely additive: it changes no client, mapper, role, or user, and
+  therefore nothing about which claims these two realms' tokens carry.
+
 ## Test users
 
 Every user carries a `tenant_id` **attribute** (not a claim directly --

@@ -61,7 +61,7 @@ If `scripts/migrate.sh local` fails partway through with `relation "..." already
 almost always means you skipped the volume drop above and are re-running against a database that
 already has (some of) the schema applied — not a bug in the migration files themselves.
 
-## Two things that will otherwise cost you an afternoon
+## Four things that will otherwise cost you an afternoon
 
 **1. Migrations do not run automatically.** `pom.xml` contains neither Flyway nor Liquibase, so
 `docker compose up` on a fresh volume leaves an entirely empty database behind a running app, and
@@ -91,6 +91,23 @@ in one worktree can silently wipe the schema another worktree is relying on. Mit
 worktree its own project name, either by exporting `COMPOSE_PROJECT_NAME=<worktree-name>` before
 running compose commands, or by passing `-p <worktree-name>` on every `docker compose` invocation
 in that worktree.
+
+**4. The Keycloak realms alone are NOT enough to log in as a customer or an agent — you must run
+the seeder.** `keycloak/customers-realm.json` and `keycloak/agents-realm.json` set each test user's
+`tenant_id` attribute, but deliberately set **no** `party_id`: a party's UUID does not exist until
+`POST /parties/individuals` creates it, so only `scripts/seed-dev-data.sh` (step 4, "Write
+`party_id` back into Keycloak") can fill it in. Skip the seeder and `customer.owner` still
+authenticates perfectly — Keycloak issues a valid token, `TenantContextFilter` accepts it because
+`tenant_id` is present — and then **every ownership-checked endpoint returns `403`**:
+`GET /policies/{id}`, `GET /claims`, `GET /claims/{id}/evidence/{ref}`, `GET /parties/{id}`,
+`GET /policies/{id}/loans`, and the agent hierarchy endpoints. The failure mode looks like a
+permissions bug or a broken realm import; it is neither. Recognize it by decoding the access token
+(`jwt.io`, or `curl` the token endpoint and look at the payload): if it has `tenant_id` but no
+`party_id`, you skipped or half-ran the seeder. The fix is not to hand-edit the user in the admin
+console — run the seeder, and if it refuses with "Already seeded", drop the volume per the reset
+sequence above and start clean. (Hand-editing *would* work — that is what
+`unmanagedAttributePolicy: ADMIN_EDIT` in the realm files is for, see `keycloak/README.md` — but
+the `party_id` has to match a real party row, so guessing one just moves the `403` to a `404`.)
 
 ## Consoles
 
