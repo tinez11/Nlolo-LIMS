@@ -79,6 +79,19 @@ rejects it because it expects `keycloak:8080` — an opaque 401 with a correct-l
 on the host makes every URL agree, and matches this project's standing rule against running Maven
 in Docker.
 
+**3. Two worktrees (or a worktree and the main checkout) running `docker compose up` at the same
+time will collide.** `docker compose config` in this directory reports `name: infra` — Compose
+derives the project name from the current directory's basename (`infra`), not from the worktree's
+full path. Every checkout on the machine has an `infra/` subdirectory, so every one of them gets
+the *same* project name unless told otherwise, and therefore the same container names and the same
+named volumes (`infra_postgres-data`, `infra_redis-data`, `infra_minio-data`). Two worktrees doing
+`cd infra && docker compose up` concurrently will fight over one Postgres container instead of
+each getting its own — one side's migrations can land in the other side's database, or `down -v`
+in one worktree can silently wipe the schema another worktree is relying on. Mitigation: give each
+worktree its own project name, either by exporting `COMPOSE_PROJECT_NAME=<worktree-name>` before
+running compose commands, or by passing `-p <worktree-name>` on every `docker compose` invocation
+in that worktree.
+
 ## Consoles
 
 | Service | URL | Credentials |
