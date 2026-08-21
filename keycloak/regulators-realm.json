@@ -17,8 +17,38 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["*"],
-      "secret": "dev-secret-regulators"
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:3000"],
+      "secret": "dev-secret-regulators",
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "regulator.tira",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "regulator.tira@example.tz",
+      "firstName": "Salum",
+      "lastName": "Tira",
+      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
+      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
+      "realmRoles": ["TIRA_READ_ONLY"]
     }
   ]
 }

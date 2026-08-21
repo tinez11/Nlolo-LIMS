@@ -22,8 +22,71 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["*"],
-      "secret": "dev-secret-staff"
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:3000"],
+      "secret": "dev-secret-staff",
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "staff.underwriter",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.underwriter@example.tz",
+      "firstName": "Halima",
+      "lastName": "Underwriter",
+      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
+      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
+      "realmRoles": ["UNDERWRITER"]
+    },
+    {
+      "username": "staff.assessor",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.assessor@example.tz",
+      "firstName": "Daudi",
+      "lastName": "Assessor",
+      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
+      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
+      "realmRoles": ["CLAIMS_ASSESSOR"]
+    },
+    {
+      "username": "staff.manager",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.manager@example.tz",
+      "firstName": "Fatuma",
+      "lastName": "Manager",
+      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
+      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
+      "realmRoles": ["CLAIMS_MANAGER"]
+    },
+    {
+      "username": "staff.finance",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.finance@example.tz",
+      "firstName": "Rehema",
+      "lastName": "Finance",
+      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
+      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
+      "realmRoles": ["FINANCE_OFFICER"]
     }
   ]
 }

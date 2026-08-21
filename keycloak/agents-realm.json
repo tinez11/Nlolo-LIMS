@@ -12,8 +12,63 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["*"],
-      "secret": "dev-secret-agents"
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:3000"],
+      "secret": "dev-secret-agents",
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "party_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "party_id",
+            "claim.name": "party_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "agent.senior",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "agent.senior@example.tz",
+      "firstName": "Juma",
+      "lastName": "Senior",
+      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
+      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
+      "realmRoles": []
+    },
+    {
+      "username": "agent.junior",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "agent.junior@example.tz",
+      "firstName": "Neema",
+      "lastName": "Junior",
+      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
+      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
+      "realmRoles": []
     }
   ]
 }
