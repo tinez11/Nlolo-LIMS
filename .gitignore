@@ -14,3 +14,12 @@ scripts/seed-evidence.jpg
 # Superpowers subagent-driven-development scratch (ledger, briefs, review packages).
 # Git-ignored by design: the git history is the durable record, not these artifacts.
 .superpowers/
+
+# Frontend (M12)
+node_modules/
+frontend/**/.next/
+frontend/**/out/
+frontend/**/.env.local
+frontend/**/coverage/
+frontend/**/test-results/
+frontend/**/playwright-report/
