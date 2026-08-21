@@ -197,6 +197,10 @@ Rejected deliberately, and recorded here so a later reader knows it was weighed 
 
 `api/openapi/openapi-regreporting.yaml` is extracted as its own document and the `regreporting` block is removed from `openapi-regreporting-document-refdata.yaml`, which keeps `document` and `refdata`. This is what that file's own header has asked for since it was written, and it is a hard prerequisite: `openApi().isValid()` and `ParseOptions.setResolve(true)` cannot load a multi-document file.
 
+> **M11 update:** the remaining two documents were split into `openapi-document.yaml` and
+> `openapi-refdata.yaml` and this bundled file was deleted. The references above describe the
+> file as it existed during M10 and are kept for that record.
+
 The spec states plainly in its own `description` that the return catalog is a placeholder pending C2, so an API consumer is not left believing the line codes are TIRA's.
 
 ### Endpoints

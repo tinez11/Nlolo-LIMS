@@ -1,0 +1,73 @@
+openapi: 3.1.0
+info:
+  title: Reference & Master Data API
+  version: "1.0.0"
+  description: >-
+    Global, non-tenant-scoped lookup and parameter data. PLACEHOLDER VALUES: every seeded value is
+    marked placeholder in refdata/V1's own table comment and must not be treated as confirmed
+    without Legal, Compliance, Product and Actuarial sign-off -- a client rendering "12.0" as a
+    loan interest rate is rendering an unconfirmed number. Access is allowlisted per realm, so a
+    key readable by staff may return 404 for a customer.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /reference-codes/{codeSetKey}:
+    get:
+      summary: Read one reference code set
+      description: >-
+        A key the caller's realm may not read returns 404, identical to a key that does not exist,
+        so this endpoint cannot be used to discover which keys exist.
+      security:
+        - customersAuth: []
+        - agentsAuth: []
+        - staffAuth: []
+        - regulatorsAuth: []
+      parameters:
+        - name: codeSetKey
+          in: path
+          required: true
+          schema: { type: string }
+          example: TZ_POLICY_LOAN_ANNUAL_INTEREST_RATE
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferenceCodeSetView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    customersAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/customers/.well-known/openid-configuration
+    agentsAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/agents/.well-known/openid-configuration
+    staffAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
+    regulatorsAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/regulators/.well-known/openid-configuration
+  schemas:
+    ReferenceCodeSetView:
+      type: object
+      required: [codeSetKey, values]
+      properties:
+        codeSetKey: { type: string }
+        values:
+          type: array
+          items: { $ref: '#/components/schemas/ReferenceCodeView' }
+    ReferenceCodeView:
+      type: object
+      required: [code, label, value]
+      properties:
+        code: { type: string }
+        label: { type: string }
+        value:
+          type: string
+          description: >-
+            Always a STRING, never a JSON number, even when it holds "24" or "12.0". The column is
+            VARCHAR(255) and its semantics vary per key -- some values are comma-separated lists.
+        jurisdiction: { type: string, nullable: true, example: TZ }

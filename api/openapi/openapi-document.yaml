@@ -1,0 +1,109 @@
+openapi: 3.1.0
+info:
+  title: Document & Content Management API
+  version: "1.0.0"
+  description: >-
+    Document retrieval. Uploads happen through the owning aggregate's own endpoint (today only
+    POST /claims/{claimId}/evidence), because a document's authorization is always the owning
+    resource's authorization -- this module cannot check ownership itself without depending on
+    the modules that depend on it.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /claims/{claimId}/evidence/{documentRef}:
+    get:
+      summary: Download one evidence file attached to a claim
+      description: >-
+        Requires BOTH that the caller may read the claim AND that the document belongs to that
+        claim. A document belonging to a different claim returns 404, never the file, even when
+        the caller legitimately owns the claim named in the path.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: documentRef
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The file. Content-Type is the media type declared at upload, or application/octet-stream when unknown.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /documents/{documentRef}:
+    get:
+      summary: Download any document in the caller's tenant (staff only)
+      description: >-
+        Staff-only, because staff are authorized tenant-wide and so need no object-level check.
+        Customers and agents must use the owning aggregate's endpoint instead.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: documentRef
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The file. Content-Type is the media type declared at upload, or application/octet-stream when unknown.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /documents/{documentRef}/metadata:
+    get:
+      summary: Read a document's metadata without transferring its content (staff only)
+      security:
+        - staffAuth: []
+      parameters:
+        - name: documentRef
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentMetadataView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    customersAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/customers/.well-known/openid-configuration
+    agentsAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/agents/.well-known/openid-configuration
+    staffAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
+  schemas:
+    DocumentMetadataView:
+      type: object
+      required: [documentRef, ownerContext, documentType, uploadedAt]
+      properties:
+        documentRef: { type: string }
+        ownerContext:
+          type: string
+          description: >-
+            Opaque owning-aggregate reference, currently always "claim:{uuid}". Treated as opaque
+            on purpose -- new producers will introduce new shapes, so do not parse it.
+        documentType: { type: string, enum: [KYC_EVIDENCE, POLICY_DOCUMENT, CLAIM_EVIDENCE, SIGNED_FORM, UNDERWRITING_EVIDENCE] }
+        contentType: { type: string, nullable: true, description: "Null for documents uploaded before document/V2." }
+        fileName: { type: string, nullable: true, description: "Null for documents uploaded before document/V2." }
+        uploadedBy: { type: string, nullable: true }
+        uploadedAt: { type: string, format: date-time }

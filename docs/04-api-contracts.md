@@ -1,7 +1,7 @@
 # Deliverable 4 — API Contract Specification
 **Digital Life Insurance Core Platform — Tanzania (Phase 0, Artifact 4 of 8)**
 
-> Companion OpenAPI 3.1 files (delivered alongside this document): `openapi-common.yaml`, `openapi-underwriting.yaml`, `openapi-policy.yaml`, `openapi-policyloan.yaml`, `openapi-billing.yaml`, `openapi-claims.yaml`, `openapi-product.yaml`, `openapi-party.yaml`, `openapi-distribution.yaml`, `openapi-payment.yaml`, `openapi-reinsurance.yaml`, `openapi-regreporting-document-refdata.yaml` (three documents in one file, split before tooling use — noted in-file).
+> Companion OpenAPI 3.1 files (delivered alongside this document): `openapi-common.yaml`, `openapi-underwriting.yaml`, `openapi-policy.yaml`, `openapi-policyloan.yaml`, `openapi-billing.yaml`, `openapi-claims.yaml`, `openapi-product.yaml`, `openapi-party.yaml`, `openapi-distribution.yaml`, `openapi-payment.yaml`, `openapi-reinsurance.yaml`, `openapi-regreporting.yaml`, `openapi-document.yaml`, `openapi-refdata.yaml`.
 
 ---
 
