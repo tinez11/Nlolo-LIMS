@@ -18,6 +18,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -187,6 +188,43 @@ class ReferenceDataAllowlistTest {
                 .with(regulatorOf(tenantId)))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("REFERENCE_CODE_SET_NOT_FOUND"));
+    }
+
+    @Test
+    void anAgentCannotReadThePremiumPricingBasis() throws Exception {
+        // TZ_BASE_PREMIUM_RATE_PER_MILLE is in neither PUBLICLY_DISCLOSED nor AGENT_OPERATIONAL --
+        // the single most sensitive key on the platform, and agents get no special exemption for
+        // it just because they are allowed some commercially-adjacent keys (e.g. the commission
+        // clawback window). This is the mirror of aCustomerCannotReadThePremiumPricingBasis /
+        // aRegulatorGetsTheDisclosedKeysButNotTheCommercialOnes for the third non-staff realm.
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/reference-codes/{codeSetKey}", "TZ_BASE_PREMIUM_RATE_PER_MILLE")
+                .with(agentOf(tenantId)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("REFERENCE_CODE_SET_NOT_FOUND"));
+    }
+
+    @Test
+    void regulatorsAndCustomersAreDeniedTheRemainingAgentOperationalKeys() throws Exception {
+        // AGENT_OPERATIONAL's three keys are readable by agents (and staff) only. One combination
+        // (customer + OFFLINE_RECEIPT_SLA_HOURS) is already covered by
+        // anAgentCanReadTheFieldReceiptSlaThatACustomerCannot; this closes the remaining five
+        // realm/key denial combinations in one loop rather than five near-duplicate test methods.
+        record Denial(String realmName, RequestPostProcessor token, String codeSetKey) {}
+        UUID tenantId = UUID.randomUUID();
+        List<Denial> denials = List.of(
+            new Denial("regulator", regulatorOf(tenantId), "OFFLINE_RECEIPT_SLA_HOURS"),
+            new Denial("regulator", regulatorOf(tenantId), "POLICY_SUSPENSION_ELIGIBLE_CATEGORIES"),
+            new Denial("regulator", regulatorOf(tenantId), "TZ_COMMISSION_CLAWBACK_MONTHS"),
+            new Denial("customer", customerOf(tenantId), "POLICY_SUSPENSION_ELIGIBLE_CATEGORIES"),
+            new Denial("customer", customerOf(tenantId), "TZ_COMMISSION_CLAWBACK_MONTHS"));
+
+        for (Denial denial : denials) {
+            mockMvc.perform(get("/reference-codes/{codeSetKey}", denial.codeSetKey()).with(denial.token()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("REFERENCE_CODE_SET_NOT_FOUND"));
+        }
     }
 
     @Test
