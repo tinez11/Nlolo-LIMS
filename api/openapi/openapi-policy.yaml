@@ -61,8 +61,12 @@ paths:
   /policies:
     get:
       summary: Search policies
-      description: Staff and agent-scoped only — no bulk listing endpoint exists for the customers realm.
+      description: >
+        Customers are force-scoped to their own policies: a client-supplied policyholderPartyId is
+        overridden with the token's party_id claim. Agents are scoped to their agency hierarchy.
+        Staff have unrestricted read within their tenant.
       security:
+        - customersAuth: [profile]
         - agentsAuth: [agent]
         - staffAuth: []
       parameters:
@@ -250,6 +254,7 @@ paths:
     get:
       summary: Coverage status as of a given date (used by claims, staff, support)
       security:
+        - customersAuth: [profile]
         - agentsAuth: [agent]
         - staffAuth: []
       parameters:

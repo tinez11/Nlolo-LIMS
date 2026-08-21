@@ -71,14 +71,26 @@ public class PolicyController {
         return ResponseEntity.ok(PolicyResponseDto.from(view));
     }
 
+    /**
+     * Customers are force-SCOPED to their own policies: a client-supplied
+     * {@code policyholderPartyId} is OVERRIDDEN with the token's own {@code party_id} claim, never
+     * merely checked-then-rejected -- {@code tenant_id}/{@code party_id} never come from client
+     * input (docs/04-api-contracts.md:39). Scoping the query itself is the correct enforcement
+     * point for a list endpoint, unlike getPolicy/coverage-status which 403 on an explicit mismatch
+     * against a resource that already exists. Same idiom as ClaimController.listClaims.
+     */
     @GetMapping("/policies")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PolicySearchResponse> searchPolicies(
             @RequestParam(required = false) UUID policyholderPartyId,
             @RequestParam(required = false) PolicyStatus status,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int pageSize) {
-        Page<PolicyView> result = policyApi.searchPolicies(policyholderPartyId, status, PageRequest.of(page, Math.min(pageSize, 100)));
+            @RequestParam(defaultValue = "20") int pageSize,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        UUID effectivePolicyholderPartyId = isCustomer(authentication)
+            ? ownPartyIdOrThrow(jwt) : policyholderPartyId;
+        Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, status,
+            PageRequest.of(page, Math.min(pageSize, 100)));
         return ResponseEntity.ok(PolicySearchResponse.from(result));
     }
 
@@ -136,8 +148,11 @@ public class PolicyController {
     }
 
     @GetMapping("/policies/{policyNumber}/coverage-status")
-    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
-    public ResponseEntity<CoverageStatusResponseDto> getCoverageStatus(@PathVariable String policyNumber, @RequestParam(required = false) LocalDate asOf) {
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<CoverageStatusResponseDto> getCoverageStatus(@PathVariable String policyNumber,
+            @RequestParam(required = false) LocalDate asOf,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        enforceCustomerOwnPolicyOnly(policyApi.getPolicy(policyNumber), jwt, authentication);
         return ResponseEntity.ok(CoverageStatusResponseDto.from(policyApi.getCoverageStatus(policyNumber, asOf)));
     }
 
@@ -156,15 +171,26 @@ public class PolicyController {
      * scoping dimension from this same-tenant ownership check.
      */
     private void enforceCustomerOwnPolicyOnly(PolicyView view, Jwt jwt, Authentication authentication) {
-        boolean isCustomer = authentication.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .anyMatch("ROLE_REALM_CUSTOMERS"::equals);
-        if (isCustomer) {
-            String ownPartyId = jwt.getClaimAsString("party_id");
-            if (ownPartyId == null || !ownPartyId.equals(view.policyholderPartyId().toString())) {
-                throw new AccessDeniedException("Access denied: customer may only access their own policy");
-            }
+        if (!isCustomer(authentication)) {
+            return;
         }
+        String ownPartyId = jwt.getClaimAsString("party_id");
+        if (ownPartyId == null || !ownPartyId.equals(view.policyholderPartyId().toString())) {
+            throw new AccessDeniedException("Access denied: customer may only access their own policy");
+        }
+    }
+
+    static boolean isCustomer(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_CUSTOMERS"::equals);
+    }
+
+    static UUID ownPartyIdOrThrow(Jwt jwt) {
+        String ownPartyId = jwt.getClaimAsString("party_id");
+        if (ownPartyId == null) {
+            throw new AccessDeniedException("Customer token carries no party_id claim");
+        }
+        return UUID.fromString(ownPartyId);
     }
 
     private ResponseEntity<ProblemDetail> notImplementedChoreography() {
