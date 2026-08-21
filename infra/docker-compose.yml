@@ -157,6 +157,8 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-devadmin}
     ports:
       - "5050:80"
+    volumes:
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     depends_on:
       - postgres
     profiles: ["tools"]   # `docker compose --profile tools up` -- optional, not part of default startup

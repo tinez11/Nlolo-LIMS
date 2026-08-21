@@ -1,0 +1,95 @@
+# 09 — Local Development
+
+A runbook for running the platform on a development machine. Postgres, Keycloak, Redis, MinIO,
+the mobile-money stub, and Mailpit all run as Docker containers; the application itself runs on
+the host (see gotcha 2 below for why).
+
+## Prerequisites
+
+- **Docker** (with Compose v2 — `docker compose`, not the standalone `docker-compose` binary) and
+  enough free RAM to run six-plus containers plus the JVM.
+- **Node** (for any frontend tooling this repo's `package.json` scripts assume — not required to
+  run the backend alone).
+- **The VS Code Java extension's bundled JRE 21**, at
+  `/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64`. Export
+  it as `JAVA_HOME` before running Maven; do not rely on a separately-installed JDK unless you
+  know it is also Java 21.
+- **Do NOT install Postgres or Keycloak natively.** They run as containers on `5432` and `8081`
+  respectively (Keycloak's container publishes its internal `8080` as host `8081` — see
+  `infra/docker-compose.yml`). A native Postgres or Keycloak install listening on the same port
+  will fail to bind, or worse, silently win the port and have the containerized service fail
+  instead, producing a confusing "why is my data missing" investigation. If you already have a
+  local Postgres or Keycloak service running, stop it before bringing this stack up.
+- **No local `psql` install is required.** `scripts/migrate.sh local` runs `psql` inside the
+  `postgres` container itself.
+
+## Startup
+
+```bash
+cd infra && docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit && cd ..
+scripts/migrate.sh local          # nothing applies schema automatically -- see below
+export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64"
+./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local
+scripts/seed-dev-data.sh          # in a second terminal, once the app is up
+```
+
+`pgadmin` is intentionally not in that container list — it lives behind the `tools` Compose
+profile and is optional. Start it with:
+
+```bash
+cd infra && docker compose --profile tools up -d pgadmin && cd ..
+```
+
+## Reset sequence
+
+`scripts/migrate.sh local` is a first-run-only tool (see gotcha 1). To get back to a clean slate:
+
+```bash
+cd infra
+docker compose --profile tools down -v   # -v drops the named volumes, including postgres-data
+docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit
+cd ..
+scripts/migrate.sh local
+```
+
+`down -v` removes `postgres-data`, `redis-data`, and `minio-data` — Postgres schema, cached
+sessions, and uploaded documents all go with it. There is no partial-reset option; the compose
+project has one Postgres instance shared by every module's schema, so "reset just one module" is
+not a thing `migrate.sh` or Compose supports.
+
+If `scripts/migrate.sh local` fails partway through with `relation "..." already exists`, that
+almost always means you skipped the volume drop above and are re-running against a database that
+already has (some of) the schema applied — not a bug in the migration files themselves.
+
+## Two things that will otherwise cost you an afternoon
+
+**1. Migrations do not run automatically.** `pom.xml` contains neither Flyway nor Liquibase, so
+`docker compose up` on a fresh volume leaves an entirely empty database behind a running app, and
+every request fails on a missing relation — an error that names nothing about the real cause.
+`scripts/migrate.sh local` is the only path. It is also NOT idempotent: re-running it against an
+already-migrated database fails on plain `CREATE TABLE`. To start clean, drop the volume
+(`docker compose --profile tools down -v`), bring it back up, and re-migrate.
+
+**2. Run the application on the HOST, not as the compose `app` service, whenever a browser is
+involved.** `application.yml` defaults the Keycloak issuers to `http://localhost:8081/realms/...`,
+which is what your browser and Keycloak both use. The compose `app` service overrides them to
+`http://keycloak:8080/...` for in-network use. Run the app in Docker and the browser is redirected
+to `localhost:8081`, Keycloak stamps the token `iss: http://localhost:8081/...`, and the app
+rejects it because it expects `keycloak:8080` — an opaque 401 with a correct-looking login. Running
+on the host makes every URL agree, and matches this project's standing rule against running Maven
+in Docker.
+
+## Consoles
+
+| Service | URL | Credentials |
+|---|---|---|
+| Application API | http://localhost:8080 | bearer token from Keycloak |
+| Keycloak admin | http://localhost:8081 | `admin` / `devadmin` |
+| pgAdmin | http://localhost:5050 | `dev@nlolo-lifeplatform.tz` / `devadmin` (server pre-registered) |
+| Mailpit (outbound mail) | http://localhost:8025 | none |
+| MinIO console | http://localhost:9001 | `minioadmin` / `minioadmin` |
+| WireMock (mobile money) | http://localhost:8082 | none |
+
+pgAdmin's registered connection uses the `postgres` superuser deliberately: `app_role` is
+`NOSUPERUSER NOBYPASSRLS`, so browsing as it shows **zero rows** in every tenant-scoped table
+until you `SET app.current_tenant_id`. That is tenant isolation working, not a broken database.

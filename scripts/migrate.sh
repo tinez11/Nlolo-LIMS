@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Applies every module's V1 schema migration in sequence against the target
 # environment's database, mirroring .github/workflows/ci-cd.yml's
-# db-migration-validation job. Usage: scripts/migrate.sh <staging|production>
+# db-migration-validation job. Usage: scripts/migrate.sh <local|staging|production>
 #
 # NOTE: not idempotent -- safe for a first migration run only. Re-running
 # against an already-migrated database will fail (plain CREATE TABLE/INDEX,
@@ -10,9 +10,16 @@
 # migration exists for any module.
 set -euo pipefail
 
-ENVIRONMENT="${1:?Usage: scripts/migrate.sh <staging|production>}"
+ENVIRONMENT="${1:?Usage: scripts/migrate.sh <local|staging|production>}"
 
 case "$ENVIRONMENT" in
+  local)
+    # Runs psql INSIDE the postgres container, so no host psql install is needed -- the container
+    # already ships it. Each migration is piped in on stdin rather than mounted or `docker cp`ed:
+    # docker cp mangles Windows paths on the development machines this targets.
+    DB_URL=""            # unused in local mode; every psql call goes through docker compose exec
+    LOCAL_MODE=1
+    ;;
   staging)
     DB_URL="${STAGING_DB_URL:?STAGING_DB_URL is not set}"
     ;;
@@ -20,10 +27,22 @@ case "$ENVIRONMENT" in
     DB_URL="${PRODUCTION_DB_URL:?PRODUCTION_DB_URL is not set}"
     ;;
   *)
-    echo "Unknown environment: $ENVIRONMENT (expected 'staging' or 'production')" >&2
+    echo "Unknown environment: $ENVIRONMENT (expected 'local', 'staging' or 'production')" >&2
     exit 1
     ;;
 esac
+
+LOCAL_MODE="${LOCAL_MODE:-0}"
+
+apply() {
+  local migration="$1"
+  if [ "$LOCAL_MODE" = "1" ]; then
+    docker compose -f infra/docker-compose.yml exec -T postgres \
+      psql -U postgres -d lifeplatform -v ON_ERROR_STOP=1 -q < "$migration"
+  else
+    psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+  fi
+}
 
 MODULES="party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata"
 
@@ -33,11 +52,13 @@ MODULES="party product underwriting policy policyloan billing claims payment aud
 # PolicyApiImpl.suspendPolicy and PolicyLoanApiImpl.originateLoan both read at runtime) and
 # db-migrations/policyloan/V2 (the partition tenant-control event trigger) would never have
 # been applied to staging or production at all.
+applied=0
 for mod in $MODULES; do
   for migration in $(ls "db-migrations/$mod"/V*.sql 2>/dev/null | sort -V); do
     echo "Applying $migration"
-    psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+    apply "$migration"
+    applied=$((applied + 1))
   done
 done
 
-echo "All 16 modules' migrations applied against $ENVIRONMENT."
+echo "Applied $applied migrations across $(echo $MODULES | wc -w) modules against $ENVIRONMENT."

@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "lifeplatform (local)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "lifeplatform",
+      "Username": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "Connect as postgres, not app_role: app_role is NOSUPERUSER NOBYPASSRLS, so RLS applies and every tenant-scoped table looks empty until app.current_tenant_id is set. Use app_role only when deliberately verifying isolation."
+    }
+  }
+}
