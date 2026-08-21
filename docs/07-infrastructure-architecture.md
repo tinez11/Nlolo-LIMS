@@ -69,3 +69,21 @@ Both deploy jobs run Flyway migrations, then the pg_partman post-migration scrip
 4. Deployment approval reviewers for the `production` GitHub Environment need to be named — an org/process decision, not an architecture one, but it blocks the CD pipeline from actually being usable end-to-end.
 
 *Holding here per your process — once reviewed, I'll proceed to Deliverable 8 (Implementation Roadmap: prioritized module build order, dependency graph, milestone definitions with acceptance criteria) — the final Phase 0 artifact.*
+
+---
+
+## 7. Frontend Stack — Added M12 (Post-Phase-0 Addendum)
+
+Phase 0 specified no frontend at all: the eleven milestones through M11 built a REST surface, an identity provider, and a loginable local stack, but nothing had ever rendered a screen. M12 (the customer portal — design spec at `docs/superpowers/specs/2026-08-21-m12-customer-portal-design.md`) is the first frontend on the platform, and this section records the stack decisions it locks in, since they are infrastructure-relevant and would otherwise live only in a milestone spec.
+
+**Next.js (App Router) + TypeScript, deployed as a Backend-for-Frontend.** Every backend call happens server-side, in Route Handlers or Server Actions — never from the browser. This is not a stylistic preference, it is forced by §1-era security decisions that M11 then verified in code: `SecurityConfig` carries no CORS policy whatsoever, deliberately, because the confidential `lifeplatform-app` Keycloak client's secret must never reach a browser. A server-rendered BFF sidesteps CORS entirely and keeps the access token in an httpOnly session cookie where no script can read it. The alternative — a static SPA plus a permissive CORS policy and a public Keycloak client — would have meant weakening the platform's own identity model to accommodate the frontend, which is the wrong direction.
+
+**Auth: NextAuth against the `customers` realm only.** Authorization Code + PKCE. The portal never constructs or reads an agent/staff/regulator token; those three realms are out of scope by construction. M11 already added `http://localhost:3000/*` to `lifeplatform-app`'s `redirectUris` specifically in anticipation of this. One infrastructure consequence worth naming here rather than burying in the milestone spec: the realms set no `accessTokenLifespan` override, so Keycloak's server default (~5 minutes) applies, which makes token refresh in the NextAuth `jwt` callback a hard requirement from day one, not a later refinement.
+
+**Tailwind CSS + shadcn/ui for the component layer.** shadcn's copy-into-the-repo model means there is no runtime dependency on a component library with its own upgrade cadence and no design-system version to track in CI — the components become project source, reviewed like any other code. For a from-scratch insurance domain UI (policy schedules, invoice tables, claim timelines) unstyled-by-default primitives fit better than a heavier opinionated system that would need fighting on every screen. **TanStack Query** handles client-side fetching, caching, and mutation state on top of the BFF's Route Handlers.
+
+**The BFF uses the existing `redis` container.** No new infrastructure: the portal needs an atomic dedup store to hard-guard the three backend endpoints that accept `Idempotency-Key` but never read it (policy loan origination, loan repayment, policy endorsements — verified in M11-era source), and `redis` is already in `docker-compose.yml` per §2. This is an interim portal-side mitigation, not a fix; real server-side idempotency on those three endpoints remains an open backend item.
+
+**Typed clients are generated per OpenAPI spec, not from an aggregate.** There is no unified spec and no live `/v3/api-docs` (confirmed during M11) — `api/openapi/` holds fourteen separate YAML files — so `openapi-typescript` runs once per spec the portal consumes, producing one client module each. There is no cross-module merge step, because the backend does not have one either.
+
+**Still open:** production hosting, CDN/edge strategy, and production `redirectUris` for the portal. M12 is explicitly dev/build-time only; deployment topology for the frontend is a separate, later decision and is not covered by §4's existing CI/CD pipeline.
