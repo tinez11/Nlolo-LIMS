@@ -76,17 +76,21 @@ public class BillingController {
      * {@code VALIDATION_ERROR} ProblemDetails, which is what openapi-billing.yaml declares.
      */
     @PostMapping("/invoices/{invoiceId}/payment-request")
-    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
     public ResponseEntity<Void> requestPaymentForInvoice(@PathVariable UUID invoiceId,
                                                           @Valid @RequestBody PaymentRequestDto request,
                                                           @RequestHeader(value = "Idempotency-Key", required = false)
-                                                          String idempotencyKey) {
+                                                          String idempotencyKey,
+                                                          @AuthenticationPrincipal Jwt jwt,
+                                                          Authentication authentication) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new IllegalArgumentException("Idempotency-Key header is required on this endpoint: the same key "
                 + "is treated as the same collection attempt (deduplicated), a new key as a new attempt. There is "
                 + "deliberately no default -- any default would make a genuine operator retry after a decline "
                 + "impossible.");
         }
+        InvoiceView invoice = billingApi.getInvoice(invoiceId);
+        enforceCustomerOwnPolicyOnly(policyApi.getPolicy(invoice.policyNumber()), jwt, authentication);
         billingApi.requestPaymentForInvoice(invoiceId, request.payerRef(), idempotencyKey);
         return ResponseEntity.accepted().build();
     }

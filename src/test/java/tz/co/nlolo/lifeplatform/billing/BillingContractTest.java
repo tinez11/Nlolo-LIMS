@@ -387,17 +387,20 @@ class BillingContractTest {
     }
 
     @Test
-    void requestPaymentForInvoiceRejectsACustomerWith403() throws Exception {
+    void requestPaymentForInvoiceRejectsANonOwningCustomerWith403() throws Exception {
         Fixture fixture = issuePolicy("BILLING-CONTRACT-PAYREQ-03");
         String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
                 .with(staffOf(fixture.tenantId())))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
 
-        // @PreAuthorize on requestPaymentForInvoice admits only REALM_STAFF/REALM_AGENTS --
-        // REALM_CUSTOMERS (even the policy's own owner) is the excluded role.
+        // M12 Task 2: @PreAuthorize on requestPaymentForInvoice now also admits REALM_CUSTOMERS,
+        // gated on object-level ownership (enforceCustomerOwnPolicyOnly). A stranger customer --
+        // not the policy's own policyholderPartyId -- is still rejected with 403; the policy
+        // owner's own-invoice acceptance path is covered by
+        // BillingCustomerPaymentTest.customerCannotRequestPaymentForAnotherPartysInvoice.
         mockMvc.perform(post("/invoices/" + invoiceId + "/payment-request")
-                .with(customerOf(fixture.tenantId(), fixture.policyholderPartyId()))
+                .with(customerOf(fixture.tenantId(), UUID.randomUUID()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Idempotency-Key", "contract-payreq-03-attempt-1")
                 .content("""

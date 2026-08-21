@@ -9,6 +9,14 @@ public interface BillingApi {
 
     InvoiceView getNextDueInvoice(String policyNumber);
     List<InvoiceView> listInvoices(String policyNumber, InvoiceStatus status);
+
+    /**
+     * Single-invoice read by id, needed for object-level authorization on endpoints that identify
+     * an invoice without naming its policy (BillingController.requestPaymentForInvoice). Tenant
+     * scoping is applied inside the implementation, never taken from the caller.
+     */
+    InvoiceView getInvoice(UUID invoiceId);
+
     InvoiceView waiveInvoice(UUID invoiceId, String reason, String waivedBy);
 
     /**

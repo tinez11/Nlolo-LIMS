@@ -73,6 +73,14 @@ public class BillingApiImpl implements BillingApi {
     }
 
     @Override
+    public InvoiceView getInvoice(UUID invoiceId) {
+        UUID tenantId = TenantContext.get();
+        PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
+            .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
+        return toView(invoice);
+    }
+
+    @Override
     @Transactional
     public InvoiceView waiveInvoice(UUID invoiceId, String reason, String waivedBy) {
         UUID tenantId = TenantContext.get();

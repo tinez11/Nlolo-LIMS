@@ -88,7 +88,11 @@ paths:
         Publishes billing.PaymentRequested (request/confirm pattern) — payment attempts collection
         against payerRef and, on success, publishes payment.PaymentConfirmed, which billing's own
         PaymentEventListener consumes to move the invoice toward PARTIALLY_PAID/PAID.
+        Customers may request payment only for an invoice belonging to their own policy
+        (object-level check against the token's party_id claim); agents and staff are scoped to
+        their tenant.
       security:
+        - customersAuth: [profile]
         - staffAuth: []
         - agentsAuth: [agent]
       parameters:
