@@ -51,7 +51,8 @@ class DocumentApiIntegrationTest {
     @BeforeAll
     static void applyMigrationAndCreateBuckets() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
-            "db-migrations/document/V1__create_document_schema.sql");
+            "db-migrations/document/V1__create_document_schema.sql",
+            "db-migrations/document/V2__add_content_type_and_file_name.sql");
 
         minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -80,7 +81,7 @@ class DocumentApiIntegrationTest {
         byte[] originalContent = "kyc-scan-bytes".getBytes();
 
         String documentRef = documentApi.upload("party:test-party-id", DocumentType.KYC_EVIDENCE, "test-uploader",
-            new ByteArrayInputStream(originalContent), originalContent.length, "application/octet-stream");
+            new ByteArrayInputStream(originalContent), originalContent.length, "application/octet-stream", "scan.jpg");
 
         byte[] downloaded = documentApi.download(documentRef);
         assertThat(downloaded).isEqualTo(originalContent);
@@ -95,7 +96,8 @@ class DocumentApiIntegrationTest {
         byte[] originalContent = "underwriting-evidence-bytes".getBytes();
 
         String documentRef = documentApi.upload("underwriting-case:test-case-id", DocumentType.UNDERWRITING_EVIDENCE,
-            "test-uploader", new ByteArrayInputStream(originalContent), originalContent.length, "application/octet-stream");
+            "test-uploader", new ByteArrayInputStream(originalContent), originalContent.length, "application/octet-stream",
+            "underwriting-evidence.pdf");
 
         byte[] downloaded = documentApi.download(documentRef);
         assertThat(downloaded).isEqualTo(originalContent);

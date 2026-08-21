@@ -65,7 +65,7 @@ public class ClaimEvidenceController {
         String documentRef;
         try {
             documentRef = documentApi.upload("claim:" + claimId, DocumentType.CLAIM_EVIDENCE, jwt.getSubject(),
-                file.getInputStream(), file.getSize(), file.getContentType());
+                file.getInputStream(), file.getSize(), file.getContentType(), file.getOriginalFilename());
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to read uploaded evidence file", e);
         }

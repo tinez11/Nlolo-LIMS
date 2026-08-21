@@ -12,6 +12,7 @@ import tz.co.nlolo.lifeplatform.claims.api.MaturityClaimDetails;
 import tz.co.nlolo.lifeplatform.claims.domain.Claim;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
+import tz.co.nlolo.lifeplatform.document.api.DocumentNotFoundException;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
@@ -33,7 +34,6 @@ import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -72,6 +72,7 @@ class ClaimEvidenceIntegrationTest {
     static void applyMigrationsAndCreateBuckets() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/document/V1__create_document_schema.sql",
+            "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql");
@@ -117,7 +118,7 @@ class ClaimEvidenceIntegrationTest {
         byte[] originalContent = "claim-evidence-bytes".getBytes();
         String documentRef = documentApi.upload("claim:" + claim.getClaimId(), DocumentType.CLAIM_EVIDENCE,
             "test-uploader", new ByteArrayInputStream(originalContent), originalContent.length,
-            "application/octet-stream");
+            "application/octet-stream", "evidence.jpg");
 
         // Falsifies Step 1: confirms MinioDocumentStorage.bucketFor() actually routed this object
         // into the dedicated claim-evidence bucket, not the general policy-documents bucket.
@@ -150,13 +151,14 @@ class ClaimEvidenceIntegrationTest {
         TenantContext.set(otherTenantId);
         byte[] content = "other-tenant-bytes".getBytes();
         String foreignDocumentRef = documentApi.upload("claim:foreign", DocumentType.CLAIM_EVIDENCE,
-            "other-uploader", new ByteArrayInputStream(content), content.length, "application/octet-stream");
+            "other-uploader", new ByteArrayInputStream(content), content.length, "application/octet-stream",
+            "foreign-evidence.jpg");
 
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         Claim claim = registerClaim(tenantId);
 
-        assertThrows(NoSuchElementException.class,
+        assertThrows(DocumentNotFoundException.class,
             () -> claimsApi.attachEvidence(claim.getClaimId(), foreignDocumentRef, "desc", "test-uploader"));
     }
 
@@ -175,7 +177,8 @@ class ClaimEvidenceIntegrationTest {
 
         byte[] content = "late-evidence-bytes".getBytes();
         String documentRef = documentApi.upload("claim:" + claim.getClaimId(), DocumentType.CLAIM_EVIDENCE,
-            "test-uploader", new ByteArrayInputStream(content), content.length, "application/octet-stream");
+            "test-uploader", new ByteArrayInputStream(content), content.length, "application/octet-stream",
+            "late-evidence.jpg");
 
         assertThrows(InvalidClaimStateException.class,
             () -> claimsApi.attachEvidence(claim.getClaimId(), documentRef, "too late", "test-uploader"));

@@ -394,7 +394,7 @@ public class ClaimsApiImpl implements ClaimsApi {
         // Confirms the ref exists AND belongs to this tenant -- DocumentApiImpl.findOrThrow
         // reports a cross-tenant ref identically to "doesn't exist" (DocumentApiImpl.java:67-74),
         // so this call both validates the ref and closes a cross-tenant reference hole in one go.
-        // NoSuchElementException propagates as-is (404 at the boundary).
+        // DocumentNotFoundException propagates as-is, mapped to 404 by DocumentExceptionHandler.
         documentApi.getMetadata(documentRef);
 
         ClaimEvidence evidence = new ClaimEvidence(tenantId, claimId, documentRef, description, uploadedBy);

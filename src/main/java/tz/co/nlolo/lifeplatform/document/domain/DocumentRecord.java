@@ -29,6 +29,12 @@ public class DocumentRecord {
     @Column(name = "document_type", nullable = false)
     private DocumentType documentType;
 
+    @Column(name = "content_type")
+    private String contentType;
+
+    @Column(name = "file_name")
+    private String fileName;
+
     @Column(name = "uploaded_by")
     private String uploadedBy;
 
@@ -38,11 +44,13 @@ public class DocumentRecord {
     protected DocumentRecord() {}
 
     public DocumentRecord(String documentRef, UUID tenantId, String ownerContext, DocumentType documentType,
-                           String uploadedBy, Instant uploadedAt) {
+                           String contentType, String fileName, String uploadedBy, Instant uploadedAt) {
         this.documentRef = documentRef;
         this.tenantId = tenantId;
         this.ownerContext = ownerContext;
         this.documentType = documentType;
+        this.contentType = contentType;
+        this.fileName = fileName;
         this.uploadedBy = uploadedBy;
         this.uploadedAt = uploadedAt;
     }
@@ -51,6 +59,8 @@ public class DocumentRecord {
     public UUID getTenantId() { return tenantId; }
     public String getOwnerContext() { return ownerContext; }
     public DocumentType getDocumentType() { return documentType; }
+    public String getContentType() { return contentType; }
+    public String getFileName() { return fileName; }
     public String getUploadedBy() { return uploadedBy; }
     public Instant getUploadedAt() { return uploadedAt; }
 }

@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentMetadataView;
+import tz.co.nlolo.lifeplatform.document.api.DocumentNotFoundException;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.document.domain.DocumentRecord;
 import tz.co.nlolo.lifeplatform.document.infrastructure.DocumentRecordRepository;
@@ -15,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.UUID;
 
 @Service
@@ -35,12 +35,13 @@ public class DocumentApiImpl implements DocumentApi {
     @Override
     @Transactional
     public String upload(String ownerContext, DocumentType documentType, String uploadedBy,
-                          InputStream content, long contentLength, String contentType) {
+                          InputStream content, long contentLength, String contentType, String fileName) {
         String documentRef = UUID.randomUUID().toString();
         UUID tenantId = TenantContext.get();
         storage.put(storageKey(tenantId, documentRef), documentType, content, contentLength, contentType);
 
-        repository.save(new DocumentRecord(documentRef, tenantId, ownerContext, documentType, uploadedBy, Instant.now()));
+        repository.save(new DocumentRecord(documentRef, tenantId, ownerContext, documentType,
+            contentType, fileName, uploadedBy, Instant.now()));
 
         eventPublisher.publishEvent(DomainEventEnvelope.of("document.DocumentUploaded", tenantId,
             Map.of("documentRef", documentRef, "ownerContext", ownerContext, "documentType", documentType.name())));
@@ -58,19 +59,19 @@ public class DocumentApiImpl implements DocumentApi {
     public DocumentMetadataView getMetadata(String documentRef) {
         DocumentRecord record = findOrThrow(documentRef);
         return new DocumentMetadataView(record.getDocumentRef(), record.getOwnerContext(), record.getDocumentType(),
-            record.getUploadedBy(), record.getUploadedAt());
+            record.getContentType(), record.getFileName(), record.getUploadedBy(), record.getUploadedAt());
     }
 
     private DocumentRecord findOrThrow(String documentRef) {
         DocumentRecord record = repository.findById(documentRef)
-            .orElseThrow(() -> new NoSuchElementException("No document found for ref " + documentRef));
+            .orElseThrow(() -> new DocumentNotFoundException("No document found for ref " + documentRef));
         // Fail-loud tenant scoping (mirrors PartyApiImpl.findPartyOrThrow): RLS is the primary
         // control, but this is genuine defense-in-depth, not a substitute for it. A cross-tenant
         // mismatch is reported identically to "doesn't exist" (docs/04-api-contracts.md §2) --
         // same exception, same message shape -- so callers can't distinguish "not found" from
         // "not yours" and infer another tenant's document exists.
         if (!record.getTenantId().equals(TenantContext.get())) {
-            throw new NoSuchElementException("No document found for ref " + documentRef);
+            throw new DocumentNotFoundException("No document found for ref " + documentRef);
         }
         return record;
     }
