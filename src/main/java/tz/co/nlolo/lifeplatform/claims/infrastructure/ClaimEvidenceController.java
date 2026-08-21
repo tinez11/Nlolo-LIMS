@@ -1,9 +1,12 @@
 package tz.co.nlolo.lifeplatform.claims.infrastructure;
 
+import tz.co.nlolo.lifeplatform.FileDownloadResponses;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimEvidenceView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
+import tz.co.nlolo.lifeplatform.document.api.DocumentMetadataView;
+import tz.co.nlolo.lifeplatform.document.api.DocumentNotFoundException;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -84,5 +87,31 @@ public class ClaimEvidenceController {
         List<ClaimEvidenceResponseDto> evidence = claimsApi.listEvidence(claimId).stream()
             .map(ClaimEvidenceResponseDto::from).toList();
         return ResponseEntity.ok(evidence);
+    }
+
+    /**
+     * Two independent checks, and the second is not redundant. The first authorizes the CLAIM;
+     * without the second, a different caller-supplied identifier -- documentRef -- still selects
+     * the resource, so owning claim A would be enough to fetch claim B's evidence. That is M7's
+     * nested-resource IDOR exactly. A mismatch is reported as 404 rather than 403, identical to a
+     * nonexistent ref, so a caller cannot learn that someone else's document exists.
+     */
+    @GetMapping("/claims/{claimId}/evidence/{documentRef}")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<byte[]> downloadEvidence(@PathVariable UUID claimId,
+            @PathVariable String documentRef,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        ClaimView claim = claimsApi.getClaim(claimId);
+        ClaimController.enforceCustomerOwnClaimOnly(claim, jwt, authentication);
+
+        DocumentMetadataView metadata = documentApi.getMetadata(documentRef);
+        if (!("claim:" + claimId).equals(metadata.ownerContext())) {
+            // Same exception and same message as a nonexistent ref (Task 1), so "not yours" and
+            // "does not exist" are indistinguishable to the caller.
+            throw new DocumentNotFoundException("No document found for ref " + documentRef);
+        }
+
+        return FileDownloadResponses.fileResponse(documentApi.download(documentRef), metadata.contentType(),
+            metadata.fileName(), metadata.documentRef());
     }
 }
