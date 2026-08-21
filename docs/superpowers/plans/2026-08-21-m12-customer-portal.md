@@ -953,7 +953,10 @@ mapping; screens never branch on HTTP status."
   - `refreshAccessToken(token: PortalToken, deps: RefreshDeps): Promise<PortalToken>` — pure, unit-testable
   - `type PortalToken = { accessToken: string; refreshToken: string; expiresAt: number; error?: 'RefreshFailed' }`
   - `auth()`, `signIn()`, `signOut()`, `handlers` exported from `@/auth`
-  Task 6 consumes `auth()` to read the access token.
+  Task 6 reads the access token via `getToken()` from `next-auth/jwt`, NOT `auth()` — the
+  `session()` callback below deliberately strips everything but `error` (never exposing the token
+  to anything a browser's `useSession()` could read), so `auth()` alone cannot see it. `getToken()`
+  reads the raw `jwt()`-callback payload directly, bypassing that filter, server-side only.
 
 **Context:** `keycloak/customers-realm.json` sets no `accessTokenLifespan`, so Keycloak's ~5-minute default applies. Without refresh the portal 401s within minutes of real use. The refresh logic lives in its own module so it can be unit-tested without NextAuth's runtime — the `jwt` callback just calls it.
 
@@ -1263,7 +1266,7 @@ re-login instead of surfacing an error."
 - Create: `frontend/customer-portal/src/lib/backend.ts` + `src/lib/backend.test.ts`
 
 **Interfaces:**
-- Consumes: `auth()` from `@/auth`; `ApiProblem` from `@/lib/problem`.
+- Consumes: `getToken` from `next-auth/jwt`; `ApiProblem` from `@/lib/problem`.
 - Produces:
   - `class ApiError extends Error { status: number; problem: ApiProblem | null }`
   - `callBackend<T>(path: string, init?: BackendInit): Promise<T>` where `BackendInit = { method?: string; body?: unknown; headers?: Record<string,string>; searchParams?: Record<string, string | number | undefined>; accessToken?: string }`
@@ -1271,6 +1274,9 @@ re-login instead of surfacing an error."
   Tasks 8–13 use these for every backend call.
 
 **Context:** Every Route Handler goes through this one function, so the bearer token is attached in exactly one place and `ProblemDetails` is decoded in exactly one place. `accessToken` is injectable so the function is testable without a NextAuth session.
+
+**Why `getToken()`, not `auth()` (found in Task 5's review, corrected here before this task was dispatched):**
+Task 5's `auth.ts` has a `session()` callback that deliberately returns only `{ error }` — by design, so the access token can never reach anything a Client Component's `useSession()` could read. But that means `auth()` itself resolves through the exact same `session()` callback (confirmed against the installed `next-auth` package — there is no privileged server-only path that skips it), so `(await auth()).accessToken` is always `undefined`. The correct way to read the raw token server-side is `getToken()` from `next-auth/jwt`, which decrypts the session cookie directly and returns the `jwt()` callback's payload — the one place `accessToken`/`refreshToken`/`expiresAt`/`error` actually live. `getToken()` needs request context; in the App Router this is available via `next/headers`'s `cookies()`/`headers()` without threading a `request` parameter through every call site, so `resolveAccessToken` below stays a zero-argument function and Tasks 8–13's Route Handlers are unaffected.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1374,7 +1380,8 @@ Create `frontend/customer-portal/src/lib/backend.ts`:
 
 ```ts
 import 'server-only';
-import { auth } from '@/auth';
+import { getToken } from 'next-auth/jwt';
+import { cookies, headers } from 'next/headers';
 import type { ApiProblem } from '@/lib/problem';
 
 /**
@@ -1410,12 +1417,18 @@ export type BackendInit = {
 
 async function resolveAccessToken(explicit?: string): Promise<string> {
   if (explicit) return explicit;
-  const session = (await auth()) as unknown as { accessToken?: string } | null;
-  if (!session?.accessToken) {
+  // getToken(), NOT auth() -- auth() resolves through the session() callback, which deliberately
+  // never exposes accessToken (see Task 5). getToken() reads the raw jwt()-callback payload
+  // directly from the encrypted session cookie, server-side only.
+  const token = await getToken({
+    req: { headers: await headers(), cookies: await cookies() } as never,
+    secret: process.env.AUTH_SECRET,
+  }) as { accessToken?: string; error?: string } | null;
+  if (!token?.accessToken || token.error) {
     // Middleware normally redirects before this, but a Route Handler can still be hit directly.
     throw new ApiError(401, null);
   }
-  return session.accessToken;
+  return token.accessToken;
 }
 
 function buildUrl(baseUrl: string, path: string, searchParams?: BackendInit['searchParams']): string {
@@ -2820,7 +2833,8 @@ Create `frontend/customer-portal/src/app/api/policies/[policyNumber]/loans/route
 
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { getToken } from 'next-auth/jwt';
+import { cookies, headers } from 'next/headers';
 import { ApiError, callBackend } from '@/lib/backend';
 import { runGuardedMutation, type PerformResult } from '@/lib/guarded-mutation';
 import { idempotencyKeyFor } from '@/lib/idempotency';
@@ -2834,8 +2848,15 @@ export async function POST(
 ) {
   const { policyNumber } = await params;
   const body = (await request.json()) as { amount: string; currencyCode: string; clientKey: string };
-  const session = (await auth()) as unknown as { user?: { id?: string }; sub?: string } | null;
-  const subject = session?.sub ?? session?.user?.id;
+  // getToken(), NOT auth() -- same reason as Task 6's resolveAccessToken: auth() resolves through
+  // Task 5's session() callback, which strips everything but `error`. `sub` is a standard JWT
+  // claim NextAuth itself sets from the Keycloak account and never touched by our jwt()/session()
+  // callbacks, so it survives on the raw token getToken() returns.
+  const token = await getToken({
+    req: { headers: await headers(), cookies: await cookies() } as never,
+    secret: process.env.AUTH_SECRET,
+  }) as { sub?: string } | null;
+  const subject = token?.sub;
   if (!subject) {
     return NextResponse.json({ status: 401, title: 'Unauthorized', type: 'about:blank', traceId: 'portal' }, { status: 401 });
   }
