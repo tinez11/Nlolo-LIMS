@@ -67,7 +67,13 @@ AGENT_SENIOR_TOKEN=$(token_for agents agent.senior "$AGENTS_SECRET")
 
 # Not idempotent on purpose: re-running would create a second set of parties and policies, and
 # silently doubling seed data is worse than refusing. Detect and refuse.
-if api "$STAFF_FINANCE_TOKEN" GET "/products" | grep -q '"productName":"Demo Term Life"'; then
+# Uses the same " *: *"-tolerant matching as jsonval() above, rather than an exact-substring grep
+# -- an exact match on '"productName":"Demo Term Life"' only works because Spring Boot's default
+# Jackson output happens to have no space after the colon today. If that ever changed (a
+# pretty-printer, a DTO field reorder), the exact match would silently stop detecting prior seed
+# state, and the script would run until hitting ux_product_code's unique constraint instead --
+# still safe, but a far less informative failure than "Already seeded".
+if api "$STAFF_FINANCE_TOKEN" GET "/products" | grep -q '"productName" *: *"Demo Term Life"'; then
   echo "Already seeded (found the demo product). Reset with: docker compose --profile tools down -v" >&2
   exit 1
 fi
