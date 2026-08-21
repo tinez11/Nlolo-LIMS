@@ -78,7 +78,7 @@ const SURRENDER_NOT_AVAILABLE = mapApiError({
  * brand-new row added via "Add beneficiary" already carries `revocable: true` from `emptyRow()`, so
  * this fallback is a defensive no-op in practice, not a real behavior change).
  */
-function toWireBeneficiaries(rows: BeneficiaryInput[]): ApiBeneficiaryInput[] {
+export function toWireBeneficiaries(rows: BeneficiaryInput[]): ApiBeneficiaryInput[] {
   return rows.map((row) => ({
     type: row.partyId ? 'PARTY' : 'FREEFORM',
     partyId: row.partyId,
@@ -94,7 +94,7 @@ function toWireBeneficiaries(rows: BeneficiaryInput[]): ApiBeneficiaryInput[] {
  * matching the OpenAPI schema's own `default: true`) so an existing irrevocable designation stays
  * irrevocable through an edit-and-save round trip.
  */
-function fromWireBeneficiaries(rows: ApiBeneficiaryInput[] | undefined): BeneficiaryInput[] {
+export function fromWireBeneficiaries(rows: ApiBeneficiaryInput[] | undefined): BeneficiaryInput[] {
   if (!rows || rows.length === 0) {
     return [{ freeformDesignee: '', sharePercentage: '', revocable: true }];
   }
