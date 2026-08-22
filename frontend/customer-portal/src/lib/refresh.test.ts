@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { refreshAccessToken } from './refresh';
+import { needsRefresh, refreshAccessToken } from './refresh';
 
 const CONFIG = {
   issuer: 'http://localhost:8081/realms/customers',
@@ -84,5 +84,27 @@ describe('refreshAccessToken', () => {
     );
 
     expect(result.error).toBe('RefreshFailed');
+  });
+});
+
+describe('needsRefresh', () => {
+  const now = 1_000_000;
+
+  it('returns false well before expiry', () => {
+    expect(needsRefresh(now + 300_000, now)).toBe(false);
+  });
+
+  it('returns false just outside the skew window', () => {
+    expect(needsRefresh(now + 61_000, now)).toBe(false);
+  });
+
+  it('returns true just inside the skew window -- this is the case that proves the skew ' +
+    'exists at all; without it, a test asserting only "true when already expired" would pass ' +
+    'against the old, buggy at-expiry comparison too', () => {
+    expect(needsRefresh(now + 59_000, now)).toBe(true);
+  });
+
+  it('returns true when already past expiry', () => {
+    expect(needsRefresh(now - 1, now)).toBe(true);
   });
 });

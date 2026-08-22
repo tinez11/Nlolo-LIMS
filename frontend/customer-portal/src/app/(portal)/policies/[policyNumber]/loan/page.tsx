@@ -73,7 +73,7 @@ async function fetchInterestRateNote(): Promise<ReferenceCodeSetView | null> {
  * `clientKey` is generated ONCE per form instance (this component's lifetime), not per submit
  * attempt, so a retry of the same attempt reuses the same claim.
  */
-function BorrowForm({ policyNumber, onOriginated }: { policyNumber: string; onOriginated: () => void }) {
+export function BorrowForm({ policyNumber, onOriginated }: { policyNumber: string; onOriginated: () => void }) {
   const [amount, setAmount] = useState('');
   const [payeeRef, setPayeeRef] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +136,7 @@ function BorrowForm({ policyNumber, onOriginated }: { policyNumber: string; onOr
  * Repayment form: same two-layer guard as `BorrowForm`, targeting `POST /loans/{id}/repayments`,
  * the other endpoint with no server-side idempotency.
  */
-function RepayForm({ loanId, onRepaid }: { loanId: string; onRepaid: () => void }) {
+export function RepayForm({ loanId, onRepaid }: { loanId: string; onRepaid: () => void }) {
   const [amount, setAmount] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [error, setError] = useState<string | null>(null);

@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import Keycloak from 'next-auth/providers/keycloak';
-import { refreshAccessToken, type PortalToken } from '@/lib/refresh';
+import { needsRefresh, refreshAccessToken, type PortalToken } from '@/lib/refresh';
 
 /**
  * `customers` realm only, confidential client. The client secret is read here — on the server —
@@ -10,20 +10,6 @@ import { refreshAccessToken, type PortalToken } from '@/lib/refresh';
 const ISSUER = process.env.KEYCLOAK_ISSUER!;
 const CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID!;
 const CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET!;
-
-/**
- * Refresh this many milliseconds BEFORE the access token actually expires, not at expiry.
- *
- * `middleware.ts`'s `auth()` call runs the `jwt` callback below and writes the refreshed
- * session cookie onto the OUTGOING response — but a Route Handler running later in that SAME
- * request reads `getToken()` off the INCOMING request's headers, which still carry the
- * pre-refresh cookie (a middleware `set-cookie` is never visible to a downstream handler in the
- * same request). If we refresh exactly at expiry, that same-request read forwards an
- * already-expired token to the backend and gets a spurious 401. Refreshing with this skew means
- * the token minted here is still genuinely valid for another minute, so the same-request read
- * still succeeds; the NEXT request picks up the new cookie.
- */
-const REFRESH_SKEW_MS = 60_000;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -46,7 +32,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!current.refreshToken) {
         return token;
       }
-      if (Date.now() < current.expiresAt - REFRESH_SKEW_MS) {
+      // See `needsRefresh` in lib/refresh.ts for why this refreshes BEFORE actual expiry (the
+      // REFRESH_SKEW_MS skew) rather than at it -- that skew is what closes the spurious
+      // same-request 401 (C1 in the final review).
+      if (!needsRefresh(current.expiresAt, Date.now())) {
         return token;
       }
 
