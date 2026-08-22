@@ -153,7 +153,7 @@ export default function PolicyDetailPage({
           <Link href={`/policies/${policyNumber}/billing`} className="underline underline-offset-2">
             Billing
           </Link>
-          <Link href={`/policies/${policyNumber}/claims`} className="underline underline-offset-2">
+          <Link href="/claims" className="underline underline-offset-2">
             Claims
           </Link>
           <Link href={`/policies/${policyNumber}/loan`} className="underline underline-offset-2">

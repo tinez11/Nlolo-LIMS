@@ -60,4 +60,18 @@ describe('mapApiError', () => {
       errorCode: 'VALIDATION_ERROR', traceId: 't8',
     })).toMatch(/check the form/i);
   });
+
+  it('tells the customer a Layer 2 claim is already held, not the generic fallback', () => {
+    expect(mapApiError({
+      type: 'about:blank', title: 'Conflict', status: 409,
+      errorCode: 'REQUEST_ALREADY_IN_PROGRESS', traceId: 't9',
+    })).toMatch(/already being processed/i);
+  });
+
+  it('tells the customer to check their policy rather than retry on an indeterminate outcome', () => {
+    expect(mapApiError({
+      type: 'about:blank', title: 'Gateway Timeout', status: 504,
+      errorCode: 'OUTCOME_UNKNOWN', traceId: 't10',
+    })).toMatch(/check your policy before retrying/i);
+  });
 });

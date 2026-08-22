@@ -77,7 +77,7 @@ function BorrowForm({ policyNumber, onOriginated }: { policyNumber: string; onOr
   const [amount, setAmount] = useState('');
   const [payeeRef, setPayeeRef] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [clientKey] = useState(() => crypto.randomUUID());
+  const [clientKey, setClientKey] = useState(() => crypto.randomUUID());
 
   const { submit, isSubmitting } = useSubmitGuard(async () => {
     setError(null);
@@ -97,6 +97,10 @@ function BorrowForm({ policyNumber, onOriginated }: { policyNumber: string; onOr
     }
     setAmount('');
     setPayeeRef('');
+    // A successful submission is a definitive outcome recorded under this clientKey. Rotate it
+    // now so the NEXT submission from this still-mounted form is a genuinely new idempotency
+    // claim, not a replay of this one's recorded success (see C2 in the final review).
+    setClientKey(crypto.randomUUID());
     onOriginated();
   });
 
@@ -136,7 +140,7 @@ function RepayForm({ loanId, onRepaid }: { loanId: string; onRepaid: () => void 
   const [amount, setAmount] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [clientKey] = useState(() => crypto.randomUUID());
+  const [clientKey, setClientKey] = useState(() => crypto.randomUUID());
 
   const { submit, isSubmitting } = useSubmitGuard(async () => {
     setError(null);
@@ -156,6 +160,9 @@ function RepayForm({ loanId, onRepaid }: { loanId: string; onRepaid: () => void 
     }
     setAmount('');
     setPaymentReference('');
+    // Same reasoning as BorrowForm: rotate the clientKey after a definitive success so a second,
+    // genuinely new repayment from this still-mounted form is not silently replayed (see C2).
+    setClientKey(crypto.randomUUID());
     onRepaid();
   });
 

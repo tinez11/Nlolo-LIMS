@@ -26,6 +26,10 @@ const BY_ERROR_CODE: Record<string, string> = {
     'This policy has no cash value available to borrow against yet, so a loan cannot be issued.',
   VALIDATION_ERROR:
     'Some of the details entered are not valid. Please check the form and try again.',
+  REQUEST_ALREADY_IN_PROGRESS:
+    'This request is already being processed. Please wait a moment before trying again.',
+  OUTCOME_UNKNOWN:
+    'We could not confirm whether this request went through. Please check your policy before retrying.',
 };
 
 export function mapApiError(problem: ApiProblem | null, fallbackStatus?: number): string {

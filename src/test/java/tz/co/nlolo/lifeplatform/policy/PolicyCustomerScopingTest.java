@@ -2,11 +2,13 @@ package tz.co.nlolo.lifeplatform.policy;
 
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -19,6 +21,7 @@ import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -120,6 +123,108 @@ class PolicyCustomerScopingTest {
                 .with(customerOf(TENANT, UUID.randomUUID())))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("POLICY_NOT_FOUND"));
+    }
+
+    /**
+     * I4 (final review, escalated deferred-minor #1): the test above only ever requests a
+     * NONEXISTENT policy number, so it proves nothing about {@code enforceCustomerOwnPolicyOnly}
+     * itself -- {@code policyApi.getPolicy} 404s before the ownership check is ever reached, and
+     * all five tests in this class stayed green even with the ownership check deleted entirely.
+     * These two tests seed a REAL policy owned by a REAL party (via the manual-issue flow, mirroring
+     * {@code BillingCustomerPaymentTest.customerCannotRequestPaymentForAnotherPartysInvoice}) and
+     * assert both halves: a stranger is 403'd, and the actual owner is let through with 200.
+     */
+    @Test
+    void customerCannotReadAnotherPartysCoverageStatusForARealPolicy() throws Exception {
+        IssuedPolicy issued = manualIssue(TENANT, "POLICY-SCOPING-COVERAGE-01");
+
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/coverage-status")
+                .with(customerOf(TENANT, UUID.randomUUID())))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void ownerCustomerCanReadTheirOwnCoverageStatus() throws Exception {
+        IssuedPolicy issued = manualIssue(TENANT, "POLICY-SCOPING-COVERAGE-02");
+
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/coverage-status")
+                .with(customerOf(TENANT, issued.policyholderPartyId())))
+            .andExpect(status().isOk());
+    }
+
+    private record IssuedPolicy(String policyNumber, UUID policyholderPartyId) {}
+
+    private record ProductFixture(UUID productId, UUID productVersionId) {}
+
+    /**
+     * Full-HTTP manual-issue fixture chain, copied from {@code PolicyContractTest.manualIssue} (and
+     * mirroring {@code BillingCustomerPaymentTest.seedInvoiceOwnedBy}): register applicant -> publish
+     * product -> open underwriting case -> manual-issue with an explicit premiumAmount. Runs against
+     * the migration set already applied by {@link #applyMigrations()} -- no billing/policyloan schema
+     * is touched during issuance.
+     */
+    private IssuedPolicy manualIssue(UUID tenantId, String productCode) throws Exception {
+        String applicantResponse = mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Policy Scoping Applicant","dateOfBirth":"1990-01-01","contactInfo":{"phoneNumber":"+255713%06d"}}
+                    """.formatted(Math.abs(productCode.hashCode() % 1000000))))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID applicantId = UUID.fromString(JsonPath.read(applicantResponse, "$.partyId"));
+
+        String productResponse = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"%s","productName":"Policy Scoping Product","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """.formatted(productCode)))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String productId = JsonPath.read(productResponse, "$.productId");
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
+                    """))
+            .andExpect(status().isCreated());
+
+        String snapshotResponse = mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String productVersionId = JsonPath.read(snapshotResponse, "$.productVersionId");
+
+        String caseResponse = mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssured":{"amount":"1000000.00","currencyCode":"TZS"}}
+                    """.formatted(applicantId, productId, productVersionId)))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String caseId = JsonPath.read(caseResponse, "$.caseId");
+
+        String policyResponse = mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"premiumFrequency":"MONTHLY",
+                     "agentOfRecordId":"%s","reasonForManualIssue":"Policy scoping test issuance"}
+                    """.formatted(caseId, applicantId, productVersionId, UUID.randomUUID())))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String policyNumber = JsonPath.read(policyResponse, "$.policyNumber");
+
+        return new IssuedPolicy(policyNumber, applicantId);
     }
 
     private static org.springframework.security.test.web.servlet.request

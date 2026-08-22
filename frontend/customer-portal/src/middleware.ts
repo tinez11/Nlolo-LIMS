@@ -8,8 +8,7 @@ import { NextResponse } from 'next/server';
  */
 export default auth((request) => {
   const session = request.auth as ({ error?: string } | null);
-  const isSignInRoute = request.nextUrl.pathname.startsWith('/api/auth')
-    || request.nextUrl.pathname === '/signin';
+  const isSignInRoute = request.nextUrl.pathname.startsWith('/api/auth');
 
   if (isSignInRoute) {
     return NextResponse.next();
