@@ -62,6 +62,37 @@ async function resolveAccessToken(explicit?: string): Promise<string> {
   return token.accessToken;
 }
 
+/**
+ * Extracts the caller's own `party_id` claim from the access token this portal already holds
+ * server-side. Task 11 needs this ONLY for claim registration: unlike `GET /claims`'s
+ * `claimantPartyId` filter (force-overridden server-side, so the portal never sends it at all),
+ * `POST /claims` VALIDATES the request body's `claimantPartyId` against the token's own claim and
+ * 403s on a mismatch, rather than rewriting it (verified against
+ * `ClaimController.enforceCustomerOwnClaimantOnly`) -- so the field is required, and the ONLY safe
+ * source for it is the verified token, never the browser.
+ *
+ * No local signature verification is performed: this token is the same one every other call in
+ * this file sends as the Authorization bearer, and the backend re-validates its signature on every
+ * request anyway, so a tampered claim here could only ever produce a 401 from the backend, never a
+ * successful call under a forged identity.
+ */
+export async function resolveOwnPartyId(init: Pick<BackendInit, 'accessToken'> = {}): Promise<string> {
+  const accessToken = await resolveAccessToken(init.accessToken);
+  const payload = accessToken.split('.')[1];
+  let partyId: unknown;
+  try {
+    partyId = payload
+      ? (JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { party_id?: unknown }).party_id
+      : undefined;
+  } catch {
+    partyId = undefined;
+  }
+  if (typeof partyId !== 'string' || !partyId) {
+    throw new ApiError(401, null);
+  }
+  return partyId;
+}
+
 function buildUrl(baseUrl: string, path: string, searchParams?: BackendInit['searchParams']): string {
   if (!searchParams) return `${baseUrl}${path}`;
   const params = new URLSearchParams();
@@ -77,14 +108,25 @@ export async function callBackendRaw(path: string, init: BackendInit = {}): Prom
   const doFetch = init.fetchImpl ?? fetch;
   const accessToken = await resolveAccessToken(init.accessToken);
 
+  // FormData (claim-evidence upload, task 11) must reach `fetch` unchanged: `fetch` computes the
+  // multipart boundary itself only when IT sets the Content-Type header, so a body that is already
+  // a FormData instance is passed straight through with no JSON.stringify and no Content-Type of
+  // our own -- setting 'multipart/form-data' by hand here, without the boundary parameter, would
+  // break every upload.
+  const isFormData = init.body instanceof FormData;
+
   return doFetch(buildUrl(baseUrl, path, init.searchParams), {
     method: init.method ?? 'GET',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.body !== undefined && !isFormData ? { 'Content-Type': 'application/json' } : {}),
       ...init.headers,
     },
-    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    body: init.body === undefined
+      ? undefined
+      : isFormData
+        ? (init.body as FormData)
+        : JSON.stringify(init.body),
     cache: 'no-store',
   });
 }
