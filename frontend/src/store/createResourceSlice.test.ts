@@ -113,9 +113,16 @@ describe('isEmpty', () => {
 });
 
 describe('track', () => {
+  // Each test uses its own key so the module-level request-id map does not leak
+  // sequencing state between unrelated tests.
+  let key = 0;
+  const nextKey = () => `test-${key++}`;
+
   it('drives loading then success', async () => {
     const seen: Resource<string[]>[] = [];
-    await track(idle<string[]>(), (next) => seen.push(next), () => Promise.resolve(['a']));
+    await track(nextKey(), idle<string[]>(), (next) => seen.push(next), () =>
+      Promise.resolve(['a']),
+    );
     expect(seen.map((s) => s.status)).toEqual(['loading', 'success']);
     expect(seen[1]?.data).toEqual(['a']);
   });
@@ -123,7 +130,7 @@ describe('track', () => {
   it('drives loading then error, preserving prior data', async () => {
     const seen: Resource<string[]>[] = [];
     const start = success(['old']);
-    await track(start, (next) => seen.push(next), () => Promise.reject(anError));
+    await track(nextKey(), start, (next) => seen.push(next), () => Promise.reject(anError));
     expect(seen.map((s) => s.status)).toEqual(['loading', 'error']);
     expect(seen[1]?.data).toEqual(['old']);
     expect(seen[1]?.error).toBe(anError);
@@ -132,8 +139,76 @@ describe('track', () => {
   it('does not throw out of the caller', async () => {
     const set = vi.fn();
     await expect(
-      track(idle<string[]>(), set, () => Promise.reject(anError)),
+      track(nextKey(), idle<string[]>(), set, () => Promise.reject(anError)),
     ).resolves.toBeUndefined();
     expect(set).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * REGRESSION. Nothing previously stopped an OLDER request that happens to
+   * resolve LAST from overwriting a NEWER one already showing correct data --
+   * exactly what rapid status-filter clicks in PoliciesPage would trigger, since
+   * network timing has no relationship to click order. Deferred promises let this
+   * test resolve them out of order deterministically instead of hoping a race
+   * reproduces.
+   */
+  it('discards a stale success once a newer request for the same key has started', async () => {
+    const seen: Resource<string>[] = [];
+    const set = (next: Resource<string>) => seen.push(next);
+    const k = nextKey();
+
+    let resolveOld!: (v: string) => void;
+    let resolveNew!: (v: string) => void;
+    const old = new Promise<string>((r) => (resolveOld = r));
+    const fresh = new Promise<string>((r) => (resolveNew = r));
+
+    const oldCall = track(k, idle<string>(), set, () => old);
+    const newCall = track(k, idle<string>(), set, () => fresh);
+
+    // The newer request resolves FIRST -- the common case, since it usually
+    // supersedes the older one precisely because it was faster or retried less.
+    resolveNew('fresh-result');
+    await newCall;
+    // The older request resolves SECOND. Without sequencing this would overwrite
+    // the fresh result the user is already looking at.
+    resolveOld('stale-result');
+    await oldCall;
+
+    const successes = seen.filter((s) => s.status === 'success');
+    expect(successes).toHaveLength(1);
+    expect(successes[0]?.data).toBe('fresh-result');
+  });
+
+  it('discards a stale FAILURE the same way -- an old timeout must not blank a fresh success', async () => {
+    const seen: Resource<string>[] = [];
+    const set = (next: Resource<string>) => seen.push(next);
+    const k = nextKey();
+
+    let rejectOld!: (e: unknown) => void;
+    let resolveNew!: (v: string) => void;
+    const old = new Promise<string>((_, reject) => (rejectOld = reject));
+    const fresh = new Promise<string>((r) => (resolveNew = r));
+
+    const oldCall = track(k, idle<string>(), set, () => old);
+    const newCall = track(k, idle<string>(), set, () => fresh);
+
+    resolveNew('fresh-result');
+    await newCall;
+    rejectOld(anError);
+    await oldCall;
+
+    expect(seen.at(-1)?.status).toBe('success');
+    expect(seen.at(-1)?.data).toBe('fresh-result');
+  });
+
+  it('does not let unrelated keys interfere with each other', async () => {
+    const seenA: Resource<string>[] = [];
+    const seenB: Resource<string>[] = [];
+    await Promise.all([
+      track(nextKey(), idle<string>(), (n) => seenA.push(n), () => Promise.resolve('a')),
+      track(nextKey(), idle<string>(), (n) => seenB.push(n), () => Promise.resolve('b')),
+    ]);
+    expect(seenA.at(-1)?.data).toBe('a');
+    expect(seenB.at(-1)?.data).toBe('b');
   });
 });

@@ -12,8 +12,16 @@ import { Spinner } from './states';
 
 export interface Stat {
   label: string;
-  /** null while the count is still loading. */
+  /** null while there is no number to show yet -- see `pending` for why. */
   value: number | null;
+  /**
+   * True while a value is actively expected soon (spinner). False with a null
+   * value means the load genuinely failed and nothing is in flight to fix that --
+   * rendered as a dash, never a spinner that spins forever. Getting this wrong
+   * once meant a failed initial fetch left every card spinning permanently, next
+   * to an error panel telling the user the load had already finished failing.
+   */
+  pending?: boolean;
   /** What the number actually counts, so it cannot be misread. */
   hint: string;
   onSelect?: () => void;
@@ -39,10 +47,14 @@ export function StatCards({ stats }: { stats: Stat[] }) {
           >
             <p className="text-xs text-muted-foreground">{stat.label}</p>
             <p className="mt-1 text-2xl font-semibold tracking-tight">
-              {stat.value === null ? (
+              {stat.value !== null ? (
+                stat.value.toLocaleString()
+              ) : stat.pending ? (
                 <Spinner className="my-1.5" />
               ) : (
-                stat.value.toLocaleString()
+                <span className="text-subtle-foreground" aria-label="Not available">
+                  —
+                </span>
               )}
             </p>
             <p className="mt-0.5 text-[11px] text-subtle-foreground">{stat.hint}</p>

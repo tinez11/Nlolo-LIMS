@@ -38,6 +38,17 @@ export function RequireAuth({ realm, children }: { realm: Realm; children: React
       .catch(() => undefined);
   }, [auth]);
 
+  // isAuthenticated wins over error, checked in that order. react-oidc-context's
+  // addSilentRenewError handler dispatches ERROR without touching isAuthenticated
+  // or user (confirmed by reading the reducer: the ERROR case only ever sets
+  // isLoading and error) -- so a background token renew that fails transiently
+  // leaves a perfectly live session sitting behind a truthy auth.error. Checking
+  // error first would tear down the whole console over a renew hiccup the user
+  // never needed to see.
+  if (auth.isAuthenticated) {
+    return <RestoreLocation realm={realm}>{children}</RestoreLocation>;
+  }
+
   if (auth.error) {
     return (
       <div className="grid h-full place-items-center px-6">
@@ -66,11 +77,7 @@ export function RequireAuth({ realm, children }: { realm: Realm; children: React
     );
   }
 
-  if (!auth.isAuthenticated) {
-    return <LoadingBlock label="Signing in" />;
-  }
-
-  return <RestoreLocation realm={realm}>{children}</RestoreLocation>;
+  return <LoadingBlock label="Signing in" />;
 }
 
 /**

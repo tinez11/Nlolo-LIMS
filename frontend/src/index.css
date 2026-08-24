@@ -1,4 +1,18 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
+/* tw-animate-css supplies the animate-in / animate-out / fade-* / zoom-*
+   utilities shadcn components expect (the v4-compatible successor to
+   tailwindcss-animate). Without it, the Sheet overlay and content classes in
+   ui/sheet.tsx emit no CSS at all: the drawer still functions, only with no
+   transition -- easy to miss, since nothing errors.
+
+   Two lexer quirks in the CSS toolchain forced this comment into its current
+   shape, both confirmed by trial rather than assumed:
+   1. A comment placed BETWEEN the two adjacent @import rules above broke the
+      build; comments are only tolerated once the imports are contiguous.
+   2. An apostrophe anywhere inside this comment broke the build the same way,
+      apparently confusing string-token detection across the comment boundary --
+      hence the deliberately contraction-free wording throughout this file. */
 
 /* Tailwind v4 drives dark mode off a media query by default. The console needs an
    explicit toggle that wins in both directions, so dark is a class on <html>. */

@@ -29,13 +29,17 @@ export function SheetContent({
       <Dialog.Overlay
         className={cn(
           'fixed inset-0 z-40 bg-black/20 dark:bg-black/50',
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0',
+          'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
         )}
       />
       <Dialog.Content
         className={cn(
           'fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col',
           'border-l border-border bg-surface shadow-xl',
+          'data-[state=open]:animate-in data-[state=open]:slide-in-from-right',
+          'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right',
+          'duration-200',
           // A slide-over that cannot be reached on a laptop is not a slide-over.
           'sm:max-w-md',
           className,

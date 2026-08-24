@@ -42,8 +42,14 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   invoices: {},
   loans: {},
 
+  // Every `track` call below is keyed so a slower, superseded request can never
+  // overwrite a faster, newer one -- e.g. clicking through status filter chips
+  // quickly, where network timing has no relationship to click order. The list key
+  // is constant regardless of which filter was requested: it is the same on-screen
+  // table either way, and only the most recently REQUESTED filter should win.
   loadList: (params) =>
     track(
+      'policy.list',
       getState().list,
       (next) => set({ list: next }),
       () => searchPolicies(params),
@@ -51,6 +57,7 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
 
   loadDetail: (policyNumber) =>
     track(
+      `policy.detail.${policyNumber}`,
       getState().detail[policyNumber] ?? idle<PolicyView>(),
       (next) => set((s) => ({ detail: { ...s.detail, [policyNumber]: next } })),
       () => getPolicy(policyNumber),
@@ -58,6 +65,7 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
 
   loadCoverage: (policyNumber) =>
     track(
+      `policy.coverage.${policyNumber}`,
       getState().coverage[policyNumber] ?? idle<CoverageStatusView>(),
       (next) => set((s) => ({ coverage: { ...s.coverage, [policyNumber]: next } })),
       () => getCoverageStatus(policyNumber),
@@ -65,6 +73,7 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
 
   loadInvoices: (policyNumber) =>
     track(
+      `policy.invoices.${policyNumber}`,
       getState().invoices[policyNumber] ?? idle<InvoiceView[]>(),
       (next) => set((s) => ({ invoices: { ...s.invoices, [policyNumber]: next } })),
       () => listInvoices(policyNumber),
@@ -72,6 +81,7 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
 
   loadLoans: (policyNumber) =>
     track(
+      `policy.loans.${policyNumber}`,
       getState().loans[policyNumber] ?? idle<LoanView[]>(),
       (next) => set((s) => ({ loans: { ...s.loans, [policyNumber]: next } })),
       () => listLoans(policyNumber),

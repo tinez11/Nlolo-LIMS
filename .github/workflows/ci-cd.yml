@@ -43,6 +43,13 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      # src/types/api/ is gitignored (generated output drifting from the specs it
+      # came from is worse than regenerating it), so every checkout -- CI included
+      # -- must run this before anything that imports it. Skipping this step is not
+      # hypothetical: verified locally that omitting it fails Typecheck and Build
+      # with TS2307 "cannot find module" on every src/api/types.ts import.
+      - name: Generate API types from backend/api/openapi
+        run: npm run generate:api
       - name: Lint
         run: npm run lint
       - name: Typecheck
@@ -182,8 +189,21 @@ jobs:
         working-directory: backend/infra
         run: docker compose up -d --wait postgres redis minio keycloak
 
+      - name: Apply database migrations
+        working-directory: backend
+        # Same schema-setup step docs/09-local-development.md has a dev run. Without
+        # this the schema is empty, seed-dev-data.sh's first API call 400s, and the
+        # e2e suite would be exercising an app with nowhere to put data --
+        # continue-on-error had been masking exactly that.
+        run: ./scripts/migrate.sh local
+
       - name: Build and start the application
         working-directory: backend
+        env:
+          # application-local.yml (port 15432, app_role) is the profile that matches
+          # this compose file's Postgres port mapping; the default application.yml
+          # profile has no datasource at all and the process would not start.
+          SPRING_PROFILES_ACTIVE: local
         run: |
           ./mvnw -B -q package -DskipTests
           nohup java -jar target/*.jar > /tmp/app.log 2>&1 &

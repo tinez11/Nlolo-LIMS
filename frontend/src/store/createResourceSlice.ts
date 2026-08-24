@@ -77,18 +77,44 @@ export function isEmpty<T>(resource: Resource<{ items: T[] } | T[]>): boolean {
 }
 
 /**
- * Wrap a fetch so the three transitions are impossible to get out of order.
+ * Latest request id issued per resource `key`. Module-level rather than per-store,
+ * since a key (e.g. `policy.detail.POL-1`) is already globally unique -- one map
+ * for every domain store is simpler than threading a per-store instance through.
+ */
+const latestRequestId = new Map<string, number>();
+
+/**
+ * Wrap a fetch so the three transitions are impossible to get out of order, AND so
+ * an in-flight request that a newer one has superseded can never overwrite it.
+ *
+ * `key` must uniquely identify the resource being loaded -- `'policy.list'`, or
+ * `` `policy.detail.${policyNumber}` `` for a keyed sub-resource. Without the
+ * sequencing this closes: clicking through status filters quickly fires a search
+ * per click, and nothing stopped an OLDER request that happens to resolve LAST
+ * (slow network, a retried 5xx, whatever) from overwriting the newer, correct
+ * result the user is already looking at with stale data.
+ *
  * `set` receives the next Resource; the caller owns where it lives in the store.
  */
 export async function track<T>(
+  key: string,
   current: Resource<T>,
   set: (next: Resource<T>) => void,
   load: () => Promise<T>,
 ): Promise<void> {
+  const requestId = (latestRequestId.get(key) ?? 0) + 1;
+  latestRequestId.set(key, requestId);
+
   set(loading(current));
   try {
-    set(success(await load()));
+    const data = await load();
+    // A newer call for this same key started (and is now the one the user cares
+    // about) while this one was in flight -- drop this result on the floor rather
+    // than clobbering it.
+    if (latestRequestId.get(key) !== requestId) return;
+    set(success(data));
   } catch (cause) {
+    if (latestRequestId.get(key) !== requestId) return;
     // The Axios interceptor has already normalized this to an ApiError.
     set(failure(current, cause as ApiError));
   }

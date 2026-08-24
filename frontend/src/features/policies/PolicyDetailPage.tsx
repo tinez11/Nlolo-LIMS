@@ -9,6 +9,7 @@ import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
+import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectCoverage,
   selectDetail,
@@ -49,7 +50,10 @@ export function PolicyDetailPage() {
 
   const policy = detail.data;
 
-  if (detail.data === null && detail.status === 'loading') {
+  // isInitialLoad, not a 'loading'-only check: the load fires from an effect that
+  // runs AFTER first render, so status is briefly 'idle' -- a 'loading'-only check
+  // let that frame fall through toward the error branch below.
+  if (isInitialLoad(detail)) {
     return <LoadingBlock label={`Loading ${policyNumber}`} />;
   }
 
@@ -154,7 +158,7 @@ export function PolicyDetailPage() {
   );
 
   function renderInvoices() {
-    if (invoices.data === null && invoices.status === 'loading') return <LoadingBlock />;
+    if (isInitialLoad(invoices)) return <LoadingBlock />;
     if (invoices.status === 'error' && invoices.error && invoices.data === null) {
       return (
         <ErrorPanel error={invoices.error} onRetry={() => void loadInvoices(policyNumber)} />
@@ -206,7 +210,7 @@ export function PolicyDetailPage() {
   }
 
   function renderLoans() {
-    if (loans.data === null && loans.status === 'loading') return <LoadingBlock />;
+    if (isInitialLoad(loans)) return <LoadingBlock />;
     if (loans.status === 'error' && loans.error && loans.data === null) {
       return <ErrorPanel error={loans.error} onRetry={() => void loadLoans(policyNumber)} />;
     }
@@ -261,7 +265,7 @@ export function PolicyDetailPage() {
   }
 
   function renderCoverage() {
-    if (coverage.data === null && coverage.status === 'loading') return <LoadingBlock />;
+    if (isInitialLoad(coverage)) return <LoadingBlock />;
     if (coverage.status === 'error' && coverage.error && coverage.data === null) {
       return <ErrorPanel error={coverage.error} onRetry={() => void loadCoverage(policyNumber)} />;
     }

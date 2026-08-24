@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader } from '@/components/ui/sheet';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
+import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectDetail, usePolicyStore } from '@/store/policyStore';
 import { Field } from './Field';
 
@@ -48,7 +49,12 @@ export function PolicyDrawer({
         />
 
         <SheetBody>
-          {detail.data === null && detail.status === 'loading' && <LoadingBlock />}
+          {/* isInitialLoad, not a 'loading'-only check: the fetch fires from an
+              effect that runs AFTER first render, so there is a real frame at
+              status 'idle' that a 'loading'-only check would fall through, and the
+              drawer would flash empty content for one paint before the request had
+              even started. */}
+          {isInitialLoad(detail) && <LoadingBlock />}
 
           {detail.status === 'error' && detail.error && detail.data === null && (
             <ErrorPanel

@@ -113,11 +113,26 @@ for realm in "${REALMS[@]}"; do
   fi
 
   # Verify by reading it back rather than trusting the write's status code.
-  verified="$(curl -sS -H "Authorization: Bearer $TOKEN" \
-    "$KEYCLOAK_URL/admin/realms/$realm/clients?clientId=$CLIENT_ID" \
-    | json_get 'v[0]&&[v[0].publicClient,(v[0].attributes||{})["pkce.code.challenge.method"],(v[0].redirectUris||[]).join(",")].join(" | ")')"
+  client_json="$(curl -sS -H "Authorization: Bearer $TOKEN" \
+    "$KEYCLOAK_URL/admin/realms/$realm/clients?clientId=$CLIENT_ID")"
+  verified="$(printf '%s' "$client_json" | json_get 'v[0]&&[v[0].publicClient,(v[0].attributes||{})["pkce.code.challenge.method"],(v[0].redirectUris||[]).join(",")].join(" | ")')"
   [ -n "$verified" ] || fail "client not readable after write"
   log "verified: public | pkce | redirects = $verified"
+
+  # The mapper matters as much as the client itself and is checked separately: this
+  # platform's own history is that all four Keycloak realms went TEN milestones with
+  # zero protocol mappers before anyone noticed, because every test minted its own
+  # JWT instead of using a real one (see project-synthetic-test-identity-trap). The
+  # Admin API's client PUT/POST does apply an inline `protocolMappers` array on this
+  # Keycloak version, but that is Keycloak's behaviour to keep, not this script's --
+  # asserting the mapper landed, rather than trusting the client write succeeded,
+  # is what makes this script's own "verified" line trustworthy.
+  uuid="$(printf '%s' "$client_json" | json_get 'v[0]&&v[0].id')"
+  has_tenant_mapper="$(curl -sS -H "Authorization: Bearer $TOKEN" \
+    "$KEYCLOAK_URL/admin/realms/$realm/clients/$uuid/protocol-mappers/models" \
+    | json_get "v.some(m=>m.name==='tenant_id')")"
+  [ "$has_tenant_mapper" = "true" ] || fail "tenant_id protocol mapper is missing after write -- tokens from this client will 403 at TenantContextFilter"
+  log "verified: tenant_id protocol mapper present"
 done
 
 printf '\nDone.\n'

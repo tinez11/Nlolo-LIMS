@@ -1,18 +1,22 @@
 # 10 — Frontend Development
 
-A runbook for running the customer portal (`frontend/customer-portal/`, Next.js) against the real
-local stack described in `docs/09-local-development.md`. The portal is a BFF: every browser
-request goes through the portal's own Route Handlers, which hold the Keycloak client secret and
-call the backend server-side. The backend itself has no CORS policy at all, deliberately, so a
-browser could not call it directly even if it tried.
+A runbook for running the staff console (`frontend/`, Vite + React, realm-scoped
+SPA) against the real local stack described in `docs/09-local-development.md`.
+
+Unlike the Next.js portal this replaces, the SPA is **not** a BFF: it is a plain
+browser client that calls the backend directly, authenticating via PKCE against a
+**public** Keycloak client (`lifeplatform-spa`) rather than holding a confidential
+client secret server-side. The backend has no CORS policy at all, so a `vite dev`
+server proxies `/api` to the backend to stay same-origin (`vite.config.ts`).
 
 ## Prerequisites
 
 - Everything in `docs/09-local-development.md`'s prerequisites, plus:
-- **Node** (the version pinned in `frontend/customer-portal/package.json`'s `engines`, if present;
-  otherwise a current LTS). `npm` ships with it.
-- The backend running per `docs/09-local-development.md`'s startup sequence, **including the
-  seeder** -- the portal has nothing to show without it (see Gotcha 1 below).
+- **Node 22** (`frontend/package.json`'s `engines`). `npm` ships with it.
+- The backend running per `docs/09-local-development.md`'s startup sequence,
+  **including the seeder** -- the console has nothing to show without it.
+- The `lifeplatform-spa` client actually present in Keycloak -- see Gotcha 1. This
+  is the step most likely to be skipped, because it is silent when it is.
 
 ## Startup order
 
@@ -22,112 +26,129 @@ cd infra && docker compose up -d postgres keycloak minio redis mock-mobile-money
 scripts/migrate.sh local
 export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64"
 ./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local
-scripts/seed-dev-data.sh          # REQUIRED -- writes party_id back into Keycloak (Gotcha 1)
+scripts/seed-dev-data.sh          # REQUIRED -- writes party_id back into Keycloak, see Gotcha 2
 
-# 2. Portal
-cd frontend/customer-portal
-cp .env.example .env.local        # first run only -- see below
+# 2. The lifeplatform-spa Keycloak client -- see Gotcha 1 for why this is a
+#    separate step and not just part of the realm import
+./scripts/apply-spa-client.sh staff
+
+# 3. Console
+cd ../frontend
+cp .env.example .env.local        # first run only
 npm install
-npm run dev                       # http://localhost:3000
+npm run generate:api              # required before typecheck/build -- see below
+npm run dev                       # http://localhost:5173
 ```
 
 ### `.env.local`
 
-Copy `.env.example` to `.env.local` and fill in real values for this stack:
-
-| Variable | Value for the standard local stack |
-|---|---|
-| `BACKEND_BASE_URL` | `http://localhost:8080` |
-| `KEYCLOAK_ISSUER` | `http://localhost:8081/realms/customers` |
-| `KEYCLOAK_CLIENT_ID` | `lifeplatform-app` |
-| `KEYCLOAK_CLIENT_SECRET` | `dev-secret-customers` (the `customers` realm's confidential client secret) |
-| `AUTH_SECRET` | any random value -- generate with `openssl rand -base64 32` |
-| `AUTH_URL` | `http://localhost:3000` |
-| `REDIS_URL` | `redis://localhost:6379` |
-
-`.env.local` (and every other `.env*` file except `.env.example`) is gitignored -- it is never
-committed, so every developer creates their own from `.env.example`.
+Copy `.env.example` to `.env.local`. The defaults already match the standard local
+stack (`VITE_API_BASE_URL=/api` through the dev proxy, `VITE_KEYCLOAK_BASE_URL=
+http://localhost:8081`, `VITE_KEYCLOAK_CLIENT_ID=lifeplatform-spa`) -- there is
+nothing to fill in for local development, unlike the old portal's `.env.local`,
+which needed a real client secret. There is no client secret here at all: the SPA
+is a public PKCE client by construction (see `frontend/PLAN.md` §3).
 
 ### After any OpenAPI change
 
-The portal's `src/types/api/*.ts` files are generated, not hand-written, from
-`api/openapi/openapi-*.yaml` (15 separate specs -- there is no aggregate spec on this platform).
-Regenerate them whenever a spec changes:
+`src/types/api/*.ts` are generated, not hand-written, from `api/openapi/openapi-*.yaml`
+(15 separate specs -- there is no aggregate spec on this platform) and are
+gitignored, so **every fresh checkout needs this before typecheck or build will
+succeed**, not just after a spec change:
 
 ```bash
 npm run generate:api
 ```
 
+CI runs this as its own step in `frontend-build-and-test` for the same reason --
+omitting it there was found and fixed during this console's own code review:
+`Typecheck`/`Build` fail with `TS2307 Cannot find module '@/types/api/...'` on any
+tree where it has not run yet.
+
 ## Testing
 
 Two independent layers, run differently on purpose:
 
-- **`npm test`** (Vitest) -- fast, mocked, no live stack required. Run in the foreground.
-- **`npm run e2e`** (Playwright) -- slow, real Keycloak login, real backend, real Postgres/MinIO.
-  Requires the full stack above (infra, backend with seeded data, and the portal's own dev server)
-  to already be running. `playwright.config.ts`'s `webServer` will start `npm run dev` itself if
-  port 3000 is free, but `reuseExistingServer: true` means it happily attaches to one you already
-  started -- the usual case in local development.
+- **`npm test`** (Vitest) -- fast, mocked at the data-shape level (MSW is
+  permitted for response bodies), no live stack required. Run in the foreground.
+- **`npm run test:e2e`** (Playwright) -- slow, real Keycloak login, real backend,
+  real Postgres/MinIO. Requires the full stack above (infra, backend with seeded
+  data, and `lifeplatform-spa` applied) to already be running.
+  `playwright.config.ts`'s `webServer` starts `npm run dev` itself if port 5173 is
+  free, and `reuseExistingServer: !CI` happily attaches to one you already
+  started.
 
   ```bash
-  cd frontend/customer-portal
-  npm run e2e
+  cd frontend
+  npm run test:e2e
   ```
 
-  Expected: 3 tests pass (`setup` logs in as `customer.owner` once and saves the session to
-  `e2e/.auth/owner.json`; `claim-evidence.spec.ts` and `ownership.spec.ts` run against `chromium`).
-  `fullyParallel` is off and `retries` is `0` deliberately -- this suite shares real backend state
-  across specs, and a flaky auth failure here is exactly the failure this suite exists to catch, so
-  it must fail loudly rather than be quietly retried away.
-
-  `claim-evidence.spec.ts` additionally logs in as `staff.manager` via a direct Keycloak password
-  grant (not through the browser) in a `beforeAll`, to reopen `customer.owner`'s seeded claim if it
-  is still SETTLED -- see that file's own comments for why. This makes `npm run e2e` self-contained
-  from a freshly seeded stack; no manual fixture step is required.
+  Expected: 7 tests pass (`setup` logs in as `staff.underwriter` once and saves
+  Keycloak's SSO cookie to `e2e/.auth/staff.json`; `staff-policies.spec.ts` runs
+  against `chromium`). What gets saved is the **SSO cookie**, not app tokens --
+  the console holds tokens in memory only (see Gotcha 3), so every subsequent test
+  exercises a real silent re-authentication rather than replaying a saved session.
 
 ## Gotchas
 
-**1. `party_id` comes from the seeder, not the realm import -- and the portal cannot tell you why
-everything is empty.** `keycloak/customers-realm.json` sets `tenant_id` on `customer.owner` and
-`customer.other` but deliberately no `party_id` (a party's UUID does not exist until
-`POST /parties/individuals` creates it). Only `scripts/seed-dev-data.sh` writes it back into
-Keycloak. Skip the seeder and login still succeeds -- the portal shows a signed-in session -- but
-every list (`/`, `/claims`) renders empty and every detail page shows a fetch error, because the
-backend 403s a token with `tenant_id` but no `party_id` on every ownership-checked endpoint. This
-looks exactly like a portal bug (or a broken realm import) and is neither; see
-`docs/09-local-development.md`'s Gotcha 4 for the full explanation and the fix (run the seeder).
+**1. Editing `keycloak/staff-realm.json` has NO EFFECT on an already-started
+stack, silently.** Keycloak keeps its own data in Postgres here (`KC_DB=postgres`,
+volume `infra_postgres-data`), and `--import-realm` imports a realm only if it
+does **not already exist**. So adding the `lifeplatform-spa` client to the realm
+JSON does nothing on any environment that has been started before -- no warning,
+no error, the console just fails with an opaque "invalid client" at the Keycloak
+login page. A fresh volume (and CI) imports it correctly, which is exactly what
+makes this easy to miss. Run `./scripts/apply-spa-client.sh staff` after any
+change to the client's config in that JSON file; it is idempotent (create-or-update
+via the Admin API) and verifies both the client's PKCE settings and its
+`tenant_id` protocol mapper by reading them back -- not by trusting the write's
+status code. That last check is not decorative: this platform's own history is
+that all four realms went ten milestones with zero protocol mappers before
+anyone noticed (see `project-synthetic-test-identity-trap`), because every test
+minted its own JWT instead of using a real one.
 
-**2. Real login only -- there is no mocked auth provider, in the app or in the E2E suite.**
-`src/auth.ts` configures exactly one NextAuth provider, `Keycloak`, against whichever realm
-`KEYCLOAK_ISSUER` points at. `e2e/auth.setup.ts` and `e2e/ownership.spec.ts` drive the actual
-Keycloak login form (`#username`, `#password`, `#kc-login`) through a real browser, not a stubbed
-session cookie. This is deliberate: this project's own history (the M1 database role, the M11
-Keycloak mappers) had a fabricated test identity hide a completely broken real-credential path
-twice, both times with every test green. Do not "simplify" the E2E setup by injecting a session
-token directly -- that reintroduces exactly the blind spot this suite exists to close.
+**2. `party_id` comes from the seeder, not the realm import.**
+`keycloak/staff-realm.json` sets `tenant_id` on every staff user but no
+`party_id` -- staff has no party of its own, so this affects the customer/agent
+realms more directly, but it is the same underlying mechanism: only
+`scripts/seed-dev-data.sh` writes the seeded data the console has anything to
+show. Skip the seeder and the Policies list is simply empty, which looks
+identical to a real backend problem; see `docs/09-local-development.md`'s
+Gotcha 4.
 
-**3. The NextAuth sign-in page is not the Keycloak login form -- there are two hops.** Visiting any
-protected route while unauthenticated redirects to NextAuth's OWN sign-in page
-(`/api/auth/signin`), which renders one button per configured provider ("Sign in with Keycloak").
-Only after that button is clicked does the browser reach Keycloak's actual login form. A Playwright
-script (or a developer) that tries to fill `#username` immediately after `page.goto('/')` will find
-no such element yet.
+**3. Real login only -- there is no mocked auth provider, in the app or in the
+E2E suite -- and tokens are held in memory only.** `RealmAuthProvider.tsx` mounts
+one `react-oidc-context` `AuthProvider` per realm-scoped route, against a public
+PKCE client. `e2e/auth.setup.ts` and `staff-policies.spec.ts` drive the actual
+Keycloak login form (`#username`, `#password`, `#kc-login`) through a real
+browser. Tokens are never written to `localStorage`/`sessionStorage` -- only the
+transient PKCE verifier is, and only until it is redeemed -- which means **every
+page load re-authenticates silently against Keycloak's SSO cookie**. This is a
+deliberate trade against XSS risk (see `frontend/PLAN.md` §3), and it is also why
+this suite's login step is not optional overhead to be mocked away: it is
+exercised on literally every navigation. Do not "simplify" the E2E setup by
+injecting a session cookie or token directly -- this project's own history (the
+M1 database role, the M11 Keycloak mappers) had a fabricated test identity hide a
+completely broken real-credential path twice, both times with every test green.
 
-**4. The one seeded policy is a dead end for new claims, and the one seeded claim is a dead end for
-new evidence -- know both before writing a new E2E spec against this data.**
-`scripts/seed-dev-data.sh` leaves exactly one policy, `POL-6BD5702F`, in status SURRENDERED (a
-terminal status -- `PolicyApiImpl.reinstatePolicy` only accepts LAPSED), and exactly one claim
-against it, SETTLED (evidence uploads to a SETTLED claim are rejected by
-`ClaimsApiImpl.attachEvidence`). Registering a *new* claim against the seeded policy is therefore
-not possible (`ClaimsApiImpl.registerClaim` requires the policy to be in force), so the only way to
-exercise the evidence-upload path is to move the *existing* claim out of SETTLED first, using the
-platform's own `POST /claims/{id}/reopen` (`CLAIMS_MANAGER` role, `staff` realm -- e.g.
-`staff.manager` / `devpassword`). `claim-evidence.spec.ts` does this itself in a `beforeAll`; do
-the same in any new spec that needs a claim in an editable state, rather than hand-editing the
-database or the seeder.
+**4. One hop, not two -- the login flow changed shape from the old portal.**
+The deleted Next.js portal bounced through NextAuth's own sign-in page first
+(`/api/auth/signin`, "Sign in with Keycloak") before reaching Keycloak's real
+form. This SPA's `RequireAuth` redirects straight to Keycloak -- there is no
+intermediate app-owned page. A script written against the old two-hop flow will
+find `#username` immediately after `page.goto()`, without an intervening click.
 
-**5. `pg-hostproxy` (port 15432), not `5432`, for any direct Postgres connection from the host.** A
-native Postgres process independently occupies host port 5432 on this machine; connecting there
-reaches the wrong server. This does not affect the portal directly (it never talks to Postgres
-itself -- only the backend and the `IdempotencyStore`'s Redis client do), but it matters the moment
-you inspect seeded data by hand while debugging a portal issue.
+**5. The one seeded policy is a dead end for new claims and reads
+`cashValue: 0.00`.** `scripts/seed-dev-data.sh` leaves exactly one policy,
+`POL-6BD5702F`, in status SURRENDERED with one SETTLED claim against it -- see the
+old portal runbook's equivalent gotcha (now in git history) for the full
+claims-specific detail, which no longer applies directly to this staff-only
+console but is worth knowing if a future realm's E2E suite exercises claims. The
+`cashValue: 0.00` is not a display bug: `PolicyAccount.cashValueAmount` is
+hardcoded to zero at issuance platform-wide (see `project-platform-status`'s M11
+entry), and the console's Policy detail page annotates it rather than hiding it.
+
+**6. `pg-hostproxy` (port 15432), not `5432`, for any direct Postgres connection
+from the host.** A native Postgres process independently occupies host port 5432
+on this machine; connecting there reaches the wrong server. `application-local.yml`
+already points at 15432 -- this matters only when inspecting seeded data by hand.

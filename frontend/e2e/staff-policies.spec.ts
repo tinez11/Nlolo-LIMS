@@ -116,9 +116,20 @@ test.describe('staff policies', () => {
 
   test('sends no Authorization header to an unauthenticated route', async ({ page }) => {
     // The realm picker is public; leaking a bearer token to it would mean the
-    // interceptor is attaching tokens indiscriminately.
+    // interceptor is attaching tokens indiscriminately, so this actually inspects
+    // outgoing requests -- checking only page content, as an earlier version of
+    // this test did, would pass whether or not the interceptor misbehaved.
+    const authorizedRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.headers()['authorization']) {
+        authorizedRequests.push(`${request.method()} ${request.url()}`);
+      }
+    });
+
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Life Platform' })).toBeVisible();
     await expect(page.getByRole('link', { name: /staff/i })).toBeVisible();
+
+    expect(authorizedRequests).toEqual([]);
   });
 });

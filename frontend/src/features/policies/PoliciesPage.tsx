@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { cn } from '@/lib/cn';
+import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
 import { PolicyDrawer } from './PolicyDrawer';
 
@@ -61,8 +62,17 @@ export function PoliciesPage() {
   const stats: Stat[] = [
     {
       label: status ? `${status[0]}${status.slice(1).toLowerCase()} policies` : 'All policies',
-      value: busy && total === null ? null : total,
-      hint: status ? 'matching this filter' : 'in this tenant',
+      value: total,
+      // isInitialLoad, not `busy` alone: if the load has already FAILED with no
+      // data, spinning forever is worse than a dash -- the user is looking at an
+      // error panel that already told them the load finished, unsuccessfully.
+      pending: isInitialLoad(list),
+      hint:
+        list.status === 'error' && total === null
+          ? 'could not load'
+          : status
+            ? 'matching this filter'
+            : 'in this tenant',
     },
   ];
 
@@ -109,8 +119,12 @@ export function PoliciesPage() {
 
   function renderBody() {
     // Initial load shows skeleton rows; a refetch keeps the old rows so the table
-    // the user is reading does not blank out.
-    if (list.data === null && busy) return <TableSkeleton columns={columns.length} />;
+    // the user is reading does not blank out. isInitialLoad, not `busy` alone: the
+    // fetch is kicked off from an effect, which runs AFTER the first render, so
+    // there is a real frame where status is still 'idle' rather than 'loading' --
+    // checking only 'loading' let that frame fall through to the empty state and
+    // flash "No policies yet" before the request had even started.
+    if (isInitialLoad(list)) return <TableSkeleton columns={columns.length} />;
 
     if (list.status === 'error' && list.error && list.data === null) {
       return (
