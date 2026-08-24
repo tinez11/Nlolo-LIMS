@@ -35,6 +35,25 @@ export type ClaimType = ClaimView['claimType'];
 export type ClaimDetails = ClaimsComponents['schemas']['ClaimDetails'];
 export type RegisterClaimRequest = ClaimsComponents['schemas']['RegisterClaimRequest'];
 
+export type ClaimAssessmentView = ClaimsComponents['schemas']['ClaimAssessmentView'];
+export type SubmitClaimAssessmentRequest = ClaimsComponents['schemas']['SubmitClaimAssessmentRequest'];
+
+/**
+ * `POST /claims/{claimId}/settlement-decision` and `.../reopen` both declare
+ * their request bodies INLINE in the spec (no named schema), so codegen never
+ * produced a type for either -- hand-written here, transcribed from the actual
+ * generated path entry in `types/api/claims.ts`, not guessed.
+ */
+export interface SettlementDecisionRequest {
+  approved: boolean;
+  approvedAmount?: Money;
+  rejectionReason?: string | null;
+  payeeRef?: string | null;
+}
+export interface ReopenClaimRequest {
+  reason: string;
+}
+
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the
  * generated type's own comment: any discriminator+oneOf shape fails

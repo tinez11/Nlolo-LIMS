@@ -1,0 +1,94 @@
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { Button } from '@/components/ui/button';
+import { selectReopening, useClaimStore } from '@/store/claimStore';
+import {
+  blankReopenClaimForm,
+  reopenClaimFormSchema,
+  toApiRequest,
+  type ReopenClaimFormValues,
+} from './reopenClaimForm';
+
+/**
+ * `POST /claims/{claimId}/reopen` -- `CLAIMS_MANAGER` role only, rendered by
+ * the parent only for a claim currently REJECTED or SETTLED (any other status
+ * 409s). Deliberately does not clear the prior approved amount -- the previous
+ * decision stays on the record until a new one is made (`Claim.reopen()`'s own
+ * doc). Reopening a SETTLED claim does NOT reverse the policy closure
+ * settlement caused (a documented platform limitation, not a bug this panel
+ * can paper over) -- surfaced as a note rather than silently implied to work.
+ */
+export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; wasSettled: boolean }) {
+  const reopenClaim = useClaimStore((s) => s.reopenClaim);
+  const resetReopenClaim = useClaimStore((s) => s.resetReopenClaim);
+  const reopening = useClaimStore(selectReopening(claimId));
+
+  useEffect(() => {
+    resetReopenClaim(claimId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claimId]);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<ReopenClaimFormValues>({
+    resolver: zodResolver(reopenClaimFormSchema),
+    defaultValues: blankReopenClaimForm(),
+  });
+
+  async function onSubmit(values: ReopenClaimFormValues) {
+    await reopenClaim(claimId, toApiRequest(values));
+  }
+
+  return (
+    <form className="space-y-3 p-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+      {wasSettled && (
+        <p className="rounded-md bg-status-warning-bg px-3 py-2 text-[11px] text-status-warning-fg">
+          This claim is SETTLED. Reopening it does not reverse the policy closure settlement already
+          caused -- coverage stays discharged and billing stays stopped.
+        </p>
+      )}
+
+      <FormField label="Reason" error={errors.reason?.message}>
+        <textarea
+          className="min-h-16 w-full rounded-md border border-input bg-surface px-2.5 py-2 text-sm"
+          placeholder="New evidence submitted"
+          {...register('reason')}
+        />
+      </FormField>
+
+      {reopening.status === 'error' && reopening.error && (
+        <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
+          {reopening.error.detail ?? reopening.error.title}
+          {reopening.error.traceId && (
+            <span className="ml-2 font-mono text-[10px] opacity-80">({reopening.error.traceId})</span>
+          )}
+        </div>
+      )}
+
+      <Button type="submit" size="sm" variant="primary" disabled={reopening.status === 'loading'}>
+        {reopening.status === 'loading' ? 'Reopening…' : 'Reopen claim'}
+      </Button>
+    </form>
+  );
+}
+
+function FormField({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string | undefined;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+      {error && <p className="mt-1 text-[11px] text-status-danger-fg">{error}</p>}
+    </label>
+  );
+}

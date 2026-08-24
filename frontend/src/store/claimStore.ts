@@ -1,8 +1,24 @@
 import { create } from 'zustand';
-import { getClaim, registerClaim, searchClaims, type ClaimSearchParams } from '@/api/claims';
-import type { ClaimView, Page, RegisterClaimRequest } from '@/api/types';
+import {
+  decideSettlement,
+  getClaim,
+  registerClaim,
+  reopenClaim,
+  searchClaims,
+  submitClaimAssessment,
+  type ClaimSearchParams,
+} from '@/api/claims';
+import type {
+  ClaimAssessmentView,
+  ClaimView,
+  Page,
+  RegisterClaimRequest,
+  ReopenClaimRequest,
+  SettlementDecisionRequest,
+  SubmitClaimAssessmentRequest,
+} from '@/api/types';
 import type { MutationAttempt } from '@/lib/idempotency';
-import { idle, track, type Resource } from './createResourceSlice';
+import { idle, success, track, type Resource } from './createResourceSlice';
 
 /**
  * The `claims` domain store. One store per backend module, mirroring the
@@ -19,12 +35,27 @@ interface ClaimState {
   // for the same reason saveBeneficiaries stays separate from policy `detail` --
   // a failed registration must not corrupt any already-loaded claim.
   registering: Resource<ClaimView>;
+  // All three below are keyed by claimId: each targets an EXISTING claim, and a
+  // failed action on one claim must not corrupt another's state.
+  submittingAssessment: Keyed<ClaimAssessmentView>;
+  decidingSettlement: Keyed<ClaimView>;
+  reopening: Keyed<ClaimView>;
 
   loadList: (params: ClaimSearchParams) => Promise<void>;
   loadDetail: (claimId: string) => Promise<void>;
   registerClaim: (request: RegisterClaimRequest, attempt: MutationAttempt) => Promise<void>;
   /** Clears a stale registration error before a fresh attempt -- see the call site. */
   resetRegisterClaim: () => void;
+  submitAssessment: (claimId: string, request: SubmitClaimAssessmentRequest) => Promise<void>;
+  resetSubmitAssessment: (claimId: string) => void;
+  decideSettlement: (
+    claimId: string,
+    request: SettlementDecisionRequest,
+    attempt: MutationAttempt,
+  ) => Promise<void>;
+  resetDecideSettlement: (claimId: string) => void;
+  reopenClaim: (claimId: string, request: ReopenClaimRequest) => Promise<void>;
+  resetReopenClaim: (claimId: string) => void;
 }
 
 const REGISTER_KEY = 'claim.register';
@@ -33,6 +64,9 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
   list: idle(),
   detail: {},
   registering: idle(),
+  submittingAssessment: {},
+  decidingSettlement: {},
+  reopening: {},
 
   loadList: (params) =>
     track(
@@ -63,8 +97,75 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
   // is built with the reset from the start rather than discovering the same class
   // of bug a second time.
   resetRegisterClaim: () => set({ registering: idle() }),
+
+  submitAssessment: (claimId, request) =>
+    track(
+      `claim.submitAssessment.${claimId}`,
+      getState().submittingAssessment[claimId] ?? idle<ClaimAssessmentView>(),
+      (next) => set((s) => ({ submittingAssessment: { ...s.submittingAssessment, [claimId]: next } })),
+      async () => {
+        const assessment = await submitClaimAssessment(claimId, request);
+        // The response is the assessment record, not the claim -- refetch so the
+        // status flip (REGISTERED/REOPENED -> UNDER_ASSESSMENT) shows in `detail`.
+        await getState().loadDetail(claimId);
+        return assessment;
+      },
+    ),
+
+  resetSubmitAssessment: (claimId) =>
+    set((s) => {
+      if (!(claimId in s.submittingAssessment)) return s;
+      const { [claimId]: _discard, ...rest } = s.submittingAssessment;
+      return { submittingAssessment: rest };
+    }),
+
+  decideSettlement: (claimId, request, attempt) =>
+    track(
+      `claim.decideSettlement.${claimId}`,
+      getState().decidingSettlement[claimId] ?? idle<ClaimView>(),
+      (next) => set((s) => ({ decidingSettlement: { ...s.decidingSettlement, [claimId]: next } })),
+      async () => {
+        const view = await decideSettlement(claimId, request, attempt);
+        // The response IS the freshly-decided claim -- write it straight into the
+        // detail slot rather than firing a redundant GET for data already in hand.
+        set((s) => ({ detail: { ...s.detail, [claimId]: success(view) } }));
+        return view;
+      },
+    ),
+
+  resetDecideSettlement: (claimId) =>
+    set((s) => {
+      if (!(claimId in s.decidingSettlement)) return s;
+      const { [claimId]: _discard, ...rest } = s.decidingSettlement;
+      return { decidingSettlement: rest };
+    }),
+
+  reopenClaim: (claimId, request) =>
+    track(
+      `claim.reopen.${claimId}`,
+      getState().reopening[claimId] ?? idle<ClaimView>(),
+      (next) => set((s) => ({ reopening: { ...s.reopening, [claimId]: next } })),
+      async () => {
+        const view = await reopenClaim(claimId, request);
+        set((s) => ({ detail: { ...s.detail, [claimId]: success(view) } }));
+        return view;
+      },
+    ),
+
+  resetReopenClaim: (claimId) =>
+    set((s) => {
+      if (!(claimId in s.reopening)) return s;
+      const { [claimId]: _discard, ...rest } = s.reopening;
+      return { reopening: rest };
+    }),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
 export const selectClaimDetail = (claimId: string) => (s: ClaimState) =>
   s.detail[claimId] ?? idle<ClaimView>();
+export const selectSubmittingAssessment = (claimId: string) => (s: ClaimState) =>
+  s.submittingAssessment[claimId] ?? idle<ClaimAssessmentView>();
+export const selectDecidingSettlement = (claimId: string) => (s: ClaimState) =>
+  s.decidingSettlement[claimId] ?? idle<ClaimView>();
+export const selectReopening = (claimId: string) => (s: ClaimState) =>
+  s.reopening[claimId] ?? idle<ClaimView>();

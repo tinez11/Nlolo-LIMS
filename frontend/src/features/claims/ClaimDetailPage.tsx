@@ -1,6 +1,8 @@
 import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useAuth } from 'react-oidc-context';
+import { readIdentity, staffRoles } from '@/auth/claims';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/AppShell';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -10,19 +12,25 @@ import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaimDetail, useClaimStore } from '@/store/claimStore';
+import { ClaimAssessmentPanel } from './ClaimAssessmentPanel';
 import { ClaimDetailsFields } from './ClaimDetailsFields';
+import { ClaimReopenPanel } from './ClaimReopenPanel';
+import { ClaimSettlementPanel } from './ClaimSettlementPanel';
 
 /**
- * The "acts" half of drawer-previews-page-acts. No mutating action lives here
- * yet -- assessment, settlement decision, and reopen are staff-role-gated
- * workflows deliberately out of this slice's scope, not omitted by oversight.
- * Unlike Surrender on the Policy detail page, there is no disabled button for
- * them here: those are real, currently-501 backend paths worth surfacing as
- * blocked; these are simply not built in this console yet, and a disabled
- * button would misrepresent "not built" as "broken."
+ * The "acts" half of drawer-previews-page-acts.
+ *
+ * Assessment/settlement-decision/reopen are gated on the current user's OWN
+ * token roles (`staffRoles`), the same convenience-only decode `AppShell` uses
+ * for nav -- the backend's `@PreAuthorize` remains the real authority, this
+ * only avoids showing a staff user a form that would 403. A staff.underwriter
+ * session (no CLAIMS_ASSESSOR/CLAIMS_MANAGER role) sees none of the panels
+ * below; that is correct, not a missing feature.
  */
 export function ClaimDetailPage() {
   const { claimId = '' } = useParams();
+  const auth = useAuth();
+  const roles = staffRoles(readIdentity(auth.user?.access_token));
 
   const detail = useClaimStore(selectClaimDetail(claimId));
   const loadDetail = useClaimStore((s) => s.loadDetail);
@@ -32,6 +40,22 @@ export function ClaimDetailPage() {
   }, [claimId, loadDetail]);
 
   const claim = detail.data;
+
+  const canAssess =
+    roles.CLAIMS_ASSESSOR &&
+    !!claim &&
+    (claim.status === 'REGISTERED' || claim.status === 'REOPENED' || claim.status === 'UNDER_ASSESSMENT');
+
+  // MATURITY auto-approves straight from REGISTERED with no assessment at all
+  // (Claim.approve()'s own doc, Cl3) -- every other claim type needs
+  // UNDER_ASSESSMENT first.
+  const canDecide =
+    roles.CLAIMS_MANAGER &&
+    !!claim &&
+    (claim.status === 'UNDER_ASSESSMENT' || (claim.claimType === 'MATURITY' && claim.status === 'REGISTERED'));
+
+  const canReopen =
+    roles.CLAIMS_MANAGER && !!claim && (claim.status === 'REJECTED' || claim.status === 'SETTLED');
 
   if (isInitialLoad(detail)) {
     return <LoadingBlock label="Loading claim" />;
@@ -71,6 +95,27 @@ export function ClaimDetailPage() {
                 <ClaimDetailsFields details={claim.details} />
               </dl>
             </Panel>
+
+            {canAssess && (
+              <Panel
+                title="Submit an assessment"
+                subtitle="Claims may carry more than one before a decision is made."
+              >
+                <ClaimAssessmentPanel claimId={claimId} />
+              </Panel>
+            )}
+
+            {canDecide && (
+              <Panel title="Decide settlement" subtitle="Approve or reject -- distinct from assessing.">
+                <ClaimSettlementPanel claimId={claimId} />
+              </Panel>
+            )}
+
+            {canReopen && (
+              <Panel title="Reopen">
+                <ClaimReopenPanel claimId={claimId} wasSettled={claim.status === 'SETTLED'} />
+              </Panel>
+            )}
           </div>
 
           <div className="space-y-5">
@@ -109,11 +154,20 @@ function BackLink() {
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="rounded-lg border border-border bg-surface">
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">{title}</h2>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
       </div>
       {children}
     </section>

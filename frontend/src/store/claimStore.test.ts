@@ -45,3 +45,58 @@ describe('resetRegisterClaim', () => {
     expect(useClaimStore.getState().registering.error).toBeNull();
   });
 });
+
+/**
+ * `submittingAssessment`, `decidingSettlement`, and `reopening` are all keyed by
+ * claimId and all outlive their owning panel's mount/unmount, same failure mode
+ * as `registering` above -- built in from the start for all three.
+ */
+describe('resetSubmitAssessment', () => {
+  it('clears a failed submission back to idle', () => {
+    useClaimStore.setState({ submittingAssessment: { 'claim-1': failure(idle<never>(), anError) } });
+    useClaimStore.getState().resetSubmitAssessment('claim-1');
+    expect(useClaimStore.getState().submittingAssessment['claim-1']).toBeUndefined();
+  });
+
+  it('does not touch a different claim id', () => {
+    useClaimStore.setState({
+      submittingAssessment: {
+        'claim-1': failure(idle<never>(), anError),
+        'claim-2': idle<never>(),
+      },
+    });
+    useClaimStore.getState().resetSubmitAssessment('claim-1');
+    expect(useClaimStore.getState().submittingAssessment['claim-2']).toEqual(idle());
+  });
+
+  it('does no harm when there is nothing to reset', () => {
+    useClaimStore.setState({ submittingAssessment: {} });
+    expect(() => useClaimStore.getState().resetSubmitAssessment('claim-1')).not.toThrow();
+  });
+});
+
+describe('resetDecideSettlement', () => {
+  it('clears a failed decision back to idle', () => {
+    useClaimStore.setState({ decidingSettlement: { 'claim-1': failure(idle<never>(), anError) } });
+    useClaimStore.getState().resetDecideSettlement('claim-1');
+    expect(useClaimStore.getState().decidingSettlement['claim-1']).toBeUndefined();
+  });
+
+  it('does no harm when there is nothing to reset', () => {
+    useClaimStore.setState({ decidingSettlement: {} });
+    expect(() => useClaimStore.getState().resetDecideSettlement('claim-1')).not.toThrow();
+  });
+});
+
+describe('resetReopenClaim', () => {
+  it('clears a failed reopen back to idle', () => {
+    useClaimStore.setState({ reopening: { 'claim-1': failure(idle<never>(), anError) } });
+    useClaimStore.getState().resetReopenClaim('claim-1');
+    expect(useClaimStore.getState().reopening['claim-1']).toBeUndefined();
+  });
+
+  it('does no harm when there is nothing to reset', () => {
+    useClaimStore.setState({ reopening: {} });
+    expect(() => useClaimStore.getState().resetReopenClaim('claim-1')).not.toThrow();
+  });
+});
