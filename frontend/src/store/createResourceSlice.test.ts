@@ -32,6 +32,35 @@ describe('resource transitions', () => {
     });
   });
 
+  /**
+   * REGRESSION. Zustand subscribes via useSyncExternalStore and compares the value
+   * a selector returns to the previous one. Selectors here fall back to `idle()`
+   * for an absent key, so if `idle()` allocated a new object per call the selector
+   * would return a fresh reference every render and React would loop forever
+   * ("The result of getSnapshot should be cached to avoid an infinite loop").
+   *
+   * This actually happened -- PolicyDrawer hung -- and every unit test passed
+   * while it did, because the loop only manifests with a live store driving a real
+   * component. Referential stability is the precondition, so that is what is
+   * asserted here rather than the shape.
+   */
+  it('returns a STABLE reference so a fallback selector cannot loop React', () => {
+    expect(idle<string[]>()).toBe(idle<string[]>());
+    expect(idle<string[]>()).toBe(idle<number>() as unknown as ReturnType<typeof idle<string[]>>);
+  });
+
+  it('freezes the shared empty resource so no caller can corrupt it', () => {
+    expect(Object.isFrozen(idle())).toBe(true);
+  });
+
+  it('does not let a transition mutate the shared empty resource', () => {
+    const start = idle<string[]>();
+    const next = success(['a']);
+    expect(next).not.toBe(start);
+    expect(idle<string[]>().data).toBeNull();
+    expect(idle<string[]>().status).toBe('idle');
+  });
+
   // A refetch must not blank the table the user is currently reading.
   it('keeps previous data while reloading', () => {
     const loaded = success(['a', 'b']);

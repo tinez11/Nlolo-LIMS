@@ -40,8 +40,12 @@ export function RealmAuthProvider({
       // and it costs a request per load.
       loadUserInfo: false,
       onSigninCallback: () => {
-        // Strip ?code=&state= so a reload is not a replayed callback.
-        window.history.replaceState({}, '', `/${config.slug}`);
+        // Strip ?code=&state= only, so a reload is not a replayed callback. The URL
+        // is NOT rewritten to the final destination here: history.replaceState does
+        // not notify React Router, so doing that would change the address bar while
+        // the router kept rendering the old route. RestoreLocation below performs a
+        // real navigation instead.
+        window.history.replaceState({}, '', window.location.pathname);
       },
     }),
     [realm, config.slug],

@@ -18,8 +18,29 @@ export interface Resource<T> {
   loadedAt: number | null;
 }
 
+/**
+ * A single frozen empty resource, shared by every call.
+ *
+ * The shared reference is LOAD-BEARING, not a micro-optimisation. Zustand
+ * subscribes through useSyncExternalStore, which compares the value a selector
+ * returns against the previous one. A selector that falls back to a freshly
+ * allocated object -- `state.detail[key] ?? idle()` -- therefore returns a new
+ * reference on every render, and React re-renders forever with
+ * "The result of getSnapshot should be cached to avoid an infinite loop".
+ *
+ * That is not hypothetical: it took down PolicyDrawer, and every unit test passed
+ * while it did, because the loop only appears once a live store is driving a real
+ * component. Frozen so a caller cannot mutate the shared instance.
+ */
+const EMPTY: Resource<never> = Object.freeze({
+  data: null,
+  status: 'idle' as const,
+  error: null,
+  loadedAt: null,
+});
+
 export function idle<T>(): Resource<T> {
-  return { data: null, status: 'idle', error: null, loadedAt: null };
+  return EMPTY as Resource<T>;
 }
 
 /**

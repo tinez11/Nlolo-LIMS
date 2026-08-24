@@ -1,4 +1,25 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+
+/**
+ * Returns the first policy row's activation control, or null if the tenant genuinely
+ * has no policies.
+ *
+ * Waits for the list to settle first. `isVisible()` is an immediate snapshot rather
+ * than a wait, so probing it directly races the initial fetch and reports "no
+ * policies" for a list that simply had not arrived yet -- which silently SKIPS the
+ * test instead of failing it. A skipped test that was meant to be the
+ * definition-of-done gate is worse than a failing one.
+ */
+async function firstPolicyRow(page: Page): Promise<Locator | null> {
+  const table = page.getByRole('table', { name: 'Policies' });
+  const empty = page.getByText('No policies yet');
+  await expect(table.or(empty)).toBeVisible();
+
+  if (await empty.isVisible()) return null;
+  const row = table.getByRole('button').first();
+  await expect(row).toBeVisible();
+  return row;
+}
 
 /**
  * The definition-of-done gate for this slice: a real staff login reaching real
@@ -42,8 +63,9 @@ test.describe('staff policies', () => {
     await page.goto('/staff/policies');
     await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible();
 
-    const firstRow = page.getByRole('table', { name: 'Policies' }).getByRole('button').first();
-    test.skip(!(await firstRow.isVisible().catch(() => false)), 'no seeded policy to open');
+    const firstRow = await firstPolicyRow(page);
+    test.skip(firstRow === null, 'no seeded policy to open');
+    if (firstRow === null) return;
 
     const policyNumber = (await firstRow.textContent())?.trim() ?? '';
     expect(policyNumber).not.toBe('');
@@ -51,7 +73,11 @@ test.describe('staff policies', () => {
     await firstRow.click();
 
     // The drawer is the read-only preview half of drawer-previews-page-acts.
-    const drawer = page.getByRole('dialog', { name: 'Policy preview' });
+    // Its accessible name is the policy number, not a static label: Radix derives
+    // aria-labelledby from Dialog.Title, which overrides any aria-label. Asserting
+    // on the number is better anyway -- it proves the drawer opened for the row
+    // that was actually clicked.
+    const drawer = page.getByRole('dialog', { name: policyNumber });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByText('Sum assured')).toBeVisible();
 
@@ -68,8 +94,9 @@ test.describe('staff policies', () => {
 
   test('the deferred surrender action is disabled, not merely broken', async ({ page }) => {
     await page.goto('/staff/policies');
-    const firstRow = page.getByRole('table', { name: 'Policies' }).getByRole('button').first();
-    test.skip(!(await firstRow.isVisible().catch(() => false)), 'no seeded policy to open');
+    const firstRow = await firstPolicyRow(page);
+    test.skip(firstRow === null, 'no seeded policy to open');
+    if (firstRow === null) return;
 
     await firstRow.click();
     await page.getByRole('dialog').getByRole('link', { name: /full detail/i }).click();
