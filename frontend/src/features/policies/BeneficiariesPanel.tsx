@@ -32,9 +32,21 @@ export function BeneficiariesPanel({
   beneficiaries: BeneficiaryInput[];
 }) {
   const [editing, setEditing] = useState(false);
+  const resetSaveBeneficiaries = usePolicyStore((s) => s.resetSaveBeneficiaries);
 
   if (!editing) {
-    return <ReadView beneficiaries={beneficiaries} onEdit={() => setEditing(true)} />;
+    return (
+      <ReadView
+        beneficiaries={beneficiaries}
+        onEdit={() => {
+          // Clears any error left over from a previous, unrelated attempt --
+          // without this a stale rejection reappears the instant editing starts
+          // again, before this attempt has done anything wrong.
+          resetSaveBeneficiaries(policyNumber);
+          setEditing(true);
+        }}
+      />
+    );
   }
 
   return (
@@ -252,7 +264,13 @@ function EditForm({
           400 VALIDATION_ERROR elsewhere on this platform, so it renders as one banner
           rather than being bound to a specific input. */}
       {saving.status === 'error' && saving.error && (
-        <div className="mt-2 rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
+        // role="alert" is a real fix, not just a test hook: a screen reader user
+        // submitting this form needs the rejection announced immediately, the same
+        // way ErrorPanel's role="alert" works elsewhere on this platform.
+        <div
+          role="alert"
+          className="mt-2 rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
+        >
           {saving.error.detail ?? saving.error.title}
           {saving.error.traceId && (
             <span className="ml-2 font-mono text-[10px] opacity-80">({saving.error.traceId})</span>

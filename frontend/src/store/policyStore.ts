@@ -46,6 +46,8 @@ interface PolicyState {
   loadInvoices: (policyNumber: string) => Promise<void>;
   loadLoans: (policyNumber: string) => Promise<void>;
   saveBeneficiaries: (policyNumber: string, beneficiaries: BeneficiaryInput[]) => Promise<void>;
+  /** Clears a stale save error before a fresh edit attempt -- see the call site. */
+  resetSaveBeneficiaries: (policyNumber: string) => void;
 }
 
 export const usePolicyStore = create<PolicyState>((set, getState) => ({
@@ -121,6 +123,20 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
         return true;
       },
     ),
+
+  // This resource is keyed by policy number and outlives the edit form's own
+  // mount/unmount -- it has to, so a failure is still visible if the form is
+  // torn down and rebuilt mid-flight. But that means an OLD failure never
+  // clears itself on its own: reopening the form after a rejected save was
+  // found (via a real e2e failure, not inspection) to immediately resurface
+  // the previous error banner before the user has done anything wrong this
+  // time. Called once when editing begins, not on every render.
+  resetSaveBeneficiaries: (policyNumber) =>
+    set((s) => {
+      if (!(policyNumber in s.savingBeneficiaries)) return s;
+      const { [policyNumber]: _discard, ...rest } = s.savingBeneficiaries;
+      return { savingBeneficiaries: rest };
+    }),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
