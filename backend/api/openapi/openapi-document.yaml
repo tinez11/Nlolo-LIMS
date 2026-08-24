@@ -123,7 +123,7 @@ components:
             Opaque owning-aggregate reference, currently always "claim:{uuid}". Treated as opaque
             on purpose -- new producers will introduce new shapes, so do not parse it.
         documentType: { type: string, enum: [KYC_EVIDENCE, POLICY_DOCUMENT, CLAIM_EVIDENCE, SIGNED_FORM, UNDERWRITING_EVIDENCE] }
-        contentType: { type: string, nullable: true, description: "Null for documents uploaded before document/V2." }
-        fileName: { type: string, nullable: true, description: "Null for documents uploaded before document/V2." }
-        uploadedBy: { type: string, nullable: true }
+        contentType: { type: [string, "null"], description: "Null for documents uploaded before document/V2." }
+        fileName: { type: [string, "null"], description: "Null for documents uploaded before document/V2." }
+        uploadedBy: { type: [string, "null"] }
         uploadedAt: { type: string, format: date-time }

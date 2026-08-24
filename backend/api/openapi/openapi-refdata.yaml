@@ -70,4 +70,4 @@ components:
           description: >-
             Always a STRING, never a JSON number, even when it holds "24" or "12.0". The column is
             VARCHAR(255) and its semantics vary per key -- some values are comma-separated lists.
-        jurisdiction: { type: string, nullable: true, example: TZ }
+        jurisdiction: { type: [string, "null"], example: TZ }

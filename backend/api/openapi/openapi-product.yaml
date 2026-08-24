@@ -114,7 +114,7 @@ components:
       properties:
         ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
         effectiveDate: { type: string, format: date }
-        retirementDate: { type: string, format: date, nullable: true }
+        retirementDate: { type: [string, "null"], format: date }
         ratingTable:
           type: array
           items:
@@ -131,8 +131,7 @@ components:
               benefitType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY, SURRENDER] }
               calculationMethod: { type: string }
         fundDefinitions:
-          type: array
-          nullable: true
+          type: [array, "null"]
           description: Only valid when category = UNIT_LINKED.
           items:
             type: object
@@ -149,4 +148,4 @@ components:
         gracePeriodDays: { type: integer }
         maxLoanToValuePercent: { type: number }
         category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
-        surrenderChargeScheduleJson: { type: string, nullable: true, description: Raw JSON surrender-charge schedule from product_version.surrender_charge_schedule; null until a future milestone adds a way to author it. }
+        surrenderChargeScheduleJson: { type: [string, "null"], description: Raw JSON surrender-charge schedule from product_version.surrender_charge_schedule; null until a future milestone adds a way to author it. }

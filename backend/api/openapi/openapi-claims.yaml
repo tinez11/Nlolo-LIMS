@@ -165,10 +165,9 @@ paths:
               properties:
                 approved: { type: boolean }
                 approvedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-                rejectionReason: { type: string, nullable: true }
+                rejectionReason: { type: [string, "null"] }
                 payeeRef:
-                  type: string
-                  nullable: true
+                  type: [string, "null"]
                   description: "Mobile-money destination for the payout. Required when approved is true; ignored (may be null) when approved is false"
       responses:
         '202':
@@ -256,7 +255,7 @@ paths:
               required: [file]
               properties:
                 file: { type: string, format: binary }
-                description: { type: string, nullable: true }
+                description: { type: [string, "null"] }
       responses:
         '201':
           description: Evidence attached
@@ -387,7 +386,7 @@ components:
         claimEvidenceId: { type: string, format: uuid }
         claimId: { type: string, format: uuid }
         documentRef: { type: string }
-        description: { type: string, nullable: true }
+        description: { type: [string, "null"] }
         uploadedBy: { type: string }
         uploadedAt: { type: string, format: date-time }
     ClaimView:

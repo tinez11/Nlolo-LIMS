@@ -147,9 +147,9 @@ components:
           type: string
           description: "Accounting period, formatted YYYY-MM"
         policyNumber:
-          allOf:
+          oneOf:
             - $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef'
-          nullable: true
+            - type: "null"
           description: "Null for a posting not tied to a specific policy."
         sourceEvent:
           type: string
@@ -178,9 +178,9 @@ components:
           type: string
           description: "Accounting period, formatted YYYY-MM"
         policyNumber:
-          allOf:
+          oneOf:
             - $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef'
-          nullable: true
+            - type: "null"
           description: "Null for an entry not tied to a specific policy."
         postedAt: { type: string, format: date-time }
         postings:

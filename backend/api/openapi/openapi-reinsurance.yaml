@@ -230,15 +230,13 @@ components:
         treatyType: { $ref: '#/components/schemas/TreatyType' }
         retentionLimit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cessionPercent:
-          type: string
-          nullable: true
+          type: [string, "null"]
           pattern: '^\d+(\.\d{1,2})?$'
           description: "Decimal string, never a JSON number. Required for QUOTA_SHARE, must be absent otherwise."
         effectiveFrom: { type: string, format: date }
         effectiveTo:
-          type: string
+          type: [string, "null"]
           format: date
-          nullable: true
           description: Omitted or null for a treaty with no known end date.
     TreatyView:
       type: object
@@ -250,12 +248,11 @@ components:
         status: { $ref: '#/components/schemas/TreatyStatus' }
         retentionLimit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cessionPercent:
-          type: string
-          nullable: true
+          type: [string, "null"]
           pattern: '^\d+(\.\d{1,2})?$'
           description: "Decimal string, never a JSON number. Non-null exactly for QUOTA_SHARE."
         effectiveFrom: { type: string, format: date }
-        effectiveTo: { type: string, format: date, nullable: true }
+        effectiveTo: { type: [string, "null"], format: date }
     CessionView:
       type: object
       required: [cessionId, policyNumber, treatyId, cededAmount]
@@ -265,9 +262,9 @@ components:
         treatyId: { type: string, format: uuid }
         cededAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cededPremium:
-          allOf:
+          oneOf:
             - $ref: 'openapi-common.yaml#/components/schemas/Money'
-          nullable: true
+            - type: "null"
           description: "Null for a treaty type that cedes risk without a modelled premium share."
     ClaimRecoveryView:
       type: object
@@ -278,7 +275,6 @@ components:
         treatyId: { type: string, format: uuid }
         recoverableAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         confirmedAt:
-          type: string
+          type: [string, "null"]
           format: date-time
-          nullable: true
           description: "Null until staff confirm the reinsurer actually paid."

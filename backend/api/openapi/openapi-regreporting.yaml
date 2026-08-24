@@ -180,8 +180,7 @@ components:
         period: { type: string }
         status: { $ref: '#/components/schemas/ReturnStatus' }
         documentRef:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: "Always null pending C2 -- see info.description."
         generatedAt: { type: string, format: date-time }
         generatedBy: { type: string }

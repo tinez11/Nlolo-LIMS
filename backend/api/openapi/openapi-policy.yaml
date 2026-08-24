@@ -304,7 +304,7 @@ components:
         productVersionId: { type: string, format: uuid }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         premiumAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        agentOfRecordId: { type: string, format: uuid, nullable: true }
+        agentOfRecordId: { type: [string, "null"], format: uuid }
         premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
         beneficiaries:
           type: array
@@ -316,7 +316,7 @@ components:
       properties:
         type: { type: string, enum: [PARTY, FREEFORM] }
         partyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
-        freeformDesignee: { type: string, nullable: true }
+        freeformDesignee: { type: [string, "null"] }
         sharePercent: { type: number, minimum: 0, maximum: 100 }
         revocable: { type: boolean, default: true }
       required: [type, sharePercent]
@@ -336,7 +336,7 @@ components:
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
-        agentOfRecordId: { type: string, format: uuid, nullable: true }
+        agentOfRecordId: { type: [string, "null"], format: uuid }
         status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED] }
         issueDate: { type: string, format: date }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
@@ -356,5 +356,5 @@ components:
           items:
             type: object
             properties:
-              benefitType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY] }
+              benefitType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY, SURRENDER] }
               sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }

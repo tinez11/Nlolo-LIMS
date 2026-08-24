@@ -123,14 +123,14 @@ components:
         status:
           type: string
           enum: [IN_PROGRESS, COMPLETED, COMPENSATING, FAILED]
-        errorDetails: { type: string, nullable: true }
+        errorDetails: { type: [string, "null"] }
         resultLocation:
-          type: string
+          type: [string, "null"]
           format: uri
-          nullable: true
           description: Present once COMPLETED — link to the finalized resource.
     PageMeta:
       type: object
+      required: [page, pageSize, totalElements]
       properties:
         page: { type: integer }
         pageSize: { type: integer }

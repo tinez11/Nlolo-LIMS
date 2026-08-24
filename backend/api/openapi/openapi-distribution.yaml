@@ -270,9 +270,8 @@ components:
         licenseNumber: { type: string, minLength: 1, maxLength: 50 }
         licenseExpiryDate: { type: string, format: date }
         hierarchyParentId:
-          type: string
+          type: [string, "null"]
           format: uuid
-          nullable: true
           description: Omitted or null for an agent at the top of its hierarchy.
     AgentView:
       type: object
@@ -283,11 +282,10 @@ components:
         licenseNumber: { type: string }
         licenseStatus: { type: string, enum: [ACTIVE, EXPIRED, SUSPENDED] }
         licenseExpiryDate: { type: string, format: date }
-        hierarchyParentId: { type: string, format: uuid, nullable: true }
+        hierarchyParentId: { type: [string, "null"], format: uuid }
         commissionPlanId:
-          type: string
+          type: [string, "null"]
           format: uuid
-          nullable: true
           description: The agent's own assigned plan, if any. Null means the product's active plan applies instead.
     CreateCommissionPlanRequest:
       type: object
@@ -305,14 +303,13 @@ components:
       properties:
         tierType: { $ref: '#/components/schemas/TierType' }
         rate:
-          type: string
-          nullable: true
+          type: [string, "null"]
           pattern: '^\d+(\.\d{1,4})?$'
           description: "Decimal string, never a JSON number - a rate multiplies money. 0.10 means 10%."
         flatAmount:
-          allOf:
+          oneOf:
             - $ref: 'openapi-common.yaml#/components/schemas/Money'
-          nullable: true
+            - type: "null"
     CommissionPlanView:
       type: object
       required: [planId, productId, status, rules]
@@ -330,14 +327,13 @@ components:
         commissionRuleId: { type: string, format: uuid }
         tierType: { $ref: '#/components/schemas/TierType' }
         rate:
-          type: string
-          nullable: true
+          type: [string, "null"]
           pattern: '^\d+(\.\d{1,4})?$'
           description: "Decimal string, never a JSON number. Null when this is a flat-amount rule."
         flatAmount:
-          allOf:
+          oneOf:
             - $ref: 'openapi-common.yaml#/components/schemas/Money'
-          nullable: true
+            - type: "null"
     CommissionStatementView:
       type: object
       required: [statementId, agentId, period, totalAmount, status]
@@ -357,8 +353,8 @@ components:
             CLOSED; requesting payout moves it to PAYOUT_REQUESTED; the payment rail's outcome
             moves it to PAID or PAYOUT_FAILED. A PAYOUT_FAILED statement can be retried with a new
             idempotency key.
-        closedAt: { type: string, format: date-time, nullable: true }
-        paidAt: { type: string, format: date-time, nullable: true }
+        closedAt: { type: [string, "null"], format: date-time }
+        paidAt: { type: [string, "null"], format: date-time }
     CommissionAccrualView:
       type: object
       required: [accrualId, agentId, statementId, policyNumber, tierType, amount, period, sourceRef]
@@ -377,9 +373,8 @@ components:
           type: string
           description: "The policy number for an issuance accrual, the invoice id for a renewal, or the reversed accrual's id for a clawback."
         reversesAccrualId:
-          type: string
+          type: [string, "null"]
           format: uuid
-          nullable: true
           description: Non-null exactly for a clawback row.
     RequestPayoutRequest:
       type: object

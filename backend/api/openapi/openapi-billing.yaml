@@ -179,10 +179,9 @@ components:
         dueDate: { type: string, format: date }
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         status: { type: string, enum: [DUE, PARTIALLY_PAID, PAID, IN_GRACE, OVERDUE, WAIVED] }
-        gracePeriodEndsAt: { type: string, format: date, nullable: true }
+        gracePeriodEndsAt: { type: [string, "null"], format: date }
         dunningLevel:
-          type: integer
+          type: [integer, "null"]
           minimum: 1
           maximum: 5
-          nullable: true
           description: Present only when an ArrearsCase is open (Deliverable 3 Rev 2, Bi1).

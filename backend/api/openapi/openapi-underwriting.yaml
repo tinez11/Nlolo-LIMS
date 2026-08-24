@@ -116,16 +116,20 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        medicalDisclosure:
-          type: object
-          description: Structured Q&A responses; schema varies by product — see Deliverable 6 for the concrete field set.
+        # medicalDisclosure was declared here but never existed in OpenCaseRequest.java.
+        # Spring Boot defaults FAIL_ON_UNKNOWN_PROPERTIES=false, so a client sending it got
+        # a 201 with the disclosure silently discarded. The MedicalDisclosure entity and its
+        # repository exist with zero call sites, and RiskProfile deliberately excludes
+        # occupation/smoker factors for want of a structured source. Removed rather than left
+        # advertising a field that accepts input and throws it away; re-add it here when the
+        # backend actually persists and rates on it.
     SubmitAssessmentRequest:
       type: object
       required: [assessmentType, findings]
       properties:
         assessmentType: { type: string, enum: [MEDICAL, FINANCIAL, OCCUPATIONAL] }
         findings: { type: string }
-        riskScore: { type: number, nullable: true }
+        riskScore: { type: [number, "null"] }
     UnderwritingCaseView:
       type: object
       # The decision is intentionally flattened to decisionOutcome/decisionLoadingPercent/
@@ -138,7 +142,7 @@ components:
         productId: { type: string, format: uuid }
         status: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
         referralStatus: { type: string, enum: [NONE, REFERRED_TO_SENIOR, REFERRAL_RESOLVED] }
-        decisionOutcome: { type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED], nullable: true }
-        decisionLoadingPercent: { type: number, nullable: true }
-        decisionDeclineReason: { type: string, nullable: true }
-        decisionDecidedAt: { type: string, format: date-time, nullable: true }
+        decisionOutcome: { type: [string, "null"], enum: [ACCEPT, LOADED, DECLINED, POSTPONED, null] }
+        decisionLoadingPercent: { type: [number, "null"] }
+        decisionDeclineReason: { type: [string, "null"] }
+        decisionDecidedAt: { type: [string, "null"], format: date-time }
