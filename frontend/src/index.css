@@ -1,0 +1,152 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 drives dark mode off a media query by default. The console needs an
+   explicit toggle that wins in both directions, so dark is a class on <html>. */
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Palette: near-black on white, hairline borders, no chrome. Every colour lives here
+  as a token -- nothing in a component hard-codes a hex. Light is the base; .dark
+  redefines the same names so a component never branches on theme.
+
+  The six status buckets are the whole semantic vocabulary for ~25 backend enums
+  (see statusBadge.ts). They are deliberately distinct hues rather than shades of
+  one, because a finance officer scanning a table reads hue before text: mistaking
+  IN_DOUBT for FAILED is a real operational error, not a cosmetic one.
+*/
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.16 0 0);
+
+  --surface: oklch(1 0 0);
+  --surface-foreground: oklch(0.16 0 0);
+  --surface-muted: oklch(0.985 0 0);
+
+  --muted-foreground: oklch(0.52 0 0);
+  --subtle-foreground: oklch(0.63 0 0);
+
+  --border: oklch(0.918 0 0);
+  --border-strong: oklch(0.85 0 0);
+  --input: oklch(0.918 0 0);
+  --ring: oklch(0.16 0 0);
+
+  --accent: oklch(0.16 0 0);
+  --accent-foreground: oklch(0.99 0 0);
+  --hover: oklch(0.968 0 0);
+  --selected: oklch(0.955 0 0);
+
+  /* status: neutral / pending / active / success / warning / danger */
+  --status-neutral-bg: oklch(0.96 0.002 250);
+  --status-neutral-fg: oklch(0.42 0.008 250);
+  --status-pending-bg: oklch(0.95 0.032 240);
+  --status-pending-fg: oklch(0.45 0.14 250);
+  --status-active-bg: oklch(0.95 0.036 190);
+  --status-active-fg: oklch(0.44 0.09 195);
+  --status-success-bg: oklch(0.95 0.043 150);
+  --status-success-fg: oklch(0.43 0.11 152);
+  --status-warning-bg: oklch(0.96 0.055 92);
+  --status-warning-fg: oklch(0.47 0.11 75);
+  --status-danger-bg: oklch(0.95 0.035 22);
+  --status-danger-fg: oklch(0.48 0.17 25);
+
+  --radius: 0.375rem;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.97 0 0);
+
+  --surface: oklch(0.185 0 0);
+  --surface-foreground: oklch(0.97 0 0);
+  --surface-muted: oklch(0.165 0 0);
+
+  --muted-foreground: oklch(0.68 0 0);
+  --subtle-foreground: oklch(0.57 0 0);
+
+  --border: oklch(1 0 0 / 11%);
+  --border-strong: oklch(1 0 0 / 20%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.85 0 0);
+
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.16 0 0);
+  --hover: oklch(1 0 0 / 5%);
+  --selected: oklch(1 0 0 / 8%);
+
+  /* Dark badges invert: a dim tinted ground with a bright foreground. The same
+     hue order is preserved so the mapping is learnable across themes. */
+  --status-neutral-bg: oklch(0.28 0.006 250);
+  --status-neutral-fg: oklch(0.80 0.01 250);
+  --status-pending-bg: oklch(0.30 0.055 250);
+  --status-pending-fg: oklch(0.82 0.09 245);
+  --status-active-bg: oklch(0.29 0.045 195);
+  --status-active-fg: oklch(0.83 0.08 190);
+  --status-success-bg: oklch(0.28 0.05 152);
+  --status-success-fg: oklch(0.83 0.11 150);
+  --status-warning-bg: oklch(0.31 0.06 78);
+  --status-warning-fg: oklch(0.86 0.10 88);
+  --status-danger-bg: oklch(0.30 0.07 25);
+  --status-danger-fg: oklch(0.83 0.12 22);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-surface-muted: var(--surface-muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+
+  --color-status-neutral-bg: var(--status-neutral-bg);
+  --color-status-neutral-fg: var(--status-neutral-fg);
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-pending-fg: var(--status-pending-fg);
+  --color-status-active-bg: var(--status-active-bg);
+  --color-status-active-fg: var(--status-active-fg);
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-success-fg: var(--status-success-fg);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-warning-fg: var(--status-warning-fg);
+  --color-status-danger-bg: var(--status-danger-bg);
+  --color-status-danger-fg: var(--status-danger-fg);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Tabular figures everywhere: money and dates sit in columns, and proportional
+       digits make a currency column visibly ragged. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Visible focus only for keyboard users, but never suppressed outright. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}

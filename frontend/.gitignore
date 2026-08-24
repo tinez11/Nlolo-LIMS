@@ -1,0 +1,26 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Generated from backend/api/openapi/*.yaml by `npm run generate:api`.
+# Committed types would drift silently from the specs they came from.
+src/types/api/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/e2e/.auth/
+
+.env
+.env.*
+!.env.example
+
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/

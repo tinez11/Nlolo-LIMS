@@ -1,0 +1,285 @@
+# Frontend Rebuild — Design Decisions & Implementation Plan
+
+Status: **approved 2026-08-24**, 41 decisions settled. Supersedes the deleted
+`frontend/customer-portal` (Next.js + NextAuth).
+
+Backend reference: 20 controllers / 68 endpoints, 15 OpenAPI specs at
+`backend/api/openapi/`, 4 Keycloak realms at `backend/keycloak/`.
+
+---
+
+## 1. What this is
+
+A **single React SPA at `frontend/`** serving all four Keycloak realms through
+realm-scoped routes, with different nav per realm and role. **Staff realm first.**
+
+The UI copies the *form* of a Squarespace/Attio-style CRM — sidebar nav, page
+header, stat row, data table, right-hand slide-over — but every value rendered
+comes from this platform's own API. No mock data, no invented metrics.
+
+## 2. Stack
+
+| Concern | Choice |
+| --- | --- |
+| Build | Vite + React + TypeScript, SPA |
+| Routing | React Router v7, declarative mode |
+| Styling | Tailwind v4 (CSS-first `@theme`) + shadcn/ui |
+| Icons | Lucide |
+| Auth | `react-oidc-context` (`oidc-client-ts`), not `keycloak-js` |
+| Server state | Zustand + Axios — **no TanStack Query** |
+| API types | `openapi-typescript`, types-only, per module |
+| Forms | react-hook-form + zod |
+| Tests | Vitest + RTL, MSW for data shapes, Playwright for e2e |
+
+**Accepted cost of React Router:** list filters and pagination need a hand-rolled
+`useSearchParams` wrapper. TanStack Router would have given typed search params
+free; if filter-heavy tables dominate, this is the decision most likely to be
+revisited.
+
+## 3. Auth
+
+Realm-scoped routes — `/staff/*`, `/agents/*`, `/customers/*`, `/regulators/*` —
+each mounting its own `AuthProvider` for that realm's issuer. A picker at `/` for
+first-time arrivals. `react-oidc-context` takes exactly one `authority`, so one
+provider per route subtree avoids re-mount races and cross-realm token bleed, and
+gives per-realm code splitting for free.
+
+Issuers (from `backend/src/main/resources/application.yml`):
+
+```
+http://localhost:8081/realms/{customers,agents,staff,regulators}
+```
+
+**A new public PKCE client `lifeplatform-spa`** is added to the realm JSON.
+`lifeplatform-app` is `publicClient: false` in all four realms and stays
+untouched for backend/service use.
+
+**Tokens live in memory only.** `sessionStorage` holds just the transient PKCE
+verifier and state. A page reload re-authenticates silently against Keycloak's
+SSO cookie rather than re-prompting. Storage keys are namespaced per realm.
+`automaticSilentRenew` on; logout hits Keycloak's `end_session` endpoint.
+
+Because this leans on the Keycloak SSO cookie, it must be **verified against the
+real container**, not assumed.
+
+**Tenancy is invisible.** `TenantContextFilter` reads `tenant_id` from the
+validated JWT only; there is no `X-Tenant-Id` header or any client-supplied
+tenant input, and Postgres RLS enforces it per connection. The UI never sends or
+displays a tenant. No switcher.
+
+Authorities arrive as `ROLE_REALM_<REALM>` plus every `realm_access.roles` entry,
+so nav gating reads straight off the token.
+
+## 4. API layer
+
+**Codegen:** `openapi-typescript`, types-only, one module per spec, **all 15
+specs**. The deleted script covered only 11 — it skipped `distribution`,
+`finaccounting`, `regreporting`, `reinsurance`, precisely what a staff console
+needs. Types-only because no spec has an `operationId`, so any method-name
+generator (orval, openapi-generator, kubb) would emit garbage names for all 68
+operations. Hand-written typed Axios functions per domain sit on top.
+
+**Base URL** from `VITE_API_BASE_URL`. The specs' `servers: [.../v1]` block is
+documentation of intent — the app sets no `context-path` and serves at root, so
+a client trusting `servers[0]` would 404 on every call. Vite proxy in dev; CORS
+bean when deployed (there is currently **no CORS config anywhere** in the
+backend).
+
+**Idempotency-Key** is generated once inside each Zustand mutation action and
+held for the lifetime of that submit, so a retry reuses it. An interceptor
+asserts presence on the six endpoints that hard-require it and throws loudly in
+dev. Auto-generating per request would mint a fresh key on retry and
+double-charge — exactly what the mechanism exists to prevent.
+
+Hard-required: `POST /invoices/{id}/payment-request`, `POST /claims`,
+`POST /agents`, `POST /agents/{id}/commission-statements/{sid}/payout`,
+`POST /claims/{cid}/recoveries/{rid}/confirm`, `POST /treaties`.
+
+**Errors** are normalized by a response interceptor into
+`{status, errorCode, detail, traceId}` from the backend's `application/problem+json`
+(`ProblemDetails` requires `type`, `title`, `status`, `traceId`). Stores hold it
+in an `error` slot. Handling:
+
+- `401` → silent renew, then re-login on failure
+- `403` → an access panel, not a toast
+- `404` → may be a *disguised* denial (refdata allowlist, IDOR guards)
+- `501` → `POST /policies/{n}/surrender` and the process-status endpoint are
+  deferred stubs; their actions render disabled with a tooltip, never as live
+  buttons
+- `400` with `errors[{field, message}]` → bound onto form fields via `setError`
+
+`traceId` is surfaced and copyable — it's the only thread back to backend logs.
+
+**Money is always a decimal string** plus `currencyCode`, never a JSON number
+(backend validates `^-?\d+(\.\d{1,2})?$`). Strings stay the source of truth,
+`Intl.NumberFormat` for display, the same regex on inputs, and **no client-side
+arithmetic** — the backend computes every total. A decimal library is a
+deliberate per-screen exception, not the default.
+
+**Unknown request keys are silently dropped platform-wide** (no `spring.jackson`
+config anywhere; `additionalProperties: false` only on 3 response schemas), so a
+misspelled field returns 201 with the data discarded. The generated types are the
+real guard — the compiler catches it before the request exists.
+
+## 5. State
+
+One Zustand store per backend domain (`policyStore`, `claimStore`, …), each built
+over a shared `createResourceSlice` helper holding entities plus `status` and
+`error`. Mirrors the backend's module boundaries so a screen's data source is
+obvious, without a single global store or duplicated fetch boilerplate.
+
+## 6. Design system
+
+Inter variable with a system fallback. Near-black on white, hairline borders,
+generous whitespace, one comfortable row density. **Dark mode from day one** —
+Tailwind v4's `@theme` plus shadcn's `.dark` makes it near-free at scaffold and a
+tedious retrofit later.
+
+Avatars: shadcn `Avatar` with initials and a hue hashed from the party ID. No
+generated-avatar library — insurance parties have no photos, so the fallback *is*
+the avatar, and a hosted generator would be an external call from an insurance app.
+
+**Drawer previews, page acts.** A table row opens a read-only slide-over with key
+facts and a "Full detail" link; the full page is tabbed and owns every mutating
+action. This keeps settlement decisions, waivers, and payouts off a surface
+dismissable by clicking the backdrop. The reference design does the same thing —
+its drawer carries a "‹ FULL PROFILE" link.
+
+**Stat cards are counts only.** There are no analytics endpoints; the only
+obtainable numbers are `totalElements` from the 4 paged searches. No trend
+arrows — there is no trend data, and a card reading "↗ 12% wk/wk" with nothing
+behind it is worse than no card.
+
+**Two table variants.** A paged `DataTable` for the 4 paged endpoints
+(`/claims`, `/policies`, `/gl-postings`, group members); a client-side
+sort/filter table with **no pager** for the 11 bare-array endpoints. A pager over
+a fully-downloaded array lies about the network and breaks when the array grows.
+`PageMeta` has no `required` list, so `page`/`pageSize`/`totalElements` all
+generate optional and need defending.
+
+**One shared `StatusBadge`** maps every domain enum onto six semantic buckets, so
+a "pending" invoice and a "pending" claim look alike. Enum literals come from the
+specs and Java enums — never invented. `refdata` holds only 9 numeric placeholder
+code sets and backs **no** dropdown anywhere; every option list is a spec enum.
+
+Confirmed mappings for the ambiguous cases:
+
+| Literal | Bucket | Why |
+| --- | --- | --- |
+| `IN_DOUBT` | warning | unresolved, not failed |
+| `LOADED` | success | an acceptance with premium loading |
+| `POSTPONED` | warning | a soft decline, not a queue state |
+| `FORCED_LAPSE_TRIGGERED` | danger | |
+| `WAIVED` | neutral | closed without payment |
+| `IN_GRACE` | warning | |
+| `REOPENED` | pending | |
+
+## 7. Staff nav
+
+**Operations** — Policies, Claims, Products — always visible.
+**Finance** — GL Postings, Chart of Accounts, Treaties, Regulatory Returns,
+Agents — gated on `FINANCE_OFFICER` / `ADMIN`.
+
+Only entities with a real list endpoint get a nav item. Parties, agents,
+underwriting cases, payments, payout batches, and documents are fetch-by-ID only;
+they're reached by drilling in from a policy or claim, or via a command-palette
+lookup. A nav item leading to "paste an ID" reads as broken software.
+
+## 8. First slice
+
+Foundation — scaffold, real-Keycloak PKCE auth, codegen, design tokens,
+`StatusBadge`, both `DataTable` variants — then **Policies end-to-end**: list →
+drawer → full detail page.
+
+Policies is the right proving entity: it's paged (exercises the real pager), it
+has the deepest detail surface (beneficiaries, invoices, loans, cessions,
+coverage status, surrender value) so it stress-tests the drawer/page split, and
+it's readable by all four realms so the components carry over to Customers next.
+
+**Definition of done — one gate:** a Playwright e2e that logs into the real
+docker-compose Keycloak `staff` realm as `staff.underwriter`, lands on Policies,
+opens a row's drawer, reaches the full detail page, and asserts real data from
+the real backend.
+
+## 9. Testing
+
+Vitest + RTL for components and stores. MSW may mock **data shapes only**.
+Playwright drives the auth path against the real Keycloak container from
+`backend/infra/docker-compose.yml`.
+
+**Hard rule: zero fabricated JWTs anywhere in the suite.** Every token in a test
+comes from real Keycloak. This project has twice shipped a fully green suite over
+a completely unusable real credential path (M1 database, M11 Keycloak) because
+tests minted their own identities. A brand-new SPA doing PKCE against four realms
+is the highest-risk possible place to repeat it — mocked auth would pass whether
+or not `lifeplatform-spa` is configured at all.
+
+`e2e/auth.setup.ts` from the deleted portal did exactly this and is worth
+recovering from git rather than reinventing.
+
+CI: repoint the existing `frontend-build-and-test` job from
+`frontend/customer-portal` to `frontend/` (Node 22, `npm ci` → lint → test →
+build). Wire e2e as a separate job but **do not gate merges on it yet** — the
+compose stack takes minutes to become healthy, and a flaky-by-infrastructure
+required check trains people to ignore CI.
+
+## 10. Changes outside `frontend/`
+
+**Blockers — the SPA cannot work without these:**
+
+1. `lifeplatform-spa` public PKCE client (S256) added to `backend/keycloak/staff-realm.json`, redirect `http://localhost:5173/*`
+2. `.github/workflows/ci-cd.yml` → `frontend-build-and-test` repointed to `frontend/`
+
+**Correctness:**
+
+3. ~~All **43** `nullable: true` → `type: [X, "null"]`, because openapi-typescript silently drops the nullability.~~ **This premise was wrong and was measured to be wrong during implementation.** `openapi-typescript@7.13.0` honors `nullable: true` as a compatibility shim even under an `openapi: 3.1.0` header, emitting `string | null` for both spellings. No generated type was ever lying.
+
+   What was actually done: the **35 scalar** fields were still rewritten to `type: [X, "null"]`, on the narrower grounds that the document should not contradict its own version header or depend on a shim a future major may drop — a lateral change for this toolchain, with no behaviour difference. The **5 nullable-`$ref`** fields deliberately keep `nullable: true`, because there is no 3.1-pure spelling that works here: `oneOf`/`anyOf` with a `{type: "null"}` branch makes `swagger-request-validator` match *every* value, silently turning validation off while tests stay green. Each of the 5 carries a comment explaining the asymmetry.
+
+   The genuinely valuable generated-type fix in this area was **`PageMeta` `required`** (item 5) — those three fields really were optional and are now required.
+
+**Spec-truth fixes:**
+
+4. `RegisterCorporateRequest.contactInfo` — declare its real properties: `phoneNumber` (`^\+255\d{9}$`) and `email`, both optional, object itself required
+5. `PageMeta` — add `required: [page, pageSize, totalElements]`
+6. `openapi-policy.yaml` — add `SURRENDER` to `BenefitType` (present in Java, missing from the spec)
+7. `openapi-underwriting.yaml` — **remove `medicalDisclosure`**, see §11
+
+**Housekeeping:**
+
+8. Commit the pending 113-file `frontend/customer-portal` deletion
+
+## 11. Deliberately deferred
+
+**Endorsements UI.** `EndorsementRequest.changes` is opaque JSONB the backend
+reads *nothing* from — `getChanges()` has no non-test caller, and the one
+downstream listener is a documented no-op. `endorsementType` is a free-form
+`VARCHAR(50)` with no enum anywhere. Two test fixtures already disagree on the
+keys (`{"newAddress": …}` vs `{"address": …}`), which is itself proof nothing
+reads them. Whatever a UI sent would become the de facto schema, stored
+permanently in an append-only table. The vocabulary needs ratifying — and then
+enforcing in the spec and backend — before any UI mints it. Same shape as the M7
+commission-semantics doc void.
+
+**`medicalDisclosure`.** Advertised in the spec, absent from the Java DTO,
+silently discarded with a 201 (Spring Boot's `FAIL_ON_UNKNOWN_PROPERTIES=false`).
+The `MedicalDisclosure` entity and repository exist with zero call sites, and
+`RiskProfile` explicitly excludes occupation/smoker factors for want of a
+structured source. A form here would appear to work and throw the user's input
+away. Removed from the spec; wiring it is backend feature work.
+
+**Other deferrals:** CORS bean; the underwriting case-queue endpoint; party
+search; paginating the 11 bare-array endpoints; `additionalProperties: false` on
+request schemas; Keycloak identity brokering (one hub realm federating the four,
+which would collapse §3 to a single authority).
+
+## 12. Risks on the record
+
+1. **The agents realm has no ownership scoping.** Agent-of-record filtering is
+   documented as deferred, so an agent token currently reads *every* policy in
+   the tenant. Fix before building any agent-facing UI.
+2. **`UNDERWRITER` has no landing screen.** There is no underwriting case-list
+   endpoint, so the role's primary workflow has no queue. First backend
+   follow-up, ahead of party search.
+3. **`CUSTOMER_SERVICE_REP` appears in zero `@PreAuthorize`.** A CSR sees the
+   Operations group and nothing else. Confirm that's intended, not an oversight.
