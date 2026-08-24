@@ -13,7 +13,7 @@ import {
   type BeneficiaryFormInput,
   type BeneficiaryFormValues,
 } from './beneficiaryForm';
-import { Field } from './Field';
+import { Field } from '@/components/Field';
 
 /**
  * The one mutating form in this slice, deliberately placed on the full detail page

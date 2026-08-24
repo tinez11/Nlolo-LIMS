@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { BeneficiaryInput } from '@/api/types';
+import { UUID_PATTERN } from '@/lib/patterns';
 
 /**
  * Zod schema for the beneficiaries edit form, mirroring
@@ -18,8 +19,6 @@ import type { BeneficiaryInput } from '@/api/types';
  *    (`inputs == null || inputs.isEmpty() -> List.of()`), so clearing every
  *    beneficiary is a legitimate save, not a validation failure.
  */
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const beneficiaryRowSchema = z
   .object({

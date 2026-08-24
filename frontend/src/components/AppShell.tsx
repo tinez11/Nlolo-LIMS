@@ -52,7 +52,7 @@ const STAFF_NAV: NavGroup[] = [
     label: 'Operations',
     items: [
       { to: 'policies', label: 'Policies', icon: FileText, implemented: true },
-      { to: 'claims', label: 'Claims', icon: ScrollText, implemented: false },
+      { to: 'claims', label: 'Claims', icon: ScrollText, implemented: true },
       { to: 'products', label: 'Products', icon: Package, implemented: false },
     ],
   },

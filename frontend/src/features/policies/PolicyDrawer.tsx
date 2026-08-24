@@ -9,7 +9,7 @@ import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectDetail, usePolicyStore } from '@/store/policyStore';
-import { Field } from './Field';
+import { Field } from '@/components/Field';
 
 /**
  * The preview half of drawer-previews-page-acts.

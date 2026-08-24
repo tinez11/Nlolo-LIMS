@@ -3,6 +3,9 @@ import { RealmAuthProvider } from '@/auth/RealmAuthProvider';
 import { RequireAuth } from '@/auth/RequireAuth';
 import { AppShell } from '@/components/AppShell';
 import { RealmPicker } from '@/features/RealmPicker';
+import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
+import { ClaimsPage } from '@/features/claims/ClaimsPage';
+import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
 import { PoliciesPage } from '@/features/policies/PoliciesPage';
 import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
 
@@ -28,6 +31,9 @@ export function App() {
           <Route index element={<Navigate to="policies" replace />} />
           <Route path="policies" element={<PoliciesPage />} />
           <Route path="policies/:policyNumber" element={<PolicyDetailPage />} />
+          <Route path="claims" element={<ClaimsPage />} />
+          <Route path="claims/new" element={<RegisterClaimPage />} />
+          <Route path="claims/:claimId" element={<ClaimDetailPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

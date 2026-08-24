@@ -11,6 +11,7 @@
  * actually promises. Screens must defend on each field.
  */
 import type { components as BillingComponents } from '@/types/api/billing';
+import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
 import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
@@ -25,6 +26,38 @@ export type LoanView = PolicyLoanComponents['schemas']['LoanView'];
 
 export type PageMeta = CommonComponents['schemas']['PageMeta'];
 export type Money = CommonComponents['schemas']['Money'];
+
+export type ClaimView = ClaimsComponents['schemas']['ClaimView'];
+export type ClaimStatus = ClaimView['status'];
+export type ClaimType = ClaimView['claimType'];
+export type ClaimDetails = ClaimsComponents['schemas']['ClaimDetails'];
+export type RegisterClaimRequest = ClaimsComponents['schemas']['RegisterClaimRequest'];
+
+/**
+ * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the
+ * generated type's own comment: any discriminator+oneOf shape fails
+ * swagger-request-validator's syntax check before a single request is evaluated).
+ * It discriminates correctly anyway: every subtype's `claimType` is a literal enum
+ * of exactly one value, so a plain `switch (details.claimType)` narrows the union
+ * natively -- no manual type guard needed.
+ */
+export const CLAIM_TYPES: readonly ClaimType[] = [
+  'DEATH',
+  'DISABILITY',
+  'CRITICAL_ILLNESS',
+  'MATURITY',
+];
+
+/** The 7 claim lifecycle states, for the status filter. */
+export const CLAIM_STATUSES: readonly ClaimStatus[] = [
+  'REGISTERED',
+  'UNDER_ASSESSMENT',
+  'SETTLEMENT_REQUESTED',
+  'REOPENED',
+  'APPROVED',
+  'SETTLED',
+  'REJECTED',
+];
 
 /** The `{ items, page }` envelope the 4 paged endpoints return. */
 export interface Page<T> {

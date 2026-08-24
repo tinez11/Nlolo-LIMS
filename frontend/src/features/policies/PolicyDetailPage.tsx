@@ -18,7 +18,7 @@ import {
   usePolicyStore,
 } from '@/store/policyStore';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
-import { Field } from './Field';
+import { Field } from '@/components/Field';
 
 /**
  * The "acts" half of drawer-previews-page-acts: the full record, and where any
