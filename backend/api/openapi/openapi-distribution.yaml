@@ -306,7 +306,20 @@ components:
           type: [string, "null"]
           pattern: '^\d+(\.\d{1,4})?$'
           description: "Decimal string, never a JSON number - a rate multiplies money. 0.10 means 10%."
-        flatAmount: { $ref: 'openapi-common.yaml#/components/schemas/NullableMoney' }
+        flatAmount:
+          # `nullable: true` is retained deliberately on the handful of nullable $ref
+          # fields, even though this document declares 3.1. Every 3.1-pure alternative
+          # is worse here: oneOf/anyOf with a `{type: "null"}` branch makes
+          # swagger-request-validator match EVERY value (it resolves the unknown 3.0
+          # type permissively, so the field stops being validated at all), and a
+          # sibling `type` cannot admit null because the referenced schema pins
+          # `type: object`. Duplicating Money into a nullable copy would work but
+          # trades a real schema for drift. openapi-typescript reads this correctly as
+          # `Money | null`, and the contract tests validate it. Scalars elsewhere in
+          # these specs use the 3.1 array form, which needs no such exception.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
     CommissionPlanView:
       type: object
       required: [planId, productId, status, rules]
@@ -327,7 +340,20 @@ components:
           type: [string, "null"]
           pattern: '^\d+(\.\d{1,4})?$'
           description: "Decimal string, never a JSON number. Null when this is a flat-amount rule."
-        flatAmount: { $ref: 'openapi-common.yaml#/components/schemas/NullableMoney' }
+        flatAmount:
+          # `nullable: true` is retained deliberately on the handful of nullable $ref
+          # fields, even though this document declares 3.1. Every 3.1-pure alternative
+          # is worse here: oneOf/anyOf with a `{type: "null"}` branch makes
+          # swagger-request-validator match EVERY value (it resolves the unknown 3.0
+          # type permissively, so the field stops being validated at all), and a
+          # sibling `type` cannot admit null because the referenced schema pins
+          # `type: object`. Duplicating Money into a nullable copy would work but
+          # trades a real schema for drift. openapi-typescript reads this correctly as
+          # `Money | null`, and the contract tests validate it. Scalars elsewhere in
+          # these specs use the 3.1 array form, which needs no such exception.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
     CommissionStatementView:
       type: object
       required: [statementId, agentId, period, totalAmount, status]

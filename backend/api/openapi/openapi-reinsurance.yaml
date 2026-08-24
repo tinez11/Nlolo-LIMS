@@ -262,7 +262,11 @@ components:
         treatyId: { type: string, format: uuid }
         cededAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cededPremium:
-          $ref: 'openapi-common.yaml#/components/schemas/NullableMoney'
+          # See openapi-distribution.yaml flatAmount for why nullable: true stays on
+          # nullable $ref fields specifically.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
           description: "Null for a treaty type that cedes risk without a modelled premium share."
     ClaimRecoveryView:
       type: object
