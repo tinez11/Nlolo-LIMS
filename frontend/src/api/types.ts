@@ -51,7 +51,45 @@ export const CLAIM_TYPES: readonly ClaimType[] = [
 
 export type ProductSummary = ProductComponents['schemas']['ProductSummary'];
 export type ProductSnapshot = ProductComponents['schemas']['ProductSnapshot'];
+export type ProductStatus = NonNullable<ProductSummary['status']>;
+export type ProductCategory = NonNullable<ProductSummary['category']>;
+export type CreateProductRequest = ProductComponents['schemas']['CreateProductRequest'];
+export type ProductVersionSpec = ProductComponents['schemas']['ProductVersionSpec'];
+export type RatingFactorType = NonNullable<
+  NonNullable<ProductVersionSpec['ratingTable'][number]['factorType']>
+>;
+export type BenefitScheduleType = NonNullable<
+  NonNullable<ProductVersionSpec['benefitSchedule'][number]['benefitType']>
+>;
+export type IfrsMeasurementModel = NonNullable<ProductVersionSpec['ifrsMeasurementModel']>;
+export const IFRS_MEASUREMENT_MODELS: readonly IfrsMeasurementModel[] = ['GMM', 'PAA'];
+
 export type ManualIssueRequest = PolicyComponents['schemas']['ManualIssueRequest'];
+
+export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
+  'TERM_LIFE',
+  'ENDOWMENT',
+  'WHOLE_LIFE',
+  'ANNUITY',
+  'UNIT_LINKED',
+  'GROUP_LIFE',
+  'EDUCATION_SAVINGS',
+];
+
+export const RATING_FACTOR_TYPES: readonly RatingFactorType[] = [
+  'AGE',
+  'OCCUPATION_CLASS',
+  'SMOKER_STATUS',
+  'SUM_ASSURED_BAND',
+];
+
+export const BENEFIT_TYPES: readonly BenefitScheduleType[] = [
+  'DEATH',
+  'DISABILITY',
+  'CRITICAL_ILLNESS',
+  'MATURITY',
+  'SURRENDER',
+];
 export type PremiumFrequency = NonNullable<PolicyView['premiumFrequency']>;
 
 export const PREMIUM_FREQUENCIES: readonly PremiumFrequency[] = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'];

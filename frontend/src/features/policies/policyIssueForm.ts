@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ManualIssueRequest, PremiumFrequency } from '@/api/types';
 import { AMOUNT_PATTERN } from '@/lib/money';
-import { UUID_PATTERN } from '@/lib/patterns';
+import { CURRENCY_PATTERN, UUID_PATTERN } from '@/lib/patterns';
 import { beneficiaryListSchema, toApiBeneficiaries, type BeneficiaryFormValues } from './beneficiaryForm';
 
 /**
@@ -27,7 +27,6 @@ const amount = () =>
     .regex(AMOUNT_PATTERN, 'Must be a decimal amount like 2000000.00')
     .refine((v) => Number(v) >= 0.01, 'Must be at least 0.01');
 
-const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 const currency = () => z.string().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS');
 
 const optionalUuid = () =>

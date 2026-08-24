@@ -9,6 +9,9 @@ import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
 import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
 import { PoliciesPage } from '@/features/policies/PoliciesPage';
 import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
+import { CreateProductPage } from '@/features/products/CreateProductPage';
+import { ProductDetailPage } from '@/features/products/ProductDetailPage';
+import { ProductsPage } from '@/features/products/ProductsPage';
 
 /**
  * Realm-scoped routes.
@@ -36,6 +39,9 @@ export function App() {
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="claims/new" element={<RegisterClaimPage />} />
           <Route path="claims/:claimId" element={<ClaimDetailPage />} />
+          <Route path="products" element={<ProductsPage />} />
+          <Route path="products/new" element={<CreateProductPage />} />
+          <Route path="products/:productId" element={<ProductDetailPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

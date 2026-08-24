@@ -13,3 +13,6 @@ export const POLICY_NUMBER_PATTERN = /^[A-Z0-9-]{6,20}$/;
 
 /** What a native `<input type="date">` always produces when filled. */
 export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** An ISO 4217 currency code, e.g. `policy.infrastructure.MoneyDto.currencyCode`. */
+export const CURRENCY_PATTERN = /^[A-Z]{3}$/;
