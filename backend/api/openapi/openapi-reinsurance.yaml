@@ -262,9 +262,7 @@ components:
         treatyId: { type: string, format: uuid }
         cededAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cededPremium:
-          oneOf:
-            - $ref: 'openapi-common.yaml#/components/schemas/Money'
-            - type: "null"
+          $ref: 'openapi-common.yaml#/components/schemas/NullableMoney'
           description: "Null for a treaty type that cedes risk without a modelled premium share."
     ClaimRecoveryView:
       type: object

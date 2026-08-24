@@ -112,8 +112,35 @@ components:
       type: string
       format: uuid
       description: Opaque PartyId. Resolved via the party module's own API; never expanded inline.
+    NullableMoney:
+      # Deliberately a copy of Money rather than a $ref to it, and the duplication is
+      # load-bearing. OAS 3.1 has no construct for "this $ref, or null" that
+      # swagger-request-validator evaluates correctly: `anyOf: [$ref, {type: "null"}]`
+      # makes the null branch match EVERY value (it resolves unknown 3.0 types
+      # permissively), so the field would stop being validated at all, and
+      # `$ref` + a sibling `type` fails on null because the referenced Money pins
+      # `type: object`. The array form below is validated correctly -- `properties`
+      # simply does not apply to a null instance -- and openapi-typescript reads it
+      # as `{...} | null`. Keep in sync with Money above; they sit adjacent so drift
+      # is visible in review.
+      type: [object, "null"]
+      properties:
+        amount:
+          type: string
+          pattern: '^-?\d+(\.\d{1,2})?$'
+          description: Decimal string — never a binary float.
+        currencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: TZS
     PolicyNumberRef:
       type: string
+      pattern: '^[A-Z0-9-]{6,20}$'
+    NullablePolicyNumberRef:
+      # See NullableMoney for why this is a copy and not a nullable $ref.
+      # `pattern` does not apply to a null instance, so this validates a real
+      # policy number exactly as strictly as PolicyNumberRef does.
+      type: [string, "null"]
       pattern: '^[A-Z0-9-]{6,20}$'
     ProcessStatus:
       type: object

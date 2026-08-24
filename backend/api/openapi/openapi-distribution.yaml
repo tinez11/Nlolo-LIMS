@@ -306,10 +306,7 @@ components:
           type: [string, "null"]
           pattern: '^\d+(\.\d{1,4})?$'
           description: "Decimal string, never a JSON number - a rate multiplies money. 0.10 means 10%."
-        flatAmount:
-          oneOf:
-            - $ref: 'openapi-common.yaml#/components/schemas/Money'
-            - type: "null"
+        flatAmount: { $ref: 'openapi-common.yaml#/components/schemas/NullableMoney' }
     CommissionPlanView:
       type: object
       required: [planId, productId, status, rules]
@@ -330,10 +327,7 @@ components:
           type: [string, "null"]
           pattern: '^\d+(\.\d{1,4})?$'
           description: "Decimal string, never a JSON number. Null when this is a flat-amount rule."
-        flatAmount:
-          oneOf:
-            - $ref: 'openapi-common.yaml#/components/schemas/Money'
-            - type: "null"
+        flatAmount: { $ref: 'openapi-common.yaml#/components/schemas/NullableMoney' }
     CommissionStatementView:
       type: object
       required: [statementId, agentId, period, totalAmount, status]
