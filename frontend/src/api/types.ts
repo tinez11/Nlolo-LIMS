@@ -16,6 +16,7 @@ import type { components as CommonComponents } from '@/types/api/common';
 import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
 import type { components as ProductComponents } from '@/types/api/product';
+import type { components as UnderwritingComponents } from '@/types/api/underwriting';
 
 export type PolicyView = PolicyComponents['schemas']['PolicyView'];
 export type PolicyStatus = NonNullable<PolicyView['status']>;
@@ -121,3 +122,21 @@ export const POLICY_STATUSES: readonly PolicyStatus[] = [
   'MATURED',
   'SURRENDERED',
 ];
+
+/**
+ * `UnderwritingCaseView` deliberately omits `productVersionId`, `sumAssuredAmount`
+ * and `sumAssuredCurrency` -- `underwriting.api.UnderwritingCaseView` marks all
+ * three `@JsonIgnore` (a real regression fix: they leaked into the JSON response
+ * and violated this very spec's `additionalProperties:false` until that was
+ * added). A case's sum assured is therefore knowable only at the moment you
+ * open it, from that response -- there is no way to read it back afterward.
+ */
+export type UnderwritingCaseView = UnderwritingComponents['schemas']['UnderwritingCaseView'];
+export type UnderwritingCaseStatus = NonNullable<UnderwritingCaseView['status']>;
+export type UnderwritingReferralStatus = NonNullable<UnderwritingCaseView['referralStatus']>;
+export type UnderwritingDecisionOutcome = NonNullable<UnderwritingCaseView['decisionOutcome']>;
+export type OpenCaseRequest = UnderwritingComponents['schemas']['OpenCaseRequest'];
+export type SubmitAssessmentRequest = UnderwritingComponents['schemas']['SubmitAssessmentRequest'];
+export type AssessmentType = NonNullable<SubmitAssessmentRequest['assessmentType']>;
+
+export const ASSESSMENT_TYPES: readonly AssessmentType[] = ['MEDICAL', 'FINANCIAL', 'OCCUPATIONAL'];

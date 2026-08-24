@@ -1,5 +1,6 @@
 import {
   BookText,
+  ClipboardCheck,
   FileText,
   LogOut,
   Moon,
@@ -24,10 +25,20 @@ import { Button } from './ui/button';
  * Nav definition for the staff realm.
  *
  * `implemented` gates rendering. Every entry here has a real list endpoint behind
- * it -- entities that are fetch-by-ID only (parties, agents, underwriting cases,
- * payments, payout batches, documents) deliberately get NO nav item, because an
- * item that leads to a "paste an ID" screen reads as broken software. They are
- * reached by drilling in from a policy or claim.
+ * it -- entities that are fetch-by-ID only (parties, agents, payments, payout
+ * batches, documents) deliberately get NO nav item, because an item that leads
+ * to a "paste an ID" screen reads as broken software. They are reached by
+ * drilling in from a policy or claim.
+ *
+ * Underwriting is the one exception, and deliberately not a "paste an ID"
+ * screen: `POST /underwriting/cases` is the only entry point onto that domain
+ * that exists server-side (no list/search endpoint, and unlike parties/agents,
+ * no OTHER domain's response ever re-surfaces a real case id to drill in from
+ * -- confirmed against the actual `PolicyResponseDto` wire type, which omits
+ * `underwritingCaseId` entirely despite the internal same-named `PolicyView`
+ * record carrying it). So the nav item goes straight to the one real, working
+ * action: opening a case. Its own detail page says plainly that the id it
+ * hands back afterward is the only way to return to it.
  *
  * The unimplemented entries are listed rather than deleted so the intended shape is
  * visible, but they are filtered out below: shipping a link to an empty page is the
@@ -54,6 +65,7 @@ const STAFF_NAV: NavGroup[] = [
       { to: 'policies', label: 'Policies', icon: FileText, implemented: true },
       { to: 'claims', label: 'Claims', icon: ScrollText, implemented: true },
       { to: 'products', label: 'Products', icon: Package, implemented: true },
+      { to: 'underwriting/new', label: 'Underwriting', icon: ClipboardCheck, implemented: true },
     ],
   },
   {
