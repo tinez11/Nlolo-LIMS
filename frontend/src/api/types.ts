@@ -14,6 +14,7 @@ import type { components as BillingComponents } from '@/types/api/billing';
 import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
 import type { components as PolicyComponents } from '@/types/api/policy';
+import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
 import type { components as ProductComponents } from '@/types/api/product';
 import type { components as UnderwritingComponents } from '@/types/api/underwriting';
@@ -53,6 +54,28 @@ export interface SettlementDecisionRequest {
 export interface ReopenClaimRequest {
   reason: string;
 }
+
+/**
+ * `agents`/`commission-plans` -- there is no `GET /agents` list or search
+ * endpoint at all (matches parties/payments/documents' shape), and no
+ * `GET /commission-plans/{id}` either: a plan is readable only through an
+ * agent's applicable-plan lookup (agent + product), never by its own id.
+ */
+export type AgentView = DistributionComponents['schemas']['AgentView'];
+export type LicenseStatus = NonNullable<AgentView['licenseStatus']>;
+export type OnboardAgentRequest = DistributionComponents['schemas']['OnboardAgentRequest'];
+
+export type CommissionPlanView = DistributionComponents['schemas']['CommissionPlanView'];
+export type PlanStatus = NonNullable<CommissionPlanView['status']>;
+export type CreateCommissionPlanRequest = DistributionComponents['schemas']['CreateCommissionPlanRequest'];
+export type CommissionRuleInput = DistributionComponents['schemas']['CommissionRuleInput'];
+export type CommissionRuleView = DistributionComponents['schemas']['CommissionRuleView'];
+export type TierType = DistributionComponents['schemas']['TierType'];
+
+export type CommissionStatementView = DistributionComponents['schemas']['CommissionStatementView'];
+export type StatementStatus = NonNullable<CommissionStatementView['status']>;
+export type CommissionAccrualView = DistributionComponents['schemas']['CommissionAccrualView'];
+export type RequestPayoutRequest = DistributionComponents['schemas']['RequestPayoutRequest'];
 
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the

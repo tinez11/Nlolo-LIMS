@@ -25,20 +25,24 @@ import { Button } from './ui/button';
  * Nav definition for the staff realm.
  *
  * `implemented` gates rendering. Every entry here has a real list endpoint behind
- * it -- entities that are fetch-by-ID only (parties, agents, payments, payout
- * batches, documents) deliberately get NO nav item, because an item that leads
- * to a "paste an ID" screen reads as broken software. They are reached by
- * drilling in from a policy or claim.
+ * it -- entities that are fetch-by-ID only (parties, payments, payout batches,
+ * documents) deliberately get NO nav item, because an item that leads to a
+ * "paste an ID" screen reads as broken software. They are reached by drilling
+ * in from a policy or claim.
  *
- * Underwriting is the one exception, and deliberately not a "paste an ID"
- * screen: `POST /underwriting/cases` is the only entry point onto that domain
- * that exists server-side (no list/search endpoint, and unlike parties/agents,
- * no OTHER domain's response ever re-surfaces a real case id to drill in from
- * -- confirmed against the actual `PolicyResponseDto` wire type, which omits
- * `underwritingCaseId` entirely despite the internal same-named `PolicyView`
- * record carrying it). So the nav item goes straight to the one real, working
- * action: opening a case. Its own detail page says plainly that the id it
- * hands back afterward is the only way to return to it.
+ * Underwriting and Agents are the two exceptions, and deliberately not
+ * "paste an ID" screens: `POST /underwriting/cases` and `POST /agents` are
+ * the only entry points onto those domains that exist server-side (neither
+ * has a list/search endpoint), so each nav item goes straight to the one
+ * real, working action -- opening a case, onboarding an agent -- rather than
+ * a lookup box. Underwriting's own case id is never re-surfaced anywhere else
+ * on this platform (confirmed against the actual `PolicyResponseDto` wire
+ * type, which omits `underwritingCaseId` entirely despite the internal
+ * same-named `PolicyView` record carrying it), so its detail page is explicit
+ * that the id it hands back is the only way to return. An agent is different:
+ * `PolicyView.agentOfRecordId` DOES round-trip through `GET /policies` for
+ * real, so an agent is also reachable by drilling in from a policy that names
+ * one -- Agents' nav entry is just the first way in, not the only one.
  *
  * The unimplemented entries are listed rather than deleted so the intended shape is
  * visible, but they are filtered out below: shipping a link to an empty page is the
@@ -78,7 +82,7 @@ const STAFF_NAV: NavGroup[] = [
       { to: 'chart-of-accounts', label: 'Chart of accounts', icon: Wallet, implemented: false },
       { to: 'treaties', label: 'Treaties', icon: Shield, implemented: false },
       { to: 'regulatory-returns', label: 'Regulatory returns', icon: Receipt, implemented: false },
-      { to: 'agents', label: 'Agents', icon: Users, implemented: false },
+      { to: 'agents/new', label: 'Agents', icon: Users, implemented: true },
     ],
   },
 ];

@@ -6,6 +6,8 @@ import { RealmPicker } from '@/features/RealmPicker';
 import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
 import { ClaimsPage } from '@/features/claims/ClaimsPage';
 import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
+import { AgentDetailPage } from '@/features/distribution/AgentDetailPage';
+import { OnboardAgentPage } from '@/features/distribution/OnboardAgentPage';
 import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
 import { PoliciesPage } from '@/features/policies/PoliciesPage';
 import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
@@ -46,6 +48,8 @@ export function App() {
           <Route path="products/:productId" element={<ProductDetailPage />} />
           <Route path="underwriting/new" element={<OpenUnderwritingCasePage />} />
           <Route path="underwriting/:caseId" element={<UnderwritingCaseDetailPage />} />
+          <Route path="agents/new" element={<OnboardAgentPage />} />
+          <Route path="agents/:agentId" element={<AgentDetailPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

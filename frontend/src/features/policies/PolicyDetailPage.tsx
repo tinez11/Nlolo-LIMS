@@ -138,7 +138,9 @@ export function PolicyDetailPage() {
                   label="Agent of record"
                   value={
                     policy.agentOfRecordId ? (
-                      <span className="font-mono text-xs">{policy.agentOfRecordId}</span>
+                      <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="font-mono text-xs underline">
+                        {policy.agentOfRecordId}
+                      </Link>
                     ) : (
                       'Direct — no agent'
                     )
