@@ -17,6 +17,7 @@ import {
   selectLoans,
   usePolicyStore,
 } from '@/store/policyStore';
+import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { Field } from './Field';
 
 /**
@@ -151,7 +152,11 @@ export function PolicyDetailPage() {
             {renderCoverage()}
           </Panel>
 
-          <Panel title="Beneficiaries">{renderBeneficiaries()}</Panel>
+          <Panel title="Beneficiaries">
+            {policy && (
+              <BeneficiariesPanel policyNumber={policyNumber} beneficiaries={policy.beneficiaries ?? []} />
+            )}
+          </Panel>
         </div>
       </div>
     </>
@@ -290,30 +295,6 @@ export function PolicyDetailPage() {
     );
   }
 
-  function renderBeneficiaries() {
-    const list = policy?.beneficiaries ?? [];
-    if (list.length === 0) {
-      return <p className="px-4 pb-4 text-xs text-muted-foreground">None recorded.</p>;
-    }
-    return (
-      <dl className="px-4 pb-2">
-        {list.map((b, index) => (
-          <Field
-            key={`${b.partyId ?? b.freeformDesignee ?? 'beneficiary'}-${index}`}
-            label={b.type === 'FREEFORM' ? 'Freeform' : 'Party'}
-            value={
-              <span className="font-mono text-xs">
-                {b.freeformDesignee ?? b.partyId ?? '—'}
-              </span>
-            }
-            {...(typeof b.sharePercent === 'number'
-              ? { note: `${b.sharePercent}% share` }
-              : {})}
-          />
-        ))}
-      </dl>
-    );
-  }
 }
 
 function BackLink() {

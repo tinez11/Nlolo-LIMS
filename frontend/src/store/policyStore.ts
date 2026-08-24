@@ -4,10 +4,18 @@ import {
   getPolicy,
   listInvoices,
   listLoans,
+  replaceBeneficiaries,
   searchPolicies,
   type PolicySearchParams,
 } from '@/api/policies';
-import type { CoverageStatusView, InvoiceView, LoanView, Page, PolicyView } from '@/api/types';
+import type {
+  BeneficiaryInput,
+  CoverageStatusView,
+  InvoiceView,
+  LoanView,
+  Page,
+  PolicyView,
+} from '@/api/types';
 import { idle, track, type Resource } from './createResourceSlice';
 
 /**
@@ -27,12 +35,17 @@ interface PolicyState {
   coverage: Keyed<CoverageStatusView>;
   invoices: Keyed<InvoiceView[]>;
   loans: Keyed<LoanView[]>;
+  // Deliberately separate from `detail`: a failed SAVE must not corrupt or discard
+  // the last known-good read of the policy, and the two have unrelated shapes
+  // (this one carries no useful `data`, just whether a save is in flight or failed).
+  savingBeneficiaries: Keyed<true>;
 
   loadList: (params: PolicySearchParams) => Promise<void>;
   loadDetail: (policyNumber: string) => Promise<void>;
   loadCoverage: (policyNumber: string) => Promise<void>;
   loadInvoices: (policyNumber: string) => Promise<void>;
   loadLoans: (policyNumber: string) => Promise<void>;
+  saveBeneficiaries: (policyNumber: string, beneficiaries: BeneficiaryInput[]) => Promise<void>;
 }
 
 export const usePolicyStore = create<PolicyState>((set, getState) => ({
@@ -41,6 +54,7 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   coverage: {},
   invoices: {},
   loans: {},
+  savingBeneficiaries: {},
 
   // Every `track` call below is keyed so a slower, superseded request can never
   // overwrite a faster, newer one -- e.g. clicking through status filter chips
@@ -86,6 +100,27 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       (next) => set((s) => ({ loans: { ...s.loans, [policyNumber]: next } })),
       () => listLoans(policyNumber),
     ),
+
+  // A distinct key from `policy.detail.${policyNumber}` -- the save and the
+  // subsequent refresh are two independent tracked operations, so a slow refresh
+  // triggered by an OLDER save cannot be confused with one triggered by a newer one.
+  saveBeneficiaries: (policyNumber, beneficiaries) =>
+    track(
+      `policy.saveBeneficiaries.${policyNumber}`,
+      getState().savingBeneficiaries[policyNumber] ?? idle<true>(),
+      (next) => set((s) => ({ savingBeneficiaries: { ...s.savingBeneficiaries, [policyNumber]: next } })),
+      // Explicit Promise<true> return type: without it, TypeScript widens the
+      // literal `return true` to `boolean` because the function body has more than
+      // one statement, which then fails to satisfy Resource<true>.
+      async (): Promise<true> => {
+        await replaceBeneficiaries(policyNumber, beneficiaries);
+        // The PUT returns no body, so the only way to show the new set is to refetch.
+        // Awaited so a caller that closes the edit form on success never renders the
+        // stale pre-save detail for one frame.
+        await getState().loadDetail(policyNumber);
+        return true;
+      },
+    ),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
@@ -97,3 +132,5 @@ export const selectInvoices = (policyNumber: string) => (s: PolicyState) =>
   s.invoices[policyNumber] ?? idle<InvoiceView[]>();
 export const selectLoans = (policyNumber: string) => (s: PolicyState) =>
   s.loans[policyNumber] ?? idle<LoanView[]>();
+export const selectSavingBeneficiaries = (policyNumber: string) => (s: PolicyState) =>
+  s.savingBeneficiaries[policyNumber] ?? idle<true>();

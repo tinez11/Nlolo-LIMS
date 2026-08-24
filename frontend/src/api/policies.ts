@@ -1,5 +1,6 @@
-import { get } from '@/lib/http';
+import { get, put } from '@/lib/http';
 import type {
+  BeneficiaryInput,
   CoverageStatusView,
   InvoiceView,
   LoanView,
@@ -82,4 +83,23 @@ export function listInvoices(policyNumber: string): Promise<InvoiceView[]> {
 /** `GET /policies/{n}/loans` -- also a bare unpaged array. */
 export function listLoans(policyNumber: string): Promise<LoanView[]> {
   return get<LoanView[]>(`/policies/${encodeURIComponent(policyNumber)}/loans`);
+}
+
+/**
+ * `PUT /policies/{n}/beneficiaries` -- replaces the whole beneficiary set.
+ *
+ * No `Idempotency-Key` on this endpoint at all (unlike the six hard-required
+ * endpoints elsewhere): the controller declares no such header, and the operation
+ * replaces the full set idempotently by construction (same body twice produces the
+ * same end state), so there is nothing here for a key to protect against.
+ *
+ * Returns void: the spec declares this a `200` with no response body
+ * (`ResponseEntity.ok().build()` server-side). Callers refetch the policy detail to
+ * see the new beneficiaries.
+ */
+export function replaceBeneficiaries(
+  policyNumber: string,
+  beneficiaries: BeneficiaryInput[],
+): Promise<void> {
+  return put<void>(`/policies/${encodeURIComponent(policyNumber)}/beneficiaries`, beneficiaries);
 }
