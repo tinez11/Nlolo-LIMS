@@ -6,6 +6,7 @@ import { RealmPicker } from '@/features/RealmPicker';
 import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
 import { ClaimsPage } from '@/features/claims/ClaimsPage';
 import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
+import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
 import { PoliciesPage } from '@/features/policies/PoliciesPage';
 import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
 
@@ -30,6 +31,7 @@ export function App() {
         <Route path="/staff" element={<StaffRealm />}>
           <Route index element={<Navigate to="policies" replace />} />
           <Route path="policies" element={<PoliciesPage />} />
+          <Route path="policies/new" element={<IssuePolicyPage />} />
           <Route path="policies/:policyNumber" element={<PolicyDetailPage />} />
           <Route path="claims" element={<ClaimsPage />} />
           <Route path="claims/new" element={<RegisterClaimPage />} />

@@ -1,5 +1,6 @@
+import { Plus } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { POLICY_STATUSES, type PolicyStatus, type PolicyView } from '@/api/types';
 import { DEFAULT_PAGE_SIZE } from '@/api/policies';
 import { PageHeader } from '@/components/AppShell';
@@ -194,6 +195,14 @@ export function PoliciesPage() {
       <PageHeader
         title="Policies"
         description="Every policy in your tenant. Select one to preview it."
+        actions={
+          <Button asChild size="sm" variant="primary">
+            <Link to="new">
+              <Plus />
+              Issue policy
+            </Link>
+          </Button>
+        }
       />
 
       <StatCards stats={stats} />

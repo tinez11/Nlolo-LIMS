@@ -15,6 +15,7 @@ import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
 import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
+import type { components as ProductComponents } from '@/types/api/product';
 
 export type PolicyView = PolicyComponents['schemas']['PolicyView'];
 export type PolicyStatus = NonNullable<PolicyView['status']>;
@@ -47,6 +48,13 @@ export const CLAIM_TYPES: readonly ClaimType[] = [
   'CRITICAL_ILLNESS',
   'MATURITY',
 ];
+
+export type ProductSummary = ProductComponents['schemas']['ProductSummary'];
+export type ProductSnapshot = ProductComponents['schemas']['ProductSnapshot'];
+export type ManualIssueRequest = PolicyComponents['schemas']['ManualIssueRequest'];
+export type PremiumFrequency = NonNullable<PolicyView['premiumFrequency']>;
+
+export const PREMIUM_FREQUENCIES: readonly PremiumFrequency[] = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'];
 
 /** The 7 claim lifecycle states, for the status filter. */
 export const CLAIM_STATUSES: readonly ClaimStatus[] = [

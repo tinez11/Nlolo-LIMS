@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiError } from '@/lib/apiError';
+import type { PolicyView } from '@/api/types';
 import { failure, idle, success } from './createResourceSlice';
 import { selectSavingBeneficiaries, usePolicyStore } from './policyStore';
 
@@ -72,5 +73,35 @@ describe('resetSaveBeneficiaries', () => {
     usePolicyStore.getState().resetSaveBeneficiaries('POL-1');
 
     expect(selectSavingBeneficiaries('POL-1')(usePolicyStore.getState()).error).toBeNull();
+  });
+});
+
+/**
+ * `issuing` is a single, non-keyed slot (issuance creates a NEW policy, so there
+ * is no existing id to key by) -- the same shape as claims' `registering`, which
+ * needed the identical reset for the identical reason. Built in from the start.
+ */
+describe('resetIssuePolicy', () => {
+  it('clears a failed issuance back to idle', () => {
+    usePolicyStore.setState({ issuing: failure(idle<PolicyView>(), anError) });
+
+    usePolicyStore.getState().resetIssuePolicy();
+
+    expect(usePolicyStore.getState().issuing).toEqual(idle());
+  });
+
+  it('does no harm when there is nothing to reset', () => {
+    usePolicyStore.setState({ issuing: idle() });
+
+    expect(() => usePolicyStore.getState().resetIssuePolicy()).not.toThrow();
+    expect(usePolicyStore.getState().issuing.status).toBe('idle');
+  });
+
+  it('never leaves the previous error reachable afterward', () => {
+    usePolicyStore.setState({ issuing: failure(idle<PolicyView>(), anError) });
+
+    usePolicyStore.getState().resetIssuePolicy();
+
+    expect(usePolicyStore.getState().issuing.error).toBeNull();
   });
 });

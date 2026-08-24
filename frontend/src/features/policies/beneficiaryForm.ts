@@ -59,21 +59,24 @@ const beneficiaryRowSchema = z
     }
   });
 
-export const beneficiariesFormSchema = z
-  .object({ beneficiaries: z.array(beneficiaryRowSchema) })
-  .superRefine((data, ctx) => {
-    if (data.beneficiaries.length === 0) return; // clearing all beneficiaries is legitimate
-    const total = data.beneficiaries.reduce((sum, b) => sum + b.sharePercent, 0);
-    // The backend compares an exact BigDecimal to "100"; floating point in the browser
-    // needs a small tolerance for the same real inputs (e.g. 33.34 + 33.33 + 33.33).
-    if (Math.abs(total - 100) > 0.005) {
-      ctx.addIssue({
-        code: 'custom',
-        message: `Shares must sum to 100, got ${total}`,
-        path: ['beneficiaries'],
-      });
-    }
-  });
+/**
+ * The array-level schema, exported on its own so it can be embedded inside a
+ * larger form (see policyIssueForm.ts, which reuses this verbatim for manual
+ * policy issuance's own optional `beneficiaries` field -- the wire shape and
+ * every validation rule are identical, so this is the same field, not a
+ * coincidentally similar one).
+ */
+export const beneficiaryListSchema = z.array(beneficiaryRowSchema).superRefine((list, ctx) => {
+  if (list.length === 0) return; // clearing all beneficiaries is legitimate
+  const total = list.reduce((sum, b) => sum + b.sharePercent, 0);
+  // The backend compares an exact BigDecimal to "100"; floating point in the browser
+  // needs a small tolerance for the same real inputs (e.g. 33.34 + 33.33 + 33.33).
+  if (Math.abs(total - 100) > 0.005) {
+    ctx.addIssue({ code: 'custom', message: `Shares must sum to 100, got ${total}` });
+  }
+});
+
+export const beneficiariesFormSchema = z.object({ beneficiaries: beneficiaryListSchema });
 
 /**
  * Two distinct types either side of `z.coerce.number()`:

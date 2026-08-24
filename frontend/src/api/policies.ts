@@ -1,9 +1,10 @@
-import { get, put } from '@/lib/http';
+import { get, post, put } from '@/lib/http';
 import type {
   BeneficiaryInput,
   CoverageStatusView,
   InvoiceView,
   LoanView,
+  ManualIssueRequest,
   Page,
   PolicyStatus,
   PolicyView,
@@ -102,4 +103,16 @@ export function replaceBeneficiaries(
   beneficiaries: BeneficiaryInput[],
 ): Promise<void> {
   return put<void>(`/policies/${encodeURIComponent(policyNumber)}/beneficiaries`, beneficiaries);
+}
+
+/**
+ * `POST /policies/manual-issue` -- the staff exception path that issues a policy
+ * outside the normal underwriting-decision pipeline. No `Idempotency-Key` at all
+ * on this endpoint (confirmed against both the controller signature and the
+ * spec): a second identical submission genuinely creates a second policy, so the
+ * UI's own submit-button disabling while in flight is the only guard against a
+ * double-click, not a server-side idempotency mechanism.
+ */
+export function issuePolicy(request: ManualIssueRequest): Promise<PolicyView> {
+  return post<PolicyView>('/policies/manual-issue', request);
 }

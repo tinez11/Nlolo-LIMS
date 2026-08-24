@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   getCoverageStatus,
   getPolicy,
+  issuePolicy,
   listInvoices,
   listLoans,
   replaceBeneficiaries,
@@ -13,6 +14,7 @@ import type {
   CoverageStatusView,
   InvoiceView,
   LoanView,
+  ManualIssueRequest,
   Page,
   PolicyView,
 } from '@/api/types';
@@ -39,6 +41,9 @@ interface PolicyState {
   // the last known-good read of the policy, and the two have unrelated shapes
   // (this one carries no useful `data`, just whether a save is in flight or failed).
   savingBeneficiaries: Keyed<true>;
+  // A single slot, not keyed: issuance creates a NEW policy, so there is no
+  // existing policyNumber to key against yet -- same shape as claims' `registering`.
+  issuing: Resource<PolicyView>;
 
   loadList: (params: PolicySearchParams) => Promise<void>;
   loadDetail: (policyNumber: string) => Promise<void>;
@@ -48,6 +53,10 @@ interface PolicyState {
   saveBeneficiaries: (policyNumber: string, beneficiaries: BeneficiaryInput[]) => Promise<void>;
   /** Clears a stale save error before a fresh edit attempt -- see the call site. */
   resetSaveBeneficiaries: (policyNumber: string) => void;
+  issuePolicy: (request: ManualIssueRequest) => Promise<void>;
+  /** Clears a stale issuance error before a fresh attempt -- see RegisterClaimPage's
+   *  identical need for why this exists from the start rather than being added later. */
+  resetIssuePolicy: () => void;
 }
 
 export const usePolicyStore = create<PolicyState>((set, getState) => ({
@@ -57,6 +66,7 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   invoices: {},
   loans: {},
   savingBeneficiaries: {},
+  issuing: idle(),
 
   // Every `track` call below is keyed so a slower, superseded request can never
   // overwrite a faster, newer one -- e.g. clicking through status filter chips
@@ -137,6 +147,16 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       const { [policyNumber]: _discard, ...rest } = s.savingBeneficiaries;
       return { savingBeneficiaries: rest };
     }),
+
+  issuePolicy: (request) =>
+    track(
+      'policy.issue',
+      getState().issuing,
+      (next) => set({ issuing: next }),
+      () => issuePolicy(request),
+    ),
+
+  resetIssuePolicy: () => set({ issuing: idle() }),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
