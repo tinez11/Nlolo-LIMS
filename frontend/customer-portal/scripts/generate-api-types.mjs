@@ -9,7 +9,7 @@ const SPECS = [
   'billing', 'payment', 'claims', 'policyloan', 'document', 'refdata',
 ];
 
-const specDir = path.resolve(import.meta.dirname, '../../../api/openapi');
+const specDir = path.resolve(import.meta.dirname, '../../../backend/api/openapi');
 const outDir = path.resolve(import.meta.dirname, '../src/types/api');
 mkdirSync(outDir, { recursive: true });
 

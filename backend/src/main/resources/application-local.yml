@@ -3,7 +3,8 @@ spring:
     activate:
       on-profile: local
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/lifeplatform}
+    # 15432, not the standard 5432 -- see infra/docker-compose.yml's postgres port comment.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:15432/lifeplatform}
     username: ${SPRING_DATASOURCE_USERNAME:app_role}
     password: ${SPRING_DATASOURCE_PASSWORD:devapppassword}
 

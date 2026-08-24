@@ -19,7 +19,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-devapppassword}
     ports:
-      - "5432:5432"
+      # Host-side only -- every other service in this file reaches Postgres via the internal
+      # "postgres:5432" DNS name, unaffected by this. 15432, not 5432, because a native Windows
+      # PostgreSQL install on this machine's dev box permanently occupies host port 5432 -- see
+      # docs/10-frontend-development.md gotcha 5.
+      - "15432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro

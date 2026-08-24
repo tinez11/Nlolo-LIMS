@@ -14,12 +14,14 @@ the host (see gotcha 2 below for why).
   `/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64`. Export
   it as `JAVA_HOME` before running Maven; do not rely on a separately-installed JDK unless you
   know it is also Java 21.
-- **Do NOT install Postgres or Keycloak natively.** They run as containers on `5432` and `8081`
-  respectively (Keycloak's container publishes its internal `8080` as host `8081` — see
-  `infra/docker-compose.yml`). A native Postgres or Keycloak install listening on the same port
-  will fail to bind, or worse, silently win the port and have the containerized service fail
-  instead, producing a confusing "why is my data missing" investigation. If you already have a
-  local Postgres or Keycloak service running, stop it before bringing this stack up.
+- **Do NOT install Postgres or Keycloak natively.** They run as containers on host ports `15432`
+  and `8081` respectively (Postgres is published on `15432`, not the standard `5432`, specifically
+  because a native Postgres install will silently win that port instead of failing to bind —
+  `application-local.yml`'s datasource URL already points at `15432` to match; Keycloak's
+  container publishes its internal `8080` as host `8081` — see `infra/docker-compose.yml`). If you
+  already have a local Postgres or Keycloak service running on either port, stop it before
+  bringing this stack up, or the app will silently talk to the wrong database with a confusing
+  `password authentication failed` error.
 - **No local `psql` install is required.** `scripts/migrate.sh local` runs `psql` inside the
   `postgres` container itself.
 
