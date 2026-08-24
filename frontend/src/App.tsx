@@ -1,10 +1,49 @@
-import { cn } from '@/lib/cn';
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { RealmAuthProvider } from '@/auth/RealmAuthProvider';
+import { RequireAuth } from '@/auth/RequireAuth';
+import { AppShell } from '@/components/AppShell';
+import { RealmPicker } from '@/features/RealmPicker';
+import { PoliciesPage } from '@/features/policies/PoliciesPage';
+import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
 
-/** Placeholder shell -- replaced by the router in the next commit. */
+/**
+ * Realm-scoped routes.
+ *
+ * `react-oidc-context`'s AuthProvider takes exactly ONE authority, and the realm
+ * must therefore be known before the user is authenticated -- a chicken-and-egg the
+ * URL resolves. One provider is mounted per realm subtree, which also means a
+ * customer never downloads the finance bundle, and no stale token from another
+ * realm can reach the wrong provider.
+ *
+ * Only /staff is built. The other three realms are deliberately absent rather than
+ * stubbed: an authenticating route into an empty app is worse than a 404.
+ */
 export function App() {
   return (
-    <div className={cn('grid h-full place-items-center')}>
-      <p className="text-sm text-muted-foreground">Life Platform Console</p>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<RealmPicker />} />
+
+        <Route path="/staff" element={<StaffRealm />}>
+          <Route index element={<Navigate to="policies" replace />} />
+          <Route path="policies" element={<PoliciesPage />} />
+          <Route path="policies/:policyNumber" element={<PolicyDetailPage />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+function StaffRealm() {
+  return (
+    <RealmAuthProvider realm="staff">
+      <RequireAuth realm="staff">
+        <AppShell realm="staff">
+          <Outlet />
+        </AppShell>
+      </RequireAuth>
+    </RealmAuthProvider>
   );
 }

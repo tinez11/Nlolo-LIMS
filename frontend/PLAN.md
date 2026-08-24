@@ -227,7 +227,11 @@ required check trains people to ignore CI.
 
 **Blockers — the SPA cannot work without these:**
 
-1. `lifeplatform-spa` public PKCE client (S256) added to `backend/keycloak/staff-realm.json`, redirect `http://localhost:5173/*`
+1. `lifeplatform-spa` public PKCE client (S256) added to `backend/keycloak/staff-realm.json`, redirect `http://localhost:5173/*`.
+
+   **Editing that file is not sufficient on an existing environment**, and this was found the hard way during implementation. Keycloak keeps its own data in Postgres here (`KC_DB=postgres`, volume `infra_postgres-data`), and `--import-realm` imports a realm only if it does **not already exist** — so on any stack that has been started before, the edit is skipped in complete silence. No warning, no error; the SPA just fails with an opaque "invalid client" at the Keycloak login page. A fresh volume (and therefore CI) imports it correctly, which is what makes the trap easy to miss.
+
+   `backend/scripts/apply-spa-client.sh` closes it: idempotent, creates-or-updates via the Admin API, and reads the client back to verify rather than trusting the write's status code.
 2. `.github/workflows/ci-cd.yml` → `frontend-build-and-test` repointed to `frontend/`
 
 **Correctness:**
