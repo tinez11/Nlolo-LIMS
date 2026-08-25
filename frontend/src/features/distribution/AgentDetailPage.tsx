@@ -181,7 +181,13 @@ function LifecycleActions({
 
 function SuspendAction({ agentId }: { agentId: string }) {
   const suspendAgent = useDistributionStore((s) => s.suspendAgent);
+  const resetSuspendAgent = useDistributionStore((s) => s.resetSuspendAgent);
   const suspending = useDistributionStore(selectSuspendingAgent(agentId));
+
+  useEffect(() => {
+    resetSuspendAgent(agentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId]);
 
   return (
     <div className="space-y-2 px-4 pb-4">
@@ -200,7 +206,13 @@ function SuspendAction({ agentId }: { agentId: string }) {
 
 function ReactivateAction({ agentId }: { agentId: string }) {
   const reactivateAgent = useDistributionStore((s) => s.reactivateAgent);
+  const resetReactivateAgent = useDistributionStore((s) => s.resetReactivateAgent);
   const reactivating = useDistributionStore(selectReactivatingAgent(agentId));
+
+  useEffect(() => {
+    resetReactivateAgent(agentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId]);
 
   return (
     <div className="space-y-2 px-4 pb-4">

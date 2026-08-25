@@ -173,9 +173,14 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
 
   resetCreateCommissionPlan: () => set({ creatingPlan: idle() }),
 
+  // Keyed by agentId alone, NOT by period -- matching the slot it writes
+  // into (`statements[agentId]`, not `statements[agentId][period]`).
+  // Including period in the key while the slot stays agentId-only defeated
+  // track()'s anti-clobber guard for the "switch the period filter quickly"
+  // race (found in the whole-portal review, 2026-08-25).
   loadStatements: (agentId, period) =>
     track(
-      `distribution.statements.${agentId}.${period ?? ''}`,
+      `distribution.statements.${agentId}`,
       getState().statements[agentId] ?? idle<CommissionStatementView[]>(),
       (next) => set((s) => ({ statements: { ...s.statements, [agentId]: next } })),
       () => listCommissionStatements(agentId, period),

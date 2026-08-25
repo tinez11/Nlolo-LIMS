@@ -47,6 +47,7 @@ export function UnderwritingCaseDetailPage() {
   const resetSubmitAssessment = useUnderwritingStore((s) => s.resetSubmitAssessment);
   const submitting = useUnderwritingStore(selectSubmittingAssessment(caseId));
   const referCase = useUnderwritingStore((s) => s.referCase);
+  const resetReferCase = useUnderwritingStore((s) => s.resetReferCase);
   const referring = useUnderwritingStore(selectReferring(caseId));
 
   useEffect(() => {
@@ -55,12 +56,14 @@ export function UnderwritingCaseDetailPage() {
   }, [caseId, loadCase]);
 
   // Same reset-on-mount discipline as every other keyed mutation resource on
-  // this console: `submittingAssessment` outlives this page's own
-  // mount/unmount, so a previous visit's 409 would otherwise resurface
-  // immediately on a fresh navigation to the same case.
+  // this console: `submittingAssessment`/`referring` outlive this page's own
+  // mount/unmount, so a previous visit's failure would otherwise resurface
+  // immediately on a fresh navigation to the same case (the page's own
+  // "bookmark this" framing below makes that a real, not hypothetical, path).
   useEffect(() => {
     if (!caseId) return;
     resetSubmitAssessment(caseId);
+    resetReferCase(caseId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 

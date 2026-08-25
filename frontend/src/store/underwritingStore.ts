@@ -27,6 +27,7 @@ interface UnderwritingState {
   submitAssessment: (caseId: string, request: SubmitAssessmentRequest) => Promise<void>;
   resetSubmitAssessment: (caseId: string) => void;
   referCase: (caseId: string) => Promise<void>;
+  resetReferCase: (caseId: string) => void;
 }
 
 export const useUnderwritingStore = create<UnderwritingState>((set, getState) => ({
@@ -89,6 +90,13 @@ export const useUnderwritingStore = create<UnderwritingState>((set, getState) =>
         return true;
       },
     ),
+
+  resetReferCase: (caseId) =>
+    set((s) => {
+      if (!(caseId in s.referring)) return s;
+      const { [caseId]: _discard, ...rest } = s.referring;
+      return { referring: rest };
+    }),
 }));
 
 export const selectCase = (caseId: string) => (s: UnderwritingState) =>

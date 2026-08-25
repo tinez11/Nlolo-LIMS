@@ -396,7 +396,13 @@ function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: (
 
 function ResumeAction({ policyNumber }: { policyNumber: string }) {
   const resumePolicy = usePolicyStore((s) => s.resumePolicy);
+  const resetResumePolicy = usePolicyStore((s) => s.resetResumePolicy);
   const resuming = usePolicyStore(selectResuming(policyNumber));
+
+  useEffect(() => {
+    resetResumePolicy(policyNumber);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policyNumber]);
 
   return (
     <div className="space-y-2 px-4 pb-4">
@@ -415,7 +421,13 @@ function ResumeAction({ policyNumber }: { policyNumber: string }) {
 
 function ReinstateAction({ policyNumber }: { policyNumber: string }) {
   const reinstatePolicy = usePolicyStore((s) => s.reinstatePolicy);
+  const resetReinstatePolicy = usePolicyStore((s) => s.resetReinstatePolicy);
   const reinstating = usePolicyStore(selectReinstating(policyNumber));
+
+  useEffect(() => {
+    resetReinstatePolicy(policyNumber);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policyNumber]);
 
   return (
     <div className="space-y-2 px-4 pb-4">

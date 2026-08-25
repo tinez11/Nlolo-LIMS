@@ -29,9 +29,13 @@ export const useRegreportingStore = create<RegreportingState>((set, getState) =>
   detail: {},
   generating: idle(),
 
+  // Constant key regardless of period filter -- see policyStore.loadList's
+  // comment: `list` is a single non-keyed slot, so varying the key here
+  // would defeat track()'s anti-clobber guard (found in the whole-portal
+  // review, 2026-08-25).
   loadList: (period) =>
     track(
-      `regreporting.list.${period ?? ''}`,
+      'regreporting.list',
       getState().list,
       (next) => set({ list: next }),
       () => listReturns(period),

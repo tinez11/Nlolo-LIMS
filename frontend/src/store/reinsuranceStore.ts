@@ -51,9 +51,15 @@ export const useReinsuranceStore = create<ReinsuranceState>((set, getState) => (
   recoveries: {},
   confirmingRecovery: {},
 
+  // The key is constant regardless of which status filter was requested --
+  // see policyStore.loadList's identical comment: `list` is a single
+  // non-keyed slot, so only the most recently REQUESTED filter may win.
+  // Varying the key by status here would defeat track()'s anti-clobber
+  // guard for exactly the "switch the filter quickly" race it exists to
+  // prevent (found in the whole-portal review, 2026-08-25).
   loadList: (status) =>
     track(
-      `reinsurance.list.${status ?? ''}`,
+      'reinsurance.list',
       getState().list,
       (next) => set({ list: next }),
       () => listTreaties(status),
