@@ -2,12 +2,13 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
-import { readIdentity, staffRoles } from '@/auth/claims';
+import { canSeeFinance, readIdentity, staffRoles } from '@/auth/claims';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/AppShell';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { RecoveriesPanel } from '@/features/reinsurance/RecoveriesPanel';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -30,7 +31,9 @@ import { ClaimSettlementPanel } from './ClaimSettlementPanel';
 export function ClaimDetailPage() {
   const { claimId = '' } = useParams();
   const auth = useAuth();
-  const roles = staffRoles(readIdentity(auth.user?.access_token));
+  const identity = readIdentity(auth.user?.access_token);
+  const roles = staffRoles(identity);
+  const canSeeReinsurance = canSeeFinance(identity);
 
   const detail = useClaimStore(selectClaimDetail(claimId));
   const loadDetail = useClaimStore((s) => s.loadDetail);
@@ -136,6 +139,12 @@ export function ClaimDetailPage() {
                 />
               </dl>
             </Panel>
+
+            {canSeeReinsurance && (
+              <Panel title="Reinsurance" subtitle="Recoveries this claim's own settlement produced">
+                <RecoveriesPanel claimId={claimId} />
+              </Panel>
+            )}
           </div>
         </div>
       )}

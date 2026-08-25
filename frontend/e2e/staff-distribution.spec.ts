@@ -144,7 +144,6 @@ test.describe('staff distribution', () => {
   });
 
   test('creates a commission plan for a fresh product, and it becomes readable afterward', async ({
-    page,
     browser,
   }) => {
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });

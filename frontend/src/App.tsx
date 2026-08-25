@@ -14,6 +14,9 @@ import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
 import { CreateProductPage } from '@/features/products/CreateProductPage';
 import { ProductDetailPage } from '@/features/products/ProductDetailPage';
 import { ProductsPage } from '@/features/products/ProductsPage';
+import { CreateTreatyPage } from '@/features/reinsurance/CreateTreatyPage';
+import { TreatiesPage } from '@/features/reinsurance/TreatiesPage';
+import { TreatyDetailPage } from '@/features/reinsurance/TreatyDetailPage';
 import { OpenUnderwritingCasePage } from '@/features/underwriting/OpenUnderwritingCasePage';
 import { UnderwritingCaseDetailPage } from '@/features/underwriting/UnderwritingCaseDetailPage';
 
@@ -50,6 +53,9 @@ export function App() {
           <Route path="underwriting/:caseId" element={<UnderwritingCaseDetailPage />} />
           <Route path="agents/new" element={<OnboardAgentPage />} />
           <Route path="agents/:agentId" element={<AgentDetailPage />} />
+          <Route path="treaties" element={<TreatiesPage />} />
+          <Route path="treaties/new" element={<CreateTreatyPage />} />
+          <Route path="treaties/:treatyId" element={<TreatyDetailPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

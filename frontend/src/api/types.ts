@@ -17,6 +17,7 @@ import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
 import type { components as ProductComponents } from '@/types/api/product';
+import type { components as ReinsuranceComponents } from '@/types/api/reinsurance';
 import type { components as UnderwritingComponents } from '@/types/api/underwriting';
 
 export type PolicyView = PolicyComponents['schemas']['PolicyView'];
@@ -76,6 +77,21 @@ export type CommissionStatementView = DistributionComponents['schemas']['Commiss
 export type StatementStatus = NonNullable<CommissionStatementView['status']>;
 export type CommissionAccrualView = DistributionComponents['schemas']['CommissionAccrualView'];
 export type RequestPayoutRequest = DistributionComponents['schemas']['RequestPayoutRequest'];
+
+/**
+ * `GET /treaties` is a real list endpoint (unlike underwriting cases and
+ * agents) -- `TreatiesPage` gets the same drawer-previews-page-acts shape as
+ * Policies/Claims/Products, not the create-only exception.
+ */
+export type TreatyView = ReinsuranceComponents['schemas']['TreatyView'];
+export type TreatyType = ReinsuranceComponents['schemas']['TreatyType'];
+export type TreatyStatus = ReinsuranceComponents['schemas']['TreatyStatus'];
+export type CreateTreatyRequest = ReinsuranceComponents['schemas']['CreateTreatyRequest'];
+export type CessionView = ReinsuranceComponents['schemas']['CessionView'];
+export type ClaimRecoveryView = ReinsuranceComponents['schemas']['ClaimRecoveryView'];
+
+export const TREATY_TYPES: readonly TreatyType[] = ['QUOTA_SHARE', 'SURPLUS', 'XOL'];
+export const TREATY_STATUSES: readonly TreatyStatus[] = ['ACTIVE', 'EXPIRED'];
 
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the

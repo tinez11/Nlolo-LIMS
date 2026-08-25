@@ -80,7 +80,7 @@ const STAFF_NAV: NavGroup[] = [
     items: [
       { to: 'gl-postings', label: 'GL postings', icon: BookText, implemented: false },
       { to: 'chart-of-accounts', label: 'Chart of accounts', icon: Wallet, implemented: false },
-      { to: 'treaties', label: 'Treaties', icon: Shield, implemented: false },
+      { to: 'treaties', label: 'Treaties', icon: Shield, implemented: true },
       { to: 'regulatory-returns', label: 'Regulatory returns', icon: Receipt, implemented: false },
       { to: 'agents/new', label: 'Agents', icon: Users, implemented: true },
     ],

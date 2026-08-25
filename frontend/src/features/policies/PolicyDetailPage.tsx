@@ -1,7 +1,9 @@
 import { ArrowLeft, Ban } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useAuth } from 'react-oidc-context';
 import type { InvoiceView, LoanView } from '@/api/types';
+import { canSeeFinance, readIdentity } from '@/auth/claims';
 import { PageHeader } from '@/components/AppShell';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -17,6 +19,7 @@ import {
   selectLoans,
   usePolicyStore,
 } from '@/store/policyStore';
+import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { Field } from '@/components/Field';
 
@@ -27,9 +30,16 @@ import { Field } from '@/components/Field';
  * The invoice and loan tables use the NO-PAGER variant, because
  * `GET /policies/{n}/invoices` and `.../loans` return bare unpaged arrays -- the
  * whole set arrives in one response and a pager over it would be a lie.
+ *
+ * The Reinsurance panel is gated on the SAME convenience-decoded role check
+ * `AppShell` uses for its own Finance nav group (`GET .../cessions` itself
+ * requires FINANCE_OFFICER/ADMIN) -- shown only to a staff user whose own
+ * token could actually call it, never a blanket "staff can see everything."
  */
 export function PolicyDetailPage() {
   const { policyNumber = '' } = useParams();
+  const auth = useAuth();
+  const canSeeReinsurance = canSeeFinance(readIdentity(auth.user?.access_token));
 
   const detail = usePolicyStore(selectDetail(policyNumber));
   const coverage = usePolicyStore(selectCoverage(policyNumber));
@@ -159,6 +169,12 @@ export function PolicyDetailPage() {
               <BeneficiariesPanel policyNumber={policyNumber} beneficiaries={policy.beneficiaries ?? []} />
             )}
           </Panel>
+
+          {canSeeReinsurance && policy && (
+            <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
+              <CessionsPanel policyNumber={policyNumber} />
+            </Panel>
+          )}
         </div>
       </div>
     </>
