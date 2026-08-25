@@ -190,4 +190,21 @@ class UnderwritingContractTest {
             .andExpect(status().isNotFound())
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.errorCode").value("UNDERWRITING_CASE_NOT_FOUND"));
     }
+
+    @Test
+    void openCaseReturns404ForANonexistentApplicantPartyId() throws Exception {
+        // productId/productVersionId are random, deliberately -- applicantPartyId must be checked
+        // and 404 first, before either of those is resolved.
+        UUID tenantId = UUID.randomUUID();
+        UUID nonexistentPartyId = UUID.randomUUID();
+
+        mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s","sumAssured":{"amount":"1000000.00","currencyCode":"TZS"}}
+                    """.formatted(nonexistentPartyId, UUID.randomUUID(), UUID.randomUUID())))
+            .andExpect(status().isNotFound());
+    }
 }

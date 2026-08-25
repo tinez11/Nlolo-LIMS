@@ -297,6 +297,27 @@ class PolicyContractTest {
     }
 
     @Test
+    void manualIssueReturns404ForANonexistentPolicyholderPartyId() throws Exception {
+        // productVersionId is a random UUID, not a real published one -- deliberate: PolicyApiImpl
+        // .issuePolicy must check policyholderPartyId and 404 on it BEFORE it ever gets to
+        // resolving productVersionId, or this test would 404/422 for the wrong reason.
+        UUID tenantId = UUID.randomUUID();
+        UUID nonexistentPartyId = UUID.randomUUID();
+
+        mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "reasonForManualIssue":"Contract test -- nonexistent policyholder"}
+                    """.formatted(UUID.randomUUID(), nonexistentPartyId, UUID.randomUUID(), UUID.randomUUID())))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
     void getPolicyMatchesOpenApiContractForStaff() throws Exception {
         UUID tenantId = UUID.randomUUID();
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-01");
