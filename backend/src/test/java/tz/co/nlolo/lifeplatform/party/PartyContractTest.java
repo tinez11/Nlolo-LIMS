@@ -505,4 +505,84 @@ class PartyContractTest {
             .andExpect(jsonPath("$.errorCode").value("DUPLICATE_REGISTRATION_NUMBER"))
             .andExpect(jsonPath("$.traceId").exists());
     }
+
+    // --- GET /parties?q=... -----------------------------------------------------------------
+
+    @Test
+    void searchPartiesByQMatchesACaseInsensitiveSubstringOfDisplayName() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Zawadi Search Fixture","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345695"}}
+                    """))
+            .andExpect(status().isCreated());
+
+        // Deliberately the WRONG case from what was registered ("Zawadi" vs "zawadi") --
+        // this is the falsifiable half of "ILIKE is inherently case-insensitive": a
+        // case-SENSITIVE match would find zero rows here.
+        mockMvc.perform(get("/parties")
+                .queryParam("q", "zawadi")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].displayName").value("Zawadi Search Fixture"));
+    }
+
+    @Test
+    void searchPartiesByQCombinesWithKycStatus() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // Two parties sharing a name fragment, only one VERIFIED -- proves q and
+        // kycStatus are genuinely ANDed together, not either alone.
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Baraka Combo Fixture Pending","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345696"}}
+                    """))
+            .andExpect(status().isCreated());
+        String verifiedResponse = mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Baraka Combo Fixture Verified","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345697"}}
+                    """))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        UUID verifiedPartyId = UUID.fromString(objectMapper.readValue(verifiedResponse, PartyView.class).partyId().toString());
+        mockMvc.perform(post("/parties/" + verifiedPartyId + "/kyc")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"status":"VERIFIED","evidenceDocumentRef":"doc-ref-combo-fixture"}
+                    """))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(get("/parties")
+                .queryParam("q", "combo fixture")
+                .queryParam("kycStatus", "VERIFIED")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].displayName").value("Baraka Combo Fixture Verified"));
+    }
+
+    @Test
+    void searchPartiesByQReturnsEmptyForNoMatches() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(get("/parties")
+                .queryParam("q", "NoPartyAnywhereHasThisExactNonsenseName12345")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0));
+    }
 }

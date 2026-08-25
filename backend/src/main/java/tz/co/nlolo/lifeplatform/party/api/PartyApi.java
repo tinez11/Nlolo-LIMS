@@ -34,6 +34,9 @@ public interface PartyApi {
      * this as a KYC review queue (any {@code kycStatus}, any/no {@code createdBy}), agents get a
      * read-only "parties I registered" view (the controller force-scopes {@code createdBy} to the
      * caller's own JWT subject for an agents-realm token, never client-supplied).
+     * {@code q} is a free-text, case-insensitive substring match against displayName, combinable
+     * with {@code kycStatus} -- both filters apply together, not either-or. Null means no filter
+     * on that dimension.
      */
-    Page<PartyView> searchParties(KycStatus kycStatus, String createdBy, Pageable pageable);
+    Page<PartyView> searchParties(KycStatus kycStatus, String createdBy, String q, Pageable pageable);
 }

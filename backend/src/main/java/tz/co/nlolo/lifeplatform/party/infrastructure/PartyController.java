@@ -98,13 +98,14 @@ public class PartyController {
     @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
     public ResponseEntity<PageResponse<PartyView>> searchParties(
             @RequestParam(required = false) KycStatus kycStatus,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         boolean isAgent = authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
         String effectiveCreatedBy = isAgent ? jwt.getSubject() : null;
-        Page<PartyView> result = partyApi.searchParties(kycStatus, effectiveCreatedBy,
+        Page<PartyView> result = partyApi.searchParties(kycStatus, effectiveCreatedBy, q,
             PageRequest.of(page, Math.min(pageSize, 100)));
         return ResponseEntity.ok(PageResponse.from(result));
     }

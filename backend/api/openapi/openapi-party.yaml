@@ -61,6 +61,10 @@ paths:
         - name: kycStatus
           in: query
           schema: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        - name: q
+          in: query
+          description: Free-text, case-insensitive substring match against displayName.
+          schema: { type: string }
         - name: page
           in: query
           schema: { type: integer, default: 0 }

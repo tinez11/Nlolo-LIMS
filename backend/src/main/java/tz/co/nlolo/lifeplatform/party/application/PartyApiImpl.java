@@ -102,10 +102,17 @@ public class PartyApiImpl implements PartyApi {
     }
 
     @Override
-    public Page<PartyView> searchParties(KycStatus kycStatus, String createdBy, Pageable pageable) {
+    public Page<PartyView> searchParties(KycStatus kycStatus, String createdBy, String q, Pageable pageable) {
         UUID tenantId = TenantContext.get();
+        // The three no-q branches stay on the original derived-query methods (unchanged
+        // shape) for the common (no-text-search) case -- only a present `q` routes
+        // through the new three-way `search` query, same reasoning
+        // PolicyApiImpl.searchPolicies/ClaimsApiImpl.searchClaims already use for their
+        // own optional extra filter dimension.
         Page<Party> page;
-        if (kycStatus != null && createdBy != null) {
+        if (q != null && !q.isBlank()) {
+            page = partyRepository.search(tenantId, kycStatus, createdBy, q.trim(), pageable);
+        } else if (kycStatus != null && createdBy != null) {
             page = partyRepository.findByTenantIdAndKycStatusAndCreatedBy(tenantId, kycStatus, createdBy, pageable);
         } else if (kycStatus != null) {
             page = partyRepository.findByTenantIdAndKycStatus(tenantId, kycStatus, pageable);
