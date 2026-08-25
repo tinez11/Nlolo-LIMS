@@ -2,6 +2,7 @@ import { get, post } from '@/lib/http';
 import type {
   KycEvidenceUploadResponse,
   KycStatus,
+  Page,
   PartyView,
   RegisterCorporateRequest,
   RegisterIndividualRequest,
@@ -10,15 +11,58 @@ import type {
 /**
  * Party read/write surface, hand-written for the same reasons as api/policies.ts.
  *
- * There is no `GET /parties` list or search endpoint anywhere on the platform --
- * a party is only ever reachable by drilling in from an id already on screen
- * (a policy's policyholderPartyId, a claim's claimantPartyId, an underwriting
- * case's applicantPartyId, an agent's own partyId).
+ * Most of a party is still only reachable by drilling in from an id already on
+ * screen (a policy's policyholderPartyId, a claim's claimantPartyId, an
+ * underwriting case's applicantPartyId, an agent's own partyId) -- but
+ * `searchParties` below is the one exception: a real list/search endpoint,
+ * added specifically because a party PENDING KYC with nothing yet referencing
+ * it (a fresh self-service or agent-assisted registration) was otherwise
+ * invisible to staff, with no way to find it to review at all.
  */
 
 /** `GET /parties/{partyId}` -- staff/agents/own-customer only. */
 export function getParty(partyId: string): Promise<PartyView> {
   return get<PartyView>(`/parties/${encodeURIComponent(partyId)}`);
+}
+
+export interface PartySearchParams {
+  kycStatus?: KycStatus;
+  page?: number;
+  pageSize?: number;
+}
+
+export const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+/**
+ * `GET /parties` -- staff filter freely (an unrestricted KYC review queue);
+ * an agents-realm caller is force-scoped server-side to parties IT
+ * registered, never client-supplied. Same anonymous-envelope normalization
+ * as `api/policies.ts#searchPolicies`.
+ */
+export async function searchParties(params: PartySearchParams = {}): Promise<Page<PartyView>> {
+  const page = params.page ?? 0;
+  const pageSize = Math.min(params.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+
+  const body = await get<{
+    items?: PartyView[];
+    page?: { page?: number; pageSize?: number; totalElements?: number };
+  }>('/parties', {
+    params: {
+      ...(params.kycStatus ? { kycStatus: params.kycStatus } : {}),
+      page,
+      pageSize,
+    },
+  });
+
+  return {
+    items: body.items ?? [],
+    page: {
+      page: body.page?.page ?? page,
+      pageSize: body.page?.pageSize ?? pageSize,
+      totalElements: body.page?.totalElements ?? 0,
+    },
+  };
 }
 
 /**

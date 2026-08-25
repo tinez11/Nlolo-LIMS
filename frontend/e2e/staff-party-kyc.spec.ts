@@ -5,10 +5,11 @@ import { expect, test } from '@playwright/test';
  * and `POST .../kyc` (decide) did not, until this staff-portal CRUD audit found
  * the gap -- `PartyApi.submitKycEvidence` has always required a real
  * `evidenceDocumentRef`, but there was no upload path anywhere on the platform
- * that could produce one for a KYC purpose. There is no `GET /parties` list
- * anywhere, so this reaches the party by drilling in from a policy's real
- * policyholderPartyId link, the same discovery path the staff console itself
- * uses.
+ * that could produce one for a KYC purpose. This test reaches the party by
+ * drilling in from a policy's real policyholderPartyId link -- one of two
+ * real discovery paths that now exist. `GET /parties`, the other one (see
+ * `staff-kyc-review.spec.ts`), was added later once a party with nothing yet
+ * referencing it turned out to be genuinely invisible otherwise.
  *
  * Drives TWO real transitions (reject, then verify) rather than asserting a
  * single end state: the shared fixture party used across this session's other

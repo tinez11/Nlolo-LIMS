@@ -1,8 +1,17 @@
 import { create } from 'zustand';
-import { getParty, registerCorporate, registerIndividual, submitKyc, uploadKycEvidence } from '@/api/party';
+import {
+  getParty,
+  registerCorporate,
+  registerIndividual,
+  searchParties,
+  submitKyc,
+  uploadKycEvidence,
+  type PartySearchParams,
+} from '@/api/party';
 import type {
   KycEvidenceUploadResponse,
   KycStatus,
+  Page,
   PartyView,
   RegisterCorporateRequest,
   RegisterIndividualRequest,
@@ -10,14 +19,18 @@ import type {
 import { idle, track, type Resource } from './createResourceSlice';
 
 /**
- * The `party` domain store. There is no list/search anywhere on this platform --
- * every party is reached by drilling in from an id already on screen, so this
- * store is entirely keyed-by-partyId, like distribution's agent store.
+ * The `party` domain store. Most of it is keyed-by-partyId (every party except
+ * via `list` is reached by drilling in from an id already on screen), same
+ * shape as distribution's agent store.
  */
 
 type Keyed<T> = Record<string, Resource<T>>;
 
 interface PartyState {
+  // Single slot, not keyed: one list (the KYC review queue for staff, or "parties
+  // I registered" for an agent) on screen at a time -- same shape as
+  // policyStore's/claimStore's own `list`.
+  list: Resource<Page<PartyView>>;
   detail: Keyed<PartyView>;
   // Keyed by partyId, separately from `detail` and from each other -- same
   // shape as policyStore's suspending/resuming/reinstating: two distinct
@@ -32,6 +45,7 @@ interface PartyState {
   registeringIndividual: Resource<PartyView>;
   registeringCorporate: Resource<PartyView>;
 
+  loadList: (params: PartySearchParams) => Promise<void>;
   loadParty: (partyId: string) => Promise<void>;
   uploadKycEvidence: (partyId: string, file: File) => Promise<void>;
   resetUploadKycEvidence: (partyId: string) => void;
@@ -44,11 +58,24 @@ interface PartyState {
 }
 
 export const usePartyStore = create<PartyState>((set, getState) => ({
+  list: idle(),
   detail: {},
   uploadingKycEvidence: {},
   submittingKyc: {},
   registeringIndividual: idle(),
   registeringCorporate: idle(),
+
+  // Constant key regardless of which kycStatus filter was requested -- the same
+  // on-screen table either way, so only the most recently REQUESTED filter
+  // should win a race, exactly the reasoning policyStore.loadList's own
+  // comment gives for the same shape.
+  loadList: (params) =>
+    track(
+      'party.list',
+      getState().list,
+      (next) => set({ list: next }),
+      () => searchParties(params),
+    ),
 
   loadParty: (partyId) =>
     track(
@@ -117,6 +144,7 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
+export const selectPartyList = (s: PartyState) => s.list;
 export const selectParty = (partyId: string) => (s: PartyState) => s.detail[partyId] ?? idle<PartyView>();
 export const selectUploadingKycEvidence = (partyId: string) => (s: PartyState) =>
   s.uploadingKycEvidence[partyId] ?? idle<KycEvidenceUploadResponse>();

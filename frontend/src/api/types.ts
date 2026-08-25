@@ -190,6 +190,7 @@ export type SuspendPolicyRequest = PolicyComponents['schemas']['SuspendPolicyReq
  */
 export type PartyView = PartyComponents['schemas']['PartyView'];
 export type KycStatus = NonNullable<PartyView['kycStatus']>;
+export const KYC_STATUSES: readonly KycStatus[] = ['PENDING', 'VERIFIED', 'REJECTED'];
 export type KycEvidenceUploadResponse = PartyComponents['schemas']['KycEvidenceUploadResponse'];
 
 /**

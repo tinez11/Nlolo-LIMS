@@ -9,6 +9,7 @@ import {
   ScrollText,
   Shield,
   Sun,
+  UserCheck,
   UserPlus,
   Users,
   Wallet,
@@ -26,12 +27,15 @@ import { Button } from './ui/button';
  * Nav definition for the staff realm.
  *
  * `implemented` gates rendering. Every entry here has a real list endpoint behind
- * it -- entities that are fetch-by-ID only (parties, payments, payout batches,
+ * it -- entities that are STILL fetch-by-ID only (payments, payout batches,
  * documents) deliberately get NO nav item, because an item that leads to a
  * "paste an ID" screen reads as broken software. They are reached by drilling
- * in from a policy or claim.
+ * in from a policy or claim. Parties used to be in that category too, until
+ * `GET /parties` closed the gap: a party PENDING KYC with nothing yet
+ * referencing it (a fresh registration) was otherwise invisible to staff, so
+ * "KYC review" below is a real list, not a lookup box.
  *
- * Underwriting and Agents are the two exceptions, and deliberately not
+ * Underwriting and Agents are the two exceptions among what's left, and deliberately not
  * "paste an ID" screens: `POST /underwriting/cases` and `POST /agents` are
  * the only entry points onto those domains that exist server-side (neither
  * has a list/search endpoint), so each nav item goes straight to the one
@@ -71,6 +75,7 @@ const STAFF_NAV: NavGroup[] = [
       { to: 'claims', label: 'Claims', icon: ScrollText, implemented: true },
       { to: 'products', label: 'Products', icon: Package, implemented: true },
       { to: 'underwriting/new', label: 'Underwriting', icon: ClipboardCheck, implemented: true },
+      { to: 'kyc', label: 'KYC review', icon: UserCheck, implemented: true },
     ],
   },
   {

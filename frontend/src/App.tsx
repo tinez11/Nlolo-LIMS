@@ -9,6 +9,7 @@ import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
 import { AgentDetailPage } from '@/features/distribution/AgentDetailPage';
 import { AgentProfilePage } from '@/features/distribution/AgentProfilePage';
 import { OnboardAgentPage } from '@/features/distribution/OnboardAgentPage';
+import { KycReviewPage } from '@/features/party/KycReviewPage';
 import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
 import { PartyDetailPage } from '@/features/party/PartyDetailPage';
 import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
@@ -63,6 +64,7 @@ export function App() {
           <Route path="agents/new" element={<OnboardAgentPage />} />
           <Route path="agents/:agentId" element={<AgentDetailPage />} />
           <Route path="parties/:partyId" element={<PartyDetailPage />} />
+          <Route path="kyc" element={<KycReviewPage />} />
           <Route path="treaties" element={<TreatiesPage />} />
           <Route path="treaties/new" element={<CreateTreatyPage />} />
           <Route path="treaties/:treatyId" element={<TreatyDetailPage />} />
