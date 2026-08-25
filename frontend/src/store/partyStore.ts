@@ -1,6 +1,12 @@
 import { create } from 'zustand';
-import { getParty, submitKyc, uploadKycEvidence } from '@/api/party';
-import type { KycEvidenceUploadResponse, KycStatus, PartyView } from '@/api/types';
+import { getParty, registerCorporate, registerIndividual, submitKyc, uploadKycEvidence } from '@/api/party';
+import type {
+  KycEvidenceUploadResponse,
+  KycStatus,
+  PartyView,
+  RegisterCorporateRequest,
+  RegisterIndividualRequest,
+} from '@/api/types';
 import { idle, track, type Resource } from './createResourceSlice';
 
 /**
@@ -18,18 +24,31 @@ interface PartyState {
   // mutations against the same entity.
   uploadingKycEvidence: Keyed<KycEvidenceUploadResponse>;
   submittingKyc: Keyed<true>;
+  // Single slots, not keyed: each creates a NEW party, so there is no
+  // existing id to key against yet -- same shape as distribution's
+  // `onboarding` and underwriting's `opening`. Separate slots (rather than
+  // one shared "registering") so switching between the Individual/Corporate
+  // forms never carries the other form's error or in-flight state.
+  registeringIndividual: Resource<PartyView>;
+  registeringCorporate: Resource<PartyView>;
 
   loadParty: (partyId: string) => Promise<void>;
   uploadKycEvidence: (partyId: string, file: File) => Promise<void>;
   resetUploadKycEvidence: (partyId: string) => void;
   submitKyc: (partyId: string, status: KycStatus, evidenceDocumentRef: string) => Promise<void>;
   resetSubmitKyc: (partyId: string) => void;
+  registerIndividual: (request: RegisterIndividualRequest) => Promise<void>;
+  resetRegisterIndividual: () => void;
+  registerCorporate: (request: RegisterCorporateRequest) => Promise<void>;
+  resetRegisterCorporate: () => void;
 }
 
 export const usePartyStore = create<PartyState>((set, getState) => ({
   detail: {},
   uploadingKycEvidence: {},
   submittingKyc: {},
+  registeringIndividual: idle(),
+  registeringCorporate: idle(),
 
   loadParty: (partyId) =>
     track(
@@ -75,6 +94,26 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
       const { [partyId]: _discard, ...rest } = s.submittingKyc;
       return { submittingKyc: rest };
     }),
+
+  registerIndividual: (request) =>
+    track(
+      'party.registerIndividual',
+      getState().registeringIndividual,
+      (next) => set({ registeringIndividual: next }),
+      () => registerIndividual(request),
+    ),
+
+  resetRegisterIndividual: () => set({ registeringIndividual: idle() }),
+
+  registerCorporate: (request) =>
+    track(
+      'party.registerCorporate',
+      getState().registeringCorporate,
+      (next) => set({ registeringCorporate: next }),
+      () => registerCorporate(request),
+    ),
+
+  resetRegisterCorporate: () => set({ registeringCorporate: idle() }),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
@@ -83,3 +122,5 @@ export const selectUploadingKycEvidence = (partyId: string) => (s: PartyState) =
   s.uploadingKycEvidence[partyId] ?? idle<KycEvidenceUploadResponse>();
 export const selectSubmittingKyc = (partyId: string) => (s: PartyState) =>
   s.submittingKyc[partyId] ?? idle<true>();
+export const selectRegisteringIndividual = (s: PartyState) => s.registeringIndividual;
+export const selectRegisteringCorporate = (s: PartyState) => s.registeringCorporate;

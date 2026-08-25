@@ -3,6 +3,7 @@ import {
   createCommissionPlan,
   getAgent,
   getApplicablePlan,
+  getOwnAgent,
   listAccruals,
   listCommissionStatements,
   onboardAgent,
@@ -36,6 +37,10 @@ interface DistributionState {
   // existing id to key against yet -- same shape as underwriting's `opening`.
   onboarding: Resource<AgentView>;
   agents: Keyed<AgentView>;
+  // A single slot, not keyed: there is only ever one "me" for the calling
+  // session, unlike `agents` which is keyed by whichever agentId a staff
+  // caller happens to be looking at.
+  ownAgent: Resource<AgentView>;
   // Keyed by `${agentId}:${productId}` -- a plan is resolved per (agent,
   // product) pair, never by its own id (no `GET /commission-plans/{id}`).
   plans: Keyed<CommissionPlanView>;
@@ -54,6 +59,7 @@ interface DistributionState {
   onboardAgent: (request: OnboardAgentRequest, attempt: MutationAttempt) => Promise<void>;
   resetOnboardAgent: () => void;
   loadAgent: (agentId: string) => Promise<void>;
+  loadOwnAgent: () => Promise<void>;
   suspendAgent: (agentId: string) => Promise<void>;
   resetSuspendAgent: (agentId: string) => void;
   reactivateAgent: (agentId: string) => Promise<void>;
@@ -78,6 +84,7 @@ interface DistributionState {
 export const useDistributionStore = create<DistributionState>((set, getState) => ({
   onboarding: idle(),
   agents: {},
+  ownAgent: idle(),
   plans: {},
   creatingPlan: idle(),
   statements: {},
@@ -102,6 +109,14 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
       getState().agents[agentId] ?? idle<AgentView>(),
       (next) => set((s) => ({ agents: { ...s.agents, [agentId]: next } })),
       () => getAgent(agentId),
+    ),
+
+  loadOwnAgent: () =>
+    track(
+      'distribution.ownAgent',
+      getState().ownAgent,
+      (next) => set({ ownAgent: next }),
+      () => getOwnAgent(),
     ),
 
   suspendAgent: (agentId) =>
@@ -227,6 +242,7 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
 
 export const selectAgent = (agentId: string) => (s: DistributionState) =>
   s.agents[agentId] ?? idle<AgentView>();
+export const selectOwnAgent = (s: DistributionState) => s.ownAgent;
 export const selectApplicablePlan = (agentId: string, productId: string) => (s: DistributionState) =>
   s.plans[planKey(agentId, productId)] ?? idle<CommissionPlanView>();
 export const selectStatements = (agentId: string) => (s: DistributionState) =>

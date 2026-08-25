@@ -34,6 +34,15 @@ export function getAgent(agentId: string): Promise<AgentView> {
 }
 
 /**
+ * `GET /agents/me` -- agents-realm only. Resolves the caller's own agentId
+ * from its `party_id` claim -- there is no `agentId` claim and no `GET
+ * /agents` list, so this is the only way an agent discovers its own record.
+ */
+export function getOwnAgent(): Promise<AgentView> {
+  return get<AgentView>('/agents/me');
+}
+
+/**
  * `POST /agents/{n}/suspend` -- staff FINANCE_OFFICER/ADMIN only.
  * `AgentProfile.setLicenseStatus` existed with no caller anywhere on the
  * platform until this endpoint. 409s unless the agent is currently ACTIVE.

@@ -9,7 +9,7 @@ import { REALM_CONFIG, REALMS } from '@/auth/realms';
  * realm must be chosen before any authentication can begin. Realm-scoped routes
  * make that choice a URL, and this is where an arrival with no URL makes it.
  *
- * Only the staff console is built so far. The other three realms are shown as
+ * Staff and agents are built so far. The other two realms are shown as
  * unavailable rather than hidden, because a policyholder landing here should learn
  * that this address is not for them yet -- but they are NOT links, because a link to
  * a working login followed by an empty app is worse than an honest label.
@@ -26,7 +26,7 @@ export function RealmPicker() {
         <ul className="mt-6 space-y-2">
           {REALMS.map((realm) => {
             const config = REALM_CONFIG[realm];
-            const available = realm === 'staff';
+            const available = realm === 'staff' || realm === 'agents';
 
             return (
               <li key={realm}>

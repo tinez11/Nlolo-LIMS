@@ -16,3 +16,6 @@ export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** An ISO 4217 currency code, e.g. `policy.infrastructure.MoneyDto.currencyCode`. */
 export const CURRENCY_PATTERN = /^[A-Z]{3}$/;
+
+/** `party.infrastructure.ContactInfo.phoneNumber` -- Tanzanian E.164. */
+export const PHONE_PATTERN = /^\+255\d{9}$/;

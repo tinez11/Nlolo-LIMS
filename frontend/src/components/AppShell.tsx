@@ -9,6 +9,7 @@ import {
   ScrollText,
   Shield,
   Sun,
+  UserPlus,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -87,15 +88,44 @@ const STAFF_NAV: NavGroup[] = [
   },
 ];
 
+/**
+ * Nav definition for the agents realm. Deliberately just these two: "browse my
+ * book of business" (policies/claims scoped to this agent) is blocked on a
+ * real backend gap -- `PolicyController`/`ClaimController` have no
+ * `agentOfRecordId` filtering for agents-realm tokens today, see
+ * `AgentController`'s own object-level scoping for the pattern that would
+ * need extending. Both items here reuse endpoints that are already correctly
+ * scoped (`GET /agents/me`, and registration POSTs that create a brand-new
+ * record rather than reading someone else's).
+ */
+const AGENTS_NAV: NavGroup[] = [
+  {
+    label: 'My business',
+    items: [
+      { to: 'me', label: 'My profile', icon: Users, implemented: true },
+      { to: 'customers/new', label: 'Onboard a customer', icon: UserPlus, implemented: true },
+    ],
+  },
+];
+
+const NAV_BY_REALM: Record<Realm, NavGroup[]> = {
+  staff: STAFF_NAV,
+  agents: AGENTS_NAV,
+  customers: [],
+  regulators: [],
+};
+
 export function AppShell({ realm, children }: { realm: Realm; children: ReactNode }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const config = REALM_CONFIG[realm];
 
-  const groups = STAFF_NAV.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => item.implemented),
-  })).filter((group) => group.items.length > 0 && (group.requires?.(identity) ?? true));
+  const groups = NAV_BY_REALM[realm]
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.implemented),
+    }))
+    .filter((group) => group.items.length > 0 && (group.requires?.(identity) ?? true));
 
   return (
     <div className="flex h-full">

@@ -193,6 +193,16 @@ export type KycStatus = NonNullable<PartyView['kycStatus']>;
 export type KycEvidenceUploadResponse = PartyComponents['schemas']['KycEvidenceUploadResponse'];
 
 /**
+ * `POST /parties/individuals` / `POST /parties/corporates` -- both existed and were already
+ * agent-scoped server-side (individual: self-service or agent-assisted; corporate: agent or
+ * staff) before any frontend called either. Staff-assisted individual registration was added
+ * alongside this frontend work, closing an asymmetry with corporates that had no documented
+ * rationale (staff portal review, 2026-08-25).
+ */
+export type RegisterIndividualRequest = PartyComponents['schemas']['RegisterIndividualRequest'];
+export type RegisterCorporateRequest = PartyComponents['schemas']['RegisterCorporateRequest'];
+
+/**
  * `POST /regulatory-returns` (generate) + `GET` (list/get) -- fully built and
  * staff-reachable (FINANCE_OFFICER/ADMIN) since M10, but with zero staff UI
  * until this staff-portal CRUD audit found the gap. `returnType` is

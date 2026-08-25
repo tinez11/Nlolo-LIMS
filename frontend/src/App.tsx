@@ -7,7 +7,9 @@ import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
 import { ClaimsPage } from '@/features/claims/ClaimsPage';
 import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
 import { AgentDetailPage } from '@/features/distribution/AgentDetailPage';
+import { AgentProfilePage } from '@/features/distribution/AgentProfilePage';
 import { OnboardAgentPage } from '@/features/distribution/OnboardAgentPage';
+import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
 import { PartyDetailPage } from '@/features/party/PartyDetailPage';
 import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
 import { PoliciesPage } from '@/features/policies/PoliciesPage';
@@ -35,8 +37,9 @@ import { UnderwritingCaseDetailPage } from '@/features/underwriting/Underwriting
  * customer never downloads the finance bundle, and no stale token from another
  * realm can reach the wrong provider.
  *
- * Only /staff is built. The other three realms are deliberately absent rather than
- * stubbed: an authenticating route into an empty app is worse than a 404.
+ * /staff and /agents are built. /customers and /regulators are deliberately
+ * absent rather than stubbed: an authenticating route into an empty app is
+ * worse than a 404.
  */
 export function App() {
   return (
@@ -70,6 +73,12 @@ export function App() {
           <Route path="regulatory-returns/:returnId" element={<RegulatoryReturnDetailPage />} />
         </Route>
 
+        <Route path="/agents" element={<AgentsRealm />}>
+          <Route index element={<Navigate to="me" replace />} />
+          <Route path="me" element={<AgentProfilePage />} />
+          <Route path="customers/new" element={<OnboardCustomerPage />} />
+        </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
@@ -81,6 +90,18 @@ function StaffRealm() {
     <RealmAuthProvider realm="staff">
       <RequireAuth realm="staff">
         <AppShell realm="staff">
+          <Outlet />
+        </AppShell>
+      </RequireAuth>
+    </RealmAuthProvider>
+  );
+}
+
+function AgentsRealm() {
+  return (
+    <RealmAuthProvider realm="agents">
+      <RequireAuth realm="agents">
+        <AppShell realm="agents">
           <Outlet />
         </AppShell>
       </RequireAuth>

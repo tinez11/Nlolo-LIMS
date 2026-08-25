@@ -48,6 +48,15 @@ export default defineConfig({
         storageState: 'e2e/.auth/staff.json',
       },
     },
+    {
+      name: 'agents',
+      testMatch: /agents-.*\.spec\.ts/,
+      dependencies: ['setup'],
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: 'e2e/.auth/agent.json',
+      },
+    },
   ],
 
   webServer: {

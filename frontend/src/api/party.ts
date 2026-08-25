@@ -1,5 +1,11 @@
 import { get, post } from '@/lib/http';
-import type { KycEvidenceUploadResponse, KycStatus, PartyView } from './types';
+import type {
+  KycEvidenceUploadResponse,
+  KycStatus,
+  PartyView,
+  RegisterCorporateRequest,
+  RegisterIndividualRequest,
+} from './types';
 
 /**
  * Party read/write surface, hand-written for the same reasons as api/policies.ts.
@@ -35,4 +41,18 @@ export function submitKyc(
   evidenceDocumentRef: string,
 ): Promise<void> {
   return post<void>(`/parties/${encodeURIComponent(partyId)}/kyc`, { status, evidenceDocumentRef });
+}
+
+/**
+ * `POST /parties/individuals` -- customer self-service, agent-assisted, or
+ * (as of the staff-portal review) staff-assisted. Returns the new party
+ * PENDING KYC -- registration and verification are always two separate steps.
+ */
+export function registerIndividual(request: RegisterIndividualRequest): Promise<PartyView> {
+  return post<PartyView>('/parties/individuals', request);
+}
+
+/** `POST /parties/corporates` -- agent or staff only, never self-service. */
+export function registerCorporate(request: RegisterCorporateRequest): Promise<PartyView> {
+  return post<PartyView>('/parties/corporates', request);
 }
