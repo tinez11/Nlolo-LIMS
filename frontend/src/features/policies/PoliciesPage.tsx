@@ -21,7 +21,18 @@ import { PolicyDrawer } from './PolicyDrawer';
  * pager. Filter and page live in the URL, which makes a filtered view shareable and
  * the back button correct -- the one thing React Router does not hand us for free.
  */
-export function PoliciesPage() {
+export function PoliciesPage({
+  title = 'Policies',
+  description = 'Every policy in your tenant. Select one to preview it.',
+  showIssueAction = true,
+}: {
+  title?: string;
+  description?: string;
+  /** false for the agents-realm mount: issuing a policy is a staff-only action
+   *  (`POST /policies/manual-issue` is `hasRole('REALM_STAFF')`), and there is
+   *  no `new` route under `/agents/policies` for the link to reach anyway. */
+  showIssueAction?: boolean;
+} = {}) {
   const [params, setParams] = useSearchParams();
   const [previewing, setPreviewing] = useState<string | null>(null);
 
@@ -193,15 +204,17 @@ export function PoliciesPage() {
   return (
     <>
       <PageHeader
-        title="Policies"
-        description="Every policy in your tenant. Select one to preview it."
+        title={title}
+        description={description}
         actions={
-          <Button asChild size="sm" variant="primary">
-            <Link to="new">
-              <Plus />
-              Issue policy
-            </Link>
-          </Button>
+          showIssueAction ? (
+            <Button asChild size="sm" variant="primary">
+              <Link to="new">
+                <Plus />
+                Issue policy
+              </Link>
+            </Button>
+          ) : undefined
         }
       />
 

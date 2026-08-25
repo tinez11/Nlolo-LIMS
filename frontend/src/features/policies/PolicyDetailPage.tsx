@@ -6,6 +6,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import type { LoanView } from '@/api/types';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
+import type { Realm } from '@/auth/realms';
 import { PageHeader } from '@/components/AppShell';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -47,10 +48,11 @@ import {
  * requires FINANCE_OFFICER/ADMIN) -- shown only to a staff user whose own
  * token could actually call it, never a blanket "staff can see everything."
  */
-export function PolicyDetailPage() {
+export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   const { policyNumber = '' } = useParams();
   const auth = useAuth();
   const canSeeReinsurance = canSeeFinance(readIdentity(auth.user?.access_token));
+  const isStaff = realm === 'staff';
 
   const detail = usePolicyStore(selectDetail(policyNumber));
   const coverage = usePolicyStore(selectCoverage(policyNumber));
@@ -151,21 +153,32 @@ export function PolicyDetailPage() {
                   label="Policyholder"
                   value={
                     policy.policyholderPartyId ? (
-                      <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="font-mono text-xs underline">
-                        {policy.policyholderPartyId}
-                      </Link>
+                      isStaff ? (
+                        <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="font-mono text-xs underline">
+                          {policy.policyholderPartyId}
+                        </Link>
+                      ) : (
+                        <span className="font-mono text-xs">{policy.policyholderPartyId}</span>
+                      )
                     ) : (
                       '—'
                     )
                   }
+                  {...(!isStaff && policy.policyholderPartyId
+                    ? { note: 'No drill-in yet outside the staff console' }
+                    : {})}
                 />
                 <Field
                   label="Agent of record"
                   value={
                     policy.agentOfRecordId ? (
-                      <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="font-mono text-xs underline">
-                        {policy.agentOfRecordId}
-                      </Link>
+                      isStaff ? (
+                        <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="font-mono text-xs underline">
+                          {policy.agentOfRecordId}
+                        </Link>
+                      ) : (
+                        <span className="font-mono text-xs">{policy.agentOfRecordId}</span>
+                      )
                     ) : (
                       'Direct — no agent'
                     )
@@ -175,7 +188,11 @@ export function PolicyDetailPage() {
             )}
           </Panel>
 
-          {policy && <Panel title="Lifecycle">{<LifecycleActions policyNumber={policyNumber} status={policy.status} />}</Panel>}
+          {/* Suspend/resume/reinstate are all hasRole('REALM_STAFF') only -- shown
+              only in the staff console, not just left to always-403 on click, the
+              same "don't render a button that can never work for this session"
+              discipline the deferred surrender action already follows above. */}
+          {isStaff && policy && <Panel title="Lifecycle">{<LifecycleActions policyNumber={policyNumber} status={policy.status} />}</Panel>}
 
           <Panel title="Coverage" subtitle="Active benefits as of today">
             {renderCoverage()}

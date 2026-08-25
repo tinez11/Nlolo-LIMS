@@ -22,7 +22,19 @@ import { ClaimDrawer } from './ClaimDrawer';
  * live in the URL for the same reason: a shareable filtered view and a correct
  * back button, which React Router does not give for free.
  */
-export function ClaimsPage() {
+export function ClaimsPage({
+  title = 'Claims',
+  description = 'Every claim in your tenant. Select one to preview it.',
+  showNewClaimAction = true,
+}: {
+  title?: string;
+  description?: string;
+  /** false for the agents-realm mount: `RegisterClaimPage` assumes the staff
+   *  console shape, and there is no `new` route under `/agents/claims` for
+   *  the link to reach -- registering a claim on a client's behalf stays a
+   *  staff-console action for now, browsing does not. */
+  showNewClaimAction?: boolean;
+} = {}) {
   const [params, setParams] = useSearchParams();
   const [previewing, setPreviewing] = useState<string | null>(null);
 
@@ -183,15 +195,17 @@ export function ClaimsPage() {
   return (
     <>
       <PageHeader
-        title="Claims"
-        description="Every claim in your tenant. Select one to preview it."
+        title={title}
+        description={description}
         actions={
-          <Button asChild size="sm" variant="primary">
-            <Link to="new">
-              <Plus />
-              New claim
-            </Link>
-          </Button>
+          showNewClaimAction ? (
+            <Button asChild size="sm" variant="primary">
+              <Link to="new">
+                <Plus />
+                New claim
+              </Link>
+            </Button>
+          ) : undefined
         }
       />
 

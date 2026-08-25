@@ -77,6 +77,28 @@ export function App() {
           <Route index element={<Navigate to="me" replace />} />
           <Route path="me" element={<AgentProfilePage />} />
           <Route path="customers/new" element={<OnboardCustomerPage />} />
+          <Route
+            path="policies"
+            element={
+              <PoliciesPage
+                title="My policies"
+                description="Policies where you are the agent of record, or someone in your downline is."
+                showIssueAction={false}
+              />
+            }
+          />
+          <Route path="policies/:policyNumber" element={<PolicyDetailPage realm="agents" />} />
+          <Route
+            path="claims"
+            element={
+              <ClaimsPage
+                title="My claims"
+                description="Claims against a policy where you are the agent of record, or someone in your downline is."
+                showNewClaimAction={false}
+              />
+            }
+          />
+          <Route path="claims/:claimId" element={<ClaimDetailPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -89,20 +89,22 @@ const STAFF_NAV: NavGroup[] = [
 ];
 
 /**
- * Nav definition for the agents realm. Deliberately just these two: "browse my
- * book of business" (policies/claims scoped to this agent) is blocked on a
- * real backend gap -- `PolicyController`/`ClaimController` have no
- * `agentOfRecordId` filtering for agents-realm tokens today, see
- * `AgentController`'s own object-level scoping for the pattern that would
- * need extending. Both items here reuse endpoints that are already correctly
- * scoped (`GET /agents/me`, and registration POSTs that create a brand-new
- * record rather than reading someone else's).
+ * Nav definition for the agents realm. Policies/claims reuse the exact same
+ * `PoliciesPage`/`ClaimsPage`/`PolicyDetailPage`/`ClaimDetailPage` components
+ * the staff console mounts -- the scoping to "this agent's own book of
+ * business" happens entirely server-side (`PolicyController`/`ClaimController`
+ * resolve the caller's hierarchy team via `DistributionApi.resolveAgentTeam`
+ * and filter the query itself), so the frontend never needs its own filter
+ * UI. The only client-side differences are cosmetic (title/description, and
+ * hiding the staff-only "Issue policy"/"New claim" actions).
  */
 const AGENTS_NAV: NavGroup[] = [
   {
     label: 'My business',
     items: [
       { to: 'me', label: 'My profile', icon: Users, implemented: true },
+      { to: 'policies', label: 'Policies', icon: FileText, implemented: true },
+      { to: 'claims', label: 'Claims', icon: ScrollText, implemented: true },
       { to: 'customers/new', label: 'Onboard a customer', icon: UserPlus, implemented: true },
     ],
   },
