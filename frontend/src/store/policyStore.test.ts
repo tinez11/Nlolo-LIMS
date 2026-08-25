@@ -105,3 +105,42 @@ describe('resetIssuePolicy', () => {
     expect(usePolicyStore.getState().issuing.error).toBeNull();
   });
 });
+
+/**
+ * `waivingInvoice` and `requestingPayment` are both keyed by invoiceId and
+ * outlive their owning row's mount/unmount, same failure mode as every other
+ * mutation resource on this console -- built in from the start.
+ */
+describe('resetWaiveInvoice', () => {
+  it('clears a failed waiver back to idle', () => {
+    usePolicyStore.setState({ waivingInvoice: { 'inv-1': failure(idle<true>(), anError) } });
+    usePolicyStore.getState().resetWaiveInvoice('inv-1');
+    expect(usePolicyStore.getState().waivingInvoice['inv-1']).toBeUndefined();
+  });
+
+  it('does not touch a different invoice id', () => {
+    usePolicyStore.setState({
+      waivingInvoice: { 'inv-1': failure(idle<true>(), anError), 'inv-2': success(true) },
+    });
+    usePolicyStore.getState().resetWaiveInvoice('inv-1');
+    expect(usePolicyStore.getState().waivingInvoice['inv-2']?.status).toBe('success');
+  });
+
+  it('does no harm when there is nothing to reset', () => {
+    usePolicyStore.setState({ waivingInvoice: {} });
+    expect(() => usePolicyStore.getState().resetWaiveInvoice('inv-1')).not.toThrow();
+  });
+});
+
+describe('resetRequestPaymentForInvoice', () => {
+  it('clears a failed payment request back to idle', () => {
+    usePolicyStore.setState({ requestingPayment: { 'inv-1': failure(idle<true>(), anError) } });
+    usePolicyStore.getState().resetRequestPaymentForInvoice('inv-1');
+    expect(usePolicyStore.getState().requestingPayment['inv-1']).toBeUndefined();
+  });
+
+  it('does no harm when there is nothing to reset', () => {
+    usePolicyStore.setState({ requestingPayment: {} });
+    expect(() => usePolicyStore.getState().resetRequestPaymentForInvoice('inv-1')).not.toThrow();
+  });
+});

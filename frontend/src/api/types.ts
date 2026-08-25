@@ -57,6 +57,19 @@ export interface ReopenClaimRequest {
 }
 
 /**
+ * `POST /invoices/{invoiceId}/waiver` and `.../payment-request` both declare
+ * their request bodies INLINE in the spec (no named schema, same shape as
+ * claims' settlement-decision/reopen) -- hand-written here, transcribed from
+ * the actual generated path entry in `types/api/billing.ts`.
+ */
+export interface WaiverRequest {
+  reason: string;
+}
+export interface PaymentRequest {
+  payerRef: string;
+}
+
+/**
  * `agents`/`commission-plans` -- there is no `GET /agents` list or search
  * endpoint at all (matches parties/payments/documents' shape), and no
  * `GET /commission-plans/{id}` either: a plan is readable only through an

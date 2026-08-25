@@ -1,4 +1,5 @@
 import { get, post, put } from '@/lib/http';
+import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   BeneficiaryInput,
   CoverageStatusView,
@@ -6,8 +7,10 @@ import type {
   LoanView,
   ManualIssueRequest,
   Page,
+  PaymentRequest,
   PolicyStatus,
   PolicyView,
+  WaiverRequest,
 } from './types';
 
 /**
@@ -84,6 +87,35 @@ export function listInvoices(policyNumber: string): Promise<InvoiceView[]> {
 /** `GET /policies/{n}/loans` -- also a bare unpaged array. */
 export function listLoans(policyNumber: string): Promise<LoanView[]> {
   return get<LoanView[]>(`/policies/${encodeURIComponent(policyNumber)}/loans`);
+}
+
+/**
+ * `POST /invoices/{invoiceId}/waiver` -- staff only. Returns 200 with no body
+ * (verified against the real spec), so the only way to see the effect is to
+ * refetch the invoice list. No `Idempotency-Key` here at all -- unlike its
+ * neighbor below, waiving is not itself a money movement toward a payment
+ * rail, so there is nothing for the key to dedupe against.
+ */
+export function waiveInvoice(invoiceId: string, request: WaiverRequest): Promise<void> {
+  return post<void>(`/invoices/${encodeURIComponent(invoiceId)}/waiver`, request);
+}
+
+/**
+ * `POST /invoices/{invoiceId}/payment-request` -- staff/customer/agent.
+ * `Idempotency-Key` is hard-required (a 400 without it) -- see
+ * lib/idempotency.ts's REQUIRED list. Returns 202 with no body; billing's own
+ * `PaymentEventListener` moves the invoice toward PARTIALLY_PAID/PAID
+ * asynchronously once payment confirms, so a refetch right after this call
+ * may still show the pre-collection status for a moment.
+ */
+export function requestPaymentForInvoice(
+  invoiceId: string,
+  request: PaymentRequest,
+  attempt: MutationAttempt,
+): Promise<void> {
+  return post<void>(`/invoices/${encodeURIComponent(invoiceId)}/payment-request`, request, {
+    headers: attempt.headers(),
+  });
 }
 
 /**

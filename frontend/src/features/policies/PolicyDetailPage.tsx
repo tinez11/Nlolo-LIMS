@@ -2,7 +2,7 @@ import { ArrowLeft, Ban } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
-import type { InvoiceView, LoanView } from '@/api/types';
+import type { LoanView } from '@/api/types';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import { PageHeader } from '@/components/AppShell';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -12,15 +12,10 @@ import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import {
-  selectCoverage,
-  selectDetail,
-  selectInvoices,
-  selectLoans,
-  usePolicyStore,
-} from '@/store/policyStore';
+import { selectCoverage, selectDetail, selectLoans, usePolicyStore } from '@/store/policyStore';
 import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
+import { InvoicesPanel } from './InvoicesPanel';
 import { Field } from '@/components/Field';
 
 /**
@@ -43,21 +38,18 @@ export function PolicyDetailPage() {
 
   const detail = usePolicyStore(selectDetail(policyNumber));
   const coverage = usePolicyStore(selectCoverage(policyNumber));
-  const invoices = usePolicyStore(selectInvoices(policyNumber));
   const loans = usePolicyStore(selectLoans(policyNumber));
 
   const loadDetail = usePolicyStore((s) => s.loadDetail);
   const loadCoverage = usePolicyStore((s) => s.loadCoverage);
-  const loadInvoices = usePolicyStore((s) => s.loadInvoices);
   const loadLoans = usePolicyStore((s) => s.loadLoans);
 
   useEffect(() => {
     if (!policyNumber) return;
     void loadDetail(policyNumber);
     void loadCoverage(policyNumber);
-    void loadInvoices(policyNumber);
     void loadLoans(policyNumber);
-  }, [policyNumber, loadDetail, loadCoverage, loadInvoices, loadLoans]);
+  }, [policyNumber, loadDetail, loadCoverage, loadLoans]);
 
   const policy = detail.data;
 
@@ -107,7 +99,7 @@ export function PolicyDetailPage() {
       <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-5">
           <Panel title="Invoices" subtitle="All invoices for this policy">
-            {renderInvoices()}
+            <InvoicesPanel policyNumber={policyNumber} />
           </Panel>
 
           <Panel title="Loans" subtitle="Policy loans taken against cash value">
@@ -179,58 +171,6 @@ export function PolicyDetailPage() {
       </div>
     </>
   );
-
-  function renderInvoices() {
-    if (isInitialLoad(invoices)) return <LoadingBlock />;
-    if (invoices.status === 'error' && invoices.error && invoices.data === null) {
-      return (
-        <ErrorPanel error={invoices.error} onRetry={() => void loadInvoices(policyNumber)} />
-      );
-    }
-    const rows = invoices.data ?? [];
-    if (rows.length === 0) {
-      return <EmptyState title="No invoices" description="Nothing has been billed on this policy." />;
-    }
-
-    const columns: Column<InvoiceView>[] = [
-      { key: 'due', header: 'Due', render: (i) => formatDate(i.dueDate) },
-      {
-        key: 'status',
-        header: 'Status',
-        render: (i) => (
-          <span className="flex items-center gap-1.5">
-            <StatusBadge kind="invoice" value={i.status} />
-            {typeof i.dunningLevel === 'number' && (
-              <span
-                className="text-[11px] text-status-danger-fg"
-                title="Dunning escalation level (1-5)"
-              >
-                L{i.dunningLevel}
-              </span>
-            )}
-          </span>
-        ),
-      },
-      {
-        key: 'grace',
-        header: 'Grace ends',
-        secondary: true,
-        render: (i) => (
-          <span className="text-muted-foreground">{formatDate(i.gracePeriodEndsAt)}</span>
-        ),
-      },
-      { key: 'amount', header: 'Amount', align: 'right', render: (i) => formatMoney(i.amount) },
-    ];
-
-    return (
-      <DataTable
-        columns={columns}
-        rows={rows}
-        rowKey={(i) => i.invoiceId ?? JSON.stringify(i)}
-        caption={`Invoices for ${policyNumber}`}
-      />
-    );
-  }
 
   function renderLoans() {
     if (isInitialLoad(loans)) return <LoadingBlock />;

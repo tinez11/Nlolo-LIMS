@@ -6,7 +6,9 @@ import {
   listInvoices,
   listLoans,
   replaceBeneficiaries,
+  requestPaymentForInvoice,
   searchPolicies,
+  waiveInvoice,
   type PolicySearchParams,
 } from '@/api/policies';
 import type {
@@ -16,8 +18,11 @@ import type {
   LoanView,
   ManualIssueRequest,
   Page,
+  PaymentRequest,
   PolicyView,
+  WaiverRequest,
 } from '@/api/types';
+import type { MutationAttempt } from '@/lib/idempotency';
 import { idle, track, type Resource } from './createResourceSlice';
 
 /**
@@ -44,6 +49,10 @@ interface PolicyState {
   // A single slot, not keyed: issuance creates a NEW policy, so there is no
   // existing policyNumber to key against yet -- same shape as claims' `registering`.
   issuing: Resource<PolicyView>;
+  // Both keyed by invoiceId: each targets an EXISTING invoice, and a failed
+  // action on one must not corrupt another's state.
+  waivingInvoice: Keyed<true>;
+  requestingPayment: Keyed<true>;
 
   loadList: (params: PolicySearchParams) => Promise<void>;
   loadDetail: (policyNumber: string) => Promise<void>;
@@ -57,6 +66,15 @@ interface PolicyState {
   /** Clears a stale issuance error before a fresh attempt -- see RegisterClaimPage's
    *  identical need for why this exists from the start rather than being added later. */
   resetIssuePolicy: () => void;
+  waiveInvoice: (policyNumber: string, invoiceId: string, request: WaiverRequest) => Promise<void>;
+  resetWaiveInvoice: (invoiceId: string) => void;
+  requestPaymentForInvoice: (
+    policyNumber: string,
+    invoiceId: string,
+    request: PaymentRequest,
+    attempt: MutationAttempt,
+  ) => Promise<void>;
+  resetRequestPaymentForInvoice: (invoiceId: string) => void;
 }
 
 export const usePolicyStore = create<PolicyState>((set, getState) => ({
@@ -67,6 +85,8 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   loans: {},
   savingBeneficiaries: {},
   issuing: idle(),
+  waivingInvoice: {},
+  requestingPayment: {},
 
   // Every `track` call below is keyed so a slower, superseded request can never
   // overwrite a faster, newer one -- e.g. clicking through status filter chips
@@ -157,6 +177,50 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
     ),
 
   resetIssuePolicy: () => set({ issuing: idle() }),
+
+  waiveInvoice: (policyNumber, invoiceId, request) =>
+    track(
+      `policy.waiveInvoice.${invoiceId}`,
+      getState().waivingInvoice[invoiceId] ?? idle<true>(),
+      (next) => set((s) => ({ waivingInvoice: { ...s.waivingInvoice, [invoiceId]: next } })),
+      // Explicit Promise<true>: see productStore.publishVersion for why the
+      // annotation is required to stop TypeScript widening the literal to boolean.
+      async (): Promise<true> => {
+        await waiveInvoice(invoiceId, request);
+        // The waiver POST returns no body at all -- refetch to see the
+        // invoice's real new status (WAIVED).
+        await getState().loadInvoices(policyNumber);
+        return true;
+      },
+    ),
+
+  resetWaiveInvoice: (invoiceId) =>
+    set((s) => {
+      if (!(invoiceId in s.waivingInvoice)) return s;
+      const { [invoiceId]: _discard, ...rest } = s.waivingInvoice;
+      return { waivingInvoice: rest };
+    }),
+
+  requestPaymentForInvoice: (policyNumber, invoiceId, request, attempt) =>
+    track(
+      `policy.requestPayment.${invoiceId}`,
+      getState().requestingPayment[invoiceId] ?? idle<true>(),
+      (next) => set((s) => ({ requestingPayment: { ...s.requestingPayment, [invoiceId]: next } })),
+      async (): Promise<true> => {
+        await requestPaymentForInvoice(invoiceId, request, attempt);
+        // 202 with no body -- collection itself completes asynchronously, but
+        // refetch anyway so a fast confirm already reflected server-side shows.
+        await getState().loadInvoices(policyNumber);
+        return true;
+      },
+    ),
+
+  resetRequestPaymentForInvoice: (invoiceId) =>
+    set((s) => {
+      if (!(invoiceId in s.requestingPayment)) return s;
+      const { [invoiceId]: _discard, ...rest } = s.requestingPayment;
+      return { requestingPayment: rest };
+    }),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
@@ -170,3 +234,7 @@ export const selectLoans = (policyNumber: string) => (s: PolicyState) =>
   s.loans[policyNumber] ?? idle<LoanView[]>();
 export const selectSavingBeneficiaries = (policyNumber: string) => (s: PolicyState) =>
   s.savingBeneficiaries[policyNumber] ?? idle<true>();
+export const selectWaivingInvoice = (invoiceId: string) => (s: PolicyState) =>
+  s.waivingInvoice[invoiceId] ?? idle<true>();
+export const selectRequestingPayment = (invoiceId: string) => (s: PolicyState) =>
+  s.requestingPayment[invoiceId] ?? idle<true>();
