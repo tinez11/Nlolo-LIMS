@@ -15,6 +15,7 @@ import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
 import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as DistributionComponents } from '@/types/api/distribution';
+import type { components as FinaccountingComponents } from '@/types/api/finaccounting';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
 import type { components as ProductComponents } from '@/types/api/product';
 import type { components as ReinsuranceComponents } from '@/types/api/reinsurance';
@@ -105,6 +106,18 @@ export type ClaimRecoveryView = ReinsuranceComponents['schemas']['ClaimRecoveryV
 
 export const TREATY_TYPES: readonly TreatyType[] = ['QUOTA_SHARE', 'SURPLUS', 'XOL'];
 export const TREATY_STATUSES: readonly TreatyStatus[] = ['ACTIVE', 'EXPIRED'];
+
+/**
+ * `finaccounting` is read-only, permanently: every posting is derived from a
+ * domain event by this module's own listeners, and there is no write
+ * endpoint here at all, by design -- a correction is a future reversal entry
+ * (deferred), never an edit to an existing one.
+ */
+export type JournalEntryView = FinaccountingComponents['schemas']['JournalEntryView'];
+export type GlPostingView = FinaccountingComponents['schemas']['GlPostingView'];
+export type ChartOfAccountView = FinaccountingComponents['schemas']['ChartOfAccountView'];
+export type AccountType = ChartOfAccountView['accountType'];
+export type PostingDirection = GlPostingView['direction'];
 
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the
