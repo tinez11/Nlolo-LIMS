@@ -12,11 +12,9 @@ import { expect, test } from '@playwright/test';
  * So every test here must open its own case and work from the id its own
  * response hands back -- there is no discovery path to lean on.
  *
- * `d9937444-3873-4336-9cb7-addb486f3e1b` is the same real seeded policyholder
- * used throughout staff-issue-policy.spec.ts.
+ * "Amina Owner" (`d9937444-3873-4336-9cb7-addb486f3e1b`) is the same real
+ * seeded policyholder used throughout staff-issue-policy.spec.ts.
  */
-
-const REAL_PARTY_ID = 'd9937444-3873-4336-9cb7-addb486f3e1b';
 
 test.describe('staff underwriting', () => {
   test.beforeEach(async ({ page }) => {
@@ -29,28 +27,20 @@ test.describe('staff underwriting', () => {
     await expect(select.locator('option', { hasText: 'Demo Term Life' })).toHaveCount(1);
   });
 
-  test('rejects a malformed applicant party id client-side, before reaching the network', async ({
+  test('shows no matches for a nonsense applicant search, before reaching the network', async ({
     page,
   }) => {
-    let requestFired = false;
-    page.on('request', (req) => {
-      if (req.method() === 'POST' && req.url().endsWith('/underwriting/cases')) requestFired = true;
-    });
-
-    await page.getByLabel('Applicant party id').fill('not-a-uuid');
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
-    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-    await page.getByLabel('Sum assured').fill('1500000.00');
-    await page.getByRole('button', { name: 'Open case' }).click();
-
-    await expect(page.getByText('Not a valid party id')).toBeVisible();
-    expect(requestFired).toBe(false);
+    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Zzzznonexistentnamezzz');
+    await expect(page.getByText(/No matches for/)).toBeVisible({ timeout: 5000 });
   });
 
   test('opens a case, decides it by submitting one assessment, and the decision survives a reload', async ({
     page,
   }) => {
-    await page.getByLabel('Applicant party id').fill(REAL_PARTY_ID);
+    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
     await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('1500000.00');
@@ -81,7 +71,9 @@ test.describe('staff underwriting', () => {
   });
 
   test('refers a case to a senior underwriter', async ({ page }) => {
-    await page.getByLabel('Applicant party id').fill(REAL_PARTY_ID);
+    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
     await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('1500000.00');
@@ -100,7 +92,9 @@ test.describe('staff underwriting', () => {
     page,
     context,
   }) => {
-    await page.getByLabel('Applicant party id').fill(REAL_PARTY_ID);
+    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
     await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('1500000.00');
@@ -131,28 +125,5 @@ test.describe('staff underwriting', () => {
     await expect(page2.getByRole('heading', { name: 'Decision' })).toBeVisible();
 
     await page2.close();
-  });
-
-  test('does not resurface a stale open-case rejection on a fresh visit to the page', async ({
-    page,
-  }) => {
-    // Trigger a real rejection: a well-formed but nonexistent party id.
-    // partyApi.getParty(...) genuinely checks existence, so this 404s for real.
-    await page.getByLabel('Applicant party id').fill('00000000-0000-4000-8000-000000000000');
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
-    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-    await page.getByLabel('Sum assured').fill('1500000.00');
-    await page.getByRole('button', { name: 'Open case' }).click();
-
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
-
-    // Wait for the first navigation to genuinely settle before firing the
-    // second -- back-to-back goto() calls with no intervening wait can race
-    // the app's own in-flight requests from the first page (seen previously
-    // on staff-issue-policy.spec.ts).
-    await page.goto('/staff/policies');
-    await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible();
-    await page.goto('/staff/underwriting/new');
-    await expect(page.getByRole('alert')).not.toBeVisible();
   });
 });

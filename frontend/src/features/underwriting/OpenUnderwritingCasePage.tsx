@@ -1,9 +1,10 @@
 import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/AppShell';
+import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
@@ -45,6 +46,7 @@ export function OpenUnderwritingCasePage() {
     handleSubmit,
     watch,
     setValue,
+    control,
     formState: { errors },
   } = useForm<OpenCaseFormValues>({
     resolver: zodResolver(openCaseFormSchema),
@@ -97,10 +99,16 @@ export function OpenUnderwritingCasePage() {
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <FormField label="Applicant party id" error={errors.applicantPartyId?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm"
-            placeholder="uuid"
-            {...register('applicantPartyId')}
+          <Controller
+            control={control}
+            name="applicantPartyId"
+            render={({ field }) => (
+              <PartyPicker
+                value={field.value || null}
+                onChange={(partyId) => field.onChange(partyId ?? '')}
+                placeholder="Search for the applicant by name"
+              />
+            )}
           />
         </FormField>
 
