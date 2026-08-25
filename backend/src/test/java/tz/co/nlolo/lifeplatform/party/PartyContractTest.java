@@ -585,4 +585,41 @@ class PartyContractTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items.length()").value(0));
     }
+
+    @Test
+    void searchPartiesByQStaysForceScopedToTheCallingAgentsOwnCreatedByParties() throws Exception {
+        // The new 3-way `search` query carries the SAME agents-realm force-scoping
+        // as the original derived-query branches -- proven here the same way, not
+        // just assumed from reading the code: two agents (distinct JWT subjects)
+        // each register a party sharing a `q`-matchable name fragment, and agent A's
+        // own `q` search must find only its own party, never agent B's.
+        UUID tenantId = UUID.randomUUID();
+        String agentASubject = "agent-a-q-scoping-test";
+        String agentBSubject = "agent-b-q-scoping-test";
+
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(agentASubject).claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Scoping Query Fixture Agent A","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345698"}}
+                    """))
+            .andExpect(status().isCreated());
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(agentBSubject).claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Scoping Query Fixture Agent B","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345699"}}
+                    """))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/parties")
+                .queryParam("q", "Scoping Query Fixture")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(agentASubject).claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].displayName").value("Scoping Query Fixture Agent A"));
+    }
 }

@@ -1,19 +1,19 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Command as CommandPrimitive } from 'cmdk';
-import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { searchParties } from '@/api/party';
+import { Loader2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { getParty, searchParties } from '@/api/party';
 import type { KycStatus, PartyView } from '@/api/types';
 import { StatusBadge } from '@/components/StatusBadge';
+import type { ApiError } from '@/lib/http';
 import { UUID_PATTERN } from '@/lib/patterns';
 
 export interface PartyPickerProps {
-  /** The selected partyId, or null. This component does not resolve a label
-   *  for a pre-existing value on mount -- every integration point on this
-   *  platform today is a CREATE form, where value always starts null, so
-   *  there is no existing id to resolve a name for. If a future caller needs
-   *  to edit an already-selected party, it must pass an initial label some
-   *  other way; that is out of scope until a real caller needs it. */
+  /** The selected partyId, or null. If `value` is set but no selection has
+   *  happened in this component instance yet (e.g. an edit form seeding a
+   *  pre-existing party), the label is resolved via `GET /parties/{id}` on
+   *  mount/value-change so the field never renders a populated value as an
+   *  empty placeholder. */
   value: string | null;
   onChange: (partyId: string | null, party: PartyView | null) => void;
   /** Pre-filters the search to only this KYC status -- e.g. `VERIFIED` for
@@ -27,13 +27,22 @@ const MIN_QUERY_LENGTH = 2;
 
 type SearchStatus = 'idle' | 'loading' | 'success' | 'error';
 
+function isNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as ApiError).kind === 'notFound';
+}
+
 export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search by name…' }: PartyPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [results, setResults] = useState<PartyView[]>([]);
   const [status, setStatus] = useState<SearchStatus>('idle');
-  const cancelledRef = useRef(false);
+  // Tracks which value this instance has already resolved (or attempted to
+  // resolve) a label for, so an external value we didn't just select from
+  // this component's own list -- e.g. an edit form seeding a real,
+  // pre-existing party -- doesn't render as an empty placeholder, and so a
+  // 404/network hiccup on that lookup doesn't retry every render.
+  const resolvedForValue = useRef<string | null>(null);
 
   // A directly-typed/pasted UUID (a staff member copying an id from
   // elsewhere out of habit) searches immediately -- it is already a
@@ -42,19 +51,46 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
   const trimmed = query.trim();
   const isUuid = UUID_PATTERN.test(trimmed);
 
-  const performSearch = useCallback(() => {
-    cancelledRef.current = false;
+  useEffect(() => {
+    if (!open) return;
+    if (trimmed.length < MIN_QUERY_LENGTH && !isUuid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResults([]);
+      setStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+    // Cleared immediately, not left showing the previous query's rows under
+    // the spinner -- those stayed clickable otherwise.
+    setResults([]);
     setStatus('loading');
     const timer = setTimeout(
       () => {
-        searchParties({ q: trimmed, ...(kycStatus ? { kycStatus } : {}), pageSize: 10 })
-          .then((page) => {
-            if (cancelledRef.current) return;
-            setResults(page.items);
+        // `q` matches displayName only -- a pasted UUID needs the direct
+        // by-id lookup, not a text search that can never match it.
+        const request: Promise<PartyView[]> = isUuid
+          ? getParty(trimmed).then((party) => (kycStatus && party.kycStatus !== kycStatus ? [] : [party]))
+          : searchParties({ q: trimmed, ...(kycStatus ? { kycStatus } : {}), pageSize: 10 }).then(
+              (page) => page.items,
+            );
+
+        request
+          .then((items) => {
+            if (cancelled) return;
+            setResults(items);
             setStatus('success');
           })
-          .catch(() => {
-            if (cancelledRef.current) return;
+          .catch((error: unknown) => {
+            if (cancelled) return;
+            // A pasted id that simply doesn't resolve to any party is "no
+            // matches", the same outcome as a name search with zero hits --
+            // not a failure of the search itself.
+            if (isUuid && isNotFound(error)) {
+              setResults([]);
+              setStatus('success');
+              return;
+            }
             setStatus('error');
           });
       },
@@ -62,43 +98,74 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
     );
 
     return () => {
-      cancelledRef.current = true;
+      cancelled = true;
       clearTimeout(timer);
     };
-  }, [trimmed, isUuid, kycStatus]);
+  }, [open, trimmed, isUuid, kycStatus]);
 
+  // Resolves a label for a `value` this component didn't just set itself
+  // (via select()/clear() below, which set selectedLabel synchronously) --
+  // an edit form seeding a real, pre-existing party id being the real case.
   useEffect(() => {
-    if (!open || (trimmed.length < MIN_QUERY_LENGTH && !isUuid)) {
-      return;
-    }
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    const cleanup = performSearch();
-    return cleanup;
-  }, [open, trimmed, isUuid, kycStatus, performSearch]);
+    if (!value || resolvedForValue.current === value) return;
+    resolvedForValue.current = value;
+    let cancelled = false;
+    getParty(value)
+      .then((party) => {
+        if (cancelled || resolvedForValue.current !== value) return;
+        setSelectedLabel(party.displayName ?? party.partyId ?? value);
+      })
+      .catch(() => {
+        // Leave selectedLabel unset -- the trigger falls back to the
+        // placeholder rather than crashing or showing a raw id.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
 
   function select(party: PartyView) {
+    resolvedForValue.current = party.partyId ?? null;
     onChange(party.partyId ?? null, party);
     setSelectedLabel(party.displayName ?? party.partyId ?? null);
     setOpen(false);
     setQuery('');
   }
 
+  function clear(e: React.MouseEvent) {
+    e.stopPropagation();
+    resolvedForValue.current = null;
+    onChange(null, null);
+    setSelectedLabel(null);
+  }
+
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          type="button"
-          aria-label={value && selectedLabel ? selectedLabel : placeholder}
-          className="flex h-9 w-full items-center rounded-md border border-input bg-surface px-2.5 text-left text-sm"
-        >
-          {value && selectedLabel ? (
-            selectedLabel
-          ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
-          )}
-        </button>
-      </Popover.Trigger>
+      <div className="relative">
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            aria-label={value && selectedLabel ? selectedLabel : placeholder}
+            className="flex h-9 w-full items-center rounded-md border border-input bg-surface px-2.5 text-left text-sm"
+          >
+            {value && selectedLabel ? (
+              <span className="min-w-0 truncate pr-6">{selectedLabel}</span>
+            ) : (
+              <span className="min-w-0 truncate text-muted-foreground">{placeholder}</span>
+            )}
+          </button>
+        </Popover.Trigger>
+        {value && (
+          <button
+            type="button"
+            aria-label="Clear selection"
+            onClick={clear}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-hover hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        )}
+      </div>
       <Popover.Portal>
         <Popover.Content
           align="start"
