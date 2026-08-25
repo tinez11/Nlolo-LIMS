@@ -103,6 +103,25 @@ class PartyContractTest {
     }
 
     @Test
+    void staffCanRegisterAnIndividual() throws Exception {
+        // Staff-assisted individual registration (e.g. a branch/call-center walk-in with no
+        // agent involved) -- previously 403'd because registerIndividual only allowed
+        // REALM_CUSTOMERS/REALM_AGENTS, an asymmetry with registerCorporate (which already
+        // allows staff) that had no documented rationale (staff portal review, 2026-08-25).
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Staff Assisted Walkin","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345694","email":"walkin@example.tz"}}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
     void registerIndividualRejectsUnauthenticatedRequest() throws Exception {
         mockMvc.perform(post("/parties/individuals")
                 .contentType(MediaType.APPLICATION_JSON)

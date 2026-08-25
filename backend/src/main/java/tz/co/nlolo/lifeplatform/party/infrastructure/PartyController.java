@@ -43,7 +43,7 @@ public class PartyController {
     }
 
     @PostMapping("/parties/individuals")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS')")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PartyView> registerIndividual(@Valid @RequestBody RegisterIndividualRequest request,
                                                           @AuthenticationPrincipal Jwt jwt) {
         PartyView view = partyApi.registerIndividual(request.fullName(), request.dateOfBirth(),

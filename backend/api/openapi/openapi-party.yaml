@@ -14,10 +14,11 @@ servers:
 paths:
   /parties/individuals:
     post:
-      summary: Register an individual (self-service signup, or agent-assisted)
+      summary: Register an individual (self-service signup, agent-assisted, or staff-assisted)
       security:
         - customersAuth: []
         - agentsAuth: [agent]
+        - staffAuth: []
       requestBody:
         required: true
         content:
