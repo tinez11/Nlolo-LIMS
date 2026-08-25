@@ -134,8 +134,11 @@ export function ClaimDetailPage() {
                 )}
                 <Field
                   label="Claimant"
-                  value={<span className="font-mono text-xs">{claim.claimantPartyId}</span>}
-                  note="No party lookup endpoint exists yet"
+                  value={
+                    <Link to={`/staff/parties/${claim.claimantPartyId}`} className="font-mono text-xs underline">
+                      {claim.claimantPartyId}
+                    </Link>
+                  }
                 />
                 <Field
                   label="Contestability"

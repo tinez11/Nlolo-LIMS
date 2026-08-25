@@ -1,5 +1,8 @@
 package tz.co.nlolo.lifeplatform.party.infrastructure;
 
+import tz.co.nlolo.lifeplatform.AllowedDocumentContentTypes;
+import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
+import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
@@ -7,6 +10,7 @@ import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,17 +23,23 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.UUID;
 
 @RestController
 public class PartyController {
 
     private final PartyApi partyApi;
+    private final DocumentApi documentApi;
 
-    public PartyController(PartyApi partyApi) {
+    public PartyController(PartyApi partyApi, DocumentApi documentApi) {
         this.partyApi = partyApi;
+        this.documentApi = documentApi;
     }
 
     @PostMapping("/parties/individuals")
@@ -73,6 +83,29 @@ public class PartyController {
             }
         }
         return ResponseEntity.ok(partyApi.getParty(partyId));
+    }
+
+    /**
+     * A real, previously-missing upload path: {@code PartyApi.submitKycEvidence} below has always
+     * required a real {@code evidenceDocumentRef}, but until this endpoint there was no way to
+     * produce one for a KYC purpose at all -- {@code claims.infrastructure.ClaimEvidenceController}
+     * is the only other upload path on the platform, and it is hardcoded to claim evidence. Mirrors
+     * that controller's shape exactly (allowlist via the now-shared
+     * {@link AllowedDocumentContentTypes}, {@code ownerContext} scoped to this owning aggregate).
+     */
+    @PostMapping(value = "/parties/{partyId}/kyc-evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<KycEvidenceUploadResponseDto> uploadKycEvidence(@PathVariable UUID partyId,
+            @RequestPart("file") MultipartFile file, @AuthenticationPrincipal Jwt jwt) {
+        String contentType = AllowedDocumentContentTypes.normalizeOrThrow(file.getContentType());
+        String documentRef;
+        try {
+            documentRef = documentApi.upload("party:" + partyId, DocumentType.KYC_EVIDENCE, jwt.getSubject(),
+                file.getInputStream(), file.getSize(), contentType, file.getOriginalFilename());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read uploaded KYC evidence file", e);
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(new KycEvidenceUploadResponseDto(documentRef));
     }
 
     @PostMapping("/parties/{partyId}/kyc")

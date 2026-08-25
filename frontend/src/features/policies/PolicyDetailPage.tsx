@@ -149,8 +149,15 @@ export function PolicyDetailPage() {
                 <Field label="Issued" value={formatDate(policy.issueDate)} />
                 <Field
                   label="Policyholder"
-                  value={<span className="font-mono text-xs">{policy.policyholderPartyId ?? '—'}</span>}
-                  note="No party lookup endpoint exists yet"
+                  value={
+                    policy.policyholderPartyId ? (
+                      <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="font-mono text-xs underline">
+                        {policy.policyholderPartyId}
+                      </Link>
+                    ) : (
+                      '—'
+                    )
+                  }
                 />
                 <Field
                   label="Agent of record"

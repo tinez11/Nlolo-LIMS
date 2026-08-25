@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.claims.infrastructure;
 
+import tz.co.nlolo.lifeplatform.AllowedDocumentContentTypes;
 import tz.co.nlolo.lifeplatform.FileDownloadResponses;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimEvidenceView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
@@ -10,7 +11,6 @@ import tz.co.nlolo.lifeplatform.document.api.DocumentMetadataView;
 import tz.co.nlolo.lifeplatform.document.api.DocumentNotFoundException;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,8 +27,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -43,32 +41,6 @@ import java.util.UUID;
  */
 @RestController
 public class ClaimEvidenceController {
-
-    /**
-     * The closed set of media types evidence may be uploaded with, and therefore the closed set
-     * {@code openapi-document.yaml}'s two binary {@code 200} responses declare -- the two are one
-     * decision and must be changed together.
-     *
-     * <p>{@code MultipartFile.getContentType()} is a CLIENT-SUPPLIED header that Tomcat does not
-     * validate in any way: it will happily hand back {@code text/html}, {@code not a media type},
-     * or {@code ""}. Persisting it unchecked had two consequences. (1) Whatever arrived was echoed
-     * straight back out of the download endpoints by {@code FileDownloadResponses}, so an uploaded
-     * {@code text/html} "photo" rendered as a page in the victim's browser -- stored XSS through a
-     * document store. (2) A value that is not parseable as a media type at all could not be turned
-     * into a {@code Content-Type} header on the way out, permanently breaking that one document's
-     * download (see {@code FileDownloadResponses}' own fallback, which is the defence-in-depth half
-     * of this fix for rows this allowlist never saw).
-     *
-     * <p>{@code application/octet-stream} is in the set as the genuine "we do not know what this
-     * is" value, NOT as a wildcard escape hatch: it renders as a download in every browser, so it
-     * carries none of the inline-rendering risk the other entries' allowance is weighed against.
-     */
-    private static final Set<String> ALLOWED_EVIDENCE_CONTENT_TYPES =
-        Set.of("image/jpeg", "image/png", "application/pdf", "application/octet-stream");
-
-    /** Sorted for a deterministic error message; the set above is the authority. */
-    private static final String ALLOWED_EVIDENCE_CONTENT_TYPES_DISPLAY =
-        ALLOWED_EVIDENCE_CONTENT_TYPES.stream().sorted().reduce((a, b) -> a + ", " + b).orElseThrow();
 
     private final ClaimsApi claimsApi;
     private final DocumentApi documentApi;
@@ -110,37 +82,20 @@ public class ClaimEvidenceController {
     }
 
     /**
-     * Normalizes and allowlists the client-supplied part {@code Content-Type}, returning the exact
-     * value to persist. Rejections are 422 via {@code claims}' own
-     * {@link ClaimValidationException} -> {@code CLAIM_VALIDATION_FAILED} mapping
-     * ({@code ClaimExceptionHandler}), the module's established shape for "the request was
-     * well-formed but its content is not acceptable"; a bare {@code IllegalArgumentException} would
-     * have fallen through to {@code GlobalExceptionHandler}'s 400 instead, which is the wrong
-     * status and the wrong error code for a semantic rejection.
-     *
-     * <p>Parameters are DROPPED, not merely ignored: {@code image/jpeg;charset=<script>} is stored
-     * as {@code image/jpeg}, so what lands in {@code document_record.content_type} is always one of
-     * exactly four short, parseable literals. A missing or blank part header is the honest "unknown"
-     * case and becomes {@code application/octet-stream} rather than a rejection -- a client that
-     * simply sends no {@code Content-Type} on the part is not doing anything wrong.
+     * Delegates the actual normalization/allowlisting to the shared
+     * {@link AllowedDocumentContentTypes} (also used by {@code party}'s KYC evidence upload), but
+     * keeps claims' OWN rejection shape: 422 via {@code ClaimValidationException} ->
+     * {@code CLAIM_VALIDATION_FAILED} ({@code ClaimExceptionHandler}), the module's established
+     * shape for "the request was well-formed but its content is not acceptable" -- a bare
+     * {@code IllegalArgumentException} would fall through to {@code GlobalExceptionHandler}'s 400
+     * instead, the wrong status/error code for this module's semantic rejection.
      */
     private static String allowedContentTypeOrThrow(String rawContentType) {
-        if (rawContentType == null || rawContentType.isBlank()) {
-            return MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        }
-        MediaType parsed;
         try {
-            parsed = MediaType.parseMediaType(rawContentType);
-        } catch (InvalidMediaTypeException e) {
-            throw new ClaimValidationException("Evidence content type '" + rawContentType
-                + "' is not a valid media type. Allowed: " + ALLOWED_EVIDENCE_CONTENT_TYPES_DISPLAY);
+            return AllowedDocumentContentTypes.normalizeOrThrow(rawContentType);
+        } catch (IllegalArgumentException e) {
+            throw new ClaimValidationException(e.getMessage());
         }
-        String normalized = (parsed.getType() + "/" + parsed.getSubtype()).toLowerCase(Locale.ROOT);
-        if (!ALLOWED_EVIDENCE_CONTENT_TYPES.contains(normalized)) {
-            throw new ClaimValidationException("Evidence content type '" + normalized
-                + "' is not allowed. Allowed: " + ALLOWED_EVIDENCE_CONTENT_TYPES_DISPLAY);
-        }
-        return normalized;
     }
 
     @GetMapping("/claims/{claimId}/evidence")

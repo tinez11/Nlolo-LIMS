@@ -13,6 +13,7 @@
 import type { components as BillingComponents } from '@/types/api/billing';
 import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
+import type { components as PartyComponents } from '@/types/api/party';
 import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { components as FinaccountingComponents } from '@/types/api/finaccounting';
@@ -177,6 +178,18 @@ export type ManualIssueRequest = PolicyComponents['schemas']['ManualIssueRequest
  * CRUD audit found the gap. `resume`/`reinstate` take no request body.
  */
 export type SuspendPolicyRequest = PolicyComponents['schemas']['SuspendPolicyRequest'];
+
+/**
+ * `GET /parties/{partyId}` has always existed; `POST .../kyc-evidence` (upload) and
+ * `POST .../kyc` (decide) did not, until this staff-portal CRUD audit found the
+ * gap -- `PartyApi.submitKycEvidence` has always required a real
+ * `evidenceDocumentRef`, but there was no upload path anywhere on the platform
+ * that could produce one for a KYC purpose. `PartyView`'s fields are all optional
+ * on the wire (the spec declares no `required` list).
+ */
+export type PartyView = PartyComponents['schemas']['PartyView'];
+export type KycStatus = NonNullable<PartyView['kycStatus']>;
+export type KycEvidenceUploadResponse = PartyComponents['schemas']['KycEvidenceUploadResponse'];
 
 export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   'TERM_LIFE',

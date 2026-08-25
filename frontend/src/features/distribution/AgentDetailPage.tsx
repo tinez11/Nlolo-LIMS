@@ -87,8 +87,15 @@ export function AgentDetailPage() {
               <dl className="px-4 pb-2">
                 <Field
                   label="Party"
-                  value={<span className="font-mono text-xs">{agent.partyId ?? '—'}</span>}
-                  note="No party lookup endpoint exists yet"
+                  value={
+                    agent.partyId ? (
+                      <Link to={`/staff/parties/${agent.partyId}`} className="font-mono text-xs underline">
+                        {agent.partyId}
+                      </Link>
+                    ) : (
+                      '—'
+                    )
+                  }
                 />
                 <Field label="License expiry" value={formatDate(agent.licenseExpiryDate)} />
                 <Field

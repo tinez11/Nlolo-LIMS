@@ -65,6 +65,38 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PartyView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /parties/{partyId}/kyc-evidence:
+    post:
+      summary: Upload a KYC evidence file (staff only)
+      description: >
+        Uploads a document (ID scan, proof of address, certificate of incorporation)
+        and returns its documentRef -- pass that ref to POST .../kyc to record a
+        verification decision against it. Two separate calls, not one, because a
+        decision may reuse evidence already on file rather than re-uploading it.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Evidence uploaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KycEvidenceUploadResponse' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /parties/{partyId}/kyc:
     post:
       summary: Submit KYC evidence and update verification status (staff-verified only)
@@ -181,6 +213,11 @@ components:
         partyType: { type: string, enum: [INDIVIDUAL, CORPORATE, GROUP] }
         kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
         displayName: { type: string }
+    KycEvidenceUploadResponse:
+      type: object
+      required: [documentRef]
+      properties:
+        documentRef: { type: string }
     GroupMembershipView:
       type: object
       properties:

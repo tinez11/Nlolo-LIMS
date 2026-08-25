@@ -193,8 +193,15 @@ export function UnderwritingCaseDetailPage() {
               <dl className="px-4 pb-2">
                 <Field
                   label="Applicant"
-                  value={<span className="font-mono text-xs">{view.applicantPartyId ?? '—'}</span>}
-                  note="No party lookup endpoint exists yet"
+                  value={
+                    view.applicantPartyId ? (
+                      <Link to={`/staff/parties/${view.applicantPartyId}`} className="font-mono text-xs underline">
+                        {view.applicantPartyId}
+                      </Link>
+                    ) : (
+                      '—'
+                    )
+                  }
                 />
                 <Field
                   label="Product"
