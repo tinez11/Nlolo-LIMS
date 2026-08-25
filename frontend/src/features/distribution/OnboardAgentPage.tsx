@@ -1,9 +1,10 @@
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/AppShell';
+import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useDistributionStore } from '@/store/distributionStore';
@@ -39,6 +40,7 @@ export function OnboardAgentPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<OnboardAgentFormValues>({
     resolver: zodResolver(onboardAgentFormSchema),
@@ -71,10 +73,17 @@ export function OnboardAgentPage() {
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <FormField label="Party id" error={errors.partyId?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm"
-            placeholder="uuid"
-            {...register('partyId')}
+          <Controller
+            control={control}
+            name="partyId"
+            render={({ field }) => (
+              <PartyPicker
+                value={field.value || null}
+                onChange={(partyId) => field.onChange(partyId ?? '')}
+                kycStatus="VERIFIED"
+                placeholder="Search for a VERIFIED party by name"
+              />
+            )}
           />
         </FormField>
 

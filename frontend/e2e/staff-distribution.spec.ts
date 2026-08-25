@@ -23,12 +23,13 @@ import { expect, type Page, test } from '@playwright/test';
  * statement, rather than pretending to reach PAID.
  */
 
-const REAL_PARTY_ID = 'd9937444-3873-4336-9cb7-addb486f3e1b';
 const FUTURE_LICENSE_EXPIRY = `${new Date().getFullYear() + 5}-01-01`;
 
 async function onboardRealAgent(page: Page): Promise<string> {
   await page.goto('/staff/agents/new');
-  await page.getByLabel('Party id').fill(REAL_PARTY_ID);
+  await page.getByRole('button', { name: 'Search for a VERIFIED party by name' }).click();
+  await page.getByPlaceholder('Type a name to search').fill('Amina');
+  await page.getByText('Amina Owner').click();
   await page.getByLabel('License number').fill(`E2E-LIC-${Date.now()}`);
   await page.getByLabel('License expiry date').fill(FUTURE_LICENSE_EXPIRY);
   await page.getByRole('button', { name: 'Onboard agent' }).click();
