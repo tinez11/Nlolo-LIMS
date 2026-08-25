@@ -298,11 +298,18 @@ class PolicyContractTest {
 
     @Test
     void manualIssueReturns404ForANonexistentPolicyholderPartyId() throws Exception {
-        // productVersionId is a random UUID, not a real published one -- deliberate: PolicyApiImpl
-        // .issuePolicy must check policyholderPartyId and 404 on it BEFORE it ever gets to
-        // resolving productVersionId, or this test would 404/422 for the wrong reason.
+        // productVersionId MUST be real here (unlike a first draft of this test, which used a
+        // random one) -- PolicyController.manualIssue calls productApi.getSnapshotByVersionId
+        // as its very first statement, before ever constructing PolicyApi.IssueRequest or
+        // calling policyApi.issuePolicy (where the party-existence check under test actually
+        // lives, in PolicyApiImpl.issuePolicy). A nonexistent productVersionId would 404 there
+        // first, letting this test pass even with the party check deleted entirely -- a false
+        // positive. Using a real, published product version (same publishProduct fixture the
+        // rest of this file's HTTP-level tests use) forces the request past that lookup so the
+        // 404 asserted below is genuinely caused by policyholderPartyId, not productVersionId.
         UUID tenantId = UUID.randomUUID();
         UUID nonexistentPartyId = UUID.randomUUID();
+        ProductFixture product = publishProduct(tenantId, "POLICY-CONTRACT-404PARTY", "TERM_LIFE");
 
         mockMvc.perform(post("/policies/manual-issue")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
@@ -313,7 +320,7 @@ class PolicyContractTest {
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
                      "reasonForManualIssue":"Contract test -- nonexistent policyholder"}
-                    """.formatted(UUID.randomUUID(), nonexistentPartyId, UUID.randomUUID(), UUID.randomUUID())))
+                    """.formatted(UUID.randomUUID(), nonexistentPartyId, product.productVersionId(), UUID.randomUUID())))
             .andExpect(status().isNotFound());
     }
 
