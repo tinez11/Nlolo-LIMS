@@ -22,13 +22,11 @@ import { expect, type Page, test } from '@playwright/test';
  * roles, which does not exist and is not worth adding realm data for one rule
  * already covered by the backend's own tests -- see the module doc, not a gap.
  *
- * The seeded policyholder, `d9937444-3873-4336-9cb7-addb486f3e1b`, is reused
- * throughout the session's other suites; every claim registered here uses a
- * freshly-issued policy rather than the one seeded (SURRENDERED) policy, which
- * cannot support a real claim registration at all.
+ * The seeded policyholder, "Amina Owner" (`d9937444-3873-4336-9cb7-addb486f3e1b`),
+ * is reused throughout the session's other suites; every claim registered here
+ * uses a freshly-issued policy rather than the one seeded (SURRENDERED) policy,
+ * which cannot support a real claim registration at all.
  */
-
-const REAL_PARTY_ID = 'd9937444-3873-4336-9cb7-addb486f3e1b';
 
 async function issueRealPolicy(page: Page): Promise<string> {
   await page.goto('/staff/policies/new');
@@ -48,7 +46,9 @@ async function issueRealPolicy(page: Page): Promise<string> {
 async function registerRealDeathClaim(page: Page, policyNumber: string): Promise<string> {
   await page.goto('/staff/claims/new');
   await page.getByLabel('Policy number').fill(policyNumber);
-  await page.getByLabel('Claimant party id').fill(REAL_PARTY_ID);
+  await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
+  await page.getByPlaceholder('Type a name to search').fill('Amina');
+  await page.getByText('Amina Owner').click();
   await page.getByLabel('Date of event').fill('2026-08-01');
   // DEATH is the default selection, but select it explicitly so this survives a
   // reorder of CLAIM_TYPES.

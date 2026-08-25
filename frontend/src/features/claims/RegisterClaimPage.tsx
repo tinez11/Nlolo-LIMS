@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { CLAIM_TYPES } from '@/api/types';
 import { PageHeader } from '@/components/AppShell';
+import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useClaimStore } from '@/store/claimStore';
@@ -50,6 +51,7 @@ export function RegisterClaimPage() {
     handleSubmit,
     watch,
     setValue,
+    control,
     formState: { errors },
   } = useForm<RegisterClaimFormValues>({
     resolver: zodResolver(registerClaimFormSchema),
@@ -110,10 +112,16 @@ export function RegisterClaimPage() {
         </FormField>
 
         <FormField label="Claimant party id" error={errors.claimantPartyId?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm"
-            placeholder="uuid"
-            {...register('claimantPartyId')}
+          <Controller
+            control={control}
+            name="claimantPartyId"
+            render={({ field }) => (
+              <PartyPicker
+                value={field.value || null}
+                onChange={(partyId) => field.onChange(partyId ?? '')}
+                placeholder="Search for the claimant by name"
+              />
+            )}
           />
         </FormField>
 

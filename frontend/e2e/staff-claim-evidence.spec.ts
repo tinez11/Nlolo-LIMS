@@ -42,7 +42,9 @@ test.describe('staff claim evidence', () => {
 
     await page.goto('/staff/claims/new');
     await page.getByLabel('Policy number').fill(policyNumber);
-    await page.getByLabel('Claimant party id').fill('d9937444-3873-4336-9cb7-addb486f3e1b');
+    await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
     await page.getByLabel('Date of event').fill('2026-01-10');
     await page.getByLabel('Cause of death').fill('E2E fixture');
     await page.getByLabel('Place of death').fill('Dar es Salaam');
