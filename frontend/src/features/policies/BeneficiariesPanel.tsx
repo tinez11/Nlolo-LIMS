@@ -1,8 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import type { BeneficiaryInput } from '@/api/types';
+import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { usePolicyStore, selectSavingBeneficiaries } from '@/store/policyStore';
@@ -182,10 +183,18 @@ function EditForm({
                 </select>
 
                 {type === 'PARTY' ? (
-                  <input
-                    className="h-8 flex-1 rounded-md border border-input bg-surface px-2 font-mono text-xs"
-                    placeholder="Party id (uuid)"
-                    {...register(`beneficiaries.${index}.partyId`)}
+                  <Controller
+                    control={control}
+                    name={`beneficiaries.${index}.partyId`}
+                    render={({ field }) => (
+                      <div className="h-8 flex-1">
+                        <PartyPicker
+                          value={field.value || null}
+                          onChange={(partyId) => field.onChange(partyId ?? '')}
+                          placeholder="Search for the beneficiary by name"
+                        />
+                      </div>
+                    )}
                   />
                 ) : (
                   <input

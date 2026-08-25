@@ -86,7 +86,9 @@ test.describe('staff beneficiaries edit', () => {
     // Leave type at its default PARTY, fill the party id field, THEN switch to
     // FREEFORM without clearing it -- the exact "both set" shape the backend's
     // hasParty == hasFreeform check rejects independent of the declared type.
-    await page.getByPlaceholder('Party id (uuid)').fill('11111111-1111-4111-8111-111111111111');
+    await page.getByRole('button', { name: 'Search for the beneficiary by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
     await page.getByRole('combobox').selectOption('FREEFORM');
     await page.getByPlaceholder('Designee, e.g. "My Estate"').fill('Also this');
     await page.getByRole('spinbutton').fill('100');
