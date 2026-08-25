@@ -1,11 +1,13 @@
 package tz.co.nlolo.lifeplatform.distribution.infrastructure;
 
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.distribution.api.AgentNotFoundException;
 import tz.co.nlolo.lifeplatform.distribution.api.AgentView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionPlanView;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementNotFoundException;
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.distribution.api.LicenseStatus;
 import tz.co.nlolo.lifeplatform.distribution.domain.AgentProfile;
 import tz.co.nlolo.lifeplatform.distribution.domain.CommissionCalculator;
 import jakarta.validation.Valid;
@@ -108,6 +110,23 @@ public class AgentController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         AgentView view = distributionApi.getAgent(agentId);   // 404s cross-tenant, before any 403
         enforceAgentReadAccess(agentId, jwt, authentication);
+        return ResponseEntity.ok(AgentResponseDto.from(view));
+    }
+
+    /**
+     * There was no way for an agents-realm token to discover its own {@code agentId} at all:
+     * {@code GET /agents/{agentId}} requires already knowing the id, there is no {@code GET
+     * /agents} list, and the token carries {@code party_id}, never an {@code agentId} claim.
+     * {@link #enforceAgentReadAccess} already does this exact {@code party_id -> AgentProfile}
+     * resolution internally, but only to authorize a request that names an id -- it never handed
+     * the resolved id back. This exposes that same resolution as a real lookup (found closing out
+     * the agent-realm readiness review, 2026-08-25).
+     */
+    @GetMapping("/agents/me")
+    @PreAuthorize("hasRole('REALM_AGENTS')")
+    public ResponseEntity<AgentResponseDto> getOwnAgentProfile(@AuthenticationPrincipal Jwt jwt) {
+        UUID agentId = resolveOwnAgentId(jwt);
+        AgentView view = distributionApi.getAgent(agentId);
         return ResponseEntity.ok(AgentResponseDto.from(view));
     }
 
@@ -270,6 +289,33 @@ public class AgentController {
             return;
         }
         throw new AccessDeniedException("Agent may only read its own record or one below it in its hierarchy");
+    }
+
+    /**
+     * Same {@code party_id -> AgentProfile} resolution as {@link #enforceAgentReadAccess}, but
+     * returning the id instead of merely authorizing against one supplied by the caller.
+     * {@code findByTenantIdAndPartyId} can return more than one profile for a party (no DB
+     * constraint limits a party to a single agent record) -- an ACTIVE one is preferred if any
+     * exists, since that is the license a logged-in agent would actually expect to land on;
+     * otherwise the first one found stands in rather than 404ing a party that IS an agent, just
+     * not an active one right now.
+     */
+    private UUID resolveOwnAgentId(Jwt jwt) {
+        UUID tenantId = TenantContext.get();
+        String partyIdClaim = jwt.getClaimAsString("party_id");
+        if (partyIdClaim == null) {
+            throw new AccessDeniedException("Agent token carries no party_id claim");
+        }
+        List<AgentProfile> callerProfiles = agentProfileRepository
+            .findByTenantIdAndPartyId(tenantId, UUID.fromString(partyIdClaim));
+        if (callerProfiles.isEmpty()) {
+            throw new AgentNotFoundException("Token's party is not an agent in this tenant");
+        }
+        return callerProfiles.stream()
+            .filter(p -> p.getLicenseStatus() == LicenseStatus.ACTIVE)
+            .findFirst()
+            .orElse(callerProfiles.get(0))
+            .getAgentId();
     }
 
     private static boolean hasAuthority(Authentication authentication, String authority) {

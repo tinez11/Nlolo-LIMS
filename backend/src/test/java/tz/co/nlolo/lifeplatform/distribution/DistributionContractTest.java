@@ -472,6 +472,44 @@ class DistributionContractTest {
     }
 
     // ============================================================================================
+    // GET /agents/me -- the caller's own agentId, since nothing else on the platform exposes it
+    // ============================================================================================
+
+    @Test
+    void getOwnAgentProfileReturns200ForTheCallersOwnAgent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "ME", null);
+
+        mockMvc.perform(get("/agents/me").with(agentOf(tenantId, agent.partyId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.agentId").value(agent.agentId().toString()));
+    }
+
+    @Test
+    void getOwnAgentProfileReturns404WhenThePartyIsNotAnAgent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // A real party with no AgentProfile at all -- proves this 404s rather than 500ing or
+        // matching some unrelated agent.
+        PartyView notAnAgent = verifiedParty(tenantId, "NOT-AN-AGENT");
+
+        mockMvc.perform(get("/agents/me").with(agentOf(tenantId, notAnAgent.partyId())))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("AGENT_NOT_FOUND"));
+    }
+
+    @Test
+    void getOwnAgentProfileReturns403ForStaff() throws Exception {
+        // Staff has no "own agent" concept -- unlike GET /agents/{agentId}, which staff reads
+        // freely, this endpoint is agents-realm only.
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/agents/me").with(financeStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    // ============================================================================================
     // GET /agents/{agentId}/commission-plan
     // ============================================================================================
 

@@ -52,6 +52,26 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /agents/me:
+    get:
+      summary: Get the caller's own agent profile
+      description: >
+        Agents-realm only. Resolves the caller's own agent record from the token's `party_id`
+        claim -- there is no `agentId` claim and no `GET /agents` list, so this is the only way
+        an agent can discover which agent record is theirs. 404 if the token's party is not an
+        agent in this tenant. If a party somehow holds more than one agent profile, an ACTIVE
+        one is preferred; otherwise the first one found stands in.
+      security:
+        - agentsAuth: [agent]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /agents/{agentId}:
     get:
       summary: Get agent detail
