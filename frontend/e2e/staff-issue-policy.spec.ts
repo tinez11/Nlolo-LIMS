@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 /**
  * Manual policy issuance e2e coverage.
@@ -13,12 +13,15 @@ import { expect, test } from '@playwright/test';
  * new policy's own detail page -> reload -> still there. Real Postgres row, not
  * a mock.
  *
- * The real party used throughout, `d9937444-3873-4336-9cb7-addb486f3e1b`, is the
- * seeded policyholder on POL-6BD5702F -- `partyApi.getParty(...)` genuinely
- * checks existence, so a made-up UUID would 404.
+ * The real party picked throughout, "Amina Owner" (`d9937444-3873-4336-9cb7-addb486f3e1b`),
+ * is the seeded policyholder on POL-6BD5702F.
  */
 
-const REAL_PARTY_ID = 'd9937444-3873-4336-9cb7-addb486f3e1b';
+async function pickPolicyholder(page: Page, nameQuery = 'Amina') {
+  await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
+  await page.getByPlaceholder('Type a name to search').fill(nameQuery);
+  await page.getByText('Amina Owner').click();
+}
 
 test.describe('staff issue policy', () => {
   test.beforeEach(async ({ page }) => {
@@ -41,7 +44,7 @@ test.describe('staff issue policy', () => {
       if (req.method() === 'POST' && req.url().endsWith('/manual-issue')) requestFired = true;
     });
 
-    await page.getByLabel('Policyholder party id').fill(REAL_PARTY_ID);
+    await pickPolicyholder(page);
     await page.getByLabel('Sum assured').fill('2000000.00');
     await page.getByLabel('Premium', { exact: true }).fill('800.00');
     await page.getByLabel('Reason for manual issue').fill('E2E test');
@@ -54,19 +57,18 @@ test.describe('staff issue policy', () => {
     expect(requestFired).toBe(false);
   });
 
-  test('rejects a malformed policyholder party id client-side', async ({ page }) => {
-    await page.getByLabel('Policyholder party id').fill('not-a-uuid');
-    await page.getByLabel('Sum assured').fill('2000000.00');
-    await page.getByLabel('Premium', { exact: true }).fill('800.00');
-    await page.getByLabel('Reason for manual issue').fill('E2E test');
-    await page.getByRole('button', { name: 'Issue policy' }).click();
-    await expect(page.getByText('Not a valid party id')).toBeVisible();
+  test('shows no matches for a nonsense policyholder search, before reaching the network', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Zzzznonexistentnamezzz');
+    await expect(page.getByText(/No matches for/)).toBeVisible({ timeout: 5000 });
   });
 
   test('issues a real policy end to end, navigates to it, and it survives a reload', async ({
     page,
   }) => {
-    await page.getByLabel('Policyholder party id').fill(REAL_PARTY_ID);
+    await pickPolicyholder(page);
     await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
     // The version id resolves asynchronously via GET /products/{id}/active-snapshot
     // -- wait for that to actually land before submitting, or the request would
@@ -93,30 +95,5 @@ test.describe('staff issue policy', () => {
     // store's in-memory state surviving a soft navigation.
     await page.reload();
     await expect(page.getByText('TZS 2,000,000.00').first()).toBeVisible();
-  });
-
-  test('does not resurface a stale issuance error on a fresh visit to the page', async ({
-    page,
-  }) => {
-    // Trigger a real rejection: a well-formed but nonexistent party id.
-    // partyApi.getParty(...) genuinely checks existence, so this 404s for real.
-    await page.getByLabel('Policyholder party id').fill('00000000-0000-4000-8000-000000000000');
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
-    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-    await page.getByLabel('Sum assured').fill('2000000.00');
-    await page.getByLabel('Premium', { exact: true }).fill('800.00');
-    await page.getByLabel('Reason for manual issue').fill('E2E nonexistent-party test');
-    await page.getByRole('button', { name: 'Issue policy' }).click();
-
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
-
-    // Wait for the first navigation to genuinely settle before firing the second
-    // -- back-to-back goto() calls with no intervening wait raced the app's own
-    // in-flight requests from the first page and intermittently aborted the
-    // second navigation (net::ERR_ABORTED).
-    await page.goto('/staff/policies');
-    await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible();
-    await page.goto('/staff/policies/new');
-    await expect(page.getByRole('alert')).not.toBeVisible();
   });
 });

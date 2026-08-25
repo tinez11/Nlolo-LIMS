@@ -1,10 +1,11 @@
 import { ArrowLeft, Plus, X } from 'lucide-react';
 import { useEffect } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { PREMIUM_FREQUENCIES } from '@/api/types';
 import { PageHeader } from '@/components/AppShell';
+import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
@@ -125,10 +126,16 @@ export function IssuePolicyPage() {
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <FormField label="Policyholder party id" error={errors.policyholderPartyId?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm"
-            placeholder="uuid"
-            {...register('policyholderPartyId')}
+          <Controller
+            control={control}
+            name="policyholderPartyId"
+            render={({ field }) => (
+              <PartyPicker
+                value={field.value || null}
+                onChange={(partyId) => field.onChange(partyId ?? '')}
+                placeholder="Search for the policyholder by name"
+              />
+            )}
           />
         </FormField>
 
@@ -232,10 +239,18 @@ export function IssuePolicyPage() {
                       <option value="FREEFORM">Freeform</option>
                     </select>
                     {type === 'PARTY' ? (
-                      <input
-                        className="h-8 flex-1 rounded-md border border-input bg-surface px-2 font-mono text-xs"
-                        placeholder="Party id (uuid)"
-                        {...register(`beneficiaries.${index}.partyId`)}
+                      <Controller
+                        control={control}
+                        name={`beneficiaries.${index}.partyId`}
+                        render={({ field }) => (
+                          <div className="h-8 flex-1">
+                            <PartyPicker
+                              value={field.value || null}
+                              onChange={(partyId) => field.onChange(partyId ?? '')}
+                              placeholder="Search for the beneficiary by name"
+                            />
+                          </div>
+                        )}
                       />
                     ) : (
                       <input
