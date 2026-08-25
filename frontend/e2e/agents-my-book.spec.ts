@@ -25,7 +25,9 @@ test.describe('agents my book of business', () => {
 
     async function issuePolicy(agentOfRecordId: string | null, reason: string): Promise<string> {
       await staffPage.goto('/staff/policies/new');
-      await staffPage.getByLabel('Policyholder party id').fill(REAL_PARTY_ID);
+      await staffPage.getByRole('button', { name: 'Search for the policyholder by name' }).click();
+      await staffPage.getByPlaceholder('Type a name to search').fill('Amina');
+      await staffPage.getByText('Amina Owner').click();
       await staffPage.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
       await expect(staffPage.getByText('Resolving product version…')).not.toBeVisible();
       await staffPage.getByLabel('Sum assured').fill('1000000.00');

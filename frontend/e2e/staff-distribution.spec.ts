@@ -80,7 +80,9 @@ async function issueRealPolicyForAgent(
   agentId: string,
 ): Promise<string> {
   await page.goto('/staff/policies/new');
-  await page.getByLabel('Policyholder party id').fill(REAL_PARTY_ID);
+  await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
+  await page.getByPlaceholder('Type a name to search').fill('Amina');
+  await page.getByText('Amina Owner').click();
   await page.getByLabel('Product').selectOption({ label: productOptionLabel });
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('2000000.00');
@@ -106,7 +108,9 @@ test.describe('staff distribution', () => {
     // Issuing a policy is REALM_STAFF-broad, not finance-gated -- the default
     // staff.underwriter identity is enough here.
     await page.goto('/staff/policies/new');
-    await page.getByLabel('Policyholder party id').fill(REAL_PARTY_ID);
+    await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
+  await page.getByPlaceholder('Type a name to search').fill('Amina');
+  await page.getByText('Amina Owner').click();
     await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('2000000.00');

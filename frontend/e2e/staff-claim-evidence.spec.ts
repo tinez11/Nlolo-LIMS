@@ -28,7 +28,9 @@ test.describe('staff claim evidence', () => {
     // the only seeded policy is SURRENDERED (staff-claims.spec.ts's own note),
     // so a fresh one is the only way to reach a real, non-SETTLED claim.
     await page.goto('/staff/policies/new');
-    await page.getByLabel('Policyholder party id').fill('d9937444-3873-4336-9cb7-addb486f3e1b');
+    await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
     await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('2000000.00');
