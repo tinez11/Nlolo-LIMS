@@ -15,7 +15,6 @@ import { expect, test } from '@playwright/test';
  * of this same suite; the list-page check is a lighter, best-effort
  * companion on top of it.
  */
-const REAL_PARTY_ID = 'd9937444-3873-4336-9cb7-addb486f3e1b';
 const AGENT_SENIOR_ID = '83ac3bd4-a900-4a61-a9a4-90cf64a5da90';
 
 test.describe('agents my book of business', () => {
@@ -46,7 +45,9 @@ test.describe('agents my book of business', () => {
 
     await staffPage.goto('/staff/claims/new');
     await staffPage.getByPlaceholder('POL-XXXXXXXX').fill(policyInBook);
-    await staffPage.getByPlaceholder('uuid').first().fill(REAL_PARTY_ID);
+    await staffPage.getByRole('button', { name: 'Search for the claimant by name' }).click();
+    await staffPage.getByPlaceholder('Type a name to search').fill('Amina');
+    await staffPage.getByText('Amina Owner').click();
     await staffPage.locator('input[type="date"]').first().fill('2026-08-01');
     await staffPage.getByLabel('Cause of death').fill('Natural causes');
     await staffPage.getByLabel('Place of death').fill('Dar es Salaam');

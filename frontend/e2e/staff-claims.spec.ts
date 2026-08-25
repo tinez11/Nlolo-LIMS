@@ -105,7 +105,9 @@ test.describe('staff claims', () => {
     // policy and claimant -- passes every client rule, so this DOES reach the
     // network, and the backend's real business rule rejects it.
     await page.getByPlaceholder('POL-XXXXXXXX').fill('POL-6BD5702F');
-    await page.getByPlaceholder('uuid').first().fill('d9937444-3873-4336-9cb7-addb486f3e1b');
+    await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
     await page.locator('input[type="date"]').first().fill('2026-08-01');
     await page.getByLabel('Cause of death').fill('Test');
     await page.getByLabel('Place of death').fill('Test');
@@ -124,7 +126,9 @@ test.describe('staff claims', () => {
   }) => {
     await page.goto('/staff/claims/new');
     await page.getByPlaceholder('POL-XXXXXXXX').fill('POL-6BD5702F');
-    await page.getByPlaceholder('uuid').first().fill('d9937444-3873-4336-9cb7-addb486f3e1b');
+    await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
     await page.locator('input[type="date"]').first().fill('2026-08-01');
     await page.getByLabel('Cause of death').fill('Test');
     await page.getByLabel('Place of death').fill('Test');
