@@ -1,0 +1,23 @@
+-- Module: finaccounting V4 -- gives the chart of accounts a real CRUD surface.
+--
+-- Every other table in this module stays exactly as append-only/event-derived as
+-- it already was (journal_entry/gl_posting keep their V2 REVOKE UPDATE, DELETE --
+-- untouched here). chart_of_account is different: V2 already granted app_role
+-- full SELECT/INSERT/UPDATE/DELETE on it (the table was always meant to be
+-- writable -- nothing in the database ever blocked this, only the missing
+-- application/API layer did), and finaccounting/V3's own comment named "a
+-- status/valid-to column" as the correct future shape for editing an account.
+-- This migration is the smaller half of that: it adds audit columns for a plain
+-- rename, not a status/retire lifecycle (out of scope for what was asked -- see
+-- V3's comment for why retiring an IN-USE account is a distinct, deferred
+-- concern from deleting an unused one, which the application layer enforces via
+-- the real fk_gl_posting_account_code foreign key rather than a new column).
+--
+-- created_at/created_by already exist (V1). accountType/normalBalance stay
+-- derived from the account code's leading digit (PostingRule.accountTypeFor/
+-- normalBalanceFor) and are never independently editable -- letting them
+-- diverge from the code's own 1xxx-5xxx block convention would break every
+-- other reader of this table that relies on it (ChartOfAccountSeeder, this
+-- migration's own V2 seed-data comment, and the frontend's display logic).
+ALTER TABLE finaccounting.chart_of_account ADD COLUMN updated_at TIMESTAMPTZ;
+ALTER TABLE finaccounting.chart_of_account ADD COLUMN updated_by VARCHAR(100);

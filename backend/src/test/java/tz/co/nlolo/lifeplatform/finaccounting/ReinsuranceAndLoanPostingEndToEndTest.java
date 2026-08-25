@@ -177,7 +177,8 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
-            "db-migrations/finaccounting/V3__account_code_foreign_key.sql");
+            "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
+            "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

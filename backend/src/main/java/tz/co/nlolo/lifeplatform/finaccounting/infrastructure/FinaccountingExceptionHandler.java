@@ -1,5 +1,8 @@
 package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountInUseException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountNotFoundException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.DuplicateAccountCodeException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingValidationException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import org.springframework.core.Ordered;
@@ -37,6 +40,21 @@ public class FinaccountingExceptionHandler {
     @ExceptionHandler(FinaccountingValidationException.class)
     public ProblemDetail handleValidation(FinaccountingValidationException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "FINACCOUNTING_VALIDATION_FAILED");
+    }
+
+    @ExceptionHandler(AccountNotFoundException.class)
+    public ProblemDetail handleAccountNotFound(AccountNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "ACCOUNT_NOT_FOUND");
+    }
+
+    @ExceptionHandler(DuplicateAccountCodeException.class)
+    public ProblemDetail handleDuplicateAccountCode(DuplicateAccountCodeException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "DUPLICATE_ACCOUNT_CODE");
+    }
+
+    @ExceptionHandler(AccountInUseException.class)
+    public ProblemDetail handleAccountInUse(AccountInUseException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "ACCOUNT_IN_USE");
     }
 
     /** {@code traceId} is REQUIRED by openapi-common.yaml's ProblemDetails schema -- an M6 contract

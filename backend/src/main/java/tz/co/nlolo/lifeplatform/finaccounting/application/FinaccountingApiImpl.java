@@ -2,8 +2,12 @@ package tz.co.nlolo.lifeplatform.finaccounting.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountInUseException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ChartOfAccountView;
+import tz.co.nlolo.lifeplatform.finaccounting.api.DuplicateAccountCodeException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
+import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingValidationException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.GlPostingView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
@@ -11,10 +15,12 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -26,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +45,9 @@ import java.util.stream.Collectors;
  */
 @Service
 public class FinaccountingApiImpl implements FinaccountingApi {
+
+    private static final Pattern ACCOUNT_CODE_PATTERN = Pattern.compile("^[1-5]\\d{3}$");
+    private static final int MAX_ACCOUNT_NAME_LENGTH = 200;
 
     private final JournalEntryRepository journalEntryRepository;
     private final GlPostingRepository glPostingRepository;
@@ -173,6 +183,84 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         UUID tenantId = TenantContext.get();
         return chartOfAccountRepository.findByTenantIdOrderByAccountCodeAsc(tenantId).stream()
             .map(this::toView).toList();
+    }
+
+    /**
+     * Defense in depth, same convention as {@code DistributionApiImpl.onboardAgent}'s own
+     * re-validation of a field the DTO's bean validation already checks: this method is
+     * {@link FinaccountingApi}'s own published contract, reachable by a future non-HTTP caller
+     * that bypasses {@code ChartOfAccountController}'s {@code @Valid} entirely.
+     */
+    @Override
+    @Transactional
+    public ChartOfAccountView createAccount(String accountCode, String name, String createdBy) {
+        UUID tenantId = TenantContext.get();
+
+        if (accountCode == null || !ACCOUNT_CODE_PATTERN.matcher(accountCode).matches()) {
+            throw new FinaccountingValidationException(
+                "Account code must be 4 digits with a leading 1-5 block (1=ASSET, 2=LIABILITY, "
+                    + "3=EQUITY, 4=INCOME, 5=EXPENSE), got: " + accountCode);
+        }
+        if (name == null || name.isBlank()) {
+            throw new FinaccountingValidationException("An account name is required");
+        }
+        if (name.length() > MAX_ACCOUNT_NAME_LENGTH) {
+            throw new FinaccountingValidationException(
+                "Account name is " + name.length() + " characters; the maximum is " + MAX_ACCOUNT_NAME_LENGTH);
+        }
+
+        // Fast-path check, not the real backstop -- (tenant_id, account_code) is the primary key,
+        // so a genuine race is caught by the saveAndFlush/catch below instead, same shape as
+        // AgentProfile onboarding's own duplicate-license check.
+        if (chartOfAccountRepository.existsByTenantIdAndAccountCode(tenantId, accountCode)) {
+            throw new DuplicateAccountCodeException(
+                "Account code '" + accountCode + "' already exists in this tenant");
+        }
+
+        ChartOfAccount account = new ChartOfAccount(tenantId, accountCode, name.trim(),
+            PostingRule.accountTypeFor(accountCode), PostingRule.normalBalanceFor(accountCode), createdBy);
+        try {
+            chartOfAccountRepository.saveAndFlush(account);
+        } catch (DataIntegrityViolationException e) {
+            throw new DuplicateAccountCodeException(
+                "Account code '" + accountCode + "' already exists in this tenant");
+        }
+        return toView(account);
+    }
+
+    @Override
+    @Transactional
+    public ChartOfAccountView renameAccount(String accountCode, String newName, String updatedBy) {
+        UUID tenantId = TenantContext.get();
+        if (newName == null || newName.isBlank()) {
+            throw new FinaccountingValidationException("An account name is required");
+        }
+        if (newName.length() > MAX_ACCOUNT_NAME_LENGTH) {
+            throw new FinaccountingValidationException(
+                "Account name is " + newName.length() + " characters; the maximum is " + MAX_ACCOUNT_NAME_LENGTH);
+        }
+        ChartOfAccount account = findAccountOrThrow(accountCode, tenantId);
+        account.rename(newName.trim(), updatedBy);
+        chartOfAccountRepository.save(account);
+        return toView(account);
+    }
+
+    @Override
+    @Transactional
+    public void deleteAccount(String accountCode) {
+        UUID tenantId = TenantContext.get();
+        findAccountOrThrow(accountCode, tenantId);
+        if (glPostingRepository.existsByTenantIdAndAccountCode(tenantId, accountCode)) {
+            throw new AccountInUseException("Account '" + accountCode
+                + "' has real postings against it and cannot be deleted; retiring an in-use "
+                + "account is a separate, not-yet-built concern");
+        }
+        chartOfAccountRepository.deleteByTenantIdAndAccountCode(tenantId, accountCode);
+    }
+
+    private ChartOfAccount findAccountOrThrow(String accountCode, UUID tenantId) {
+        return chartOfAccountRepository.findByTenantIdAndAccountCode(tenantId, accountCode)
+            .orElseThrow(() -> new AccountNotFoundException("Account '" + accountCode + "' not found"));
     }
 
     /** Single-entry form: loads this entry's own legs. Used by {@link #getJournalEntry}, where one

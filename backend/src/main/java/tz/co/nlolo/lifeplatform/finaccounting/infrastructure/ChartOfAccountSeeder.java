@@ -1,6 +1,5 @@
 package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 
-import tz.co.nlolo.lifeplatform.finaccounting.api.AccountType;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import org.slf4j.Logger;
@@ -92,7 +91,7 @@ public class ChartOfAccountSeeder {
                     // PartyApiImpl.registerCorporate and ProductApiImpl.createProduct flush.
                     chartOfAccountRepository.saveAndFlush(new ChartOfAccount(
                         tenantId, accountCode, name,
-                        accountTypeFor(accountCode),
+                        PostingRule.accountTypeFor(accountCode),
                         PostingRule.normalBalanceFor(accountCode),
                         seededBy));
                 }
@@ -103,18 +102,5 @@ public class ChartOfAccountSeeder {
             log.info("Chart of accounts for tenant {} was seeded concurrently by another thread; "
                 + "treating the collision as already-seeded", tenantId);
         }
-    }
-
-    /** Derived from the account code's leading digit, per the conventional five-block scheme
-     * documented in V2 section 5: 1-ASSET, 2-LIABILITY, 3-EQUITY, 4-INCOME, 5-EXPENSE. */
-    private static AccountType accountTypeFor(String accountCode) {
-        return switch (accountCode.charAt(0)) {
-            case '1' -> AccountType.ASSET;
-            case '2' -> AccountType.LIABILITY;
-            case '3' -> AccountType.EQUITY;
-            case '4' -> AccountType.INCOME;
-            case '5' -> AccountType.EXPENSE;
-            default -> throw new IllegalArgumentException("Unrecognised account code block: " + accountCode);
-        };
     }
 }

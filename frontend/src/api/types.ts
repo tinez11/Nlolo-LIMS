@@ -120,6 +120,15 @@ export type AccountType = ChartOfAccountView['accountType'];
 export type PostingDirection = GlPostingView['direction'];
 
 /**
+ * The chart of accounts is NOT read-only (added on explicit request, after the
+ * module first shipped read-only) -- `accountType`/`normalBalance` stay
+ * derived server-side from `accountCode`'s own leading digit and are
+ * deliberately absent from both request shapes below.
+ */
+export type CreateAccountRequest = FinaccountingComponents['schemas']['CreateAccountRequest'];
+export type RenameAccountRequest = FinaccountingComponents['schemas']['RenameAccountRequest'];
+
+/**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the
  * generated type's own comment: any discriminator+oneOf shape fails
  * swagger-request-validator's syntax check before a single request is evaluated).

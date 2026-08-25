@@ -19,4 +19,9 @@ public interface GlPostingRepository extends JpaRepository<GlPosting, GlPostingI
         UUID tenantId, Collection<UUID> journalEntryIds);
 
     List<GlPosting> findByTenantIdAndAccountCodeAndPeriod(UUID tenantId, String accountCode, String period);
+
+    /** The real guard behind deleting a chart-of-account row: true once ANY posting has ever
+     *  referenced this account, matching {@code fk_gl_posting_account_code}'s own scope
+     *  (finaccounting/V3) exactly -- not scoped to a period, unlike the finder above. */
+    boolean existsByTenantIdAndAccountCode(UUID tenantId, String accountCode);
 }

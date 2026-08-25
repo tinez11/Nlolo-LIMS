@@ -3,17 +3,26 @@ info:
   title: Finaccounting API
   version: "1.0.0"
   description: >
-    External REST surface of the `finaccounting` module: read-only access to the double-entry
-    general ledger -- journal entries with their two legs (GL postings), and the chart of
-    accounts. This surface exposes GL POSTINGS ONLY. IFRS 17 measurement (CSM roll-forward, LRC,
-    LIC) is NOT YET IMPLEMENTED -- it is blocked on C1 (Actuarial) -- so a consumer of this spec
-    should not expect a CSM, LRC, or LIC endpoint to exist anywhere below.
+    External REST surface of the `finaccounting` module: the double-entry general ledger --
+    journal entries with their two legs (GL postings), and the chart of accounts. IFRS 17
+    measurement (CSM roll-forward, LRC, LIC) is NOT YET IMPLEMENTED -- it is blocked on C1
+    (Actuarial) -- so a consumer of this spec should not expect a CSM, LRC, or LIC endpoint to
+    exist anywhere below.
 
 
-    There is deliberately no write endpoint anywhere in this file. Every journal entry is derived
-    from a domain event by finaccounting's own listeners; nothing is hand-entered. A correction is
-    a future reversal entry (deferred, see the design spec's section 9), never an edit to an
-    existing one. That absence is what makes the ledger trustworthy.
+    Journal entries and GL postings stay READ ONLY, permanently: every entry is derived from a
+    domain event by finaccounting's own listeners, nothing is hand-entered, and a correction is a
+    future reversal entry (deferred, see the design spec's section 9), never an edit to an
+    existing one. That absence is what makes the ledger trustworthy, and nothing in this file
+    changes it.
+
+
+    The chart of accounts is NOT read-only: it has a real create/rename/delete surface below,
+    added on explicit request after the module first shipped read-only. `accountType` and
+    `normalBalance` stay derived from the account code's own leading digit and are never
+    independently settable on either create or rename. Deleting an account is rejected once any
+    real posting references it (a real foreign key at the database layer) -- retiring an in-use
+    account is a distinct, deferred concern, not built here.
 
 
     Every endpoint requires the staff realm AND the fine-grained FINANCE_OFFICER or ADMIN role,
@@ -78,8 +87,9 @@ paths:
     get:
       summary: List the chart of accounts
       description: >
-        Every account on this platform is currently a PLACEHOLDER pending Finance sign-off. Rows
-        are seeded, not authored through this API -- there is no create endpoint here either.
+        Every account on this platform started as a PLACEHOLDER pending Finance sign-off, seeded
+        rather than authored through this API -- this endpoint now also returns any account
+        created through POST below.
       security:
         - staffAuth: []
       responses:
@@ -92,6 +102,78 @@ paths:
                 items: { $ref: '#/components/schemas/ChartOfAccountView' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a chart-of-account row
+      description: >
+        `accountType` and `normalBalance` are NOT accepted here -- both are derived server-side
+        from `accountCode`'s own leading digit (1=ASSET, 2=LIABILITY, 3=EQUITY, 4=INCOME,
+        5=EXPENSE), so an account can never disagree with its own code's block convention.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAccountRequest' }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChartOfAccountView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: "An account with this accountCode already exists in this tenant"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /chart-of-accounts/{accountCode}:
+    put:
+      summary: Rename a chart-of-account row
+      description: >
+        A plain rename. `accountCode` is this resource's own identifier and `accountType`/
+        `normalBalance` stay derived from it -- neither is editable, only `name`.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AccountCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RenameAccountRequest' }
+      responses:
+        '200':
+          description: Account renamed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChartOfAccountView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Delete a chart-of-account row
+      description: >
+        Rejected once any real GL posting references this account -- retiring an in-use account
+        (as opposed to deleting one nothing has ever posted to) is a distinct, deferred concern.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AccountCode'
+      responses:
+        '204':
+          description: Account deleted
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: "At least one GL posting already references this account -- it cannot be deleted"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   parameters:
     JournalEntryId:
@@ -110,7 +192,17 @@ components:
       in: query
       required: false
       schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+    AccountCode:
+      name: accountCode
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[1-5]\d{3}$' }
   responses:
+    BadRequest:
+      description: "Malformed request body -- a missing/blank name, or an accountCode that is not 4 digits with a leading 1-5 block"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
     Unauthorized:
       description: Missing or invalid bearer token
       content:
@@ -199,3 +291,17 @@ components:
         name: { type: string }
         accountType: { $ref: '#/components/schemas/AccountType' }
         normalBalance: { $ref: '#/components/schemas/PostingDirection' }
+    CreateAccountRequest:
+      type: object
+      required: [accountCode, name]
+      properties:
+        accountCode:
+          type: string
+          pattern: '^[1-5]\d{3}$'
+          description: "4 digits, leading block 1=ASSET, 2=LIABILITY, 3=EQUITY, 4=INCOME, 5=EXPENSE -- accountType/normalBalance are derived from it server-side, never accepted here."
+        name: { type: string, maxLength: 200 }
+    RenameAccountRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 200 }

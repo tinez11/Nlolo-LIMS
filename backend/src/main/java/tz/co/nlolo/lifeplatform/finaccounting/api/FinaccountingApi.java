@@ -7,12 +7,23 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The `finaccounting` module's public surface: READ ONLY.
+ * The `finaccounting` module's public surface.
  *
- * <p>There is deliberately no write method. Every posting is derived from a domain event by this
- * module's own listeners -- nothing hand-enters a journal entry, which is what makes the ledger
- * trustworthy. A correction is a future reversal entry (deferred, see the design spec's §9), not
- * an edit.
+ * <p><b>Journal entries and GL postings stay READ ONLY, permanently</b> -- every posting is
+ * derived from a domain event by this module's own listeners, nothing hand-enters one, and a
+ * correction is a future reversal entry (deferred, see the design spec's §9), never an edit. That
+ * absence is what makes the ledger trustworthy, and nothing below changes it.
+ *
+ * <p><b>The chart of accounts is NOT read-only</b> (added after M9 shipped, on explicit request):
+ * {@link #createAccount}/{@link #renameAccount}/{@link #deleteAccount} give it a real CRUD
+ * surface. This was always possible at the database level -- finaccounting/V2 granted app_role
+ * full SELECT/INSERT/UPDATE/DELETE on {@code chart_of_account} from the start, unlike
+ * {@code journal_entry}/{@code gl_posting}'s deliberate REVOKE -- only the application/API layer
+ * was missing. {@code accountType}/{@code normalBalance} stay derived from the account code's
+ * leading digit ({@link tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule#accountTypeFor})
+ * and are never independently settable, and delete is blocked by a real foreign key
+ * ({@code fk_gl_posting_account_code}, finaccounting/V3) once any posting references the account
+ * -- retiring an in-use account is a distinct, deferred concern (V3's own comment), not built here.
  *
  * <p>IFRS 17 measurement (CSM roll-forward, LRC, LIC) is absent by design: it is blocked on C1
  * (Actuarial). M9 is the GL posting layer only.
@@ -42,4 +53,26 @@ public interface FinaccountingApi {
      * as M9 seeds it, a few hundred at most for a real Finance-authored chart), so there is no
      * unbounded-growth exposure here of the kind {@link #listJournalEntries} has. */
     List<ChartOfAccountView> listChartOfAccounts();
+
+    /**
+     * @param accountCode must match the five-block convention ({@code ^[1-5]\d{3}$}) -- enforced
+     *        by the caller (bean validation on the wire DTO), not re-checked here, the same split
+     *        {@code ReinsuranceApiImpl.createTreaty} uses between framework- and domain-level rules
+     * @throws tz.co.nlolo.lifeplatform.finaccounting.api.DuplicateAccountCodeException if
+     *         {@code (tenant, accountCode)} already exists
+     */
+    ChartOfAccountView createAccount(String accountCode, String name, String createdBy);
+
+    /** A plain rename. {@code accountCode}, {@code accountType} and {@code normalBalance} are
+     *  never editable -- see this interface's own javadoc for why.
+     *  @throws AccountNotFoundException if no such account exists in this tenant */
+    ChartOfAccountView renameAccount(String accountCode, String newName, String updatedBy);
+
+    /**
+     * @throws AccountNotFoundException if no such account exists in this tenant
+     * @throws AccountInUseException if at least one real {@code gl_posting} row references this
+     *         account -- deleting it would violate {@code fk_gl_posting_account_code} or, worse,
+     *         orphan historical postings from the account they were booked to
+     */
+    void deleteAccount(String accountCode);
 }

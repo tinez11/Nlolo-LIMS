@@ -13,4 +13,6 @@ public interface ChartOfAccountRepository extends JpaRepository<ChartOfAccount, 
     List<ChartOfAccount> findByTenantIdOrderByAccountCodeAsc(UUID tenantId);
     Optional<ChartOfAccount> findByTenantIdAndAccountCode(UUID tenantId, String accountCode);
     boolean existsByTenantId(UUID tenantId);
+    boolean existsByTenantIdAndAccountCode(UUID tenantId, String accountCode);
+    void deleteByTenantIdAndAccountCode(UUID tenantId, String accountCode);
 }

@@ -1,12 +1,29 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 /**
- * Finaccounting e2e coverage against the real backend. Entirely read-only,
- * by platform design -- every journal entry is derived from a domain event
- * by this module's own listeners, and there is no write endpoint anywhere on
- * this surface, so there is nothing here to create as a test fixture.
+ * An account's own code renders once, in a span with this exact class combo
+ * (ChartOfAccountsPage's `AccountRow`) -- nowhere else on the page does that
+ * combination appear, even though the bare code text does (the delete
+ * confirmation's "Delete <code>..." sentence, and a 409's error message both
+ * echo it). Scoping through this selector, not a bare `getByText(code)`,
+ * is what keeps every row lookup below a single unambiguous match.
+ */
+function accountRow(page: Page, code: string) {
+  return page
+    .locator('span.font-mono.text-xs.text-muted-foreground', { hasText: code })
+    .locator('..')
+    .locator('..')
+    .locator('..');
+}
+
+/**
+ * Finaccounting e2e coverage against the real backend. Journal entries/GL
+ * postings stay read-only, by platform design -- every entry is derived from
+ * a domain event by this module's own listeners. The chart of accounts is
+ * NOT read-only: create/rename/delete were added on explicit request, so
+ * this file also covers that real lifecycle end to end.
  *
- * Every endpoint (`/gl-postings*`, `/chart-of-accounts`) is gated on
+ * Every endpoint (`/gl-postings*`, `/chart-of-accounts*`) is gated on
  * FINANCE_OFFICER/ADMIN with no REALM_STAFF-broad read path at all -- the
  * same posture as Reinsurance, stricter than Distribution -- so this whole
  * file runs under the real `staff.finance` identity (auth-finance.setup.ts).
@@ -16,7 +33,9 @@ import { expect, test } from '@playwright/test';
  * posts a real DR/CR pair (Premium Receivable / Unearned Premium) at
  * issuance, so a fresh policy issued here is both the test fixture and the
  * assertion target -- no fabricated data, just the platform's own real
- * side effect.
+ * side effect. That same real pair (account 1200) is also what proves the
+ * delete-blocked-while-in-use path below: it is the one seeded account this
+ * tenant is guaranteed to have posted against.
  */
 
 test.describe('staff finaccounting', () => {
@@ -91,6 +110,87 @@ test.describe('staff finaccounting', () => {
     // 1200 Premium Receivable / 2200 Unearned Premium is the real accrual
     // pair every premium invoice posts against.
     await expect(page.getByText('1200')).toBeVisible();
+  });
+
+  test('creates an account with a derived type/balance, renames it, then deletes it', async ({
+    page,
+  }) => {
+    // 4 digits, leading block 5 = EXPENSE (normal balance DR) -- the pattern
+    // the backend itself enforces, not a value the UI is free to interpret.
+    const code = `5${String(Date.now() % 1000).padStart(3, '0')}`;
+    const name = `E2E Expense ${Date.now()}`;
+
+    await page.goto('/staff/chart-of-accounts');
+    await page.getByRole('button', { name: 'New account' }).click();
+    await page.getByLabel('Account code').fill(code);
+    await page.getByLabel('Name').fill(name);
+    await page.getByRole('button', { name: 'Create account' }).click();
+
+    const row = accountRow(page, code);
+    await expect(row.getByText(name)).toBeVisible({ timeout: 15_000 });
+    await expect(row.getByText('EXPENSE', { exact: true })).toBeVisible();
+    await expect(row.getByText('DR', { exact: true })).toBeVisible();
+
+    const renamedName = `${name} renamed`;
+    await row.getByRole('button', { name: 'Rename' }).click();
+    const nameInput = row.getByLabel('Name');
+    await nameInput.fill(renamedName);
+    await row.getByRole('button', { name: 'Rename', exact: true }).click();
+    await expect(row.getByText(renamedName)).toBeVisible({ timeout: 15_000 });
+
+    await row.getByRole('button', { name: 'Delete' }).click();
+    await row.getByRole('button', { name: 'Delete account' }).click();
+    await expect(accountRow(page, code)).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test('rejects a duplicate account code with a real 409', async ({ page }) => {
+    const code = `4${String(Date.now() % 1000).padStart(3, '0')}`;
+    const name = `E2E Income ${Date.now()}`;
+
+    await page.goto('/staff/chart-of-accounts');
+    await page.getByRole('button', { name: 'New account' }).click();
+    await page.getByLabel('Account code').fill(code);
+    await page.getByLabel('Name').fill(name);
+    await page.getByRole('button', { name: 'Create account' }).click();
+
+    const row = accountRow(page, code);
+    await expect(row.getByText(name)).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole('button', { name: 'New account' }).click();
+    await page.getByLabel('Account code').fill(code);
+    await page.getByLabel('Name').fill('Duplicate attempt');
+    await page.getByRole('button', { name: 'Create account' }).click();
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
+
+    // Clean up so a re-run of this spec is not blocked by a leftover account.
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await row.getByRole('button', { name: 'Delete' }).click();
+    await row.getByRole('button', { name: 'Delete account' }).click();
+    await expect(accountRow(page, code)).toHaveCount(0, { timeout: 15_000 });
+  });
+
+  test('rejects a malformed account code client-side, before any request is sent', async ({
+    page,
+  }) => {
+    await page.goto('/staff/chart-of-accounts');
+    await page.getByRole('button', { name: 'New account' }).click();
+    await page.getByLabel('Account code').fill('9000');
+    await page.getByLabel('Name').fill('Should never be created');
+    await page.getByRole('button', { name: 'Create account' }).click();
+
+    await expect(page.getByText('Must be 4 digits starting with 1-5')).toBeVisible();
+    await expect(page.getByText('Should never be created')).not.toBeVisible();
+  });
+
+  test('blocks deleting an account a real GL posting already references', async ({ page }) => {
+    await page.goto('/staff/chart-of-accounts');
+    const row = accountRow(page, '1200');
+    await row.getByRole('button', { name: 'Delete' }).click();
+    await row.getByRole('button', { name: 'Delete account' }).click();
+
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
+    // Still there -- the delete was rejected, not silently accepted.
+    await expect(accountRow(page, '1200')).toBeVisible();
   });
 });
 

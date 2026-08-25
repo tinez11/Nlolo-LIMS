@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.finaccounting.domain;
 
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountType;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 
 import java.util.Map;
@@ -74,5 +75,23 @@ public final class PostingRule {
     public static PostingDirection normalBalanceFor(String accountCode) {
         return accountCode.startsWith("2") || accountCode.startsWith("3") || accountCode.startsWith("4")
             ? PostingDirection.CR : PostingDirection.DR;
+    }
+
+    /**
+     * Derived from the account code's leading digit, per the conventional five-block scheme
+     * documented in finaccounting/V2 section 5: 1-ASSET, 2-LIABILITY, 3-EQUITY, 4-INCOME,
+     * 5-EXPENSE. Moved here from {@code ChartOfAccountSeeder} (its original, seed-only home) when
+     * {@code createAccount} needed the identical derivation for a hand-authored account code --
+     * one rule, not two copies that could drift apart.
+     */
+    public static AccountType accountTypeFor(String accountCode) {
+        return switch (accountCode.charAt(0)) {
+            case '1' -> AccountType.ASSET;
+            case '2' -> AccountType.LIABILITY;
+            case '3' -> AccountType.EQUITY;
+            case '4' -> AccountType.INCOME;
+            case '5' -> AccountType.EXPENSE;
+            default -> throw new IllegalArgumentException("Unrecognised account code block: " + accountCode);
+        };
     }
 }

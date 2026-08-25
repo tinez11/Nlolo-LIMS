@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -31,7 +32,10 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -47,16 +51,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code AppRolePrivilegesIntegrationTest}'s and {@code RowLevelSecurityIntegrationTest}'s job, not
  * this one's.
  *
- * <p><b>Fixture-seeding technique, chosen deliberately rather than guessed.</b> {@code
- * FinaccountingApi} exposes no write method at all -- every posting is derived from a domain event
- * by this module's own listeners (see that interface's javadoc) -- and the one write primitive that
- * exists, {@code FinaccountingApiImpl.postEntry(JournalEntry)}, is package-private to {@code
- * finaccounting.application} (its only intended callers are Task 6's per-source-module listeners).
- * This class lives in the bare {@code finaccounting} package (matching every other module's
- * *ContractTest*), so it cannot reach {@code postEntry} directly the way {@code
- * FinaccountingApiIntegrationTest} does from inside {@code .application}. Rather than expanding the
- * migration list to drive a real cross-module event chain (billing/claims/policy/underwriting are
- * deliberately NOT in this class's migration list below), this mirrors {@code
+ * <p><b>Fixture-seeding technique for JOURNAL ENTRIES, chosen deliberately rather than guessed.</b>
+ * Journal entries/GL postings still have no write endpoint at all -- every posting is derived from
+ * a domain event by this module's own listeners (see {@code FinaccountingApi}'s javadoc) -- and the
+ * one write primitive that exists, {@code FinaccountingApiImpl.postEntry(JournalEntry)}, is
+ * package-private to {@code finaccounting.application} (its only intended callers are Task 6's
+ * per-source-module listeners). This class lives in the bare {@code finaccounting} package
+ * (matching every other module's *ContractTest*), so it cannot reach {@code postEntry} directly the
+ * way {@code FinaccountingApiIntegrationTest} does from inside {@code .application}. Rather than
+ * expanding the migration list to drive a real cross-module event chain (billing/claims/policy/
+ * underwriting are deliberately NOT in this class's migration list below), this mirrors {@code
  * DistributionContractTest}'s own established precedent for exactly this situation -- {@code
  * commissionStatementRepository} is autowired there and used directly to seed/manipulate fixtures
  * for a table with no direct write endpoint. {@link #seedEntry} does the same with {@code
@@ -64,6 +68,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * own save order (entry first, so its {@code @GeneratedValue} id is real, then one {@code GlPosting}
  * per leg) rather than reimplementing its idempotency/balance-check semantics, which are not what
  * this class is testing.
+ *
+ * <p><b>The chart of accounts is NOT read-only</b> (added after M9 shipped) -- its own
+ * create/rename/delete endpoints are exercised directly below through real HTTP calls, unlike
+ * journal entries/GL postings above.
  */
 @Testcontainers
 @AutoConfigureMockMvc
@@ -99,7 +107,8 @@ class FinaccountingContractTest {
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
-            "db-migrations/finaccounting/V3__account_code_foreign_key.sql");
+            "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
+            "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -297,5 +306,166 @@ class FinaccountingContractTest {
         // rather than an incidental 200-with-nothing-interesting that would pass for the wrong reason.
         mockMvc.perform(get("/chart-of-accounts").with(underwriterStaffOf(tenantId)))
             .andExpect(status().isForbidden());
+    }
+
+    // ============================================================================================
+    // POST /chart-of-accounts
+    // ============================================================================================
+
+    @Test
+    void createAccountReturns201AndDerivesAccountTypeAndNormalBalanceFromTheCode() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        // 3xxx is EQUITY/CR by the five-block convention -- none of the nine seeded accounts use
+        // this block, so this is genuinely a new account, not a seed collision.
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"3000","name":"Retained Earnings"}"""))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "ChartOfAccountView"))
+            .andExpect(jsonPath("$.accountCode").value("3000"))
+            .andExpect(jsonPath("$.name").value("Retained Earnings"))
+            .andExpect(jsonPath("$.accountType").value("EQUITY"))
+            .andExpect(jsonPath("$.normalBalance").value("CR"));
+
+        mockMvc.perform(get("/chart-of-accounts").with(financeStaffOf(tenantId)))
+            .andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
+    void createAccountReturns409ForADuplicateAccountCode() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String body = """
+            {"accountCode":"3100","name":"Share Capital"}""";
+
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("DUPLICATE_ACCOUNT_CODE"));
+    }
+
+    @Test
+    void createAccountReturns400ForAMalformedAccountCodeOrABlankName() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        // "9000" has no valid block (only 1-5 are defined). Deliberately NOT paired with the
+        // OpenApi request/response matcher here: this request is, by design, itself invalid
+        // against the spec's own declared `accountCode` pattern, so the validator's own
+        // request-side check would throw before the response could ever be asserted on --
+        // exactly what a test proving the SERVER's 400 needs to send, so only the status is
+        // checked for this one case.
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"9000","name":"Bogus Block"}"""))
+            .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"3200","name":""}"""))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createAccountReturns403ForANonFinanceRole() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(post("/chart-of-accounts").with(underwriterStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"3300","name":"Should Never Be Created"}"""))
+            .andExpect(status().isForbidden());
+    }
+
+    // ============================================================================================
+    // PUT /chart-of-accounts/{accountCode}
+    // ============================================================================================
+
+    @Test
+    void renameAccountReturns200AndUpdatesTheNameOnly() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"3400","name":"Original Name"}"""))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(put("/chart-of-accounts/{accountCode}", "3400").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"Renamed"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.accountCode").value("3400"))
+            .andExpect(jsonPath("$.name").value("Renamed"))
+            // Untouched by the rename -- both stay derived from the code.
+            .andExpect(jsonPath("$.accountType").value("EQUITY"))
+            .andExpect(jsonPath("$.normalBalance").value("CR"));
+    }
+
+    @Test
+    void renameAccountReturns404ForAnUnknownAccountCode() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(put("/chart-of-accounts/{accountCode}", "3500").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"Does Not Exist"}"""))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("ACCOUNT_NOT_FOUND"));
+    }
+
+    // ============================================================================================
+    // DELETE /chart-of-accounts/{accountCode}
+    // ============================================================================================
+
+    @Test
+    void deleteAccountReturns204WhenNoPostingReferencesIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"3600","name":"Never Posted To"}"""))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(delete("/chart-of-accounts/{accountCode}", "3600").with(financeStaffOf(tenantId)))
+            .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/chart-of-accounts").with(financeStaffOf(tenantId)))
+            .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void deleteAccountReturns409WhenARealPostingReferencesIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // seedEntry posts a real DR CASH ("1000") / CR PREMIUM_RECEIVABLE ("1200") leg pair.
+        seedEntry(tenantId, "billing.PremiumInvoiceGenerated", "gl-ct-inuse", "2026-08", "POL-GL-INUSE", "1000.00");
+
+        mockMvc.perform(delete("/chart-of-accounts/{accountCode}", PostingRule.CASH).with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("ACCOUNT_IN_USE"));
+
+        // Still there -- the rejected delete must not have removed it.
+        mockMvc.perform(get("/chart-of-accounts").with(financeStaffOf(tenantId)))
+            .andExpect(jsonPath("$.length()").value(9));
+    }
+
+    @Test
+    void deleteAccountReturns404ForAnUnknownAccountCode() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(delete("/chart-of-accounts/{accountCode}", "3700").with(financeStaffOf(tenantId)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("ACCOUNT_NOT_FOUND"));
     }
 }

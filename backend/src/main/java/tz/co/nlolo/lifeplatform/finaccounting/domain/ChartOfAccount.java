@@ -45,6 +45,12 @@ public class ChartOfAccount {
     @Column(name = "created_by")
     private String createdBy;
 
+    @Column(name = "updated_at")
+    private Instant updatedAt;
+
+    @Column(name = "updated_by")
+    private String updatedBy;
+
     protected ChartOfAccount() {}
 
     public ChartOfAccount(UUID tenantId, String accountCode, String name,
@@ -64,4 +70,17 @@ public class ChartOfAccount {
     public PostingDirection getNormalBalance() { return normalBalance; }
     public Instant getCreatedAt() { return createdAt; }
     public String getCreatedBy() { return createdBy; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public String getUpdatedBy() { return updatedBy; }
+
+    /** A plain rename -- {@code accountCode} is this entity's own primary key (composite with
+     *  {@code tenantId}) and {@code accountType}/{@code normalBalance} stay derived from its
+     *  leading digit (see {@link tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule}), so
+     *  neither is, or should be, independently editable -- {@code name} is the only field with no
+     *  structural reason to stay fixed. */
+    public void rename(String newName, String updatedBy) {
+        this.name = newName;
+        this.updatedAt = Instant.now();
+        this.updatedBy = updatedBy;
+    }
 }

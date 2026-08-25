@@ -1,11 +1,23 @@
-import { get } from '@/lib/http';
+import { del, get, post, put } from '@/lib/http';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './policies';
-import type { ChartOfAccountView, JournalEntryView, Page } from './types';
+import type {
+  ChartOfAccountView,
+  CreateAccountRequest,
+  JournalEntryView,
+  Page,
+  RenameAccountRequest,
+} from './types';
 
 /**
- * Finaccounting read surface. Read-only, permanently: every journal entry is
- * derived from a domain event by this module's own listeners -- there is no
- * write endpoint anywhere on this surface, and there never will be.
+ * Finaccounting read/write surface.
+ *
+ * Journal entries and GL postings stay read-only, permanently: every entry is
+ * derived from a domain event by this module's own listeners, and there is no
+ * write endpoint for either, ever. The chart of accounts is NOT read-only --
+ * create/rename/delete were added on explicit request, after the module first
+ * shipped read-only; `accountType`/`normalBalance` stay derived server-side
+ * from the account code's own leading digit and are never independently
+ * settable on either endpoint below.
  */
 
 export interface GlPostingSearchParams {
@@ -52,8 +64,33 @@ export function getGlPosting(journalEntryId: string): Promise<JournalEntryView> 
   return get<JournalEntryView>(`/gl-postings/${encodeURIComponent(journalEntryId)}`);
 }
 
-/** `GET /chart-of-accounts` -- a bare array; account rows are seeded, never
- *  authored through this API. */
+/** `GET /chart-of-accounts` -- a bare array; some rows are seeded, others
+ *  created through the endpoint below. */
 export function listChartOfAccounts(): Promise<ChartOfAccountView[]> {
   return get<ChartOfAccountView[]>('/chart-of-accounts');
+}
+
+/** `POST /chart-of-accounts` -- staff FINANCE_OFFICER/ADMIN only. A duplicate
+ *  accountCode 409s; a malformed one (not 4 digits with a leading 1-5 block) 400s. */
+export function createAccount(request: CreateAccountRequest): Promise<ChartOfAccountView> {
+  return post<ChartOfAccountView>('/chart-of-accounts', request);
+}
+
+/** `PUT /chart-of-accounts/{accountCode}` -- staff FINANCE_OFFICER/ADMIN only.
+ *  A plain rename; accountCode/accountType/normalBalance are not editable. */
+export function renameAccount(
+  accountCode: string,
+  request: RenameAccountRequest,
+): Promise<ChartOfAccountView> {
+  return put<ChartOfAccountView>(`/chart-of-accounts/${encodeURIComponent(accountCode)}`, request);
+}
+
+/**
+ * `DELETE /chart-of-accounts/{accountCode}` -- staff FINANCE_OFFICER/ADMIN
+ * only. Rejected with a real 409 once any GL posting references the account
+ * -- retiring an in-use account is a distinct, deferred concern this endpoint
+ * does not attempt.
+ */
+export function deleteAccount(accountCode: string): Promise<void> {
+  return del<void>(`/chart-of-accounts/${encodeURIComponent(accountCode)}`);
 }

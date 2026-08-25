@@ -94,4 +94,10 @@ export async function put<T>(
   return response.data;
 }
 
+/** DELETE helper that returns the body (if any) and throws ApiError. */
+export async function del<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  const response = await http.delete<T>(url, config);
+  return response.data;
+}
+
 export type { ApiError };
