@@ -27,6 +27,7 @@ export function getParty(partyId: string): Promise<PartyView> {
 
 export interface PartySearchParams {
   kycStatus?: KycStatus;
+  q?: string;
   page?: number;
   pageSize?: number;
 }
@@ -50,6 +51,7 @@ export async function searchParties(params: PartySearchParams = {}): Promise<Pag
   }>('/parties', {
     params: {
       ...(params.kycStatus ? { kycStatus: params.kycStatus } : {}),
+      ...(params.q ? { q: params.q } : {}),
       page,
       pageSize,
     },
