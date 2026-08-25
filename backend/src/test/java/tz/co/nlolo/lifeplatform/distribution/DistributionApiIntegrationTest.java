@@ -212,6 +212,79 @@ class DistributionApiIntegrationTest {
         assertThrows(DistributionValidationException.class, () -> distributionApi.onboardAgent(duplicateRequest, "staff-1"));
     }
 
+    // ---- resolveAgentTeam ----------------------------------------------------------------------
+    //
+    // Built for policy/claims' agents-realm "browse my book of business" scoping -- these are the
+    // ONLY tests anywhere that exercise resolveAgentTeam against a REAL two-level branching
+    // hierarchy through real repository queries (CommissionCalculatorTest's own
+    // resolveDescendantIdsCollectsBothLevelsOfABranchingTree pins the pure-function walk itself,
+    // with fakes; this pins the real findByTenantIdAndHierarchyParentId wiring around it).
+
+    @Test
+    void resolveAgentTeamIncludesSelfAndBothLevelsOfANonLinearDownline() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView rootParty = registerVerifiedParty(tenantId, "TEAM-ROOT");
+        AgentView root = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            rootParty.partyId(), "LIC-TEAM-ROOT", LocalDate.now().plusYears(1), null), "staff-1");
+
+        PartyView childAParty = registerVerifiedParty(tenantId, "TEAM-CHILD-A");
+        AgentView childA = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            childAParty.partyId(), "LIC-TEAM-CHILD-A", LocalDate.now().plusYears(1), root.agentId()), "staff-1");
+
+        PartyView childBParty = registerVerifiedParty(tenantId, "TEAM-CHILD-B");
+        AgentView childB = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            childBParty.partyId(), "LIC-TEAM-CHILD-B", LocalDate.now().plusYears(1), root.agentId()), "staff-1");
+
+        PartyView grandchildParty = registerVerifiedParty(tenantId, "TEAM-GRANDCHILD");
+        AgentView grandchild = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            grandchildParty.partyId(), "LIC-TEAM-GRANDCHILD", LocalDate.now().plusYears(1), childA.agentId()), "staff-1");
+
+        // A third level -- MUST NOT appear, MAX_HIERARCHY_WALK_DEPTH is 2.
+        PartyView tooDeepParty = registerVerifiedParty(tenantId, "TEAM-TOO-DEEP");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            tooDeepParty.partyId(), "LIC-TEAM-TOO-DEEP", LocalDate.now().plusYears(1), grandchild.agentId()), "staff-1");
+
+        TenantContext.set(tenantId);
+        List<UUID> team = distributionApi.resolveAgentTeam(rootParty.partyId());
+
+        assertThat(team).containsExactlyInAnyOrder(root.agentId(), childA.agentId(), childB.agentId(), grandchild.agentId());
+    }
+
+    @Test
+    void resolveAgentTeamIsJustSelfForALeafAgent() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView leafParty = registerVerifiedParty(tenantId, "TEAM-LEAF");
+        AgentView leaf = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            leafParty.partyId(), "LIC-TEAM-LEAF", LocalDate.now().plusYears(1), null), "staff-1");
+
+        TenantContext.set(tenantId);
+        assertThat(distributionApi.resolveAgentTeam(leafParty.partyId())).containsExactly(leaf.agentId());
+    }
+
+    @Test
+    void resolveAgentTeamIsEmptyWhenThePartyIsNotAnAgent() {
+        UUID tenantId = UUID.randomUUID();
+        // A real, verified party that was never onboarded as an agent at all.
+        PartyView notAnAgent = registerVerifiedParty(tenantId, "TEAM-NOT-AN-AGENT");
+
+        TenantContext.set(tenantId);
+        assertThat(distributionApi.resolveAgentTeam(notAnAgent.partyId())).isEmpty();
+    }
+
+    @Test
+    void resolveAgentTeamDoesNotCrossTenants() {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        PartyView partyInTenantA = registerVerifiedParty(tenantA, "TEAM-XTENANT-A");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            partyInTenantA.partyId(), "LIC-TEAM-XTENANT-A", LocalDate.now().plusYears(1), null), "staff-1");
+
+        // Same partyId looked up under the WRONG tenant's context -- RLS/tenant-scoping must
+        // treat this as "not an agent here", not accidentally find tenant A's row.
+        TenantContext.set(tenantB);
+        assertThat(distributionApi.resolveAgentTeam(partyInTenantA.partyId())).isEmpty();
+    }
+
     // ---- createCommissionPlan -----------------------------------------------------------------
 
     /**

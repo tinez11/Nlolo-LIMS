@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.claims.api.ClaimAssessmentView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,12 +25,14 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * The seven {@code /claims*} operations {@code ClaimEvidenceController} does not own. Role gates
  * follow docs/04-api-contracts.md:56 and openapi-claims.yaml exactly: register/read are open to
- * all three realms with an object-level ownership check for customers; assessment/settlement-
+ * all three realms with an object-level ownership check for customers (and, since the agents-
+ * realm "browse my book of business" work, for agents too); assessment/settlement-
  * decision/reopen are staff-only, gated on the FINE-GRAINED role name (CLAIMS_ASSESSOR /
  * CLAIMS_MANAGER), not just REALM_STAFF -- mirrors UnderwritingController's existing
  * {@code hasRole('UNDERWRITER')} idiom, since {@code SecurityConfig.authoritiesFor} already maps
@@ -40,9 +43,11 @@ import java.util.UUID;
 public class ClaimController {
 
     private final ClaimsApi claimsApi;
+    private final PolicyApi policyApi;
 
-    public ClaimController(ClaimsApi claimsApi) {
+    public ClaimController(ClaimsApi claimsApi, PolicyApi policyApi) {
         this.claimsApi = claimsApi;
+        this.policyApi = policyApi;
     }
 
     /**
@@ -91,6 +96,7 @@ public class ClaimController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView view = claimsApi.getClaim(claimId);
         enforceCustomerOwnClaimOnly(view, jwt, authentication);
+        enforceAgentOwnClaimOnly(policyApi, view, jwt, authentication);
         return ResponseEntity.ok(ClaimResponseDto.from(view));
     }
 
@@ -113,7 +119,13 @@ public class ClaimController {
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         UUID effectiveClaimantPartyId = isCustomer(authentication) ? ownPartyIdOrThrow(jwt) : claimantPartyId;
-        Page<ClaimView> result = claimsApi.searchClaims(status, effectiveClaimantPartyId,
+        // Agents are force-scoped to claims filed against a policy in their own hierarchy team's
+        // book -- same "override the query" idiom as the customer scoping above. Joins through
+        // policy (PolicyApi.policyNumbersForAgentTeam) rather than claims needing its own
+        // distribution dependency, since a claim carries no agentOfRecordId of its own.
+        Set<String> policyNumbers = isAgent(authentication)
+            ? policyApi.policyNumbersForAgentTeam(ownAgentPartyIdOrThrow(jwt)) : null;
+        Page<ClaimView> result = claimsApi.searchClaims(status, effectiveClaimantPartyId, policyNumbers,
             PageRequest.of(page, Math.min(pageSize, 100)));
         return ResponseEntity.ok(ClaimSearchResponseDto.from(result));
     }
@@ -196,5 +208,40 @@ public class ClaimController {
             throw new AccessDeniedException("Customer token carries no party_id claim");
         }
         return UUID.fromString(ownPartyId);
+    }
+
+    static boolean isAgent(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+    }
+
+    private static UUID ownAgentPartyIdOrThrow(Jwt jwt) {
+        String ownPartyId = jwt.getClaimAsString("party_id");
+        if (ownPartyId == null) {
+            throw new AccessDeniedException("Agent token carries no party_id claim");
+        }
+        return UUID.fromString(ownPartyId);
+    }
+
+    /**
+     * Object-level authorization for agents, mirroring {@link #enforceCustomerOwnClaimOnly}: an
+     * agents-realm token may only read a claim filed against a policy in its own hierarchy team's
+     * book of business. Re-resolves the team via {@code PolicyApi.policyNumbersForAgentTeam} on
+     * every call rather than caching it -- a single-claim read, unlike {@link #listClaims}, has no
+     * shared per-request scope to reuse it from, and this join is a plain indexed lookup, not
+     * expensive enough to warrant one.
+     *
+     * <p>Static and package-visible, {@code policyApi} passed explicitly, same reason
+     * {@link #enforceCustomerOwnClaimOnly} is: {@code ClaimEvidenceController} reuses this
+     * verbatim rather than risking two copies drifting apart -- an agents-realm token could
+     * otherwise attach/list/download evidence on any claim in the tenant, not just its own book.
+     */
+    static void enforceAgentOwnClaimOnly(PolicyApi policyApi, ClaimView claim, Jwt jwt, Authentication authentication) {
+        if (!isAgent(authentication)) {
+            return;
+        }
+        if (!policyApi.policyNumbersForAgentTeam(ownAgentPartyIdOrThrow(jwt)).contains(claim.policyNumber())) {
+            throw new AccessDeniedException("Access denied: agent may only access claims in their own book of business");
+        }
     }
 }

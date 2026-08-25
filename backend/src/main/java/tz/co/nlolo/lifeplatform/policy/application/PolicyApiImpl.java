@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.policy.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.*;
@@ -31,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -47,6 +49,7 @@ public class PolicyApiImpl implements PolicyApi {
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
+    private final DistributionApi distributionApi;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -54,6 +57,7 @@ public class PolicyApiImpl implements PolicyApi {
                           EndorsementRepository endorsementRepository, BeneficiaryRepository beneficiaryRepository,
                           CoverageRepository coverageRepository, LoanValueReservationRepository loanValueReservationRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
+                          DistributionApi distributionApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
         this.policyAccountRepository = policyAccountRepository;
@@ -64,6 +68,7 @@ public class PolicyApiImpl implements PolicyApi {
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
+        this.distributionApi = distributionApi;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
     }
@@ -206,10 +211,22 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
-    public Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Pageable pageable) {
+    public Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Set<UUID> agentOfRecordIds, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<Policy> page;
-        if (policyholderPartyId != null && status != null) {
+        // The three no-agent-filter branches stay on the original derived-query methods (unchanged
+        // shape, unchanged behaviour) rather than routing everything through the new three-way
+        // `search` query for the common (non-agent) case. Critically, the guard here is `!= null`,
+        // NOT `!= null && !isEmpty()`: an EMPTY (but non-null) set is a real, security-relevant
+        // case -- an agents-realm caller whose resolved team came back empty (its party is not
+        // actually an agent in this tenant, an edge case DistributionApi.resolveAgentTeam allows
+        // for) must see ZERO policies, not silently fall through to the unfiltered "no agent
+        // filter" branches and see the whole tenant. `PolicyRepository.search`'s JPQL handles an
+        // empty `IN (...)` collection correctly (matches nothing), so routing there is sufficient.
+        if (agentOfRecordIds != null) {
+            page = policyRepository.search(tenantId, policyholderPartyId, status != null ? status.name() : null,
+                agentOfRecordIds, pageable);
+        } else if (policyholderPartyId != null && status != null) {
             page = policyRepository.findByTenantIdAndPolicyholderPartyIdAndStatus(tenantId, policyholderPartyId, status.name(), pageable);
         } else if (policyholderPartyId != null) {
             page = policyRepository.findByTenantIdAndPolicyholderPartyId(tenantId, policyholderPartyId, pageable);
@@ -219,6 +236,15 @@ public class PolicyApiImpl implements PolicyApi {
             page = policyRepository.findByTenantId(tenantId, pageable);
         }
         return page.map(this::toView);
+    }
+
+    @Override
+    public Set<String> policyNumbersForAgentTeam(UUID callerPartyId) {
+        List<UUID> team = distributionApi.resolveAgentTeam(callerPartyId);
+        if (team.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(policyRepository.findPolicyNumbersByTenantIdAndAgentOfRecordIdIn(TenantContext.get(), team));
     }
 
     @Override

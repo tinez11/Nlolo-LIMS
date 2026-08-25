@@ -5,7 +5,10 @@ import tz.co.nlolo.lifeplatform.claims.domain.Claim;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +38,25 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
     Page<Claim> findByTenantIdAndClaimantPartyId(UUID tenantId, UUID claimantPartyId, Pageable pageable);
     Page<Claim> findByTenantIdAndClaimantPartyIdAndStatus(UUID tenantId, UUID claimantPartyId, ClaimStatus status, Pageable pageable);
     List<Claim> findByTenantIdAndPolicyNumber(UUID tenantId, String policyNumber);
+
+    /**
+     * The agents-realm-scoping counterpart to the derived-query combinations above --
+     * {@code policyNumbers} is a THIRD optional dimension (claimantPartyId x status x agent
+     * scope), following {@code PolicyRepository.search}'s exact null-safe-predicate shape rather
+     * than a fourth derived-method combination. Claims carry no {@code agentOfRecordId} of their
+     * own (they reference a policy, not an agent, directly) -- {@code policyNumbers} is resolved
+     * by the caller via {@code PolicyApi.policyNumbersForAgentTeam}, joining through policy rather
+     * than claims taking a dependency on {@code distribution} itself.
+     */
+    @Query("SELECT c FROM Claim c WHERE c.tenantId = :tenantId "
+        + "AND (:claimantPartyId IS NULL OR c.claimantPartyId = :claimantPartyId) "
+        + "AND (:status IS NULL OR c.status = :status) "
+        + "AND (:policyNumbers IS NULL OR c.policyNumber IN :policyNumbers)")
+    Page<Claim> search(@Param("tenantId") UUID tenantId,
+                        @Param("claimantPartyId") UUID claimantPartyId,
+                        @Param("status") ClaimStatus status,
+                        @Param("policyNumbers") Collection<String> policyNumbers,
+                        Pageable pageable);
 
     /** Backs claims/V3's partial unique index on (tenant_id, registration_idempotency_key) --
      * ClaimsApiImpl.registerClaim re-queries this on a caught unique-constraint violation to

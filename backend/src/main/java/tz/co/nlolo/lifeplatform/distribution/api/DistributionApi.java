@@ -25,6 +25,22 @@ public interface DistributionApi {
     AgentView onboardAgent(OnboardAgentRequest request, String onboardedBy);
     AgentView getAgent(UUID agentId);
 
+    /**
+     * Resolves {@code partyId}'s own object-level read scope over agent-related data elsewhere on
+     * the platform: its own agent record (if the party IS an agent in this tenant) plus everyone
+     * within {@code MAX_HIERARCHY_WALK_DEPTH} levels below it in the hierarchy -- the same depth
+     * cap {@code AgentController.enforceAgentReadAccess} already applies to reading a descendant's
+     * own agent record, and the same one {@code CommissionCalculator}'s OVERRIDE/SUPERVISOR_OVERRIDE
+     * tiers use. Empty if the party is not an agent in this tenant at all.
+     *
+     * <p>Built for {@code policy}/{@code claims} to scope an agents-realm token's "browse my book
+     * of business" to what it is actually entitled to see -- see those modules' own controllers for
+     * the previously-deferred gap this closes (their own comments named exactly this: "no
+     * agent/agency data model... to resolve 'is this caller's agent identity the agentOfRecord'
+     * against").
+     */
+    List<UUID> resolveAgentTeam(UUID partyId);
+
     /** ACTIVE -> SUSPENDED. {@code AgentProfile.setLicenseStatus} has existed since M7 with no
      * caller anywhere on the platform -- this is the first one. @throws InvalidAgentStateException
      * if the agent is not currently ACTIVE. */

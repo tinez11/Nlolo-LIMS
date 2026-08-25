@@ -39,6 +39,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -226,10 +227,15 @@ public class ClaimsApiImpl implements ClaimsApi {
      * {@code ClaimsContractTest} caught (this method had never once been called with a non-null
      * {@code status} by any prior test). */
     @Override
-    public Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Pageable pageable) {
+    public Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<Claim> page;
-        if (claimantPartyId != null && status != null) {
+        // Same "leave the pre-existing derived-query paths alone for the common case" reasoning as
+        // PolicyApiImpl.searchPolicies -- only an agents-realm caller's non-null policyNumbers
+        // routes through the new three-way query.
+        if (policyNumbers != null) {
+            page = claimRepository.search(tenantId, claimantPartyId, status, policyNumbers, pageable);
+        } else if (claimantPartyId != null && status != null) {
             page = claimRepository.findByTenantIdAndClaimantPartyIdAndStatus(tenantId, claimantPartyId, status, pageable);
         } else if (claimantPartyId != null) {
             page = claimRepository.findByTenantIdAndClaimantPartyId(tenantId, claimantPartyId, pageable);

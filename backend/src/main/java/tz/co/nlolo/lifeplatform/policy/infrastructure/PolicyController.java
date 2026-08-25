@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.policy.infrastructure;
 
+import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
@@ -22,6 +23,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -29,10 +31,12 @@ public class PolicyController {
 
     private final PolicyApi policyApi;
     private final ProductApi productApi;
+    private final DistributionApi distributionApi;
 
-    public PolicyController(PolicyApi policyApi, ProductApi productApi) {
+    public PolicyController(PolicyApi policyApi, ProductApi productApi, DistributionApi distributionApi) {
         this.policyApi = policyApi;
         this.productApi = productApi;
+        this.distributionApi = distributionApi;
     }
 
     @PostMapping("/policies/manual-issue")
@@ -55,19 +59,17 @@ public class PolicyController {
     public ResponseEntity<PolicyResponseDto> getPolicy(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         // Object-level authorization (docs/04-api-contracts.md §3), same idiom as
         // PartyController.getParty: a customers-realm token may only read the policy matching
-        // its own party_id claim (enforceCustomerOwnPolicyOnly below). Agents/staff are scoped
-        // by realm role alone here, same as PartyController -- openapi-policy.yaml's description
-        // for this operation states agents "are scoped to policies where they are agentOfRecord
-        // or within their agency hierarchy," but that hierarchy is not implemented: unlike the
-        // party case, PolicyView.agentOfRecordId DOES already exist on this resource, so a
-        // direct agentOfRecordId-match (leaving the fuzzier agency-hierarchy part genuinely
-        // deferred) is feasible sooner than the party equivalent -- but there is still no
-        // agent/agency data model (which agent a caller's JWT corresponds to, or how agencies
-        // nest) to resolve "is this caller's agent identity the agentOfRecord" against, so it
-        // remains deferred to a later milestone rather than silently skipped. Same gap applies
-        // to searchPolicies/getCoverageStatus/isInForce below (all agentsAuth-gated).
+        // its own party_id claim (enforceCustomerOwnPolicyOnly below). Agents are now scoped to
+        // their own hierarchy team's agentOfRecordId too (enforceAgentOwnTeamOnly) -- this was
+        // the exact gap this comment used to describe as deferred ("no agent/agency data model...
+        // to resolve 'is this caller's agent identity the agentOfRecord' against"), closed via
+        // DistributionApi.resolveAgentTeam once policy::api gained a distribution dependency for
+        // the agents-realm "browse my book of business" work. Staff remain scoped by realm role
+        // alone. getCoverageStatus/isInForce are NOT wired to either check -- neither has an HTTP
+        // mapping on this controller at all, so the gap there is moot until one exists.
         PolicyView view = policyApi.getPolicy(policyNumber);
         enforceCustomerOwnPolicyOnly(view, jwt, authentication);
+        enforceAgentOwnTeamOnly(view, jwt, authentication);
         return ResponseEntity.ok(PolicyResponseDto.from(view));
     }
 
@@ -89,7 +91,16 @@ public class PolicyController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         UUID effectivePolicyholderPartyId = isCustomer(authentication)
             ? ownPartyIdOrThrow(jwt) : policyholderPartyId;
-        Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, status,
+        // Agents are force-scoped to their own hierarchy team, the same "override the query, don't
+        // merely check-then-reject" idiom as the customer scoping above -- an agents-realm token
+        // cannot broaden this by supplying its own agentOfRecordId filter (there is none to
+        // supply: this endpoint never accepted one), it can only ever see its own team's policies.
+        // MUST be null (not Set.of()) for staff/customers: PolicyApiImpl.searchPolicies treats
+        // null as "no agent filter" and a non-null EMPTY set as "filter to nothing" -- passing
+        // Set.of() here for a non-agent caller would make every staff/customer search return zero
+        // results.
+        Set<UUID> agentOfRecordIds = isAgent(authentication) ? resolveOwnAgentTeamOrThrow(jwt) : null;
+        Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, status, agentOfRecordIds,
             PageRequest.of(page, Math.min(pageSize, 100)));
         return ResponseEntity.ok(PolicySearchResponse.from(result));
     }
@@ -227,6 +238,43 @@ public class PolicyController {
             throw new AccessDeniedException("Customer token carries no party_id claim");
         }
         return UUID.fromString(ownPartyId);
+    }
+
+    static boolean isAgent(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+    }
+
+    /** Resolves the caller's own {@code DistributionApi.resolveAgentTeam} result (itself plus its
+     *  hierarchy downline), 403ing if the token carries no {@code party_id} claim at all -- same
+     *  shape as {@link #ownPartyIdOrThrow}. An EMPTY (but non-null) team is a legitimate result of
+     *  {@code resolveAgentTeam} itself (the party is not an agent in this tenant) and is left to
+     *  the caller to interpret -- {@link #searchPolicies} treats it as "no policies", not an error,
+     *  since a search naturally degrades to nothing rather than needing a special-cased 403. */
+    private Set<UUID> resolveOwnAgentTeamOrThrow(Jwt jwt) {
+        String ownPartyId = jwt.getClaimAsString("party_id");
+        if (ownPartyId == null) {
+            throw new AccessDeniedException("Agent token carries no party_id claim");
+        }
+        return Set.copyOf(distributionApi.resolveAgentTeam(UUID.fromString(ownPartyId)));
+    }
+
+    /**
+     * Object-level authorization for agents, the mirror of {@link #enforceCustomerOwnPolicyOnly}:
+     * an agents-realm token may only read a policy whose {@code agentOfRecordId} is itself or
+     * someone in its own hierarchy downline. A policy with NO agent of record (sold direct) is
+     * therefore never visible to an agents-realm caller -- there is no "unattributed" bucket an
+     * agent is entitled to browse. Unlike the customer check (a single ownPartyId comparison), this
+     * genuinely needs a real lookup ({@code DistributionApi.resolveAgentTeam}), which is exactly
+     * the capability this endpoint's own comment used to name as the missing piece.
+     */
+    private void enforceAgentOwnTeamOnly(PolicyView view, Jwt jwt, Authentication authentication) {
+        if (!isAgent(authentication)) {
+            return;
+        }
+        if (view.agentOfRecordId() == null || !resolveOwnAgentTeamOrThrow(jwt).contains(view.agentOfRecordId())) {
+            throw new AccessDeniedException("Access denied: agent may only access policies in their own book of business");
+        }
     }
 
     private ResponseEntity<ProblemDetail> notImplementedChoreography() {

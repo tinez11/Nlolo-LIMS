@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public interface PolicyApi {
@@ -26,7 +27,25 @@ public interface PolicyApi {
     void replaceBeneficiaries(String policyNumber, List<BeneficiaryInput> beneficiaries, String changedBy);
     SurrenderQuoteView quoteSurrenderValue(String policyNumber);
     PolicyView getPolicy(String policyNumber);
-    Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Pageable pageable);
+
+    /**
+     * {@code agentOfRecordIds} is null/empty for "no agent filter" (staff and customer callers);
+     * a non-empty set restricts results to policies whose {@code agentOfRecordId} is one of the
+     * given ids -- an agents-realm caller's own resolved hierarchy team (see
+     * {@code DistributionApi.resolveAgentTeam}), computed by the controller, not this method.
+     */
+    Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Set<UUID> agentOfRecordIds, Pageable pageable);
+
+    /**
+     * The policy numbers an agents-realm caller's own hierarchy team (itself plus its downline,
+     * within {@code DistributionApi.resolveAgentTeam}'s depth cap) is entitled to see -- resolves
+     * {@code callerPartyId}'s team via {@code DistributionApi} internally, so {@code claims} (which
+     * has no distribution dependency of its own, only {@code policy::api}) can scope its own
+     * "browse my book" claims list/detail through this single call rather than needing the
+     * distribution dependency itself. Empty if the party is not an agent in this tenant.
+     */
+    Set<String> policyNumbersForAgentTeam(UUID callerPartyId);
+
     CoverageStatusView getCoverageStatus(String policyNumber, LocalDate asOf);
     boolean isPolicyInForce(String policyNumber, LocalDate asOf);
 

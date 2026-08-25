@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.AllowedDocumentContentTypes;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
+import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import jakarta.validation.Valid;
@@ -83,6 +84,29 @@ public class PartyController {
             }
         }
         return ResponseEntity.ok(partyApi.getParty(partyId));
+    }
+
+    /**
+     * There was no way to list/filter parties at all until this -- see {@code PartyApi
+     * .searchParties}'s own javadoc for why that mattered (a registered-but-not-yet-KYC'd party
+     * with no policy/claim/case/agent referencing it was otherwise invisible to staff). Staff use
+     * this as an unrestricted KYC review queue; an agents-realm caller is force-scoped to parties
+     * IT registered (its own JWT subject, never client-supplied {@code createdBy}) -- the same
+     * "override the query" idiom {@code PolicyController.searchPolicies} uses for customers.
+     */
+    @GetMapping("/parties")
+    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
+    public ResponseEntity<PageResponse<PartyView>> searchParties(
+            @RequestParam(required = false) KycStatus kycStatus,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        boolean isAgent = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+        String effectiveCreatedBy = isAgent ? jwt.getSubject() : null;
+        Page<PartyView> result = partyApi.searchParties(kycStatus, effectiveCreatedBy,
+            PageRequest.of(page, Math.min(pageSize, 100)));
+        return ResponseEntity.ok(PageResponse.from(result));
     }
 
     /**

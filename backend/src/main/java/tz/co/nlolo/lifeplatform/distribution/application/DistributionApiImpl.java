@@ -198,6 +198,27 @@ public class DistributionApiImpl implements DistributionApi {
     }
 
     @Override
+    public List<UUID> resolveAgentTeam(UUID partyId) {
+        UUID tenantId = TenantContext.get();
+        List<AgentProfile> ownProfiles = agentProfileRepository.findByTenantIdAndPartyId(tenantId, partyId);
+        if (ownProfiles.isEmpty()) {
+            return List.of();
+        }
+        // A LinkedHashSet, not a List, because a party holding more than one AgentProfile (no DB
+        // constraint prevents it -- see AgentController's own note on this) could otherwise walk
+        // overlapping downlines and duplicate an id in the result.
+        java.util.Set<UUID> team = new java.util.LinkedHashSet<>();
+        java.util.function.Function<UUID, List<UUID>> childrenOf = id ->
+            agentProfileRepository.findByTenantIdAndHierarchyParentId(tenantId, id).stream()
+                .map(AgentProfile::getAgentId).toList();
+        for (AgentProfile own : ownProfiles) {
+            team.add(own.getAgentId());
+            team.addAll(CommissionCalculator.resolveDescendantIds(own.getAgentId(), childrenOf));
+        }
+        return List.copyOf(team);
+    }
+
+    @Override
     @Transactional
     public AgentView suspendAgent(UUID agentId, String suspendedBy) {
         UUID tenantId = TenantContext.get();

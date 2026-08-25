@@ -129,4 +129,38 @@ public final class CommissionCalculator {
         }
         return chain;
     }
+
+    /**
+     * The downward counterpart to {@link #resolveAncestorIds}: every descendant of {@code rootId}
+     * within {@code MAX_HIERARCHY_WALK_DEPTH} levels, order unspecified. Unlike the ancestor walk
+     * (a single chain, since {@code hierarchy_parent_id} gives each agent exactly one parent), a
+     * node can have MANY children, so this is a breadth-first frontier expansion, not a linked
+     * walk. Same cycle-safety reasoning as {@link #resolveAncestorIds}: the self-FK has no DB
+     * constraint against a cycle, so {@code seen} must be checked before a node is ever expanded,
+     * not just before it is added to the result.
+     *
+     * <p>Built for object-level read scoping (an agent's own "book of business" spans themselves
+     * plus their downline), not commission calculation -- {@code AgentController} already reuses
+     * this class's ancestor walk for a non-commission purpose (read authorization), so this is the
+     * same precedent in the other direction.
+     */
+    public static List<UUID> resolveDescendantIds(UUID rootId, java.util.function.Function<UUID, List<UUID>> childrenOf) {
+        List<UUID> descendants = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+        seen.add(rootId);
+        List<UUID> frontier = List.of(rootId);
+        for (int depth = 0; depth < MAX_HIERARCHY_WALK_DEPTH && !frontier.isEmpty(); depth++) {
+            List<UUID> next = new ArrayList<>();
+            for (UUID node : frontier) {
+                for (UUID child : childrenOf.apply(node)) {
+                    if (seen.add(child)) {
+                        descendants.add(child);
+                        next.add(child);
+                    }
+                }
+            }
+            frontier = next;
+        }
+        return descendants;
+    }
 }

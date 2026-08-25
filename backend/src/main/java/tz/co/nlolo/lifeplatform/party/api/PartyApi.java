@@ -24,4 +24,16 @@ public interface PartyApi {
     void submitKycEvidence(UUID partyId, KycStatus status, String evidenceDocumentRef, String verifiedBy);
     void addGroupMember(UUID groupPartyId, UUID memberPartyId);
     Page<GroupMembershipView> listGroupMembers(UUID groupPartyId, Pageable pageable);
+
+    /**
+     * There was no way to list/filter parties at all -- {@code PartyRepository} had exactly one
+     * query method before this ({@code findByTenantIdAndRegistrationNumber}) -- which meant a
+     * party registered PENDING KYC and not yet referenced by any policy/claim/underwriting
+     * case/agent was invisible to staff: nothing could find it to review. {@code kycStatus} and
+     * {@code createdBy} are both nullable filters (null = no filter on that dimension); staff use
+     * this as a KYC review queue (any {@code kycStatus}, any/no {@code createdBy}), agents get a
+     * read-only "parties I registered" view (the controller force-scopes {@code createdBy} to the
+     * caller's own JWT subject for an agents-realm token, never client-supplied).
+     */
+    Page<PartyView> searchParties(KycStatus kycStatus, String createdBy, Pageable pageable);
 }

@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class PolicyApiImplSurrenderChargeTest {
 
     private final PolicyApiImpl policyApi = new PolicyApiImpl(
-        null, null, null, null, null, null, null, null, null, null, new ObjectMapper());
+        null, null, null, null, null, null, null, null, null, null, null, new ObjectMapper());
 
     @Test
     void returnsZeroWhenScheduleIsNull() {

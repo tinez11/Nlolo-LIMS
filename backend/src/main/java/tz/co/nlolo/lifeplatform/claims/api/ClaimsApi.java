@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -27,7 +28,15 @@ public interface ClaimsApi {
 
     ClaimView getClaim(UUID claimId);
 
-    Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Pageable pageable);
+    /**
+     * {@code policyNumbers} is null for "no agent filter" (staff and customer callers); a
+     * non-null (possibly empty) set restricts results to claims filed against one of the given
+     * policy numbers -- an agents-realm caller's own book of business, resolved by the controller
+     * via {@code PolicyApi.policyNumbersForAgentTeam} (claims has no agentOfRecordId of its own,
+     * only the policy it references, so this joins through policy rather than needing a
+     * distribution dependency here).
+     */
+    Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, Pageable pageable);
 
     ClaimAssessmentView submitAssessment(UUID claimId, String findings, BigDecimal recommendedAmount,
                                           String recommendedCurrency, boolean fraudIndicator, String assessedBy);

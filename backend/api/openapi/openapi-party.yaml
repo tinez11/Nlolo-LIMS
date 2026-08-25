@@ -47,6 +47,40 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartyView' }
+  /parties:
+    get:
+      summary: List/search parties (staff KYC review queue; agents see only parties they registered)
+      description: >
+        Staff may filter by kycStatus alone (any/no createdBy). An agents-realm caller is
+        force-scoped to createdBy = its own JWT subject regardless of any client input -- there is
+        no way for an agent to browse another agent's, staff's, or a self-service registration.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: kycStatus
+          in: query
+          schema: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PartyView' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /parties/{partyId}:
     get:
       summary: Get party detail

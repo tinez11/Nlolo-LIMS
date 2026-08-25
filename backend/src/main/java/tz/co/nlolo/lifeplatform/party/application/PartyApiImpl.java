@@ -102,6 +102,22 @@ public class PartyApiImpl implements PartyApi {
     }
 
     @Override
+    public Page<PartyView> searchParties(KycStatus kycStatus, String createdBy, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+        Page<Party> page;
+        if (kycStatus != null && createdBy != null) {
+            page = partyRepository.findByTenantIdAndKycStatusAndCreatedBy(tenantId, kycStatus, createdBy, pageable);
+        } else if (kycStatus != null) {
+            page = partyRepository.findByTenantIdAndKycStatus(tenantId, kycStatus, pageable);
+        } else if (createdBy != null) {
+            page = partyRepository.findByTenantIdAndCreatedBy(tenantId, createdBy, pageable);
+        } else {
+            page = partyRepository.findByTenantId(tenantId, pageable);
+        }
+        return page.map(PartyApiImpl::toView);
+    }
+
+    @Override
     @Transactional
     public void submitKycEvidence(UUID partyId, KycStatus status, String evidenceDocumentRef, String verifiedBy) {
         Party party = findPartyOrThrow(partyId);

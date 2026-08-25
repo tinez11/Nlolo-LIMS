@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentMetadataView;
 import tz.co.nlolo.lifeplatform.document.api.DocumentNotFoundException;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -44,10 +45,12 @@ public class ClaimEvidenceController {
 
     private final ClaimsApi claimsApi;
     private final DocumentApi documentApi;
+    private final PolicyApi policyApi;
 
-    public ClaimEvidenceController(ClaimsApi claimsApi, DocumentApi documentApi) {
+    public ClaimEvidenceController(ClaimsApi claimsApi, DocumentApi documentApi, PolicyApi policyApi) {
         this.claimsApi = claimsApi;
         this.documentApi = documentApi;
+        this.policyApi = policyApi;
     }
 
     /**
@@ -66,6 +69,7 @@ public class ClaimEvidenceController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView claim = claimsApi.getClaim(claimId);
         ClaimController.enforceCustomerOwnClaimOnly(claim, jwt, authentication);
+        ClaimController.enforceAgentOwnClaimOnly(policyApi, claim, jwt, authentication);
 
         String contentType = allowedContentTypeOrThrow(file.getContentType());
 
@@ -104,6 +108,7 @@ public class ClaimEvidenceController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView claim = claimsApi.getClaim(claimId);
         ClaimController.enforceCustomerOwnClaimOnly(claim, jwt, authentication);
+        ClaimController.enforceAgentOwnClaimOnly(policyApi, claim, jwt, authentication);
 
         List<ClaimEvidenceResponseDto> evidence = claimsApi.listEvidence(claimId).stream()
             .map(ClaimEvidenceResponseDto::from).toList();
@@ -124,6 +129,7 @@ public class ClaimEvidenceController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         ClaimView claim = claimsApi.getClaim(claimId);
         ClaimController.enforceCustomerOwnClaimOnly(claim, jwt, authentication);
+        ClaimController.enforceAgentOwnClaimOnly(policyApi, claim, jwt, authentication);
 
         DocumentMetadataView metadata = documentApi.getMetadata(documentRef);
         if (!("claim:" + claimId).equals(metadata.ownerContext())) {

@@ -317,6 +317,52 @@ class CommissionCalculatorTest {
         assertThat(chain).hasSize(2);
     }
 
+    // ---- resolveDescendantIds ----------------------------------------------------------------
+
+    @Test
+    void resolveDescendantIdsCollectsBothLevelsOfABranchingTree() {
+        UUID root = UUID.randomUUID();
+        UUID childA = UUID.randomUUID();
+        UUID childB = UUID.randomUUID();
+        UUID grandchildOfA = UUID.randomUUID();
+        UUID grandchildOfB = UUID.randomUUID();
+        UUID tooDeep = UUID.randomUUID(); // a third level -- must NOT appear in the result
+
+        Map<UUID, List<UUID>> children = Map.of(
+            root, List.of(childA, childB),
+            childA, List.of(grandchildOfA),
+            childB, List.of(grandchildOfB),
+            grandchildOfA, List.of(tooDeep));
+        Function<UUID, List<UUID>> childrenOf = id -> children.getOrDefault(id, List.of());
+
+        List<UUID> descendants = CommissionCalculator.resolveDescendantIds(root, childrenOf);
+
+        assertThat(descendants).containsExactlyInAnyOrder(childA, childB, grandchildOfA, grandchildOfB);
+        assertThat(descendants).doesNotContain(root, tooDeep);
+    }
+
+    @Test
+    void resolveDescendantIdsTerminatesOnACycle() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        Map<UUID, List<UUID>> children = Map.of(a, List.of(b), b, List.of(a)); // A -> B -> A -> ...
+        Function<UUID, List<UUID>> childrenOf = id -> children.getOrDefault(id, List.of());
+
+        List<UUID> descendants = CommissionCalculator.resolveDescendantIds(a, childrenOf);
+
+        // Must terminate (this call returning at all is the primary assertion), and the root
+        // itself must never reappear as its own descendant.
+        assertThat(descendants).containsExactly(b);
+    }
+
+    @Test
+    void resolveDescendantIdsReturnsEmptyForALeafAgent() {
+        UUID leaf = UUID.randomUUID();
+        Function<UUID, List<UUID>> childrenOf = id -> List.of();
+
+        assertThat(CommissionCalculator.resolveDescendantIds(leaf, childrenOf)).isEmpty();
+    }
+
     // ---- helpers ------------------------------------------------------------------------------
 
     private static Accrual findByTier(List<Accrual> accruals, TierType tier) {
