@@ -19,6 +19,7 @@ import type { components as DistributionComponents } from '@/types/api/distribut
 import type { components as FinaccountingComponents } from '@/types/api/finaccounting';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
 import type { components as ProductComponents } from '@/types/api/product';
+import type { components as RegreportingComponents } from '@/types/api/regreporting';
 import type { components as ReinsuranceComponents } from '@/types/api/reinsurance';
 import type { components as UnderwritingComponents } from '@/types/api/underwriting';
 
@@ -190,6 +191,19 @@ export type SuspendPolicyRequest = PolicyComponents['schemas']['SuspendPolicyReq
 export type PartyView = PartyComponents['schemas']['PartyView'];
 export type KycStatus = NonNullable<PartyView['kycStatus']>;
 export type KycEvidenceUploadResponse = PartyComponents['schemas']['KycEvidenceUploadResponse'];
+
+/**
+ * `POST /regulatory-returns` (generate) + `GET` (list/get) -- fully built and
+ * staff-reachable (FINANCE_OFFICER/ADMIN) since M10, but with zero staff UI
+ * until this staff-portal CRUD audit found the gap. `returnType` is
+ * deliberately not a closed enum -- the return catalog is DATA (seeded
+ * `return_definition` rows), not code, so there is no dropdown to back it
+ * with; staff type the code they know is seeded (`QUARTERLY_PRUDENTIAL`
+ * today).
+ */
+export type RegulatoryReturnView = RegreportingComponents['schemas']['RegulatoryReturnView'];
+export type ReturnLineView = RegreportingComponents['schemas']['ReturnLineView'];
+export type GenerateReturnRequest = RegreportingComponents['schemas']['GenerateReturnRequest'];
 
 export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   'TERM_LIFE',

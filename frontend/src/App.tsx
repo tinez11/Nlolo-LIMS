@@ -18,6 +18,8 @@ import { ProductsPage } from '@/features/products/ProductsPage';
 import { ChartOfAccountsPage } from '@/features/finaccounting/ChartOfAccountsPage';
 import { GlPostingDetailPage } from '@/features/finaccounting/GlPostingDetailPage';
 import { GlPostingsPage } from '@/features/finaccounting/GlPostingsPage';
+import { RegulatoryReturnDetailPage } from '@/features/regreporting/RegulatoryReturnDetailPage';
+import { RegulatoryReturnsPage } from '@/features/regreporting/RegulatoryReturnsPage';
 import { CreateTreatyPage } from '@/features/reinsurance/CreateTreatyPage';
 import { TreatiesPage } from '@/features/reinsurance/TreatiesPage';
 import { TreatyDetailPage } from '@/features/reinsurance/TreatyDetailPage';
@@ -64,6 +66,8 @@ export function App() {
           <Route path="gl-postings" element={<GlPostingsPage />} />
           <Route path="gl-postings/:journalEntryId" element={<GlPostingDetailPage />} />
           <Route path="chart-of-accounts" element={<ChartOfAccountsPage />} />
+          <Route path="regulatory-returns" element={<RegulatoryReturnsPage />} />
+          <Route path="regulatory-returns/:returnId" element={<RegulatoryReturnDetailPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

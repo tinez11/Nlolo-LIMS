@@ -146,6 +146,14 @@ export const STATUS_MAPS = {
     RECONCILIATION_OVERDUE: 'danger',
   },
 
+  // regreporting/domain/RegulatoryReturn.java -- a plain String field, always
+  // "READY" today (generation is synchronous); GENERATING is the DB CHECK's
+  // only other value, unreachable under the current synchronous design.
+  regulatoryReturn: {
+    GENERATING: 'pending',
+    READY: 'success',
+  },
+
   // openapi-common.yaml ProcessStatus.status
   process: {
     IN_PROGRESS: 'pending',
