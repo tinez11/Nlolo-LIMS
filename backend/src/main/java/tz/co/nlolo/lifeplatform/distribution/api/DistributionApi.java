@@ -25,6 +25,16 @@ public interface DistributionApi {
     AgentView onboardAgent(OnboardAgentRequest request, String onboardedBy);
     AgentView getAgent(UUID agentId);
 
+    /** ACTIVE -> SUSPENDED. {@code AgentProfile.setLicenseStatus} has existed since M7 with no
+     * caller anywhere on the platform -- this is the first one. @throws InvalidAgentStateException
+     * if the agent is not currently ACTIVE. */
+    AgentView suspendAgent(UUID agentId, String suspendedBy);
+
+    /** SUSPENDED -> ACTIVE. @throws InvalidAgentStateException if the agent is not currently
+     * SUSPENDED -- in particular, an EXPIRED agent is not reactivated through this method, since
+     * expiry is calendar-driven, not a staff decision to undo. */
+    AgentView reactivateAgent(UUID agentId, String reactivatedBy);
+
     CommissionPlanView createCommissionPlan(UUID productId, List<CommissionRuleInput> rules, String createdBy);
     CommissionPlanView getApplicablePlan(UUID agentId, UUID productId);
 

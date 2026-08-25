@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Pause, Play } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -10,7 +10,12 @@ import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectAgent, useDistributionStore } from '@/store/distributionStore';
+import {
+  selectAgent,
+  selectReactivatingAgent,
+  selectSuspendingAgent,
+  useDistributionStore,
+} from '@/store/distributionStore';
 import { useProductStore } from '@/store/productStore';
 import { CommissionPlanPanel } from './CommissionPlanPanel';
 import { CommissionStatementsPanel } from './CommissionStatementsPanel';
@@ -79,6 +84,12 @@ export function AgentDetailPage() {
           <Panel title="Commission statements">
             <CommissionStatementsPanel agentId={agentId} canManage={canManage} />
           </Panel>
+
+          {canManage && agent && (
+            <Panel title="Lifecycle">
+              <LifecycleActions agentId={agentId} status={agent.licenseStatus} />
+            </Panel>
+          )}
         </div>
 
         <div className="space-y-5">
@@ -136,6 +147,73 @@ function BackLink() {
         Onboard another agent
       </Link>
     </Button>
+  );
+}
+
+/**
+ * `POST /agents/{n}/suspend`/`reactivate` -- `AgentProfile.setLicenseStatus`
+ * has existed since M7 with no caller anywhere on the platform until this
+ * staff-portal CRUD audit found the gap. Only one action is ever shown,
+ * mirroring the backend's own guards: ACTIVE -> Suspend, SUSPENDED ->
+ * Reactivate. An EXPIRED agent shows neither -- reactivating past an expiry
+ * is not something this endpoint does (expiry is calendar-driven, not a
+ * staff decision to undo).
+ */
+function LifecycleActions({
+  agentId,
+  status,
+}: {
+  agentId: string;
+  status: string | undefined;
+}) {
+  if (status === 'ACTIVE') {
+    return <SuspendAction agentId={agentId} />;
+  }
+  if (status === 'SUSPENDED') {
+    return <ReactivateAction agentId={agentId} />;
+  }
+  return (
+    <p className="px-4 pb-4 text-xs text-muted-foreground">
+      No lifecycle action available for {status ?? 'this status'}.
+    </p>
+  );
+}
+
+function SuspendAction({ agentId }: { agentId: string }) {
+  const suspendAgent = useDistributionStore((s) => s.suspendAgent);
+  const suspending = useDistributionStore(selectSuspendingAgent(agentId));
+
+  return (
+    <div className="space-y-2 px-4 pb-4">
+      {suspending.status === 'error' && suspending.error && (
+        <p role="alert" className="text-[11px] text-status-danger-fg">
+          {suspending.error.detail ?? suspending.error.title}
+        </p>
+      )}
+      <Button size="sm" disabled={suspending.status === 'loading'} onClick={() => void suspendAgent(agentId)}>
+        <Pause />
+        {suspending.status === 'loading' ? 'Suspending…' : 'Suspend'}
+      </Button>
+    </div>
+  );
+}
+
+function ReactivateAction({ agentId }: { agentId: string }) {
+  const reactivateAgent = useDistributionStore((s) => s.reactivateAgent);
+  const reactivating = useDistributionStore(selectReactivatingAgent(agentId));
+
+  return (
+    <div className="space-y-2 px-4 pb-4">
+      {reactivating.status === 'error' && reactivating.error && (
+        <p role="alert" className="text-[11px] text-status-danger-fg">
+          {reactivating.error.detail ?? reactivating.error.title}
+        </p>
+      )}
+      <Button size="sm" disabled={reactivating.status === 'loading'} onClick={() => void reactivateAgent(agentId)}>
+        <Play />
+        {reactivating.status === 'loading' ? 'Reactivating…' : 'Reactivate'}
+      </Button>
+    </div>
   );
 }
 

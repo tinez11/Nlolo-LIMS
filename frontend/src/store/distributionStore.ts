@@ -6,7 +6,9 @@ import {
   listAccruals,
   listCommissionStatements,
   onboardAgent,
+  reactivateAgent,
   requestPayout,
+  suspendAgent,
 } from '@/api/distribution';
 import type {
   AgentView,
@@ -44,10 +46,18 @@ interface DistributionState {
   statements: Keyed<CommissionStatementView[]>;
   accruals: Keyed<CommissionAccrualView[]>;
   requestingPayout: Keyed<true>;
+  // Each keyed by agentId, separately from `agents` and from each other --
+  // same shape as policyStore's suspending/resuming/reinstating.
+  suspendingAgent: Keyed<AgentView>;
+  reactivatingAgent: Keyed<AgentView>;
 
   onboardAgent: (request: OnboardAgentRequest, attempt: MutationAttempt) => Promise<void>;
   resetOnboardAgent: () => void;
   loadAgent: (agentId: string) => Promise<void>;
+  suspendAgent: (agentId: string) => Promise<void>;
+  resetSuspendAgent: (agentId: string) => void;
+  reactivateAgent: (agentId: string) => Promise<void>;
+  resetReactivateAgent: (agentId: string) => void;
   loadApplicablePlan: (agentId: string, productId: string) => Promise<void>;
   createCommissionPlan: (
     agentId: string,
@@ -73,6 +83,8 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
   statements: {},
   accruals: {},
   requestingPayout: {},
+  suspendingAgent: {},
+  reactivatingAgent: {},
 
   onboardAgent: (request, attempt) =>
     track(
@@ -91,6 +103,44 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
       (next) => set((s) => ({ agents: { ...s.agents, [agentId]: next } })),
       () => getAgent(agentId),
     ),
+
+  suspendAgent: (agentId) =>
+    track(
+      `distribution.suspendAgent.${agentId}`,
+      getState().suspendingAgent[agentId] ?? idle<AgentView>(),
+      (next) => set((s) => ({ suspendingAgent: { ...s.suspendingAgent, [agentId]: next } })),
+      async () => {
+        const updated = await suspendAgent(agentId);
+        set((s) => ({ agents: { ...s.agents, [agentId]: success(updated) } }));
+        return updated;
+      },
+    ),
+
+  resetSuspendAgent: (agentId) =>
+    set((s) => {
+      if (!(agentId in s.suspendingAgent)) return s;
+      const { [agentId]: _discard, ...rest } = s.suspendingAgent;
+      return { suspendingAgent: rest };
+    }),
+
+  reactivateAgent: (agentId) =>
+    track(
+      `distribution.reactivateAgent.${agentId}`,
+      getState().reactivatingAgent[agentId] ?? idle<AgentView>(),
+      (next) => set((s) => ({ reactivatingAgent: { ...s.reactivatingAgent, [agentId]: next } })),
+      async () => {
+        const updated = await reactivateAgent(agentId);
+        set((s) => ({ agents: { ...s.agents, [agentId]: success(updated) } }));
+        return updated;
+      },
+    ),
+
+  resetReactivateAgent: (agentId) =>
+    set((s) => {
+      if (!(agentId in s.reactivatingAgent)) return s;
+      const { [agentId]: _discard, ...rest } = s.reactivatingAgent;
+      return { reactivatingAgent: rest };
+    }),
 
   loadApplicablePlan: (agentId, productId) =>
     track(
@@ -180,3 +230,7 @@ export const selectAccruals = (agentId: string, statementId: string) => (s: Dist
   s.accruals[statementKey(agentId, statementId)] ?? idle<CommissionAccrualView[]>();
 export const selectRequestingPayout = (agentId: string, statementId: string) => (s: DistributionState) =>
   s.requestingPayout[statementKey(agentId, statementId)] ?? idle<true>();
+export const selectSuspendingAgent = (agentId: string) => (s: DistributionState) =>
+  s.suspendingAgent[agentId] ?? idle<AgentView>();
+export const selectReactivatingAgent = (agentId: string) => (s: DistributionState) =>
+  s.reactivatingAgent[agentId] ?? idle<AgentView>();

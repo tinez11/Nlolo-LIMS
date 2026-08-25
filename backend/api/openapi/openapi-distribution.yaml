@@ -73,6 +73,43 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /agents/{agentId}/suspend:
+    post:
+      summary: Suspend an ACTIVE agent's license
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Agent suspended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /agents/{agentId}/reactivate:
+    post:
+      summary: Reactivate a SUSPENDED agent's license back to ACTIVE
+      description: >
+        Only from SUSPENDED -- an EXPIRED agent is not reactivated through this
+        endpoint, since expiry is calendar-driven, not a staff decision to undo.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Agent reactivated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /agents/{agentId}/commission-plan:
     get:
       summary: Get the agent's applicable commission plan for a product

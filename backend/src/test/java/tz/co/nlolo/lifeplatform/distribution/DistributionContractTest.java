@@ -786,4 +786,62 @@ class DistributionContractTest {
 
         wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/disburse")));
     }
+
+    // --- suspend/reactivate: AgentProfile.setLicenseStatus has existed since M7 with no caller
+    // anywhere on the platform -- these are the falsifiable proof that the real gap is closed. ---
+
+    @Test
+    void suspendAgentMatchesOpenApiContractAndTransitionsToSuspended() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "SUSPEND-OK", null);
+
+        mockMvc.perform(post("/agents/{agentId}/suspend", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.licenseStatus").value("SUSPENDED"));
+    }
+
+    @Test
+    void suspendAgentRejectsAnAlreadySuspendedAgentWith409() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "SUSPEND-409", null);
+        mockMvc.perform(post("/agents/{agentId}/suspend", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/agents/{agentId}/suspend", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("DISTRIBUTION_INVALID_STATE"));
+    }
+
+    @Test
+    void suspendAgentRejectsStaffWithoutTheFinanceRoleWith403() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "SUSPEND-403", null);
+
+        mockMvc.perform(post("/agents/{agentId}/suspend", agent.agentId()).with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void reactivateAgentMatchesOpenApiContractAndTransitionsBackToActive() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "REACTIVATE-OK", null);
+        mockMvc.perform(post("/agents/{agentId}/suspend", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/agents/{agentId}/reactivate", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.licenseStatus").value("ACTIVE"));
+    }
+
+    @Test
+    void reactivateAgentRejectsAnAlreadyActiveAgentWith409() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent agent = onboardAgent(tenantId, "REACTIVATE-409", null);
+
+        mockMvc.perform(post("/agents/{agentId}/reactivate", agent.agentId()).with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("DISTRIBUTION_INVALID_STATE"));
+    }
 }

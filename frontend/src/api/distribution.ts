@@ -34,6 +34,22 @@ export function getAgent(agentId: string): Promise<AgentView> {
 }
 
 /**
+ * `POST /agents/{n}/suspend` -- staff FINANCE_OFFICER/ADMIN only.
+ * `AgentProfile.setLicenseStatus` existed with no caller anywhere on the
+ * platform until this endpoint. 409s unless the agent is currently ACTIVE.
+ */
+export function suspendAgent(agentId: string): Promise<AgentView> {
+  return post<AgentView>(`/agents/${encodeURIComponent(agentId)}/suspend`);
+}
+
+/** `POST /agents/{n}/reactivate` -- staff FINANCE_OFFICER/ADMIN only. 409s
+ *  unless the agent is currently SUSPENDED (an EXPIRED agent is not
+ *  reactivated through this endpoint -- expiry is calendar-driven). */
+export function reactivateAgent(agentId: string): Promise<AgentView> {
+  return post<AgentView>(`/agents/${encodeURIComponent(agentId)}/reactivate`);
+}
+
+/**
  * Resolves the agent's own assigned plan if it has one, otherwise the
  * product's ACTIVE plan. A genuine 404 means neither applies yet -- not an
  * error state, the caller's cue to offer creating one.

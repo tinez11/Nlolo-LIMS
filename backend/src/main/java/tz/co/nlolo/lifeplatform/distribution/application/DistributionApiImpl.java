@@ -12,6 +12,8 @@ import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementNotFoundExce
 import tz.co.nlolo.lifeplatform.distribution.api.CommissionStatementView;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionValidationException;
+import tz.co.nlolo.lifeplatform.distribution.api.InvalidAgentStateException;
+import tz.co.nlolo.lifeplatform.distribution.api.LicenseStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.PlanStatus;
 import tz.co.nlolo.lifeplatform.distribution.api.TierType;
 import tz.co.nlolo.lifeplatform.distribution.domain.AgentProfile;
@@ -35,6 +37,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -192,6 +195,42 @@ public class DistributionApiImpl implements DistributionApi {
     @Override
     public AgentView getAgent(UUID agentId) {
         return toAgentView(findAgentOrThrow(agentId, TenantContext.get()));
+    }
+
+    @Override
+    @Transactional
+    public AgentView suspendAgent(UUID agentId, String suspendedBy) {
+        UUID tenantId = TenantContext.get();
+        AgentProfile agent = findAgentOrThrow(agentId, tenantId);
+        if (agent.getLicenseStatus() != LicenseStatus.ACTIVE) {
+            throw new InvalidAgentStateException("Agent " + agentId
+                + " must be ACTIVE to be SUSPENDED (current: " + agent.getLicenseStatus() + ")");
+        }
+        agent.setLicenseStatus(LicenseStatus.SUSPENDED);
+        agent.setUpdatedAt(Instant.now());
+        agent.setUpdatedBy(suspendedBy);
+        agentProfileRepository.save(agent);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.AgentSuspended", tenantId,
+            Map.of("agentId", agentId)));
+        return toAgentView(agent);
+    }
+
+    @Override
+    @Transactional
+    public AgentView reactivateAgent(UUID agentId, String reactivatedBy) {
+        UUID tenantId = TenantContext.get();
+        AgentProfile agent = findAgentOrThrow(agentId, tenantId);
+        if (agent.getLicenseStatus() != LicenseStatus.SUSPENDED) {
+            throw new InvalidAgentStateException("Agent " + agentId
+                + " must be SUSPENDED to be reactivated (current: " + agent.getLicenseStatus() + ")");
+        }
+        agent.setLicenseStatus(LicenseStatus.ACTIVE);
+        agent.setUpdatedAt(Instant.now());
+        agent.setUpdatedBy(reactivatedBy);
+        agentProfileRepository.save(agent);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("distribution.AgentReactivated", tenantId,
+            Map.of("agentId", agentId)));
+        return toAgentView(agent);
     }
 
     @Override

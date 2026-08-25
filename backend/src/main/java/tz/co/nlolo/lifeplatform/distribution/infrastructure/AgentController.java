@@ -111,6 +111,25 @@ public class AgentController {
         return ResponseEntity.ok(AgentResponseDto.from(view));
     }
 
+    /**
+     * A real controller mapping for a domain setter (`AgentProfile.setLicenseStatus`) that has
+     * existed since M7 with no caller anywhere on the platform -- staff had no way, even via
+     * curl, to suspend an agent. Gated the same as onboarding (FINANCE_OFFICER/ADMIN); a bad
+     * transition 409s via InvalidAgentStateException, already mapped by DistributionExceptionHandler.
+     */
+    @PostMapping("/agents/{agentId}/suspend")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<AgentResponseDto> suspendAgent(@PathVariable UUID agentId, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(AgentResponseDto.from(distributionApi.suspendAgent(agentId, jwt.getSubject())));
+    }
+
+    /** Same real-gap fix as {@link #suspendAgent} -- SUSPENDED -> ACTIVE only. */
+    @PostMapping("/agents/{agentId}/reactivate")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<AgentResponseDto> reactivateAgent(@PathVariable UUID agentId, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(AgentResponseDto.from(distributionApi.reactivateAgent(agentId, jwt.getSubject())));
+    }
+
     @GetMapping("/agents/{agentId}/commission-plan")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<CommissionPlanResponseDto> getApplicablePlan(@PathVariable UUID agentId,
