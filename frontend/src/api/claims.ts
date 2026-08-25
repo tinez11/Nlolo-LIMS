@@ -2,6 +2,7 @@ import { post, get } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   ClaimAssessmentView,
+  ClaimEvidenceView,
   ClaimStatus,
   ClaimView,
   Page,
@@ -107,4 +108,40 @@ export function decideSettlement(
  *  REJECTED or SETTLED; any other status 409s. */
 export function reopenClaim(claimId: string, request: ReopenClaimRequest): Promise<ClaimView> {
   return post<ClaimView>(`/claims/${encodeURIComponent(claimId)}/reopen`, request);
+}
+
+/**
+ * `POST /claims/{claimId}/evidence` -- customer/agent/staff, object-level
+ * ownership enforced server-side. 409s once the claim is SETTLED (reopen it
+ * first). `description` is genuinely optional on the wire (`type: [string,
+ * "null"]`) -- omitted here rather than sent as `null` when blank, since
+ * FormData has no `null`, only "absent" or a string.
+ */
+export function attachClaimEvidence(
+  claimId: string,
+  file: File,
+  description?: string,
+): Promise<ClaimEvidenceView> {
+  const form = new FormData();
+  form.append('file', file);
+  if (description) form.append('description', description);
+  return post<ClaimEvidenceView>(`/claims/${encodeURIComponent(claimId)}/evidence`, form);
+}
+
+/** `GET /claims/{claimId}/evidence` -- a bare unpaged array. */
+export function listClaimEvidence(claimId: string): Promise<ClaimEvidenceView[]> {
+  return get<ClaimEvidenceView[]>(`/claims/${encodeURIComponent(claimId)}/evidence`);
+}
+
+/**
+ * `GET /claims/{claimId}/evidence/{documentRef}` -- returns the raw file with
+ * its real Content-Type (one of image/jpeg, image/png, application/pdf,
+ * application/octet-stream -- the closed upload allowlist). A mismatched
+ * claimId/documentRef pairing 404s identically to a nonexistent ref, so
+ * "not yours" and "does not exist" stay indistinguishable to the caller.
+ */
+export function downloadClaimEvidence(claimId: string, documentRef: string): Promise<Blob> {
+  return get<Blob>(`/claims/${encodeURIComponent(claimId)}/evidence/${encodeURIComponent(documentRef)}`, {
+    responseType: 'blob',
+  });
 }

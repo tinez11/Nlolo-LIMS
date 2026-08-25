@@ -10,6 +10,7 @@ import type {
   PaymentRequest,
   PolicyStatus,
   PolicyView,
+  SuspendPolicyRequest,
   WaiverRequest,
 } from './types';
 
@@ -147,4 +148,26 @@ export function replaceBeneficiaries(
  */
 export function issuePolicy(request: ManualIssueRequest): Promise<PolicyView> {
   return post<PolicyView>('/policies/manual-issue', request);
+}
+
+/**
+ * `POST /policies/{n}/suspend` -- staff only. Rejected with a real 409 for an
+ * ineligible product category (POLICY_SUSPENSION_ELIGIBLE_CATEGORIES seeds only
+ * GROUP_LIFE) or a policy that isn't currently ACTIVE.
+ */
+export function suspendPolicy(policyNumber: string, request: SuspendPolicyRequest): Promise<PolicyView> {
+  return post<PolicyView>(`/policies/${encodeURIComponent(policyNumber)}/suspend`, request);
+}
+
+/** `POST /policies/{n}/resume` -- staff only. 409s unless the policy is SUSPENDED. */
+export function resumePolicy(policyNumber: string): Promise<PolicyView> {
+  return post<PolicyView>(`/policies/${encodeURIComponent(policyNumber)}/resume`);
+}
+
+/**
+ * `POST /policies/{n}/reinstate` -- staff only. 409s unless the policy is LAPSED,
+ * and again if it lapsed longer ago than refdata's TZ_REINSTATEMENT_WINDOW_MONTHS.
+ */
+export function reinstatePolicy(policyNumber: string): Promise<PolicyView> {
+  return post<PolicyView>(`/policies/${encodeURIComponent(policyNumber)}/reinstate`);
 }

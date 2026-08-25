@@ -1,4 +1,4 @@
-import axios, { type AxiosRequestConfig } from 'axios';
+import axios, { AxiosError, type AxiosRequestConfig } from 'axios';
 import { toApiError, type ApiError } from './apiError';
 import { IDEMPOTENCY_HEADER, requiresIdempotencyKey } from './idempotency';
 
@@ -60,13 +60,42 @@ http.interceptors.request.use((config) => {
 
 http.interceptors.response.use(
   (response) => response,
-  (cause: unknown) => {
+  async (cause: unknown) => {
+    await inflateBlobErrorBody(cause);
     const error = toApiError(cause);
     if (error.kind === 'unauthenticated') onUnauthenticated?.();
     // Every caller downstream sees an ApiError, never an AxiosError.
     return Promise.reject(error);
   },
 );
+
+/**
+ * A request made with `responseType: 'blob'` (evidence/document downloads) gets
+ * its ERROR body blob-ified too, not just its success body -- axios applies
+ * `responseType` uniformly regardless of status code. Without this, a failed
+ * download's real `application/problem+json` body (title/detail/errorCode/
+ * traceId) arrives as an opaque `Blob` that `toApiError`'s `isProblemDetails`
+ * check happens to accept (a `Blob` is `typeof 'object'`, not an array) but can
+ * never read a single field off of, silently degrading every such error to a
+ * generic "Request failed (404)" with no detail. Decodes it back to JSON in
+ * place before `toApiError` ever sees it, but only for a body that actually
+ * looks like one (Content-Type contains "json") -- an image/pdf/octet-stream
+ * failure body (there isn't one; those only ever have a JSON error body, but
+ * this guards the shape rather than assuming it) is left alone.
+ */
+export async function inflateBlobErrorBody(cause: unknown): Promise<void> {
+  if (!(cause instanceof AxiosError) || !cause.response) return;
+  const { data, headers } = cause.response;
+  if (!(data instanceof Blob)) return;
+  const contentType = typeof headers?.['content-type'] === 'string' ? headers['content-type'] : data.type;
+  if (!contentType.includes('json')) return;
+  try {
+    cause.response.data = JSON.parse(await data.text());
+  } catch {
+    // Not actually JSON despite the header -- leave the Blob as-is; toApiError's
+    // shape-check will fall back to the generic "Request failed" message.
+  }
+}
 
 /** GET helper that returns the body and throws ApiError. */
 export async function get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {

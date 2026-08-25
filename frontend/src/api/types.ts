@@ -42,6 +42,17 @@ export type ClaimAssessmentView = ClaimsComponents['schemas']['ClaimAssessmentVi
 export type SubmitClaimAssessmentRequest = ClaimsComponents['schemas']['SubmitClaimAssessmentRequest'];
 
 /**
+ * `POST /claims/{claimId}/evidence` and `GET .../evidence` -- built since M6/M11
+ * but with zero staff UI until this staff-portal CRUD audit found the gap. The
+ * download endpoint (`GET .../evidence/{documentRef}`) returns raw bytes with a
+ * real Content-Type from a closed 4-value set (image/jpeg, image/png,
+ * application/pdf, application/octet-stream) -- there is no metadata field for
+ * it on ClaimEvidenceView itself, so the frontend reads it off the actual
+ * download response rather than a separate lookup.
+ */
+export type ClaimEvidenceView = ClaimsComponents['schemas']['ClaimEvidenceView'];
+
+/**
  * `POST /claims/{claimId}/settlement-decision` and `.../reopen` both declare
  * their request bodies INLINE in the spec (no named schema), so codegen never
  * produced a type for either -- hand-written here, transcribed from the actual
@@ -159,6 +170,13 @@ export type IfrsMeasurementModel = NonNullable<ProductVersionSpec['ifrsMeasureme
 export const IFRS_MEASUREMENT_MODELS: readonly IfrsMeasurementModel[] = ['GMM', 'PAA'];
 
 export type ManualIssueRequest = PolicyComponents['schemas']['ManualIssueRequest'];
+
+/**
+ * `POST /policies/{n}/suspend` (staff only) -- suspend/resume/reinstate had real,
+ * tested domain logic since M3 but no HTTP endpoint at all until this staff-portal
+ * CRUD audit found the gap. `resume`/`reinstate` take no request body.
+ */
+export type SuspendPolicyRequest = PolicyComponents['schemas']['SuspendPolicyRequest'];
 
 export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   'TERM_LIFE',

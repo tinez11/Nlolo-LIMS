@@ -17,6 +17,7 @@ import { ClaimAssessmentPanel } from './ClaimAssessmentPanel';
 import { ClaimDetailsFields } from './ClaimDetailsFields';
 import { ClaimReopenPanel } from './ClaimReopenPanel';
 import { ClaimSettlementPanel } from './ClaimSettlementPanel';
+import { EvidencePanel } from './EvidencePanel';
 
 /**
  * The "acts" half of drawer-previews-page-acts.
@@ -97,6 +98,10 @@ export function ClaimDetailPage() {
                 <Field label="Date of event" value={formatDate(claim.dateOfEvent)} />
                 <ClaimDetailsFields details={claim.details} />
               </dl>
+            </Panel>
+
+            <Panel title="Evidence" subtitle="Photos, certificates, and reports attached to this claim">
+              <EvidencePanel claimId={claimId} canAttach={claim.status !== 'SETTLED'} />
             </Panel>
 
             {canAssess && (

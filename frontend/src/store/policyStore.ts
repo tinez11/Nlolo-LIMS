@@ -5,9 +5,12 @@ import {
   issuePolicy,
   listInvoices,
   listLoans,
+  reinstatePolicy,
   replaceBeneficiaries,
   requestPaymentForInvoice,
+  resumePolicy,
   searchPolicies,
+  suspendPolicy,
   waiveInvoice,
   type PolicySearchParams,
 } from '@/api/policies';
@@ -20,10 +23,11 @@ import type {
   Page,
   PaymentRequest,
   PolicyView,
+  SuspendPolicyRequest,
   WaiverRequest,
 } from '@/api/types';
 import type { MutationAttempt } from '@/lib/idempotency';
-import { idle, track, type Resource } from './createResourceSlice';
+import { idle, success, track, type Resource } from './createResourceSlice';
 
 /**
  * The `policy` domain store.
@@ -53,6 +57,12 @@ interface PolicyState {
   // action on one must not corrupt another's state.
   waivingInvoice: Keyed<true>;
   requestingPayment: Keyed<true>;
+  // Each keyed by policyNumber, separately from `detail` and from each other --
+  // same shape as claims' submittingAssessment/decidingSettlement/reopening: three
+  // distinct lifecycle actions on the same entity, each its own tracked mutation.
+  suspending: Keyed<PolicyView>;
+  resuming: Keyed<PolicyView>;
+  reinstating: Keyed<PolicyView>;
 
   loadList: (params: PolicySearchParams) => Promise<void>;
   loadDetail: (policyNumber: string) => Promise<void>;
@@ -75,6 +85,12 @@ interface PolicyState {
     attempt: MutationAttempt,
   ) => Promise<void>;
   resetRequestPaymentForInvoice: (invoiceId: string) => void;
+  suspendPolicy: (policyNumber: string, request: SuspendPolicyRequest) => Promise<void>;
+  resetSuspendPolicy: (policyNumber: string) => void;
+  resumePolicy: (policyNumber: string) => Promise<void>;
+  resetResumePolicy: (policyNumber: string) => void;
+  reinstatePolicy: (policyNumber: string) => Promise<void>;
+  resetReinstatePolicy: (policyNumber: string) => void;
 }
 
 export const usePolicyStore = create<PolicyState>((set, getState) => ({
@@ -87,6 +103,9 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   issuing: idle(),
   waivingInvoice: {},
   requestingPayment: {},
+  suspending: {},
+  resuming: {},
+  reinstating: {},
 
   // Every `track` call below is keyed so a slower, superseded request can never
   // overwrite a faster, newer one -- e.g. clicking through status filter chips
@@ -221,6 +240,66 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       const { [invoiceId]: _discard, ...rest } = s.requestingPayment;
       return { requestingPayment: rest };
     }),
+
+  // Each of the three below returns the updated PolicyView directly, but `detail`
+  // is refreshed from it too -- so a caller reading `detail` (the coverage panel,
+  // the status badge in the header) sees the new status without a manual reload.
+  suspendPolicy: (policyNumber, request) =>
+    track(
+      `policy.suspend.${policyNumber}`,
+      getState().suspending[policyNumber] ?? idle<PolicyView>(),
+      (next) => set((s) => ({ suspending: { ...s.suspending, [policyNumber]: next } })),
+      async () => {
+        const updated = await suspendPolicy(policyNumber, request);
+        set((s) => ({ detail: { ...s.detail, [policyNumber]: success(updated) } }));
+        return updated;
+      },
+    ),
+
+  resetSuspendPolicy: (policyNumber) =>
+    set((s) => {
+      if (!(policyNumber in s.suspending)) return s;
+      const { [policyNumber]: _discard, ...rest } = s.suspending;
+      return { suspending: rest };
+    }),
+
+  resumePolicy: (policyNumber) =>
+    track(
+      `policy.resume.${policyNumber}`,
+      getState().resuming[policyNumber] ?? idle<PolicyView>(),
+      (next) => set((s) => ({ resuming: { ...s.resuming, [policyNumber]: next } })),
+      async () => {
+        const updated = await resumePolicy(policyNumber);
+        set((s) => ({ detail: { ...s.detail, [policyNumber]: success(updated) } }));
+        return updated;
+      },
+    ),
+
+  resetResumePolicy: (policyNumber) =>
+    set((s) => {
+      if (!(policyNumber in s.resuming)) return s;
+      const { [policyNumber]: _discard, ...rest } = s.resuming;
+      return { resuming: rest };
+    }),
+
+  reinstatePolicy: (policyNumber) =>
+    track(
+      `policy.reinstate.${policyNumber}`,
+      getState().reinstating[policyNumber] ?? idle<PolicyView>(),
+      (next) => set((s) => ({ reinstating: { ...s.reinstating, [policyNumber]: next } })),
+      async () => {
+        const updated = await reinstatePolicy(policyNumber);
+        set((s) => ({ detail: { ...s.detail, [policyNumber]: success(updated) } }));
+        return updated;
+      },
+    ),
+
+  resetReinstatePolicy: (policyNumber) =>
+    set((s) => {
+      if (!(policyNumber in s.reinstating)) return s;
+      const { [policyNumber]: _discard, ...rest } = s.reinstating;
+      return { reinstating: rest };
+    }),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
@@ -234,6 +313,12 @@ export const selectLoans = (policyNumber: string) => (s: PolicyState) =>
   s.loans[policyNumber] ?? idle<LoanView[]>();
 export const selectSavingBeneficiaries = (policyNumber: string) => (s: PolicyState) =>
   s.savingBeneficiaries[policyNumber] ?? idle<true>();
+export const selectSuspending = (policyNumber: string) => (s: PolicyState) =>
+  s.suspending[policyNumber] ?? idle<PolicyView>();
+export const selectResuming = (policyNumber: string) => (s: PolicyState) =>
+  s.resuming[policyNumber] ?? idle<PolicyView>();
+export const selectReinstating = (policyNumber: string) => (s: PolicyState) =>
+  s.reinstating[policyNumber] ?? idle<PolicyView>();
 export const selectWaivingInvoice = (invoiceId: string) => (s: PolicyState) =>
   s.waivingInvoice[invoiceId] ?? idle<true>();
 export const selectRequestingPayment = (invoiceId: string) => (s: PolicyState) =>

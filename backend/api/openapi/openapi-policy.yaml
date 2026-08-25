@@ -148,6 +148,75 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/suspend:
+    post:
+      summary: Suspend an ACTIVE policy
+      description: >
+        Only the product categories listed in refdata's
+        POLICY_SUSPENSION_ELIGIBLE_CATEGORIES may be suspended; any other
+        category, or a policy not currently ACTIVE, 409s.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuspendPolicyRequest' }
+      responses:
+        '200':
+          description: Policy suspended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/resume:
+    post:
+      summary: Resume a SUSPENDED policy back to ACTIVE
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: Policy resumed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/reinstate:
+    post:
+      summary: Reinstate a LAPSED policy
+      description: >
+        Only within refdata's TZ_REINSTATEMENT_WINDOW_MONTHS of the lapse date;
+        a policy lapsed longer ago than that, or not currently LAPSED, 409s.
+        Reinstated status stays REINSTATED going forward (not written back to
+        ACTIVE), distinguishing it for audit/actuarial purposes -- coverage is
+        equivalent either way.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: Policy reinstated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /policies/{policyNumber}/surrender-value:
     get:
       summary: Quote current surrender value (does not commit to surrender)
@@ -329,6 +398,11 @@ components:
         changes:
           type: object
           description: Endorsement-type-specific change payload.
+    SuspendPolicyRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string }
     PolicyView:
       type: object
       properties:

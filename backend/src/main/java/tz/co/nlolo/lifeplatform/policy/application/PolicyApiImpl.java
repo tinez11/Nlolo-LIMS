@@ -408,6 +408,13 @@ public class PolicyApiImpl implements PolicyApi {
     public void reinstatePolicy(String policyNumber, String reinstatedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // Real bug, found by PolicyContractTest's own negative control: getLapsedAt() is null on
+        // any non-LAPSED policy, so the window check below must never run before this guard --
+        // it used to, and reinstating a never-lapsed (e.g. ACTIVE) policy NPE'd into a bare 500
+        // instead of the 409 INVALID_POLICY_STATE Policy.reinstate()'s own guard would have given.
+        if (!"LAPSED".equals(policy.getStatus())) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be LAPSED to be REINSTATED (current: " + policy.getStatus() + ")");
+        }
         int windowMonths = Integer.parseInt(referenceDataApi.getValue("TZ_REINSTATEMENT_WINDOW_MONTHS", "TZ"));
         long monthsSinceLapse = Period.between(policy.getLapsedAt().atZone(ZoneOffset.UTC).toLocalDate(), LocalDate.now()).toTotalMonths();
         if (monthsSinceLapse > windowMonths) {

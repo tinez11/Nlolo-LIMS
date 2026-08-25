@@ -1,5 +1,7 @@
-import { ArrowLeft, Ban } from 'lucide-react';
-import { useEffect } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { ArrowLeft, Ban, Pause, Play, RotateCcw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import type { LoanView } from '@/api/types';
@@ -12,11 +14,25 @@ import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectCoverage, selectDetail, selectLoans, usePolicyStore } from '@/store/policyStore';
+import {
+  selectCoverage,
+  selectDetail,
+  selectLoans,
+  selectReinstating,
+  selectResuming,
+  selectSuspending,
+  usePolicyStore,
+} from '@/store/policyStore';
 import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
 import { Field } from '@/components/Field';
+import {
+  blankSuspendPolicyForm,
+  suspendPolicyFormSchema,
+  toApiRequest as toSuspendApiRequest,
+  type SuspendPolicyFormValues,
+} from './suspendPolicyForm';
 
 /**
  * The "acts" half of drawer-previews-page-acts: the full record, and where any
@@ -152,6 +168,8 @@ export function PolicyDetailPage() {
             )}
           </Panel>
 
+          {policy && <Panel title="Lifecycle">{<LifecycleActions policyNumber={policyNumber} status={policy.status} />}</Panel>}
+
           <Panel title="Coverage" subtitle="Active benefits as of today">
             {renderCoverage()}
           </Panel>
@@ -263,6 +281,147 @@ function BackLink() {
         All policies
       </Link>
     </Button>
+  );
+}
+
+/**
+ * `POST /policies/{n}/suspend`/`resume`/`reinstate` -- staff only, all three
+ * fully implemented and tested since M3 but with no HTTP endpoint at all until
+ * this staff-portal CRUD audit found the gap. Only one action is ever shown at
+ * a time, mirroring the backend's own guards exactly: ACTIVE -> Suspend,
+ * SUSPENDED -> Resume, LAPSED -> Reinstate. A REINSTATED policy shows none of
+ * the three -- `Policy.suspend()` requires status == ACTIVE, and a reinstated
+ * policy stays labeled REINSTATED rather than being written back to ACTIVE
+ * (Policy.java's own comment), so it is genuinely not eligible for a further
+ * suspend through this same action despite being in force.
+ */
+function LifecycleActions({
+  policyNumber,
+  status,
+}: {
+  policyNumber: string;
+  status: string | undefined;
+}) {
+  const [suspendFormOpen, setSuspendFormOpen] = useState(false);
+
+  if (status === 'ACTIVE') {
+    return suspendFormOpen ? (
+      <SuspendForm policyNumber={policyNumber} onDone={() => setSuspendFormOpen(false)} />
+    ) : (
+      <div className="px-4 pb-4">
+        <Button size="sm" onClick={() => setSuspendFormOpen(true)}>
+          <Pause />
+          Suspend
+        </Button>
+      </div>
+    );
+  }
+
+  if (status === 'SUSPENDED') {
+    return <ResumeAction policyNumber={policyNumber} />;
+  }
+
+  if (status === 'LAPSED') {
+    return <ReinstateAction policyNumber={policyNumber} />;
+  }
+
+  return <p className="px-4 pb-4 text-xs text-muted-foreground">No lifecycle action available for {status ?? 'this status'}.</p>;
+}
+
+function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: () => void }) {
+  const suspendPolicy = usePolicyStore((s) => s.suspendPolicy);
+  const resetSuspendPolicy = usePolicyStore((s) => s.resetSuspendPolicy);
+  const suspending = usePolicyStore(selectSuspending(policyNumber));
+
+  useEffect(() => {
+    resetSuspendPolicy(policyNumber);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policyNumber]);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<SuspendPolicyFormValues>({
+    resolver: zodResolver(suspendPolicyFormSchema),
+    defaultValues: blankSuspendPolicyForm(),
+  });
+
+  async function onSubmit(values: SuspendPolicyFormValues) {
+    await suspendPolicy(policyNumber, toSuspendApiRequest(values));
+    if (usePolicyStore.getState().suspending[policyNumber]?.status === 'success') onDone();
+  }
+
+  return (
+    <form
+      className="mx-4 mb-4 space-y-2 rounded-md border border-border p-2.5"
+      onSubmit={(e) => void handleSubmit(onSubmit)(e)}
+    >
+      <label className="block">
+        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Reason</span>
+        <input
+          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+          placeholder="Employer group scheme in arrears"
+          {...register('reason')}
+        />
+        {errors.reason?.message && (
+          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.reason.message}</p>
+        )}
+      </label>
+
+      {suspending.status === 'error' && suspending.error && (
+        <p role="alert" className="text-[11px] text-status-danger-fg">
+          {suspending.error.detail ?? suspending.error.title}
+        </p>
+      )}
+
+      <div className="flex items-center gap-1.5">
+        <Button type="submit" size="sm" variant="primary" disabled={suspending.status === 'loading'}>
+          {suspending.status === 'loading' ? 'Suspending…' : 'Suspend policy'}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function ResumeAction({ policyNumber }: { policyNumber: string }) {
+  const resumePolicy = usePolicyStore((s) => s.resumePolicy);
+  const resuming = usePolicyStore(selectResuming(policyNumber));
+
+  return (
+    <div className="space-y-2 px-4 pb-4">
+      {resuming.status === 'error' && resuming.error && (
+        <p role="alert" className="text-[11px] text-status-danger-fg">
+          {resuming.error.detail ?? resuming.error.title}
+        </p>
+      )}
+      <Button size="sm" disabled={resuming.status === 'loading'} onClick={() => void resumePolicy(policyNumber)}>
+        <Play />
+        {resuming.status === 'loading' ? 'Resuming…' : 'Resume'}
+      </Button>
+    </div>
+  );
+}
+
+function ReinstateAction({ policyNumber }: { policyNumber: string }) {
+  const reinstatePolicy = usePolicyStore((s) => s.reinstatePolicy);
+  const reinstating = usePolicyStore(selectReinstating(policyNumber));
+
+  return (
+    <div className="space-y-2 px-4 pb-4">
+      {reinstating.status === 'error' && reinstating.error && (
+        <p role="alert" className="text-[11px] text-status-danger-fg">
+          {reinstating.error.detail ?? reinstating.error.title}
+        </p>
+      )}
+      <Button size="sm" disabled={reinstating.status === 'loading'} onClick={() => void reinstatePolicy(policyNumber)}>
+        <RotateCcw />
+        {reinstating.status === 'loading' ? 'Reinstating…' : 'Reinstate'}
+      </Button>
+    </div>
   );
 }
 

@@ -113,6 +113,42 @@ public class PolicyController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * Real controller mapping for a domain method (`PolicyApi.suspendPolicy`) that was fully
+     * implemented, tested, and event-publishing since M3, but never reachable over HTTP by
+     * anyone -- the M3 roadmap's own "Active -> Suspended -> Lapsed -> Reinstated/Surrendered"
+     * acceptance criteria was met at the application/test layer and never carried through to the
+     * API layer. `PolicyApiImpl.suspendPolicy` re-checks product-category eligibility
+     * (POLICY_SUSPENSION_ELIGIBLE_CATEGORIES) and the ACTIVE-only guard; both surface as a real
+     * 409 (INVALID_POLICY_STATE), already mapped by PolicyExceptionHandler.
+     */
+    @PostMapping("/policies/{policyNumber}/suspend")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyResponseDto> suspendPolicy(@PathVariable String policyNumber,
+            @Valid @RequestBody SuspendPolicyRequestDto request, @AuthenticationPrincipal Jwt jwt) {
+        policyApi.suspendPolicy(policyNumber, request.reason(), jwt.getSubject());
+        return ResponseEntity.ok(PolicyResponseDto.from(policyApi.getPolicy(policyNumber)));
+    }
+
+    /** Same real-gap fix as suspendPolicy above -- SUSPENDED -> ACTIVE only, enforced by
+     * `Policy.resume()`'s own guard (409 INVALID_POLICY_STATE on any other current status). */
+    @PostMapping("/policies/{policyNumber}/resume")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyResponseDto> resumePolicy(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt) {
+        policyApi.resumeSuspendedPolicy(policyNumber, jwt.getSubject());
+        return ResponseEntity.ok(PolicyResponseDto.from(policyApi.getPolicy(policyNumber)));
+    }
+
+    /** Same real-gap fix as suspendPolicy above -- LAPSED -> REINSTATED only, gated by both
+     * `Policy.reinstate()`'s guard and `PolicyApiImpl`'s own TZ_REINSTATEMENT_WINDOW_MONTHS
+     * check (both 409 INVALID_POLICY_STATE). */
+    @PostMapping("/policies/{policyNumber}/reinstate")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyResponseDto> reinstatePolicy(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt) {
+        policyApi.reinstatePolicy(policyNumber, jwt.getSubject());
+        return ResponseEntity.ok(PolicyResponseDto.from(policyApi.getPolicy(policyNumber)));
+    }
+
     @GetMapping("/policies/{policyNumber}/surrender-value")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<Map<String, Object>> getSurrenderValue(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {

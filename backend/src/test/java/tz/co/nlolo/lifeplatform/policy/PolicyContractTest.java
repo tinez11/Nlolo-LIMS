@@ -134,14 +134,20 @@ class PolicyContractTest {
 
     private record ProductFixture(UUID productId, UUID productVersionId) {}
 
-    private ProductFixture publishProduct(UUID tenantId, String code) throws Exception {
+    /**
+     * Overload taking an explicit category: POLICY_SUSPENSION_ELIGIBLE_CATEGORIES
+     * (refdata/V2) seeds only GROUP_LIFE as suspension-eligible -- the suspend/resume
+     * tests below need a policy in that category, while every other fixture keeps
+     * using plain TERM_LIFE.
+     */
+    private ProductFixture publishProduct(UUID tenantId, String code, String category) throws Exception {
         String createResponse = mockMvc.perform(post("/products")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"productCode":"%s","productName":"Policy Contract Product","category":"TERM_LIFE","defaultCurrency":"TZS"}
-                    """.formatted(code)))
+                    {"productCode":"%s","productName":"Policy Contract Product","category":"%s","defaultCurrency":"TZS"}
+                    """.formatted(code, category)))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         String productId = JsonPath.read(createResponse, "$.productId");
@@ -179,8 +185,12 @@ class PolicyContractTest {
     }
 
     private IssuedPolicy manualIssue(UUID tenantId, String productCode) throws Exception {
+        return manualIssue(tenantId, productCode, "TERM_LIFE");
+    }
+
+    private IssuedPolicy manualIssue(UUID tenantId, String productCode, String category) throws Exception {
         UUID applicantId = registerApplicant(tenantId, String.valueOf(Math.abs(productCode.hashCode() % 10000)));
-        ProductFixture product = publishProduct(tenantId, productCode);
+        ProductFixture product = publishProduct(tenantId, productCode, category);
         UUID caseId = openUnderwritingCase(tenantId, applicantId, product);
 
         String response = mockMvc.perform(post("/policies/manual-issue")
@@ -479,5 +489,152 @@ class PolicyContractTest {
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.inForce").value(true));
+    }
+
+    // --- suspend/resume/reinstate: PolicyApi.suspendPolicy/resumeSuspendedPolicy/reinstatePolicy
+    // were fully implemented, tested, and event-publishing since M3, but had NO controller mapping
+    // at all until this fix -- these are the falsifiable proof that the real gap is closed, not
+    // just documented as closed.
+
+    @Test
+    void suspendPolicyMatchesOpenApiContractAndTransitionsToSuspended() throws Exception {
+        // POLICY_SUSPENSION_ELIGIBLE_CATEGORIES (refdata/V2) seeds only GROUP_LIFE.
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-13", "GROUP_LIFE");
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"Employer group scheme in arrears"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("SUSPENDED"));
+    }
+
+    @Test
+    void suspendPolicyRejectsAnIneligibleProductCategoryWith409() throws Exception {
+        // TERM_LIFE is NOT in POLICY_SUSPENSION_ELIGIBLE_CATEGORIES -- PolicyApiImpl's own
+        // eligibility check, not the ACTIVE-only guard, must be what rejects this.
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-14");
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"Should be rejected -- TERM_LIFE is not suspension-eligible"}
+                    """))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_POLICY_STATE"));
+    }
+
+    @Test
+    void suspendPolicyRejectsNonStaffCallerWith403() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-15", "GROUP_LIFE");
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"Should be rejected before reaching the service layer"}
+                    """))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void suspendPolicyRejectsABlankReasonWith400() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-16", "GROUP_LIFE");
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":""}
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void resumePolicyMatchesOpenApiContractAndTransitionsBackToActive() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-17", "GROUP_LIFE");
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"Employer group scheme in arrears"}
+                    """))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/resume")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void resumePolicyRejectsAnAlreadyActivePolicyWith409() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-18", "GROUP_LIFE");
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/resume")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_POLICY_STATE"));
+    }
+
+    @Test
+    void reinstatePolicyMatchesOpenApiContractAndTransitionsLapsedToReinstated() throws Exception {
+        // No HTTP path to LAPSED exists (lapsePolicy is only ever called automatically off
+        // arrears, per the audit) -- same direct-PolicyApi-call fixture idiom as issueTestPolicy
+        // above, used here only to reach the precondition state, not to bypass the assertion.
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-19", "GROUP_LIFE");
+        TenantContext.set(tenantId);
+        policyApi.lapsePolicy(issued.policyNumber(), "test-fixture");
+        TenantContext.clear();
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/reinstate")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("REINSTATED"));
+    }
+
+    @Test
+    void reinstatePolicyRejectsANonLapsedPolicyWith409() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-20", "GROUP_LIFE");
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/reinstate")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("INVALID_POLICY_STATE"));
+    }
+
+    @Test
+    void reinstatePolicyRejectsNonStaffCallerWith403() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-21", "GROUP_LIFE");
+
+        mockMvc.perform(post("/policies/" + issued.policyNumber() + "/reinstate")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
     }
 }

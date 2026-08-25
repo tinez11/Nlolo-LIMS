@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import {
+  attachClaimEvidence,
   decideSettlement,
   getClaim,
+  listClaimEvidence,
   registerClaim,
   reopenClaim,
   searchClaims,
@@ -10,6 +12,7 @@ import {
 } from '@/api/claims';
 import type {
   ClaimAssessmentView,
+  ClaimEvidenceView,
   ClaimView,
   Page,
   RegisterClaimRequest,
@@ -40,9 +43,15 @@ interface ClaimState {
   submittingAssessment: Keyed<ClaimAssessmentView>;
   decidingSettlement: Keyed<ClaimView>;
   reopening: Keyed<ClaimView>;
+  evidence: Keyed<ClaimEvidenceView[]>;
+  // Keyed by claimId, not by any per-file id: only one upload is ever in flight
+  // for a given claim's panel at a time (the form disables itself while
+  // submitting), so there is nothing a second key would disambiguate.
+  attachingEvidence: Keyed<true>;
 
   loadList: (params: ClaimSearchParams) => Promise<void>;
   loadDetail: (claimId: string) => Promise<void>;
+  loadEvidence: (claimId: string) => Promise<void>;
   registerClaim: (request: RegisterClaimRequest, attempt: MutationAttempt) => Promise<void>;
   /** Clears a stale registration error before a fresh attempt -- see the call site. */
   resetRegisterClaim: () => void;
@@ -56,6 +65,8 @@ interface ClaimState {
   resetDecideSettlement: (claimId: string) => void;
   reopenClaim: (claimId: string, request: ReopenClaimRequest) => Promise<void>;
   resetReopenClaim: (claimId: string) => void;
+  attachEvidence: (claimId: string, file: File, description?: string) => Promise<void>;
+  resetAttachEvidence: (claimId: string) => void;
 }
 
 const REGISTER_KEY = 'claim.register';
@@ -67,6 +78,8 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
   submittingAssessment: {},
   decidingSettlement: {},
   reopening: {},
+  evidence: {},
+  attachingEvidence: {},
 
   loadList: (params) =>
     track(
@@ -82,6 +95,14 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
       getState().detail[claimId] ?? idle<ClaimView>(),
       (next) => set((s) => ({ detail: { ...s.detail, [claimId]: next } })),
       () => getClaim(claimId),
+    ),
+
+  loadEvidence: (claimId) =>
+    track(
+      `claim.evidence.${claimId}`,
+      getState().evidence[claimId] ?? idle<ClaimEvidenceView[]>(),
+      (next) => set((s) => ({ evidence: { ...s.evidence, [claimId]: next } })),
+      () => listClaimEvidence(claimId),
     ),
 
   registerClaim: (request, attempt) =>
@@ -158,6 +179,27 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
       const { [claimId]: _discard, ...rest } = s.reopening;
       return { reopening: rest };
     }),
+
+  attachEvidence: (claimId, file, description) =>
+    track(
+      `claim.attachEvidence.${claimId}`,
+      getState().attachingEvidence[claimId] ?? idle<true>(),
+      (next) => set((s) => ({ attachingEvidence: { ...s.attachingEvidence, [claimId]: next } })),
+      // Explicit Promise<true>: see policyStore.saveBeneficiaries for why the
+      // annotation is required to stop TypeScript widening the literal to boolean.
+      async (): Promise<true> => {
+        await attachClaimEvidence(claimId, file, description);
+        await getState().loadEvidence(claimId);
+        return true;
+      },
+    ),
+
+  resetAttachEvidence: (claimId) =>
+    set((s) => {
+      if (!(claimId in s.attachingEvidence)) return s;
+      const { [claimId]: _discard, ...rest } = s.attachingEvidence;
+      return { attachingEvidence: rest };
+    }),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
@@ -169,3 +211,7 @@ export const selectDecidingSettlement = (claimId: string) => (s: ClaimState) =>
   s.decidingSettlement[claimId] ?? idle<ClaimView>();
 export const selectReopening = (claimId: string) => (s: ClaimState) =>
   s.reopening[claimId] ?? idle<ClaimView>();
+export const selectEvidence = (claimId: string) => (s: ClaimState) =>
+  s.evidence[claimId] ?? idle<ClaimEvidenceView[]>();
+export const selectAttachingEvidence = (claimId: string) => (s: ClaimState) =>
+  s.attachingEvidence[claimId] ?? idle<true>();
