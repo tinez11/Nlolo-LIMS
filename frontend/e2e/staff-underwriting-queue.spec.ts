@@ -41,6 +41,13 @@ test.describe('staff underwriting queue', () => {
     await drawer.getByRole('link', { name: /full detail/i }).click();
     await expect(page).toHaveURL(new RegExp(`/staff/underwriting/${caseId}`));
     await expect(page.getByRole('heading', { name: 'Underwriting case' })).toBeVisible();
+
+    // The detail page's own callout now correctly links back to the queue,
+    // replacing the old (now-false) "bookmark this, there's no other way
+    // back" copy.
+    await page.getByRole('link', { name: 'Underwriting queue' }).click();
+    await expect(page).toHaveURL(/\/staff\/underwriting$/);
+    await expect(page.getByText(caseId)).toBeVisible();
   });
 
   test('the status filter is shareable through the URL', async ({ page }) => {

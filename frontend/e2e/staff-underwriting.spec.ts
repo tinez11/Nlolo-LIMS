@@ -3,14 +3,15 @@ import { expect, test } from '@playwright/test';
 /**
  * Underwriting domain e2e coverage against the real backend.
  *
- * `POST /underwriting/cases` is the ONLY entry point onto this domain that
- * exists server-side: no list/search endpoint, and unlike every other
- * fetch-by-id entity on this console, no other domain's response ever
- * re-surfaces a real case id either (verified directly: a real `GET /policies`
- * response for the seeded policyholder below carries no `underwritingCaseId`
- * field at all, confirming the wire DTO, not just the OpenAPI spec, drops it).
- * So every test here must open its own case and work from the id its own
- * response hands back -- there is no discovery path to lean on.
+ * `POST /underwriting/cases` is the only entry point onto this domain -- the
+ * Underwriting queue (`GET /underwriting/cases`, covered separately in
+ * staff-underwriting-queue.spec.ts) is now a real discovery path, but no
+ * other domain's response ever re-surfaces a real case id (verified directly:
+ * a real `GET /policies` response for the seeded policyholder below carries
+ * no `underwritingCaseId` field at all, confirming the wire DTO, not just the
+ * OpenAPI spec, drops it). So every test here still opens its own case and
+ * works from the id its own response hands back, rather than depending on
+ * the queue.
  *
  * "Amina Owner" (`d9937444-3873-4336-9cb7-addb486f3e1b`) is the same real
  * seeded policyholder used throughout staff-issue-policy.spec.ts.

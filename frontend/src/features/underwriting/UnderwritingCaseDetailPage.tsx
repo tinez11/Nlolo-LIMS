@@ -27,13 +27,12 @@ import {
 } from './submitAssessmentForm';
 
 /**
- * The only screen that can ever show a case: opened straight from
- * `OpenUnderwritingCasePage`'s own redirect, or a direct visit to a
- * previously-bookmarked url -- there is no browse-back path either through
- * this platform's own missing list/search endpoint, or through a policy this
- * case eventually issues (`GET /policies` never re-surfaces `underwritingCaseId`,
- * confirmed against the real wire DTO and the OpenAPI spec, not just the
- * internal same-named domain type).
+ * Reached from `OpenUnderwritingCasePage`'s own redirect, a direct visit to a
+ * bookmarked url, or -- now that `GET /underwriting/cases` exists -- a real
+ * click-through from the Underwriting queue's drawer. Still not reachable
+ * through a policy this case eventually issues, though: `GET /policies` never
+ * re-surfaces `underwritingCaseId` (confirmed against the real wire DTO and
+ * the OpenAPI spec, not just the internal same-named domain type).
  *
  * `decideIfPossible` runs unconditionally on every `POST /assessments`, not
  * once "enough" evidence exists -- so submitting ONE assessment IS the
@@ -71,8 +70,8 @@ export function UnderwritingCaseDetailPage() {
   // Same reset-on-mount discipline as every other keyed mutation resource on
   // this console: `submittingAssessment`/`referring` outlive this page's own
   // mount/unmount, so a previous visit's failure would otherwise resurface
-  // immediately on a fresh navigation to the same case (the page's own
-  // "bookmark this" framing below makes that a real, not hypothetical, path).
+  // immediately on a fresh navigation to the same case -- a real path now,
+  // whether by bookmark or by revisiting through the Underwriting queue.
   useEffect(() => {
     if (!caseId) return;
     resetSubmitAssessment(caseId);
@@ -251,8 +250,12 @@ export function UnderwritingCaseDetailPage() {
           </Panel>
 
           <div className="rounded-lg border border-dashed border-border bg-surface-muted px-4 py-3 text-xs text-muted-foreground">
-            No endpoint lists or searches underwriting cases, and a policy later issued from this
-            case never re-exposes its id. Bookmark this page if you need to find it again.
+            Browsable again from the{' '}
+            <Link to=".." relative="path" className="underline">
+              Underwriting queue
+            </Link>
+            . A policy later issued from this case still never re-exposes its id, though --
+            bookmark this page if you need direct access without going through the queue.
           </div>
         </div>
       </div>

@@ -13,13 +13,13 @@ import { blankOpenCaseForm, openCaseFormSchema, toApiRequest, type OpenCaseFormV
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
- * exists server-side. There is no case list/search endpoint anywhere on this
- * platform, and a policy's own `underwritingCaseId` never round-trips back out
- * through `GET /policies` (confirmed: the actual wire DTO, `PolicyResponseDto`,
- * omits it entirely, and so does the OpenAPI spec's `PolicyView` response
- * schema -- only the internal, same-named domain record carries it). So this
- * page's own success response is the ONLY moment this id is ever knowable
- * again; the detail page it redirects to says so plainly.
+ * exists server-side. `GET /underwriting/cases` (the Underwriting queue) is now
+ * a real browse-back path, but a policy's own `underwritingCaseId` still never
+ * round-trips back out through `GET /policies` (confirmed: the actual wire DTO,
+ * `PolicyResponseDto`, omits it entirely, and so does the OpenAPI spec's
+ * `PolicyView` response schema -- only the internal, same-named domain record
+ * carries it). So this page's own success response is still the fastest way to
+ * this id, even though it is no longer the only one.
  */
 export function OpenUnderwritingCasePage() {
   const navigate = useNavigate();
@@ -94,7 +94,7 @@ export function OpenUnderwritingCasePage() {
 
       <PageHeader
         title="Open an underwriting case"
-        description="No case can be found or browsed to again afterward -- bookmark the id this creates."
+        description="Browsable afterward from the Underwriting queue -- but a policy later issued from it never re-exposes this case's id."
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
