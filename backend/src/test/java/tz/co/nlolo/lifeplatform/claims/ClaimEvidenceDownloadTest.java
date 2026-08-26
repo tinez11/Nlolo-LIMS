@@ -133,15 +133,6 @@ class ClaimEvidenceDownloadTest {
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("party_id", partyId.toString()));
     }
 
-    /** An agents-realm token carrying its own party_id -- the distinguishing feature versus
-     * {@code customerOf} is the REALM role, which is what {@code
-     * ClaimController.enforceCustomerOwnClaimOnly} branches on. */
-    private static SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor agentOf(UUID tenantId, UUID partyId) {
-        return SecurityMockMvcRequestPostProcessors.jwt()
-            .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
-            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("party_id", partyId.toString()));
-    }
-
     @Test
     void aDocumentFromAnotherClaimIsNotFoundEvenThoughTheCallerOwnsTheClaimInThePath() throws Exception {
         // Two claims, two different claimant parties, SAME tenant (so this is object-level
@@ -315,39 +306,14 @@ class ClaimEvidenceDownloadTest {
                 org.hamcrest.Matchers.containsString(documentRef)));
     }
 
-    /**
-     * Final-review Finding 4. docs/04-api-contracts.md states agents get "unrestricted in-tenant
-     * read, same as staff" on claim evidence, and the code agrees --
-     * {@code ClaimController.enforceCustomerOwnClaimOnly} no-ops for any non-customer realm -- but
-     * nothing asserted it. The existing agent-related coverage is the OPPOSITE property (agents are
-     * 403'd on the staff-only generic {@code /documents/{ref}} endpoint), so deleting the
-     * {@code isCustomer} guard, or narrowing this endpoint's {@code @PreAuthorize} to drop
-     * {@code REALM_AGENTS}, would both have shipped green. The agent's own party_id is deliberately
-     * a THIRD, unrelated UUID: it matches neither the claimant nor anything on the claim, so a
-     * future "agents may only see their own book" check would fail here rather than pass by luck.
-     */
-    @Test
-    void anAgentMayDownloadEvidenceForAClaimBelongingToADifferentParty() throws Exception {
-        UUID tenantId = TenantContext.get();
-        UUID claimantPartyId = UUID.randomUUID();
-        UUID agentPartyId = UUID.randomUUID();
-        Claim claim = registerClaim(tenantId, claimantPartyId);
-
-        byte[] content = "agent-readable-evidence-bytes".getBytes();
-        String documentRef = documentApi.upload("claim:" + claim.getClaimId(), DocumentType.CLAIM_EVIDENCE,
-            "uploader", new ByteArrayInputStream(content), content.length, "application/pdf", "certificate.pdf");
-
-        MvcResult result = mockMvc.perform(get("/claims/" + claim.getClaimId() + "/evidence/" + documentRef)
-                .with(agentOf(tenantId, agentPartyId)))
-            .andExpect(status().isOk())
-            .andExpect(header().string("Content-Type", "application/pdf"))
-            .andReturn();
-        assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(content);
-
-        // The contrast that makes the assertion above meaningful: the SAME request from a customer
-        // token whose party_id is that same unrelated UUID is denied. Only the realm differs.
-        mockMvc.perform(get("/claims/" + claim.getClaimId() + "/evidence/" + documentRef)
-                .with(customerOf(tenantId, agentPartyId)))
-            .andExpect(status().isForbidden());
-    }
+    // The test formerly here, `anAgentMayDownloadEvidenceForAClaimBelongingToADifferentParty`,
+    // asserted the OLD pre-agent-scoping contract (docs/04-api-contracts.md's now-superseded
+    // "unrestricted in-tenant read, same as staff" for agents) -- exactly the gap
+    // AgentBookOfBusinessScopingTest's `enforceAgentOwnClaimOnly` scoping was built to close. It
+    // also never had `distribution`/`policy` schema migrations applied, so once that scoping
+    // landed it failed with a 500 (missing table), not the 403 the new contract actually requires.
+    // Real positive/negative coverage for this endpoint's agent scoping now lives in
+    // AgentBookOfBusinessScopingTest (`downloadEvidenceAsAgentReturns200ForAClaimAgainstAPolicyInItsOwnDownline`
+    // / `downloadEvidenceAsAgentReturns403ForAClaimOutsideItsTeam`), which already has the full
+    // migration set and fixture helpers this scenario needs.
 }

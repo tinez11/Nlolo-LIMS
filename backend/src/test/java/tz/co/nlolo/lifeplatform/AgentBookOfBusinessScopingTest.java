@@ -35,6 +35,7 @@ import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -102,6 +103,10 @@ class AgentBookOfBusinessScopingTest {
         MinioClient minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL()).credentials(MINIO.getUserName(), MINIO.getPassword()).build();
         minioClient.makeBucket(MakeBucketArgs.builder().bucket("documents").build());
+        // MinioDocumentStorage routes DocumentType.CLAIM_EVIDENCE to "claim-evidence" specifically,
+        // not the generic "documents" bucket above -- needed for the evidence-download scoping
+        // tests below.
+        minioClient.makeBucket(MakeBucketArgs.builder().bucket("claim-evidence").build());
     }
 
     @AfterEach
@@ -115,6 +120,7 @@ class AgentBookOfBusinessScopingTest {
     @Autowired private PolicyApi policyApi;
     @Autowired private ClaimsApi claimsApi;
     @Autowired private DistributionApi distributionApi;
+    @Autowired private tz.co.nlolo.lifeplatform.document.api.DocumentApi documentApi;
 
     private record Fixture(UUID applicantId, UUID productId, UUID productVersionId) {}
 
@@ -163,6 +169,17 @@ class AgentBookOfBusinessScopingTest {
             "book-scope-reg-" + UUID.randomUUID(), "claims-staff-fixture");
         TenantContext.clear();
         return view.claimId();
+    }
+
+    private String attachEvidence(UUID tenantId, UUID claimId) {
+        TenantContext.set(tenantId);
+        byte[] content = "book-scoping-evidence-bytes".getBytes();
+        String documentRef = documentApi.upload("claim:" + claimId,
+            tz.co.nlolo.lifeplatform.document.api.DocumentType.CLAIM_EVIDENCE, "test-fixture",
+            new java.io.ByteArrayInputStream(content), content.length, "application/pdf", "evidence.pdf");
+        claimsApi.attachEvidence(claimId, documentRef, "book scoping fixture evidence", "test-fixture");
+        TenantContext.clear();
+        return documentRef;
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor agentOf(UUID tenantId, UUID partyId) {
@@ -332,6 +349,39 @@ class AgentBookOfBusinessScopingTest {
 
         mockMvc.perform(get("/claims/{id}", book.claimOutsideTeam()).with(staffOf(book.tenantId())))
             .andExpect(status().isOk());
+    }
+
+    // ============================================================================================
+    // GET /claims/{claimId}/evidence/{documentRef} -- same scoping, via ClaimController's
+    // enforceAgentOwnClaimOnly reused verbatim by ClaimEvidenceController. Not previously covered
+    // by any test with the right migrations in place -- the pre-existing
+    // ClaimEvidenceDownloadTest's own "an agent may download evidence for a claim belonging to a
+    // different party" predates this scoping feature entirely (it asserted the OLD, now-closed
+    // gap: an unscoped agents-realm token could read any evidence in the tenant) and never had
+    // `distribution` schema migrations applied, so it 500'd instead of the correct 403 once this
+    // scoping landed. Replaced here with real positive/negative coverage using this file's own
+    // fixtures, which already have every migration this code path needs.
+    // ============================================================================================
+
+    @Test
+    void downloadEvidenceAsAgentReturns200ForAClaimAgainstAPolicyInItsOwnDownline() throws Exception {
+        Book book = buildBook("EVIDENCE-OK");
+        String documentRef = attachEvidence(book.tenantId(), book.claimInTeam());
+
+        mockMvc.perform(get("/claims/{id}/evidence/{ref}", book.claimInTeam(), documentRef)
+                .with(agentOf(book.tenantId(), book.supervisor().partyId())))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", "application/pdf"));
+    }
+
+    @Test
+    void downloadEvidenceAsAgentReturns403ForAClaimOutsideItsTeam() throws Exception {
+        Book book = buildBook("EVIDENCE-403");
+        String documentRef = attachEvidence(book.tenantId(), book.claimOutsideTeam());
+
+        mockMvc.perform(get("/claims/{id}/evidence/{ref}", book.claimOutsideTeam(), documentRef)
+                .with(agentOf(book.tenantId(), book.supervisor().partyId())))
+            .andExpect(status().isForbidden());
     }
 
     // ============================================================================================

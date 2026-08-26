@@ -66,7 +66,12 @@ class PolicyCustomerScopingTest {
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            // Needed since PolicyController.resolveOwnAgentTeamOrThrow (agents-realm "browse my
+            // book of business" scoping) queries distribution.agent_profile for ANY agents-realm
+            // search now, not just ones this class originally anticipated.
+            "db-migrations/distribution/V1__create_distribution_schema.sql",
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
     }
 
     @Autowired
@@ -103,13 +108,39 @@ class PolicyCustomerScopingTest {
             .andExpect(status().isForbidden());
     }
 
+    /**
+     * `party_id` is now REQUIRED on an agents-realm search (not just accepted-if-present) --
+     * `PolicyController.resolveOwnAgentTeamOrThrow`, added by the agents-realm "browse my book of
+     * business" scoping, needs it to resolve the caller's own team, the same way
+     * `ownPartyIdOrThrow` already requires it for customers (see
+     * `customerTokenWithoutPartyIdClaimIsDenied` above). This test predates that scoping feature;
+     * its own explicit-filter assertion is still correct once a real party_id is supplied -- an
+     * agent's own book scoping and an explicit policyholderPartyId filter apply together
+     * (`effectivePolicyholderPartyId` is never overridden for agents the way it is for customers),
+     * not either/or.
+     */
     @Test
     void agentListStillAcceptsAnExplicitPolicyholderFilter() throws Exception {
         mockMvc.perform(get("/policies")
                 .param("policyholderPartyId", UUID.randomUUID().toString())
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
-                    .jwt(builder -> builder.claim("tenant_id", TENANT.toString()))))
+                    .jwt(builder -> builder.claim("tenant_id", TENANT.toString())
+                        .claim("party_id", UUID.randomUUID().toString()))))
             .andExpect(status().isOk());
+    }
+
+    /**
+     * The symmetric case `customerTokenWithoutPartyIdClaimIsDenied` already covers for customers:
+     * an agents-realm token that carries no party_id claim at all cannot resolve its own team, and
+     * is denied rather than silently treated as having no scoping filter (which would leak the
+     * whole tenant).
+     */
+    @Test
+    void agentTokenWithoutPartyIdClaimIsDenied() throws Exception {
+        mockMvc.perform(get("/policies")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", TENANT.toString()))))
+            .andExpect(status().isForbidden());
     }
 
     @Test
