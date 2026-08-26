@@ -28,6 +28,7 @@ import { TreatiesPage } from '@/features/reinsurance/TreatiesPage';
 import { TreatyDetailPage } from '@/features/reinsurance/TreatyDetailPage';
 import { OpenUnderwritingCasePage } from '@/features/underwriting/OpenUnderwritingCasePage';
 import { UnderwritingCaseDetailPage } from '@/features/underwriting/UnderwritingCaseDetailPage';
+import { UnderwritingQueuePage } from '@/features/underwriting/UnderwritingQueuePage';
 
 /**
  * Realm-scoped routes.
@@ -59,6 +60,7 @@ export function App() {
           <Route path="products" element={<ProductsPage />} />
           <Route path="products/new" element={<CreateProductPage />} />
           <Route path="products/:productId" element={<ProductDetailPage />} />
+          <Route path="underwriting" element={<UnderwritingQueuePage />} />
           <Route path="underwriting/new" element={<OpenUnderwritingCasePage />} />
           <Route path="underwriting/:caseId" element={<UnderwritingCaseDetailPage />} />
           <Route path="agents/new" element={<OnboardAgentPage />} />

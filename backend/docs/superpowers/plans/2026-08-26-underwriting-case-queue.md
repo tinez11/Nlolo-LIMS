@@ -633,6 +633,11 @@ export function UnderwritingQueuePage() {
 
   const columns: Column<UnderwritingCaseView>[] = [
     {
+      key: 'caseId',
+      header: 'Case ID',
+      render: (c) => <span className="font-mono text-xs font-medium">{c.caseId ?? '—'}</span>,
+    },
+    {
       key: 'status',
       header: 'Status',
       render: (c) => (c.status ? <StatusBadge kind="underwritingCase" value={c.status} /> : '—'),

@@ -33,21 +33,21 @@ import { Button } from './ui/button';
  * in from a policy or claim. Parties used to be in that category too, until
  * `GET /parties` closed the gap: a party PENDING KYC with nothing yet
  * referencing it (a fresh registration) was otherwise invisible to staff, so
- * "KYC review" below is a real list, not a lookup box.
+ * "KYC review" below is a real list, not a lookup box. Underwriting closed the
+ * same gap later still (`GET /underwriting/cases`) -- its own case id STILL
+ * never round-trips back out through any other endpoint's response
+ * (`PolicyResponseDto` omits `underwritingCaseId` despite the internal
+ * same-named `PolicyView` record carrying it), so the queue below is the only
+ * way back to a case you didn't bookmark, not a supplementary one.
  *
- * Underwriting and Agents are the two exceptions among what's left, and deliberately not
- * "paste an ID" screens: `POST /underwriting/cases` and `POST /agents` are
- * the only entry points onto those domains that exist server-side (neither
- * has a list/search endpoint), so each nav item goes straight to the one
- * real, working action -- opening a case, onboarding an agent -- rather than
- * a lookup box. Underwriting's own case id is never re-surfaced anywhere else
- * on this platform (confirmed against the actual `PolicyResponseDto` wire
- * type, which omits `underwritingCaseId` entirely despite the internal
- * same-named `PolicyView` record carrying it), so its detail page is explicit
- * that the id it hands back is the only way to return. An agent is different:
- * `PolicyView.agentOfRecordId` DOES round-trip through `GET /policies` for
- * real, so an agent is also reachable by drilling in from a policy that names
- * one -- Agents' nav entry is just the first way in, not the only one.
+ * Agents is the one remaining exception, and deliberately not a "paste an ID"
+ * screen: `POST /agents` is the only entry point onto that domain that exists
+ * server-side (no list/search endpoint), so its nav item goes straight to the
+ * one real, working action -- onboarding an agent -- rather than a lookup box.
+ * An agent IS reachable another way, though: `PolicyView.agentOfRecordId` DOES
+ * round-trip through `GET /policies` for real, so an agent is also reachable
+ * by drilling in from a policy that names one -- Agents' nav entry is just the
+ * first way in, not the only one.
  *
  * The unimplemented entries are listed rather than deleted so the intended shape is
  * visible, but they are filtered out below: shipping a link to an empty page is the
@@ -74,7 +74,7 @@ const STAFF_NAV: NavGroup[] = [
       { to: 'policies', label: 'Policies', icon: FileText, implemented: true },
       { to: 'claims', label: 'Claims', icon: ScrollText, implemented: true },
       { to: 'products', label: 'Products', icon: Package, implemented: true },
-      { to: 'underwriting/new', label: 'Underwriting', icon: ClipboardCheck, implemented: true },
+      { to: 'underwriting', label: 'Underwriting', icon: ClipboardCheck, implemented: true },
       { to: 'kyc', label: 'KYC review', icon: UserCheck, implemented: true },
     ],
   },

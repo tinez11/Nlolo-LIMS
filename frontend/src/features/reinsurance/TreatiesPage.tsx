@@ -17,9 +17,10 @@ import { TreatyDrawer } from './TreatyDrawer';
 
 /**
  * `GET /treaties` is a bare unpaged array (like products' catalog), so this
- * gets the no-pager table variant. Unlike underwriting cases and agents, a
- * treaty IS listable -- so this follows Policies/Claims/Products' full
- * drawer-previews-page-acts shape rather than the create-only exception.
+ * gets the no-pager table variant. Unlike agents (still create-only, see
+ * AppShell.tsx's STAFF_NAV comment), a treaty IS listable -- so this follows
+ * Policies/Claims/Products/Underwriting's full drawer-previews-page-acts
+ * shape rather than the create-only exception.
  */
 export function TreatiesPage() {
   const [params, setParams] = useSearchParams();
