@@ -4,6 +4,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/AppShell';
+import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
@@ -96,10 +97,17 @@ export function OnboardAgentPage() {
         </FormField>
 
         <FormField label="License expiry date" error={errors.licenseExpiryDate?.message}>
-          <input
-            type="date"
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
-            {...register('licenseExpiryDate')}
+          <Controller
+            control={control}
+            name="licenseExpiryDate"
+            render={({ field }) => (
+              <DatePicker
+                value={field.value || null}
+                onChange={(iso) => field.onChange(iso ?? '')}
+                placeholder="Select the license expiry date"
+                disabled={{ before: new Date() }}
+              />
+            )}
           />
         </FormField>
 

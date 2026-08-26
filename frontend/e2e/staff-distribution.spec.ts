@@ -31,7 +31,8 @@ async function onboardRealAgent(page: Page): Promise<string> {
   await page.getByPlaceholder('Type a name to search').fill('Amina');
   await page.getByText('Amina Owner').click();
   await page.getByLabel('License number').fill(`E2E-LIC-${Date.now()}`);
-  await page.getByLabel('License expiry date').fill(FUTURE_LICENSE_EXPIRY);
+  await page.getByRole('button', { name: 'Select the license expiry date' }).click();
+  await page.getByPlaceholder('YYYY-MM-DD').fill(FUTURE_LICENSE_EXPIRY);
   await page.getByRole('button', { name: 'Onboard agent' }).click();
   await expect(page).toHaveURL(/\/staff\/agents\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   return page.url().split('/').pop() as string;
