@@ -12,6 +12,8 @@ import tz.co.nlolo.lifeplatform.underwriting.domain.*;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.RiskAssessmentRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.UnderwritingCaseRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -150,6 +152,15 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     @Override
     public UnderwritingCaseView getCase(UUID caseId) {
         return toView(findOrThrow(caseId, TenantContext.get()));
+    }
+
+    @Override
+    public Page<UnderwritingCaseView> listCases(UnderwritingCaseStatus status, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+        Page<UnderwritingCase> page = status != null
+            ? underwritingCaseRepository.findByTenantIdAndStatus(tenantId, status.name(), pageable)
+            : underwritingCaseRepository.findByTenantId(tenantId, pageable);
+        return page.map(this::toView);
     }
 
     @Override

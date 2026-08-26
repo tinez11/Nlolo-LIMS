@@ -207,4 +207,70 @@ class UnderwritingContractTest {
                     """.formatted(nonexistentPartyId, UUID.randomUUID(), UUID.randomUUID())))
             .andExpect(status().isNotFound());
     }
+
+    @Test
+    void listCasesDefaultsToNewestCreatedFirst() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+
+        String firstCase = openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId());
+        String firstCaseId = JsonPath.read(firstCase, "$.caseId");
+        String secondCase = openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId());
+        String secondCaseId = JsonPath.read(secondCase, "$.caseId");
+
+        mockMvc.perform(get("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].caseId").value(secondCaseId))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[1].caseId").value(firstCaseId))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.page.totalElements").value(2));
+    }
+
+    @Test
+    void listCasesFiltersByStatus() throws Exception {
+        // Two cases in the SAME tenant, both left OPEN (nothing here decides
+        // either) -- if the status filter were silently ignored, filtering to
+        // DECIDED would still wrongly return these 2 OPEN cases instead of 0.
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+        openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId());
+        openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId());
+
+        mockMvc.perform(get("/underwriting/cases")
+                .param("status", "OPEN")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.page.totalElements").value(2));
+
+        mockMvc.perform(get("/underwriting/cases")
+                .param("status", "DECIDED")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.page.totalElements").value(0));
+    }
+
+    @Test
+    void listCasesIsTenantScoped() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+        openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId());
+
+        UUID otherTenantId = UUID.randomUUID();
+        UUID otherApplicantId = registerTestApplicant(otherTenantId);
+        ProductFixture otherProduct = publishTestProduct(otherTenantId);
+        openCaseViaHttp(otherTenantId, otherApplicantId, otherProduct.productId(), otherProduct.productVersionId());
+
+        mockMvc.perform(get("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.page.totalElements").value(1));
+    }
 }

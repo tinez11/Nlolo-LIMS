@@ -1,8 +1,13 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseStatus;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +26,17 @@ public class UnderwritingController {
 
     public UnderwritingController(UnderwritingApi underwritingApi) {
         this.underwritingApi = underwritingApi;
+    }
+
+    @GetMapping("/cases")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<UnderwritingCaseSearchResponse> listCases(
+            @RequestParam(required = false) UnderwritingCaseStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        Pageable pageable = PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<UnderwritingCaseView> result = underwritingApi.listCases(status, pageable);
+        return ResponseEntity.ok(UnderwritingCaseSearchResponse.from(result));
     }
 
     @PostMapping("/cases")
