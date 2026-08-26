@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -126,7 +127,7 @@ public class ClaimController {
         Set<String> policyNumbers = isAgent(authentication)
             ? policyApi.policyNumbersForAgentTeam(ownAgentPartyIdOrThrow(jwt)) : null;
         Page<ClaimView> result = claimsApi.searchClaims(status, effectiveClaimantPartyId, policyNumbers,
-            PageRequest.of(page, Math.min(pageSize, 100)));
+            PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt")));
         return ResponseEntity.ok(ClaimSearchResponseDto.from(result));
     }
 

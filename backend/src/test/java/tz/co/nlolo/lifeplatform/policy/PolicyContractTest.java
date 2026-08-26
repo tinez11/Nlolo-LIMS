@@ -665,4 +665,22 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isForbidden());
     }
+
+    // --- Staff list improvements: newest-first default sort, q free-text search ------------------
+
+    @Test
+    void searchPoliciesOrdersNewestCreatedFirstByDefault() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // Two real policies issued in sequence -- the second one issued must be
+        // items[0], proving a real ORDER BY, not incidentally-already-sorted seed data.
+        String firstPolicy = manualIssue(tenantId, "SORT-ORDER-FIRST").policyNumber();
+        String secondPolicy = manualIssue(tenantId, "SORT-ORDER-SECOND").policyNumber();
+
+        mockMvc.perform(get("/policies")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].policyNumber").value(secondPolicy))
+            .andExpect(jsonPath("$.items[1].policyNumber").value(firstPolicy));
+    }
 }

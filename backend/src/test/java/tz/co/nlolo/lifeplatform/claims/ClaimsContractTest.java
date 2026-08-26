@@ -784,4 +784,26 @@ class ClaimsContractTest {
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
     }
+
+    // --- Staff list improvements: newest-first default sort, q free-text search ------------------
+
+    @Test
+    void listClaimsOrdersNewestCreatedFirstByDefault() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SORT-ORDER-PRODUCT");
+        // Two distinct policies (not two claims on one policy, to sidestep any
+        // undocumented one-claim-per-policy assumption elsewhere in this domain) --
+        // both real, both against the same real applicant/product fixture.
+        String policyA = issuePolicy(tenantId, fixture);
+        String policyB = issuePolicy(tenantId, fixture);
+        UUID claimId1 = registerDeathClaim(tenantId, fixture.applicantId(), policyA);
+        UUID claimId2 = registerDeathClaim(tenantId, fixture.applicantId(), policyB);
+
+        mockMvc.perform(get("/claims")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].claimId").value(claimId2.toString()))
+            .andExpect(jsonPath("$.items[1].claimId").value(claimId1.toString()));
+    }
 }

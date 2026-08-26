@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -101,7 +102,7 @@ public class PolicyController {
         // results.
         Set<UUID> agentOfRecordIds = isAgent(authentication) ? resolveOwnAgentTeamOrThrow(jwt) : null;
         Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, status, agentOfRecordIds,
-            PageRequest.of(page, Math.min(pageSize, 100)));
+            PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt")));
         return ResponseEntity.ok(PolicySearchResponse.from(result));
     }
 
