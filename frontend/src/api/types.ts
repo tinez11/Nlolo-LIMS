@@ -282,6 +282,7 @@ export const POLICY_STATUSES: readonly PolicyStatus[] = [
  */
 export type UnderwritingCaseView = UnderwritingComponents['schemas']['UnderwritingCaseView'];
 export type UnderwritingCaseStatus = NonNullable<UnderwritingCaseView['status']>;
+export const UNDERWRITING_CASE_STATUSES: readonly UnderwritingCaseStatus[] = ['OPEN', 'IN_REVIEW', 'DECIDED'];
 export type UnderwritingReferralStatus = NonNullable<UnderwritingCaseView['referralStatus']>;
 export type UnderwritingDecisionOutcome = NonNullable<UnderwritingCaseView['decisionOutcome']>;
 export type OpenCaseRequest = UnderwritingComponents['schemas']['OpenCaseRequest'];

@@ -1,18 +1,54 @@
 import { get, post } from '@/lib/http';
-import type { OpenCaseRequest, SubmitAssessmentRequest, UnderwritingCaseView } from './types';
+import type { OpenCaseRequest, Page, SubmitAssessmentRequest, UnderwritingCaseStatus, UnderwritingCaseView } from './types';
 
 /**
  * Underwriting read/write surface.
  *
- * There is no `GET /underwriting/cases` list or search endpoint anywhere on this
- * platform (confirmed against `UnderwritingController` -- only the 4 routes
- * below exist), and `POST /policies`'s own `underwritingCaseId` never round-trips
- * back out through `GET /policies` either (`PolicyResponseDto` -- the actual wire
- * DTO, not the internal `PolicyView` -- has no such field, and neither does the
- * OpenAPI spec's `PolicyView` response schema). A case is therefore reachable
- * ONLY by an id you already hold: the response of opening it, or one handed to
- * you out of band. There is no browse-back path once that id is lost.
+ * `GET /underwriting/cases` (added alongside this comment) is tenant-scoped and
+ * status-filterable, but carries no free-text search -- a case has no
+ * human-facing identifier the way a policy number or claim does, only a raw
+ * UUID `caseId`. `POST /policies`'s own `underwritingCaseId` still never
+ * round-trips back out through `GET /policies` either (`PolicyResponseDto` --
+ * the actual wire DTO, not the internal `PolicyView` -- has no such field, and
+ * neither does the OpenAPI spec's `PolicyView` response schema): the ONLY way
+ * to reach a specific case afterward is either the id captured when it was
+ * opened, or browsing the list below.
  */
+
+export interface UnderwritingListParams {
+  status?: UnderwritingCaseStatus;
+  page?: number;
+  pageSize?: number;
+}
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+/** `GET /underwriting/cases` -- agent or staff, tenant-scoped, no free-text search. */
+export async function listCases(params: UnderwritingListParams = {}): Promise<Page<UnderwritingCaseView>> {
+  const page = params.page ?? 0;
+  const pageSize = Math.min(params.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+
+  const body = await get<{
+    items?: UnderwritingCaseView[];
+    page?: { page?: number; pageSize?: number; totalElements?: number };
+  }>('/underwriting/cases', {
+    params: {
+      ...(params.status ? { status: params.status } : {}),
+      page,
+      pageSize,
+    },
+  });
+
+  return {
+    items: body.items ?? [],
+    page: {
+      page: body.page?.page ?? page,
+      pageSize: body.page?.pageSize ?? pageSize,
+      totalElements: body.page?.totalElements ?? 0,
+    },
+  };
+}
 
 /** `POST /underwriting/cases` -- agent or staff. No Idempotency-Key enforcement
  *  yet (accepted, not required, per the controller's own comment). */

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { getCase, openCase, referCase, submitAssessment } from '@/api/underwriting';
-import type { OpenCaseRequest, SubmitAssessmentRequest, UnderwritingCaseView } from '@/api/types';
+import { getCase, listCases, openCase, referCase, submitAssessment } from '@/api/underwriting';
+import type { UnderwritingListParams } from '@/api/underwriting';
+import type { OpenCaseRequest, Page, SubmitAssessmentRequest, UnderwritingCaseView } from '@/api/types';
 import { idle, success, track, type Resource } from './createResourceSlice';
 
 /**
@@ -10,6 +11,7 @@ import { idle, success, track, type Resource } from './createResourceSlice';
 type Keyed<T> = Record<string, Resource<T>>;
 
 interface UnderwritingState {
+  list: Resource<Page<UnderwritingCaseView>>;
   // A single slot, not keyed: opening makes a NEW case, so there is no existing
   // id to key against yet -- same shape as products' `creating`.
   opening: Resource<UnderwritingCaseView>;
@@ -21,6 +23,7 @@ interface UnderwritingState {
   submittingAssessment: Keyed<UnderwritingCaseView>;
   referring: Keyed<true>;
 
+  loadList: (params: UnderwritingListParams) => Promise<void>;
   openCase: (request: OpenCaseRequest) => Promise<void>;
   resetOpenCase: () => void;
   loadCase: (caseId: string) => Promise<void>;
@@ -31,10 +34,19 @@ interface UnderwritingState {
 }
 
 export const useUnderwritingStore = create<UnderwritingState>((set, getState) => ({
+  list: idle(),
   opening: idle(),
   cases: {},
   submittingAssessment: {},
   referring: {},
+
+  loadList: (params) =>
+    track(
+      'underwriting.list',
+      getState().list,
+      (next) => set({ list: next }),
+      () => listCases(params),
+    ),
 
   openCase: (request) =>
     track(
