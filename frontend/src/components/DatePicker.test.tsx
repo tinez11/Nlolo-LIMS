@@ -94,4 +94,46 @@ describe('DatePicker', () => {
     const dayButton = screen.getAllByRole('button', { name: /\w+day, \w+ \d+.*\d{4}/ })[5]!;
     expect(dayButton).toBeDisabled();
   });
+
+  it('typing a date outside the disabled range does not call onChange, unlike clicking a disabled day would', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <DatePicker
+        value={null}
+        onChange={onChange}
+        placeholder="Pick a date"
+        disabled={{ after: new Date(2026, 0, 1) }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Pick a date' }));
+    // A syntactically valid, fully-typed date, but AFTER the disabled bound --
+    // the calendar grid would refuse this day, and the typed-input path must
+    // refuse it too rather than silently accepting whatever bypasses the click UI.
+    await user.type(screen.getByPlaceholderText('YYYY-MM-DD'), '2026-06-15');
+
+    expect(onChange).not.toHaveBeenCalled();
+    // The popover stays open on a rejected typed date -- same "nothing happened"
+    // treatment as typing an incomplete date above.
+    expect(screen.getByPlaceholderText('YYYY-MM-DD')).toBeInTheDocument();
+  });
+
+  it('typing a date inside an "after" disabled range still calls onChange', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <DatePicker
+        value={null}
+        onChange={onChange}
+        placeholder="Pick a date"
+        disabled={{ after: new Date(2026, 0, 1) }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Pick a date' }));
+    await user.type(screen.getByPlaceholderText('YYYY-MM-DD'), '2025-06-15');
+
+    expect(onChange).toHaveBeenCalledWith('2025-06-15');
+  });
 });

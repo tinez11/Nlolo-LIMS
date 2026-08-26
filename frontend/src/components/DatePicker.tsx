@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover';
 import { X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { DayPicker, type Matcher } from 'react-day-picker';
+import { DayPicker, dateMatchModifiers, type Matcher } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import { formatDate } from '@/lib/dates';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
@@ -46,6 +46,13 @@ export function DatePicker({ value, onChange, placeholder = 'Select a date', dis
     if (parsed) setMonth(parsed);
   }, [value]);
 
+  const dayPickerDisabled: Matcher[] | undefined = disabled
+    ? [
+        ...(disabled.before ? [{ before: disabled.before }] : []),
+        ...(disabled.after ? [{ after: disabled.after }] : []),
+      ]
+    : undefined;
+
   function select(date: Date | undefined) {
     if (!date) return;
     onChange(toIso(date));
@@ -55,11 +62,15 @@ export function DatePicker({ value, onChange, placeholder = 'Select a date', dis
   function onTypedChange(next: string) {
     setTyped(next);
     const parsed = fromIso(next);
-    if (parsed) {
-      onChange(next);
-      setMonth(parsed);
-      setOpen(false);
-    }
+    if (!parsed) return;
+    // The calendar grid already refuses a disabled day via `dayPickerDisabled`
+    // (DayPicker's own `disabled` prop) -- without this check, typing a
+    // syntactically valid date directly into the text field bypassed that
+    // range entirely (e.g. a future date of death, or a future date of birth).
+    if (dayPickerDisabled && dateMatchModifiers(parsed, dayPickerDisabled)) return;
+    onChange(next);
+    setMonth(parsed);
+    setOpen(false);
   }
 
   function clear(e: React.MouseEvent) {
@@ -67,13 +78,6 @@ export function DatePicker({ value, onChange, placeholder = 'Select a date', dis
     onChange(null);
     setTyped('');
   }
-
-  const dayPickerDisabled: Matcher[] | undefined = disabled
-    ? [
-        ...(disabled.before ? [{ before: disabled.before }] : []),
-        ...(disabled.after ? [{ after: disabled.after }] : []),
-      ]
-    : undefined;
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
