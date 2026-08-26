@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { CLAIM_TYPES } from '@/api/types';
 import { PageHeader } from '@/components/AppShell';
+import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
@@ -126,10 +127,17 @@ export function RegisterClaimPage() {
         </FormField>
 
         <FormField label="Date of event" error={errors.dateOfEvent?.message}>
-          <input
-            type="date"
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
-            {...register('dateOfEvent')}
+          <Controller
+            control={control}
+            name="dateOfEvent"
+            render={({ field }) => (
+              <DatePicker
+                value={field.value || null}
+                onChange={(iso) => field.onChange(iso ?? '')}
+                placeholder="Select the date of event"
+                disabled={{ after: new Date() }}
+              />
+            )}
           />
         </FormField>
 
@@ -159,7 +167,18 @@ export function RegisterClaimPage() {
                 <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.placeOfDeath')} />
               </FormField>
               <FormField label="Date of death" error={detailError('dateOfDeath')}>
-                <input type="date" className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.dateOfDeath')} />
+                <Controller
+                  control={control}
+                  name="details.dateOfDeath"
+                  render={({ field }) => (
+                    <DatePicker
+                      value={(field.value as string) || null}
+                      onChange={(iso) => field.onChange(iso ?? '')}
+                      placeholder="Select the date of death"
+                      disabled={{ after: new Date() }}
+                    />
+                  )}
+                />
               </FormField>
               <FormField label="Attending physician" error={detailError('attendingPhysician')}>
                 <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.attendingPhysician')} />
@@ -173,7 +192,18 @@ export function RegisterClaimPage() {
                 <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.disabilityType')} />
               </FormField>
               <FormField label="Onset date" error={detailError('onsetDate')}>
-                <input type="date" className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.onsetDate')} />
+                <Controller
+                  control={control}
+                  name="details.onsetDate"
+                  render={({ field }) => (
+                    <DatePicker
+                      value={(field.value as string) || null}
+                      onChange={(iso) => field.onChange(iso ?? '')}
+                      placeholder="Select the onset date"
+                      disabled={{ after: new Date() }}
+                    />
+                  )}
+                />
               </FormField>
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <input type="checkbox" {...register('details.permanent')} />
@@ -198,7 +228,18 @@ export function RegisterClaimPage() {
                 <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.diagnosis')} />
               </FormField>
               <FormField label="Diagnosis date" error={detailError('diagnosisDate')}>
-                <input type="date" className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.diagnosisDate')} />
+                <Controller
+                  control={control}
+                  name="details.diagnosisDate"
+                  render={({ field }) => (
+                    <DatePicker
+                      value={(field.value as string) || null}
+                      onChange={(iso) => field.onChange(iso ?? '')}
+                      placeholder="Select the diagnosis date"
+                      disabled={{ after: new Date() }}
+                    />
+                  )}
+                />
               </FormField>
               <FormField label="ICD code" error={detailError('icdCode')}>
                 <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm" {...register('details.icdCode')} />
@@ -208,7 +249,17 @@ export function RegisterClaimPage() {
 
           {claimType === 'MATURITY' && (
             <FormField label="Maturity date" error={detailError('maturityDate')}>
-              <input type="date" className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.maturityDate')} />
+              <Controller
+                control={control}
+                name="details.maturityDate"
+                render={({ field }) => (
+                  <DatePicker
+                    value={(field.value as string) || null}
+                    onChange={(iso) => field.onChange(iso ?? '')}
+                    placeholder="Select the maturity date"
+                  />
+                )}
+              />
             </FormField>
           )}
         </div>

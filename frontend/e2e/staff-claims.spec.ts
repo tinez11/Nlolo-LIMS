@@ -114,10 +114,12 @@ test.describe('staff claims', () => {
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();
-    await page.locator('input[type="date"]').first().fill('2026-08-01');
+    await page.getByRole('button', { name: 'Select the date of event' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('2026-08-01');
     await page.getByLabel('Cause of death').fill('Test');
     await page.getByLabel('Place of death').fill('Test');
-    await page.locator('input[type="date"]').nth(1).fill('2026-08-01');
+    await page.getByRole('button', { name: 'Select the date of death' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('2026-08-01');
     await page.getByLabel('Attending physician').fill('Dr. Test');
 
     await page.getByRole('button', { name: 'Register claim' }).click();
@@ -135,10 +137,12 @@ test.describe('staff claims', () => {
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();
-    await page.locator('input[type="date"]').first().fill('2026-08-01');
+    await page.getByRole('button', { name: 'Select the date of event' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('2026-08-01');
     await page.getByLabel('Cause of death').fill('Test');
     await page.getByLabel('Place of death').fill('Test');
-    await page.locator('input[type="date"]').nth(1).fill('2026-08-01');
+    await page.getByRole('button', { name: 'Select the date of death' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('2026-08-01');
     await page.getByLabel('Attending physician').fill('Dr. Test');
     await page.getByRole('button', { name: 'Register claim' }).click();
     await expect(page.getByRole('alert')).toBeVisible();

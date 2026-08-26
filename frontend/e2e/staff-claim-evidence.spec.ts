@@ -45,10 +45,12 @@ test.describe('staff claim evidence', () => {
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();
-    await page.getByLabel('Date of event').fill('2026-01-10');
+    await page.getByRole('button', { name: 'Select the date of event' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('2026-01-10');
     await page.getByLabel('Cause of death').fill('E2E fixture');
     await page.getByLabel('Place of death').fill('Dar es Salaam');
-    await page.getByLabel('Date of death').fill('2026-01-10');
+    await page.getByRole('button', { name: 'Select the date of death' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('2026-01-10');
     await page.getByLabel('Attending physician').fill('Dr E2E');
     await page.getByRole('button', { name: 'Register claim' }).click();
     await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/, { timeout: 15_000 });
