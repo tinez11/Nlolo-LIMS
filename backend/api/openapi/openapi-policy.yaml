@@ -76,6 +76,10 @@ paths:
         - name: status
           in: query
           schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED] }
+        - name: q
+          in: query
+          description: Free-text, case-insensitive substring match against policyNumber.
+          schema: { type: string }
         - name: page
           in: query
           schema: { type: integer, default: 0 }

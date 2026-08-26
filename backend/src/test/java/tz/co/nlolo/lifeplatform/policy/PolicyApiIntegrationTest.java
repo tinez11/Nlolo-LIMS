@@ -170,7 +170,7 @@ class PolicyApiIntegrationTest {
         List<PolicyView> found = List.of();
         for (int attempt = 0; attempt < 50; attempt++) {
             TenantContext.set(tenantId);
-            var results = policyApi.searchPolicies(fixture.applicantId(), null, null, PageRequest.of(0, 10));
+            var results = policyApi.searchPolicies(fixture.applicantId(), null, null, null, PageRequest.of(0, 10));
             found = results.getContent();
             if (!found.isEmpty()) {
                 break;

@@ -683,4 +683,54 @@ class PolicyContractTest {
             .andExpect(jsonPath("$.items[0].policyNumber").value(secondPolicy))
             .andExpect(jsonPath("$.items[1].policyNumber").value(firstPolicy));
     }
+
+    @Test
+    void searchPoliciesByQMatchesACaseInsensitiveSubstringOfPolicyNumber() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = manualIssue(tenantId, "Q-SEARCH-FIXTURE").policyNumber();
+        // A second, real, unrelated policy in the SAME tenant -- without it, an
+        // IGNORED q param would still return "everything in this fresh tenant"
+        // (exactly 1 item), passing for the wrong reason.
+        manualIssue(tenantId, "Q-SEARCH-OTHER");
+
+        // Deliberately lowercased query against a real POL-XXXXXXXX (uppercase-hex)
+        // policy number -- falsifies "ILIKE is inherently case-insensitive" against a
+        // real row rather than trusting the SQL.
+        mockMvc.perform(get("/policies")
+                .queryParam("q", policyNumber.toLowerCase())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].policyNumber").value(policyNumber));
+    }
+
+    @Test
+    void searchPoliciesByQCombinesWithStatus() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = manualIssue(tenantId, "Q-COMBO-FIXTURE").policyNumber();
+        // A second real, ACTIVE policy in the same tenant -- status=ACTIVE ALONE
+        // would match both, so only a genuinely-applied q narrows this to one.
+        manualIssue(tenantId, "Q-COMBO-OTHER");
+
+        mockMvc.perform(get("/policies")
+                .queryParam("q", policyNumber)
+                .queryParam("status", "ACTIVE")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].policyNumber").value(policyNumber));
+    }
+
+    @Test
+    void searchPoliciesByQReturnsEmptyForNoMatches() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(get("/policies")
+                .queryParam("q", "NoPolicyAnywhereHasThisExactNonsenseNumber12345")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0));
+    }
 }

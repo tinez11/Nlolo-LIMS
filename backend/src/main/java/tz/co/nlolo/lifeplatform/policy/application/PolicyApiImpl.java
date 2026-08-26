@@ -211,9 +211,10 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
-    public Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Set<UUID> agentOfRecordIds, Pageable pageable) {
+    public Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Set<UUID> agentOfRecordIds, String q, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<Policy> page;
+        boolean hasQ = q != null && !q.isBlank();
         // The three no-agent-filter branches stay on the original derived-query methods (unchanged
         // shape, unchanged behaviour) rather than routing everything through the new three-way
         // `search` query for the common (non-agent) case. Critically, the guard here is `!= null`,
@@ -223,9 +224,12 @@ public class PolicyApiImpl implements PolicyApi {
         // for) must see ZERO policies, not silently fall through to the unfiltered "no agent
         // filter" branches and see the whole tenant. `PolicyRepository.search`'s JPQL handles an
         // empty `IN (...)` collection correctly (matches nothing), so routing there is sufficient.
-        if (agentOfRecordIds != null) {
+        //
+        // A present q ALSO routes through the wider `search` query, same reasoning: only the
+        // truly-unfiltered common case stays on the fast derived-query methods.
+        if (agentOfRecordIds != null || hasQ) {
             page = policyRepository.search(tenantId, policyholderPartyId, status != null ? status.name() : null,
-                agentOfRecordIds, pageable);
+                agentOfRecordIds, hasQ ? q.trim() : null, pageable);
         } else if (policyholderPartyId != null && status != null) {
             page = policyRepository.findByTenantIdAndPolicyholderPartyIdAndStatus(tenantId, policyholderPartyId, status.name(), pageable);
         } else if (policyholderPartyId != null) {

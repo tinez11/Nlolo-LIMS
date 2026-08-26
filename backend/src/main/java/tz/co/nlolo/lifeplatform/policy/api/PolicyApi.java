@@ -34,7 +34,7 @@ public interface PolicyApi {
      * given ids -- an agents-realm caller's own resolved hierarchy team (see
      * {@code DistributionApi.resolveAgentTeam}), computed by the controller, not this method.
      */
-    Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Set<UUID> agentOfRecordIds, Pageable pageable);
+    Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Set<UUID> agentOfRecordIds, String q, Pageable pageable);
 
     /**
      * The policy numbers an agents-realm caller's own hierarchy team (itself plus its downline,

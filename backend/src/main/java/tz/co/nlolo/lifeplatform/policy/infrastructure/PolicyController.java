@@ -87,6 +87,7 @@ public class PolicyController {
     public ResponseEntity<PolicySearchResponse> searchPolicies(
             @RequestParam(required = false) UUID policyholderPartyId,
             @RequestParam(required = false) PolicyStatus status,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -101,7 +102,7 @@ public class PolicyController {
         // Set.of() here for a non-agent caller would make every staff/customer search return zero
         // results.
         Set<UUID> agentOfRecordIds = isAgent(authentication) ? resolveOwnAgentTeamOrThrow(jwt) : null;
-        Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, status, agentOfRecordIds,
+        Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, status, agentOfRecordIds, q,
             PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt")));
         return ResponseEntity.ok(PolicySearchResponse.from(result));
     }

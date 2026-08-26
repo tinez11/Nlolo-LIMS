@@ -31,11 +31,13 @@ public interface PolicyRepository extends JpaRepository<Policy, String> {
     @Query("SELECT p FROM Policy p WHERE p.tenantId = :tenantId "
         + "AND (:policyholderPartyId IS NULL OR p.policyholderPartyId = :policyholderPartyId) "
         + "AND (:status IS NULL OR p.status = :status) "
-        + "AND (:agentOfRecordIds IS NULL OR p.agentOfRecordId IN :agentOfRecordIds)")
+        + "AND (:agentOfRecordIds IS NULL OR p.agentOfRecordId IN :agentOfRecordIds) "
+        + "AND (:q IS NULL OR LOWER(p.policyNumber) LIKE LOWER(CONCAT('%', :q, '%')))")
     Page<Policy> search(@Param("tenantId") UUID tenantId,
                          @Param("policyholderPartyId") UUID policyholderPartyId,
                          @Param("status") String status,
                          @Param("agentOfRecordIds") Collection<UUID> agentOfRecordIds,
+                         @Param("q") String q,
                          Pageable pageable);
 
     /** Backs {@code claims}' own agent-team scoping (claims has no agentOfRecordId of its own --
