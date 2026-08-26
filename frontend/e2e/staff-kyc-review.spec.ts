@@ -26,7 +26,8 @@ test.describe('staff KYC review', () => {
     const fullName = `E2E KYC Queue Fixture ${Date.now()}`;
     await agentPage.goto('/agents/customers/new');
     await agentPage.getByLabel('Full name').fill(fullName);
-    await agentPage.getByLabel('Date of birth').fill('1990-05-12');
+    await agentPage.getByRole('button', { name: 'Select the date of birth' }).click();
+    await agentPage.getByPlaceholder('YYYY-MM-DD').fill('1990-05-12');
     await agentPage.getByRole('button', { name: 'Register individual' }).click();
     await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
     const partyIdText = await agentPage.getByText(/^[0-9a-f]{8}-[0-9a-f]{4}-/).textContent();

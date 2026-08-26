@@ -1,7 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { PageHeader } from '@/components/AppShell';
+import { DatePicker } from '@/components/DatePicker';
 import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -83,6 +84,7 @@ function RegisterIndividualForm() {
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors },
@@ -118,10 +120,17 @@ function RegisterIndividualForm() {
       </FormField>
 
       <FormField label="Date of birth" error={errors.dateOfBirth?.message}>
-        <input
-          type="date"
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
-          {...register('dateOfBirth')}
+        <Controller
+          control={control}
+          name="dateOfBirth"
+          render={({ field }) => (
+            <DatePicker
+              value={field.value || null}
+              onChange={(iso) => field.onChange(iso ?? '')}
+              placeholder="Select the date of birth"
+              disabled={{ after: new Date() }}
+            />
+          )}
         />
       </FormField>
 

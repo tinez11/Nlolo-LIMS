@@ -46,7 +46,8 @@ test.describe('agents onboard a customer', () => {
 
     const suffix = Date.now();
     await page.getByLabel('Full name').fill(`E2E Agent Onboarded ${suffix}`);
-    await page.getByLabel('Date of birth').fill('1990-05-12');
+    await page.getByRole('button', { name: 'Select the date of birth' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('1990-05-12');
     await page.getByLabel('Phone number (optional)').fill('+255712345678');
     await page.getByRole('button', { name: 'Register individual' }).click();
 
