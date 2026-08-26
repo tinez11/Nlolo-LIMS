@@ -29,7 +29,8 @@ async function createRealQuotaShareTreaty(
   // QUOTA_SHARE is the default selection.
   await page.getByLabel('Retention limit').fill('0.00');
   await page.getByLabel('Cession percent').fill(cessionPercent);
-  await page.getByLabel('Effective from').fill('2020-01-01');
+  await page.getByRole('button', { name: 'Select the effective-from date' }).click();
+  await page.getByPlaceholder('YYYY-MM-DD').fill('2020-01-01');
   await page.getByRole('button', { name: 'Create treaty' }).click();
   await expect(page).toHaveURL(/\/staff\/treaties\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   const treatyId = page.url().split('/').pop() as string;
@@ -71,7 +72,8 @@ test.describe('staff reinsurance', () => {
     await page.getByLabel('Reinsurer name').fill('E2E No Percent Re');
     await page.getByLabel('Retention limit').fill('0.00');
     // Cession percent left blank -- QUOTA_SHARE requires it.
-    await page.getByLabel('Effective from').fill('2020-01-01');
+    await page.getByRole('button', { name: 'Select the effective-from date' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('2020-01-01');
     await page.getByRole('button', { name: 'Create treaty' }).click();
 
     await expect(page.getByText('Must be a decimal percentage like 25.00')).toBeVisible();

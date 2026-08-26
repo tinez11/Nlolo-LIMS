@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { type FieldErrors, useForm } from 'react-hook-form';
+import { type FieldErrors, useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { TREATY_TYPES } from '@/api/types';
 import { PageHeader } from '@/components/AppShell';
+import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useReinsuranceStore } from '@/store/reinsuranceStore';
@@ -42,6 +43,7 @@ export function CreateTreatyPage() {
     handleSubmit,
     watch,
     reset,
+    control,
     formState: { errors },
   } = useForm<CreateTreatyFormValues>({
     resolver: zodResolver(createTreatyFormSchema),
@@ -137,17 +139,29 @@ export function CreateTreatyPage() {
 
         <div className="grid grid-cols-2 gap-2">
           <FormField label="Effective from" error={errors.effectiveFrom?.message}>
-            <input
-              type="date"
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
-              {...register('effectiveFrom')}
+            <Controller
+              control={control}
+              name="effectiveFrom"
+              render={({ field }) => (
+                <DatePicker
+                  value={field.value || null}
+                  onChange={(iso) => field.onChange(iso ?? '')}
+                  placeholder="Select the effective-from date"
+                />
+              )}
             />
           </FormField>
           <FormField label="Effective to (optional)" error={errors.effectiveTo?.message}>
-            <input
-              type="date"
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
-              {...register('effectiveTo')}
+            <Controller
+              control={control}
+              name="effectiveTo"
+              render={({ field }) => (
+                <DatePicker
+                  value={field.value || null}
+                  onChange={(iso) => field.onChange(iso ?? '')}
+                  placeholder="Select the effective-to date"
+                />
+              )}
             />
           </FormField>
         </div>
