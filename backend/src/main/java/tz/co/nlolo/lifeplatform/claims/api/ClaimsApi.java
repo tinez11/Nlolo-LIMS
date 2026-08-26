@@ -36,7 +36,7 @@ public interface ClaimsApi {
      * only the policy it references, so this joins through policy rather than needing a
      * distribution dependency here).
      */
-    Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, Pageable pageable);
+    Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, String q, Pageable pageable);
 
     ClaimAssessmentView submitAssessment(UUID claimId, String findings, BigDecimal recommendedAmount,
                                           String recommendedCurrency, boolean fraudIndicator, String assessedBy);

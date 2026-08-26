@@ -227,14 +227,15 @@ public class ClaimsApiImpl implements ClaimsApi {
      * {@code ClaimsContractTest} caught (this method had never once been called with a non-null
      * {@code status} by any prior test). */
     @Override
-    public Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, Pageable pageable) {
+    public Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, String q, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<Claim> page;
+        boolean hasQ = q != null && !q.isBlank();
         // Same "leave the pre-existing derived-query paths alone for the common case" reasoning as
-        // PolicyApiImpl.searchPolicies -- only an agents-realm caller's non-null policyNumbers
-        // routes through the new three-way query.
-        if (policyNumbers != null) {
-            page = claimRepository.search(tenantId, claimantPartyId, status, policyNumbers, pageable);
+        // PolicyApiImpl.searchPolicies -- an agents-realm caller's non-null policyNumbers, or a
+        // present q, routes through the new wider query.
+        if (policyNumbers != null || hasQ) {
+            page = claimRepository.search(tenantId, claimantPartyId, status, policyNumbers, hasQ ? q.trim() : null, pageable);
         } else if (claimantPartyId != null && status != null) {
             page = claimRepository.findByTenantIdAndClaimantPartyIdAndStatus(tenantId, claimantPartyId, status, pageable);
         } else if (claimantPartyId != null) {

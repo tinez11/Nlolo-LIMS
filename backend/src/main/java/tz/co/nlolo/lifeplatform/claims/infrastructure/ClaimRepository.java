@@ -51,11 +51,13 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
     @Query("SELECT c FROM Claim c WHERE c.tenantId = :tenantId "
         + "AND (:claimantPartyId IS NULL OR c.claimantPartyId = :claimantPartyId) "
         + "AND (:status IS NULL OR c.status = :status) "
-        + "AND (:policyNumbers IS NULL OR c.policyNumber IN :policyNumbers)")
+        + "AND (:policyNumbers IS NULL OR c.policyNumber IN :policyNumbers) "
+        + "AND (:q IS NULL OR LOWER(c.policyNumber) LIKE LOWER(CONCAT('%', :q, '%')))")
     Page<Claim> search(@Param("tenantId") UUID tenantId,
                         @Param("claimantPartyId") UUID claimantPartyId,
                         @Param("status") ClaimStatus status,
                         @Param("policyNumbers") Collection<String> policyNumbers,
+                        @Param("q") String q,
                         Pageable pageable);
 
     /** Backs claims/V3's partial unique index on (tenant_id, registration_idempotency_key) --

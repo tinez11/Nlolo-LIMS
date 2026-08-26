@@ -116,6 +116,7 @@ public class ClaimController {
     public ResponseEntity<ClaimSearchResponseDto> listClaims(
             @RequestParam(required = false) ClaimStatus status,
             @RequestParam(required = false) UUID claimantPartyId,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
@@ -126,7 +127,7 @@ public class ClaimController {
         // distribution dependency, since a claim carries no agentOfRecordId of its own.
         Set<String> policyNumbers = isAgent(authentication)
             ? policyApi.policyNumbersForAgentTeam(ownAgentPartyIdOrThrow(jwt)) : null;
-        Page<ClaimView> result = claimsApi.searchClaims(status, effectiveClaimantPartyId, policyNumbers,
+        Page<ClaimView> result = claimsApi.searchClaims(status, effectiveClaimantPartyId, policyNumbers, q,
             PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt")));
         return ResponseEntity.ok(ClaimSearchResponseDto.from(result));
     }

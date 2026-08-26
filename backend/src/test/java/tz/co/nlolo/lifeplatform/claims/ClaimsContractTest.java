@@ -806,4 +806,39 @@ class ClaimsContractTest {
             .andExpect(jsonPath("$.items[0].claimId").value(claimId2.toString()))
             .andExpect(jsonPath("$.items[1].claimId").value(claimId1.toString()));
     }
+
+    @Test
+    void listClaimsByQMatchesACaseInsensitiveSubstringOfPolicyNumber() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "Q-SEARCH-CLAIM-PRODUCT");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        // A second real claim against a DIFFERENT policy in the same tenant --
+        // without it, an IGNORED q would still return "everything in this fresh
+        // tenant" (1 item), passing for the wrong reason.
+        String otherPolicyNumber = issuePolicy(tenantId, fixture);
+        registerDeathClaim(tenantId, fixture.applicantId(), otherPolicyNumber);
+
+        // Deliberately lowercased query against a real POL-XXXXXXXX (uppercase-hex)
+        // policy number -- falsifies "ILIKE is inherently case-insensitive" against a
+        // real row rather than trusting the SQL.
+        mockMvc.perform(get("/claims")
+                .queryParam("q", policyNumber.toLowerCase())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].claimId").value(claimId.toString()));
+    }
+
+    @Test
+    void listClaimsByQReturnsEmptyForNoMatches() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(get("/claims")
+                .queryParam("q", "NoClaimAnywhereIsAgainstThisExactNonsensePolicy12345")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0));
+    }
 }
