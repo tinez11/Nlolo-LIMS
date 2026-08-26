@@ -25,6 +25,7 @@ import type {
 export interface PolicySearchParams {
   status?: PolicyStatus;
   policyholderPartyId?: string;
+  q?: string;
   page?: number;
   pageSize?: number;
 }
@@ -51,6 +52,7 @@ export async function searchPolicies(params: PolicySearchParams = {}): Promise<P
     params: {
       ...(params.status ? { status: params.status } : {}),
       ...(params.policyholderPartyId ? { policyholderPartyId: params.policyholderPartyId } : {}),
+      ...(params.q ? { q: params.q } : {}),
       page,
       pageSize,
     },

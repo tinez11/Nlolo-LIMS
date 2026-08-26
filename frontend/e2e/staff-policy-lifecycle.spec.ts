@@ -99,4 +99,14 @@ test.describe('staff policy lifecycle', () => {
     await expect(page).toHaveURL(new RegExp(`/staff/policies/${policyNumber}$`));
     await expect(page.getByLabel('Reason')).toBeVisible();
   });
+
+  test('the search bar finds a real policy by its policy number', async ({ page }) => {
+    const policyNumber = await issuePolicyAgainst(page, 'Demo Term Life (DEMO-TERM-01)', 'E2E search bar fixture');
+
+    await page.goto('/staff/policies');
+    await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible();
+    await page.getByPlaceholder('Search by policy number').fill(policyNumber);
+    await expect(page).toHaveURL(new RegExp(`q=${policyNumber}`), { timeout: 5000 });
+    await expect(page.getByText(policyNumber)).toBeVisible();
+  });
 });
