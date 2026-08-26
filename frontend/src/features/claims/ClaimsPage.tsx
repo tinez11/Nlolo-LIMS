@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CLAIM_STATUSES, type ClaimStatus, type ClaimView } from '@/api/types';
@@ -43,20 +43,48 @@ export function ClaimsPage({
     statusParam && (CLAIM_STATUSES as readonly string[]).includes(statusParam)
       ? (statusParam as ClaimStatus)
       : undefined;
+  const qParam = params.get('q') ?? '';
+  const [qInput, setQInput] = useState(qParam);
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
 
   const list = useClaimStore((s) => s.list);
   const loadList = useClaimStore((s) => s.loadList);
 
   useEffect(() => {
-    void loadList({ ...(status ? { status } : {}), page, pageSize: DEFAULT_PAGE_SIZE });
-  }, [loadList, status, page]);
+    void loadList({
+      ...(status ? { status } : {}),
+      ...(qParam ? { q: qParam } : {}),
+      page,
+      pageSize: DEFAULT_PAGE_SIZE,
+    });
+  }, [loadList, status, qParam, page]);
 
-  function update(next: { status?: ClaimStatus | undefined; page?: number }) {
+  // Keeps the input in sync if the URL changes from outside this input (back
+  // button, a status-chip click that also clears q via `update` below).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setQInput(qParam);
+  }, [qParam]);
+
+  // Debounced: writes to the URL (which is what actually triggers the fetch
+  // above) 300ms after the user stops typing, not on every keystroke.
+  useEffect(() => {
+    if (qInput === qParam) return;
+    const timer = setTimeout(() => update({ q: qInput || undefined }), 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qInput]);
+
+  function update(next: { status?: ClaimStatus | undefined; q?: string | undefined; page?: number }) {
     const merged = new URLSearchParams(params);
     if ('status' in next) {
       if (next.status) merged.set('status', next.status);
       else merged.delete('status');
+      merged.delete('page');
+    }
+    if ('q' in next) {
+      if (next.q) merged.set('q', next.q);
+      else merged.delete('q');
       merged.delete('page');
     }
     if (next.page !== undefined) {
@@ -135,7 +163,9 @@ export function ClaimsPage({
       return (
         <ErrorPanel
           error={list.error}
-          onRetry={() => void loadList({ ...(status ? { status } : {}), page })}
+          onRetry={() =>
+            void loadList({ ...(status ? { status } : {}), ...(qParam ? { q: qParam } : {}), page })
+          }
         />
       );
     }
@@ -227,6 +257,15 @@ export function ClaimsPage({
                 onClick={() => update({ status: value })}
               />
             ))}
+            <div className="relative ml-auto w-full max-w-55">
+              <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={qInput}
+                onChange={(e) => setQInput(e.target.value)}
+                placeholder="Search by policy number"
+                className="h-8 w-full rounded-md border border-input bg-surface pl-7 pr-2.5 text-xs"
+              />
+            </div>
           </div>
 
           {renderBody()}

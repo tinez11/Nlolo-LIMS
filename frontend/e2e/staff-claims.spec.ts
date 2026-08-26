@@ -56,6 +56,12 @@ test.describe('staff claims', () => {
     page,
   }) => {
     await page.goto('/staff/claims');
+    // Search for the seeded claim specifically, by its own policy number --
+    // "first row" stopped reliably meaning "the seeded claim" once the list
+    // defaults to newest-created-first and other specs' fixtures create newer
+    // claims ahead of it.
+    await page.getByPlaceholder('Search by policy number').fill('POL-6BD5702F');
+    await expect(page).toHaveURL(/q=POL-6BD5702F/, { timeout: 5000 });
     const row = await firstClaimRow(page);
     expect(row).not.toBeNull();
     await row!.click();
@@ -142,5 +148,13 @@ test.describe('staff claims', () => {
     await page.goto('/staff/claims');
     await page.goto('/staff/claims/new');
     await expect(page.getByRole('alert')).not.toBeVisible();
+  });
+
+  test('the search bar finds a real claim by its policy number', async ({ page }) => {
+    await page.goto('/staff/claims');
+    await expect(page.getByRole('heading', { name: 'Claims' })).toBeVisible();
+    await page.getByPlaceholder('Search by policy number').fill('POL-6BD5702F');
+    await expect(page).toHaveURL(/q=POL-6BD5702F/, { timeout: 5000 });
+    await expect(page.getByText('DEATH')).toBeVisible();
   });
 });

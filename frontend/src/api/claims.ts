@@ -22,6 +22,7 @@ import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './policies';
 export interface ClaimSearchParams {
   status?: ClaimStatus;
   claimantPartyId?: string;
+  q?: string;
   page?: number;
   pageSize?: number;
 }
@@ -38,6 +39,7 @@ export async function searchClaims(params: ClaimSearchParams = {}): Promise<Page
     params: {
       ...(params.status ? { status: params.status } : {}),
       ...(params.claimantPartyId ? { claimantPartyId: params.claimantPartyId } : {}),
+      ...(params.q ? { q: params.q } : {}),
       page,
       pageSize,
     },
