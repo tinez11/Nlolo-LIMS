@@ -88,6 +88,29 @@ test.describe('staff underwriting', () => {
     await expect(page.getByRole('button', { name: 'Refer to senior underwriter' })).not.toBeVisible();
   });
 
+  test('a staff.finance session (no UNDERWRITER role) sees no assessment form or refer button on a real case', async ({
+    page,
+    browser,
+  }) => {
+    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
+    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
+    await page.getByLabel('Sum assured').fill('1500000.00');
+    await page.getByRole('button', { name: 'Open case' }).click();
+    await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    const caseUrl = page.url();
+
+    const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
+    const financePage = await financeContext.newPage();
+    await financePage.goto(caseUrl);
+    await expect(financePage.getByRole('heading', { name: 'Underwriting case' })).toBeVisible();
+    await expect(financePage.getByRole('button', { name: 'Submit assessment' })).not.toBeVisible();
+    await expect(financePage.getByRole('button', { name: 'Refer to senior underwriter' })).not.toBeVisible();
+    await financeContext.close();
+  });
+
   test('a second assessment racing against an already-decided case genuinely 409s, and does not resurface after a reload', async ({
     page,
     context,

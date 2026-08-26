@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import type { BeneficiaryInput } from '@/api/types';
+import { PartyName } from '@/components/PartyName';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
@@ -77,7 +78,13 @@ function ReadView({
             <Field
               key={`${b.partyId ?? b.freeformDesignee ?? 'beneficiary'}-${index}`}
               label={b.type === 'FREEFORM' ? 'Freeform' : 'Party'}
-              value={<span className="font-mono text-xs">{b.freeformDesignee ?? b.partyId ?? '—'}</span>}
+              value={
+                b.type === 'PARTY' && b.partyId ? (
+                  <PartyName partyId={b.partyId} />
+                ) : (
+                  <span className="text-sm">{b.freeformDesignee ?? '—'}</span>
+                )
+              }
               {...(typeof b.sharePercent === 'number' ? { note: `${b.sharePercent}% share` } : {})}
             />
           ))}

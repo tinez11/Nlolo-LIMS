@@ -36,6 +36,14 @@ async function addFreeformRow(page: Page, designee: string, sharePercent: number
   await page.getByRole('spinbutton').fill(String(sharePercent));
 }
 
+async function addPartyRow(page: Page, nameQuery: string, resultText: string, sharePercent: number) {
+  await page.getByRole('button', { name: 'Add beneficiary' }).click();
+  await page.getByRole('button', { name: 'Search for the beneficiary by name' }).click();
+  await page.getByPlaceholder('Type a name to search').fill(nameQuery);
+  await page.getByText(resultText).click();
+  await page.getByRole('spinbutton').fill(String(sharePercent));
+}
+
 test.describe('staff beneficiaries edit', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(POLICY_PATH);
@@ -132,6 +140,30 @@ test.describe('staff beneficiaries edit', () => {
     await expect(page.getByText('None recorded.')).toBeVisible();
 
     await page.reload();
+    await expect(page.getByText('None recorded.')).toBeVisible();
+  });
+
+  test('the read view resolves a real party beneficiary to its name, not a raw uuid', async ({
+    page,
+  }) => {
+    await openEdit(page);
+    await removeAllRows(page);
+    await addPartyRow(page, 'Amina', 'Amina Owner', 100);
+
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await expect(page.getByRole('button', { name: 'Edit beneficiaries' })).toBeVisible();
+    // The whole point: PartyName resolves the id to a real name, not
+    // `d9937444-3873-4336-9cb7-addb486f3e1b` showing up raw in the read view.
+    await expect(page.getByText('Amina Owner')).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText('Amina Owner')).toBeVisible();
+
+    // Restore the shared fixture to the seeded baseline (empty).
+    await openEdit(page);
+    await removeAllRows(page);
+    await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('None recorded.')).toBeVisible();
   });
 

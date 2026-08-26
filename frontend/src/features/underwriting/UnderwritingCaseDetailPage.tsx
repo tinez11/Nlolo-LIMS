@@ -2,8 +2,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
 import { ASSESSMENT_TYPES } from '@/api/types';
+import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/AppShell';
 import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -37,9 +39,20 @@ import {
  * once "enough" evidence exists -- so submitting ONE assessment IS the
  * decision, and a second call 409s (`UnderwritingCaseAlreadyDecidedException`).
  * There is no separate accept/decline/rate-up action to build a form for.
+ *
+ * Assessment/referral are gated on the current user's OWN token roles
+ * (`staffRoles`), same convenience-only decode `ClaimDetailPage` already uses
+ * for its own action panels -- the backend's `@PreAuthorize('UNDERWRITER')`
+ * remains the real authority, this only avoids showing a staff user (e.g.
+ * finance, customer-service) a live form that would 403. A non-decided case
+ * viewed by a non-underwriter renders neither panel; that is correct, not a
+ * missing feature.
  */
 export function UnderwritingCaseDetailPage() {
   const { caseId = '' } = useParams();
+  const auth = useAuth();
+  const identity = readIdentity(auth.user?.access_token);
+  const roles = staffRoles(identity);
 
   const detail = useUnderwritingStore(selectCase(caseId));
   const loadCase = useUnderwritingStore((s) => s.loadCase);
@@ -109,7 +122,28 @@ export function UnderwritingCaseDetailPage() {
 
       <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-5">
-          {view?.status !== 'DECIDED' ? (
+          {view?.status === 'DECIDED' ? (
+            <Panel title="Decision">
+              <dl className="px-4 pb-2">
+                <Field
+                  label="Outcome"
+                  value={<StatusBadge kind="underwritingDecision" value={view.decisionOutcome} />}
+                />
+                {view.decisionOutcome === 'LOADED' && (
+                  <Field
+                    label="Loading"
+                    value={
+                      view.decisionLoadingPercent != null ? `${view.decisionLoadingPercent}%` : '—'
+                    }
+                  />
+                )}
+                {view.decisionOutcome === 'DECLINED' && (
+                  <Field label="Reason" value={view.decisionDeclineReason ?? '—'} />
+                )}
+                <Field label="Decided" value={formatInstant(view.decisionDecidedAt)} />
+              </dl>
+            </Panel>
+          ) : roles.UNDERWRITER ? (
             <Panel
               title="Submit an assessment"
               subtitle="This decides the case outright -- there is no separate accept/decline step."
@@ -166,28 +200,7 @@ export function UnderwritingCaseDetailPage() {
                 </Button>
               </form>
             </Panel>
-          ) : (
-            <Panel title="Decision">
-              <dl className="px-4 pb-2">
-                <Field
-                  label="Outcome"
-                  value={<StatusBadge kind="underwritingDecision" value={view.decisionOutcome} />}
-                />
-                {view.decisionOutcome === 'LOADED' && (
-                  <Field
-                    label="Loading"
-                    value={
-                      view.decisionLoadingPercent != null ? `${view.decisionLoadingPercent}%` : '—'
-                    }
-                  />
-                )}
-                {view.decisionOutcome === 'DECLINED' && (
-                  <Field label="Reason" value={view.decisionDeclineReason ?? '—'} />
-                )}
-                <Field label="Decided" value={formatInstant(view.decisionDecidedAt)} />
-              </dl>
-            </Panel>
-          )}
+          ) : null}
         </div>
 
         <div className="space-y-5">
@@ -218,7 +231,7 @@ export function UnderwritingCaseDetailPage() {
               </dl>
             )}
 
-            {view?.referralStatus === 'NONE' && (
+            {view?.referralStatus === 'NONE' && roles.UNDERWRITER && (
               <div className="px-4 pb-4">
                 <Button
                   size="sm"
