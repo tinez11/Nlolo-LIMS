@@ -1,8 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, X } from 'lucide-react';
 import { useEffect } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { BENEFIT_TYPES, IFRS_MEASUREMENT_MODELS, RATING_FACTOR_TYPES, type ProductCategory } from '@/api/types';
+import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { selectPublishing, useProductStore } from '@/store/productStore';
 import {
@@ -92,19 +93,31 @@ export function PublishVersionForm({
           </select>
         </FormField>
         <FormField label="Effective date" error={errors.effectiveDate?.message}>
-          <input
-            type="date"
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
-            {...register('effectiveDate')}
+          <Controller
+            control={control}
+            name="effectiveDate"
+            render={({ field }) => (
+              <DatePicker
+                value={field.value || null}
+                onChange={(iso) => field.onChange(iso ?? '')}
+                placeholder="Select the effective date"
+              />
+            )}
           />
         </FormField>
       </div>
 
       <FormField label="Retirement date (optional)" error={errors.retirementDate?.message}>
-        <input
-          type="date"
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
-          {...register('retirementDate')}
+        <Controller
+          control={control}
+          name="retirementDate"
+          render={({ field }) => (
+            <DatePicker
+              value={field.value || null}
+              onChange={(iso) => field.onChange(iso ?? '')}
+              placeholder="Select the retirement date"
+            />
+          )}
         />
       </FormField>
 

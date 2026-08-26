@@ -57,7 +57,8 @@ test.describe('staff products', () => {
     // both AGE and SUM_ASSURED_BAND), mirrored client-side in publishVersionSchema.
     await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
     await ratingSection.locator('input[placeholder="Band, e.g. 18-30"]').fill('18-30');
-    await page.getByLabel('Effective date').fill('2026-01-01');
+    await page.getByRole('button', { name: 'Select the effective date' }).click();
+    await page.getByPlaceholder('YYYY-MM-DD').fill('2026-01-01');
 
     await page.getByRole('button', { name: 'Publish version' }).click();
     await expect(
