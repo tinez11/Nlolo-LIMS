@@ -32,7 +32,7 @@ public interface PolicyRepository extends JpaRepository<Policy, String> {
         + "AND (:policyholderPartyId IS NULL OR p.policyholderPartyId = :policyholderPartyId) "
         + "AND (:status IS NULL OR p.status = :status) "
         + "AND (:agentOfRecordIds IS NULL OR p.agentOfRecordId IN :agentOfRecordIds) "
-        + "AND (:q IS NULL OR LOWER(p.policyNumber) LIKE LOWER(CONCAT('%', :q, '%')))")
+        + "AND (:q IS NULL OR LOWER(p.policyNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))")
     Page<Policy> search(@Param("tenantId") UUID tenantId,
                          @Param("policyholderPartyId") UUID policyholderPartyId,
                          @Param("status") String status,

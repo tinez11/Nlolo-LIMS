@@ -52,7 +52,7 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
         + "AND (:claimantPartyId IS NULL OR c.claimantPartyId = :claimantPartyId) "
         + "AND (:status IS NULL OR c.status = :status) "
         + "AND (:policyNumbers IS NULL OR c.policyNumber IN :policyNumbers) "
-        + "AND (:q IS NULL OR LOWER(c.policyNumber) LIKE LOWER(CONCAT('%', :q, '%')))")
+        + "AND (:q IS NULL OR LOWER(c.policyNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))")
     Page<Claim> search(@Param("tenantId") UUID tenantId,
                         @Param("claimantPartyId") UUID claimantPartyId,
                         @Param("status") ClaimStatus status,
