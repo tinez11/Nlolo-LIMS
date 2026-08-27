@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { readIdentity, staffRoles } from '@/auth/claims';
-import { PageHeader } from '@/components/AppShell';
+import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';

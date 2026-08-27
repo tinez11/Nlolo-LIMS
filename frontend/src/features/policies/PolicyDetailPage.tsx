@@ -7,7 +7,7 @@ import { useAuth } from 'react-oidc-context';
 import type { LoanView } from '@/api/types';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
-import { PageHeader } from '@/components/AppShell';
+import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';

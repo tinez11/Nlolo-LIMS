@@ -6,7 +6,7 @@ import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
 import { ASSESSMENT_TYPES } from '@/api/types';
 import { readIdentity, staffRoles } from '@/auth/claims';
-import { PageHeader } from '@/components/AppShell';
+import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';

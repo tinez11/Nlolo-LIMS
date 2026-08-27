@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { PRODUCT_CATEGORIES, type ProductCategory } from '@/api/types';
-import { PageHeader } from '@/components/AppShell';
+import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { useProductStore } from '@/store/productStore';

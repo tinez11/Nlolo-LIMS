@@ -282,8 +282,88 @@ which would collapse §3 to a single authority).
 1. **The agents realm has no ownership scoping.** Agent-of-record filtering is
    documented as deferred, so an agent token currently reads *every* policy in
    the tenant. Fix before building any agent-facing UI.
-2. **`UNDERWRITER` has no landing screen.** There is no underwriting case-list
+2. ~~**`UNDERWRITER` has no landing screen.** There is no underwriting case-list
    endpoint, so the role's primary workflow has no queue. First backend
-   follow-up, ahead of party search.
+   follow-up, ahead of party search.~~ **Closed.** `GET /underwriting/cases`
+   (paged, status-filterable) and `UnderwritingQueuePage` shipped in
+   `6520768`..`60ff669`. Party search closed too — `GET /parties` supports `q`
+   and `kycStatus`, and backs `KycReviewPage` and `PartyPicker`.
 3. **`CUSTOMER_SERVICE_REP` appears in zero `@PreAuthorize`.** A CSR sees the
    Operations group and nothing else. Confirm that's intended, not an oversight.
+
+---
+
+## 13. Restructure — Phase 0
+
+Added 2026-08-27, after reviewing an operations-console mockup
+(`nloloopsconsole.html` + `operationsprocessflow.html`) against the real API.
+
+**What the review found.** 34 mockup screens against 79 backend operations: 12
+fully servable and *all 12 already built here*; 5 render but thin; 17 with no
+backend at all. The mockup's contribution is therefore not new screens — it is a
+better information architecture over screens that already work, plus a wish-list
+of four bounded contexts the platform has never had.
+
+**Do not trust the mockup's citations.** It attributes Lead & Advisory,
+Proposals and Customer Service to "Addendum A §2.18/§2.20/§2.21". No such
+document exists; grepping all eleven `backend/docs/` deliverables returns zero
+hits for Lead, Quotation, Proposal, Complaint or Customer Service. Those
+contexts are undesigned. The mockup's "Design note" callouts are the author's
+own proposals wearing the costume of ratified decisions.
+
+Backend gaps and the pricing decision are specified separately in
+`backend/docs/superpowers/specs/2026-08-27-m13-pricing-and-read-gaps-design.md`.
+This section covers only the frontend, which blocks on none of it.
+
+### C3 — one `FormField` — **done** (`d8f4246`)
+
+`FormField` had been copy-pasted into twelve feature files, byte-identical in
+eleven. Promoted to `components/FormField.tsx`; 219 lines deleted. It sits
+beside `Field`, which is a different thing — `Field` is the read-only
+label/value row in a detail panel.
+
+### C1 — a screen manifest
+
+The screen list lives twice with no shared source: `App.tsx` holds 34 `<Route>`
+entries, `AppShell.tsx` holds `NAV_BY_REALM` with 14 items. They are the #2 and
+#3 most-churned files in the frontend's history. Adding a screen means editing
+both, and nothing catches the drift — 20 routes are reachable only by drilling
+in, which is deliberate per §7, but indistinguishable from an accidental
+omission.
+
+One `screens.ts` manifest; the router and the nav become maps over it. The
+`implemented` flag already in `AppShell` moves onto the manifest, where it can
+gate the route as well as the nav item, and a test can assert that every route
+is either reachable or explicitly marked otherwise.
+
+### C2 — a `gates` module
+
+The business rules that make this an insurance console rather than a CRUD app
+live nowhere. They are absent (claims coverage) or inlined in page JSX, where
+they can only be tested by rendering a page.
+
+`gates/` exposes `(record, asOfDate) => Gate[]` — `{ok, hard, title, detail}` —
+with `claimGates` and `issueGates` first, rendered by one `<GatePanel>`. The
+seam sits above the API layer, so the whole rule set is testable against fixture
+records with no DOM.
+
+**This exists because of a specific waste.** `GET /policies/{n}/coverage-status`
+and `/in-force` both accept `asOf`, and the mockup's best idea — judge a claim
+against the policy as it stood on the date of event, not today — is therefore
+already paid for. The parameter is typed, generated and plumbed through
+`api/policies.ts`, and then dropped: `policyStore` calls
+`getCoverageStatus(policyNumber)` with no `asOf`, so it always asks about today.
+`RegisterClaimPage`, the one screen that knows the date of event, never asks at
+all.
+
+### Deliberately not adopted from the mockup
+
+- **Client-side premium arithmetic.** The mockup's `price()` computes premiums in
+  the browser from a rate table. That is what §4 forbids, and its rate shape
+  (absolute rates per mille) does not match the backend's (multipliers with no
+  base). Pricing moves to the backend — see the M13 spec.
+- **Fabricated data.** The mockup hardcodes a 120-row chart of accounts, a
+  payments feed and 21 report definitions. Rendering invented figures is the
+  trap §6's "stat cards are counts only" rule exists to avoid.
+- **Screens for the four undesigned contexts.** Leads, needs analysis,
+  quotations, proposals and service cases are backend work first.

@@ -1,138 +1,27 @@
-import {
-  BookText,
-  ClipboardCheck,
-  FileText,
-  LogOut,
-  Moon,
-  Package,
-  Receipt,
-  ScrollText,
-  Shield,
-  Sun,
-  UserCheck,
-  UserPlus,
-  Users,
-  Wallet,
-} from 'lucide-react';
+import { LogOut, Moon, Sun } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
-import { avatarHue, canSeeFinance, displayName, initials, readIdentity } from '@/auth/claims';
+import { avatarHue, displayName, initials, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { cn } from '@/lib/cn';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
+import { navFor } from '@/screens';
 import { Button } from './ui/button';
 
 /**
- * Nav definition for the staff realm.
+ * The console chrome: sidebar, nav, user block.
  *
- * `implemented` gates rendering. Every entry here has a real list endpoint behind
- * it -- entities that are STILL fetch-by-ID only (payments, payout batches,
- * documents) deliberately get NO nav item, because an item that leads to a
- * "paste an ID" screen reads as broken software. They are reached by drilling
- * in from a policy or claim. Parties used to be in that category too, until
- * `GET /parties` closed the gap: a party PENDING KYC with nothing yet
- * referencing it (a fresh registration) was otherwise invisible to staff, so
- * "KYC review" below is a real list, not a lookup box. Underwriting closed the
- * same gap later still (`GET /underwriting/cases`) -- its own case id STILL
- * never round-trips back out through any other endpoint's response
- * (`PolicyResponseDto` omits `underwritingCaseId` despite the internal
- * same-named `PolicyView` record carrying it), so the queue below is the only
- * way back to a case you didn't bookmark, not a supplementary one.
- *
- * Agents is the one remaining exception, and deliberately not a "paste an ID"
- * screen: `POST /agents` is the only entry point onto that domain that exists
- * server-side (no list/search endpoint), so its nav item goes straight to the
- * one real, working action -- onboarding an agent -- rather than a lookup box.
- * An agent IS reachable another way, though: `PolicyView.agentOfRecordId` DOES
- * round-trip through `GET /policies` for real, so an agent is also reachable
- * by drilling in from a policy that names one -- Agents' nav entry is just the
- * first way in, not the only one.
- *
- * The unimplemented entries are listed rather than deleted so the intended shape is
- * visible, but they are filtered out below: shipping a link to an empty page is the
- * same dead end by another route.
+ * The nav is derived from the screen manifest (`@/screens`), not declared here.
+ * Which screens get a sidebar item -- and why most deliberately do not -- is
+ * recorded on the manifest entries themselves via their `reach` field.
  */
-interface NavItem {
-  to: string;
-  label: string;
-  icon: typeof FileText;
-  implemented: boolean;
-}
-
-interface NavGroup {
-  label: string;
-  items: NavItem[];
-  /** Undefined means always visible. */
-  requires?: (identity: ReturnType<typeof readIdentity>) => boolean;
-}
-
-const STAFF_NAV: NavGroup[] = [
-  {
-    label: 'Operations',
-    items: [
-      { to: 'policies', label: 'Policies', icon: FileText, implemented: true },
-      { to: 'claims', label: 'Claims', icon: ScrollText, implemented: true },
-      { to: 'products', label: 'Products', icon: Package, implemented: true },
-      { to: 'underwriting', label: 'Underwriting', icon: ClipboardCheck, implemented: true },
-      { to: 'kyc', label: 'KYC review', icon: UserCheck, implemented: true },
-    ],
-  },
-  {
-    label: 'Finance',
-    // Mirrors the backend expression on every finance endpoint:
-    // hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))
-    requires: canSeeFinance,
-    items: [
-      { to: 'gl-postings', label: 'GL postings', icon: BookText, implemented: true },
-      { to: 'chart-of-accounts', label: 'Chart of accounts', icon: Wallet, implemented: true },
-      { to: 'treaties', label: 'Treaties', icon: Shield, implemented: true },
-      { to: 'regulatory-returns', label: 'Regulatory returns', icon: Receipt, implemented: true },
-      { to: 'agents/new', label: 'Agents', icon: Users, implemented: true },
-    ],
-  },
-];
-
-/**
- * Nav definition for the agents realm. Policies/claims reuse the exact same
- * `PoliciesPage`/`ClaimsPage`/`PolicyDetailPage`/`ClaimDetailPage` components
- * the staff console mounts -- the scoping to "this agent's own book of
- * business" happens entirely server-side (`PolicyController`/`ClaimController`
- * resolve the caller's hierarchy team via `DistributionApi.resolveAgentTeam`
- * and filter the query itself), so the frontend never needs its own filter
- * UI. The only client-side differences are cosmetic (title/description, and
- * hiding the staff-only "Issue policy"/"New claim" actions).
- */
-const AGENTS_NAV: NavGroup[] = [
-  {
-    label: 'My business',
-    items: [
-      { to: 'me', label: 'My profile', icon: Users, implemented: true },
-      { to: 'policies', label: 'Policies', icon: FileText, implemented: true },
-      { to: 'claims', label: 'Claims', icon: ScrollText, implemented: true },
-      { to: 'customers/new', label: 'Onboard a customer', icon: UserPlus, implemented: true },
-    ],
-  },
-];
-
-const NAV_BY_REALM: Record<Realm, NavGroup[]> = {
-  staff: STAFF_NAV,
-  agents: AGENTS_NAV,
-  customers: [],
-  regulators: [],
-};
-
 export function AppShell({ realm, children }: { realm: Realm; children: ReactNode }) {
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
   const config = REALM_CONFIG[realm];
 
-  const groups = NAV_BY_REALM[realm]
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => item.implemented),
-    }))
-    .filter((group) => group.items.length > 0 && (group.requires?.(identity) ?? true));
+  const groups = navFor(realm, identity);
 
   return (
     <div className="flex h-full">
@@ -235,29 +124,6 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
           <LogOut />
         </Button>
       </div>
-    </div>
-  );
-}
-
-/** Page header used by every screen, so titles and actions align across the console. */
-export function PageHeader({
-  title,
-  description,
-  actions,
-}: {
-  title: ReactNode;
-  description?: ReactNode;
-  actions?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6 pb-4">
-      <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        {description && (
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        )}
-      </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
   );
 }

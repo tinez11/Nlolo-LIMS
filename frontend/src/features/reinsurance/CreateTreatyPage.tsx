@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { type FieldErrors, useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { TREATY_TYPES } from '@/api/types';
-import { PageHeader } from '@/components/AppShell';
+import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';

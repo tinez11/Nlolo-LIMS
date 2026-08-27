@@ -1,0 +1,268 @@
+import {
+  BookText,
+  ClipboardCheck,
+  FileText,
+  Package,
+  Receipt,
+  ScrollText,
+  Shield,
+  UserCheck,
+  UserPlus,
+  Users,
+  Wallet,
+} from 'lucide-react';
+import type { ReactNode } from 'react';
+import { canSeeFinance, type readIdentity } from '@/auth/claims';
+import type { Realm } from '@/auth/realms';
+import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
+import { ClaimsPage } from '@/features/claims/ClaimsPage';
+import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
+import { AgentDetailPage } from '@/features/distribution/AgentDetailPage';
+import { AgentProfilePage } from '@/features/distribution/AgentProfilePage';
+import { OnboardAgentPage } from '@/features/distribution/OnboardAgentPage';
+import { ChartOfAccountsPage } from '@/features/finaccounting/ChartOfAccountsPage';
+import { GlPostingDetailPage } from '@/features/finaccounting/GlPostingDetailPage';
+import { GlPostingsPage } from '@/features/finaccounting/GlPostingsPage';
+import { KycReviewPage } from '@/features/party/KycReviewPage';
+import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
+import { PartyDetailPage } from '@/features/party/PartyDetailPage';
+import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
+import { PoliciesPage } from '@/features/policies/PoliciesPage';
+import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
+import { CreateProductPage } from '@/features/products/CreateProductPage';
+import { ProductDetailPage } from '@/features/products/ProductDetailPage';
+import { ProductsPage } from '@/features/products/ProductsPage';
+import { RegulatoryReturnDetailPage } from '@/features/regreporting/RegulatoryReturnDetailPage';
+import { RegulatoryReturnsPage } from '@/features/regreporting/RegulatoryReturnsPage';
+import { CreateTreatyPage } from '@/features/reinsurance/CreateTreatyPage';
+import { TreatiesPage } from '@/features/reinsurance/TreatiesPage';
+import { TreatyDetailPage } from '@/features/reinsurance/TreatyDetailPage';
+import { OpenUnderwritingCasePage } from '@/features/underwriting/OpenUnderwritingCasePage';
+import { UnderwritingCaseDetailPage } from '@/features/underwriting/UnderwritingCaseDetailPage';
+import { UnderwritingQueuePage } from '@/features/underwriting/UnderwritingQueuePage';
+
+/**
+ * The one place a screen is declared.
+ *
+ * The router (`App.tsx`) and the sidebar (`AppShell.tsx`) are both maps over
+ * this. They used to be two hand-maintained lists -- 34 `<Route>` entries in one
+ * file, 14 nav items in the other, no shared source -- and they were the two
+ * most-churned files in the frontend's history. Adding a screen meant editing
+ * both, and nothing caught the drift.
+ *
+ * `reach` is what the two lists could not express. Most screens here are
+ * deliberately NOT in the sidebar: a detail page is reached by clicking a row,
+ * and a nav item leading to a "paste an ID" screen reads as broken software
+ * (PLAN.md §7). Making that a required field turns an absence into a statement:
+ * a new screen cannot be added without saying how a user gets to it, so
+ * "deliberately drill-in only" and "somebody forgot the nav item" stop looking
+ * identical.
+ */
+
+type NavGroupId = 'operations' | 'finance' | 'my-business';
+
+interface NavPlacement {
+  group: NavGroupId;
+  label: string;
+  icon: typeof FileText;
+}
+
+export interface Screen {
+  /** Path relative to the realm root, exactly as `<Route path>` takes it. */
+  path: string;
+  element: ReactNode;
+  /**
+   * How a user reaches this screen: a sidebar placement, or an explicit
+   * declaration that it is only reachable by drilling in from another screen.
+   */
+  reach: NavPlacement | 'drill-in';
+}
+
+export interface NavGroup {
+  id: NavGroupId;
+  label: string;
+  /** Undefined means always visible. */
+  requires?: (identity: ReturnType<typeof readIdentity>) => boolean;
+}
+
+/**
+ * Group order is sidebar order. A group with no visible screens renders nothing,
+ * so gating happens per-group here and per-screen on the entries below.
+ */
+export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
+  staff: [
+    { id: 'operations', label: 'Operations' },
+    {
+      id: 'finance',
+      label: 'Finance',
+      // Mirrors the backend expression on every finance endpoint:
+      // hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))
+      requires: canSeeFinance,
+    },
+  ],
+  agents: [{ id: 'my-business', label: 'My business' }],
+  customers: [],
+  regulators: [],
+};
+
+/** Where a realm's index route redirects to. */
+export const REALM_HOME: Record<Realm, string | null> = {
+  staff: 'policies',
+  agents: 'me',
+  customers: null,
+  regulators: null,
+};
+
+const STAFF_SCREENS: Screen[] = [
+  {
+    path: 'policies',
+    element: <PoliciesPage />,
+    reach: { group: 'operations', label: 'Policies', icon: FileText },
+  },
+  { path: 'policies/new', element: <IssuePolicyPage />, reach: 'drill-in' },
+  { path: 'policies/:policyNumber', element: <PolicyDetailPage />, reach: 'drill-in' },
+
+  {
+    path: 'claims',
+    element: <ClaimsPage />,
+    reach: { group: 'operations', label: 'Claims', icon: ScrollText },
+  },
+  { path: 'claims/new', element: <RegisterClaimPage />, reach: 'drill-in' },
+  { path: 'claims/:claimId', element: <ClaimDetailPage />, reach: 'drill-in' },
+
+  {
+    path: 'products',
+    element: <ProductsPage />,
+    reach: { group: 'operations', label: 'Products', icon: Package },
+  },
+  { path: 'products/new', element: <CreateProductPage />, reach: 'drill-in' },
+  { path: 'products/:productId', element: <ProductDetailPage />, reach: 'drill-in' },
+
+  {
+    path: 'underwriting',
+    element: <UnderwritingQueuePage />,
+    reach: { group: 'operations', label: 'Underwriting', icon: ClipboardCheck },
+  },
+  { path: 'underwriting/new', element: <OpenUnderwritingCasePage />, reach: 'drill-in' },
+  { path: 'underwriting/:caseId', element: <UnderwritingCaseDetailPage />, reach: 'drill-in' },
+
+  {
+    path: 'kyc',
+    element: <KycReviewPage />,
+    reach: { group: 'operations', label: 'KYC review', icon: UserCheck },
+  },
+  // A party PENDING KYC with nothing referencing it yet is invisible to staff
+  // except through the KYC queue above, which is why that queue is a real list
+  // rather than a lookup box.
+  { path: 'parties/:partyId', element: <PartyDetailPage />, reach: 'drill-in' },
+
+  // Agents is the one nav item pointing at a create form rather than a list:
+  // `POST /agents` is the only entry point onto that domain server-side, so the
+  // item goes to the one real working action. An agent IS also reachable by
+  // drilling in from a policy -- `PolicyView.agentOfRecordId` does round-trip
+  // through `GET /policies`, unlike `underwritingCaseId`, which does not.
+  {
+    path: 'agents/new',
+    element: <OnboardAgentPage />,
+    reach: { group: 'finance', label: 'Agents', icon: Users },
+  },
+  { path: 'agents/:agentId', element: <AgentDetailPage />, reach: 'drill-in' },
+
+  {
+    path: 'gl-postings',
+    element: <GlPostingsPage />,
+    reach: { group: 'finance', label: 'GL postings', icon: BookText },
+  },
+  { path: 'gl-postings/:journalEntryId', element: <GlPostingDetailPage />, reach: 'drill-in' },
+  {
+    path: 'chart-of-accounts',
+    element: <ChartOfAccountsPage />,
+    reach: { group: 'finance', label: 'Chart of accounts', icon: Wallet },
+  },
+  {
+    path: 'treaties',
+    element: <TreatiesPage />,
+    reach: { group: 'finance', label: 'Treaties', icon: Shield },
+  },
+  { path: 'treaties/new', element: <CreateTreatyPage />, reach: 'drill-in' },
+  { path: 'treaties/:treatyId', element: <TreatyDetailPage />, reach: 'drill-in' },
+  {
+    path: 'regulatory-returns',
+    element: <RegulatoryReturnsPage />,
+    reach: { group: 'finance', label: 'Regulatory returns', icon: Receipt },
+  },
+  { path: 'regulatory-returns/:returnId', element: <RegulatoryReturnDetailPage />, reach: 'drill-in' },
+];
+
+/**
+ * Policies and claims reuse the exact same page components the staff console
+ * mounts. Scoping to "this agent's own book" happens entirely server-side
+ * (`PolicyController`/`ClaimController` resolve the caller's hierarchy team via
+ * `DistributionApi.resolveAgentTeam` and filter the query), so the frontend
+ * needs no filter UI. The only differences are cosmetic: title, description, and
+ * hiding the staff-only create actions.
+ */
+const AGENTS_SCREENS: Screen[] = [
+  {
+    path: 'me',
+    element: <AgentProfilePage />,
+    reach: { group: 'my-business', label: 'My profile', icon: Users },
+  },
+  {
+    path: 'policies',
+    element: (
+      <PoliciesPage
+        title="My policies"
+        description="Policies where you are the agent of record, or someone in your downline is."
+        showIssueAction={false}
+      />
+    ),
+    reach: { group: 'my-business', label: 'Policies', icon: FileText },
+  },
+  { path: 'policies/:policyNumber', element: <PolicyDetailPage realm="agents" />, reach: 'drill-in' },
+  {
+    path: 'claims',
+    element: (
+      <ClaimsPage
+        title="My claims"
+        description="Claims against a policy where you are the agent of record, or someone in your downline is."
+        showNewClaimAction={false}
+      />
+    ),
+    reach: { group: 'my-business', label: 'Claims', icon: ScrollText },
+  },
+  { path: 'claims/:claimId', element: <ClaimDetailPage />, reach: 'drill-in' },
+  {
+    path: 'customers/new',
+    element: <OnboardCustomerPage />,
+    reach: { group: 'my-business', label: 'Onboard a customer', icon: UserPlus },
+  },
+];
+
+/**
+ * `customers` and `regulators` are deliberately empty rather than stubbed: an
+ * authenticating route into an empty app is worse than a 404, so `App.tsx`
+ * mounts no subtree for a realm with no screens.
+ */
+export const SCREENS: Record<Realm, Screen[]> = {
+  staff: STAFF_SCREENS,
+  agents: AGENTS_SCREENS,
+  customers: [],
+  regulators: [],
+};
+
+/** The sidebar for one realm: groups the identity may see, each with its screens. */
+export function navFor(
+  realm: Realm,
+  identity: ReturnType<typeof readIdentity>,
+): { label: string; items: (NavPlacement & { to: string })[] }[] {
+  return NAV_GROUPS[realm]
+    .filter((group) => group.requires?.(identity) ?? true)
+    .map((group) => ({
+      label: group.label,
+      items: SCREENS[realm]
+        .filter((screen) => screen.reach !== 'drill-in' && screen.reach.group === group.id)
+        .map((screen) => ({ ...(screen.reach as NavPlacement), to: screen.path })),
+    }))
+    .filter((group) => group.items.length > 0);
+}
