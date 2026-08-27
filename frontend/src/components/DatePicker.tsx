@@ -284,6 +284,36 @@ export function DatePicker({ value, onChange, disabled }: DatePickerProps) {
     setDirty(false);
   }
 
+  /**
+   * A write that did not come from a keystroke.
+   *
+   * Real typing is intercepted in `onKeyDown` and prevented, so it never produces
+   * an input event -- which means anything arriving here set the value directly:
+   * Playwright's `fill()`, browser autofill, or a mobile IME committing a
+   * composition. Ignoring them is what broke 20 call sites across 11 e2e specs
+   * when this component was rewritten, and mobile IME would have followed.
+   *
+   * Only a complete date is adopted. A partial write is dropped rather than
+   * half-applied, because a writer that set `29/08` meant a date, not a day.
+   */
+  function adopt(written: string) {
+    if (written === '') {
+      setRaw(EMPTY);
+      setActive(null);
+      setDirty(false);
+      return;
+    }
+    const digits = written.replace(/\D/g, '');
+    if (digits.length !== LENGTH.day + LENGTH.month + LENGTH.year) return;
+    setRaw({
+      day: digits.slice(0, 2),
+      month: digits.slice(2, 4),
+      year: digits.slice(4),
+    });
+    setActive(null);
+    setDirty(false);
+  }
+
   function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
     if (/^\d$/.test(event.key)) {
@@ -392,9 +422,9 @@ export function DatePicker({ value, onChange, disabled }: DatePickerProps) {
         <input
           ref={inputRef}
           value={display}
-          // Section-driven: every keystroke is handled in onKeyDown, so there is
-          // nothing for a change handler to do -- but a controlled input wants one.
-          onChange={() => {}}
+          // Keystrokes are handled in onKeyDown and prevented, so this only ever
+          // fires for a write that bypassed the keyboard -- see `adopt`.
+          onChange={(event) => adopt(event.target.value)}
           onKeyDown={onKeyDown}
           onFocus={() => {
             setFocused(true);

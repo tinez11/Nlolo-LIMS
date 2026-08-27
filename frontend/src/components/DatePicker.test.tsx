@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -41,6 +41,71 @@ const field = () => screen.getByRole('textbox');
 const DAY_BUTTON_NAME = /\w+day, \w+ \d+.*\d{4}/;
 
 describe('DatePicker', () => {
+  /**
+   * Real typing is intercepted in onKeyDown and preventDefault-ed, so it never
+   * produces an input event. These cover the writers that DO: Playwright's
+   * `fill()`, browser autofill, and mobile IME composition. Left unhandled, the
+   * field silently ignores all three -- which is exactly how the DatePicker
+   * rewrite broke 20 call sites across 11 e2e specs without a single unit test
+   * going red.
+   */
+  describe('programmatic writes', () => {
+    it('adopts a complete date written straight to the value', () => {
+      const onValue = vi.fn();
+      render(<Controlled onValue={onValue} />);
+
+      fireEvent.change(field(), { target: { value: '29/08/2026' } });
+
+      expect(field()).toHaveValue('29/08/2026');
+      expect(onValue).toHaveBeenCalledWith('2026-08-29');
+    });
+
+    it('accepts bare digits, since a writer need not know the separators', () => {
+      const onValue = vi.fn();
+      render(<Controlled onValue={onValue} />);
+
+      fireEvent.change(field(), { target: { value: '29082026' } });
+
+      expect(field()).toHaveValue('29/08/2026');
+      expect(onValue).toHaveBeenCalledWith('2026-08-29');
+    });
+
+    it('clears on an empty write', () => {
+      const onValue = vi.fn();
+      render(<Controlled initial="2026-08-10" onValue={onValue} />);
+
+      fireEvent.change(field(), { target: { value: '' } });
+
+      expect(field()).toHaveValue('DD/MM/YYYY');
+      expect(onValue).toHaveBeenCalledWith(null);
+    });
+
+    it('ignores a partial or unparseable write rather than half-applying it', () => {
+      const onChange = vi.fn();
+      render(<DatePicker value={null} onChange={onChange} />);
+
+      fireEvent.change(field(), { target: { value: '29/08' } });
+      expect(field()).toHaveValue('DD/MM/YYYY');
+
+      fireEvent.change(field(), { target: { value: 'tomorrow' } });
+      expect(field()).toHaveValue('DD/MM/YYYY');
+
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('still runs a programmatic date through the range check', () => {
+      const onChange = vi.fn();
+      render(
+        <DatePicker value={null} onChange={onChange} disabled={{ after: new Date(2026, 0, 1) }} />,
+      );
+
+      fireEvent.change(field(), { target: { value: '15/06/2026' } });
+
+      expect(screen.getByRole('alert')).toHaveTextContent('Date outside the allowed range');
+      expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
   it('shows the format itself when empty', () => {
     render(<DatePicker value={null} onChange={vi.fn()} />);
     expect(field()).toHaveValue('DD/MM/YYYY');

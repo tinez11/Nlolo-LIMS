@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { dmy } from './dates';
 
 /**
  * "Browse my book of business" -- the agents-realm scoping added to
@@ -48,12 +49,10 @@ test.describe('agents my book of business', () => {
     await staffPage.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await staffPage.getByPlaceholder('Type a name to search').fill('Amina');
     await staffPage.getByText('Amina Owner').click();
-    await staffPage.getByRole('button', { name: 'Select the date of event' }).click();
-    await staffPage.getByPlaceholder('YYYY-MM-DD').fill('2026-08-01');
+    await staffPage.getByLabel('Date of event').fill(dmy('2026-08-01'));
     await staffPage.getByLabel('Cause of death').fill('Natural causes');
     await staffPage.getByLabel('Place of death').fill('Dar es Salaam');
-    await staffPage.getByRole('button', { name: 'Select the date of death' }).click();
-    await staffPage.getByPlaceholder('YYYY-MM-DD').fill('2026-08-01');
+    await staffPage.getByLabel('Date of death').fill(dmy('2026-08-01'));
     await staffPage.getByLabel('Attending physician').fill('Dr. E2E Book Fixture');
     await staffPage.getByRole('button', { name: 'Register claim' }).click();
     await expect(staffPage).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/, { timeout: 15_000 });

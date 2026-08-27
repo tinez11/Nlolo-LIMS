@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { dmy } from './dates';
 
 /**
  * `POST /policies/{n}/suspend`/`resume`/`reinstate` -- all three were fully
@@ -36,8 +37,7 @@ async function createGroupLifeProduct(page: import('@playwright/test').Page, cod
   await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
   await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
   await ratingSection.locator('input[placeholder="Band, e.g. 18-30"]').nth(1).fill('1000000-5000000');
-  await page.getByRole('button', { name: 'Select the effective date' }).click();
-  await page.getByPlaceholder('YYYY-MM-DD').fill('2026-01-01');
+  await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
   await page.getByRole('button', { name: 'Publish version' }).click();
   await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 }

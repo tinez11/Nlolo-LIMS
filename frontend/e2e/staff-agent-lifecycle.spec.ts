@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { dmy } from './dates';
 
 /**
  * `POST /agents/{n}/suspend`/`reactivate` -- `AgentProfile.setLicenseStatus`
@@ -17,8 +18,7 @@ async function onboardRealAgent(page: Page): Promise<string> {
   await page.getByPlaceholder('Type a name to search').fill('Amina');
   await page.getByText('Amina Owner').click();
   await page.getByLabel('License number').fill(`E2E-LIC-LIFECYCLE-${Date.now()}`);
-  await page.getByRole('button', { name: 'Select the license expiry date' }).click();
-  await page.getByPlaceholder('YYYY-MM-DD').fill(FUTURE_LICENSE_EXPIRY);
+  await page.getByLabel('License expiry date').fill(dmy(FUTURE_LICENSE_EXPIRY));
   await page.getByRole('button', { name: 'Onboard agent' }).click();
   await expect(page).toHaveURL(/\/staff\/agents\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   return page.url().split('/').pop() as string;
@@ -70,8 +70,7 @@ test.describe('staff agent lifecycle', () => {
     const pendingName = `E2E Picker Exclusion Fixture ${Date.now()}`;
     await agentPage.goto('/agents/customers/new');
     await agentPage.getByLabel('Full name').fill(pendingName);
-    await agentPage.getByRole('button', { name: 'Select the date of birth' }).click();
-    await agentPage.getByPlaceholder('YYYY-MM-DD').fill('1990-05-12');
+    await agentPage.getByLabel('Date of birth').fill(dmy('1990-05-12'));
     await agentPage.getByRole('button', { name: 'Register individual' }).click();
     await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
     await agentContext.close();

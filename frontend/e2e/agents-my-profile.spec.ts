@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { dmy } from './dates';
 
 /**
  * Agents-realm e2e coverage against the real backend, as `agent.senior`
@@ -46,8 +47,7 @@ test.describe('agents onboard a customer', () => {
 
     const suffix = Date.now();
     await page.getByLabel('Full name').fill(`E2E Agent Onboarded ${suffix}`);
-    await page.getByRole('button', { name: 'Select the date of birth' }).click();
-    await page.getByPlaceholder('YYYY-MM-DD').fill('1990-05-12');
+    await page.getByLabel('Date of birth').fill(dmy('1990-05-12'));
     await page.getByLabel('Phone number (optional)').fill('+255712345678');
     await page.getByRole('button', { name: 'Register individual' }).click();
 

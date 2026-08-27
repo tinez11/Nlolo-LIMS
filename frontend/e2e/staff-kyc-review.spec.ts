@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { dmy } from './dates';
 
 /**
  * `GET /parties` -- there was genuinely no way to find a party at all before
@@ -26,8 +27,7 @@ test.describe('staff KYC review', () => {
     const fullName = `E2E KYC Queue Fixture ${Date.now()}`;
     await agentPage.goto('/agents/customers/new');
     await agentPage.getByLabel('Full name').fill(fullName);
-    await agentPage.getByRole('button', { name: 'Select the date of birth' }).click();
-    await agentPage.getByPlaceholder('YYYY-MM-DD').fill('1990-05-12');
+    await agentPage.getByLabel('Date of birth').fill(dmy('1990-05-12'));
     await agentPage.getByRole('button', { name: 'Register individual' }).click();
     await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
     const partyIdText = await agentPage.getByText(/^[0-9a-f]{8}-[0-9a-f]{4}-/).textContent();

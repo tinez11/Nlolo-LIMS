@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { dmy } from './dates';
 
 /**
  * Distribution (agents/commissions) e2e coverage against the real backend.
@@ -31,8 +32,7 @@ async function onboardRealAgent(page: Page): Promise<string> {
   await page.getByPlaceholder('Type a name to search').fill('Amina');
   await page.getByText('Amina Owner').click();
   await page.getByLabel('License number').fill(`E2E-LIC-${Date.now()}`);
-  await page.getByRole('button', { name: 'Select the license expiry date' }).click();
-  await page.getByPlaceholder('YYYY-MM-DD').fill(FUTURE_LICENSE_EXPIRY);
+  await page.getByLabel('License expiry date').fill(dmy(FUTURE_LICENSE_EXPIRY));
   await page.getByRole('button', { name: 'Onboard agent' }).click();
   await expect(page).toHaveURL(/\/staff\/agents\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   return page.url().split('/').pop() as string;
@@ -58,8 +58,7 @@ async function createRealActiveProduct(page: Page): Promise<{ productId: string;
   await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
   await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
   await ratingSection.locator('input[placeholder="Band, e.g. 18-30"]').nth(1).fill('1-99999999');
-  await page.getByRole('button', { name: 'Select the effective date' }).click();
-  await page.getByPlaceholder('YYYY-MM-DD').fill('2026-01-01');
+  await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
   await page.getByRole('button', { name: 'Publish version' }).click();
   await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
