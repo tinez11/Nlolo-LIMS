@@ -75,6 +75,7 @@ class RowLevelSecurityIntegrationTest {
             // on product/underwriting tables too, not merely that the CREATE POLICY SQL
             // reads correctly.
             "db-migrations/product/V1__create_product_schema.sql",
+            "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",

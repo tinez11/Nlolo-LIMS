@@ -103,6 +103,7 @@ class FinaccountingContractTest {
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/product/V1__create_product_schema.sql",
+            "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",

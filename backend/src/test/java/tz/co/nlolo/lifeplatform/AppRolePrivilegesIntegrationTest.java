@@ -121,6 +121,7 @@ class AppRolePrivilegesIntegrationTest {
             // read correct by inspection but were never exercised under the real app_role
             // identity -- exactly the M1 blind spot this class's own javadoc describes.
             "db-migrations/product/V1__create_product_schema.sql",
+            "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",

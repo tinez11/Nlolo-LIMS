@@ -78,6 +78,7 @@ class DistributionApiIntegrationTest {
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/product/V1__create_product_schema.sql",
+            "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
         try (Connection connection = DriverManager.getConnection(

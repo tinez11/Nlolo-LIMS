@@ -191,6 +191,8 @@ Deliberately thin. Phase 0 of the frontend restructure (a shared `FormField`, a 
 - **Contract tests** for all new paths, matching the existing per-module `*ContractTest` pattern.
 - Every test runs against real Postgres via Testcontainers on the host with `./mvnw` — never Maven inside Docker, which breaks Testcontainers networking. No fabricated JWTs: tokens come from the real Keycloak container, per the standing rule that has twice caught an unusable credential path behind a green suite.
 
+**Friction found while doing this, worth fixing separately.** Test migration lists are hardcoded per test class: **39 test files name `db-migrations/product/V1__create_product_schema.sql` literally**, so adding `V2` is a 39-file mechanical edit, and a missed file surfaces as a confusing "relation does not exist" rather than as a clear signal. Every module's migrations have the same shape, so this recurs for every future migration anywhere on the platform. A helper that enumerates a module's migration directory in order — rather than 39 hand-maintained copies of the same list — would make adding a migration a one-file change. Out of scope here; recorded so the next migration author does not rediscover it.
+
 ## Rollout
 
 1. Migration + `BaseRate` domain/repository, no API surface. Deployable alone.

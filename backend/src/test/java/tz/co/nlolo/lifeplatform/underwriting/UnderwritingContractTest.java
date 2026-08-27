@@ -46,6 +46,7 @@ class UnderwritingContractTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/product/V1__create_product_schema.sql",
+            "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
