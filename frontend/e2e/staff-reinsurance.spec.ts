@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { dmy } from './dates';
+import { dmy, todayIso } from './dates';
 
 /**
  * Reinsurance e2e coverage against the real backend.
@@ -10,14 +10,26 @@ import { dmy } from './dates';
  * at all, so every test here runs under the real `staff.finance` identity
  * (auth-finance.setup.ts), reused from the distribution suite.
  *
- * A treaty's `effectiveFrom` is fixed at 2020-01-01 (safely before any real
- * policy issue date) rather than "today": `ReinsuranceApiImpl
- * .selectApplicableTreaty` picks the ACTIVE treaty with the latest
- * `effectiveFrom`, tie-broken by `createdAt` -- sharing one fixed
- * `effectiveFrom` across every treaty this file creates means the tie-break
- * always favors whichever treaty a given test created most recently, so each
- * test's own policy issuance cedes against ITS OWN treaty, never an earlier
- * test's leftover one.
+ * A treaty's `effectiveFrom` is TODAY, and that is load-bearing.
+ * `ReinsuranceApiImpl.selectApplicableTreaty` keeps every ACTIVE treaty that
+ * `isActiveOn(issueDate)` (so `effectiveFrom <= today`, inclusive) and takes the
+ * `max` by `effectiveFrom`, tie-broken by `createdAt`. Today's date is therefore
+ * the LATEST value that still qualifies, which makes this test's own treaty the
+ * winner, with `createdAt` settling any same-day tie in its favour.
+ *
+ * This file used to fix `effectiveFrom` at 2020-01-01, reasoning that it was
+ * "safely before any real policy issue date". That reasoned about the wrong
+ * comparison: what decides the winner is not the policy's issue date but OTHER
+ * TREATIES' `effectiveFrom`, and every treaty this file created shared the same
+ * one. The moment a treaty existed with any later date, it outranked all of them
+ * permanently. That is exactly what happened -- someone authored a SURPLUS treaty
+ * through the console dated a week earlier than today, with a retention limit of
+ * 57,888,888, so the applicable treaty for every cession test became one that
+ * correctly cedes nothing on a 2,000,000 policy. The suite reported no cession and
+ * the product was behaving properly.
+ *
+ * A future-dated treaty cannot break this, because `isActiveOn` excludes it from
+ * the candidates for a policy issued today.
  */
 
 async function createRealQuotaShareTreaty(
@@ -30,7 +42,9 @@ async function createRealQuotaShareTreaty(
   // QUOTA_SHARE is the default selection.
   await page.getByLabel('Retention limit').fill('0.00');
   await page.getByLabel('Cession percent').fill(cessionPercent);
-  await page.getByLabel('Effective from').fill(dmy('2020-01-01'));
+  // Today: the latest effectiveFrom that still applies to a policy issued today.
+  // See the file header for why a fixed past date was the wrong choice.
+  await page.getByLabel('Effective from').fill(dmy(todayIso()));
   await page.getByRole('button', { name: 'Create treaty' }).click();
   await expect(page).toHaveURL(/\/staff\/treaties\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   const treatyId = page.url().split('/').pop() as string;
@@ -103,14 +117,20 @@ test.describe('staff reinsurance', () => {
 
     // Cession is a same-transaction, event-driven side effect of PolicyIssued
     // -- normally visible immediately, polled defensively rather than assumed.
-    await expect(async () => {
-      await page.reload();
-      await expect(page.getByText('No reinsurance cession on this policy.')).not.toBeVisible();
-    }).toPass({ timeout: 20_000 });
-
+    //
+    // Poll for the AMOUNT, not for the absence of the empty-state text. The old
+    // form -- reload, then assert "No reinsurance cession on this policy." is not
+    // visible -- passed on the very first attempt every time, because immediately
+    // after a reload the panel is still loading and that text is legitimately
+    // absent. It was a poll that could not fail, and it hid a genuinely missing
+    // cession behind a green step for as long as the real assertion below held.
+    //
     // 50% of a 2,000,000.00 TZS sum assured, exactly what CessionCalculator's
     // QUOTA_SHARE branch computes.
-    await expect(page.getByText('TZS 1,000,000.00')).toBeVisible();
+    await expect(async () => {
+      await page.reload();
+      await expect(page.getByText('TZS 1,000,000.00')).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 30_000 });
     await expect(page.getByText(new RegExp(`treaty ${treatyId.slice(0, 8)}`))).toBeVisible();
 
     await financeContext.close();
@@ -118,6 +138,15 @@ test.describe('staff reinsurance', () => {
 
   test('a staff.underwriter session cannot see or reach Treaties at all', async ({ page }) => {
     await page.goto('/staff/policies');
+
+    // Wait for the app to actually be signed in before asserting an ABSENCE.
+    // Two failures came out of skipping this. The "Signing in" status renders no
+    // sidebar at all, so `Treaties` being invisible was satisfied by the nav not
+    // existing yet -- the assertion passed without ever testing the gate. And the
+    // silent SSO renew redirects to Keycloak, which aborted the second goto below
+    // with net::ERR_ABORTED. Anchoring on a link this identity IS entitled to
+    // makes the absence meaningful and the navigation safe.
+    await expect(page.getByRole('link', { name: 'Policies' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('link', { name: 'Treaties' })).not.toBeVisible();
 
     await page.goto('/staff/treaties');

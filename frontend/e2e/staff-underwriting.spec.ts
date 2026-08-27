@@ -20,7 +20,11 @@ import { expect, test } from '@playwright/test';
 test.describe('staff underwriting', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/staff/underwriting/new');
-    await expect(page.getByRole('heading', { name: 'Open an underwriting case' })).toBeVisible();
+    // 30s, not the 10s default: this is the first navigation of the test, so it
+    // can land mid silent-SSO-renew, and the app shows "Signing in" while a
+    // Keycloak round trip completes. The assertion was right; the budget was not.
+    await expect(page.getByRole('heading', { name: 'Open an underwriting case' }))
+      .toBeVisible({ timeout: 30_000 });
   });
 
   test('the real seeded product populates the picker', async ({ page }) => {

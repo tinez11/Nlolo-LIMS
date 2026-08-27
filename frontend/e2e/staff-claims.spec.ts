@@ -146,8 +146,18 @@ test.describe('staff claims', () => {
 
     // Leave and come back -- a fresh mount of the same singleton `registering`
     // resource must not carry the previous attempt's rejection forward.
+    //
+    // Each goto waits for its destination to actually render before the next step.
+    // Firing them back to back produced net::ERR_ABORTED when the second landed
+    // while the first was still settling (the silent SSO renew redirects to
+    // Keycloak, which aborts an in-flight navigation). And the absence assertion
+    // needs the form on screen to mean anything: checked immediately after a goto,
+    // "no alert" is satisfied by a page that has not rendered yet.
     await page.goto('/staff/claims');
+    await expect(page.getByRole('heading', { name: 'Claims' })).toBeVisible({ timeout: 30_000 });
+
     await page.goto('/staff/claims/new');
+    await expect(page.getByRole('heading', { name: 'Register a claim' })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('alert')).not.toBeVisible();
   });
 
