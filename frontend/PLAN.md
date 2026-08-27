@@ -253,6 +253,19 @@ required check trains people to ignore CI.
 
 8. Commit the pending 113-file `frontend/customer-portal` deletion
 
+**Found by the frontend, fixed in the backend:**
+
+9. `GET /parties` had **no `ORDER BY` at all** — `PageRequest.of(page, pageSize)` with no `Sort`, and neither the derived query methods nor the JPQL `search` supplied one. Two consequences, and the second is the serious one:
+
+   - A newly registered party came back in whatever position the scan yielded — in practice last, so the KYC review queue buried the very thing it exists to surface. This is what a Playwright test caught: a party registered through the real agents-realm flow could not be found in the staff queue at all.
+   - Paginating an unordered query is unsound. Postgres promises nothing about two `LIMIT/OFFSET` queries agreeing on row order, so a reviewer walking page 1 → 2 could be shown one party twice and never be shown another. **A KYC queue that can silently omit a party is a compliance problem, not a cosmetic one.**
+
+   Now `Sort.by(desc("createdAt"), desc("partyId"))`, matching the `DESC createdAt` convention already used by claims, policies, the underwriting queue and the audit journal. `partyId` is what makes the order *total*: `createdAt` is assigned in Java by `Instant.now()`, so a batch registration can genuinely tie, and a tie in the leading key restores an undefined order for exactly those rows.
+
+   `GET /parties/{id}/groups/{groupId}/members` had the same defect and is fixed the same way, sorted oldest-first — a membership roll reads as a roll, and joining order is the only order it has. Sorting matters more there, not less: a group scheme can hold thousands of members, so it is the endpoint most likely to actually be paged through.
+
+   `GET /gl-postings` looked like a third instance and is **not** one — its repository methods carry `OrderByPostedAtDesc` in their names, so it is ordered despite the bare `PageRequest.of`. Only a tie-breaker is missing there; left alone deliberately, since adding one means renaming four derived query methods for a marginal gain.
+
 ## 11. Deliberately deferred
 
 **Endorsements UI.** `EndorsementRequest.changes` is opaque JSONB the backend

@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import com.atlassian.oai.validator.mockmvc.OpenApiValidationMatchers;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -24,6 +25,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -621,5 +624,87 @@ class PartyContractTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items.length()").value(1))
             .andExpect(jsonPath("$.items[0].displayName").value("Scoping Query Fixture Agent A"));
+    }
+
+    // --- GET /parties ordering --------------------------------------------------------------
+    //
+    // This endpoint shipped with a bare PageRequest.of(page, pageSize) and therefore no ORDER BY
+    // at all. It was found by an e2e test: a party registered through the real agents flow could
+    // not be found in the staff KYC queue, because with no ordering it came back somewhere past
+    // the first page. The deeper defect is that paginating an unordered query is unsound -- rows
+    // may be assigned to pages differently on each query -- so a reviewer could be shown one
+    // party twice and never shown another.
+
+    private String registerOrderedFixture(UUID tenantId, String name, String phone) throws Exception {
+        MvcResult result = mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"" + name + "\",\"dateOfBirth\":\"1990-05-12\","
+                    + "\"contactInfo\":{\"phoneNumber\":\"" + phone + "\"}}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("partyId").asText();
+    }
+
+    @Test
+    void searchPartiesReturnsNewestFirst() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // Registered oldest -> newest, so a correct queue returns them reversed. An
+        // unordered query would return insertion order and fail this.
+        registerOrderedFixture(tenantId, "Ordering Fixture One", "+255712345801");
+        registerOrderedFixture(tenantId, "Ordering Fixture Two", "+255712345802");
+        registerOrderedFixture(tenantId, "Ordering Fixture Three", "+255712345803");
+
+        mockMvc.perform(get("/parties")
+                .queryParam("kycStatus", "PENDING")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(3))
+            .andExpect(jsonPath("$.items[0].displayName").value("Ordering Fixture Three"))
+            .andExpect(jsonPath("$.items[1].displayName").value("Ordering Fixture Two"))
+            .andExpect(jsonPath("$.items[2].displayName").value("Ordering Fixture One"));
+    }
+
+    @Test
+    void searchPartiesPagesCoverEveryRowExactlyOnce() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Set<String> registered = new HashSet<>();
+        for (int i = 1; i <= 5; i++) {
+            registered.add(registerOrderedFixture(tenantId, "Paging Fixture " + i, "+25571234581" + i));
+        }
+
+        // Walk the pages the way a reviewer would. The union must be exactly the five
+        // parties -- no duplicate across a page boundary, and nothing skipped.
+        //
+        // HONEST LIMIT, verified rather than assumed: this test was run against the
+        // unsorted controller and PASSED. Five rows in a fresh table come back in a
+        // consistent scan order, so it cannot catch the unstable-pagination defect it
+        // was written for -- `searchPartiesReturnsNewestFirst` is the one that actually
+        // fails without the sort. Reproducing instability on demand would need a table
+        // large enough to change plan, plus updates and a vacuum, and would still be
+        // probabilistic; a slow flaky test is worse than a documented gap. What this
+        // does still earn its keep on is page-boundary arithmetic: an off-by-one in
+        // page/offset handling drops or repeats a row here regardless of ordering.
+        Set<String> seen = new HashSet<>();
+        int duplicates = 0;
+        for (int page = 0; page < 3; page++) {
+            MvcResult result = mockMvc.perform(get("/parties")
+                    .queryParam("kycStatus", "PENDING")
+                    .queryParam("page", String.valueOf(page))
+                    .queryParam("pageSize", "2")
+                    .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                        .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+                .andExpect(status().isOk())
+                .andReturn();
+            for (JsonNode item : objectMapper.readTree(result.getResponse().getContentAsString()).get("items")) {
+                if (!seen.add(item.get("partyId").asText())) duplicates++;
+            }
+        }
+
+        assertThat(duplicates).as("a party shown on two different pages").isZero();
+        assertThat(seen).as("every registered party reachable by paging").isEqualTo(registered);
     }
 }

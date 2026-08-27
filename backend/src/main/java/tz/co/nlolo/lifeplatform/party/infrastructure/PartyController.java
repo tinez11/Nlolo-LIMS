@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -93,6 +94,19 @@ public class PartyController {
      * this as an unrestricted KYC review queue; an agents-realm caller is force-scoped to parties
      * IT registered (its own JWT subject, never client-supplied {@code createdBy}) -- the same
      * "override the query" idiom {@code PolicyController.searchPolicies} uses for customers.
+     *
+     * <p>The sort is not decoration. This endpoint shipped with a bare {@code PageRequest.of(page,
+     * pageSize)} and therefore no {@code ORDER BY} at all, which broke it two ways: a newly
+     * registered party landed in whatever position the scan happened to yield -- in practice last,
+     * so the queue buried the very thing it exists to surface -- and, worse, paginating an
+     * unordered query is unsound. Postgres makes no promise that two `LIMIT/OFFSET` queries see
+     * rows in the same order, so a reviewer walking page 1 -> 2 could be shown a party twice and
+     * never be shown another at all. A KYC queue that can silently omit a party is a compliance
+     * problem, not a cosmetic one.
+     *
+     * <p>{@code partyId} is the tie-breaker, and it is what makes the order TOTAL: {@code createdAt}
+     * is assigned in Java by {@code Instant.now()}, so a batch registration can genuinely collide,
+     * and ties in the leading key put us straight back to an undefined order for the rows that tie.
      */
     @GetMapping("/parties")
     @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
@@ -106,7 +120,8 @@ public class PartyController {
             .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
         String effectiveCreatedBy = isAgent ? jwt.getSubject() : null;
         Page<PartyView> result = partyApi.searchParties(kycStatus, effectiveCreatedBy, q,
-            PageRequest.of(page, Math.min(pageSize, 100)));
+            PageRequest.of(page, Math.min(pageSize, 100),
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("partyId"))));
         return ResponseEntity.ok(PageResponse.from(result));
     }
 
@@ -141,12 +156,21 @@ public class PartyController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * Same unordered-pagination defect as {@code searchParties} had, and it bites harder here: a
+     * group scheme can hold thousands of members, so this is the endpoint most likely to actually
+     * be paged through, and an unstable order means a member can be missed on every pass. Sorted
+     * oldest-first, unlike the queues -- a membership roll reads as a roll, and joining order is
+     * the only order it has.
+     */
     @GetMapping("/parties/{partyId}/groups/{groupId}/members")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PageResponse<GroupMembershipView>> listGroupMembers(
             @PathVariable UUID partyId, @PathVariable UUID groupId,
             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int pageSize) {
-        Page<GroupMembershipView> result = partyApi.listGroupMembers(groupId, PageRequest.of(page, Math.min(pageSize, 200)));
+        Page<GroupMembershipView> result = partyApi.listGroupMembers(groupId,
+            PageRequest.of(page, Math.min(pageSize, 200),
+                Sort.by(Sort.Order.asc("createdAt"), Sort.Order.asc("groupMembershipId"))));
         return ResponseEntity.ok(PageResponse.from(result));
     }
 
