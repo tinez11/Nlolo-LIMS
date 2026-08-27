@@ -24,6 +24,51 @@ servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
   /agents:
+    get:
+      summary: List agents for the current tenant (paged)
+      description: >-
+        STAFF ONLY, unlike `GET /agents/{agentId}`. That endpoint can admit an
+        agents-realm token because it checks the caller's ownership or hierarchy for
+        that one agent; a list has no such per-row check to make, because no
+        agent-of-record or book-of-business scoping exists on AgentProfile. An
+        agents-realm caller would therefore enumerate every agent in the tenant,
+        which is a new disclosure rather than a convenience.
+
+
+        `q` matches LICENCE NUMBER, not a name: an agent has no name in this
+        context. The person's name lives in `party`, reached through `partyId`, and
+        resolving it here would make distribution read another context's data to
+        fill a column.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring match against licenceNumber.
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [ACTIVE, EXPIRED, SUSPENDED] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentView' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
       summary: Onboard an agent (requires the referenced Party to already have KYC VERIFIED)
       description: >
@@ -57,8 +102,9 @@ paths:
       summary: Get the caller's own agent profile
       description: >
         Agents-realm only. Resolves the caller's own agent record from the token's `party_id`
-        claim -- there is no `agentId` claim and no `GET /agents` list, so this is the only way
-        an agent can discover which agent record is theirs. 404 if the token's party is not an
+        claim -- there is no `agentId` claim, and the `GET /agents` list added in M13 is
+        staff-only, so this remains the only way an agent can discover which agent
+        record is theirs. 404 if the token's party is not an
         agent in this tenant. If a party somehow holds more than one agent profile, an ACTIVE
         one is preferred; otherwise the first one found stands in.
       security:

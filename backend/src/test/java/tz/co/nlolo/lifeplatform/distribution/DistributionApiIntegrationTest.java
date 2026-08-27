@@ -27,6 +27,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -143,6 +145,86 @@ class DistributionApiIntegrationTest {
         AgentView reloaded = distributionApi.getAgent(view.agentId());
         assertThat(reloaded.agentId()).isEqualTo(view.agentId());
         assertThat(reloaded.licenseNumber()).isEqualTo("LIC-ONBOARD-01");
+    }
+
+    // ---- M13: listAgents ---------------------------------------------------------------------
+
+    /**
+     * The list this module never had. Every per-agent read existed; nothing could
+     * enumerate them, so an agent table had no feed and the console's nav item
+     * pointed at the onboarding form instead of a queue.
+     */
+    @Test
+    void listsAgentsForTheTenantPaged() {
+        UUID tenantId = UUID.randomUUID();
+        for (int i = 1; i <= 3; i++) {
+            PartyView party = registerVerifiedParty(tenantId, "AGT-LIST-0" + i);
+            distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+                party.partyId(), "LIC-LIST-0" + i, LocalDate.now().plusYears(1), null), "staff-1");
+        }
+        TenantContext.set(tenantId);
+
+        Page<AgentView> firstPage = distributionApi.listAgents(null, null, PageRequest.of(0, 2));
+        assertThat(firstPage.getTotalElements()).isEqualTo(3);
+        assertThat(firstPage.getContent()).hasSize(2);
+        assertThat(distributionApi.listAgents(null, null, PageRequest.of(1, 2)).getContent()).hasSize(1);
+    }
+
+    /** RLS is the backstop; the query is tenant-scoped in its own right. */
+    @Test
+    void listAgentsNeverCrossesTenants() {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        PartyView partyA = registerVerifiedParty(tenantA, "AGT-ISO-A");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            partyA.partyId(), "LIC-ISO-A", LocalDate.now().plusYears(1), null), "staff-1");
+
+        TenantContext.set(tenantB);
+        assertThat(distributionApi.listAgents(null, null, PageRequest.of(0, 20)).getTotalElements()).isZero();
+    }
+
+    /**
+     * `q` matches LICENCE NUMBER, not a name -- an agent has no name in this context.
+     * The person's name lives in `party`, and resolving it here would make
+     * distribution read another context's data to fill a column.
+     */
+    @Test
+    void listAgentsSearchesByLicenceNumberCaseInsensitively() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView one = registerVerifiedParty(tenantId, "AGT-Q-1");
+        PartyView two = registerVerifiedParty(tenantId, "AGT-Q-2");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            one.partyId(), "LIC-NORTH-001", LocalDate.now().plusYears(1), null), "staff-1");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            two.partyId(), "LIC-SOUTH-002", LocalDate.now().plusYears(1), null), "staff-1");
+        TenantContext.set(tenantId);
+
+        assertThat(distributionApi.listAgents("north", null, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-NORTH-001");
+        assertThat(distributionApi.listAgents("SOUTH", null, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-SOUTH-002");
+        assertThat(distributionApi.listAgents("LIC-", null, PageRequest.of(0, 20)).getTotalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void listAgentsFiltersByLicenceStatus() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView active = registerVerifiedParty(tenantId, "AGT-ST-A");
+        PartyView suspended = registerVerifiedParty(tenantId, "AGT-ST-S");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            active.partyId(), "LIC-ST-ACTIVE", LocalDate.now().plusYears(1), null), "staff-1");
+        AgentView toSuspend = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            suspended.partyId(), "LIC-ST-SUSPENDED", LocalDate.now().plusYears(1), null), "staff-1");
+        distributionApi.suspendAgent(toSuspend.agentId(), "staff-1");
+        TenantContext.set(tenantId);
+
+        assertThat(distributionApi.listAgents(null, LicenseStatus.ACTIVE, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-ST-ACTIVE");
+        assertThat(distributionApi.listAgents(null, LicenseStatus.SUSPENDED, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-ST-SUSPENDED");
+        // Both filters compose -- the JPQL search branch takes the status too.
+        assertThat(distributionApi.listAgents("ST-", LicenseStatus.ACTIVE, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-ST-ACTIVE");
     }
 
     @Test

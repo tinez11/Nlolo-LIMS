@@ -180,7 +180,9 @@ Page<AuditEntryView> listEvents(String eventTypePrefix, DateRange range, Pageabl
 
 `GET /audit-log`, staff-only, paged, ordered `occurred_at DESC`, optional `eventTypePrefix` (so `policy.` filters to one module) and date range. `AuditEntryView` is reused unchanged — it exposes `payloadJson` raw, which is honest: the payload shape varies per event type and inventing a normalised view over 40-odd event types would be a translation layer nobody asked for.
 
-A new spec file `backend/api/openapi/openapi-audit.yaml` — the 16th. **`frontend/scripts/generate-api-types.mjs` enumerates the specs explicitly and must gain the entry**, or the generated types silently omit the module; the deleted portal's script covered 11 of 15 for exactly this reason.
+A new spec file `backend/api/openapi/openapi-audit.yaml` — the 16th.
+
+> **Amended: no codegen change is needed.** This section claimed `frontend/scripts/generate-api-types.mjs` "enumerates the specs explicitly and must gain the entry", citing the deleted portal's script covering 11 of 15. The current script does the opposite — it derives the list from the directory and fails on an unreadable spec, and its own header comment says it was written that way *because* of that bug. Dropping `openapi-audit.yaml` into the directory was sufficient; `npm run generate:api` picked it up and reported 16 specs. Worth recording because the same wrong assumption would otherwise be made again by whoever adds the 17th.
 
 ## Frontend
 

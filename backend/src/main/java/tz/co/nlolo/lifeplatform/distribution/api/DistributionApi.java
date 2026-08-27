@@ -26,6 +26,20 @@ public interface DistributionApi {
     AgentView getAgent(UUID agentId);
 
     /**
+     * M13: the agents list, tenant-scoped and paged.
+     *
+     * Until now this module served every per-agent read but no list, so an agent
+     * table had nothing to render and the console's nav item pointed at the
+     * onboarding form instead of a queue.
+     *
+     * `q` matches LICENCE NUMBER. An agent has no name here -- the person's name
+     * lives in `party`, reached through `partyId` -- and resolving it would make
+     * distribution read another context's data to fill a column.
+     */
+    org.springframework.data.domain.Page<AgentView> listAgents(
+        String q, LicenseStatus status, org.springframework.data.domain.Pageable pageable);
+
+    /**
      * Resolves {@code partyId}'s own object-level read scope over agent-related data elsewhere on
      * the platform: its own agent record (if the party IS an agent in this tenant) plus everyone
      * within {@code MAX_HIERARCHY_WALK_DEPTH} levels below it in the hierarchy -- the same depth

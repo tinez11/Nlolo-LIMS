@@ -33,6 +33,8 @@ import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -195,6 +197,25 @@ public class DistributionApiImpl implements DistributionApi {
     @Override
     public AgentView getAgent(UUID agentId) {
         return toAgentView(findAgentOrThrow(agentId, TenantContext.get()));
+    }
+
+    /**
+     * M13. Branches on which filters are present rather than building a single
+     * do-everything query, mirroring PolicyController's structure -- a JPQL method
+     * only where `q` needs a LIKE, derived queries otherwise.
+     */
+    @Override
+    public Page<AgentView> listAgents(String q, LicenseStatus status, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+        Page<AgentProfile> page;
+        if (q != null && !q.isBlank()) {
+            page = agentProfileRepository.search(tenantId, q.trim(), status, pageable);
+        } else if (status != null) {
+            page = agentProfileRepository.findByTenantIdAndLicenseStatus(tenantId, status, pageable);
+        } else {
+            page = agentProfileRepository.findByTenantId(tenantId, pageable);
+        }
+        return page.map(this::toAgentView);
     }
 
     @Override

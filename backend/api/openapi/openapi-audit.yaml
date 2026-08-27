@@ -1,0 +1,118 @@
+openapi: 3.1.0
+info:
+  title: Audit Event Journal API
+  version: "1.0.0"
+  description: >
+    External REST surface of the `audit` module. The 16th spec on this platform, and
+    the module's first: `audit` has held a domain API since M1 and has recorded every
+    domain event since, with no way to read it from outside.
+
+
+    READ WHAT THIS IS. `audit.audit_log` records
+    `(event_id, event_type, schema_version, sequence_number, occurred_at, recorded_at,
+    payload)` and is written by `DomainEventAuditListener` on every published domain
+    event. There is NO actor column, and no before/after values and no reason. So this
+    endpoint answers "what happened in this tenant, in order". It does NOT answer "who
+    did it and why".
+
+
+    That matters because a compliance screen wants actor, action, record, before,
+    after and reason -- and five of those six exist nowhere on this platform. Any UI
+    built over this must say what it is rather than presenting an event feed as
+    compliance evidence. Closing the gap means either carrying actor identity in every
+    domain event payload or building a second mechanism beside this journal; it is
+    recorded as an open item in the M13 design spec, not solved here.
+
+
+    `payloadJson` is returned RAW and unparsed, deliberately: the payload shape varies
+    per event type across forty-odd events, and normalising it here would be a
+    translation layer nobody has specified.
+
+
+    Operational note carried from `V1__create_audit_schema.sql`: this table is
+    PARTITIONED BY RANGE (occurred_at) with monthly partitions, and it is the
+    highest-volume table on the platform. An unbounded query scans every partition --
+    callers are expected to bound `from`/`to`. Retention is an open compliance
+    decision, still unresolved.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /audit-log:
+    get:
+      summary: The tenant's domain-event journal, newest first (paged)
+      description: >-
+        Staff only. Tenant-scoped by the validated JWT, with Postgres RLS as the
+        backstop.
+
+
+        `eventTypePrefix` filters by module, since `eventType` is `module.EventName` --
+        `policy.` returns every policy event. Both date bounds are optional and both
+        are inclusive.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: eventTypePrefix
+          in: query
+          description: Prefix match on eventType, e.g. `policy.` or `claims.ClaimSettled`.
+          schema: { type: string }
+        - name: from
+          in: query
+          description: Inclusive lower bound on occurredAt.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Inclusive upper bound on occurredAt.
+          schema: { type: string, format: date-time }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntryView' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+components:
+  securitySchemes:
+    customersAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/customers/.well-known/openid-configuration
+    agentsAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/agents/.well-known/openid-configuration
+    staffAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
+    regulatorsAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/regulators/.well-known/openid-configuration
+  schemas:
+    AuditEntryView:
+      description: >-
+        One recorded domain event. Note what is absent: no actor, no before/after, no
+        reason -- this is an event journal, not a who-did-what trail.
+      type: object
+      required: [eventId, eventType, occurredAt, payloadJson]
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType:
+          type: string
+          description: '`module.EventName`, e.g. `policy.PolicyIssued`.'
+          example: policy.PolicyIssued
+        occurredAt: { type: string, format: date-time }
+        payloadJson:
+          type: string
+          description: >-
+            The event's own JSON payload, RAW and unparsed as a string. Its shape
+            varies per eventType; this endpoint does not normalise it.

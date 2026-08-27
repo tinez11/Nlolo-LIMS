@@ -3,6 +3,10 @@ package tz.co.nlolo.lifeplatform.audit;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.audit.api.AuditApi;
+import tz.co.nlolo.lifeplatform.audit.api.AuditEntryView;
+import tz.co.nlolo.lifeplatform.audit.api.DateRange;
 import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -12,6 +16,10 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,6 +61,9 @@ class DomainEventAuditListenerIntegrationTest {
     @Autowired
     private AuditLogRepository auditLogRepository;
 
+    @Autowired
+    private AuditApi auditApi;
+
     @Test
     void publishedEventLandsInAuditLogAfterCommit() {
         UUID tenantId = UUID.randomUUID();
@@ -64,6 +75,81 @@ class DomainEventAuditListenerIntegrationTest {
         List<?> rows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
             tenantId, "test.SyntheticEvent", before.minusSeconds(5), before.plusSeconds(5));
         assertThat(rows).hasSize(1);
+    }
+
+    // ---- M13: the tenant-wide read the module never exposed --------------------------
+
+    /**
+     * `audit` has recorded every domain event since M1 with no way to read it from
+     * outside. These cover the feed that closes that, including the two properties a
+     * compliance reader depends on: tenant isolation, and newest-first ordering.
+     */
+    @Test
+    void listEventsReturnsTheTenantsFeedNewestFirst() {
+        UUID tenantId = UUID.randomUUID();
+        Instant base = Instant.now().minusSeconds(60);
+        probe.publishAndCommit(new DomainEventEnvelope<>(
+            UUID.randomUUID(), "policy.PolicyIssued", 1, tenantId, base, null, Map.of("n", 1)));
+        probe.publishAndCommit(new DomainEventEnvelope<>(
+            UUID.randomUUID(), "claims.ClaimSettled", 1, tenantId, base.plusSeconds(30), null, Map.of("n", 2)));
+
+        TenantContext.set(tenantId);
+        try {
+            Page<AuditEntryView> feed = auditApi.listEvents(null, new DateRange(null, null),
+                PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "occurredAt")));
+
+            assertThat(feed.getTotalElements()).isEqualTo(2);
+            // Newest first: the later event leads.
+            assertThat(feed.getContent().get(0).eventType()).isEqualTo("claims.ClaimSettled");
+            // The payload comes back raw and unparsed, by design.
+            assertThat(feed.getContent().get(0).payloadJson()).contains("\"n\"");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Test
+    void listEventsFiltersByModulePrefixAndDateRange() {
+        UUID tenantId = UUID.randomUUID();
+        Instant old = Instant.now().minusSeconds(3600);
+        Instant recent = Instant.now().minusSeconds(30);
+        probe.publishAndCommit(new DomainEventEnvelope<>(
+            UUID.randomUUID(), "policy.PolicyIssued", 1, tenantId, old, null, Map.of()));
+        probe.publishAndCommit(new DomainEventEnvelope<>(
+            UUID.randomUUID(), "policy.PolicyLapsed", 1, tenantId, recent, null, Map.of()));
+        probe.publishAndCommit(new DomainEventEnvelope<>(
+            UUID.randomUUID(), "claims.ClaimSettled", 1, tenantId, recent, null, Map.of()));
+
+        TenantContext.set(tenantId);
+        try {
+            Pageable page = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "occurredAt"));
+            // eventType is `module.EventName`, so a prefix filters by module.
+            assertThat(auditApi.listEvents("policy.", new DateRange(null, null), page).getTotalElements()).isEqualTo(2);
+            assertThat(auditApi.listEvents("claims.", new DateRange(null, null), page).getTotalElements()).isEqualTo(1);
+            // Bounds are inclusive, and bounding matters: unbounded scans every partition.
+            assertThat(auditApi.listEvents(null, new DateRange(recent.minusSeconds(5), null), page).getTotalElements())
+                .isEqualTo(2);
+            assertThat(auditApi.listEvents("policy.", new DateRange(recent.minusSeconds(5), null), page).getTotalElements())
+                .isEqualTo(1);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Test
+    void listEventsNeverCrossesTenants() {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        probe.publishAndCommit(new DomainEventEnvelope<>(
+            UUID.randomUUID(), "policy.PolicyIssued", 1, tenantA, Instant.now(), null, Map.of()));
+
+        TenantContext.set(tenantB);
+        try {
+            assertThat(auditApi.listEvents(null, new DateRange(null, null),
+                PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "occurredAt"))).getTotalElements()).isZero();
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     // Registered via a nested @TestConfiguration @Bean method, explicitly wired in with

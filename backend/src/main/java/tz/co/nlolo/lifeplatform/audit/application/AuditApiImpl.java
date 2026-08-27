@@ -27,6 +27,28 @@ public class AuditApiImpl implements AuditApi {
         this.repository = repository;
     }
 
+    /**
+     * Absent filters become wide-open bounds rather than nulls.
+     *
+     * The query cannot take nulls: on Postgres a NULL bind has no inferable type,
+     * so `(:p is null or col like concat(:p, '%'))` sends `bytea` and the server
+     * rejects `character varying ~~ bytea`. An empty prefix is exactly equivalent
+     * (`like '%'` matches everything), and EPOCH..MAX_INSTANT is exactly equivalent
+     * to an unbounded range -- with the same cost, since either way an unbounded
+     * query scans every monthly partition.
+     */
+    private static final java.time.Instant MAX_INSTANT = java.time.Instant.parse("9999-12-31T23:59:59Z");
+
+    @Override
+    public org.springframework.data.domain.Page<AuditEntryView> listEvents(
+            String eventTypePrefix, DateRange range, org.springframework.data.domain.Pageable pageable) {
+        String prefix = (eventTypePrefix == null || eventTypePrefix.isBlank()) ? "" : eventTypePrefix;
+        java.time.Instant from = (range == null || range.from() == null) ? java.time.Instant.EPOCH : range.from();
+        java.time.Instant to = (range == null || range.to() == null) ? MAX_INSTANT : range.to();
+        return repository.listEvents(TenantContext.get(), prefix, from, to, pageable)
+            .map(e -> new AuditEntryView(e.getEventId(), e.getEventType(), e.getOccurredAt(), e.getPayload()));
+    }
+
     @Override
     public List<AuditEntryView> getTrail(EntityRef entity, DateRange range) {
         String eventTypePrefix = entity.entityType() + ".%";

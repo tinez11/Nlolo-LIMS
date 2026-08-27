@@ -127,7 +127,7 @@ paths:
               schema: { $ref: '#/components/schemas/PremiumQuoteView' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
-        '404': { description: No product, or no version active as of that date }
+        '404': { description: "No product, or no version active as of that date" }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /products/{productId}/versions/{versionId}/rating:
     get:
@@ -156,7 +156,7 @@ paths:
               schema: { $ref: '#/components/schemas/VersionRatingView' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
-        '404': { description: No such version for that product in this tenant }
+        '404': { description: "No such version for that product in this tenant" }
 components:
   schemas:
     ProductSummary:

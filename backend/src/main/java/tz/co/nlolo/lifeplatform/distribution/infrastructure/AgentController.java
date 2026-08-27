@@ -104,6 +104,31 @@ public class AgentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(AgentResponseDto.from(view));
     }
 
+    /**
+     * The agents list. STAFF ONLY, unlike the per-agent read below.
+     *
+     * `GET /agents/{agentId}` can safely admit an agents-realm token because
+     * `enforceAgentReadAccess` checks that caller's ownership or hierarchy for that
+     * one agent. A list has no such per-row check to make: no agent-of-record or
+     * book-of-business scoping exists on AgentProfile, so an agents-realm caller
+     * would enumerate every agent in the tenant. That is a new disclosure, not a
+     * convenience -- the same reasoning that kept `GET /underwriting/cases`
+     * staff-only.
+     *
+     * `q` matches licence number; an agent has no name in this module.
+     */
+    @GetMapping("/agents")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<AgentSearchResponse> listAgents(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) LicenseStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        return ResponseEntity.ok(AgentSearchResponse.from(distributionApi.listAgents(q, status,
+            org.springframework.data.domain.PageRequest.of(page, Math.min(pageSize, 100),
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.ASC, "licenseNumber")))));
+    }
+
     @GetMapping("/agents/{agentId}")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<AgentResponseDto> getAgent(@PathVariable UUID agentId,
