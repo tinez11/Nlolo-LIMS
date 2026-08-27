@@ -94,8 +94,28 @@ describe('screen manifest', () => {
       'Policies & claims',
       'Finance',
       'Distribution',
+      'Records',
       'Configuration',
     ]);
+  });
+
+  it('never makes the nav stricter than the endpoint it fronts', () => {
+    // `GET /audit-log` is hasRole('REALM_STAFF') -- any staff member may read it.
+    // Putting the Event journal in a finance-gated group would hide a screen most
+    // staff are authorised to see, which is how it was first written.
+    const withoutFinance = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
+    const items = navFor('staff', withoutFinance).flatMap((g) => g.items.map((i) => i.label));
+    expect(items).toContain('Event journal');
+  });
+
+  it('points the Agents nav item at a list, not at the create form', () => {
+    // PLAN.md §7 recorded Agents as the one nav item aimed at a create form,
+    // because `POST /agents` was the only entry point onto the domain that
+    // existed. `GET /agents` retired that exception; this pins it so the item
+    // cannot quietly regress to the form.
+    const agents = SCREENS.staff.find((s) => s.reach !== 'drill-in' && s.reach.label === 'Agents');
+    expect(agents?.path).toBe('agents');
+    expect(SCREENS.staff.find((s) => s.path === 'agents/new')?.reach).toBe('drill-in');
   });
 
   it('declares a badge only where a real paged count exists', () => {

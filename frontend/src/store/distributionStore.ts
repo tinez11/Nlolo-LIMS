@@ -5,12 +5,14 @@ import {
   getApplicablePlan,
   getOwnAgent,
   listAccruals,
+  listAgents,
   listCommissionStatements,
   onboardAgent,
   reactivateAgent,
   requestPayout,
   suspendAgent,
 } from '@/api/distribution';
+import type { AgentSearchParams } from '@/api/distribution';
 import type {
   AgentView,
   CommissionAccrualView,
@@ -18,6 +20,7 @@ import type {
   CommissionStatementView,
   CreateCommissionPlanRequest,
   OnboardAgentRequest,
+  Page,
   RequestPayoutRequest,
 } from '@/api/types';
 import type { MutationAttempt } from '@/lib/idempotency';
@@ -36,6 +39,9 @@ interface DistributionState {
   // A single slot, not keyed: onboarding makes a NEW agent, so there is no
   // existing id to key against yet -- same shape as underwriting's `opening`.
   onboarding: Resource<AgentView>;
+  /** The paged agents list. Distribution served every per-agent read but no list
+   *  until M13, so an agent table had no feed at all. */
+  list: Resource<Page<AgentView>>;
   agents: Keyed<AgentView>;
   // A single slot, not keyed: there is only ever one "me" for the calling
   // session, unlike `agents` which is keyed by whichever agentId a staff
@@ -58,6 +64,7 @@ interface DistributionState {
 
   onboardAgent: (request: OnboardAgentRequest, attempt: MutationAttempt) => Promise<void>;
   resetOnboardAgent: () => void;
+  loadList: (params: AgentSearchParams) => Promise<void>;
   loadAgent: (agentId: string) => Promise<void>;
   loadOwnAgent: () => Promise<void>;
   suspendAgent: (agentId: string) => Promise<void>;
@@ -83,6 +90,7 @@ interface DistributionState {
 
 export const useDistributionStore = create<DistributionState>((set, getState) => ({
   onboarding: idle(),
+  list: idle(),
   agents: {},
   ownAgent: idle(),
   plans: {},
@@ -102,6 +110,14 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
     ),
 
   resetOnboardAgent: () => set({ onboarding: idle() }),
+
+  loadList: (params) =>
+    track(
+      'distribution.list',
+      getState().list,
+      (next) => set({ list: next }),
+      () => listAgents(params),
+    ),
 
   loadAgent: (agentId) =>
     track(

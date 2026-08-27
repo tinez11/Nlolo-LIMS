@@ -6,19 +6,65 @@ import type {
   CommissionPlanView,
   CommissionStatementView,
   CreateCommissionPlanRequest,
+  LicenseStatus,
   OnboardAgentRequest,
+  Page,
   RequestPayoutRequest,
 } from './types';
 
 /**
  * Distribution (agents/commissions) read/write surface.
  *
- * There is no `GET /agents` list or search endpoint anywhere on this platform
- * -- an agent is reachable only by an id you already hold: the response of
- * onboarding it, or a policy's own `agentOfRecordId` (surfaced on
- * `PolicyView`, unlike underwriting's `underwritingCaseId` which the wire DTO
- * drops entirely -- confirmed by reading `PolicyResponseDto` directly).
+ * `GET /agents` (added in M13) is a real paged list, staff-only. Before it, an
+ * agent was reachable only by an id you already held: the response of onboarding
+ * it, or a policy's own `agentOfRecordId` (surfaced on `PolicyView`, unlike
+ * underwriting's `underwritingCaseId` which the wire DTO drops entirely --
+ * confirmed by reading `PolicyResponseDto` directly).
  */
+
+export interface AgentSearchParams {
+  /** Case-insensitive substring match against LICENCE NUMBER. */
+  q?: string;
+  status?: LicenseStatus;
+  page?: number;
+  pageSize?: number;
+}
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
+/**
+ * `GET /agents` -- staff only, tenant-scoped, paged.
+ *
+ * `q` matches the licence number, NOT a name: an agent has no name in the
+ * distribution context. The person's name lives in `party`, reached through
+ * `partyId`, so a name column here would need a second call per row.
+ */
+export async function listAgents(params: AgentSearchParams = {}): Promise<Page<AgentView>> {
+  const page = params.page ?? 0;
+  const pageSize = Math.min(params.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+
+  const body = await get<{
+    items?: AgentView[];
+    page?: { page?: number; pageSize?: number; totalElements?: number };
+  }>('/agents', {
+    params: {
+      ...(params.q ? { q: params.q } : {}),
+      ...(params.status ? { status: params.status } : {}),
+      page,
+      pageSize,
+    },
+  });
+
+  return {
+    items: body.items ?? [],
+    page: {
+      page: body.page?.page ?? page,
+      pageSize: body.page?.pageSize ?? pageSize,
+      totalElements: body.page?.totalElements ?? 0,
+    },
+  };
+}
 
 /** `POST /agents` -- staff FINANCE_OFFICER/ADMIN only. Idempotency-Key is
  *  hard-required (a 400 without it) -- see lib/idempotency.ts's REQUIRED list. */
@@ -35,8 +81,9 @@ export function getAgent(agentId: string): Promise<AgentView> {
 
 /**
  * `GET /agents/me` -- agents-realm only. Resolves the caller's own agentId
- * from its `party_id` claim -- there is no `agentId` claim and no `GET
- * /agents` list, so this is the only way an agent discovers its own record.
+ * from its `party_id` claim -- there is no `agentId` claim, and the `GET /agents`
+ * list is staff-only, so this remains the only way an agent discovers its own
+ * record.
  */
 export function getOwnAgent(): Promise<AgentView> {
   return get<AgentView>('/agents/me');

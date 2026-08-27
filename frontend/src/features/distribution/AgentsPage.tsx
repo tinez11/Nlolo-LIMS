@@ -1,0 +1,271 @@
+import { Plus } from 'lucide-react';
+import { useEffect, type ReactNode } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { LICENSE_STATUSES, type AgentView, type LicenseStatus } from '@/api/types';
+import { DataTable, Pager, type Column } from '@/components/DataTable';
+import { PageHeader } from '@/components/PageHeader';
+import { StatCards, type Stat } from '@/components/StatCards';
+import { StatusBadge } from '@/components/StatusBadge';
+import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/cn';
+import { formatDate } from '@/lib/dates';
+import { isInitialLoad } from '@/store/createResourceSlice';
+import { useDistributionStore } from '@/store/distributionStore';
+
+const DEFAULT_PAGE_SIZE = 20;
+
+/**
+ * `GET /agents` — the list this domain never had.
+ *
+ * Until M13, distribution served every per-agent read and no list, so the
+ * console's "Agents" nav item pointed at the ONBOARDING FORM: the only entry
+ * point onto the domain that existed server-side. PLAN.md §7 recorded that as a
+ * deliberate exception. This retires it — the nav item is a real list now.
+ *
+ * There is no name column, and that is not an omission. An agent has no name in
+ * the distribution context; the person's name lives in `party`, reached through
+ * `partyId`, so a name column would mean a second request per row. Search
+ * therefore matches the LICENCE NUMBER, which is the agent's human-facing
+ * identifier here.
+ */
+export function AgentsPage() {
+  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const statusParam = params.get('status');
+  const status: LicenseStatus | undefined =
+    statusParam && (LICENSE_STATUSES as readonly string[]).includes(statusParam)
+      ? (statusParam as LicenseStatus)
+      : undefined;
+  const q = params.get('q') ?? '';
+  const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
+
+  const list = useDistributionStore((s) => s.list);
+  const loadList = useDistributionStore((s) => s.loadList);
+
+  useEffect(() => {
+    void loadList({
+      ...(q ? { q } : {}),
+      ...(status ? { status } : {}),
+      page,
+      pageSize: DEFAULT_PAGE_SIZE,
+    });
+  }, [loadList, q, status, page]);
+
+  function update(next: { status?: LicenseStatus | undefined; q?: string; page?: number }) {
+    const merged = new URLSearchParams(params);
+    if ('status' in next) {
+      if (next.status) merged.set('status', next.status);
+      else merged.delete('status');
+      merged.delete('page');
+    }
+    if (next.q !== undefined) {
+      if (next.q) merged.set('q', next.q);
+      else merged.delete('q');
+      merged.delete('page');
+    }
+    if (next.page !== undefined) {
+      if (next.page === 0) merged.delete('page');
+      else merged.set('page', String(next.page));
+    }
+    setParams(merged);
+  }
+
+  const total = list.data?.page.totalElements ?? null;
+
+  const stats: Stat[] = [
+    {
+      label: status ? `${status[0]}${status.slice(1).toLowerCase()} agents` : 'All agents',
+      value: total,
+      pending: isInitialLoad(list),
+      hint:
+        list.status === 'error' && total === null
+          ? 'could not load'
+          : status || q
+            ? 'matching this filter'
+            : 'in this tenant',
+    },
+  ];
+
+  const columns: Column<AgentView>[] = [
+    {
+      key: 'licenseNumber',
+      header: 'Licence number',
+      render: (a) => <span className="font-mono text-xs font-medium">{a.licenseNumber ?? '—'}</span>,
+    },
+    {
+      key: 'licenseStatus',
+      header: 'Licence',
+      render: (a) => (a.licenseStatus ? <StatusBadge kind="agentLicense" value={a.licenseStatus} /> : '—'),
+    },
+    {
+      key: 'licenseExpiryDate',
+      header: 'Expires',
+      render: (a) => <span className="tabular-nums">{formatDate(a.licenseExpiryDate)}</span>,
+    },
+    {
+      key: 'partyId',
+      header: 'Party',
+      secondary: true,
+      // The person's name lives in `party`; resolving it here would be a second
+      // request per row, so the id is shown rather than a name that would be wrong.
+      render: (a) => <span className="font-mono text-xs text-muted-foreground">{a.partyId ?? '—'}</span>,
+    },
+    {
+      key: 'hierarchyParentId',
+      header: 'Reports to',
+      secondary: true,
+      render: (a) =>
+        a.hierarchyParentId ? (
+          <span className="font-mono text-xs text-muted-foreground">{a.hierarchyParentId}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+  ];
+
+  function retry() {
+    void loadList({
+      ...(q ? { q } : {}),
+      ...(status ? { status } : {}),
+      page,
+      pageSize: DEFAULT_PAGE_SIZE,
+    });
+  }
+
+  function renderBody() {
+    if (isInitialLoad(list)) return <TableSkeleton columns={columns.length} />;
+
+    if (list.status === 'error' && list.error && list.data === null) {
+      return <ErrorPanel error={list.error} onRetry={retry} />;
+    }
+
+    const rows = list.data?.items ?? [];
+    if (rows.length === 0 && list.status === 'success') {
+      return (
+        <EmptyState
+          title={q || status ? 'No agents match' : 'No agents yet'}
+          description={
+            q || status
+              ? 'Nothing in this tenant matches that licence number or status.'
+              : 'Agents appear here once onboarded.'
+          }
+          {...(q || status
+            ? {
+                action: (
+                  <Button size="sm" onClick={() => update({ q: '', status: undefined })}>
+                    Clear filters
+                  </Button>
+                ),
+              }
+            : {})}
+        />
+      );
+    }
+
+    return (
+      <>
+        {list.status === 'error' && list.error && (
+          <p className="border-b border-border bg-status-warning-bg px-4 py-2 text-xs text-status-warning-fg">
+            Showing older data — could not refresh.
+            {list.error.traceId && <span className="ml-1 font-mono">({list.error.traceId})</span>}
+          </p>
+        )}
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(a) => a.agentId ?? JSON.stringify(a)}
+          onRowActivate={(a) => {
+            if (a.agentId) navigate(a.agentId);
+          }}
+          caption="Agents"
+        />
+        {list.data && (
+          <Pager
+            page={list.data.page}
+            busy={list.status === 'loading'}
+            onPageChange={(next) => update({ page: next })}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="Agents"
+        description="Every agent in your tenant. Select one to open it."
+        actions={
+          <Button asChild size="sm" variant="primary">
+            <Link to="new">
+              <Plus />
+              Onboard agent
+            </Link>
+          </Button>
+        }
+      />
+
+      <StatCards stats={stats} />
+
+      <div className="px-6 pb-6">
+        <div className="rounded-lg border border-border bg-surface">
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
+            <FilterChip label="All" active={status === undefined} onClick={() => update({ status: undefined })} />
+            {LICENSE_STATUSES.map((value) => (
+              <FilterChip
+                key={value}
+                label={<StatusBadge kind="agentLicense" value={value} />}
+                active={status === value}
+                onClick={() => update({ status: value })}
+              />
+            ))}
+            <form
+              className="ml-auto"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const value = new FormData(e.currentTarget).get('q');
+                update({ q: typeof value === 'string' ? value.trim() : '' });
+              }}
+            >
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="Search by licence number"
+                aria-label="Search by licence number"
+                className="h-8 w-56 rounded-md border border-input bg-surface px-2.5 text-sm"
+              />
+            </form>
+          </div>
+
+          {renderBody()}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'rounded-full px-2 py-1 text-xs transition-colors',
+        active ? 'bg-selected ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
+      )}
+    >
+      {label}
+    </button>
+  );
+}

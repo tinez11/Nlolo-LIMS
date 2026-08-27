@@ -10,6 +10,7 @@
  * LoanView, so the generated types are an accurate reflection of what the contract
  * actually promises. Screens must defend on each field.
  */
+import type { components as AuditComponents } from '@/types/api/audit';
 import type { components as BillingComponents } from '@/types/api/billing';
 import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
@@ -91,6 +92,15 @@ export interface PaymentRequest {
  */
 export type AgentView = DistributionComponents['schemas']['AgentView'];
 export type LicenseStatus = NonNullable<AgentView['licenseStatus']>;
+/** Order taken from the enum in openapi-distribution.yaml, not invented. */
+export const LICENSE_STATUSES: readonly LicenseStatus[] = ['ACTIVE', 'EXPIRED', 'SUSPENDED'];
+
+/**
+ * One recorded domain event. Note what is ABSENT: no actor, no before/after, no
+ * reason — `audit.audit_log` has no such columns. This is an event journal, not
+ * a who-did-what trail, and anything rendering it must say so.
+ */
+export type AuditEntryView = AuditComponents['schemas']['AuditEntryView'];
 export type OnboardAgentRequest = DistributionComponents['schemas']['OnboardAgentRequest'];
 
 export type CommissionPlanView = DistributionComponents['schemas']['CommissionPlanView'];

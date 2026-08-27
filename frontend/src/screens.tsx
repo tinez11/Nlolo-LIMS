@@ -14,11 +14,13 @@ import {
 import type { ReactNode } from 'react';
 import { canSeeFinance, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
+import { AuditLogPage } from '@/features/audit/AuditLogPage';
 import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
 import { ClaimsPage } from '@/features/claims/ClaimsPage';
 import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
 import { AgentDetailPage } from '@/features/distribution/AgentDetailPage';
 import { AgentProfilePage } from '@/features/distribution/AgentProfilePage';
+import { AgentsPage } from '@/features/distribution/AgentsPage';
 import { OnboardAgentPage } from '@/features/distribution/OnboardAgentPage';
 import { ChartOfAccountsPage } from '@/features/finaccounting/ChartOfAccountsPage';
 import { GlPostingDetailPage } from '@/features/finaccounting/GlPostingDetailPage';
@@ -64,6 +66,7 @@ type NavGroupId =
   | 'policies-claims'
   | 'finance'
   | 'distribution'
+  | 'records'
   | 'configuration'
   | 'my-business';
 
@@ -129,6 +132,14 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
       requires: canSeeFinance,
     },
     { id: 'distribution', label: 'Distribution', requires: canSeeFinance },
+    // UNGATED, to match its endpoint. `GET /audit-log` is `hasRole('REALM_STAFF')`
+    // -- any staff member may read it -- so putting the journal in a
+    // finance-gated group would make the nav stricter than the API and hide a
+    // screen most staff are authorised to see. Named "Records" rather than
+    // "Compliance" on purpose: it is an event journal, and five of the six
+    // columns a compliance register needs exist nowhere on this platform, so a
+    // group called Compliance would promise what the data cannot deliver.
+    { id: 'records', label: 'Records' },
     { id: 'configuration', label: 'Configuration' },
   ],
   agents: [{ id: 'my-business', label: 'My business' }],
@@ -162,6 +173,12 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'claims/:claimId', element: <ClaimDetailPage />, reach: 'drill-in' },
 
   {
+    path: 'audit-log',
+    element: <AuditLogPage />,
+    reach: { group: 'records', label: 'Event journal', icon: ScrollText },
+  },
+
+  {
     path: 'products',
     element: <ProductsPage />,
     reach: { group: 'configuration', label: 'Products', icon: Package },
@@ -190,16 +207,16 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'underwriting/new', element: <OpenUnderwritingCasePage />, reach: 'drill-in' },
   { path: 'underwriting/:caseId', element: <UnderwritingCaseDetailPage />, reach: 'drill-in' },
 
-  // Agents is the one nav item pointing at a create form rather than a list:
-  // `POST /agents` is the only entry point onto that domain server-side, so the
-  // item goes to the one real working action. An agent IS also reachable by
-  // drilling in from a policy -- `PolicyView.agentOfRecordId` does round-trip
-  // through `GET /policies`, unlike `underwritingCaseId`, which does not.
+  // Agents used to be the one nav item pointing at a create form rather than a
+  // list, because `POST /agents` was the only entry point onto the domain that
+  // existed server-side (PLAN.md §7's recorded exception). `GET /agents` in M13
+  // retired that: this is a real list now.
   {
-    path: 'agents/new',
-    element: <OnboardAgentPage />,
+    path: 'agents',
+    element: <AgentsPage />,
     reach: { group: 'distribution', label: 'Agents', icon: Users },
   },
+  { path: 'agents/new', element: <OnboardAgentPage />, reach: 'drill-in' },
   { path: 'agents/:agentId', element: <AgentDetailPage />, reach: 'drill-in' },
 
   {
