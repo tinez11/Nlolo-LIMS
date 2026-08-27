@@ -135,6 +135,17 @@ test.describe('staff distribution', () => {
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const financePage = await financeContext.newPage();
     const agentId = await onboardRealAgent(financePage);
+    // A FRESH product, not the seeded Demo Term Life. A commission plan hangs off a
+    // PRODUCT, so once anything -- another suite, or a person clicking around the dev
+    // console -- authors a plan on the shared fixture, every agent selecting it shows
+    // "Active plan" instead. That is what broke this test: it asserted the empty state
+    // on a product that had since acquired a plan.
+    //
+    // The no-plan state is not incidental here, it is load-bearing: the inline
+    // create-plan form ONLY renders in that state, so "canManage is false, no create
+    // form" proves nothing on a product that already has a plan. Reading the seeded
+    // fixture made the two assertions below quietly vacuous as well as red.
+    const { optionLabel } = await createRealActiveProduct(financePage);
     await financeContext.close();
 
     // getAgent/listStatements are REALM_STAFF-broad reads -- staff.underwriter
@@ -142,7 +153,7 @@ test.describe('staff distribution', () => {
     await page.goto(`/staff/agents/${agentId}`);
     await expect(page.getByRole('heading', { name: /E2E-LIC-/ })).toBeVisible();
 
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+    await page.getByLabel('Product').selectOption({ label: optionLabel });
     await expect(page.getByText('No plan applies to this agent for this product yet.')).toBeVisible();
     // canManage is false for this identity -- no inline create-plan form.
     await expect(page.getByText('Create a plan for this product')).not.toBeVisible();
