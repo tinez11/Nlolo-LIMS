@@ -18,7 +18,50 @@ public interface ProductApi {
      * sum-assured band. {@code ageBand} shares its vocabulary with
      * {@code RatingFactorInput.band}.
      */
-    record BaseRateInput(String ageBand, Sex sex, SmokerStatus smokerStatus, BigDecimal ratePerMille) {}
+    /**
+     * One cell of the base rate table: the annual rate per 1,000 of sum assured for
+     * a given (age range, sex, smoker status). {@code ageTo} is INCLUSIVE. The base
+     * a premium is computed FROM; {@link RatingFactorInput}'s multipliers apply on
+     * top for occupation class and sum-assured band.
+     */
+    record BaseRateInput(int ageFrom, int ageTo, Sex sex, SmokerStatus smokerStatus, BigDecimal ratePerMille) {}
+
+    /**
+     * What a premium is quoted for. Money arrives as amount + currency rather than
+     * a Money type, matching {@code PolicyApi}'s convention at this layer.
+     *
+     * Takes {@code dateOfBirth} and {@code asOf}, never a precomputed age: entry age
+     * is the input a mispriced policy turns on, and it is derived where the rate
+     * table lives. {@code occupationClass} and {@code smokerStatus} are ASSERTED by
+     * the caller -- no party record carries either, which is recorded as an open item
+     * in the M13 design spec.
+     */
+    record PremiumQuoteInput(UUID productId, BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                             LocalDate dateOfBirth, Sex sex, SmokerStatus smokerStatus,
+                             String occupationClass, String sumAssuredBand,
+                             PremiumFrequency frequency, LocalDate asOf) {}
+
+    /** One multiplier that was applied, in the order it was applied. */
+    record AppliedFactor(FactorType factorType, String band, BigDecimal multiplier) {}
+
+    /**
+     * A quoted premium AND its derivation.
+     *
+     * The breakdown is returned, not just the total, because "reproduce exactly what
+     * the customer was shown on a given date" is a stated requirement -- and without
+     * it the only way for a UI to show one is to recompute it, which is the
+     * client-side arithmetic `frontend/PLAN.md` §4 forbids and the mechanism by
+     * which an illustration and its first invoice come to disagree.
+     *
+     * No policy fee is included: no product field holds one, and inventing a
+     * constant would be a number with nothing behind it. Recorded as an open item.
+     */
+    record PremiumQuoteView(UUID productVersionId, String currency,
+                            int ageAtEntry, int ageFrom, int ageTo, BigDecimal ratePerMille,
+                            BigDecimal annualBase, List<AppliedFactor> appliedFactors,
+                            BigDecimal annualAfterFactors,
+                            PremiumFrequency frequency, int instalmentsPerYear,
+                            BigDecimal instalmentAmount) {}
 
     ProductSummaryView createProduct(String productCode, String productName, ProductCategory category, String defaultCurrency, String createdBy);
 
@@ -59,6 +102,38 @@ public interface ProductApi {
                          List<BaseRateInput> baseRates, String publishedBy);
 
     ProductSnapshotView getActiveSnapshot(UUID productId, LocalDate asOfDate);
+
+    /**
+     * Price a product for one applicant, on the version active as of
+     * {@code input.asOf()}.
+     *
+     * Resolution is STRICT throughout: a missing base rate table, an age outside
+     * every band, or a declared occupation class / sum-assured band with no
+     * multiplier each raise {@link PremiumNotQuotableException} naming the
+     * dimension. Nothing falls back to a neutral value, because a fallback here
+     * produces a plausible premium for a real contract and nothing fails.
+     *
+     * Deliberately NOT idempotency-keyed and it persists nothing: this is a
+     * calculation, so replaying it is free and there is no duplicate to prevent.
+     */
+    PremiumQuoteView quotePremium(PremiumQuoteInput input);
+
+    /**
+     * The rating basis for one version, for actuarial and product review.
+     *
+     * Reuses the `*Input` records as the read shape: they already carry exactly
+     * these fields, and a parallel set of output records would be two definitions
+     * of one thing, free to drift. Precedent is `UnderwritingCaseView`, which is
+     * likewise both the internal view and the wire DTO.
+     *
+     * Deliberately NOT folded into `ProductSnapshotView`, which Underwriting and
+     * Billing read on the issuance and billing path.
+     */
+    record VersionRatingView(UUID productId, UUID productVersionId, LocalDate effectiveDate,
+                             List<BaseRateInput> baseRates, List<RatingFactorInput> ratingFactors,
+                             List<BenefitInput> benefitSchedule) {}
+
+    VersionRatingView getVersionRating(UUID productId, UUID versionId);
 
     /**
      * Internal-only (not part of openapi-product.yaml), consumed by underwriting's

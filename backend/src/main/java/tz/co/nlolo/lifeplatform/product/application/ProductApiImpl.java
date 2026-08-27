@@ -110,6 +110,7 @@ public class ProductApiImpl implements ProductApi {
                     "A version with base rates must not also carry " + doubleCounted
                         + " rating factors -- those dimensions are keys of the base rate table and would be counted twice");
             }
+            rejectOverlappingAgeBands(baseRates);
         } else if (!coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
             // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
@@ -139,8 +140,9 @@ public class ProductApiImpl implements ProductApi {
         }
         if (baseRates != null) {
             for (BaseRateInput input : baseRates) {
-                baseRateRepository.save(new BaseRate(tenantId, version.getProductVersionId(), input.ageBand(),
-                    input.sex().name(), input.smokerStatus().name(), input.ratePerMille()));
+                baseRateRepository.save(new BaseRate(tenantId, version.getProductVersionId(),
+                    input.ageFrom(), input.ageTo(), input.sex().name(), input.smokerStatus().name(),
+                    input.ratePerMille()));
             }
         }
         for (BenefitInput input : benefitSchedule) {
@@ -168,6 +170,137 @@ public class ProductApiImpl implements ProductApi {
             IfrsMeasurementModel.valueOf(definition.getIfrsMeasurementModel()),
             version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
             ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson());
+    }
+
+    /**
+     * Order of operations is fixed and stated, because every step is a place a
+     * silent mispricing could live:
+     *
+     * 1. Resolve the version active as of `asOf` -- the same lookup getActiveSnapshot
+     *    uses, so a quote and an issuance on the same date price on the same rules.
+     * 2. Derive entry age from dateOfBirth and asOf. Never taken from the caller.
+     * 3. Look up the rate cell for (age, sex, smoker). No match is a 422.
+     * 4. annualBase = sumAssured / 1000 * ratePerMille.
+     * 5. Apply OCCUPATION_CLASS then SUM_ASSURED_BAND multipliers, strictly.
+     * 6. Divide by the frequency's instalments per year.
+     * 7. Round ONCE, at the end, HALF_UP to 2dp. Intermediate values keep full
+     *    precision: rounding at each step would drift by cents that compound over
+     *    a 20-year premium term.
+     *
+     * No policy fee -- no product field holds one (open item in the M13 spec).
+     */
+    @Override
+    public PremiumQuoteView quotePremium(PremiumQuoteInput input) {
+        UUID tenantId = TenantContext.get();
+        LocalDate asOf = input.asOf() != null ? input.asOf() : LocalDate.now();
+
+        ProductVersion version = productVersionRepository.findActiveAsOf(tenantId, input.productId(), asOf).stream()
+            .findFirst()
+            .orElseThrow(() -> new ProductNotFoundException(input.productId()));
+        UUID versionId = version.getProductVersionId();
+
+        if (!baseRateRepository.existsByProductVersionId(versionId)) {
+            throw new PremiumNotQuotableException("Product version " + versionId
+                + " carries no base rate table, so it cannot be priced");
+        }
+
+        int ageAtEntry = java.time.Period.between(input.dateOfBirth(), asOf).getYears();
+        if (ageAtEntry < 0) {
+            throw new PremiumNotQuotableException("Date of birth " + input.dateOfBirth() + " is after " + asOf);
+        }
+
+        BaseRate cell = baseRateRepository
+            .findApplicable(versionId, ageAtEntry, input.sex().name(), input.smokerStatus().name())
+            .orElseThrow(() -> new PremiumNotQuotableException("No base rate for age " + ageAtEntry
+                + ", " + input.sex() + ", " + input.smokerStatus() + " on product version " + versionId));
+
+        BigDecimal annualBase = input.sumAssuredAmount()
+            .divide(new BigDecimal("1000"), java.math.MathContext.DECIMAL64)
+            .multiply(cell.getRatePerMille());
+
+        List<AppliedFactor> applied = new java.util.ArrayList<>();
+        BigDecimal annual = annualBase;
+        annual = annual.multiply(strictMultiplier(versionId, FactorType.OCCUPATION_CLASS, input.occupationClass(), applied));
+        annual = annual.multiply(strictMultiplier(versionId, FactorType.SUM_ASSURED_BAND, input.sumAssuredBand(), applied));
+
+        int instalments = input.frequency().instalmentsPerYear();
+        BigDecimal instalment = annual
+            .divide(BigDecimal.valueOf(instalments), 2, java.math.RoundingMode.HALF_UP);
+
+        return new PremiumQuoteView(versionId, input.sumAssuredCurrency(),
+            ageAtEntry, cell.getAgeFrom(), cell.getAgeTo(), cell.getRatePerMille(),
+            annualBase.setScale(2, java.math.RoundingMode.HALF_UP), List.copyOf(applied),
+            annual.setScale(2, java.math.RoundingMode.HALF_UP),
+            input.frequency(), instalments, instalment);
+    }
+
+    @Override
+    public VersionRatingView getVersionRating(UUID productId, UUID versionId) {
+        UUID tenantId = TenantContext.get();
+        ProductVersion version = productVersionRepository.findById(versionId)
+            .filter(v -> v.getTenantId().equals(tenantId) && v.getProductId().equals(productId))
+            .orElseThrow(() -> new ProductNotFoundException(versionId));
+
+        List<BaseRateInput> rates = baseRateRepository.findByProductVersionId(versionId).stream()
+            .map(r -> new BaseRateInput(r.getAgeFrom(), r.getAgeTo(), Sex.valueOf(r.getSex()),
+                SmokerStatus.valueOf(r.getSmokerStatus()), r.getRatePerMille()))
+            .toList();
+        List<RatingFactorInput> factors = ratingFactorRepository.findByProductVersionId(versionId).stream()
+            .map(f -> new RatingFactorInput(FactorType.valueOf(f.getFactorType()), f.getBand(), f.getMultiplier()))
+            .toList();
+        List<BenefitInput> benefits = benefitScheduleEntryRepository.findByProductVersionId(versionId).stream()
+            .map(b -> new BenefitInput(BenefitType.valueOf(b.getBenefitType()), b.getCalculationMethod()))
+            .toList();
+
+        return new VersionRatingView(productId, versionId, version.getEffectiveDate(), rates, factors, benefits);
+    }
+
+    /**
+     * Two bands covering the same age in the same (sex, smoker) cell would make the
+     * premium depend on which row the query happens to return first -- a silent
+     * mispricing rather than an error, and invisible to the unique constraint,
+     * which only stops an identical starting age.
+     *
+     * Enforced here rather than in SQL: a true non-overlap constraint needs an
+     * EXCLUDE ... USING gist over an int4range, which requires the btree_gist
+     * extension for the equality parts of the key. Not worth a new extension on
+     * every environment for a rule this cheap to check where the rows are authored.
+     */
+    private static void rejectOverlappingAgeBands(List<BaseRateInput> baseRates) {
+        for (BaseRateInput a : baseRates) {
+            if (a.ageTo() < a.ageFrom()) {
+                throw new InvalidProductVersionException(
+                    "Base rate band " + a.ageFrom() + "-" + a.ageTo() + " ends before it begins");
+            }
+            for (BaseRateInput b : baseRates) {
+                if (a == b || a.sex() != b.sex() || a.smokerStatus() != b.smokerStatus()) continue;
+                if (a.ageFrom() <= b.ageTo() && b.ageFrom() <= a.ageTo()) {
+                    throw new InvalidProductVersionException("Base rate bands " + a.ageFrom() + "-" + a.ageTo()
+                        + " and " + b.ageFrom() + "-" + b.ageTo() + " overlap for " + a.sex() + "/" + a.smokerStatus()
+                        + " -- an age in both would price differently depending on row order");
+                }
+            }
+        }
+    }
+
+    /**
+     * Unlike {@link #resolveRatingMultiplier}, a missing band here is an ERROR.
+     * That method's neutral-1.0 is correct for underwriting risk scoring; on a
+     * premium it would quietly price a real contract as if the factor did not
+     * apply.
+     */
+    private BigDecimal strictMultiplier(UUID versionId, FactorType factorType, String band, List<AppliedFactor> applied) {
+        if (band == null || band.isBlank()) {
+            throw new PremiumNotQuotableException(factorType + " is required to price this product");
+        }
+        BigDecimal multiplier = ratingFactorRepository.findByProductVersionIdAndFactorType(versionId, factorType.name()).stream()
+            .filter(f -> f.getBand().equals(band))
+            .map(RatingFactor::getMultiplier)
+            .findFirst()
+            .orElseThrow(() -> new PremiumNotQuotableException(
+                "No " + factorType + " multiplier for band '" + band + "' on product version " + versionId));
+        applied.add(new AppliedFactor(factorType, band, multiplier));
+        return multiplier;
     }
 
     @Override

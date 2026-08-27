@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.product.infrastructure;
 
 import tz.co.nlolo.lifeplatform.product.api.DuplicateProductCodeException;
 import tz.co.nlolo.lifeplatform.product.api.InvalidProductVersionException;
+import tz.co.nlolo.lifeplatform.product.api.PremiumNotQuotableException;
 import tz.co.nlolo.lifeplatform.product.api.ProductNotFoundException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -31,6 +32,16 @@ public class ProductExceptionHandler {
     @ExceptionHandler(InvalidProductVersionException.class)
     public ProblemDetail handleInvalidVersion(InvalidProductVersionException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "INVALID_PRODUCT_VERSION");
+    }
+
+    /**
+     * 422, not 400: the request is well-formed, the product simply cannot price it.
+     * The message names the dimension that failed, because every one of these is a
+     * case where a fallback would have produced a plausible premium instead.
+     */
+    @ExceptionHandler(PremiumNotQuotableException.class)
+    public ProblemDetail handleNotQuotable(PremiumNotQuotableException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "PREMIUM_NOT_QUOTABLE");
     }
 
     @ExceptionHandler(DuplicateProductCodeException.class)

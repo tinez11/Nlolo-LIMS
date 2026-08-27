@@ -51,7 +51,7 @@ public class ProductController {
                 ? request.fundDefinitions().stream().map(f -> new ProductApi.FundInput(f.fundCode(), f.currentNav())).collect(Collectors.toList())
                 : null,
             request.baseRates() != null
-                ? request.baseRates().stream().map(b -> new ProductApi.BaseRateInput(b.ageBand(), b.sex(), b.smokerStatus(), b.ratePerMille())).collect(Collectors.toList())
+                ? request.baseRates().stream().map(b -> new ProductApi.BaseRateInput(b.ageFrom(), b.ageTo(), b.sex(), b.smokerStatus(), b.ratePerMille())).collect(Collectors.toList())
                 : List.of(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
@@ -61,5 +61,41 @@ public class ProductController {
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<ProductSnapshotView> getActiveSnapshot(@PathVariable UUID productId, @RequestParam(required = false) LocalDate effectiveDate) {
         return ResponseEntity.ok(productApi.getActiveSnapshot(productId, effectiveDate));
+    }
+
+    /**
+     * 200, not 201: nothing is created. Persists nothing, publishes nothing, and
+     * takes NO `Idempotency-Key` -- it is a calculation, so replaying it is free and
+     * there is no duplicate to prevent. The frontend interceptor that asserts the
+     * header on the six endpoints that hard-require it must not gain a seventh entry
+     * for this path, or a live-pricing form throws on every keystroke.
+     *
+     * POST rather than GET despite being a read, because the body carries
+     * `dateOfBirth`, `sex` and `smokerStatus`. A GET would put those in a URL, and
+     * therefore into access logs, proxy logs and browser history.
+     */
+    @PostMapping("/products/{productId}/premium-quote")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<ProductApi.PremiumQuoteView> quotePremium(@PathVariable UUID productId,
+                                                                    @Valid @RequestBody PremiumQuoteRequest request) {
+        return ResponseEntity.ok(productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, request.sumAssuredAmount(), request.sumAssuredCurrency(), request.dateOfBirth(),
+            request.sex(), request.smokerStatus(), request.occupationClass(), request.sumAssuredBand(),
+            request.frequency(), request.asOf())));
+    }
+
+    /**
+     * The rating basis for one version, for actuarial and product review.
+     *
+     * Kept OFF `ProductSnapshot`, which Underwriting and Billing consume on the
+     * issuance and billing path: fattening it with rate tables would make every
+     * consumer carry data exactly one screen needs, and it could not be role-scoped
+     * because Billing must keep reading it. This can be, and is.
+     */
+    @GetMapping("/products/{productId}/versions/{versionId}/rating")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<ProductApi.VersionRatingView> getVersionRating(@PathVariable UUID productId,
+                                                                         @PathVariable UUID versionId) {
+        return ResponseEntity.ok(productApi.getVersionRating(productId, versionId));
     }
 }

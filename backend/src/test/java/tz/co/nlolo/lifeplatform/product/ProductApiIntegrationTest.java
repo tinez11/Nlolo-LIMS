@@ -42,7 +42,8 @@ class ProductApiIntegrationTest {
     static void applyMigrations() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/product/V1__create_product_schema.sql",
-            "db-migrations/product/V2__base_rate_table.sql");
+            "db-migrations/product/V2__base_rate_table.sql",
+            "db-migrations/product/V3__base_rate_structured_age.sql");
     }
 
     @BeforeEach
@@ -116,7 +117,7 @@ class ProductApiIntegrationTest {
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null,
-                List.of(new ProductApi.BaseRateInput("30-39", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4000"))),
+                List.of(new ProductApi.BaseRateInput(30, 39, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4000"))),
                 "actuary@nlolo.co.tz"));
     }
 
@@ -129,7 +130,7 @@ class ProductApiIntegrationTest {
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null,
-                List.of(new ProductApi.BaseRateInput("30-39", Sex.MALE, SmokerStatus.SMOKER, new BigDecimal("22.1000"))),
+                List.of(new ProductApi.BaseRateInput(30, 39, Sex.MALE, SmokerStatus.SMOKER, new BigDecimal("22.1000"))),
                 "actuary@nlolo.co.tz"));
     }
 
@@ -146,8 +147,8 @@ class ProductApiIntegrationTest {
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null,
-            List.of(new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
-                    new ProductApi.BaseRateInput("18-25", Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8000"))),
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
+                    new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8000"))),
             "actuary@nlolo.co.tz");
 
         List<ProductSummaryView> active = productApi.listActiveProducts(ProductCategory.TERM_LIFE);
@@ -171,7 +172,7 @@ class ProductApiIntegrationTest {
                 List.of(),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null,
-                List.of(new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000"))),
+                List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000"))),
                 "actuary@nlolo.co.tz"));
     }
 
@@ -199,19 +200,45 @@ class ProductApiIntegrationTest {
 
     /**
      * Two rows for one cell would make pricing depend on row order -- a silent
-     * mispricing rather than an error. The unique index is the guard.
+     * mispricing rather than an error.
+     *
+     * Caught by the OVERLAP validation, not by the unique constraint: two identical
+     * bands are a degenerate overlap, so publish rejects them at the application
+     * layer with a message naming the bands, before the database is reached. The
+     * constraint remains as a backstop for any other writer -- proved separately in
+     * `theUniqueConstraintBacksTheOverlapCheckAtTheDatabase`, because a constraint
+     * nothing exercises is one a future migration can drop silently.
      */
     @Test
-    void aDuplicateBaseRateCellIsRefusedByTheDatabase() {
+    void aDuplicateBaseRateCellIsRefusedAtPublish() {
         ProductSummaryView product = productApi.createProduct("TERM-M13-F", "Duplicated cell", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
-        assertThrows(DataIntegrityViolationException.class, () ->
+        InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null,
-                List.of(new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
-                        new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("99.9000"))),
+                List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
+                        new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("99.9000"))),
                 "actuary@nlolo.co.tz"));
+        assertTrue(ex.getMessage().contains("overlap"));
+    }
+
+    /**
+     * The unique constraint is unreachable through publishVersion now that the
+     * overlap check precedes it, so it is exercised directly. Otherwise the guard
+     * that protects every OTHER writer would have no test at all.
+     */
+    @Test
+    void theUniqueConstraintBacksTheOverlapCheckAtTheDatabase() {
+        UUID productId = pricedProduct("TERM-M13-H", new BigDecimal("15.2000"));
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), productId)
+            .get(0).getProductVersionId();
+        UUID tenantId = TenantContext.get();
+
+        assertThrows(DataIntegrityViolationException.class, () ->
+            baseRateRepository.saveAndFlush(new tz.co.nlolo.lifeplatform.product.domain.BaseRate(
+                tenantId, versionId, 18, 25, "FEMALE", "NON_SMOKER", new BigDecimal("99.9000"))));
     }
 
     /**
@@ -227,8 +254,222 @@ class ProductApiIntegrationTest {
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null,
-                List.of(new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, BigDecimal.ZERO)),
+                List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, BigDecimal.ZERO)),
                 "actuary@nlolo.co.tz"));
+    }
+
+    // ---- M13 step 3: the premium calculation -----------------------------------
+
+    /** A priced version: one band, one occupation class, one sum-assured band. */
+    private UUID pricedProduct(String code, BigDecimal ratePerMille) {
+        ProductSummaryView product = productApi.createProduct(code, code, ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, ratePerMille)),
+            "actuary@nlolo.co.tz");
+        return product.productId();
+    }
+
+    private ProductApi.PremiumQuoteInput quoteFor(UUID productId, LocalDate dateOfBirth, PremiumFrequency frequency) {
+        return new ProductApi.PremiumQuoteInput(productId, new BigDecimal("10000000.00"), "TZS",
+            dateOfBirth, Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", "LOW", frequency, LocalDate.now());
+    }
+
+    /**
+     * Expected values computed BY HAND, not by re-running the implementation's own
+     * arithmetic: TZS 10,000,000 / 1,000 = 10,000 units, x 15.2 = 152,000 annual,
+     * / 12 = 12,666.666... -> 12,666.67, rounded HALF_UP once at the end.
+     */
+    @Test
+    void quotePremiumComputesFromTheBaseRateAndReturnsItsDerivation() {
+        UUID productId = pricedProduct("TERM-Q1", new BigDecimal("15.2000"));
+        ProductApi.PremiumQuoteView quote =
+            productApi.quotePremium(quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.MONTHLY));
+
+        assertEquals(20, quote.ageAtEntry());
+        assertEquals(18, quote.ageFrom());
+        assertEquals(25, quote.ageTo());
+        assertEquals(0, new BigDecimal("152000.00").compareTo(quote.annualBase()));
+        assertEquals(0, new BigDecimal("12666.67").compareTo(quote.instalmentAmount()));
+        assertEquals(12, quote.instalmentsPerYear());
+        // The derivation is returned so no caller has to recompute it.
+        assertEquals(2, quote.appliedFactors().size());
+    }
+
+    /** Rounding happens ONCE at the end; 152,000 / 4 and / 1 are exact. */
+    @Test
+    void quotePremiumDividesByTheFrequency() {
+        UUID productId = pricedProduct("TERM-Q2", new BigDecimal("15.2000"));
+
+        assertEquals(0, new BigDecimal("38000.00").compareTo(productApi
+            .quotePremium(quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.QUARTERLY))
+            .instalmentAmount()));
+        assertEquals(0, new BigDecimal("152000.00").compareTo(productApi
+            .quotePremium(quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.ANNUALLY))
+            .instalmentAmount()));
+    }
+
+    /**
+     * A multiplier genuinely multiplies: 10,000 units x 20.0 = 200,000 annual, then
+     * x 1.25 occupation loading = 250,000, / 12 = 20,833.333... -> 20,833.33.
+     */
+    @Test
+    void quotePremiumAppliesMultipliersOnTopOfTheBaseRate() {
+        ProductSummaryView product = productApi.createProduct("TERM-Q3", "Loaded", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_3", new BigDecimal("1.25"))),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("20.0000"))),
+            "actuary@nlolo.co.tz");
+
+        ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_3", "LOW", PremiumFrequency.MONTHLY, LocalDate.now()));
+
+        assertEquals(0, new BigDecimal("200000.00").compareTo(quote.annualBase()));
+        assertEquals(0, new BigDecimal("250000.00").compareTo(quote.annualAfterFactors()));
+        assertEquals(0, new BigDecimal("20833.33").compareTo(quote.instalmentAmount()));
+    }
+
+    /**
+     * Strict resolution, one assertion per dimension. This is the fallback hazard:
+     * resolveRatingMultiplier returns a neutral 1.0 on no match, which on a premium
+     * would price a real contract as if the factor did not apply.
+     */
+    @Test
+    void quotePremiumRefusesRatherThanFallingBackOnAnyMissingDimension() {
+        UUID productId = pricedProduct("TERM-Q4", new BigDecimal("15.2000"));
+
+        // age outside every band
+        assertThrows(PremiumNotQuotableException.class, () ->
+            productApi.quotePremium(quoteFor(productId, LocalDate.now().minusYears(40), PremiumFrequency.MONTHLY)));
+        // sex with no cell
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", "LOW", PremiumFrequency.MONTHLY, LocalDate.now())));
+        // smoker status with no cell
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.SMOKER, "CLASS_1", "LOW", PremiumFrequency.MONTHLY, LocalDate.now())));
+        // occupation class with no multiplier
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_9", "LOW", PremiumFrequency.MONTHLY, LocalDate.now())));
+        // sum-assured band with no multiplier
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", "HIGH", PremiumFrequency.MONTHLY, LocalDate.now())));
+    }
+
+    /** An unpriced version is a real state, and says so instead of guessing. */
+    @Test
+    void quotePremiumRefusesAVersionWithNoBaseRates() {
+        ProductSummaryView product = productApi.createProduct("TERM-Q5", "Unpriced", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-25", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        PremiumNotQuotableException ex = assertThrows(PremiumNotQuotableException.class, () ->
+            productApi.quotePremium(quoteFor(product.productId(), LocalDate.now().minusYears(20), PremiumFrequency.MONTHLY)));
+        assertTrue(ex.getMessage().contains("no base rate table"));
+    }
+
+    /** Age is derived from the date of birth, never taken from the caller. */
+    @Test
+    void quotePremiumDerivesEntryAgeAndRespectsTheBandBoundary() {
+        UUID productId = pricedProduct("TERM-Q6", new BigDecimal("15.2000"));
+
+        // Exactly 25 today: inside, because ageTo is inclusive.
+        assertEquals(25, productApi
+            .quotePremium(quoteFor(productId, LocalDate.now().minusYears(25), PremiumFrequency.MONTHLY))
+            .ageAtEntry());
+        // A day short of 18 is still 17, and outside the band.
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(
+            quoteFor(productId, LocalDate.now().minusYears(18).plusDays(1), PremiumFrequency.MONTHLY)));
+    }
+
+    /** Overlapping bands would make the premium depend on row order. */
+    @Test
+    void publishVersionRejectsOverlappingAgeBands() {
+        ProductSummaryView product = productApi.createProduct("TERM-Q7", "Overlapping", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2")),
+                        new ProductApi.BaseRateInput(20, 30, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4"))),
+                "actuary@nlolo.co.tz"));
+        assertTrue(ex.getMessage().contains("overlap"));
+    }
+
+    /** Adjacent bands are fine -- 18-25 and 26-30 do not overlap. */
+    @Test
+    void publishVersionAcceptsAdjacentAgeBands() {
+        ProductSummaryView product = productApi.createProduct("TERM-Q8", "Adjacent", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2")),
+                    new ProductApi.BaseRateInput(26, 30, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4"))),
+            "actuary@nlolo.co.tz");
+
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), product.productId())
+            .get(0).getProductVersionId();
+        assertEquals(2, baseRateRepository.findByProductVersionId(versionId).size());
+    }
+
+    /** Same band, different sex: not an overlap. */
+    @Test
+    void publishVersionAllowsTheSameBandForADifferentCell() {
+        ProductSummaryView product = productApi.createProduct("TERM-Q9", "Both sexes", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2")),
+                    new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8"))),
+            "actuary@nlolo.co.tz");
+
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), product.productId())
+            .get(0).getProductVersionId();
+        assertEquals(2, baseRateRepository.findByProductVersionId(versionId).size());
+    }
+
+    /** The rating read-back, for actuarial review. */
+    @Test
+    void getVersionRatingReturnsTheBasisWithoutTouchingProductSnapshot() {
+        UUID productId = pricedProduct("TERM-Q10", new BigDecimal("15.2000"));
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), productId)
+            .get(0).getProductVersionId();
+
+        ProductApi.VersionRatingView rating = productApi.getVersionRating(productId, versionId);
+        assertEquals(1, rating.baseRates().size());
+        assertEquals(2, rating.ratingFactors().size());
+        assertEquals(1, rating.benefitSchedule().size());
+        assertEquals(0, new BigDecimal("15.2000").compareTo(rating.baseRates().get(0).ratePerMille()));
+    }
+
+    @Test
+    void getVersionRatingIsTenantIsolated() {
+        UUID productId = pricedProduct("TERM-Q11", new BigDecimal("15.2000"));
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), productId)
+            .get(0).getProductVersionId();
+
+        TenantContext.set(UUID.randomUUID());
+        assertThrows(ProductNotFoundException.class, () -> productApi.getVersionRating(productId, versionId));
     }
 
     @Test

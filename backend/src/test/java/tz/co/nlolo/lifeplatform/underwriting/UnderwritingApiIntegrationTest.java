@@ -42,6 +42,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
+            "db-migrations/product/V3__base_rate_structured_age.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql");
     }

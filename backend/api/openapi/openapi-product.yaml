@@ -89,6 +89,74 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProductSnapshot' }
+  /products/{productId}/premium-quote:
+    post:
+      summary: Price a product for one applicant, on the version active as of a date
+      description: >-
+        200, not 201: nothing is created. Persists nothing, publishes nothing, and
+        takes NO Idempotency-Key -- it is a calculation, so replaying it is free and
+        there is no duplicate to prevent.
+
+        POST rather than GET despite being a read, because the body carries
+        dateOfBirth, sex and smokerStatus; a GET would put those in a URL and
+        therefore into access logs, proxy logs and browser history.
+
+        Resolution is STRICT: a version with no base rate table, an age outside every
+        band, or a declared occupation class / sum-assured band with no multiplier
+        each return 422 naming the dimension. Nothing falls back to a neutral value,
+        because a fallback here produces a plausible premium for a real contract and
+        nothing fails.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PremiumQuoteRequest' }
+      responses:
+        '200':
+          description: Priced
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PremiumQuoteView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { description: No product, or no version active as of that date }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /products/{productId}/versions/{versionId}/rating:
+    get:
+      summary: The rating basis for one version, for actuarial and product review
+      description: >-
+        Deliberately separate from ProductSnapshot, which Underwriting and Billing
+        read on the issuance and billing path: folding rate tables into it would make
+        every consumer carry data exactly one screen needs, and it could not be
+        role-scoped because Billing must keep reading it. This is staff-only.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionRatingView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { description: No such version for that product in this tenant }
 components:
   schemas:
     ProductSummary:
@@ -136,13 +204,7 @@ components:
             (422).
           type: array
           items:
-            type: object
-            required: [ageBand, sex, smokerStatus, ratePerMille]
-            properties:
-              ageBand: { type: string, description: Shares its vocabulary with ratingTable.band. }
-              sex: { type: string, enum: [FEMALE, MALE] }
-              smokerStatus: { type: string, enum: [SMOKER, NON_SMOKER, UNKNOWN] }
-              ratePerMille: { type: number, exclusiveMinimum: 0 }
+            $ref: '#/components/schemas/BaseRate'
         benefitSchedule:
           type: array
           items:
@@ -158,6 +220,95 @@ components:
             properties:
               fundCode: { type: string }
               currentNav: { type: number }
+    BaseRate:
+      description: >-
+        One cell of a version's base rate table. `ageTo` is INCLUSIVE, and the range
+        is structured rather than a band string so resolving an applicant's age is a
+        comparison, not a parse -- see V3__base_rate_structured_age.sql.
+      type: object
+      required: [ageFrom, ageTo, sex, smokerStatus, ratePerMille]
+      properties:
+        ageFrom: { type: integer, minimum: 0 }
+        ageTo: { type: integer, minimum: 0 }
+        sex: { type: string, enum: [FEMALE, MALE] }
+        smokerStatus: { type: string, enum: [SMOKER, NON_SMOKER, UNKNOWN] }
+        ratePerMille:
+          description: Annual rate per 1,000 of sum assured.
+          type: number
+          exclusiveMinimum: 0
+    PremiumQuoteRequest:
+      description: >-
+        Takes dateOfBirth, never a precomputed age: entry age is the input a
+        mispriced policy turns on, so it is derived where the rate table lives.
+        `occupationClass` and `smokerStatus` are ASSERTED by the caller -- no party
+        record carries either.
+      type: object
+      required: [sumAssuredAmount, sumAssuredCurrency, dateOfBirth, sex, smokerStatus, occupationClass, sumAssuredBand, frequency]
+      properties:
+        sumAssuredAmount: { type: number, exclusiveMinimum: 0 }
+        sumAssuredCurrency: { type: string, example: TZS }
+        dateOfBirth: { type: string, format: date }
+        sex: { type: string, enum: [FEMALE, MALE] }
+        smokerStatus: { type: string, enum: [SMOKER, NON_SMOKER, UNKNOWN] }
+        occupationClass: { type: string }
+        sumAssuredBand: { type: string }
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        asOf:
+          description: Selects the product version. Defaults to today.
+          type: [string, "null"]
+          format: date
+    PremiumQuoteView:
+      description: >-
+        The premium AND its derivation. The breakdown is returned because
+        "reproduce exactly what the customer was shown" is a requirement, and
+        without it a UI could only show one by recomputing it. No policy fee is
+        included: no product field holds one.
+      type: object
+      properties:
+        productVersionId: { type: string, format: uuid }
+        currency: { type: string, example: TZS }
+        ageAtEntry: { type: integer }
+        ageFrom: { type: integer }
+        ageTo: { type: integer }
+        ratePerMille: { type: number }
+        annualBase: { type: number }
+        appliedFactors:
+          type: array
+          items:
+            type: object
+            properties:
+              factorType: { type: string, enum: [AGE, OCCUPATION_CLASS, SMOKER_STATUS, SUM_ASSURED_BAND] }
+              band: { type: string }
+              multiplier: { type: number }
+        annualAfterFactors: { type: number }
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        instalmentsPerYear: { type: integer }
+        instalmentAmount: { type: number }
+    VersionRatingView:
+      description: The rating basis for one version, for actuarial and product review.
+      type: object
+      properties:
+        productId: { type: string, format: uuid }
+        productVersionId: { type: string, format: uuid }
+        effectiveDate: { type: string, format: date }
+        baseRates:
+          type: array
+          items: { $ref: '#/components/schemas/BaseRate' }
+        ratingFactors:
+          type: array
+          items:
+            type: object
+            properties:
+              factorType: { type: string, enum: [AGE, OCCUPATION_CLASS, SMOKER_STATUS, SUM_ASSURED_BAND] }
+              band: { type: string }
+              multiplier: { type: number }
+        benefitSchedule:
+          type: array
+          items:
+            type: object
+            properties:
+              benefitType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY, SURRENDER] }
+              calculationMethod: { type: string }
     ProductSnapshot:
       type: object
       properties:
