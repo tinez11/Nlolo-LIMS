@@ -74,16 +74,38 @@ describe('screen manifest', () => {
     }
   });
 
-  it('hides the finance group from an identity without the role', () => {
-    const operationsOnly = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
-    const labels = navFor('staff', operationsOnly).map((g) => g.label);
-    expect(labels).toContain('Operations');
+  it('hides every finance-gated group from an identity without the role', () => {
+    const withoutFinance = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
+    const labels = navFor('staff', withoutFinance).map((g) => g.label);
+    expect(labels).toContain('New business');
+    // Both gated groups, not just the one named Finance -- Distribution carries
+    // the same predicate because onboarding an agent is a finance-role action.
     expect(labels).not.toContain('Finance');
+    expect(labels).not.toContain('Distribution');
   });
 
-  it('nav order follows group order, not screen order', () => {
-    // Operations before Finance, as declared in NAV_GROUPS -- the sidebar's order
-    // is the group list's order, so reordering screens cannot reshuffle it.
-    expect(navFor('staff', superuser).map((g) => g.label)).toEqual(['Operations', 'Finance']);
+  it('nav order follows the business flow, not screen order', () => {
+    // A client is registered and assessed, becomes a policy, generates claims,
+    // then finance and distribution settle up -- and Configuration is last
+    // because authoring a product is rare set-up, not daily work. The sidebar's
+    // order is NAV_GROUPS' order, so reordering screens cannot reshuffle it.
+    expect(navFor('staff', superuser).map((g) => g.label)).toEqual([
+      'New business',
+      'Policies & claims',
+      'Finance',
+      'Distribution',
+      'Configuration',
+    ]);
+  });
+
+  it('declares a badge only where a real paged count exists', () => {
+    const badged = SCREENS.staff
+      .filter((s) => s.reach !== 'drill-in' && s.reach.badge)
+      .map((s) => (s.reach as { label: string }).label);
+
+    // Three, because only three are expressible: one status filter at a time and
+    // no analytics endpoint anywhere. Policies deliberately has none -- a policy
+    // in force is not work waiting.
+    expect(badged.sort()).toEqual(['Claims', 'KYC review', 'Underwriting']);
   });
 });

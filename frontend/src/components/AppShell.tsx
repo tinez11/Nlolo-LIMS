@@ -6,6 +6,7 @@ import { avatarHue, displayName, initials, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { cn } from '@/lib/cn';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
+import { useNavBadges } from '@/navBadges';
 import { navFor } from '@/screens';
 import { Button } from './ui/button';
 
@@ -22,6 +23,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const config = REALM_CONFIG[realm];
 
   const groups = navFor(realm, identity);
+  const badges = useNavBadges(realm);
 
   return (
     <div className="flex h-full">
@@ -52,7 +54,19 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                       }
                     >
                       <item.icon className="size-4 shrink-0" aria-hidden />
-                      {item.label}
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {item.badge && badges[item.badge] && (
+                        <span
+                          className="shrink-0 rounded-full bg-selected px-1.5 text-[11px] font-medium text-muted-foreground tabular-nums"
+                          // The count alone reads as "3 claims", which is not what
+                          // it means. Both the tooltip and the screen-reader text
+                          // say what was counted.
+                          title={badges[item.badge]!.title}
+                        >
+                          {badges[item.badge]!.count}
+                          <span className="sr-only"> — {badges[item.badge]!.title}</span>
+                        </span>
+                      )}
                     </NavLink>
                   </li>
                 ))}

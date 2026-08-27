@@ -59,12 +59,31 @@ import { UnderwritingQueuePage } from '@/features/underwriting/UnderwritingQueue
  * identical.
  */
 
-type NavGroupId = 'operations' | 'finance' | 'my-business';
+type NavGroupId =
+  | 'new-business'
+  | 'policies-claims'
+  | 'finance'
+  | 'distribution'
+  | 'configuration'
+  | 'my-business';
+
+/**
+ * A count of WORK WAITING beside a nav item, never a count of total volume.
+ *
+ * Each maps to `totalElements` on a real paged search filtered to the unstarted
+ * state, so the number means "this many are waiting for someone". Only three
+ * exist because only three are expressible: the API allows one status filter at
+ * a time, and there is no analytics endpoint anywhere (PLAN.md §6 — a number with
+ * nothing behind it is worse than no number). Policies get none deliberately: a
+ * policy in force is not work.
+ */
+export type BadgeKey = 'kyc-pending' | 'underwriting-open' | 'claims-unassessed';
 
 interface NavPlacement {
   group: NavGroupId;
   label: string;
   icon: typeof FileText;
+  badge?: BadgeKey;
 }
 
 export interface Screen {
@@ -91,7 +110,17 @@ export interface NavGroup {
  */
 export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
   staff: [
-    { id: 'operations', label: 'Operations' },
+    // Ordered by where the work sits in the business flow rather than by module:
+    // a client is registered and assessed, becomes a policy, generates claims,
+    // then finance and distribution settle up. Configuration comes LAST on
+    // purpose — authoring a product is rare actuarial set-up, not daily
+    // operations, so it belongs away from the customer journey.
+    //
+    // Gating is per GROUP, so a group must be entirely gated or entirely open.
+    // That constrains the shape: the five finance-gated screens cannot be mixed
+    // in with the five open ones however neatly the flow would read.
+    { id: 'new-business', label: 'New business' },
+    { id: 'policies-claims', label: 'Policies & claims' },
     {
       id: 'finance',
       label: 'Finance',
@@ -99,6 +128,8 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
       // hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))
       requires: canSeeFinance,
     },
+    { id: 'distribution', label: 'Distribution', requires: canSeeFinance },
+    { id: 'configuration', label: 'Configuration' },
   ],
   agents: [{ id: 'my-business', label: 'My business' }],
   customers: [],
@@ -117,7 +148,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'policies',
     element: <PoliciesPage />,
-    reach: { group: 'operations', label: 'Policies', icon: FileText },
+    reach: { group: 'policies-claims', label: 'Policies', icon: FileText },
   },
   { path: 'policies/new', element: <IssuePolicyPage />, reach: 'drill-in' },
   { path: 'policies/:policyNumber', element: <PolicyDetailPage />, reach: 'drill-in' },
@@ -125,7 +156,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'claims',
     element: <ClaimsPage />,
-    reach: { group: 'operations', label: 'Claims', icon: ScrollText },
+    reach: { group: 'policies-claims', label: 'Claims', icon: ScrollText, badge: 'claims-unassessed' },
   },
   { path: 'claims/new', element: <RegisterClaimPage />, reach: 'drill-in' },
   { path: 'claims/:claimId', element: <ClaimDetailPage />, reach: 'drill-in' },
@@ -133,28 +164,31 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'products',
     element: <ProductsPage />,
-    reach: { group: 'operations', label: 'Products', icon: Package },
+    reach: { group: 'configuration', label: 'Products', icon: Package },
   },
   { path: 'products/new', element: <CreateProductPage />, reach: 'drill-in' },
   { path: 'products/:productId', element: <ProductDetailPage />, reach: 'drill-in' },
 
-  {
-    path: 'underwriting',
-    element: <UnderwritingQueuePage />,
-    reach: { group: 'operations', label: 'Underwriting', icon: ClipboardCheck },
-  },
-  { path: 'underwriting/new', element: <OpenUnderwritingCasePage />, reach: 'drill-in' },
-  { path: 'underwriting/:caseId', element: <UnderwritingCaseDetailPage />, reach: 'drill-in' },
-
+  // Order WITHIN a group is manifest order, so these two are declared in the
+  // order the work happens: a client is identified and KYC-verified before their
+  // risk is assessed.
   {
     path: 'kyc',
     element: <KycReviewPage />,
-    reach: { group: 'operations', label: 'KYC review', icon: UserCheck },
+    reach: { group: 'new-business', label: 'KYC review', icon: UserCheck, badge: 'kyc-pending' },
   },
   // A party PENDING KYC with nothing referencing it yet is invisible to staff
   // except through the KYC queue above, which is why that queue is a real list
   // rather than a lookup box.
   { path: 'parties/:partyId', element: <PartyDetailPage />, reach: 'drill-in' },
+
+  {
+    path: 'underwriting',
+    element: <UnderwritingQueuePage />,
+    reach: { group: 'new-business', label: 'Underwriting', icon: ClipboardCheck, badge: 'underwriting-open' },
+  },
+  { path: 'underwriting/new', element: <OpenUnderwritingCasePage />, reach: 'drill-in' },
+  { path: 'underwriting/:caseId', element: <UnderwritingCaseDetailPage />, reach: 'drill-in' },
 
   // Agents is the one nav item pointing at a create form rather than a list:
   // `POST /agents` is the only entry point onto that domain server-side, so the
@@ -164,7 +198,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'agents/new',
     element: <OnboardAgentPage />,
-    reach: { group: 'finance', label: 'Agents', icon: Users },
+    reach: { group: 'distribution', label: 'Agents', icon: Users },
   },
   { path: 'agents/:agentId', element: <AgentDetailPage />, reach: 'drill-in' },
 
