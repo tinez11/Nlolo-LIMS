@@ -331,10 +331,22 @@ both, and nothing catches the drift — 20 routes are reachable only by drilling
 in, which is deliberate per §7, but indistinguishable from an accidental
 omission.
 
-One `screens.ts` manifest; the router and the nav become maps over it. The
-`implemented` flag already in `AppShell` moves onto the manifest, where it can
-gate the route as well as the nav item, and a test can assert that every route
-is either reachable or explicitly marked otherwise.
+One `screens.tsx` manifest; the router and the nav become maps over it.
+
+**Shipped in `b3dca87`, with one change from the plan above.** The intent was to
+move `AppShell`'s `implemented` flag onto the manifest. It was deleted instead:
+all 14 entries were `true`, so the flag was vestigial, and the distinction it
+never captured is the one that matters — most screens are deliberately *not* in
+the sidebar per §7. A required `reach` field replaces it: either a nav placement
+or the literal `'drill-in'`. Because it is required, a new screen cannot be added
+without declaring how a user reaches it, so "deliberately drill-in only" and
+"somebody forgot the nav item" stop looking identical.
+
+`PageHeader` moved out of `AppShell` into its own module in the same change. It
+was imported by 26 pages, so a manifest importing pages would have closed the
+cycle pages → AppShell → screens → pages — and the manifest builds its elements
+at module scope, so a badly-resolved cycle surfaces as an undefined component at
+first render, not as a build error.
 
 ### C2 — a `gates` module
 
