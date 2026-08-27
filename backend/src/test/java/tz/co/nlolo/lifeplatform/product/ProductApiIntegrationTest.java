@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.product.domain.ProductVersion;
 import tz.co.nlolo.lifeplatform.product.infrastructure.BaseRateRepository;
 import tz.co.nlolo.lifeplatform.product.infrastructure.ProductVersionRepository;
+import tz.co.nlolo.lifeplatform.product.infrastructure.RatingFactorRepository;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,7 +44,8 @@ class ProductApiIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
-            "db-migrations/product/V3__base_rate_structured_age.sql");
+            "db-migrations/product/V3__base_rate_structured_age.sql",
+            "db-migrations/product/V4__rating_table_unique_band.sql");
     }
 
     @BeforeEach
@@ -60,6 +62,9 @@ class ProductApiIntegrationTest {
 
     @Autowired
     private BaseRateRepository baseRateRepository;
+
+    @Autowired
+    private RatingFactorRepository ratingFactorRepository;
 
     @Test
     void createProductStartsInDraft() {
@@ -256,6 +261,59 @@ class ProductApiIntegrationTest {
                 null,
                 List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, BigDecimal.ZERO)),
                 "actuary@nlolo.co.tz"));
+    }
+
+    /**
+     * The same silent-mispricing shape as a duplicate base rate cell, one table over, and it went
+     * unnoticed far longer: {@code rating_table} carried only a NON-unique index, so a version could
+     * hold two rows for one (factorType, band) with different multipliers, and both readers
+     * ({@code strictMultiplier} for quoting, {@code resolveRatingMultiplier} for underwriting) filter
+     * to the band and then take {@code findFirst()}. Which multiplier applied depended on row order.
+     *
+     * <p>Reachable through the authoring form, which lets a user add the same band twice -- so this
+     * was a real path, not a direct-insert-only concern. Found by sweeping for the defect class
+     * rather than by a failure.
+     */
+    @Test
+    void aDuplicateRatingFactorBandIsRefusedAtPublish() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-I", "Duplicated band",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                        new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("2.5000")),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null, "actuary@nlolo.co.tz"));
+        // The message must name the offending band -- a bare constraint violation would leave an
+        // actuary to find which of forty rows was the duplicate.
+        assertTrue(ex.getMessage().contains("30-39"));
+        assertTrue(ex.getMessage().contains("AGE"));
+    }
+
+    /**
+     * As with base rates, the application check now precedes the constraint, so the constraint is
+     * unreachable through {@code publishVersion} and is exercised directly. A backstop nothing tests
+     * is one a future migration drops without anyone noticing.
+     */
+    @Test
+    void theUniqueBandConstraintBacksTheDuplicateCheckAtTheDatabase() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-J", "Band constraint",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        UUID tenantId = TenantContext.get();
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(tenantId, product.productId())
+            .get(0).getProductVersionId();
+
+        assertThrows(DataIntegrityViolationException.class, () ->
+            ratingFactorRepository.saveAndFlush(new tz.co.nlolo.lifeplatform.product.domain.RatingFactor(
+                tenantId, versionId, FactorType.AGE.name(), "30-39", new BigDecimal("2.5000"))));
     }
 
     // ---- M13 step 3: the premium calculation -----------------------------------

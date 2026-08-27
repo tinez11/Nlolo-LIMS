@@ -274,6 +274,14 @@ required check trains people to ignore CI.
 
     **Three instances in three modules, all the same shape:** a `Pageable` or a `findFirst()` over a query with no total order. Worth a sweep rather than waiting for a fourth to surface as a test failure.
 
+11. **The sweep found a fourth, and it is the only one no test would ever have caught.** `product.rating_table` shipped with a NON-unique index on `(product_version_id, factor_type)`, so a version could hold the same `(factorType, band)` twice with different multipliers — and both readers, `strictMultiplier` (premium quoting) and `resolveRatingMultiplier` (underwriting's rules engine), filter to the band then take `findFirst()`. The multiplier that applied depended on row order. Reachable through the authoring form, which lets a user add the same band twice.
+
+    Fixed the same way the base rate table already was: rejected where the rows are authored, with a message naming the band, **and** a `UNIQUE` constraint (`V4__rating_table_unique_band.sql`) so a writer bypassing the application cannot create the state either.
+
+    Two queries were found ordered but not *totally* ordered, and deliberately left: `ProductVersionRepository.findActiveAsOf` (`effectiveDate DESC`, no unique tie-breaker) and `GET /gl-postings` (`postedAt DESC`, likewise). Both need same-valued rows to matter and neither is reachable through a UI path today. Recorded so the next reader does not have to re-derive that they were considered.
+
+    **The pattern to carry forward:** on this platform, "which one of these rows applies" is the single most reliably-wrong piece of logic. Four for four, the answer was decided by scan order, and in three of the four cases the wrong answer is a wrong amount of money rather than a visibly broken screen. Any new query that resolves *one* row out of many needs a total order before it ships.
+
 ## 11. Deliberately deferred
 
 **Endorsements UI.** `EndorsementRequest.changes` is opaque JSONB the backend

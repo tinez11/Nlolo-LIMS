@@ -115,6 +115,7 @@ public class ProductApiImpl implements ProductApi {
             // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
         }
+        rejectDuplicateRatingFactors(ratingTable);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -266,6 +267,33 @@ public class ProductApiImpl implements ProductApi {
      * extension for the equality parts of the key. Not worth a new extension on
      * every environment for a rule this cheap to check where the rows are authored.
      */
+    /**
+     * Two rating_table rows sharing a (factorType, band) make the multiplier that applies depend on
+     * which row the query returns first -- {@code strictMultiplier} and {@code
+     * resolveRatingMultiplier} both filter to the band and then take {@code findFirst()}. Same
+     * silent-mispricing shape as overlapping age bands, and until this check nothing stopped it:
+     * {@code rating_table} carried only a NON-unique index on (product_version_id, factor_type),
+     * and the authoring form lets a user add the same band twice with different multipliers.
+     *
+     * <p>Found by sweeping for this defect class after three unordered-query bugs turned up in one
+     * day, rather than by a failing test -- a duplicate band is not reachable by accident, so it
+     * would have sat here until someone authored one and quietly got the wrong premium.
+     *
+     * <p>{@code V4__rating_table_unique_band.sql} adds the constraint the table should always have
+     * had. This check exists as well as that one so the failure names the offending band instead of
+     * surfacing as a constraint violation.
+     */
+    private static void rejectDuplicateRatingFactors(List<RatingFactorInput> ratingTable) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (RatingFactorInput factor : ratingTable) {
+            if (!seen.add(factor.factorType() + "|" + factor.band())) {
+                throw new InvalidProductVersionException("Rating table has two rows for "
+                    + factor.factorType() + " band '" + factor.band()
+                    + "' -- which multiplier applies would depend on row order");
+            }
+        }
+    }
+
     private static void rejectOverlappingAgeBands(List<BaseRateInput> baseRates) {
         for (BaseRateInput a : baseRates) {
             if (a.ageTo() < a.ageFrom()) {
