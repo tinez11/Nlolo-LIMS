@@ -134,7 +134,6 @@ export function RegisterClaimPage() {
               <DatePicker
                 value={field.value || null}
                 onChange={(iso) => field.onChange(iso ?? '')}
-                placeholder="Select the date of event"
                 disabled={{ after: new Date() }}
               />
             )}
@@ -174,7 +173,6 @@ export function RegisterClaimPage() {
                     <DatePicker
                       value={(field.value as string) || null}
                       onChange={(iso) => field.onChange(iso ?? '')}
-                      placeholder="Select the date of death"
                       disabled={{ after: new Date() }}
                     />
                   )}
@@ -199,7 +197,6 @@ export function RegisterClaimPage() {
                     <DatePicker
                       value={(field.value as string) || null}
                       onChange={(iso) => field.onChange(iso ?? '')}
-                      placeholder="Select the onset date"
                       disabled={{ after: new Date() }}
                     />
                   )}
@@ -235,7 +232,6 @@ export function RegisterClaimPage() {
                     <DatePicker
                       value={(field.value as string) || null}
                       onChange={(iso) => field.onChange(iso ?? '')}
-                      placeholder="Select the diagnosis date"
                       disabled={{ after: new Date() }}
                     />
                   )}
@@ -256,7 +252,6 @@ export function RegisterClaimPage() {
                   <DatePicker
                     value={(field.value as string) || null}
                     onChange={(iso) => field.onChange(iso ?? '')}
-                    placeholder="Select the maturity date"
                   />
                 )}
               />

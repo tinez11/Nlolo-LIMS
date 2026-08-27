@@ -127,7 +127,6 @@ function RegisterIndividualForm() {
             <DatePicker
               value={field.value || null}
               onChange={(iso) => field.onChange(iso ?? '')}
-              placeholder="Select the date of birth"
               disabled={{ after: new Date() }}
             />
           )}

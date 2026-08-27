@@ -100,7 +100,6 @@ export function PublishVersionForm({
               <DatePicker
                 value={field.value || null}
                 onChange={(iso) => field.onChange(iso ?? '')}
-                placeholder="Select the effective date"
               />
             )}
           />
@@ -115,7 +114,6 @@ export function PublishVersionForm({
             <DatePicker
               value={field.value || null}
               onChange={(iso) => field.onChange(iso ?? '')}
-              placeholder="Select the retirement date"
             />
           )}
         />

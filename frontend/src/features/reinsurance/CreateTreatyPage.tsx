@@ -146,7 +146,6 @@ export function CreateTreatyPage() {
                 <DatePicker
                   value={field.value || null}
                   onChange={(iso) => field.onChange(iso ?? '')}
-                  placeholder="Select the effective-from date"
                 />
               )}
             />
@@ -159,7 +158,6 @@ export function CreateTreatyPage() {
                 <DatePicker
                   value={field.value || null}
                   onChange={(iso) => field.onChange(iso ?? '')}
-                  placeholder="Select the effective-to date"
                 />
               )}
             />

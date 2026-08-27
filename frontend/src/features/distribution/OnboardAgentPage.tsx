@@ -104,7 +104,6 @@ export function OnboardAgentPage() {
               <DatePicker
                 value={field.value || null}
                 onChange={(iso) => field.onChange(iso ?? '')}
-                placeholder="Select the license expiry date"
                 disabled={{ before: new Date() }}
               />
             )}
