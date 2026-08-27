@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   createProduct,
   getActiveSnapshot,
+  getVersionRating,
   listProducts,
   publishVersion,
 } from '@/api/products';
@@ -11,6 +12,7 @@ import type {
   ProductSnapshot,
   ProductSummary,
   ProductVersionSpec,
+  VersionRatingView,
 } from '@/api/types';
 import { idle, track, type Resource } from './createResourceSlice';
 
@@ -23,6 +25,10 @@ type Keyed<T> = Record<string, Resource<T>>;
 interface ProductState {
   list: Resource<ProductSummary[]>;
   snapshots: Keyed<ProductSnapshot>;
+  // Keyed by versionId, NOT productId: the rating basis belongs to a version,
+  // and keying it by product would silently serve one version's rate table for
+  // another the day a second version becomes reachable.
+  ratings: Keyed<VersionRatingView>;
   // A single slot, not keyed: creation makes a NEW product, so there is no
   // existing id to key against yet -- same shape as claims' `registering`.
   creating: Resource<ProductSummary>;
@@ -32,6 +38,7 @@ interface ProductState {
 
   loadList: (category?: ProductCategory) => Promise<void>;
   loadSnapshot: (productId: string) => Promise<void>;
+  loadRating: (productId: string, versionId: string) => Promise<void>;
   createProduct: (request: CreateProductRequest) => Promise<void>;
   resetCreateProduct: () => void;
   publishVersion: (productId: string, spec: ProductVersionSpec) => Promise<void>;
@@ -41,6 +48,7 @@ interface ProductState {
 export const useProductStore = create<ProductState>((set, getState) => ({
   list: idle(),
   snapshots: {},
+  ratings: {},
   creating: idle(),
   publishing: {},
 
@@ -58,6 +66,14 @@ export const useProductStore = create<ProductState>((set, getState) => ({
       getState().snapshots[productId] ?? idle<ProductSnapshot>(),
       (next) => set((s) => ({ snapshots: { ...s.snapshots, [productId]: next } })),
       () => getActiveSnapshot(productId),
+    ),
+
+  loadRating: (productId, versionId) =>
+    track(
+      `product.rating.${versionId}`,
+      getState().ratings[versionId] ?? idle<VersionRatingView>(),
+      (next) => set((s) => ({ ratings: { ...s.ratings, [versionId]: next } })),
+      () => getVersionRating(productId, versionId),
     ),
 
   createProduct: (request) =>
@@ -99,5 +115,8 @@ export const useProductStore = create<ProductState>((set, getState) => ({
 
 export const selectProductSnapshot = (productId: string) => (s: ProductState) =>
   s.snapshots[productId] ?? idle<ProductSnapshot>();
+/** Keyed by versionId. `null` versionId means the snapshot has not resolved one yet. */
+export const selectVersionRating = (versionId: string | null | undefined) => (s: ProductState) =>
+  (versionId ? s.ratings[versionId] : undefined) ?? idle<VersionRatingView>();
 export const selectPublishing = (productId: string) => (s: ProductState) =>
   s.publishing[productId] ?? idle<true>();

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiError } from '@/lib/apiError';
-import type { ProductSummary } from '@/api/types';
+import type { ProductSummary, VersionRatingView } from '@/api/types';
 import { failure, idle, success } from './createResourceSlice';
-import { useProductStore } from './productStore';
+import { selectVersionRating, useProductStore } from './productStore';
 
 const anError: ApiError = {
   status: 409,
@@ -52,5 +52,35 @@ describe('resetPublishVersion', () => {
   it('does no harm when there is nothing to reset', () => {
     useProductStore.setState({ publishing: {} });
     expect(() => useProductStore.getState().resetPublishVersion('prod-1')).not.toThrow();
+  });
+});
+
+/**
+ * `ratings` is keyed by versionId, not productId. Today only one version per
+ * product is reachable -- the snapshot resolves the one active now and no
+ * endpoint lists the others -- so product-keying would look correct and stay
+ * correct right up to the day a second version becomes readable, then serve one
+ * version's rate table under another's name. These pin the key.
+ */
+describe('selectVersionRating', () => {
+  const rating = { productVersionId: 'ver-1', baseRates: [] } as VersionRatingView;
+
+  it('reads a rating by its version id', () => {
+    useProductStore.setState({ ratings: { 'ver-1': success(rating) } });
+    expect(selectVersionRating('ver-1')(useProductStore.getState()).data).toBe(rating);
+  });
+
+  it('is idle for a version it has not loaded', () => {
+    useProductStore.setState({ ratings: { 'ver-1': success(rating) } });
+    expect(selectVersionRating('ver-2')(useProductStore.getState())).toEqual(idle());
+  });
+
+  it('is idle when the snapshot has not resolved a version yet', () => {
+    // The page calls this on first render, before the snapshot returns. Without
+    // the null branch it would index `ratings` with "null" and, worse, invite a
+    // fetch against a version id that does not exist.
+    useProductStore.setState({ ratings: { 'ver-1': success(rating) } });
+    expect(selectVersionRating(null)(useProductStore.getState())).toEqual(idle());
+    expect(selectVersionRating(undefined)(useProductStore.getState())).toEqual(idle());
   });
 });

@@ -217,11 +217,28 @@ Deliberately thin. Phase 0 of the frontend restructure (a shared `FormField`, a 
 
 Nothing here changes an existing response shape, so no consumer breaks. `ProductSnapshotView` is untouched by design.
 
+**Step 1 is not deployable "alone" in the way that sentence implies, and step 5 proved it.** Nothing on this platform applies migrations automatically — `pom.xml` carries neither Flyway nor Liquibase, and `scripts/migrate.sh` is the only path (`docs/09-local-development.md`, gotcha 1). So a green test suite says nothing about whether a running environment has the table: Testcontainers builds its schema from the migration files per test class, while the long-lived dev database only ever gets what someone ran `migrate.sh` for.
+
+The consequence, found by driving the finished screen against the real dev backend rather than by any test: `GET /products/{id}/versions/{id}/rating` returned a **500** for every call, because `product.base_rate_table` did not exist in the dev database at all. Every backend test for this milestone passed the entire time. V2 and V3 have now been applied to local dev by hand, with the same `docker compose exec -T postgres psql` invocation `migrate.sh`'s `apply()` uses.
+
+Two things follow for anyone deploying this:
+
+- **`migrate.sh` cannot be re-run** against an environment that already has schema — it is plain `CREATE TABLE` with no history table, so it fails on the first existing relation. Applying M13 to staging or production means running *only* `db-migrations/product/V2` and `V3`, not the script.
+- The step-1 "deployable alone" claim should be read as "does not break consumers", not as "safe to ship without a schema step". Shipping the code without the migration is exactly the 500 above.
+
+This is the third instance of the pattern already recorded in this repo's memory: a check that passes while proving nothing. The migration files were correct, the tests exercised them correctly, and the deployed database still did not have the table.
+
 ## Open items
 
 - **The rates themselves.** This milestone builds the table and the arithmetic; it does not supply a single rate. Every rate per mille needs actuarial authorship, and until they exist no product version can be published under the new validation. **This is the gate on the whole milestone and it is not an engineering task.**
 - **Age band vocabulary.** `rating_table.band` is a free-text `VARCHAR` today and the bands are whatever a publisher typed. Base rates key on the same vocabulary, so two spellings of `"18-25"` are two bands. Worth ratifying as reference data before the first real product is priced — a smaller version of the same void as the endorsement `changes` keys.
 - **Policy fee.** Step 6 adds one, and no product field holds it. Either it becomes a product-version field or it is out of the calculation; it should not be a constant in code.
+
+## Two decisions taken during step 5, open to reversal
+
+**V2 and V3 were kept as two migrations, not squashed into one clean V2.** They have now been applied to local dev in that order, so squashing would need a matching hand-edit to any environment that already ran them. The reason to keep them is not inertia: V3's header is the record of *why* age bounds are structured integers rather than a band string, written at the point where implementing the calculation disproved V2's stated rationale. Squashing keeps the schema and discards the argument, at exactly the spot where a future reader might "simplify" back to a band string and reintroduce a regex between an actuary's rates and a customer's premium. The cost is one extra file and a `DROP COLUMN` on a table no environment has ever held a row in.
+
+**`quotePremium` has no frontend caller and was left with none.** `POST /products/{id}/premium-quote` is implemented, spec'd and tested, but nothing in the console calls it. Wiring an api+store pair now would add a seam with no adapter on the other side; giving it a caller would mean inventing a "test this rate table" panel that no user asked for, and it could not return a number anyway — every version on this platform is unpriced, so the endpoint's only possible answer today is a 422. Its real consumer is Quotation, one of the four undesigned contexts. The right time to wire it is when that screen is designed and can show a quote a customer would actually be given.
 - **Occupation class source.** `FactorType.OCCUPATION_CLASS` exists, but `RiskProfile` explicitly excludes occupation for want of a structured source, and `MedicalDisclosure` has zero call sites. `premium-quote` takes `occupationClass` as an input from the caller, which is the honest interim position — but it means the value is asserted, not verified.
 - **Coverage at a date cannot be answered at all, and an endpoint pretends otherwise.** `GET /policies/{n}/coverage-status?asOf=` accepts the date, echoes it into the response, and ignores it. `PolicyApiImpl.getCoverageStatus` queries `findByPolicyNumberAndActiveTrue` — a boolean flag — and `policy.coverage` carries only `active BOOLEAN` and `created_at`, with no `effective_from`/`effective_to`. So this is not an unimplemented filter; there is no per-benefit history to filter.
 

@@ -179,6 +179,8 @@ export type BenefitScheduleType = NonNullable<
   NonNullable<ProductVersionSpec['benefitSchedule'][number]['benefitType']>
 >;
 export type IfrsMeasurementModel = NonNullable<ProductVersionSpec['ifrsMeasurementModel']>;
+export type VersionRatingView = ProductComponents['schemas']['VersionRatingView'];
+export type BaseRate = ProductComponents['schemas']['BaseRate'];
 export const IFRS_MEASUREMENT_MODELS: readonly IfrsMeasurementModel[] = ['GMM', 'PAA'];
 
 export type ManualIssueRequest = PolicyComponents['schemas']['ManualIssueRequest'];
