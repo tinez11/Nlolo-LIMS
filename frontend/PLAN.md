@@ -359,14 +359,24 @@ with `claimGates` and `issueGates` first, rendered by one `<GatePanel>`. The
 seam sits above the API layer, so the whole rule set is testable against fixture
 records with no DOM.
 
-**This exists because of a specific waste.** `GET /policies/{n}/coverage-status`
-and `/in-force` both accept `asOf`, and the mockup's best idea — judge a claim
-against the policy as it stood on the date of event, not today — is therefore
-already paid for. The parameter is typed, generated and plumbed through
-`api/policies.ts`, and then dropped: `policyStore` calls
-`getCoverageStatus(policyNumber)` with no `asOf`, so it always asks about today.
-`RegisterClaimPage`, the one screen that knows the date of event, never asks at
-all.
+**Correction — the original premise for C2 was wrong.** This section first
+claimed the mockup's best idea (judge a claim against the policy as it stood on
+the date of event) was "already paid for", because `coverage-status` and
+`in-force` both accept `asOf` and `policyStore` dropped it. The dropped
+parameter was real; the conclusion was not. **The endpoint ignores `asOf`**: it
+echoes the date into the response and queries `findByPolicyNumberAndActiveTrue`,
+and `policy.coverage` has no `effective_from`/`effective_to` columns, so no
+per-benefit history exists to query. Verified on the wire (two dates 25 years
+apart, byte-identical coverage on a 2026 policy), in `PolicyApiImpl`, and in the
+schema. Checking that a parameter exists is not checking that it works.
+
+So the shipped gates assert only what the platform can prove: risk commencement
+from `PolicyView.issueDate` (hard, genuinely date-bounded), a **soft** flag when
+today's status means the coverage history needs a person — soft because a lapsed
+policy must route a claim to investigation, never auto-refuse it — and whether
+the benefit is on record at all, labelled as current rather than as-at-the-day.
+`src/gates/claimGates.ts` carries the full reasoning, and the backend gap is an
+open item in the M13 design spec.
 
 ### Deliberately not adopted from the mockup
 

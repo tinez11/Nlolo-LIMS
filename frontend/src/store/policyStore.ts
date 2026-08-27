@@ -66,7 +66,7 @@ interface PolicyState {
 
   loadList: (params: PolicySearchParams) => Promise<void>;
   loadDetail: (policyNumber: string) => Promise<void>;
-  loadCoverage: (policyNumber: string) => Promise<void>;
+  loadCoverage: (policyNumber: string, asOf?: string) => Promise<void>;
   loadInvoices: (policyNumber: string) => Promise<void>;
   loadLoans: (policyNumber: string) => Promise<void>;
   saveBeneficiaries: (policyNumber: string, beneficiaries: BeneficiaryInput[]) => Promise<void>;
@@ -128,13 +128,15 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       () => getPolicy(policyNumber),
     ),
 
-  loadCoverage: (policyNumber) =>
-    track(
-      `policy.coverage.${policyNumber}`,
-      getState().coverage[policyNumber] ?? idle<CoverageStatusView>(),
-      (next) => set((s) => ({ coverage: { ...s.coverage, [policyNumber]: next } })),
-      () => getCoverageStatus(policyNumber),
-    ),
+  loadCoverage: (policyNumber, asOf) => {
+    const key = coverageKey(policyNumber, asOf);
+    return track(
+      `policy.coverage.${key}`,
+      getState().coverage[key] ?? idle<CoverageStatusView>(),
+      (next) => set((s) => ({ coverage: { ...s.coverage, [key]: next } })),
+      () => getCoverageStatus(policyNumber, asOf),
+    );
+  },
 
   loadInvoices: (policyNumber) =>
     track(
@@ -305,8 +307,30 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
 /** Selectors, so components never index a possibly-absent key by hand. */
 export const selectDetail = (policyNumber: string) => (s: PolicyState) =>
   s.detail[policyNumber] ?? idle<PolicyView>();
-export const selectCoverage = (policyNumber: string) => (s: PolicyState) =>
-  s.coverage[policyNumber] ?? idle<CoverageStatusView>();
+/**
+ * Coverage is cached per (policy, asOf) pair, not per policy — so that two dates
+ * are two cache entries rather than one stale answer.
+ *
+ * **Nothing passes `asOf` today, deliberately.** `coverage-status` accepts the
+ * parameter, echoes it into the response, and ignores it: the query behind it is
+ * `findByPolicyNumberAndActiveTrue`, and `policy.coverage` has no
+ * `effective_from`/`effective_to` columns to bound. Two dates 25 years apart
+ * return identical coverage. Sending it would only make a date-blind answer look
+ * date-aware.
+ *
+ * The keying stays because it is the correct shape for the day the backend can
+ * answer the question (recorded in the M13 design spec's open items), and
+ * because without it the first caller to pass `asOf` gets a silently wrong
+ * cached answer in the one place a wrong date is the whole defect.
+ */
+function coverageKey(policyNumber: string, asOf?: string): string {
+  return asOf ? `${policyNumber}@${asOf}` : policyNumber;
+}
+
+export const selectCoverage =
+  (policyNumber: string, asOf?: string) =>
+  (s: PolicyState): ReturnType<typeof idle<CoverageStatusView>> =>
+    s.coverage[coverageKey(policyNumber, asOf)] ?? idle<CoverageStatusView>();
 export const selectInvoices = (policyNumber: string) => (s: PolicyState) =>
   s.invoices[policyNumber] ?? idle<InvoiceView[]>();
 export const selectLoans = (policyNumber: string) => (s: PolicyState) =>

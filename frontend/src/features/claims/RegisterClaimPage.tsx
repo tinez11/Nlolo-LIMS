@@ -9,8 +9,12 @@ import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { GatePanel } from '@/components/GatePanel';
+import { claimGates } from '@/gates/claimGates';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
+import { POLICY_NUMBER_PATTERN } from '@/lib/patterns';
 import { useClaimStore } from '@/store/claimStore';
+import { selectCoverage, selectDetail, usePolicyStore } from '@/store/policyStore';
 import {
   blankDetailsFor,
   registerClaimFormSchema,
@@ -65,6 +69,30 @@ export function RegisterClaimPage() {
   // interaction. Correct as written; re-renders exactly when the field changes.
   // eslint-disable-next-line react-hooks/incompatible-library
   const claimType = watch('details.claimType');
+  const policyNumber = watch('policyNumber');
+  const dateOfEvent = watch('dateOfEvent');
+
+  /**
+   * What the platform can honestly say about cover -- see `claimGates`, which
+   * documents why "as at the date of event" is NOT among it: coverage-status
+   * accepts `asOf`, echoes it, and ignores it.
+   *
+   * The policy carries the only real date (`issueDate`) and its current status;
+   * coverage carries the benefit set. Both are fetched as soon as the policy
+   * number is well-formed, so the checks appear as the date is entered.
+   */
+  const loadDetail = usePolicyStore((s) => s.loadDetail);
+  const loadCoverage = usePolicyStore((s) => s.loadCoverage);
+  const policy = usePolicyStore(selectDetail(policyNumber));
+  const coverage = usePolicyStore(selectCoverage(policyNumber));
+
+  useEffect(() => {
+    // Guarded on the real pattern, not on non-emptiness: without it, every
+    // keystroke of a policy number fires a request certain to 404.
+    if (!POLICY_NUMBER_PATTERN.test(policyNumber)) return;
+    void loadDetail(policyNumber);
+    void loadCoverage(policyNumber);
+  }, [policyNumber, loadDetail, loadCoverage]);
 
   // react-hook-form's FieldErrors type does not narrow per-branch on a
   // discriminated union field the way the VALUE type does -- `errors.details` is
@@ -140,6 +168,21 @@ export function RegisterClaimPage() {
             )}
           />
         </FormField>
+
+        {/* Sits directly under the date that drives it rather than in a side
+            rail: the answer belongs next to the question. Renders nothing until
+            there is a date to ask about. The title deliberately avoids the words
+            "date of event" -- `getByLabel` matches by substring, so a container
+            name containing a field label makes that field ambiguous. */}
+        <GatePanel
+          title="Coverage checks"
+          gates={claimGates({
+            policy: policy.data ?? null,
+            coverage: coverage.data ?? null,
+            claimType: claimType ?? null,
+            dateOfEvent: dateOfEvent || null,
+          })}
+        />
 
         <FormField label="Claim type">
           <select
