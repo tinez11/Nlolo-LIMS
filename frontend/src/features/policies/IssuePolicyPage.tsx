@@ -7,6 +7,7 @@ import { PREMIUM_FREQUENCIES } from '@/api/types';
 import { PageHeader } from '@/components/AppShell';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/FormField';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
@@ -323,23 +324,5 @@ export function IssuePolicyPage() {
         </div>
       </form>
     </>
-  );
-}
-
-function FormField({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string | undefined;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-      {error && <p className="mt-1 text-[11px] text-status-danger-fg">{error}</p>}
-    </label>
   );
 }

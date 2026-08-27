@@ -5,6 +5,7 @@ import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { BENEFIT_TYPES, IFRS_MEASUREMENT_MODELS, RATING_FACTOR_TYPES, type ProductCategory } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/FormField';
 import { selectPublishing, useProductStore } from '@/store/productStore';
 import {
   blankBenefitRow,
@@ -277,23 +278,5 @@ export function PublishVersionForm({
         {publishing.status === 'loading' ? 'Publishing…' : 'Publish version'}
       </Button>
     </form>
-  );
-}
-
-function FormField({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string | undefined;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-      {error && <p className="mt-1 text-[11px] text-status-danger-fg">{error}</p>}
-    </label>
   );
 }

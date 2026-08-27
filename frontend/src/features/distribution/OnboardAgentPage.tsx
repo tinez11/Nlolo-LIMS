@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/AppShell';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/FormField';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { useDistributionStore } from '@/store/distributionStore';
 import {
@@ -139,23 +140,5 @@ export function OnboardAgentPage() {
         </div>
       </form>
     </>
-  );
-}
-
-function FormField({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string | undefined;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-      {error && <p className="mt-1 text-[11px] text-status-danger-fg">{error}</p>}
-    </label>
   );
 }

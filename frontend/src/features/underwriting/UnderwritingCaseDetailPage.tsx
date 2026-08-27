@@ -11,6 +11,7 @@ import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/FormField';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -291,23 +292,5 @@ function Panel({
       </div>
       {children}
     </section>
-  );
-}
-
-function FormField({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string | undefined;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-      {error && <p className="mt-1 text-[11px] text-status-danger-fg">{error}</p>}
-    </label>
   );
 }

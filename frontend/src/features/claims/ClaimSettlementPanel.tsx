@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { type FieldErrors, useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/FormField';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { selectDecidingSettlement, useClaimStore } from '@/store/claimStore';
 import {
@@ -137,22 +138,4 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
 function fieldError(errors: FieldErrors<SettlementDecisionFormValues>, field: string): string | undefined {
   const rec = errors as Record<string, { message?: string } | undefined>;
   return rec[field]?.message;
-}
-
-function FormField({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string | undefined;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-      {error && <p className="mt-1 text-[11px] text-status-danger-fg">{error}</p>}
-    </label>
-  );
 }

@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/FormField';
 import { selectReopening, useClaimStore } from '@/store/claimStore';
 import {
   blankReopenClaimForm,
@@ -72,23 +73,5 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
         {reopening.status === 'loading' ? 'Reopening…' : 'Reopen claim'}
       </Button>
     </form>
-  );
-}
-
-function FormField({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string | undefined;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-      {error && <p className="mt-1 text-[11px] text-status-danger-fg">{error}</p>}
-    </label>
   );
 }
