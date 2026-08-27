@@ -50,6 +50,9 @@ public class ProductController {
             request.fundDefinitions() != null
                 ? request.fundDefinitions().stream().map(f -> new ProductApi.FundInput(f.fundCode(), f.currentNav())).collect(Collectors.toList())
                 : null,
+            request.baseRates() != null
+                ? request.baseRates().stream().map(b -> new ProductApi.BaseRateInput(b.ageBand(), b.sex(), b.smokerStatus(), b.ratePerMille())).collect(Collectors.toList())
+                : List.of(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

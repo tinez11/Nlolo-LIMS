@@ -123,6 +123,26 @@ components:
               factorType: { type: string, enum: [AGE, OCCUPATION_CLASS, SMOKER_STATUS, SUM_ASSURED_BAND] }
               band: { type: string }
               multiplier: { type: number }
+        baseRates:
+          description: >-
+            The rates this version is priced from: the annual rate per 1,000 of sum
+            assured for each (age band, sex, smoker status). Multipliers in ratingTable
+            apply on top, for occupation class and sum-assured band.
+
+            OPTIONAL. A version published without base rates is valid and sellable but
+            cannot be quoted -- GROUP_LIFE is rated on scheme size and cannot populate
+            this key at all. When present, ratingTable must NOT carry AGE or
+            SMOKER_STATUS factors: those are keys here and would be counted twice
+            (422).
+          type: array
+          items:
+            type: object
+            required: [ageBand, sex, smokerStatus, ratePerMille]
+            properties:
+              ageBand: { type: string, description: Shares its vocabulary with ratingTable.band. }
+              sex: { type: string, enum: [FEMALE, MALE] }
+              smokerStatus: { type: string, enum: [SMOKER, NON_SMOKER, UNKNOWN] }
+              ratePerMille: { type: number, exclusiveMinimum: 0 }
         benefitSchedule:
           type: array
           items:

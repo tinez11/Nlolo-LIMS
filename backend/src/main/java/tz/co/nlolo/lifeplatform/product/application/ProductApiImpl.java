@@ -22,15 +22,17 @@ public class ProductApiImpl implements ProductApi {
     private final RatingFactorRepository ratingFactorRepository;
     private final BenefitScheduleEntryRepository benefitScheduleEntryRepository;
     private final FundDefinitionRepository fundDefinitionRepository;
+    private final BaseRateRepository baseRateRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
-                           FundDefinitionRepository fundDefinitionRepository) {
+                           FundDefinitionRepository fundDefinitionRepository, BaseRateRepository baseRateRepository) {
         this.productDefinitionRepository = productDefinitionRepository;
         this.productVersionRepository = productVersionRepository;
         this.ratingFactorRepository = ratingFactorRepository;
         this.benefitScheduleEntryRepository = benefitScheduleEntryRepository;
         this.fundDefinitionRepository = fundDefinitionRepository;
+        this.baseRateRepository = baseRateRepository;
     }
 
     @Override
@@ -71,7 +73,8 @@ public class ProductApiImpl implements ProductApi {
     @Override
     @Transactional
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
-                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions, String publishedBy) {
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, String publishedBy) {
         UUID tenantId = TenantContext.get();
         ProductDefinition product = productDefinitionRepository.findById(productId)
             .filter(p -> p.getTenantId().equals(tenantId))
@@ -86,7 +89,29 @@ public class ProductApiImpl implements ProductApi {
         // engine (Task 4) never silently falls back to a neutral 1.0 for a factor type
         // this product intended to rate on.
         java.util.Set<FactorType> coveredFactorTypes = ratingTable.stream().map(RatingFactorInput::factorType).collect(Collectors.toSet());
-        if (!coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
+        boolean priced = baseRates != null && !baseRates.isEmpty();
+
+        if (priced) {
+            // M13. Age IS rated on a priced version -- it is a key of the base rate
+            // table -- so requiring an AGE multiplier as well would demand the one
+            // thing the next check forbids. Only SUM_ASSURED_BAND stays required.
+            if (!coveredFactorTypes.contains(FactorType.SUM_ASSURED_BAND)) {
+                throw new InvalidProductVersionException("Rating table must cover at least the SUM_ASSURED_BAND factor type");
+            }
+            // The double-count guard, and the single most likely defect in this
+            // design. AGE and SMOKER_STATUS are keys of the base rate table, so a
+            // rating_table row for either would be applied a second time on top of
+            // the rate it already selected -- silently inflating or deflating the
+            // premium with nothing failing. Refused rather than left to review.
+            java.util.Set<FactorType> doubleCounted = new java.util.LinkedHashSet<>(coveredFactorTypes);
+            doubleCounted.retainAll(List.of(FactorType.AGE, FactorType.SMOKER_STATUS));
+            if (!doubleCounted.isEmpty()) {
+                throw new InvalidProductVersionException(
+                    "A version with base rates must not also carry " + doubleCounted
+                        + " rating factors -- those dimensions are keys of the base rate table and would be counted twice");
+            }
+        } else if (!coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
+            // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
         }
 
@@ -111,6 +136,12 @@ public class ProductApiImpl implements ProductApi {
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(), input.factorType().name(), input.band(), input.multiplier()));
+        }
+        if (baseRates != null) {
+            for (BaseRateInput input : baseRates) {
+                baseRateRepository.save(new BaseRate(tenantId, version.getProductVersionId(), input.ageBand(),
+                    input.sex().name(), input.smokerStatus().name(), input.ratePerMille()));
+            }
         }
         for (BenefitInput input : benefitSchedule) {
             benefitScheduleEntryRepository.save(new BenefitScheduleEntry(tenantId, version.getProductVersionId(), input.benefitType().name(), input.calculationMethod()));

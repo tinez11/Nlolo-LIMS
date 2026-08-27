@@ -108,7 +108,19 @@ ALTER TABLE product.base_rate_table ENABLE ROW LEVEL SECURITY;
 
 **Authoring** extends the existing publish path rather than adding a second one. `PublishVersionRequest` gains `baseRates: List<BaseRateRequest>`; `ProductApi.publishVersion` gains a `List<BaseRateInput>` parameter; `ProductApiImpl.publishVersion` persists them in the same transaction as the rating factors.
 
-Validation at publish, alongside the existing rating-factor coverage check that already throws `InvalidProductVersionException`: **a version whose category requires pricing cannot be published with an empty base rate table**. A product version that can be sold but not priced is the state this milestone exists to eliminate; it should not be creatable.
+> **Amended during implementation — base rates are OPTIONAL at publish.** This section first required them: *"a version whose category requires pricing cannot be published with an empty base rate table"*. Two facts found while writing the code make that wrong.
+>
+> **GROUP_LIFE is rated on scheme size**, not on age × sex × smoker, so it cannot populate this table's key at all — requiring base rates would make an entire product line unpublishable. And **45 call sites** publish versions that predate pricing and are perfectly valid.
+>
+> So an unpriceable version is a real, representable state, surfaced where it matters — a premium quote against it fails with a clear error rather than guessing. The old 8-argument `publishVersion` remains as a `default` method delegating with no base rates, which keeps all 45 call sites unchanged.
+>
+> Group-life pricing needs a differently-keyed rate table and is its own decision. Reusing `age_band` to hold a scheme-size band would be one column with two meanings — the vocabulary-void shape this milestone exists to avoid.
+
+**Validation at publish**, alongside the existing rating-factor coverage check that throws `InvalidProductVersionException`. The two checks are mutually dependent and were first written as a contradiction, so they are stated together:
+
+- **Unpriced version** (no base rates): unchanged from M2 — `ratingTable` must cover `AGE` and `SUM_ASSURED_BAND`.
+- **Priced version**: `SUM_ASSURED_BAND` still required (it is not a key of the base rate table), but `AGE` is **not** — age is rated by the base rate table's own key. Requiring it while the double-count guard forbids it would make base rates unpublishable, which is precisely what the first draft of these two rules did.
+- **Double-count guard**: a priced version may not carry `AGE` or `SMOKER_STATUS` rating factors, since those are keys here and would be applied a second time on top of the rate they already selected.
 
 ### 2. `POST /products/{productId}/premium-quote`
 

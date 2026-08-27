@@ -215,7 +215,7 @@ A small, deliberately minimal set of value objects shared across module public A
 
 **Party Management** — *Party*: any individual/organization known to the platform. *KYC Status*: verified/pending/rejected. *Group*: a SACCO/employer enrolling members under one master arrangement.
 
-**Product Configuration** — *Product Definition*: a versioned, configurable template. *Rating Factor*: input to premium calculation (age, sum assured, occupation class, smoker status). *Fund*: a unit-linked investment pool with its own NAV.
+**Product Configuration** — *Product Definition*: a versioned, configurable template. *Rating Factor*: a **multiplier** applied to a base rate (occupation class, sum-assured band). *Base Rate Table* (M13): the annual rate per 1,000 of sum assured, by (age band, sex, smoker status) — the base a premium is computed **from**, which Rating Factors then adjust. Deliberately not called a *Mortality Table*: these are rates an actuary authors and signs, not a `qx` table the platform derives a premium from; that would additionally require interest, expense and profit assumptions (see §6 open question 4), and *Mortality Table* stays unclaimed for whoever builds it. *Sex* / *Smoker Status*: rating dimensions of the Base Rate Table, and asserted by the caller of a quote — no party record carries either. A version published with no Base Rate Table is valid and sellable but **unpriceable** (Group Life is rated on scheme size and cannot populate this key at all). *Fund*: a unit-linked investment pool with its own NAV.
 
 **Underwriting** — *Underwriting Case*: one risk-assessment instance tied to an application. *Loading*: a premium surcharge for elevated risk. *Contestability Period*: window during which non-disclosure can void a claim.
 

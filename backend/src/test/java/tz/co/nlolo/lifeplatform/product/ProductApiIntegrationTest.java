@@ -5,10 +5,12 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.product.domain.ProductVersion;
+import tz.co.nlolo.lifeplatform.product.infrastructure.BaseRateRepository;
 import tz.co.nlolo.lifeplatform.product.infrastructure.ProductVersionRepository;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -55,6 +57,9 @@ class ProductApiIntegrationTest {
     @Autowired
     private ProductVersionRepository productVersionRepository;
 
+    @Autowired
+    private BaseRateRepository baseRateRepository;
+
     @Test
     void createProductStartsInDraft() {
         ProductSummaryView product = productApi.createProduct("TERM-01", "Simple Term Life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
@@ -91,6 +96,138 @@ class ProductApiIntegrationTest {
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 List.of(new ProductApi.FundInput("FUND-A", BigDecimal.TEN)),
+                "actuary@nlolo.co.tz"));
+    }
+
+    // ---- M13: the base rate table premiums are computed from -------------------
+
+    /**
+     * The double-count guard, and the single most likely defect in the pricing
+     * design: AGE and SMOKER_STATUS are KEYS of the base rate table, so a
+     * rating_table multiplier for either dimension would be applied a second time
+     * on top of the rate it already selected -- silently, with nothing failing.
+     */
+    @Test
+    void publishVersionRejectsAgeMultiplierAlongsideBaseRates() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-A", "Double-counted age", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput("30-39", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4000"))),
+                "actuary@nlolo.co.tz"));
+    }
+
+    @Test
+    void publishVersionRejectsSmokerMultiplierAlongsideBaseRates() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-B", "Double-counted smoker", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SMOKER_STATUS, "SMOKER", new BigDecimal("1.5")),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput("30-39", Sex.MALE, SmokerStatus.SMOKER, new BigDecimal("22.1000"))),
+                "actuary@nlolo.co.tz"));
+    }
+
+    /**
+     * A priced version does NOT need an AGE multiplier -- age is rated by the base
+     * rate table's own key. Requiring one while the guard above forbids it would
+     * make base rates unpublishable, which is exactly the contradiction the two
+     * checks were first written with.
+     */
+    @Test
+    void publishVersionWithBaseRatesNeedsNoAgeMultiplier() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-C", "Priced term life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
+                    new ProductApi.BaseRateInput("18-25", Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8000"))),
+            "actuary@nlolo.co.tz");
+
+        List<ProductSummaryView> active = productApi.listActiveProducts(ProductCategory.TERM_LIFE);
+        assertTrue(active.stream().anyMatch(p -> p.productCode().equals("TERM-M13-C") && p.status() == ProductStatus.ACTIVE));
+
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), product.productId())
+            .get(0).getProductVersionId();
+        assertEquals(2, baseRateRepository.findByProductVersionId(versionId).size());
+    }
+
+    /**
+     * A priced version still needs SUM_ASSURED_BAND: that dimension is NOT a key of
+     * the base rate table, so dropping the requirement would leave it unrated.
+     */
+    @Test
+    void publishVersionWithBaseRatesStillRequiresSumAssuredBand() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-D", "Priced, unbanded", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000"))),
+                "actuary@nlolo.co.tz"));
+    }
+
+    /**
+     * The pre-pricing path is untouched: a version with no base rates publishes on
+     * the old rules and is simply unpriceable. 45 existing call sites depend on
+     * this, and GROUP_LIFE -- rated on scheme size -- cannot populate an
+     * (age band, sex, smoker) key at all.
+     */
+    @Test
+    void publishVersionWithoutBaseRatesKeepsTheOriginalRules() {
+        ProductSummaryView product = productApi.createProduct("GRP-M13-E", "Group life, scheme-rated", ProductCategory.GROUP_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-65", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), product.productId())
+            .get(0).getProductVersionId();
+        assertTrue(baseRateRepository.findByProductVersionId(versionId).isEmpty());
+        assertFalse(baseRateRepository.existsByProductVersionId(versionId));
+    }
+
+    /**
+     * Two rows for one cell would make pricing depend on row order -- a silent
+     * mispricing rather than an error. The unique index is the guard.
+     */
+    @Test
+    void aDuplicateBaseRateCellIsRefusedByTheDatabase() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-F", "Duplicated cell", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThrows(DataIntegrityViolationException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
+                        new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("99.9000"))),
+                "actuary@nlolo.co.tz"));
+    }
+
+    /**
+     * A zero or negative rate is a free policy or one that pays the customer. The
+     * table CHECK makes it unrepresentable at rest, independently of the
+     * `@Positive` bean constraint at the HTTP edge -- which is not on this path.
+     */
+    @Test
+    void aNonPositiveBaseRateIsRefusedByTheDatabase() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-G", "Free cover", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThrows(DataIntegrityViolationException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput("18-25", Sex.FEMALE, SmokerStatus.NON_SMOKER, BigDecimal.ZERO)),
                 "actuary@nlolo.co.tz"));
     }
 
