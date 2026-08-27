@@ -266,6 +266,14 @@ required check trains people to ignore CI.
 
    `GET /gl-postings` looked like a third instance and is **not** one — its repository methods carry `OrderByPostedAtDesc` in their names, so it is ordered despite the bare `PageRequest.of`. Only a tie-breaker is missing there; left alone deliberately, since adding one means renaming four derived query methods for a marginal gain.
 
+10. **A third instance of the same defect, and the worst of them.** `DistributionApiImpl.resolveApplicablePlan` took `.findFirst()` off `findByTenantIdAndProductIdAndStatus`, also with no `ORDER BY`. Nothing supersedes a prior ACTIVE plan when a new one is created, so two ACTIVE plans for one product is reachable — and the winner was whichever row Postgres returned first. **This decides the rate an agent is paid**, on both the read endpoint and the accrual path (`resolveAgentWithPlan`, called by distribution's `PolicyEventListener`), which share the same resolution.
+
+    Now `OrderByCreatedAtDescCommissionPlanIdDesc`. Reverting the fix and re-running proves the test real: unordered it resolves `0.0500`, the superseded plan, where the current one says `0.0700`.
+
+    The staff-portal CRUD audit had already recorded this as deferred gap #6 and said to fix the `ORDER BY` half independently of the UI work. That half is now done; superseding on create and a deactivation path stay deferred, since both need a decision about commission already accrued under the old plan.
+
+    **Three instances in three modules, all the same shape:** a `Pageable` or a `findFirst()` over a query with no total order. Worth a sweep rather than waiting for a fourth to surface as a test failure.
+
 ## 11. Deliberately deferred
 
 **Endorsements UI.** `EndorsementRequest.changes` is opaque JSONB the backend

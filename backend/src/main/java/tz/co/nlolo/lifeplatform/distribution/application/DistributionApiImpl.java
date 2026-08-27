@@ -375,7 +375,11 @@ public class DistributionApiImpl implements DistributionApi {
                 .orElse(null);
         }
         if (plan == null) {
-            plan = commissionPlanRepository.findByTenantIdAndProductIdAndStatus(tenantId, productId, PlanStatus.ACTIVE)
+            // findFirst() off a query that had no ORDER BY used to mean "whichever ACTIVE plan
+            // Postgres returned first" -- see the repository method's javadoc. Now newest-first.
+            plan = commissionPlanRepository
+                .findByTenantIdAndProductIdAndStatusOrderByCreatedAtDescCommissionPlanIdDesc(
+                    tenantId, productId, PlanStatus.ACTIVE)
                 .stream().findFirst().orElse(null);
         }
         return plan;

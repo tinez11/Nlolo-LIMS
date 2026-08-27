@@ -401,6 +401,38 @@ class DistributionApiIntegrationTest {
         assertThat(plan.rules().get(0).flatCurrency()).isEqualTo("TZS");
     }
 
+    /**
+     * Nothing supersedes a prior ACTIVE plan when a new one is created, so two ACTIVE plans for one
+     * product is a reachable state -- and the fallback that resolves "the plan for this product"
+     * used to take {@code .findFirst()} off a query with no {@code ORDER BY}. Which plan won, and
+     * therefore the rate an agent is actually paid, was whatever row Postgres returned first.
+     *
+     * <p>The two plans below differ ONLY in their rate, so the assertion can distinguish them: 5%
+     * authored first, 7% second. Newest-first means 7% applies. Without the ordering this asserts
+     * nothing reliable, which is the point -- it is the falsifiable half of the fix.
+     */
+    @Test
+    void getApplicablePlanResolvesTheNewestActivePlanWhenAProductHasMoreThanOne() {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-IT-TWOPLANS");
+        PartyView party = registerVerifiedParty(tenantId, "AGT-TWOPLANS-01");
+        AgentView agent = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party.partyId(), "LIC-TWOPLANS-01", LocalDate.now().plusYears(1), null), "staff-1");
+
+        distributionApi.createCommissionPlan(productId, List.of(
+            new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.0500"), null, null)),
+            "actuary-old");
+        distributionApi.createCommissionPlan(productId, List.of(
+            new DistributionApi.CommissionRuleInput(TierType.FIRST_YEAR, new BigDecimal("0.0700"), null, null)),
+            "actuary-new");
+
+        CommissionPlanView plan = distributionApi.getApplicablePlan(agent.agentId(), productId);
+        assertThat(plan.rules()).hasSize(1);
+        assertThat(plan.rules().get(0).rate())
+            .as("the newest ACTIVE plan, not whichever row the scan yielded")
+            .isEqualByComparingTo("0.0700");
+    }
+
     @Test
     void createCommissionPlanRejectsARuleWithNeitherARateNorAFlatAmount() {
         UUID tenantId = UUID.randomUUID();
