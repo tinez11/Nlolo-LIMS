@@ -7,7 +7,25 @@ import java.util.UUID;
 
 public interface ProductApi {
 
-    record RatingFactorInput(FactorType factorType, String band, BigDecimal multiplier) {}
+    /**
+     * One rating multiplier.
+     *
+     * <p>{@code ageFrom}/{@code ageTo} are REQUIRED for {@link FactorType#AGE} and must be
+     * null for every other type — {@code rating_table_age_bounds_shape} enforces the same
+     * rule at the database. {@code ageTo} is inclusive.
+     *
+     * <p>They exist because age was previously matched by exact string equality against
+     * {@code band}, and underwriting had no way to produce a matching string, so age was
+     * never rated at all. {@code band} survives as the human-readable label; the bounds
+     * are what the platform resolves on. The two-argument shape below keeps the ~45
+     * existing non-AGE call sites unchanged.
+     */
+    record RatingFactorInput(FactorType factorType, String band, BigDecimal multiplier,
+                              Integer ageFrom, Integer ageTo) {
+        public RatingFactorInput(FactorType factorType, String band, BigDecimal multiplier) {
+            this(factorType, band, multiplier, null, null);
+        }
+    }
     record BenefitInput(BenefitType benefitType, String calculationMethod) {}
     record FundInput(String fundCode, BigDecimal currentNav) {}
 
@@ -143,6 +161,24 @@ public interface ProductApi {
      * defines every factor type/band combination.
      */
     BigDecimal resolveRatingMultiplier(UUID productVersionId, FactorType factorType, String band);
+
+    /**
+     * The AGE multiplier for an applicant of {@code age}, resolved by RANGE rather than by
+     * matching a band string.
+     *
+     * <p>Separate from {@link #resolveRatingMultiplier} because age is the one factor with
+     * a natural ordering: every other type is a label the caller already holds
+     * ({@code "CLASS_1"}, {@code "SMOKER"}), while age is a number that has to be placed
+     * into whichever range covers it. Asking the caller to render an age as a band string
+     * first is what left this factor unusable — underwriting could not produce a string
+     * that matched, so it passed a sentinel and every applicant got 1.0.
+     *
+     * <p>Returns 1.0 when no AGE row covers the age, the same neutral-on-no-match contract
+     * as {@code resolveRatingMultiplier}. That deliberately covers the versions published
+     * before bounds existed: their AGE rows carry no range, match nobody, and so keep
+     * behaving exactly as they always have rather than changing decisions retroactively.
+     */
+    BigDecimal resolveAgeMultiplier(UUID productVersionId, int age);
 
     /**
      * M3 addition: manual policy issuance (openapi-policy.yaml's ManualIssueRequest) supplies

@@ -45,7 +45,8 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
-            "db-migrations/product/V4__rating_table_unique_band.sql");
+            "db-migrations/product/V4__rating_table_unique_band.sql",
+            "db-migrations/product/V5__rating_table_age_bounds.sql");
     }
 
     @BeforeEach
@@ -84,7 +85,7 @@ class ProductApiIntegrationTest {
     void publishVersionActivatesProductAndAppearsInListing() {
         ProductSummaryView product = productApi.createProduct("TERM-03", "Published Term Life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz");
@@ -98,7 +99,7 @@ class ProductApiIntegrationTest {
         ProductSummaryView product = productApi.createProduct("TERM-04", "Term with bad fund", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 List.of(new ProductApi.FundInput("FUND-A", BigDecimal.TEN)),
@@ -118,7 +119,7 @@ class ProductApiIntegrationTest {
         ProductSummaryView product = productApi.createProduct("TERM-M13-A", "Double-counted age", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null,
@@ -191,7 +192,7 @@ class ProductApiIntegrationTest {
     void publishVersionWithoutBaseRatesKeepsTheOriginalRules() {
         ProductSummaryView product = productApi.createProduct("GRP-M13-E", "Group life, scheme-rated", ProductCategory.GROUP_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-65", BigDecimal.ONE),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-65", BigDecimal.ONE, 18, 65),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz");
@@ -280,8 +281,8 @@ class ProductApiIntegrationTest {
             ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
-                        new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("2.5000")),
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                        new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("2.5000"), 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null, "actuary@nlolo.co.tz"));
@@ -301,7 +302,7 @@ class ProductApiIntegrationTest {
         ProductSummaryView product = productApi.createProduct("TERM-M13-J", "Band constraint",
             ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz");
@@ -314,6 +315,128 @@ class ProductApiIntegrationTest {
         assertThrows(DataIntegrityViolationException.class, () ->
             ratingFactorRepository.saveAndFlush(new tz.co.nlolo.lifeplatform.product.domain.RatingFactor(
                 tenantId, versionId, FactorType.AGE.name(), "30-39", new BigDecimal("2.5000"))));
+    }
+
+    // ---- AGE rating factors carry real bounds ----------------------------------
+
+    private ProductSummaryView ageProduct(String code) {
+        return productApi.createProduct(code, code, ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+    }
+
+    /**
+     * The shape rule. Age is rated by range now, so an AGE row without one is unusable —
+     * it would match nobody and silently contribute the neutral 1.0, which is exactly the
+     * bug this whole change removes.
+     */
+    @Test
+    void publishVersionRejectsAnAgeFactorWithNoRange() {
+        ProductSummaryView product = ageProduct("TERM-AGE-A");
+        InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null, "actuary@nlolo.co.tz"));
+        assertTrue(ex.getMessage().contains("30-39"), "the message must name the offending band");
+    }
+
+    @Test
+    void publishVersionRejectsOverlappingAgeRanges() {
+        ProductSummaryView product = ageProduct("TERM-AGE-B");
+        InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                // A 25-year-old falls in both. Which multiplier applies would be scan order.
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-30", BigDecimal.ONE, 18, 30),
+                        new ProductApi.RatingFactorInput(FactorType.AGE, "25-40", new BigDecimal("2.0"), 25, 40),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null, "actuary@nlolo.co.tz"));
+        assertTrue(ex.getMessage().contains("overlap"));
+    }
+
+    @Test
+    void publishVersionRejectsAnImpossibleAgeRange() {
+        ProductSummaryView product = ageProduct("TERM-AGE-C");
+        assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "40-30", BigDecimal.ONE, 40, 30),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null, "actuary@nlolo.co.tz"));
+    }
+
+    @Test
+    void resolveAgeMultiplierPicksTheCoveringBandAndIsNeutralOutsideThem() {
+        ProductSummaryView product = ageProduct("TERM-AGE-D");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-39", BigDecimal.ONE, 18, 39),
+                    new ProductApi.RatingFactorInput(FactorType.AGE, "60-99", new BigDecimal("3.0"), 60, 99),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), product.productId())
+            .get(0).getProductVersionId();
+
+        assertEquals(0, BigDecimal.ONE.compareTo(productApi.resolveAgeMultiplier(versionId, 25)));
+        // Inclusive at both ends -- 39 and 60 are inside their bands, not between them.
+        assertEquals(0, BigDecimal.ONE.compareTo(productApi.resolveAgeMultiplier(versionId, 39)));
+        assertEquals(0, new BigDecimal("3.0").compareTo(productApi.resolveAgeMultiplier(versionId, 60)));
+        assertEquals(0, new BigDecimal("3.0").compareTo(productApi.resolveAgeMultiplier(versionId, 99)));
+        // 40-59 is a gap this product simply does not rate: neutral, not an error.
+        assertEquals(0, BigDecimal.ONE.compareTo(productApi.resolveAgeMultiplier(versionId, 45)));
+    }
+
+    /**
+     * The database refuses an unbounded AGE row too, not just the application check — so a
+     * writer that bypasses {@code publishVersion} cannot recreate the state where age looks
+     * rated and silently is not.
+     *
+     * <p>NOT the same thing as the legacy rows already in long-lived databases. The
+     * constraint is NOT VALID, so rows written before V5 survive untouched (the dev database
+     * holds 99 of them, including the bare band "21" that is why bounds exist at all), and
+     * those versions keep resolving to a neutral 1.0 because a NULL bound can never satisfy
+     * {@code ageFrom <= :age}. That behaviour cannot be asserted here: NOT VALID still
+     * enforces the constraint on every INSERT, so no supported path can construct a legacy
+     * row inside a test. Reproducing it would mean dropping and re-adding the constraint
+     * mid-test, which would be testing the test rather than the platform.
+     */
+    @Test
+    void theDatabaseAlsoRefusesAnAgeRowWithNoBounds() {
+        ProductSummaryView product = ageProduct("TERM-AGE-E");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-39", BigDecimal.ONE, 18, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        UUID tenantId = TenantContext.get();
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(tenantId, product.productId())
+            .get(0).getProductVersionId();
+
+        assertThrows(DataIntegrityViolationException.class, () ->
+            ratingFactorRepository.saveAndFlush(new tz.co.nlolo.lifeplatform.product.domain.RatingFactor(
+                tenantId, versionId, FactorType.AGE.name(), "no-bounds", new BigDecimal("9.0"))));
+    }
+
+    @Test
+    void theDatabaseRefusesAgeBoundsOnANonAgeFactor() {
+        // The other half of the shape rule: bounds on an OCCUPATION_CLASS row would be data
+        // nothing reads, and a reader could reasonably assume it was rated on.
+        ProductSummaryView product = ageProduct("TERM-AGE-F");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-39", BigDecimal.ONE, 18, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        UUID tenantId = TenantContext.get();
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(tenantId, product.productId())
+            .get(0).getProductVersionId();
+
+        assertThrows(DataIntegrityViolationException.class, () ->
+            ratingFactorRepository.saveAndFlush(new tz.co.nlolo.lifeplatform.product.domain.RatingFactor(
+                tenantId, versionId, FactorType.OCCUPATION_CLASS.name(), "CLASS_1", BigDecimal.ONE, 18, 39)));
     }
 
     // ---- M13 step 3: the premium calculation -----------------------------------
@@ -429,7 +552,7 @@ class ProductApiIntegrationTest {
     void quotePremiumRefusesAVersionWithNoBaseRates() {
         ProductSummaryView product = productApi.createProduct("TERM-Q5", "Unpriced", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-25", BigDecimal.ONE),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-25", BigDecimal.ONE, 18, 25),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz");
@@ -535,7 +658,7 @@ class ProductApiIntegrationTest {
         ProductSummaryView product = productApi.createProduct("TERM-05", "Term missing coverage", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE)), // missing SUM_ASSURED_BAND
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39)), // missing SUM_ASSURED_BAND
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null, "actuary@nlolo.co.tz"));
     }
@@ -544,7 +667,7 @@ class ProductApiIntegrationTest {
     void getActiveSnapshotReturnsPublishedVersion() {
         ProductSummaryView product = productApi.createProduct("TERM-06", "Snapshot test", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now().minusDays(1), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz");
@@ -557,7 +680,7 @@ class ProductApiIntegrationTest {
     void resolveRatingMultiplierReturnsNeutralWhenBandNotFound() {
         ProductSummaryView product = productApi.createProduct("TERM-07", "Multiplier test", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now(), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("1.5")),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("1.5"), 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz");
@@ -571,7 +694,7 @@ class ProductApiIntegrationTest {
     void productsAreTenantIsolated() {
         ProductSummaryView product = productApi.createProduct("SHARED-CODE", "Tenant A product", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz");
@@ -596,7 +719,7 @@ class ProductApiIntegrationTest {
         ProductSummaryView product = productApi.createProduct("TERM-08", "Rollover test", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
 
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(2), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz");
@@ -605,7 +728,7 @@ class ProductApiIntegrationTest {
 
         // Second publish on the same product must succeed, not crash.
         assertDoesNotThrow(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
-            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("1.25")),
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("1.25"), 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary@nlolo.co.tz"));

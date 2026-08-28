@@ -51,4 +51,8 @@ public class RiskAssessment {
     public UUID getCaseId() { return caseId; }
     public String getAssessmentType() { return assessmentType; }
     public BigDecimal getRiskScore() { return riskScore; }
+    public Instant getCreatedAt() { return createdAt; }
+    /** The tie-breaker that makes "latest assessment" a total order — createdAt is
+     *  Instant.now() in Java, so two assessments can share it exactly. */
+    public UUID getRiskAssessmentId() { return riskAssessmentId; }
 }

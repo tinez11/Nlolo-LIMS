@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, X } from 'lucide-react';
 import { useEffect } from 'react';
-import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import { useForm, useFieldArray, useWatch, Controller } from 'react-hook-form';
 import { BENEFIT_TYPES, IFRS_MEASUREMENT_MODELS, RATING_FACTOR_TYPES, type ProductCategory } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
@@ -68,6 +68,10 @@ export function PublishVersionForm({
   });
 
   const ratingTable = useFieldArray({ control, name: 'ratingTable' });
+  // useWatch, not watch(): one subscription for the whole array rather than a watch() call
+  // per row inside the render loop, which is both fewer re-renders and the form the React
+  // Compiler can reason about.
+  const ratingRows = useWatch({ control, name: 'ratingTable' });
   const benefitSchedule = useFieldArray({ control, name: 'benefitSchedule' });
   const fundDefinitions = useFieldArray({ control, name: 'fundDefinitions' });
 
@@ -142,6 +146,30 @@ export function PublishVersionForm({
                 placeholder="Band, e.g. 18-30"
                 {...register(`ratingTable.${index}.band`)}
               />
+              {/* AGE is rated by RANGE, not by matching the band text. The band stays as
+                  the label an actuary reads on the product screen; these two are what the
+                  platform actually resolves against, so they show only where they mean
+                  something and the backend refuses them anywhere else. */}
+              {ratingRows?.[index]?.factorType === 'AGE' && (
+                <>
+                  <input
+                    type="number"
+                    min={0}
+                    className="h-8 w-16 rounded-md border border-input bg-surface px-2 text-right text-xs"
+                    placeholder="from"
+                    aria-label={`Rating factor ${index + 1} from age`}
+                    {...register(`ratingTable.${index}.ageFrom`)}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    className="h-8 w-16 rounded-md border border-input bg-surface px-2 text-right text-xs"
+                    placeholder="to"
+                    aria-label={`Rating factor ${index + 1} to age`}
+                    {...register(`ratingTable.${index}.ageTo`)}
+                  />
+                </>
+              )}
               <input
                 type="number"
                 step="0.01"

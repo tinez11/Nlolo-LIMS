@@ -52,7 +52,8 @@ class ProductContractTest {
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
-            "db-migrations/product/V4__rating_table_unique_band.sql");
+            "db-migrations/product/V4__rating_table_unique_band.sql",
+            "db-migrations/product/V5__rating_table_age_bounds.sql");
     }
 
     @AfterEach
@@ -105,7 +106,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
-                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
                      "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
                     """))
             .andExpect(status().isCreated());
@@ -161,7 +162,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
-                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
                      "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
                     """))
             .andExpect(status().isForbidden());
@@ -188,7 +189,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
-                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
                      "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
                     """))
             .andExpect(status().isCreated())
@@ -222,7 +223,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
-                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0}],
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39}],
                      "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
                     """))
             .andExpect(status().isUnprocessableEntity())

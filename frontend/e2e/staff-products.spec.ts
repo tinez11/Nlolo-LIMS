@@ -58,6 +58,10 @@ test.describe('staff products', () => {
     // both AGE and SUM_ASSURED_BAND), mirrored client-side in publishVersionSchema.
     await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
     await ratingSection.locator('input[placeholder="Band, e.g. 18-30"]').fill('18-30');
+    // AGE is rated by range now: the band text is a label, these two are what the platform
+    // resolves against. Publishing without them is a real 422.
+    await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
+    await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
     await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
 
     await page.getByRole('button', { name: 'Publish version' }).click();

@@ -3,7 +3,7 @@ package tz.co.nlolo.lifeplatform.underwriting.application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
-import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 import tz.co.nlolo.lifeplatform.product.api.FactorType;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
@@ -72,10 +72,22 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // finding 3): without this, a second submitAssessment call recomputes and
         // overwrites decision_outcome/decision_decline_reason/decision_decided_at in
         // place with zero record of what the original decision was. A case that
-        // genuinely needs re-assessment (e.g. new medical evidence after a DECLINE)
-        // must go through an explicit re-open step, not yet modeled, rather than have
-        // this method quietly recompute over an existing decision.
-        if (UnderwritingCaseStatus.DECIDED.name().equals(underwritingCase.getStatus())) {
+        // genuinely needs re-assessment after a real decision (new medical evidence
+        // following a DECLINE) must go through an explicit re-open step, not yet
+        // modeled, rather than have this method quietly recompute over it.
+        //
+        // POSTPONED IS THE EXCEPTION, and always should have been. It is the one outcome
+        // that means "not decided yet -- come back with more evidence", and treating it as
+        // final made it the only outcome that could never be resolved: the engine returns
+        // POSTPONED for a risk score >= 90 asking for further medical evidence, the case
+        // locked, and no amount of further evidence could ever be submitted against it. A
+        // postponed case is work in progress wearing a terminal status.
+        //
+        // Overwriting the decision columns is safe here specifically because the history
+        // survives elsewhere: every assessment is its own RiskAssessment row, and the
+        // superseded POSTPONED was published as UnderwritingDecisionMade and is durably
+        // recorded in the audit journal. Nothing is lost that was not already written down.
+        if (isDecided(underwritingCase) && !DecisionOutcome.POSTPONED.name().equals(underwritingCase.getDecisionOutcome())) {
             throw new UnderwritingCaseAlreadyDecidedException(caseId);
         }
         underwritingCase.markInReview();
@@ -90,7 +102,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // the codebase -- policy.application.UnderwritingDecisionEventListener is this event's
         // sole consumer and has nothing to react to without this call (see plan Global
         // Constraints -- underwriting published zero domain events before this task).
-        if (UnderwritingCaseStatus.DECIDED.name().equals(underwritingCase.getStatus())) {
+        if (isDecided(underwritingCase)) {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("caseId", caseId);
             payload.put("outcome", underwritingCase.getDecisionOutcome());
@@ -104,18 +116,52 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         return toView(underwritingCase);
     }
 
+    private static boolean isDecided(UnderwritingCase underwritingCase) {
+        return UnderwritingCaseStatus.DECIDED.name().equals(underwritingCase.getStatus());
+    }
+
+    /**
+     * The scores the engine weighs: the MOST RECENT assessment of each type, not every
+     * assessment ever recorded.
+     *
+     * <p>This used to be every score on the case, and the engine takes the maximum, which
+     * made a postponed case unresolvable in practice. The engine returns POSTPONED for a
+     * score of 90 or more, asking for further medical evidence; when that evidence arrived
+     * and was assessed at 30, the maximum was still the superseded 90, so the case
+     * postponed again, forever. Allowing re-assessment without this would have been a fix
+     * that changed nothing.
+     *
+     * <p>Latest PER TYPE rather than latest overall, because the three types answer
+     * different questions. A fresh MEDICAL assessment supersedes the earlier medical view;
+     * it says nothing about an OCCUPATIONAL red flag, and dropping that flag because a
+     * later assessment of a different kind came in would quietly discard evidence. So each
+     * dimension keeps its own current answer and the engine still takes the worst of them.
+     *
+     * <p>Ordered by {@code createdAt} then id: {@code createdAt} is {@code Instant.now()}
+     * in Java, so two assessments recorded in the same request can share it exactly, and
+     * "latest" would otherwise be decided by scan order — the failure this codebase has
+     * now found five times.
+     */
+    private List<BigDecimal> latestScorePerAssessmentType(UUID caseId) {
+        return riskAssessmentRepository.findByCaseId(caseId).stream()
+            .filter(a -> a.getRiskScore() != null)
+            .collect(java.util.stream.Collectors.groupingBy(RiskAssessment::getAssessmentType,
+                java.util.stream.Collectors.collectingAndThen(
+                    java.util.stream.Collectors.maxBy(
+                        java.util.Comparator.comparing(RiskAssessment::getCreatedAt)
+                            .thenComparing(RiskAssessment::getRiskAssessmentId)),
+                    latest -> latest.map(RiskAssessment::getRiskScore).orElseThrow())))
+            .values().stream()
+            .toList();
+    }
+
     private void decideIfPossible(UnderwritingCase underwritingCase) {
-        PartyView applicant = partyApi.getParty(underwritingCase.getApplicantPartyId());
-        String ageBand = resolveAgeBand(applicant);
         String sumAssuredBand = resolveSumAssuredBand(underwritingCase.getSumAssuredAmount());
 
-        BigDecimal ageMultiplier = productApi.resolveRatingMultiplier(underwritingCase.getProductVersionId(), FactorType.AGE, ageBand);
+        BigDecimal ageMultiplier = resolveAgeMultiplier(underwritingCase);
         BigDecimal sumAssuredMultiplier = productApi.resolveRatingMultiplier(underwritingCase.getProductVersionId(), FactorType.SUM_ASSURED_BAND, sumAssuredBand);
 
-        List<BigDecimal> riskScores = riskAssessmentRepository.findByCaseId(underwritingCase.getCaseId()).stream()
-            .map(RiskAssessment::getRiskScore)
-            .filter(java.util.Objects::nonNull)
-            .toList();
+        List<BigDecimal> riskScores = latestScorePerAssessmentType(underwritingCase.getCaseId());
 
         RiskProfile profile = new RiskProfile(ageMultiplier, sumAssuredMultiplier, riskScores);
         UnderwritingDecision decision = rulesEnginePort.evaluate(profile);
@@ -124,23 +170,39 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     }
 
     /**
-     * Age-band rating is NOT YET RESOLVABLE: {@code PartyView} (M1's narrow read model)
-     * exposes no {@code dateOfBirth} field, so there is no real data this method can band
-     * on. Deliberately returns a sentinel that cannot collide with any real band a product
-     * defines -- "UNKNOWN" is not a valid AGE band value any product's rating table would
-     * ever declare (real bands look like "30-39", "40-49", etc.), so
-     * {@code ProductApi.resolveRatingMultiplier}'s neutral-1.0-on-no-match fallback
-     * genuinely applies here: every applicant, regardless of actual age, gets a neutral
-     * AGE contribution rather than being silently rated against whichever real band
-     * happens to share this placeholder's name. (A previous version of this method
-     * returned the literal "30-39" -- itself a real band many products define with a
-     * non-1.0 multiplier -- which meant every applicant, including a 22-year-old or a
-     * 78-year-old, was actively rated as if they were 30-39. That was not a neutral
-     * placeholder, it was silently wrong.) Revisit once PartyView exposes dateOfBirth (or
-     * a narrow age-only accessor) so a real band can be computed.
+     * The applicant's AGE multiplier, from their real date of birth.
+     *
+     * <p>This method used to return the sentinel band {@code "UNKNOWN"}, because
+     * {@code PartyView} exposed no date of birth and there was nothing to band on. The
+     * sentinel matched no product's rating table, so every applicant resolved to the
+     * neutral 1.0 and AGE — the factor that dominates mortality — was never rated at all.
+     * A 22-year-old and a 78-year-old were underwritten identically. {@code
+     * PartyDetailView} exposes the date of birth now, so the block is gone.
+     *
+     * <p>Resolved by RANGE, not by rendering an age back into a band string:
+     * {@code rating_table} carries real {@code age_from}/{@code age_to} bounds as of V5,
+     * precisely so nothing has to guess how a publisher spelled a band.
+     *
+     * <p>Neutral 1.0 when the applicant has no recorded date of birth. A CORPORATE or GROUP
+     * party genuinely has none, and an individual registered without one is a real record
+     * on this platform — refusing to decide those cases would break underwriting for every
+     * group scheme, so age simply does not contribute. It is a rating input, not an
+     * identity check.
+     *
+     * <p>Age is taken as at TODAY rather than at the case's opening date. Cases are decided
+     * within days of opening here, the difference can only matter to an applicant with a
+     * birthday in that window, and an as-at-opening rule would need an opening date on the
+     * aggregate that is not currently read anywhere. Worth revisiting if cases ever sit
+     * open long enough for it to move a decision.
      */
-    private String resolveAgeBand(PartyView applicant) {
-        return "UNKNOWN";
+    private BigDecimal resolveAgeMultiplier(UnderwritingCase underwritingCase) {
+        PartyDetailView applicant = partyApi.getPartyDetail(underwritingCase.getApplicantPartyId());
+        LocalDate dateOfBirth = applicant.dateOfBirth();
+        if (dateOfBirth == null) {
+            return BigDecimal.ONE;
+        }
+        int age = Period.between(dateOfBirth, LocalDate.now()).getYears();
+        return productApi.resolveAgeMultiplier(underwritingCase.getProductVersionId(), age);
     }
 
     private String resolveSumAssuredBand(BigDecimal sumAssuredAmount) {

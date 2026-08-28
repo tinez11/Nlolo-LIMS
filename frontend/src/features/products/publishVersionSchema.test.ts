@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { publishVersionFormSchema, toApiRequest } from './publishVersionSchema';
 
-const ageRow = { factorType: 'AGE' as const, band: '18-30', multiplier: 1 };
+// AGE rows carry a real range as of product V5: age is resolved by range, not by matching
+// the band text, so an AGE row without one would match nobody and silently rate neutral.
+const ageRow = { factorType: 'AGE' as const, band: '18-30', multiplier: 1, ageFrom: '18', ageTo: '30' };
 const sumRow = { factorType: 'SUM_ASSURED_BAND' as const, band: '0-5000000', multiplier: 1.1 };
 
 const valid = () => ({
@@ -123,13 +125,34 @@ describe('toApiRequest', () => {
     expect(toApiRequest(parsed).fundDefinitions).toEqual([]);
   });
 
-  it('round-trips the rating table and benefit schedule verbatim', () => {
+  it('sends age bounds as numbers on AGE rows, and omits them everywhere else', () => {
+    // Not verbatim any more, and deliberately so. The form holds age bounds as strings (an
+    // empty numeric input is '', and coercing that to 0 would be a real age rather than an
+    // absence), while the wire wants integers. Non-AGE rows must carry no bounds at all --
+    // the backend's rating_table_age_bounds_shape CHECK refuses them there.
     const parsed = termLife.parse({
       ...valid(),
       benefitSchedule: [{ benefitType: 'DEATH', calculationMethod: 'sum_assured' }],
     });
     const api = toApiRequest(parsed);
-    expect(api.ratingTable).toEqual([ageRow, sumRow]);
+
+    expect(api.ratingTable).toEqual([
+      { factorType: 'AGE', band: '18-30', multiplier: 1, ageFrom: 18, ageTo: 30 },
+      { factorType: 'SUM_ASSURED_BAND', band: '0-5000000', multiplier: 1.1 },
+    ]);
+    expect(api.ratingTable[1]).not.toHaveProperty('ageFrom');
     expect(api.benefitSchedule).toEqual([{ benefitType: 'DEATH', calculationMethod: 'sum_assured' }]);
+  });
+
+  it('rejects an AGE row with no range', () => {
+    // The row would match no applicant and contribute a silent neutral 1.0 -- which is
+    // exactly how age went unrated on this platform until product V5.
+    const noRange = { factorType: 'AGE' as const, band: '18-30', multiplier: 1 };
+    expect(termLife.safeParse({ ...valid(), ratingTable: [noRange, sumRow] }).success).toBe(false);
+  });
+
+  it('rejects an AGE row whose range ends before it begins', () => {
+    const backwards = { ...ageRow, ageFrom: '40', ageTo: '30' };
+    expect(termLife.safeParse({ ...valid(), ratingTable: [backwards, sumRow] }).success).toBe(false);
   });
 });

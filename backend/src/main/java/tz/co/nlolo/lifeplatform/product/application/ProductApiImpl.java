@@ -116,6 +116,7 @@ public class ProductApiImpl implements ProductApi {
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
         }
         rejectDuplicateRatingFactors(ratingTable);
+        rejectMalformedAgeBands(ratingTable);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -137,7 +138,8 @@ public class ProductApiImpl implements ProductApi {
         productVersionRepository.save(version);
 
         for (RatingFactorInput input : ratingTable) {
-            ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(), input.factorType().name(), input.band(), input.multiplier()));
+            ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
+                input.factorType().name(), input.band(), input.multiplier(), input.ageFrom(), input.ageTo()));
         }
         if (baseRates != null) {
             for (BaseRateInput input : baseRates) {
@@ -247,7 +249,8 @@ public class ProductApiImpl implements ProductApi {
                 SmokerStatus.valueOf(r.getSmokerStatus()), r.getRatePerMille()))
             .toList();
         List<RatingFactorInput> factors = ratingFactorRepository.findByProductVersionId(versionId).stream()
-            .map(f -> new RatingFactorInput(FactorType.valueOf(f.getFactorType()), f.getBand(), f.getMultiplier()))
+            .map(f -> new RatingFactorInput(FactorType.valueOf(f.getFactorType()), f.getBand(),
+                f.getMultiplier(), f.getAgeFrom(), f.getAgeTo()))
             .toList();
         List<BenefitInput> benefits = benefitScheduleEntryRepository.findByProductVersionId(versionId).stream()
             .map(b -> new BenefitInput(BenefitType.valueOf(b.getBenefitType()), b.getCalculationMethod()))
@@ -294,6 +297,52 @@ public class ProductApiImpl implements ProductApi {
         }
     }
 
+    /**
+     * AGE rating factors must carry an age range, and the ranges must not overlap.
+     *
+     * <p>The shape half is also a database CHECK ({@code rating_table_age_bounds_shape}),
+     * checked here so the failure names the offending band instead of surfacing as a
+     * constraint violation. The overlap half exists only here, for the same reason it does
+     * for base rates: a true non-overlap constraint needs an EXCLUDE ... USING gist over an
+     * int4range, which needs btree_gist on every environment, and the rule is cheap to
+     * check where the rows are authored.
+     *
+     * <p>Two AGE bands covering one applicant would make the multiplier depend on which row
+     * the query returned first. That is the same silent-mispricing shape found four times
+     * over on this platform, and it decides an underwriting outcome here, not just a label.
+     */
+    private static void rejectMalformedAgeBands(List<RatingFactorInput> ratingTable) {
+        List<RatingFactorInput> ageBands = ratingTable.stream()
+            .filter(f -> f.factorType() == FactorType.AGE)
+            .toList();
+
+        for (RatingFactorInput f : ageBands) {
+            if (f.ageFrom() == null || f.ageTo() == null) {
+                throw new InvalidProductVersionException("AGE rating factor '" + f.band()
+                    + "' needs an age range -- age is rated by range, not by matching the band text");
+            }
+            if (f.ageFrom() < 0 || f.ageTo() < f.ageFrom()) {
+                throw new InvalidProductVersionException("AGE rating factor '" + f.band()
+                    + "' has an impossible range " + f.ageFrom() + "-" + f.ageTo());
+            }
+        }
+        for (RatingFactorInput a : ageBands) {
+            for (RatingFactorInput b : ageBands) {
+                if (a == b) continue;
+                if (a.ageFrom() <= b.ageTo() && b.ageFrom() <= a.ageTo()) {
+                    throw new InvalidProductVersionException("AGE rating factors " + a.ageFrom() + "-"
+                        + a.ageTo() + " and " + b.ageFrom() + "-" + b.ageTo()
+                        + " overlap -- an applicant in both would be rated by whichever row came back first");
+                }
+            }
+        }
+        // A version that rates on AGE at all should cover the ages it sells to, but nothing
+        // on this platform records a product's minimum or maximum entry age, so there is no
+        // range to check completeness against. An uncovered age resolves to the neutral 1.0
+        // rather than failing, which is the documented contract -- worth revisiting if entry
+        // age limits ever become product data.
+    }
+
     private static void rejectOverlappingAgeBands(List<BaseRateInput> baseRates) {
         for (BaseRateInput a : baseRates) {
             if (a.ageTo() < a.ageFrom()) {
@@ -329,6 +378,27 @@ public class ProductApiImpl implements ProductApi {
                 "No " + factorType + " multiplier for band '" + band + "' on product version " + versionId));
         applied.add(new AppliedFactor(factorType, band, multiplier));
         return multiplier;
+    }
+
+    @Override
+    public BigDecimal resolveAgeMultiplier(UUID productVersionId, int age) {
+        List<RatingFactor> covering = ratingFactorRepository.findAgeBandCovering(productVersionId, age);
+        if (covering.isEmpty()) {
+            // Neutral, exactly as resolveRatingMultiplier is for an unmatched band. This is
+            // also the path every version published before V5 takes: its AGE rows have no
+            // bounds, so they cover nobody and those versions keep rating age the way they
+            // always have, rather than having decisions change underneath them.
+            return BigDecimal.ONE;
+        }
+        if (covering.size() > 1) {
+            // Overlaps are rejected at publish. Reaching here means a version predates that
+            // check or was written around it, and picking one of two would be a silent
+            // mis-rating -- the failure mode this platform has now found four times over.
+            throw new InvalidProductVersionException("Product version " + productVersionId
+                + " has " + covering.size() + " AGE bands covering age " + age
+                + " -- which multiplier applies is undefined");
+        }
+        return covering.get(0).getMultiplier();
     }
 
     @Override

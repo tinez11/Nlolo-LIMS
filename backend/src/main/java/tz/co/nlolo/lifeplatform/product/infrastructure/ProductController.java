@@ -45,7 +45,7 @@ public class ProductController {
     public ResponseEntity<Void> publishVersion(@PathVariable UUID productId, @Valid @RequestBody PublishVersionRequest request,
                                                 @AuthenticationPrincipal Jwt jwt) {
         productApi.publishVersion(productId, request.ifrsMeasurementModel(), request.effectiveDate(), request.retirementDate(),
-            request.ratingTable().stream().map(r -> new ProductApi.RatingFactorInput(r.factorType(), r.band(), r.multiplier())).collect(Collectors.toList()),
+            request.ratingTable().stream().map(r -> new ProductApi.RatingFactorInput(r.factorType(), r.band(), r.multiplier(), r.ageFrom(), r.ageTo())).collect(Collectors.toList()),
             request.benefitSchedule().stream().map(b -> new ProductApi.BenefitInput(b.benefitType(), b.calculationMethod())).collect(Collectors.toList()),
             request.fundDefinitions() != null
                 ? request.fundDefinitions().stream().map(f -> new ProductApi.FundInput(f.fundCode(), f.currentNav())).collect(Collectors.toList())

@@ -34,6 +34,10 @@ async function createGroupLifeProduct(page: import('@playwright/test').Page, cod
   const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
   await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
   await ratingSection.locator('input[placeholder="Band, e.g. 18-30"]').fill('18-30');
+  // AGE is rated by range now: the band text is a label, these two are what the platform
+  // resolves against. Publishing without them is a real 422.
+  await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
+  await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
   await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
   await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
   await ratingSection.locator('input[placeholder="Band, e.g. 18-30"]').nth(1).fill('1000000-5000000');

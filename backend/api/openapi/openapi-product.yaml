@@ -184,6 +184,12 @@ components:
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
         ratingTable:
+          description: >-
+            Multipliers applied on top of the base rate. For factorType AGE, ageFrom and ageTo
+            are REQUIRED and are what the platform rates on -- `band` remains as the
+            human-readable label but is not matched against. Age was previously resolved by
+            exact string equality on `band`, which underwriting could not produce, so age was
+            never rated at all. ageFrom/ageTo must be absent for every other factor type.
           type: array
           items:
             type: object
@@ -191,6 +197,11 @@ components:
               factorType: { type: string, enum: [AGE, OCCUPATION_CLASS, SMOKER_STATUS, SUM_ASSURED_BAND] }
               band: { type: string }
               multiplier: { type: number }
+              ageFrom: { type: [integer, "null"], minimum: 0 }
+              ageTo:
+                description: Inclusive, matching BaseRate.
+                type: [integer, "null"]
+                minimum: 0
         baseRates:
           description: >-
             The rates this version is priced from: the annual rate per 1,000 of sum
@@ -302,6 +313,8 @@ components:
               factorType: { type: string, enum: [AGE, OCCUPATION_CLASS, SMOKER_STATUS, SUM_ASSURED_BAND] }
               band: { type: string }
               multiplier: { type: number }
+              ageFrom: { type: [integer, "null"] }
+              ageTo: { type: [integer, "null"] }
         benefitSchedule:
           type: array
           items:

@@ -14,11 +14,41 @@ import { ISO_DATE_PATTERN } from '@/lib/patterns';
  * already selected before reaching this form).
  */
 
-const ratingFactorRowSchema = z.object({
-  factorType: z.enum(['AGE', 'OCCUPATION_CLASS', 'SMOKER_STATUS', 'SUM_ASSURED_BAND']),
-  band: z.string().trim().min(1, 'Band is required'),
-  multiplier: z.coerce.number(),
-});
+/**
+ * `ageFrom`/`ageTo` are kept as strings in the form and coerced on submit, the same split
+ * the file header already describes for `multiplier`: an empty numeric input is `''`, and
+ * `z.coerce.number()` would silently turn that into 0 — which for an age bound is a real
+ * value, not an absence.
+ */
+const ratingFactorRowSchema = z
+  .object({
+    factorType: z.enum(['AGE', 'OCCUPATION_CLASS', 'SMOKER_STATUS', 'SUM_ASSURED_BAND']),
+    band: z.string().trim().min(1, 'Band is required'),
+    multiplier: z.coerce.number(),
+    // Optional on the row, required for AGE by the refinement below: a SUM_ASSURED_BAND or
+    // OCCUPATION_CLASS row has no age bounds and the backend's CHECK refuses them there, so
+    // demanding the keys on every row would be demanding fields that must stay empty.
+    ageFrom: z.string().trim().optional(),
+    ageTo: z.string().trim().optional(),
+  })
+  .superRefine((row, ctx) => {
+    // Mirrors ProductApiImpl.rejectMalformedAgeBands and the rating_table_age_bounds_shape
+    // CHECK. Age is rated by RANGE now -- an AGE row without one matches nobody and would
+    // contribute a silent neutral 1.0, which is the defect this whole change removes.
+    if (row.factorType !== 'AGE') return;
+    const from = Number(row.ageFrom);
+    const to = Number(row.ageTo);
+    if (!row.ageFrom || !row.ageTo || Number.isNaN(from) || Number.isNaN(to)) {
+      ctx.addIssue({ code: 'custom', path: ['ageFrom'], message: 'An AGE factor needs a from and to age' });
+      return;
+    }
+    if (from < 0) {
+      ctx.addIssue({ code: 'custom', path: ['ageFrom'], message: 'Age cannot be negative' });
+    }
+    if (to < from) {
+      ctx.addIssue({ code: 'custom', path: ['ageTo'], message: 'To age must not be below from age' });
+    }
+  });
 
 const benefitRowSchema = z.object({
   benefitType: z.enum(['DEATH', 'DISABILITY', 'CRITICAL_ILLNESS', 'MATURITY', 'SURRENDER']),
@@ -86,7 +116,7 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
 }
 
 export function blankRatingFactorRow(): PublishVersionFormInput['ratingTable'][number] {
-  return { factorType: 'AGE', band: '', multiplier: 1 };
+  return { factorType: 'AGE', band: '', multiplier: 1, ageFrom: '', ageTo: '' };
 }
 
 export function blankBenefitRow(): PublishVersionFormInput['benefitSchedule'][number] {
@@ -102,7 +132,20 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
     ifrsMeasurementModel: values.ifrsMeasurementModel,
     effectiveDate: values.effectiveDate,
     retirementDate: values.retirementDate === '' ? null : values.retirementDate,
-    ratingTable: values.ratingTable,
+    // Age bounds go on the wire as numbers for AGE rows and are OMITTED for every other
+    // factor type -- the backend's CHECK refuses bounds on a non-AGE row, and sending 0 or
+    // null-shaped strings would either fail that or record a value nothing reads.
+    ratingTable: values.ratingTable.map((row) =>
+      row.factorType === 'AGE'
+        ? {
+            factorType: row.factorType,
+            band: row.band,
+            multiplier: row.multiplier,
+            ageFrom: Number(row.ageFrom),
+            ageTo: Number(row.ageTo),
+          }
+        : { factorType: row.factorType, band: row.band, multiplier: row.multiplier },
+    ),
     benefitSchedule: values.benefitSchedule,
     fundDefinitions: values.fundDefinitions,
   };
