@@ -25,7 +25,7 @@ import { OnboardAgentPage } from '@/features/distribution/OnboardAgentPage';
 import { ChartOfAccountsPage } from '@/features/finaccounting/ChartOfAccountsPage';
 import { GlPostingDetailPage } from '@/features/finaccounting/GlPostingDetailPage';
 import { GlPostingsPage } from '@/features/finaccounting/GlPostingsPage';
-import { KycReviewPage } from '@/features/party/KycReviewPage';
+import { ClientsPage } from '@/features/party/ClientsPage';
 import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
 import { PartyDetailPage } from '@/features/party/PartyDetailPage';
 import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
@@ -62,6 +62,7 @@ import { UnderwritingQueuePage } from '@/features/underwriting/UnderwritingQueue
  */
 
 type NavGroupId =
+  | 'clients'
   | 'new-business'
   | 'policies-claims'
   | 'finance'
@@ -122,6 +123,12 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     // Gating is per GROUP, so a group must be entirely gated or entirely open.
     // That constrains the shape: the five finance-gated screens cannot be mixed
     // in with the five open ones however neatly the flow would read.
+    // FIRST, and its own group rather than an item under New business. Clients are
+    // the entity everything else hangs off -- policies, claims, KYC, beneficiary
+    // exposure and documents all belong to a person -- and this screen is the way
+    // into all of them. Filing the customer record under acquisition is what made
+    // it a KYC queue rather than a register for as long as it was one.
+    { id: 'clients', label: 'Clients' },
     { id: 'new-business', label: 'New business' },
     { id: 'policies-claims', label: 'Policies & claims' },
     {
@@ -189,10 +196,14 @@ const STAFF_SCREENS: Screen[] = [
   // Order WITHIN a group is manifest order, so these two are declared in the
   // order the work happens: a client is identified and KYC-verified before their
   // risk is assessed.
+  // The path stays `kyc`: the badge, existing bookmarks and the e2e suite all point
+  // at it, and renaming a route to match a label is churn that buys nothing a
+  // reader can see. The badge still counts parties awaiting KYC, so the work queue
+  // survives the screen becoming a register.
   {
     path: 'kyc',
-    element: <KycReviewPage />,
-    reach: { group: 'new-business', label: 'KYC review', icon: UserCheck, badge: 'kyc-pending' },
+    element: <ClientsPage />,
+    reach: { group: 'clients', label: 'Clients', icon: UserCheck, badge: 'kyc-pending' },
   },
   // A party PENDING KYC with nothing referencing it yet is invisible to staff
   // except through the KYC queue above, which is why that queue is a real list
@@ -283,6 +294,22 @@ const AGENTS_SCREENS: Screen[] = [
     reach: { group: 'my-business', label: 'Claims', icon: ScrollText },
   },
   { path: 'claims/:claimId', element: <ClaimDetailPage />, reach: 'drill-in' },
+  // Clients an agent REGISTERED, which is not the same set as their book: a client
+  // they registered may be written by another agent, and their book contains
+  // policyholders they never registered. The scoping is the server's -- GET /parties
+  // force-scopes an agents-realm token to its own `createdBy` -- so this screen
+  // cannot widen it by passing the wrong prop.
+  {
+    path: 'clients',
+    element: (
+      <ClientsPage
+        title="My clients"
+        description="Everyone you have registered. Open one for their policies, claims and documents."
+      />
+    ),
+    reach: { group: 'my-business', label: 'My clients', icon: UserCheck },
+  },
+  { path: 'parties/:partyId', element: <PartyDetailPage realm="agents" />, reach: 'drill-in' },
   {
     path: 'customers/new',
     element: <OnboardCustomerPage />,

@@ -27,6 +27,8 @@ import type { components as UnderwritingComponents } from '@/types/api/underwrit
 export type PolicyView = PolicyComponents['schemas']['PolicyView'];
 export type PolicyStatus = NonNullable<PolicyView['status']>;
 export type BeneficiaryInput = PolicyComponents['schemas']['BeneficiaryInput'];
+/** The reverse direction: a policy that names some party as beneficiary. */
+export type BeneficiaryOfView = PolicyComponents['schemas']['BeneficiaryOfView'];
 export type CoverageStatusView = PolicyComponents['schemas']['CoverageStatusView'];
 
 export type InvoiceView = BillingComponents['schemas']['InvoiceView'];
@@ -201,6 +203,9 @@ export type SuspendPolicyRequest = PolicyComponents['schemas']['SuspendPolicyReq
  * on the wire (the spec declares no `required` list).
  */
 export type PartyView = PartyComponents['schemas']['PartyView'];
+/** The full record from `GET /parties/{id}`. Deliberately not what the list returns. */
+export type PartyDetailView = PartyComponents['schemas']['PartyDetailView'];
+export type PartyDocumentView = PartyComponents['schemas']['PartyDocumentView'];
 export type KycStatus = NonNullable<PartyView['kycStatus']>;
 export const KYC_STATUSES: readonly KycStatus[] = ['PENDING', 'VERIFIED', 'REJECTED'];
 export type KycEvidenceUploadResponse = PartyComponents['schemas']['KycEvidenceUploadResponse'];

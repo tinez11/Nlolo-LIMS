@@ -2,6 +2,7 @@ import { get, post, put } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   BeneficiaryInput,
+  BeneficiaryOfView,
   CoverageStatusView,
   InvoiceView,
   LoanView,
@@ -172,4 +173,23 @@ export function resumePolicy(policyNumber: string): Promise<PolicyView> {
  */
 export function reinstatePolicy(policyNumber: string): Promise<PolicyView> {
   return post<PolicyView>(`/policies/${encodeURIComponent(policyNumber)}/reinstate`);
+}
+
+/**
+ * `GET /beneficiaries?partyId=` -- "which policies pay out to this person".
+ *
+ * The reverse of a policy's own beneficiary list, and previously unanswerable:
+ * beneficiary rows were only ever readable by policy number, so a person's
+ * exposure as a beneficiary was stored and unreachable.
+ *
+ * Its own resource rather than `/policies/beneficiaries`, which would sit under
+ * `GET /policies/{policyNumber}` and depend on a routing precedence rule.
+ *
+ * Only ACTIVE rows: replacing a policy's beneficiaries deactivates the old ones
+ * rather than deleting them, and that history is a different question. An
+ * agents-realm caller may ask only about a client it registered -- a 403
+ * otherwise, unlike the underwriting list's empty page.
+ */
+export function beneficiaryOf(partyId: string): Promise<BeneficiaryOfView[]> {
+  return get<BeneficiaryOfView[]>('/beneficiaries', { params: { partyId } });
 }

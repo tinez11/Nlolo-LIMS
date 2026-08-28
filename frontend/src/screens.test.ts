@@ -89,7 +89,10 @@ describe('screen manifest', () => {
     // then finance and distribution settle up -- and Configuration is last
     // because authoring a product is rare set-up, not daily work. The sidebar's
     // order is NAV_GROUPS' order, so reordering screens cannot reshuffle it.
+    // Clients leads: they are the entity everything else hangs off, and this screen
+    // is the way into a person's policies, claims, KYC and documents.
     expect(navFor('staff', superuser).map((g) => g.label)).toEqual([
+      'Clients',
       'New business',
       'Policies & claims',
       'Finance',
@@ -106,6 +109,26 @@ describe('screen manifest', () => {
     const withoutFinance = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
     const items = navFor('staff', withoutFinance).flatMap((g) => g.items.map((i) => i.label));
     expect(items).toContain('Event journal');
+  });
+
+  it('gives both realms that can read clients a way to reach them', () => {
+    // `GET /parties` is REALM_STAFF or REALM_AGENTS, and force-scopes an agent to
+    // parties it registered. So both realms get an entry, and the Clients group is
+    // ungated -- the same "nav must not be stricter than the endpoint" rule the
+    // Event journal broke when it was first filed under a finance-gated group.
+    const withoutFinance = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
+    expect(navFor('staff', withoutFinance).flatMap((g) => g.items.map((i) => i.label)))
+      .toContain('Clients');
+    expect(navFor('agents', superuser).flatMap((g) => g.items.map((i) => i.label)))
+      .toContain('My clients');
+  });
+
+  it('lets both realms drill into a client record', () => {
+    // The register navigates to `../parties/{id}` relative to itself, so the agents
+    // realm needs its own `parties/:partyId` route or that link is a 404 there.
+    for (const realm of ['staff', 'agents'] as const) {
+      expect(SCREENS[realm].map((s) => s.path)).toContain('parties/:partyId');
+    }
   });
 
   it('points the Agents nav item at a list, not at the create form', () => {
@@ -126,6 +149,10 @@ describe('screen manifest', () => {
     // Three, because only three are expressible: one status filter at a time and
     // no analytics endpoint anywhere. Policies deliberately has none -- a policy
     // in force is not work waiting.
-    expect(badged.sort()).toEqual(['Claims', 'KYC review', 'Underwriting']);
+    //
+    // "Clients" carries the KYC-pending count. The screen became a register rather
+    // than a queue, but the count is still work waiting, and the badge is what keeps
+    // that queue one click away now that the default filter shows everyone.
+    expect(badged.sort()).toEqual(['Claims', 'Clients', 'Underwriting']);
   });
 });

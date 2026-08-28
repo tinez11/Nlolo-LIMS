@@ -43,6 +43,10 @@ export function PoliciesPage({
       : undefined;
   const qParam = params.get('q') ?? '';
   const [qInput, setQInput] = useState(qParam);
+  // Set by the client record's "View all" link, so a client with fifty policies has
+  // somewhere real to send the reader. Not exposed as a control on this page: nobody
+  // types a party UUID, they arrive here holding one.
+  const policyholderPartyId = params.get('policyholderPartyId') ?? '';
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
 
   const list = usePolicyStore((s) => s.list);
@@ -52,10 +56,11 @@ export function PoliciesPage({
     void loadList({
       ...(status ? { status } : {}),
       ...(qParam ? { q: qParam } : {}),
+      ...(policyholderPartyId ? { policyholderPartyId } : {}),
       page,
       pageSize: DEFAULT_PAGE_SIZE,
     });
-  }, [loadList, status, qParam, page]);
+  }, [loadList, status, qParam, policyholderPartyId, page]);
 
   // Keeps the input in sync if the URL changes from outside this input (back
   // button, a status-chip click that also clears q via `update` below).

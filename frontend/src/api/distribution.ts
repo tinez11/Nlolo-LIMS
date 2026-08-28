@@ -26,6 +26,12 @@ export interface AgentSearchParams {
   /** Case-insensitive substring match against LICENCE NUMBER. */
   q?: string;
   status?: LicenseStatus;
+  /**
+   * "Is this client also an agent." Supplying it IGNORES `q` and `status`
+   * server-side -- looking up one party is a different question from searching the
+   * register, and combining them would let a caller believe it had searched.
+   */
+  partyId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -51,6 +57,7 @@ export async function listAgents(params: AgentSearchParams = {}): Promise<Page<A
     params: {
       ...(params.q ? { q: params.q } : {}),
       ...(params.status ? { status: params.status } : {}),
+      ...(params.partyId ? { partyId: params.partyId } : {}),
       page,
       pageSize,
     },

@@ -3,6 +3,8 @@ import type {
   KycEvidenceUploadResponse,
   KycStatus,
   Page,
+  PartyDetailView,
+  PartyDocumentView,
   PartyView,
   RegisterCorporateRequest,
   RegisterIndividualRequest,
@@ -20,9 +22,36 @@ import type {
  * invisible to staff, with no way to find it to review at all.
  */
 
-/** `GET /parties/{partyId}` -- staff/agents/own-customer only. */
-export function getParty(partyId: string): Promise<PartyView> {
-  return get<PartyView>(`/parties/${encodeURIComponent(partyId)}`);
+/**
+ * `GET /parties/{partyId}` -- the FULL record, not the four-field `PartyView` the
+ * list returns. Date of birth, registration number, phone, email, KYC decision
+ * time and who registered them: all stored since the first migration, and until
+ * this returned `PartyDetailView` none of it was readable through any endpoint.
+ *
+ * Object-level scoping applies to both non-staff realms and is enforced
+ * server-side: a customer may read only itself, an agent only a client it
+ * registered. Either refusal is a real 403, so a UI must be prepared to render
+ * one rather than assuming a party it can see in a list it can also open.
+ */
+export function getParty(partyId: string): Promise<PartyDetailView> {
+  return get<PartyDetailView>(`/parties/${encodeURIComponent(partyId)}`);
+}
+
+/**
+ * `GET /parties/{partyId}/documents` -- metadata only, newest first.
+ *
+ * Lives on the party, not on the document module: authorizing a document means
+ * asking its owning aggregate, and `document` cannot depend back on `party`
+ * without a module cycle -- which is also why the generic document endpoints are
+ * staff-only and this one can serve agents.
+ *
+ * Covers KYC evidence and anything else filed under `party:{id}`. Evidence
+ * attached to the client's CLAIMS lives under `claim:{id}` and is fetched per
+ * claim from `GET /claims/{claimId}/evidence`; this endpoint deliberately does
+ * not reach across to it, so a documents panel that wants both must compose them.
+ */
+export function listPartyDocuments(partyId: string): Promise<PartyDocumentView[]> {
+  return get<PartyDocumentView[]>(`/parties/${encodeURIComponent(partyId)}/documents`);
 }
 
 export interface PartySearchParams {

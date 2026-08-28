@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   getParty,
+  listPartyDocuments,
   registerCorporate,
   registerIndividual,
   searchParties,
@@ -12,6 +13,8 @@ import type {
   KycEvidenceUploadResponse,
   KycStatus,
   Page,
+  PartyDetailView,
+  PartyDocumentView,
   PartyView,
   RegisterCorporateRequest,
   RegisterIndividualRequest,
@@ -31,7 +34,14 @@ interface PartyState {
   // I registered" for an agent) on screen at a time -- same shape as
   // policyStore's/claimStore's own `list`.
   list: Resource<Page<PartyView>>;
-  detail: Keyed<PartyView>;
+  // PartyDetailView, not PartyView: `GET /parties/{id}` returns the full record
+  // while the list stays four fields, so these two are deliberately different
+  // types for the same entity.
+  detail: Keyed<PartyDetailView>;
+  // Its own slot rather than folded into `detail`: the client page's panels load
+  // in parallel, so a slow or failing documents read must not blank the identity
+  // panel next to it.
+  documents: Keyed<PartyDocumentView[]>;
   // Keyed by partyId, separately from `detail` and from each other -- same
   // shape as policyStore's suspending/resuming/reinstating: two distinct
   // mutations against the same entity.
@@ -47,6 +57,7 @@ interface PartyState {
 
   loadList: (params: PartySearchParams) => Promise<void>;
   loadParty: (partyId: string) => Promise<void>;
+  loadPartyDocuments: (partyId: string) => Promise<void>;
   uploadKycEvidence: (partyId: string, file: File) => Promise<void>;
   resetUploadKycEvidence: (partyId: string) => void;
   submitKyc: (partyId: string, status: KycStatus, evidenceDocumentRef: string) => Promise<void>;
@@ -60,6 +71,7 @@ interface PartyState {
 export const usePartyStore = create<PartyState>((set, getState) => ({
   list: idle(),
   detail: {},
+  documents: {},
   uploadingKycEvidence: {},
   submittingKyc: {},
   registeringIndividual: idle(),
@@ -80,9 +92,17 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
   loadParty: (partyId) =>
     track(
       `party.detail.${partyId}`,
-      getState().detail[partyId] ?? idle<PartyView>(),
+      getState().detail[partyId] ?? idle<PartyDetailView>(),
       (next) => set((s) => ({ detail: { ...s.detail, [partyId]: next } })),
       () => getParty(partyId),
+    ),
+
+  loadPartyDocuments: (partyId) =>
+    track(
+      `party.documents.${partyId}`,
+      getState().documents[partyId] ?? idle<PartyDocumentView[]>(),
+      (next) => set((s) => ({ documents: { ...s.documents, [partyId]: next } })),
+      () => listPartyDocuments(partyId),
     ),
 
   uploadKycEvidence: (partyId, file) =>
@@ -145,7 +165,10 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
 
 /** Selectors, so components never index a possibly-absent key by hand. */
 export const selectPartyList = (s: PartyState) => s.list;
-export const selectParty = (partyId: string) => (s: PartyState) => s.detail[partyId] ?? idle<PartyView>();
+export const selectParty = (partyId: string) => (s: PartyState) =>
+  s.detail[partyId] ?? idle<PartyDetailView>();
+export const selectPartyDocuments = (partyId: string) => (s: PartyState) =>
+  s.documents[partyId] ?? idle<PartyDocumentView[]>();
 export const selectUploadingKycEvidence = (partyId: string) => (s: PartyState) =>
   s.uploadingKycEvidence[partyId] ?? idle<KycEvidenceUploadResponse>();
 export const selectSubmittingKyc = (partyId: string) => (s: PartyState) =>

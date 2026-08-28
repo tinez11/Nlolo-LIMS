@@ -17,6 +17,8 @@ import type { OpenCaseRequest, Page, SubmitAssessmentRequest, UnderwritingCaseSt
 
 export interface UnderwritingListParams {
   status?: UnderwritingCaseStatus;
+  /** One applicant, for a client's underwriting panel. */
+  applicantPartyId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -24,7 +26,15 @@ export interface UnderwritingListParams {
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-/** `GET /underwriting/cases` -- agent or staff, tenant-scoped, no free-text search. */
+/**
+ * `GET /underwriting/cases` -- agent or staff, tenant-scoped, no free-text search.
+ *
+ * An agents-realm caller is force-scoped server-side to applicants it registered,
+ * and cannot widen that by passing `applicantPartyId` for someone else's client --
+ * that returns an empty page, not a 403. So an empty underwriting panel on an
+ * agent's screen means "none among your clients", which is not the same statement
+ * the staff screen makes.
+ */
 export async function listCases(params: UnderwritingListParams = {}): Promise<Page<UnderwritingCaseView>> {
   const page = params.page ?? 0;
   const pageSize = Math.min(params.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
@@ -35,6 +45,7 @@ export async function listCases(params: UnderwritingListParams = {}): Promise<Pa
   }>('/underwriting/cases', {
     params: {
       ...(params.status ? { status: params.status } : {}),
+      ...(params.applicantPartyId ? { applicantPartyId: params.applicantPartyId } : {}),
       page,
       pageSize,
     },
