@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface PartyRepository extends JpaRepository<Party, UUID> {
@@ -35,4 +36,16 @@ public interface PartyRepository extends JpaRepository<Party, UUID> {
         + "AND (:q IS NULL OR LOWER(p.displayName) LIKE LOWER(CONCAT('%', :q, '%')))")
     Page<Party> search(@Param("tenantId") UUID tenantId, @Param("kycStatus") KycStatus kycStatus,
                         @Param("createdBy") String createdBy, @Param("q") String q, Pageable pageable);
+
+    /**
+     * Ids only, for another module to scope its own query by. Projected rather than returning
+     * whole {@code Party} rows: the caller needs a set to filter on, and loading every column
+     * (including the PII this module exists to guard) to read one id back would be the wrong
+     * trade.
+     */
+    @Query("SELECT p.partyId FROM Party p WHERE p.tenantId = :tenantId AND p.createdBy = :createdBy")
+    Set<UUID> findPartyIdsByTenantIdAndCreatedBy(@Param("tenantId") UUID tenantId,
+                                                   @Param("createdBy") String createdBy);
+
+    boolean existsByPartyIdAndTenantIdAndCreatedBy(UUID partyId, UUID tenantId, String createdBy);
 }

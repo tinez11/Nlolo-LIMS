@@ -165,10 +165,10 @@ class DistributionApiIntegrationTest {
         }
         TenantContext.set(tenantId);
 
-        Page<AgentView> firstPage = distributionApi.listAgents(null, null, PageRequest.of(0, 2));
+        Page<AgentView> firstPage = distributionApi.listAgents(null, null, null, PageRequest.of(0, 2));
         assertThat(firstPage.getTotalElements()).isEqualTo(3);
         assertThat(firstPage.getContent()).hasSize(2);
-        assertThat(distributionApi.listAgents(null, null, PageRequest.of(1, 2)).getContent()).hasSize(1);
+        assertThat(distributionApi.listAgents(null, null, null, PageRequest.of(1, 2)).getContent()).hasSize(1);
     }
 
     /** RLS is the backstop; the query is tenant-scoped in its own right. */
@@ -181,7 +181,7 @@ class DistributionApiIntegrationTest {
             partyA.partyId(), "LIC-ISO-A", LocalDate.now().plusYears(1), null), "staff-1");
 
         TenantContext.set(tenantB);
-        assertThat(distributionApi.listAgents(null, null, PageRequest.of(0, 20)).getTotalElements()).isZero();
+        assertThat(distributionApi.listAgents(null, null, null, PageRequest.of(0, 20)).getTotalElements()).isZero();
     }
 
     /**
@@ -200,11 +200,11 @@ class DistributionApiIntegrationTest {
             two.partyId(), "LIC-SOUTH-002", LocalDate.now().plusYears(1), null), "staff-1");
         TenantContext.set(tenantId);
 
-        assertThat(distributionApi.listAgents("north", null, PageRequest.of(0, 20)).getContent())
+        assertThat(distributionApi.listAgents("north", null, null, PageRequest.of(0, 20)).getContent())
             .extracting(AgentView::licenseNumber).containsExactly("LIC-NORTH-001");
-        assertThat(distributionApi.listAgents("SOUTH", null, PageRequest.of(0, 20)).getContent())
+        assertThat(distributionApi.listAgents("SOUTH", null, null, PageRequest.of(0, 20)).getContent())
             .extracting(AgentView::licenseNumber).containsExactly("LIC-SOUTH-002");
-        assertThat(distributionApi.listAgents("LIC-", null, PageRequest.of(0, 20)).getTotalElements()).isEqualTo(2);
+        assertThat(distributionApi.listAgents("LIC-", null, null, PageRequest.of(0, 20)).getTotalElements()).isEqualTo(2);
     }
 
     @Test
@@ -219,12 +219,12 @@ class DistributionApiIntegrationTest {
         distributionApi.suspendAgent(toSuspend.agentId(), "staff-1");
         TenantContext.set(tenantId);
 
-        assertThat(distributionApi.listAgents(null, LicenseStatus.ACTIVE, PageRequest.of(0, 20)).getContent())
+        assertThat(distributionApi.listAgents(null, LicenseStatus.ACTIVE, null, PageRequest.of(0, 20)).getContent())
             .extracting(AgentView::licenseNumber).containsExactly("LIC-ST-ACTIVE");
-        assertThat(distributionApi.listAgents(null, LicenseStatus.SUSPENDED, PageRequest.of(0, 20)).getContent())
+        assertThat(distributionApi.listAgents(null, LicenseStatus.SUSPENDED, null, PageRequest.of(0, 20)).getContent())
             .extracting(AgentView::licenseNumber).containsExactly("LIC-ST-SUSPENDED");
         // Both filters compose -- the JPQL search branch takes the status too.
-        assertThat(distributionApi.listAgents("ST-", LicenseStatus.ACTIVE, PageRequest.of(0, 20)).getContent())
+        assertThat(distributionApi.listAgents("ST-", LicenseStatus.ACTIVE, null, PageRequest.of(0, 20)).getContent())
             .extracting(AgentView::licenseNumber).containsExactly("LIC-ST-ACTIVE");
     }
 
@@ -368,6 +368,57 @@ class DistributionApiIntegrationTest {
         // treat this as "not an agent here", not accidentally find tenant A's row.
         TenantContext.set(tenantB);
         assertThat(distributionApi.resolveAgentTeam(partyInTenantA.partyId())).isEmpty();
+    }
+
+    /**
+     * "Is this client also an agent" — the client register's question, asked of the agent list.
+     * A party may hold more than one agent record, which is why this filters a list rather than
+     * returning one, and why the assertion below counts rather than fetching.
+     */
+    @Test
+    void listAgentsByPartyIdFindsTheAgentRecordsHeldByOneParty() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView agentParty = registerVerifiedParty(tenantId, "AGT-BYPARTY-01");
+        PartyView unrelated = registerVerifiedParty(tenantId, "AGT-BYPARTY-02");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            agentParty.partyId(), "LIC-BYPARTY-01", LocalDate.now().plusYears(1), null), "staff-1");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            unrelated.partyId(), "LIC-BYPARTY-02", LocalDate.now().plusYears(1), null), "staff-1");
+
+        assertThat(distributionApi.listAgents(null, null, agentParty.partyId(), PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber)
+            .containsExactly("LIC-BYPARTY-01");
+    }
+
+    @Test
+    void listAgentsByPartyIdIsEmptyForAClientWhoIsNotAnAgent() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView plainClient = registerVerifiedParty(tenantId, "AGT-BYPARTY-03");
+        // Someone IS an agent in this tenant, so an empty result cannot come from an empty table.
+        PartyView realAgent = registerVerifiedParty(tenantId, "AGT-BYPARTY-04");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            realAgent.partyId(), "LIC-BYPARTY-04", LocalDate.now().plusYears(1), null), "staff-1");
+
+        assertThat(distributionApi.listAgents(null, null, plainClient.partyId(), PageRequest.of(0, 20)))
+            .isEmpty();
+    }
+
+    /**
+     * partyId deliberately ignores q and status. Combining them would let a caller believe it had
+     * searched the register when it had only looked up one party, so this pins the documented
+     * behaviour rather than leaving it to be discovered.
+     */
+    @Test
+    void listAgentsByPartyIdIgnoresTheSearchAndStatusFilters() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView agentParty = registerVerifiedParty(tenantId, "AGT-BYPARTY-05");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            agentParty.partyId(), "LIC-BYPARTY-05", LocalDate.now().plusYears(1), null), "staff-1");
+
+        assertThat(distributionApi.listAgents("NO-SUCH-LICENCE", LicenseStatus.SUSPENDED,
+                agentParty.partyId(), PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber)
+            .containsExactly("LIC-BYPARTY-05");
     }
 
     // ---- createCommissionPlan -----------------------------------------------------------------

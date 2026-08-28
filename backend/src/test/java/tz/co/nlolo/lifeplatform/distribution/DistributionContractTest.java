@@ -124,6 +124,7 @@ class DistributionContractTest {
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",

@@ -34,6 +34,7 @@ import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -205,10 +206,19 @@ public class DistributionApiImpl implements DistributionApi {
      * only where `q` needs a LIKE, derived queries otherwise.
      */
     @Override
-    public Page<AgentView> listAgents(String q, LicenseStatus status, Pageable pageable) {
+    public Page<AgentView> listAgents(String q, LicenseStatus status, UUID partyId, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<AgentProfile> page;
-        if (q != null && !q.isBlank()) {
+        if (partyId != null) {
+            // Reuses the lookup resolveAgentTeam already relies on rather than adding a paged query
+            // for it: a party holds at most a handful of agent records, so paging in memory over
+            // that list is honest about the size instead of pretending it needs a database page.
+            // The other filters are ignored on this branch on purpose -- "is this party an agent"
+            // is a different question from "search the agent register", and combining them would
+            // invite a caller to think it had searched when it had not.
+            List<AgentProfile> profiles = agentProfileRepository.findByTenantIdAndPartyId(tenantId, partyId);
+            page = new PageImpl<>(profiles, pageable, profiles.size());
+        } else if (q != null && !q.isBlank()) {
             page = agentProfileRepository.search(tenantId, q.trim(), status, pageable);
         } else if (status != null) {
             page = agentProfileRepository.findByTenantIdAndLicenseStatus(tenantId, status, pageable);

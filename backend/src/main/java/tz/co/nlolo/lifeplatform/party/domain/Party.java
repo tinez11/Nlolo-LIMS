@@ -125,4 +125,15 @@ public class Party {
     public String getDisplayName() { return displayName; }
     public KycStatus getKycStatus() { return kycStatus; }
     public String getRegistrationNumber() { return registrationNumber; }
+
+    // Read by PartyApiImpl.getPartyDetail alone. These columns have been stored since V1 and were
+    // simply never exposed -- PartyView carries four fields, so a registered date of birth, phone
+    // number or email could not be read back through any endpoint on the platform.
+    public LocalDate getDateOfBirth() { return dateOfBirth; }
+    public String getPhoneNumber() { return phoneNumber; }
+    public String getEmail() { return email; }
+    public Instant getKycVerifiedAt() { return kycVerifiedAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    /** The JWT subject that registered this party -- what the agents realm is scoped on. */
+    public String getCreatedBy() { return createdBy; }
 }

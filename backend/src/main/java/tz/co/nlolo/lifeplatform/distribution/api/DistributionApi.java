@@ -36,8 +36,14 @@ public interface DistributionApi {
      * lives in `party`, reached through `partyId` -- and resolving it would make
      * distribution read another context's data to fill a column.
      */
+    /**
+     * @param partyId narrows to the agent record(s) belonging to one party, answering "is this
+     *                client also an agent" for the client register. Null means no filter. A party
+     *                may hold more than one agent record, which is why this is a filter on a list
+     *                rather than a lookup returning one.
+     */
     org.springframework.data.domain.Page<AgentView> listAgents(
-        String q, LicenseStatus status, org.springframework.data.domain.Pageable pageable);
+        String q, LicenseStatus status, UUID partyId, org.springframework.data.domain.Pageable pageable);
 
     /**
      * Resolves {@code partyId}'s own object-level read scope over agent-related data elsewhere on

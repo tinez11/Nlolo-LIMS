@@ -120,6 +120,7 @@ class ReinsuranceContractTest {
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",

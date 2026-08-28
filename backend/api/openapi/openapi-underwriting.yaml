@@ -17,6 +17,11 @@ paths:
   /underwriting/cases:
     get:
       summary: List underwriting cases for the current tenant
+      description: >-
+        An agents-realm token is force-scoped to applicants it registered; it cannot broaden the
+        result by supplying its own applicantPartyId. Until the client-register work this endpoint
+        applied no agent scoping at all, so any agents-realm token could list every case in the
+        tenant. Staff see the whole tenant.
       security:
         - agentsAuth: [agent]
         - staffAuth: []
@@ -24,6 +29,10 @@ paths:
         - name: status
           in: query
           schema: { type: string, enum: [OPEN, IN_REVIEW, DECIDED] }
+        - name: applicantPartyId
+          in: query
+          description: Narrows to one applicant, for a client's underwriting panel.
+          schema: { type: string, format: uuid }
         - name: page
           in: query
           schema: { type: integer, default: 0 }

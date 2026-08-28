@@ -23,6 +23,7 @@ import java.time.Period;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -155,11 +156,21 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     }
 
     @Override
-    public Page<UnderwritingCaseView> listCases(UnderwritingCaseStatus status, Pageable pageable) {
+    public Page<UnderwritingCaseView> listCases(UnderwritingCaseStatus status, UUID applicantPartyId,
+                                                 Set<UUID> applicantPartyIds, Pageable pageable) {
         UUID tenantId = TenantContext.get();
-        Page<UnderwritingCase> page = status != null
-            ? underwritingCaseRepository.findByTenantIdAndStatus(tenantId, status.name(), pageable)
-            : underwritingCaseRepository.findByTenantId(tenantId, pageable);
+        Page<UnderwritingCase> page;
+        // The two pre-existing derived-query paths stay untouched for the common staff case (no
+        // applicant filter, no agent scope) -- only a caller that actually needs one of the new
+        // dimensions routes through `search`. Same reasoning as ClaimsApiImpl.searchClaims.
+        if (applicantPartyId != null || applicantPartyIds != null) {
+            page = underwritingCaseRepository.search(tenantId, status != null ? status.name() : null,
+                applicantPartyId, applicantPartyIds, pageable);
+        } else if (status != null) {
+            page = underwritingCaseRepository.findByTenantIdAndStatus(tenantId, status.name(), pageable);
+        } else {
+            page = underwritingCaseRepository.findByTenantId(tenantId, pageable);
+        }
         return page.map(this::toView);
     }
 

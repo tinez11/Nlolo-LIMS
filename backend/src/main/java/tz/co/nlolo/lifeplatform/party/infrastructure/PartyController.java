@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -31,6 +32,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -66,15 +68,38 @@ public class PartyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
+    /**
+     * The full party record -- {@link PartyDetailView}, not the four-field {@link PartyView} the
+     * list returns. See {@code PartyApi.getPartyDetail} for why they are separate reads.
+     *
+     * <p>Object-level authorization (docs/04-api-contracts.md §3), now enforced for BOTH
+     * non-staff realms:
+     *
+     * <ul>
+     *   <li>a customers-realm token may read only the party matching its own {@code party_id};
+     *   <li>an agents-realm token may read only a party IT registered -- {@code createdBy} equal to
+     *       its own JWT subject.
+     * </ul>
+     *
+     * <p>The agent half was carried as an explicit deferral since M1 ("fine-grained
+     * agency-hierarchy/book-of-business scoping needs agent/policy data that doesn't exist until
+     * later milestones"). That data exists now, and this endpoint returning a date of birth, a
+     * phone number and an email address is what made the deferral untenable: realm-role-only
+     * scoping would have let any agent read the PII of every client in the tenant.
+     *
+     * <p>Scoped on {@code createdBy} rather than the agent's book, because the two are different
+     * sets: an agent's hierarchy team may hold policies for people they never registered, and a
+     * client they registered may be written by another agent. Registration is the relationship the
+     * agent is accountable for, and it is what {@code GET /parties} already force-scopes on, so the
+     * list and the detail agree on who "my clients" are instead of disagreeing at the drill-in.
+     *
+     * <p>Refused with {@link AccessDeniedException} -> 403, matching the customer branch rather
+     * than masking the party as a 404. Existence is not the secret here; the PII is.
+     */
     @GetMapping("/parties/{partyId}")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
-    public ResponseEntity<PartyView> getParty(@PathVariable UUID partyId, @AuthenticationPrincipal Jwt jwt,
+    public ResponseEntity<PartyDetailView> getParty(@PathVariable UUID partyId, @AuthenticationPrincipal Jwt jwt,
                                                Authentication authentication) {
-        // Object-level authorization (docs/04-api-contracts.md §3): a customers-realm
-        // token may only read the party matching its own party_id claim. Agents/staff
-        // are scoped by realm role alone at M1 -- fine-grained agency-hierarchy/
-        // book-of-business scoping needs agent/policy data that doesn't exist until
-        // later milestones, and is explicitly deferred, not silently skipped.
         boolean isCustomer = authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
             .anyMatch("ROLE_REALM_CUSTOMERS"::equals);
@@ -84,7 +109,16 @@ public class PartyController {
                 throw new AccessDeniedException("Access denied: customer may only read their own party");
             }
         }
-        return ResponseEntity.ok(partyApi.getParty(partyId));
+
+        PartyDetailView party = partyApi.getPartyDetail(partyId);
+
+        boolean isAgent = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .anyMatch("ROLE_REALM_AGENTS"::equals);
+        if (isAgent && !jwt.getSubject().equals(party.createdBy())) {
+            throw new AccessDeniedException("Access denied: agent may only read a client they registered");
+        }
+        return ResponseEntity.ok(party);
     }
 
     /**
@@ -123,6 +157,40 @@ public class PartyController {
             PageRequest.of(page, Math.min(pageSize, 100),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("partyId"))));
         return ResponseEntity.ok(PageResponse.from(result));
+    }
+
+    /**
+     * The documents filed against this party — KYC evidence today, whatever else is filed under
+     * {@code party:<id>} tomorrow.
+     *
+     * <p>It lives here, not on {@code DocumentController}, for the reason that controller's own
+     * javadoc gives: generic document access is deliberately staff-only, because authorizing a
+     * document means asking the owning aggregate "is this yours?", and the document module cannot
+     * ask — party, claims, policy and underwriting all declare {@code document::api}, so a
+     * dependency back would be a cycle. The owning module applies its own rule instead, exactly as
+     * {@code ClaimEvidenceController} does for claim evidence. That is also what lets an agent read
+     * these at all: a generic endpoint could never have served them.
+     *
+     * <p>Same scoping as the party-detail read, for the same reason — an agents-realm caller may
+     * see only a client it registered.
+     *
+     * <p>Metadata only, no content. Downloading still goes through the existing per-document
+     * endpoints; this answers "what do we hold on this person", which nothing could answer before.
+     */
+    @GetMapping("/parties/{partyId}/documents")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<PartyDocumentResponseDto>> listPartyDocuments(@PathVariable UUID partyId,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        boolean isAgent = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+        if (isAgent && !partyApi.isRegisteredBy(partyId, jwt.getSubject())) {
+            throw new AccessDeniedException("Access denied: agent may only read a client they registered");
+        }
+        // Existence check first, so an unknown party is a 404 rather than an empty list -- an empty
+        // list would say "this person has no documents" about someone who does not exist.
+        partyApi.getParty(partyId);
+        return ResponseEntity.ok(documentApi.listByOwnerContext("party:" + partyId).stream()
+            .map(PartyDocumentResponseDto::from).toList());
     }
 
     /**

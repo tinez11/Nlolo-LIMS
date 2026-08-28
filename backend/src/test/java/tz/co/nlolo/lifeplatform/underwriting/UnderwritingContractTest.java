@@ -276,4 +276,107 @@ class UnderwritingContractTest {
             .andExpect(status().isOk())
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.page.totalElements").value(1));
     }
+
+    // --- Agent scoping, which this endpoint had none of --------------------------------------
+    //
+    // `GET /underwriting/cases` has admitted REALM_AGENTS since M4 while taking no JWT and applying
+    // no filter, so any agents-realm token could list every case in the tenant -- each with its
+    // applicant, sum assured and decision. It was found while adding the applicantPartyId filter
+    // the client register needs, which would have handed that hole a precise aim.
+
+    /** Registers an applicant as a specific agent subject, so `createdBy` is that agent. */
+    private UUID registerApplicantAs(UUID tenantId, String agentSubject, String phone) throws Exception {
+        String response = mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(agentSubject).claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"Scoped UW Applicant\",\"dateOfBirth\":\"1988-03-15\","
+                    + "\"contactInfo\":{\"phoneNumber\":\"" + phone + "\"}}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(JsonPath.read(response, "$.partyId"));
+    }
+
+    @Test
+    void listCasesFiltersByApplicantPartyId() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        ProductFixture product = publishTestProduct(tenantId);
+        UUID mine = registerApplicantAs(tenantId, "uw-agent-1", "+255712340101");
+        UUID other = registerApplicantAs(tenantId, "uw-agent-1", "+255712340102");
+        openCaseViaHttp(tenantId, mine, product.productId(), product.productVersionId());
+        openCaseViaHttp(tenantId, other, product.productId(), product.productVersionId());
+
+        mockMvc.perform(get("/underwriting/cases")
+                .queryParam("applicantPartyId", mine.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                .jsonPath("$.page.totalElements").value(1))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                .jsonPath("$.items[0].applicantPartyId").value(mine.toString()));
+    }
+
+    @Test
+    void anAgentSeesOnlyCasesForApplicantsItRegistered() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        ProductFixture product = publishTestProduct(tenantId);
+        UUID ownClient = registerApplicantAs(tenantId, "uw-agent-a", "+255712340103");
+        UUID otherAgentsClient = registerApplicantAs(tenantId, "uw-agent-b", "+255712340104");
+        openCaseViaHttp(tenantId, ownClient, product.productId(), product.productVersionId());
+        openCaseViaHttp(tenantId, otherAgentsClient, product.productId(), product.productVersionId());
+
+        // Two cases exist in the tenant; agent A must see exactly its own.
+        mockMvc.perform(get("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("uw-agent-a").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                .jsonPath("$.page.totalElements").value(1))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                .jsonPath("$.items[0].applicantPartyId").value(ownClient.toString()));
+    }
+
+    /**
+     * Force-scoped, not check-then-reject: asking for another agent's client by id must return
+     * nothing rather than that client's case. This is the assertion that proves the scope is applied
+     * ON TOP of the caller's own filter instead of instead of it.
+     */
+    @Test
+    void anAgentCannotBroadenItsScopeBySupplyingAnotherAgentsApplicantId() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        ProductFixture product = publishTestProduct(tenantId);
+        UUID otherAgentsClient = registerApplicantAs(tenantId, "uw-agent-d", "+255712340105");
+        openCaseViaHttp(tenantId, otherAgentsClient, product.productId(), product.productVersionId());
+
+        mockMvc.perform(get("/underwriting/cases")
+                .queryParam("applicantPartyId", otherAgentsClient.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("uw-agent-c").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                .jsonPath("$.page.totalElements").value(0));
+    }
+
+    /**
+     * The empty-set semantic, which is the one that silently breaks. An agent who has registered
+     * nobody must scope to NOTHING; a null passed here instead would mean "no scope" and hand that
+     * agent every case in the tenant -- the exact bug this whole change removes.
+     */
+    @Test
+    void anAgentWhoHasRegisteredNobodySeesNoCasesRatherThanAllOfThem() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        ProductFixture product = publishTestProduct(tenantId);
+        UUID someoneElsesClient = registerApplicantAs(tenantId, "uw-agent-e", "+255712340106");
+        openCaseViaHttp(tenantId, someoneElsesClient, product.productId(), product.productVersionId());
+
+        mockMvc.perform(get("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("uw-agent-with-no-clients")
+                        .claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                .jsonPath("$.page.totalElements").value(0));
+    }
 }

@@ -58,6 +58,11 @@ class PartyContractTest {
     static void applyMigrations() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
+            // GET /parties/{id}/documents reads document.document_record through DocumentApi, so
+            // this class now needs the document schema too -- without it the endpoint 500s on a
+            // missing relation, which is exactly how it first failed.
+            "db-migrations/document/V1__create_document_schema.sql",
+            "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -174,6 +179,108 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    // --- GET /parties/{partyId}: the full record, and who may read it ------------------------
+
+    /** Registers as {@code subject}, returning the new party's id. */
+    private String registerAs(UUID tenantId, String subject, String fullName, String phone) throws Exception {
+        MvcResult result = mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(subject).claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"" + fullName + "\",\"dateOfBirth\":\"1990-05-12\","
+                    + "\"contactInfo\":{\"phoneNumber\":\"" + phone + "\",\"email\":\"scoped@example.tz\"}}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("partyId").asText();
+    }
+
+    /**
+     * The whole reason PartyDetailView exists. Every one of these columns has been stored since V1
+     * and returned by nothing: PartyView carries four fields, so a date of birth typed into the
+     * registration form could not be read back through any endpoint on the platform.
+     */
+    @Test
+    void getPartyReturnsTheFullRecordNotJustTheFourListFields() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String partyId = registerAs(tenantId, "agent-detail", "Detail View Fixture", "+255712345821");
+
+        mockMvc.perform(get("/parties/" + partyId)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.displayName").value("Detail View Fixture"))
+            .andExpect(jsonPath("$.dateOfBirth").value("1990-05-12"))
+            .andExpect(jsonPath("$.phoneNumber").value("+255712345821"))
+            .andExpect(jsonPath("$.email").value("scoped@example.tz"))
+            .andExpect(jsonPath("$.createdAt").exists())
+            // The field the agents realm is scoped on, surfaced so staff can see which agent owns
+            // the relationship without a second lookup.
+            .andExpect(jsonPath("$.createdBy").value("agent-detail"))
+            // PENDING until a KYC decision is recorded -- not merely absent.
+            .andExpect(jsonPath("$.kycVerifiedAt").doesNotExist());
+    }
+
+    @Test
+    void anAgentMayReadTheFullRecordOfAClientItRegistered() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String partyId = registerAs(tenantId, "agent-owner", "Own Client Fixture", "+255712345822");
+
+        mockMvc.perform(get("/parties/" + partyId)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("agent-owner").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.phoneNumber").value("+255712345822"));
+    }
+
+    /**
+     * The deferral this endpoint carried since M1 ("fine-grained agency-hierarchy scoping ...
+     * explicitly deferred, not silently skipped"), now closed. Before PartyDetailView the exposure
+     * was a name and a KYC status; it is now a date of birth, a phone number and an email address,
+     * which is what made realm-role-only scoping untenable.
+     */
+    @Test
+    void anAgentMayNotReadAClientAnotherAgentRegistered() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String partyId = registerAs(tenantId, "agent-a", "Other Agents Client", "+255712345823");
+
+        mockMvc.perform(get("/parties/" + partyId)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("agent-b").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void staffMayReadAnyPartyRegardlessOfWhoRegisteredIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String partyId = registerAs(tenantId, "agent-c", "Staff Readable Fixture", "+255712345824");
+
+        mockMvc.perform(get("/parties/" + partyId)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.subject("staff-1").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void partyDocumentsAreScopedToTheRegisteringAgentToo() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String partyId = registerAs(tenantId, "agent-docs", "Document Scope Fixture", "+255712345825");
+
+        // The owning agent may ask. No documents exist yet, so this is an empty array -- the
+        // assertion that matters here is the 403 below; a real document is exercised in
+        // PartyKycEvidenceUploadTest, which has the MinIO container this class does not.
+        mockMvc.perform(get("/parties/" + partyId + "/documents")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("agent-docs").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(get("/parties/" + partyId + "/documents")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("agent-other").claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
     }
 
     @Test

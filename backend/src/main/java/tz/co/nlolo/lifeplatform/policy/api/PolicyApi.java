@@ -25,6 +25,16 @@ public interface PolicyApi {
     PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy);
     PolicyView applyEndorsement(String policyNumber, EndorsementInput request, String appliedBy);
     void replaceBeneficiaries(String policyNumber, List<BeneficiaryInput> beneficiaries, String changedBy);
+
+    /**
+     * Every policy that currently names {@code partyId} as a beneficiary.
+     *
+     * <p>The reverse of {@link #replaceBeneficiaries}'s direction, and previously unanswerable:
+     * beneficiary rows were only ever read by policy number, so a person's exposure as a
+     * beneficiary was stored and unreachable. Returns an empty list for a party named on nothing,
+     * which is the common case and not an error.
+     */
+    List<BeneficiaryOfView> beneficiaryOf(UUID partyId);
     SurrenderQuoteView quoteSurrenderValue(String policyNumber);
     PolicyView getPolicy(String policyNumber);
 

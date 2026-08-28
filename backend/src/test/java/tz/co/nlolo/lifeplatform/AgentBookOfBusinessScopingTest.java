@@ -95,6 +95,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",

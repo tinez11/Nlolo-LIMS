@@ -49,6 +49,15 @@ paths:
         - name: status
           in: query
           schema: { type: string, enum: [ACTIVE, EXPIRED, SUSPENDED] }
+        - name: partyId
+          in: query
+          description: >-
+            Narrows to the agent record(s) held by one party, answering "is this client also an
+            agent" for the client register. A party may hold more than one, which is why this
+            filters a list rather than returning a single record. Supplying it ignores q and
+            status: it is a different question from searching the register, and combining them
+            would let a caller believe it had searched when it had not.
+          schema: { type: string, format: uuid }
         - name: page
           in: query
           schema: { type: integer, default: 0 }

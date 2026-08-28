@@ -137,6 +137,11 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    public List<BeneficiaryOfView> beneficiaryOf(UUID partyId) {
+        return beneficiaryRepository.findActiveBeneficiaryOf(TenantContext.get(), partyId);
+    }
+
+    @Override
     @Transactional
     public void replaceBeneficiaries(String policyNumber, List<BeneficiaryInput> beneficiaries, String changedBy) {
         UUID tenantId = TenantContext.get();

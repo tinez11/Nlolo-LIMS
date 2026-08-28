@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseStatus;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
@@ -11,11 +12,14 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -23,19 +27,47 @@ import java.util.UUID;
 public class UnderwritingController {
 
     private final UnderwritingApi underwritingApi;
+    /** Resolves an agents-realm caller's own registered clients, to scope the case list by. */
+    private final PartyApi partyApi;
 
-    public UnderwritingController(UnderwritingApi underwritingApi) {
+    public UnderwritingController(UnderwritingApi underwritingApi, PartyApi partyApi) {
         this.underwritingApi = underwritingApi;
+        this.partyApi = partyApi;
     }
 
+    /**
+     * <b>This endpoint had no agent scoping at all.</b> It has been readable by
+     * {@code REALM_AGENTS} since M4 while taking no JWT and applying no filter, so any
+     * agents-realm token could list every underwriting case in the tenant — including applicants
+     * who are not its clients, with their sum assured and decision. Policies and claims both
+     * force-scope agents; this one was simply missed, and adding an {@code applicantPartyId} filter
+     * for the client register would have handed that hole a precise aim.
+     *
+     * <p>Now scoped with the same "override the query, don't check-then-reject" idiom
+     * {@code PolicyController.searchPolicies} and {@code ClaimController.listClaims} use: an
+     * agents-realm caller cannot broaden the result by supplying its own {@code applicantPartyId},
+     * because its scope set is applied on top of whatever it asked for.
+     *
+     * <p>The scope is parties the agent REGISTERED, matching {@code GET /parties} and the
+     * party-detail read, so "my clients" means one thing across all three. An agent who has
+     * registered nobody gets an empty set and therefore zero rows — not, as a null would mean,
+     * every case in the tenant.
+     */
     @GetMapping("/cases")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<UnderwritingCaseSearchResponse> listCases(
             @RequestParam(required = false) UnderwritingCaseStatus status,
+            @RequestParam(required = false) UUID applicantPartyId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int pageSize) {
+            @RequestParam(defaultValue = "20") int pageSize,
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        boolean isAgent = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+        // MUST stay null for staff: null means "no scope", an empty set means "scope to nothing".
+        Set<UUID> applicantPartyIds = isAgent ? partyApi.partyIdsRegisteredBy(jwt.getSubject()) : null;
+
         Pageable pageable = PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<UnderwritingCaseView> result = underwritingApi.listCases(status, pageable);
+        Page<UnderwritingCaseView> result = underwritingApi.listCases(status, applicantPartyId, applicantPartyIds, pageable);
         return ResponseEntity.ok(UnderwritingCaseSearchResponse.from(result));
     }
 

@@ -367,8 +367,56 @@ paths:
                 type: object
                 properties:
                   inForce: { type: boolean }
+  /beneficiaries:
+    get:
+      summary: Policies naming a given party as beneficiary
+      description: >-
+        The reverse of a policy's beneficiary list -- "which policies pay out to this person" --
+        which nothing on the platform could answer before: beneficiary rows were only ever read by
+        policy number.
+
+
+        Its own resource rather than /policies/beneficiaries, which would sit underneath
+        /policies/{policyNumber} and depend on a literal segment being preferred over a path
+        variable. Correct today, but a poor thing to rest an endpoint on.
+
+
+        Only ACTIVE beneficiary rows appear; replacing a policy's beneficiaries deactivates the old
+        rows rather than deleting them, and that history is a different question. An agents-realm
+        token may ask only about a client it registered -- this reveals who stands to be paid on
+        someone else's contract, so it is scoped exactly as the party-detail read is. Customers are
+        excluded: their own exposure is a reasonable thing to show them, but it has not been
+        designed.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BeneficiaryOfView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
 components:
   schemas:
+    BeneficiaryOfView:
+      description: >-
+        One policy naming this party. policyStatus is carried because the share is meaningless
+        without it -- being named on a LAPSED policy is not being named on one in force, and a
+        percentage alone would imply a benefit that may not exist.
+      type: object
+      properties:
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        policyStatus: { type: string }
+        sharePercent: { type: number }
+        revocable: { type: boolean }
     ManualIssueRequest:
       type: object
       properties:

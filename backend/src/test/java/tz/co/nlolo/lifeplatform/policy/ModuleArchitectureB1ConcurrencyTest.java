@@ -69,7 +69,8 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
-            "db-migrations/policy/V4__underwriting_case_id.sql");
+            "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/policy/V5__beneficiary_party_index.sql");
     }
 
     @Autowired private PartyApi partyApi;

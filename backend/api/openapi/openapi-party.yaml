@@ -88,6 +88,11 @@ paths:
   /parties/{partyId}:
     get:
       summary: Get party detail
+      description: >-
+        Returns PartyDetailView, not the four-field PartyView the list returns: the full record a
+        client register displays. Object-level scoping applies to both non-staff realms -- a
+        customers-realm token may read only its own party, and an agents-realm token only a party it
+        registered (createdBy equal to its own subject). Both are refused with 403.
       security:
         - customersAuth: [profile]
         - agentsAuth: [agent]
@@ -102,8 +107,33 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PartyView' }
+              schema: { $ref: '#/components/schemas/PartyDetailView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /parties/{partyId}/documents:
+    get:
+      summary: Documents filed against this party
+      description: >-
+        Metadata only, newest first. Lives on the party rather than on the document module because
+        authorizing a document means asking its owning aggregate, and document cannot depend back on
+        party without a module cycle. An agents-realm token may read only a client it registered.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PartyDocumentView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { description: "No such party in this tenant" }
   /parties/{partyId}/kyc-evidence:
     post:
       summary: Upload a KYC evidence file (staff only)
@@ -252,6 +282,41 @@ components:
         partyType: { type: string, enum: [INDIVIDUAL, CORPORATE, GROUP] }
         kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
         displayName: { type: string }
+    PartyDetailView:
+      description: >-
+        The full party record, returned only by GET /parties/{partyId}. Separate from PartyView,
+        which stays four fields because it is every row of a page and four other modules read it as
+        an existence check. Every field beyond the first four is nullable -- an individual has no
+        registration number, a corporate has no date of birth, contact details are optional at
+        registration, and kycVerifiedAt is set only once a decision has been recorded.
+      type: object
+      properties:
+        partyId: { type: string, format: uuid }
+        partyType: { type: string, enum: [INDIVIDUAL, CORPORATE, GROUP] }
+        kycStatus: { type: string, enum: [PENDING, VERIFIED, REJECTED] }
+        displayName: { type: string }
+        dateOfBirth: { type: [string, "null"], format: date }
+        registrationNumber: { type: [string, "null"] }
+        phoneNumber: { type: [string, "null"], example: "+255712345678" }
+        email: { type: [string, "null"] }
+        kycVerifiedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        createdBy:
+          description: The JWT subject that registered this party -- what the agents realm is scoped on.
+          type: [string, "null"]
+    PartyDocumentView:
+      description: >-
+        One document filed under this party. Metadata only; content is fetched through the
+        document endpoints. ownerContext is omitted deliberately -- it is always
+        "party:<the id in the URL>" and is an internal addressing convention.
+      type: object
+      properties:
+        documentRef: { type: string }
+        documentType: { type: string, enum: [KYC_EVIDENCE, POLICY_DOCUMENT, CLAIM_EVIDENCE, SIGNED_FORM, UNDERWRITING_EVIDENCE] }
+        contentType: { type: [string, "null"] }
+        fileName: { type: [string, "null"] }
+        uploadedBy: { type: [string, "null"] }
+        uploadedAt: { type: string, format: date-time }
     KycEvidenceUploadResponse:
       type: object
       required: [documentRef]

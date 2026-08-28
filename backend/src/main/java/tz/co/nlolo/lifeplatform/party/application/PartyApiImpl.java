@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
 import tz.co.nlolo.lifeplatform.party.api.PartyType;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -99,6 +101,15 @@ public class PartyApiImpl implements PartyApi {
     @Override
     public PartyView getParty(UUID partyId) {
         return toView(findPartyOrThrow(partyId));
+    }
+
+    @Override
+    public PartyDetailView getPartyDetail(UUID partyId) {
+        Party party = findPartyOrThrow(partyId);
+        return new PartyDetailView(party.getPartyId(), party.getPartyType(), party.getKycStatus(),
+            party.getDisplayName(), party.getDateOfBirth(), party.getRegistrationNumber(),
+            party.getPhoneNumber(), party.getEmail(), party.getKycVerifiedAt(), party.getCreatedAt(),
+            party.getCreatedBy());
     }
 
     @Override
@@ -182,6 +193,16 @@ public class PartyApiImpl implements PartyApi {
         if (phoneNumber != null && !TZ_PHONE_PATTERN.matcher(phoneNumber).matches()) {
             throw new IllegalArgumentException("Phone number must match the Tanzanian E.164 pattern +255XXXXXXXXX");
         }
+    }
+
+    @Override
+    public Set<UUID> partyIdsRegisteredBy(String createdBy) {
+        return partyRepository.findPartyIdsByTenantIdAndCreatedBy(TenantContext.get(), createdBy);
+    }
+
+    @Override
+    public boolean isRegisteredBy(UUID partyId, String createdBy) {
+        return partyRepository.existsByPartyIdAndTenantIdAndCreatedBy(partyId, TenantContext.get(), createdBy);
     }
 
     private static PartyView toView(Party party) {

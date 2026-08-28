@@ -72,6 +72,7 @@ class PolicyContractTest {
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -447,6 +448,72 @@ class PolicyContractTest {
             .andExpect(status().isUnprocessableEntity())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("BENEFICIARY_VALIDATION_FAILED"));
+    }
+
+    // --- GET /beneficiaries?partyId= : the reverse direction --------------------------------
+
+    /**
+     * "Which policies pay out to this person" — previously unanswerable, because beneficiary rows
+     * were only ever read by policy number. The policyholder is named as their own beneficiary here
+     * purely because {@code manualIssue} already gives the test a real party id to use.
+     */
+    @Test
+    void beneficiaryOfReturnsThePoliciesNamingThatParty() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-BOF");
+
+        mockMvc.perform(put("/policies/" + issued.policyNumber() + "/beneficiaries")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    [{"type":"PARTY","partyId":"%s","sharePercent":100,"revocable":true}]
+                    """.formatted(issued.policyholderPartyId())))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(get("/beneficiaries")
+                .queryParam("partyId", issued.policyholderPartyId().toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].policyNumber").value(issued.policyNumber()))
+            .andExpect(jsonPath("$[0].sharePercent").value(100))
+            // Carried because a share without a status implies a benefit that may not exist.
+            .andExpect(jsonPath("$[0].policyStatus").exists());
+    }
+
+    @Test
+    void beneficiaryOfReturnsEmptyForAPartyNamedOnNothing() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-BOF2");
+
+        // Issued with no beneficiaries: the policyholder is named on nothing. An empty list, not
+        // a 404 -- "this person is a beneficiary of no policies" is an answer, not an absence.
+        mockMvc.perform(get("/beneficiaries")
+                .queryParam("partyId", issued.policyholderPartyId().toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    /**
+     * Scoped exactly as the party-detail read is, and for a stronger reason: this reveals who stands
+     * to be paid on someone else's contract.
+     */
+    @Test
+    void anAgentCannotAskAboutAPartyItDidNotRegister() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-BOF3");
+
+        mockMvc.perform(get("/beneficiaries")
+                .queryParam("partyId", issued.policyholderPartyId().toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("agent-who-registered-nobody")
+                        .claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
     }
 
     @Test

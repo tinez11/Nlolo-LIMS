@@ -105,6 +105,7 @@ class RowLevelSecurityIntegrationTest {
             // billingScheduleIsTenantIsolatedUnderRls below needs billing's own schema/grants.
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",

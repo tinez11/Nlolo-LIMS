@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.policy.infrastructure;
 
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
@@ -33,11 +34,42 @@ public class PolicyController {
     private final PolicyApi policyApi;
     private final ProductApi productApi;
     private final DistributionApi distributionApi;
+    /** Answers whether an agents-realm caller registered the party it is asking about. */
+    private final PartyApi partyApi;
 
-    public PolicyController(PolicyApi policyApi, ProductApi productApi, DistributionApi distributionApi) {
+    public PolicyController(PolicyApi policyApi, ProductApi productApi, DistributionApi distributionApi,
+                             PartyApi partyApi) {
         this.policyApi = policyApi;
         this.productApi = productApi;
         this.distributionApi = distributionApi;
+        this.partyApi = partyApi;
+    }
+
+    /**
+     * Every policy currently naming this party as a beneficiary — "which policies pay out to this
+     * person", which nothing on the platform could answer before.
+     *
+     * <p>Its own resource rather than {@code /policies/beneficiaries}, which would sit underneath
+     * {@code GET /policies/{policyNumber}} and rely on Spring preferring a literal segment over a
+     * path variable. Correct today, but a routing precedence rule is a poor thing to rest an
+     * endpoint on.
+     *
+     * <p>Scoping mirrors the party-detail read exactly, because this answers a question ABOUT a
+     * person: an agents-realm caller may ask only about a client it registered. Without that, an
+     * agent could enumerate any party's beneficiary exposure — arguably more sensitive than the
+     * contact details {@code GET /parties/{id}} guards, since it reveals who stands to be paid on
+     * someone else's contract. Customers are excluded entirely: a customer's own exposure is a
+     * reasonable thing to show them, but it is not this screen and has not been designed.
+     */
+    @GetMapping("/beneficiaries")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<BeneficiaryOfResponseDto>> beneficiaryOf(
+            @RequestParam UUID partyId, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
+        if (isAgent(authentication) && !partyApi.isRegisteredBy(partyId, jwt.getSubject())) {
+            throw new AccessDeniedException("Access denied: agent may only read a client they registered");
+        }
+        return ResponseEntity.ok(policyApi.beneficiaryOf(partyId).stream()
+            .map(BeneficiaryOfResponseDto::from).toList());
     }
 
     @PostMapping("/policies/manual-issue")

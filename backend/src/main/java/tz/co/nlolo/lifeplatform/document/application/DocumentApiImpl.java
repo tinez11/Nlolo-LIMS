@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStream;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -60,6 +61,17 @@ public class DocumentApiImpl implements DocumentApi {
         DocumentRecord record = findOrThrow(documentRef);
         return new DocumentMetadataView(record.getDocumentRef(), record.getOwnerContext(), record.getDocumentType(),
             record.getContentType(), record.getFileName(), record.getUploadedBy(), record.getUploadedAt());
+    }
+
+    @Override
+    public List<DocumentMetadataView> listByOwnerContext(String ownerContext) {
+        return repository
+            .findByTenantIdAndOwnerContextOrderByUploadedAtDescDocumentRefDesc(TenantContext.get(), ownerContext)
+            .stream()
+            .map(record -> new DocumentMetadataView(record.getDocumentRef(), record.getOwnerContext(),
+                record.getDocumentType(), record.getContentType(), record.getFileName(),
+                record.getUploadedBy(), record.getUploadedAt()))
+            .toList();
     }
 
     private DocumentRecord findOrThrow(String documentRef) {
