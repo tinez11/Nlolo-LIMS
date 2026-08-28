@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { dmy, todayIso } from './dates';
+import { expectNavItemsHidden, expectRouteDenied } from './guards';
 
 /**
  * Reinsurance e2e coverage against the real backend.
@@ -136,20 +137,11 @@ test.describe('staff reinsurance', () => {
     await financeContext.close();
   });
 
+  // The anchoring and the timeout budget both live in e2e/guards.ts -- four tests
+  // had written this shape independently and all four got it wrong the same way.
   test('a staff.underwriter session cannot see or reach Treaties at all', async ({ page }) => {
     await page.goto('/staff/policies');
-
-    // Wait for the app to actually be signed in before asserting an ABSENCE.
-    // Two failures came out of skipping this. The "Signing in" status renders no
-    // sidebar at all, so `Treaties` being invisible was satisfied by the nav not
-    // existing yet -- the assertion passed without ever testing the gate. And the
-    // silent SSO renew redirects to Keycloak, which aborted the second goto below
-    // with net::ERR_ABORTED. Anchoring on a link this identity IS entitled to
-    // makes the absence meaningful and the navigation safe.
-    await expect(page.getByRole('link', { name: 'Policies' })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('link', { name: 'Treaties' })).not.toBeVisible();
-
-    await page.goto('/staff/treaties');
-    await expect(page.getByText('You do not have access to this')).toBeVisible();
+    await expectNavItemsHidden(page, 'Treaties');
+    await expectRouteDenied(page, '/staff/treaties');
   });
 });

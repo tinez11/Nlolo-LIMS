@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectNavItemsHidden, expectRouteDenied } from './guards';
 
 /**
  * `POST /regulatory-returns` (generate) + `GET` (list/get) -- fully built and
@@ -77,9 +78,7 @@ test.describe('staff regulatory returns', () => {
 test.describe('staff regulatory returns -- role gating', () => {
   test('a staff.underwriter session cannot see or reach regulatory returns', async ({ page }) => {
     await page.goto('/staff/policies');
-    await expect(page.getByRole('link', { name: 'Regulatory returns' })).not.toBeVisible();
-
-    await page.goto('/staff/regulatory-returns');
-    await expect(page.getByText('You do not have access to this')).toBeVisible();
+    await expectNavItemsHidden(page, 'Regulatory returns');
+    await expectRouteDenied(page, '/staff/regulatory-returns');
   });
 });

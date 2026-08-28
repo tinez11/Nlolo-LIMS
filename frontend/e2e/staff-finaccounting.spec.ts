@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { expectNavItemsHidden, expectRouteDenied } from './guards';
 
 /**
  * An account's own code renders once, in a span with this exact class combo
@@ -206,13 +207,8 @@ test.describe('staff finaccounting -- role gating', () => {
     page,
   }) => {
     await page.goto('/staff/policies');
-    await expect(page.getByRole('link', { name: 'GL postings' })).not.toBeVisible();
-    await expect(page.getByRole('link', { name: 'Chart of accounts' })).not.toBeVisible();
-
-    await page.goto('/staff/gl-postings');
-    await expect(page.getByText('You do not have access to this')).toBeVisible();
-
-    await page.goto('/staff/chart-of-accounts');
-    await expect(page.getByText('You do not have access to this')).toBeVisible();
+    await expectNavItemsHidden(page, 'GL postings', 'Chart of accounts');
+    await expectRouteDenied(page, '/staff/gl-postings');
+    await expectRouteDenied(page, '/staff/chart-of-accounts');
   });
 });
