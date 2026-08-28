@@ -80,6 +80,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
+            "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata
@@ -1095,6 +1096,6 @@ class RowLevelSecurityIntegrationTest {
             null, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         return underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(),
-            new java.math.BigDecimal("1000000"), "TZS", "agent1").caseId();
+            new java.math.BigDecimal("1000000"), "TZS", null, "agent1").caseId();
     }
 }

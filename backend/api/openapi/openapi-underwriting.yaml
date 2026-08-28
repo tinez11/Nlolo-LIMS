@@ -152,6 +152,15 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        agentOfRecordId:
+          description: >-
+            Who sold it. Carried through to automatic issuance so commission accrues on the
+            normal path -- the listener used to hardcode this absent, and distribution skips
+            accrual entirely for a policy with no agent of record, so no commission had ever
+            accrued on an automatically issued policy. Optional: a self-service application
+            is a genuine direct sale.
+          type: [string, "null"]
+          format: uuid
         # medicalDisclosure was declared here but never existed in OpenCaseRequest.java.
         # Spring Boot defaults FAIL_ON_UNKNOWN_PROPERTIES=false, so a client sending it got
         # a 201 with the disclosure silently discarded. The MedicalDisclosure entity and its
@@ -182,3 +191,4 @@ components:
         decisionLoadingPercent: { type: [number, "null"] }
         decisionDeclineReason: { type: [string, "null"] }
         decisionDecidedAt: { type: [string, "null"], format: date-time }
+        agentOfRecordId: { type: [string, "null"], format: uuid }

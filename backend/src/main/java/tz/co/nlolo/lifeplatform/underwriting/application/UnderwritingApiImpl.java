@@ -51,14 +51,18 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
     @Override
     @Transactional
-    public UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, String openedBy) {
+    public UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, String openedBy) {
         UUID tenantId = TenantContext.get();
         // Confirms the applicant party genuinely exists and belongs to this tenant --
         // PartyApi.getParty already throws PartyNotFoundException on cross-tenant access
         // (M1's anti-enumeration pattern), which is exactly the failure mode we want here too.
         partyApi.getParty(applicantPartyId);
 
-        UnderwritingCase underwritingCase = new UnderwritingCase(tenantId, applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency, openedBy);
+        // agentOfRecordId is stored as an opaque id and NOT validated against distribution:
+        // this module declares no dependency on it, and the same convention already applies to
+        // productId and applicantPartyId's outbound refs. PolicyApiImpl treats the field the
+        // same way on the manual-issue path.
+        UnderwritingCase underwritingCase = new UnderwritingCase(tenantId, applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency, agentOfRecordId, openedBy);
         underwritingCaseRepository.save(underwritingCase);
         return toView(underwritingCase);
     }
@@ -266,6 +270,6 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             UnderwritingCaseStatus.valueOf(c.getStatus()), ReferralStatus.valueOf(c.getReferralStatus()),
             c.getDecisionOutcome() != null ? DecisionOutcome.valueOf(c.getDecisionOutcome()) : null,
             c.getDecisionLoadingPercent(), c.getDecisionDeclineReason(), c.getDecisionDecidedAt(),
-            c.getSumAssuredAmount(), c.getSumAssuredCurrency());
+            c.getSumAssuredAmount(), c.getSumAssuredCurrency(), c.getAgentOfRecordId());
     }
 }

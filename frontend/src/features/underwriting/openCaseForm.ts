@@ -17,6 +17,16 @@ export const openCaseFormSchema = z.object({
     .regex(AMOUNT_PATTERN, 'Must be a decimal amount like 1500000.00')
     .refine((v) => Number(v) >= 0.01, 'Must be at least 0.01'),
   sumAssuredCurrency: z.string().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS'),
+  /**
+   * Who sold it. Optional — a self-service application is a genuine direct sale — but it is
+   * what makes commission accrue when the decision auto-issues a policy: distribution skips
+   * accrual entirely for a policy with no agent of record, which is why no commission had
+   * ever accrued on the automatic path.
+   */
+  agentOfRecordId: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || UUID_PATTERN.test(v), 'Not a valid agent id'),
 });
 
 export type OpenCaseFormValues = z.infer<typeof openCaseFormSchema>;
@@ -28,6 +38,7 @@ export function blankOpenCaseForm(): OpenCaseFormValues {
     productVersionId: '',
     sumAssuredAmount: '',
     sumAssuredCurrency: 'TZS',
+    agentOfRecordId: '',
   };
 }
 
@@ -37,5 +48,8 @@ export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
     productId: values.productId,
     productVersionId: values.productVersionId,
     sumAssured: { amount: values.sumAssuredAmount, currencyCode: values.sumAssuredCurrency },
+    // Omitted entirely when blank rather than sent as '': the field is a nullable uuid, and
+    // an empty string is neither a uuid nor an absence the backend would accept.
+    ...(values.agentOfRecordId ? { agentOfRecordId: values.agentOfRecordId } : {}),
   };
 }

@@ -67,6 +67,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
+            "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -165,7 +166,7 @@ class PolicyApiIntegrationTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-AUTO-01");
         UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
-            new BigDecimal("1000000"), "TZS", "agent1");
+            new BigDecimal("1000000"), "TZS", null, "agent1");
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
 
         // awaitility is not a declared Maven dependency (Global Constraints: no new
@@ -184,6 +185,55 @@ class PolicyApiIntegrationTest {
         }
         assertThat(found).hasSize(1);
         assertThat(found.get(0).status()).isEqualTo(PolicyStatus.ACTIVE);
+    }
+
+    /**
+     * The automatically issued policy must carry the case's agent of record.
+     *
+     * <p>This is a money assertion, not a plumbing one. The listener used to hardcode
+     * {@code null} here, and distribution's {@code PolicyEventListener} returns early on a
+     * null {@code agentOfRecordId} ("sold direct -- no commission to accrue") -- so no
+     * commission ever accrued on an automatically issued policy. Commission fired only on
+     * {@code POST /policies/manual-issue}, the staff exception path, which is backwards from
+     * how the business is meant to work, and silent, because a direct sale is a legitimate
+     * state.
+     */
+    @Test
+    void anAutomaticallyIssuedPolicyCarriesTheCasesAgentOfRecord() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-AUTO-AGENT");
+        UUID agentOfRecordId = UUID.randomUUID();
+
+        UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("1000000"), "TZS", agentOfRecordId, "agent1");
+        underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings",
+            new BigDecimal("10"), "underwriter1");
+
+        List<PolicyView> found = List.of();
+        for (int attempt = 0; attempt < 50; attempt++) {
+            TenantContext.set(tenantId);
+            found = policyApi.searchPolicies(fixture.applicantId(), null, null, null, PageRequest.of(0, 10)).getContent();
+            if (!found.isEmpty()) {
+                break;
+            }
+            Thread.sleep(100);
+        }
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).agentOfRecordId())
+            .as("the agent who sold it, not null -- null is what stopped commission accruing")
+            .isEqualTo(agentOfRecordId);
+    }
+
+    @Test
+    void aCaseOpenedWithNoAgentStillIssuesAsADirectSale() {
+        // Null remains a real state: a self-service application has no agent, and forcing one
+        // would invent a commission payee.
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-AUTO-DIRECT");
+        UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("1000000"), "TZS", null, "agent1");
+
+        assertThat(opened.agentOfRecordId()).isNull();
     }
 
     @Test

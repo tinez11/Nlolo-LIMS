@@ -152,6 +152,22 @@ export function OpenUnderwritingCasePage() {
           </FormField>
         </div>
 
+        {/* Optional, and consequential: a decision that accepts this case issues the policy
+            automatically, and distribution accrues no commission at all for a policy with no
+            agent of record. Leaving it blank records a direct sale, which is a real thing
+            and not a default to fall into by accident. */}
+        <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
+          <input
+            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-xs"
+            placeholder="00000000-0000-0000-0000-000000000000"
+            {...register('agentOfRecordId')}
+          />
+          <p className="mt-1 text-[11px] text-subtle-foreground">
+            Who sold it. Leave blank for a direct sale — a policy issued with no agent of record
+            accrues no commission.
+          </p>
+        </FormField>
+
         {opening.status === 'error' && opening.error && (
           <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
             {opening.error.detail ?? opening.error.title}

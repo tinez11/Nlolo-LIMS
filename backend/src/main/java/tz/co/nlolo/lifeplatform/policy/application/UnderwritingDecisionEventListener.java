@@ -110,16 +110,25 @@ public class UnderwritingDecisionEventListener {
                     .multiply(baseRatePerMille).divide(BigDecimal.valueOf(1000), 6, RoundingMode.HALF_UP)
                     .multiply(loadingMultiplier);
                 BigDecimal monthlyPremium = annualPremium.divide(BigDecimal.valueOf(12), 2, RoundingMode.HALF_UP);
-                // agentOfRecordId/beneficiaries aren't part of an UnderwritingCase at all -- no
-                // agent-of-record field exists on that aggregate, and beneficiary designation
-                // happens post-issuance via PUT .../beneficiaries. This defaults them for the
-                // automatic path; POST /policies/manual-issue lets staff set both explicitly
-                // for the exception path.
+                // agentOfRecordId now comes from the case (underwriting V2). It used to be
+                // hardcoded null here, with the note that no such field existed on the
+                // aggregate -- which was true and was a money bug: distribution's
+                // PolicyEventListener returns early on a null agentOfRecordId ("sold direct --
+                // no commission to accrue"), so NO commission ever accrued on an automatically
+                // issued policy. Commission fired only on POST /policies/manual-issue, the
+                // staff exception path, which is backwards from how the business works.
+                //
+                // Still null for a genuine direct sale, which is a real state and the reason
+                // the bug was silent rather than loud.
+                //
+                // beneficiaries stay empty: designation genuinely happens post-issuance via
+                // PUT .../beneficiaries, and an underwriting case carries none.
                 PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
                     decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
                     decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
                     monthlyPremium, decidedCase.sumAssuredCurrency(), "MONTHLY",
-                    null, List.of(), "Automatic issuance on underwriting decision " + outcome);
+                    decidedCase.agentOfRecordId(), List.of(),
+                    "Automatic issuance on underwriting decision " + outcome);
                 policyApi.issuePolicy(caseId, request, "system:underwriting-decision-listener");
             });
         } catch (Exception e) {

@@ -29,4 +29,5 @@ import java.util.UUID;
 public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID productId, @JsonIgnore UUID productVersionId,
                                     UnderwritingCaseStatus status, ReferralStatus referralStatus, DecisionOutcome decisionOutcome,
                                     BigDecimal decisionLoadingPercent, String decisionDeclineReason, Instant decisionDecidedAt,
-                                    @JsonIgnore BigDecimal sumAssuredAmount, @JsonIgnore String sumAssuredCurrency) {}
+                                    @JsonIgnore BigDecimal sumAssuredAmount, @JsonIgnore String sumAssuredCurrency,
+                                    UUID agentOfRecordId) {}

@@ -61,18 +61,37 @@ public class UnderwritingCase {
     @Column(name = "created_by")
     private String createdBy;
 
+    /**
+     * Who sold it. An opaque ref into {@code distribution.agent_profile}, carried so the
+     * automatic issuance path can name an agent of record — without it, every automatically
+     * issued policy was direct-sold and no commission ever accrued on the normal path.
+     * Null is a real state: a self-service application has no agent.
+     */
+    @Column(name = "agent_of_record_id")
+    private UUID agentOfRecordId;
+
     protected UnderwritingCase() {}
 
     public UnderwritingCase(UUID tenantId, UUID applicantPartyId, UUID productId, UUID productVersionId,
                              BigDecimal sumAssuredAmount, String sumAssuredCurrency, String createdBy) {
+        this(tenantId, applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
+            null, createdBy);
+    }
+
+    public UnderwritingCase(UUID tenantId, UUID applicantPartyId, UUID productId, UUID productVersionId,
+                             BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId,
+                             String createdBy) {
         this.tenantId = tenantId;
         this.applicantPartyId = applicantPartyId;
         this.productId = productId;
         this.productVersionId = productVersionId;
         this.sumAssuredAmount = sumAssuredAmount;
         this.sumAssuredCurrency = sumAssuredCurrency;
+        this.agentOfRecordId = agentOfRecordId;
         this.createdBy = createdBy;
     }
+
+    public UUID getAgentOfRecordId() { return agentOfRecordId; }
 
     public UUID getCaseId() { return caseId; }
     public UUID getTenantId() { return tenantId; }

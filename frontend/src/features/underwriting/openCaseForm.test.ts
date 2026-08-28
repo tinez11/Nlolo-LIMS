@@ -7,6 +7,9 @@ const valid = () => ({
   productVersionId: '76d868df-d22d-4044-8107-42bb3ab5107c',
   sumAssuredAmount: '1500000.00',
   sumAssuredCurrency: 'TZS',
+  // Blank is the common case -- a direct sale -- and the schema treats it as absent rather
+  // than as a malformed uuid.
+  agentOfRecordId: '',
 });
 
 describe('openCaseFormSchema', () => {
@@ -60,5 +63,28 @@ describe('toApiRequest', () => {
       openCaseFormSchema.parse({ ...valid(), applicantPartyId: `  ${valid().applicantPartyId}  ` }),
     );
     expect(request.applicantPartyId).toBe(valid().applicantPartyId);
+  });
+});
+
+describe('agent of record', () => {
+  it('accepts a blank agent id as a direct sale', () => {
+    expect(openCaseFormSchema.safeParse({ ...valid(), agentOfRecordId: '' }).success).toBe(true);
+  });
+
+  it('rejects a malformed agent id rather than sending it', () => {
+    expect(openCaseFormSchema.safeParse({ ...valid(), agentOfRecordId: 'nope' }).success).toBe(false);
+  });
+
+  it('omits the agent id entirely when blank, rather than sending an empty string', () => {
+    // The field is a nullable uuid on the wire. '' is neither a uuid nor an absence, and
+    // sending it would be a 400 for the most common case there is.
+    const api = toApiRequest(openCaseFormSchema.parse({ ...valid(), agentOfRecordId: '' }));
+    expect(api).not.toHaveProperty('agentOfRecordId');
+  });
+
+  it('sends a real agent id through', () => {
+    const agentId = '11111111-2222-3333-4444-555555555555';
+    const api = toApiRequest(openCaseFormSchema.parse({ ...valid(), agentOfRecordId: agentId }));
+    expect(api.agentOfRecordId).toBe(agentId);
   });
 });

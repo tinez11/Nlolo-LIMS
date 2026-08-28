@@ -24,7 +24,13 @@ public record OpenCaseRequest(
     @NotNull UUID applicantPartyId,
     @NotNull UUID productId,
     @NotNull UUID productVersionId,
-    @NotNull @Valid Money sumAssured) {
+    @NotNull @Valid Money sumAssured,
+    /**
+     * Who sold it, carried through to automatic issuance so commission can accrue on the
+     * normal path. Optional, because a self-service application is a genuine direct sale --
+     * and because it was hardcoded absent until now, so every existing caller omits it.
+     */
+    UUID agentOfRecordId) {
 
     // Field names/constraints mirror openapi-common.yaml#/components/schemas/Money exactly.
     public record Money(

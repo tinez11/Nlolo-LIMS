@@ -46,6 +46,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
+            "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql");
     }
 
@@ -79,7 +80,7 @@ class UnderwritingApiIntegrationTest {
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null, "actuary");
         var snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
-        return underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(), sumAssured, "TZS", "agent1").caseId();
+        return underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(), sumAssured, "TZS", null, "agent1").caseId();
     }
 
     @Test
@@ -140,7 +141,7 @@ class UnderwritingApiIntegrationTest {
     void openCaseRejectsUnknownApplicant() {
         var product = productApi.createProduct("UW-BAD-" + UUID.randomUUID().toString().substring(0, 8), "Bad Applicant Test", ProductCategory.TERM_LIFE, "TZS", "actuary");
         assertThrows(tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException.class, () ->
-            underwritingApi.openCase(UUID.randomUUID(), product.productId(), UUID.randomUUID(), new BigDecimal("1000000"), "TZS", "agent1"));
+            underwritingApi.openCase(UUID.randomUUID(), product.productId(), UUID.randomUUID(), new BigDecimal("1000000"), "TZS", null, "agent1"));
     }
 
     // ---- Age is rated -------------------------------------------------------------------
@@ -175,7 +176,7 @@ class UnderwritingApiIntegrationTest {
         UUID productId = publishAgeRatedProduct();
         var snapshot = productApi.getActiveSnapshot(productId, LocalDate.now());
         UUID caseId = underwritingApi.openCase(applicant.partyId(), productId, snapshot.productVersionId(),
-            new BigDecimal("1000000"), "TZS", "agent1").caseId();
+            new BigDecimal("1000000"), "TZS", null, "agent1").caseId();
         // Same low risk score in both cases: age is the only thing that differs.
         return underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings",
             new BigDecimal("10"), "underwriter1").decisionOutcome();
@@ -210,7 +211,7 @@ class UnderwritingApiIntegrationTest {
         UUID productId = publishAgeRatedProduct();
         var snapshot = productApi.getActiveSnapshot(productId, LocalDate.now());
         UUID caseId = underwritingApi.openCase(applicant.partyId(), productId, snapshot.productVersionId(),
-            new BigDecimal("1000000"), "TZS", "agent1").caseId();
+            new BigDecimal("1000000"), "TZS", null, "agent1").caseId();
 
         assertEquals(DecisionOutcome.ACCEPT, underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL,
             "Normal findings", new BigDecimal("10"), "underwriter1").decisionOutcome());

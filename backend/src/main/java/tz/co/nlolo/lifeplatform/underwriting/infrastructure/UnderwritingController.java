@@ -79,7 +79,8 @@ public class UnderwritingController {
         // Idempotency-Key accepted but not yet enforced -- see plan Global Constraints;
         // real dedup registry lands with payment's idempotency work in M5.
         UnderwritingCaseView view = underwritingApi.openCase(request.applicantPartyId(), request.productId(), request.productVersionId(),
-            new BigDecimal(request.sumAssured().amount()), request.sumAssured().currencyCode(), jwt.getSubject());
+            new BigDecimal(request.sumAssured().amount()), request.sumAssured().currencyCode(),
+            request.agentOfRecordId(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 

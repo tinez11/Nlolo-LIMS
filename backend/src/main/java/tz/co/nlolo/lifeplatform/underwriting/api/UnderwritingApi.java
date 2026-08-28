@@ -9,7 +9,11 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface UnderwritingApi {
-    UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, String openedBy);
+    /**
+     * @param agentOfRecordId who sold it, carried through to automatic issuance so commission
+     *                        can accrue on the normal path. Null for a direct sale.
+     */
+    UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, String openedBy);
     UnderwritingCaseView submitAssessment(UUID caseId, AssessmentType assessmentType, String findings, BigDecimal riskScore, String assessedBy);
     UnderwritingCaseView getCase(UUID caseId);
     /**
