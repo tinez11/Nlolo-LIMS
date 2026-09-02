@@ -41,6 +41,12 @@ import {
  * decision, and a second call 409s (`UnderwritingCaseAlreadyDecidedException`).
  * There is no separate accept/decline/rate-up action to build a form for.
  *
+ * ONE EXCEPTION: a POSTPONED case accepts further assessments. It is the outcome that means
+ * "not decided yet -- come back with more evidence", and treating it as final made it the only
+ * outcome that could never be resolved. So the assessment form below stays available on a
+ * postponed case, and the engine weighs the LATEST assessment per type rather than the worst
+ * one ever recorded -- otherwise a case postponed at 95 would re-postpone forever.
+ *
  * Assessment/referral are gated on the current user's OWN token roles
  * (`staffRoles`), same convenience-only decode `ClaimDetailPage` already uses
  * for its own action panels -- the backend's `@PreAuthorize('UNDERWRITER')`
@@ -95,6 +101,11 @@ export function UnderwritingCaseDetailPage() {
   }
 
   const view = detail.data;
+  // POSTPONED is a decision in status only: the engine returns it asking for further medical
+  // evidence, so the case is still open in every sense that matters to an underwriter. Named
+  // once because four separate places have to agree about it -- whether the form renders,
+  // what it is called, what it says, and what its button claims to do.
+  const isPostponed = view?.decisionOutcome === 'POSTPONED';
 
   if (isInitialLoad(detail)) {
     return <LoadingBlock label={`Loading case ${caseId}`} />;
@@ -123,7 +134,7 @@ export function UnderwritingCaseDetailPage() {
 
       <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-5">
-          {view?.status === 'DECIDED' ? (
+          {view?.status === 'DECIDED' && (
             <Panel title="Decision">
               <dl className="px-4 pb-2">
                 <Field
@@ -142,12 +153,28 @@ export function UnderwritingCaseDetailPage() {
                   <Field label="Reason" value={view.decisionDeclineReason ?? '—'} />
                 )}
                 <Field label="Decided" value={formatInstant(view.decisionDecidedAt)} />
+                {isPostponed && (
+                  <Field
+                    label="Awaiting"
+                    value="Further evidence"
+                    note="A postponed case is not finished. Submit another assessment below and it will be decided again."
+                  />
+                )}
               </dl>
             </Panel>
-          ) : roles.UNDERWRITER ? (
+          )}
+
+          {/* Shown while the case is undecided AND when it is POSTPONED, which is a decision
+              in status only: the engine returns it asking for further medical evidence, so
+              refusing further assessments made it the one outcome that could never resolve. */}
+          {(view?.status !== 'DECIDED' || isPostponed) && roles.UNDERWRITER ? (
             <Panel
-              title="Submit an assessment"
-              subtitle="This decides the case outright -- there is no separate accept/decline step."
+              title={isPostponed ? 'Submit further evidence' : 'Submit an assessment'}
+              subtitle={
+                isPostponed
+                  ? 'The case is postponed pending evidence. This re-decides it on the latest assessment of each type.'
+                  : 'This decides the case outright -- there is no separate accept/decline step.'
+              }
             >
               <form
                 className="space-y-4 p-4"
@@ -197,7 +224,11 @@ export function UnderwritingCaseDetailPage() {
                 )}
 
                 <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
-                  {submitting.status === 'loading' ? 'Submitting…' : 'Submit assessment'}
+                  {submitting.status === 'loading'
+                    ? 'Submitting…'
+                    : isPostponed
+                      ? 'Submit further evidence'
+                      : 'Submit assessment'}
                 </Button>
               </form>
             </Panel>

@@ -92,6 +92,27 @@ describe('rating basis', () => {
     expect(screen.queryByText(/unpriced/)).not.toBeInTheDocument();
   });
 
+  it('shows the age bounds an AGE factor actually resolves against, not just its band label', () => {
+    // The band is free text an actuary typed; ageFrom/ageTo are what the platform resolves
+    // against, and before product V5 they did not exist -- which is how age went unrated here.
+    // A screen showing only the band cannot tell a reader whether the range behind it is right.
+    renderPage({
+      productId: PRODUCT_ID,
+      productVersionId: VERSION_ID,
+      effectiveDate: '2026-01-01',
+      baseRates: [],
+      ratingFactors: [
+        { factorType: 'AGE', band: '18-30', multiplier: 1, ageFrom: 18, ageTo: 30 },
+        { factorType: 'SUM_ASSURED_BAND', band: 'LOW', multiplier: 1.1 },
+      ],
+      benefitSchedule: [],
+    });
+
+    expect(screen.getByText('age · 18-30 (ages 18–30)')).toBeInTheDocument();
+    // Only AGE rows carry bounds; nothing invented for the ones that do not.
+    expect(screen.getByText('sum assured band · LOW')).toBeInTheDocument();
+  });
+
   it('says a version with no rate table is unpriced, rather than showing an empty table', () => {
     renderPage({
       productId: PRODUCT_ID,

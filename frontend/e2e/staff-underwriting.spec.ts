@@ -128,6 +128,39 @@ test.describe('staff underwriting', () => {
     await page2.close();
   });
 
+  test('a postponed case is not finished: further evidence re-decides it', async ({ page }) => {
+    // POSTPONED is the engine's way of saying "come back with more evidence", and the UI used
+    // to treat every decided case as final -- which made it the one outcome that could never
+    // be resolved, on a real case, through the only screen that can assess one.
+    await openCaseForAmina(page);
+
+    await page.getByLabel('Findings').fill('Inconclusive -- awaiting specialist report');
+    // >= 90 is SimpleRulesEngine's POSTPONE threshold.
+    await page.getByLabel('Risk score (optional)').fill('95');
+    await page.getByRole('button', { name: 'Submit assessment' }).click();
+
+    await expect(page.getByText('Postponed', { exact: true })).toBeVisible({ timeout: 15_000 });
+    // The form survives, and says what it is now for.
+    await expect(page.getByRole('heading', { name: 'Submit further evidence' })).toBeVisible();
+    await expect(page.getByText('Further evidence', { exact: true })).toBeVisible();
+
+    // Reload first: a postponed case must still be resolvable on a cold load, not only while
+    // the store happens to hold the response that postponed it.
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Submit further evidence' })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByLabel('Findings').fill('Specialist report clear');
+    await page.getByLabel('Risk score (optional)').fill('10');
+    await page.getByRole('button', { name: 'Submit further evidence' }).click();
+
+    // Resolved for real -- and the engine weighed the LATEST assessment per type, not the
+    // worst one ever recorded, or the 95 above would postpone it forever.
+    await expect(page.getByText('Accept', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Submit further evidence' })).not.toBeVisible();
+  });
+
   test('records a declaration with the question as it was put, and a correction adds to the record rather than replacing it', async ({
     page,
   }) => {

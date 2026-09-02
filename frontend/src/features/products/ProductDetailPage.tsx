@@ -1,7 +1,7 @@
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { BaseRate } from '@/api/types';
+import type { BaseRate, VersionRatingView } from '@/api/types';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
@@ -206,6 +206,7 @@ const BASE_RATE_COLUMNS: Column<BaseRate>[] = [
 ];
 
 type RatingResource = ReturnType<ReturnType<typeof selectVersionRating>>;
+type RatingFactorRow = NonNullable<VersionRatingView['ratingFactors']>[number];
 
 function RatingBasis({
   rating,
@@ -274,7 +275,7 @@ function RatingBasis({
         empty="No multipliers on this version."
         rows={factors.map((f) => ({
           key: `${f.factorType}-${f.band}`,
-          label: `${(f.factorType ?? '—').replace(/_/g, ' ').toLowerCase()} · ${f.band ?? '—'}`,
+          label: factorLabel(f),
           value: f.multiplier === undefined ? '—' : `× ${RATE.format(f.multiplier)}`,
         }))}
       />
@@ -290,6 +291,20 @@ function RatingBasis({
       />
     </div>
   );
+}
+
+/**
+ * The band is a LABEL the actuary typed; on an AGE row it is the age bounds the platform
+ * actually resolves against, and until product V5 those did not exist at all -- which is
+ * exactly how age went unrated here. Publishing now requires them, so show them: a screen
+ * that renders only the band cannot tell a reader whether the range behind it is right,
+ * or even present.
+ */
+function factorLabel(factor: RatingFactorRow): string {
+  const base = `${(factor.factorType ?? '—').replace(/_/g, ' ').toLowerCase()} · ${factor.band ?? '—'}`;
+  return factor.ageFrom === undefined || factor.ageTo === undefined
+    ? base
+    : `${base} (ages ${factor.ageFrom}–${factor.ageTo})`;
 }
 
 function FactorList({
