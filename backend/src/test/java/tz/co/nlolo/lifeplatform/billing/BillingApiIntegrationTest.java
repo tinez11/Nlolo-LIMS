@@ -178,7 +178,7 @@ class BillingApiIntegrationTest {
             productCode, "Billing Test Product", category, "TZS", "actuary");
         productApi.publishVersion(product.productId(), tz.co.nlolo.lifeplatform.product.api.IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.RatingFactorInput(
-                        tz.co.nlolo.lifeplatform.product.api.FactorType.AGE, "30-39", BigDecimal.ONE),
+                        tz.co.nlolo.lifeplatform.product.api.FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new tz.co.nlolo.lifeplatform.product.api.ProductApi.RatingFactorInput(
                         tz.co.nlolo.lifeplatform.product.api.FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new tz.co.nlolo.lifeplatform.product.api.ProductApi.BenefitInput(

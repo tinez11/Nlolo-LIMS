@@ -81,7 +81,7 @@ test.describe('staff claims adjudication', () => {
     await expect(page.getByRole('heading', { name: 'Reopen' })).not.toBeVisible();
   });
 
-  test('a fresh claim moves REGISTERED -> UNDER_ASSESSMENT -> SETTLEMENT_REQUESTED via two distinct real staff identities', async ({
+  test('a fresh claim moves REGISTERED -> UNDER_ASSESSMENT -> SETTLED via two distinct real staff identities', async ({
     page,
     browser,
   }) => {
@@ -115,14 +115,30 @@ test.describe('staff claims adjudication', () => {
     await managerPage.getByLabel('Payee reference').fill('MOBILE-MONEY-E2E-1');
     await managerPage.getByRole('button', { name: 'Approve claim' }).click();
 
-    // decideSettlement's approve path publishes ClaimApproved AND
-    // ClaimSettlementRequested in the same call -- the real status lands on
-    // SETTLEMENT_REQUESTED immediately, not APPROVED.
-    await expect(managerPage.getByText('Settlement requested')).toBeVisible({ timeout: 15_000 });
+    // decideSettlement's approve path publishes ClaimApproved AND ClaimSettlementRequested in
+    // the same call, and the AFTER_COMMIT chain that follows is synchronous: payment submits the
+    // disbursement to the mobile-money rail, the local mock rail answers ACCEPTED with a
+    // gatewayReference, completeDisbursement fires, and claims' PaymentEventListener marks the
+    // claim SETTLED -- all before this page can read the claim back.
+    //
+    // This assertion used to demand SETTLEMENT_REQUESTED, and it passed for two milestones for
+    // the WRONG REASON: mock-mobile-money was never started, so every disbursement threw a
+    // GatewayException and landed IN_DOUBT, leaving the claim stranded mid-chain. The dev
+    // database still carries the evidence -- 32 IN_DOUBT instructions against 32 claims parked
+    // at SETTLEMENT_REQUESTED. Bringing the rail up (it is in the documented startup sequence)
+    // exposed the assertion as a test of a broken payment path.
+    //
+    // SETTLEMENT_REQUESTED is real, but transient here: it is what a reader sees only when the
+    // rail is slow, down, or answers non-terminally. What a working stack must show is money
+    // moved and the claim closed.
+    await expect(managerPage.getByText('Settled', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     // Reload from scratch -- proves this is a real Postgres row.
     await managerPage.reload();
-    await expect(managerPage.getByText('Settlement requested')).toBeVisible();
+    await expect(managerPage.getByText('Settled', { exact: true })).toBeVisible();
+    // The decided amount is on the record, not just the status.
+    await expect(managerPage.getByText('TZS 2,000,000.00')).toBeVisible();
+
 
     await managerContext.close();
   });
