@@ -87,6 +87,23 @@ export interface PaymentRequest {
 }
 
 /**
+ * `POST /policies/{n}/loans` and `POST /loans/{loanId}/repayments` declare their
+ * bodies inline too -- transcribed from `OriginateLoanRequestDto` and
+ * `RepaymentRequestDto`. Both accept an `Idempotency-Key` but do not enforce it
+ * (see `lib/idempotency.ts`'s own note and its assertion for these two paths),
+ * so neither client call mints an attempt.
+ */
+export interface OriginateLoanRequest {
+  requestedAmount: Money;
+  /** Mobile-money / bank destination the disbursement is paid to. */
+  payeeRef: string;
+}
+export interface LoanRepaymentRequest {
+  amount: Money;
+  paymentReference: string;
+}
+
+/**
  * `agents`/`commission-plans` -- there is no `GET /agents` list or search
  * endpoint at all (matches parties/payments/documents' shape), and no
  * `GET /commission-plans/{id}` either: a plan is readable only through an

@@ -5,8 +5,10 @@ import type {
   BeneficiaryOfView,
   CoverageStatusView,
   InvoiceView,
+  LoanRepaymentRequest,
   LoanView,
   ManualIssueRequest,
+  OriginateLoanRequest,
   Page,
   PaymentRequest,
   PolicyStatus,
@@ -91,6 +93,44 @@ export function listInvoices(policyNumber: string): Promise<InvoiceView[]> {
 /** `GET /policies/{n}/loans` -- also a bare unpaged array. */
 export function listLoans(policyNumber: string): Promise<LoanView[]> {
   return get<LoanView[]>(`/policies/${encodeURIComponent(policyNumber)}/loans`);
+}
+
+/**
+ * `POST /policies/{n}/loans` -- staff/agent/customer. Returns **202** with the
+ * loan body: the reservation against cash value is confirmed synchronously, but
+ * disbursement is handed to `payment` and completes asynchronously, so the loan
+ * that comes back is normally `DISBURSEMENT_REQUESTED` rather than `DISBURSED`.
+ *
+ * Rejections worth surfacing verbatim rather than rewording: 409 when the
+ * requested amount exceeds available loan value (cash value net of existing
+ * encumbrance and live reservations), and 409 when the policy is not in force.
+ *
+ * No `Idempotency-Key`: this path accepts the header but does not enforce it,
+ * and `lib/idempotency.ts` asserts exactly that -- so minting an attempt here
+ * would imply a guarantee the backend does not currently make.
+ */
+export function originateLoan(
+  policyNumber: string,
+  request: OriginateLoanRequest,
+): Promise<LoanView> {
+  return post<LoanView>(`/policies/${encodeURIComponent(policyNumber)}/loans`, request);
+}
+
+/**
+ * `POST /loans/{loanId}/repayments` -- staff/agent/customer. Also 202 with the
+ * loan body, and the returned `outstandingBalance` is already net of this
+ * repayment (the balance is folded from the loan's own append-only ledger, so
+ * it is authoritative the moment the call returns).
+ *
+ * A repayment that clears the balance moves the loan straight to `SETTLED`;
+ * partial repayments leave it `REPAYING` and are individually accepted, as many
+ * times as needed.
+ */
+export function recordLoanRepayment(
+  loanId: string,
+  request: LoanRepaymentRequest,
+): Promise<LoanView> {
+  return post<LoanView>(`/loans/${encodeURIComponent(loanId)}/repayments`, request);
 }
 
 /**

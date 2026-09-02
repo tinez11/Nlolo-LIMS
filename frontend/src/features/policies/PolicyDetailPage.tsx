@@ -4,13 +4,11 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
-import type { LoanView } from '@/api/types';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { PageHeader } from '@/components/PageHeader';
-import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
-import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
+import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
@@ -18,7 +16,6 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectCoverage,
   selectDetail,
-  selectLoans,
   selectReinstating,
   selectResuming,
   selectSuspending,
@@ -27,6 +24,7 @@ import {
 import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
+import { LoansPanel } from './LoansPanel';
 import { Field } from '@/components/Field';
 import {
   blankSuspendPolicyForm,
@@ -56,18 +54,15 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 
   const detail = usePolicyStore(selectDetail(policyNumber));
   const coverage = usePolicyStore(selectCoverage(policyNumber));
-  const loans = usePolicyStore(selectLoans(policyNumber));
 
   const loadDetail = usePolicyStore((s) => s.loadDetail);
   const loadCoverage = usePolicyStore((s) => s.loadCoverage);
-  const loadLoans = usePolicyStore((s) => s.loadLoans);
 
   useEffect(() => {
     if (!policyNumber) return;
     void loadDetail(policyNumber);
     void loadCoverage(policyNumber);
-    void loadLoans(policyNumber);
-  }, [policyNumber, loadDetail, loadCoverage, loadLoans]);
+  }, [policyNumber, loadDetail, loadCoverage]);
 
   const policy = detail.data;
 
@@ -121,7 +116,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           </Panel>
 
           <Panel title="Loans" subtitle="Policy loans taken against cash value">
-            {renderLoans()}
+            <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
           </Panel>
         </div>
 
@@ -214,60 +209,6 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
     </>
   );
 
-  function renderLoans() {
-    if (isInitialLoad(loans)) return <LoadingBlock />;
-    if (loans.status === 'error' && loans.error && loans.data === null) {
-      return <ErrorPanel error={loans.error} onRetry={() => void loadLoans(policyNumber)} />;
-    }
-    const rows = loans.data ?? [];
-    if (rows.length === 0) {
-      return (
-        <EmptyState
-          title="No loans"
-          description="No policy loan has been taken against this policy."
-        />
-      );
-    }
-
-    const columns: Column<LoanView>[] = [
-      {
-        key: 'loanId',
-        header: 'Loan',
-        render: (l) => <span className="font-mono text-xs">{l.loanId?.slice(0, 8) ?? '—'}</span>,
-      },
-      { key: 'status', header: 'Status', render: (l) => <StatusBadge kind="loan" value={l.status} /> },
-      {
-        key: 'rate',
-        header: 'Rate',
-        align: 'right',
-        secondary: true,
-        render: (l) =>
-          typeof l.currentInterestRate === 'number' ? `${l.currentInterestRate}%` : '—',
-      },
-      {
-        key: 'principal',
-        header: 'Principal',
-        align: 'right',
-        secondary: true,
-        render: (l) => formatMoney(l.principalAmount),
-      },
-      {
-        key: 'outstanding',
-        header: 'Outstanding',
-        align: 'right',
-        render: (l) => formatMoney(l.outstandingBalance),
-      },
-    ];
-
-    return (
-      <DataTable
-        columns={columns}
-        rows={rows}
-        rowKey={(l) => l.loanId ?? JSON.stringify(l)}
-        caption={`Loans for ${policyNumber}`}
-      />
-    );
-  }
 
   function renderCoverage() {
     if (isInitialLoad(coverage)) return <LoadingBlock />;

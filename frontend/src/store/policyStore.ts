@@ -5,6 +5,8 @@ import {
   issuePolicy,
   listInvoices,
   listLoans,
+  originateLoan,
+  recordLoanRepayment,
   reinstatePolicy,
   replaceBeneficiaries,
   requestPaymentForInvoice,
@@ -18,8 +20,10 @@ import type {
   BeneficiaryInput,
   CoverageStatusView,
   InvoiceView,
+  LoanRepaymentRequest,
   LoanView,
   ManualIssueRequest,
+  OriginateLoanRequest,
   Page,
   PaymentRequest,
   PolicyView,
@@ -57,6 +61,12 @@ interface PolicyState {
   // action on one must not corrupt another's state.
   waivingInvoice: Keyed<true>;
   requestingPayment: Keyed<true>;
+  // Origination is keyed by policyNumber, not by loan id: the loan does not exist
+  // yet, and a policy can only have one origination in flight from this screen.
+  originatingLoan: Keyed<true>;
+  // Repayment is keyed by loanId -- it targets an existing loan, and a failure on
+  // one loan must not disturb another's form on the same policy.
+  repayingLoan: Keyed<true>;
   // Each keyed by policyNumber, separately from `detail` and from each other --
   // same shape as claims' submittingAssessment/decidingSettlement/reopening: three
   // distinct lifecycle actions on the same entity, each its own tracked mutation.
@@ -85,6 +95,14 @@ interface PolicyState {
     attempt: MutationAttempt,
   ) => Promise<void>;
   resetRequestPaymentForInvoice: (invoiceId: string) => void;
+  originateLoan: (policyNumber: string, request: OriginateLoanRequest) => Promise<void>;
+  resetOriginateLoan: (policyNumber: string) => void;
+  recordLoanRepayment: (
+    policyNumber: string,
+    loanId: string,
+    request: LoanRepaymentRequest,
+  ) => Promise<void>;
+  resetRecordLoanRepayment: (loanId: string) => void;
   suspendPolicy: (policyNumber: string, request: SuspendPolicyRequest) => Promise<void>;
   resetSuspendPolicy: (policyNumber: string) => void;
   resumePolicy: (policyNumber: string) => Promise<void>;
@@ -103,6 +121,8 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   issuing: idle(),
   waivingInvoice: {},
   requestingPayment: {},
+  originatingLoan: {},
+  repayingLoan: {},
   suspending: {},
   resuming: {},
   reinstating: {},
@@ -243,6 +263,51 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       return { requestingPayment: rest };
     }),
 
+  originateLoan: (policyNumber, request) =>
+    track(
+      `policy.originateLoan.${policyNumber}`,
+      getState().originatingLoan[policyNumber] ?? idle<true>(),
+      (next) => set((s) => ({ originatingLoan: { ...s.originatingLoan, [policyNumber]: next } })),
+      async (): Promise<true> => {
+        await originateLoan(policyNumber, request);
+        // The 202 DOES carry the new loan, but the list is refetched rather than
+        // appended: origination also moves the policy's cash-value encumbrance,
+        // and a refetch keeps the table consistent with the server instead of
+        // reconstructing it client-side from a single row.
+        await getState().loadLoans(policyNumber);
+        return true;
+      },
+    ),
+
+  resetOriginateLoan: (policyNumber) =>
+    set((s) => {
+      if (!(policyNumber in s.originatingLoan)) return s;
+      const { [policyNumber]: _discard, ...rest } = s.originatingLoan;
+      return { originatingLoan: rest };
+    }),
+
+  recordLoanRepayment: (policyNumber, loanId, request) =>
+    track(
+      `policy.recordLoanRepayment.${loanId}`,
+      getState().repayingLoan[loanId] ?? idle<true>(),
+      (next) => set((s) => ({ repayingLoan: { ...s.repayingLoan, [loanId]: next } })),
+      async (): Promise<true> => {
+        await recordLoanRepayment(loanId, request);
+        // Refetch, not patch: the returned balance is authoritative, but a
+        // repayment that clears the balance also flips the loan to SETTLED, and
+        // the row on screen must show both together.
+        await getState().loadLoans(policyNumber);
+        return true;
+      },
+    ),
+
+  resetRecordLoanRepayment: (loanId) =>
+    set((s) => {
+      if (!(loanId in s.repayingLoan)) return s;
+      const { [loanId]: _discard, ...rest } = s.repayingLoan;
+      return { repayingLoan: rest };
+    }),
+
   // Each of the three below returns the updated PolicyView directly, but `detail`
   // is refreshed from it too -- so a caller reading `detail` (the coverage panel,
   // the status badge in the header) sees the new status without a manual reload.
@@ -347,3 +412,7 @@ export const selectWaivingInvoice = (invoiceId: string) => (s: PolicyState) =>
   s.waivingInvoice[invoiceId] ?? idle<true>();
 export const selectRequestingPayment = (invoiceId: string) => (s: PolicyState) =>
   s.requestingPayment[invoiceId] ?? idle<true>();
+export const selectOriginatingLoan = (policyNumber: string) => (s: PolicyState) =>
+  s.originatingLoan[policyNumber] ?? idle<true>();
+export const selectRepayingLoan = (loanId: string) => (s: PolicyState) =>
+  s.repayingLoan[loanId] ?? idle<true>();
