@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { DisclosurePanel } from './DisclosurePanel';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -201,6 +202,20 @@ export function UnderwritingCaseDetailPage() {
               </form>
             </Panel>
           ) : null}
+
+          {/* Recorded by whoever took the proposal -- agents included -- not gated on the
+              UNDERWRITER role that gates assessment above. Asking the questions and deciding
+              the case are different jobs done by different people.
+
+              This is the evidence a contestability review reads. Claims computes and shows
+              `requiresContestabilityReview` on every claim; until disclosures existed there
+              was nothing behind it. */}
+          <Panel
+            title="Declarations"
+            subtitle="What the applicant declared. Read back on a claim, so it records the question as it was put."
+          >
+            <DisclosurePanel caseId={caseId} />
+          </Panel>
         </div>
 
         <div className="space-y-5">

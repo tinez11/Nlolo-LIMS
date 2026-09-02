@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
  * Underwriting domain e2e coverage against the real backend.
@@ -43,18 +43,7 @@ test.describe('staff underwriting', () => {
   test('opens a case, decides it by submitting one assessment, and the decision survives a reload', async ({
     page,
   }) => {
-    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
-    await page.getByPlaceholder('Type a name to search').fill('Amina');
-    await page.getByText('Amina Owner').click();
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
-    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-    await page.getByLabel('Sum assured').fill('1500000.00');
-
-    await page.getByRole('button', { name: 'Open case' }).click();
-
-    // A real POST -> 201 -> navigation to the new case's own url. The case id is
-    // server-generated (a UUID), so match the pattern, not a literal value.
-    await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    await openCaseForAmina(page);
     await expect(page.getByRole('heading', { name: 'Underwriting case' })).toBeVisible();
     await expect(page.getByText('None', { exact: true })).toBeVisible(); // referral status
 
@@ -76,14 +65,7 @@ test.describe('staff underwriting', () => {
   });
 
   test('refers a case to a senior underwriter', async ({ page }) => {
-    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
-    await page.getByPlaceholder('Type a name to search').fill('Amina');
-    await page.getByText('Amina Owner').click();
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
-    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-    await page.getByLabel('Sum assured').fill('1500000.00');
-    await page.getByRole('button', { name: 'Open case' }).click();
-    await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    await openCaseForAmina(page);
 
     await page.getByRole('button', { name: 'Refer to senior underwriter' }).click();
 
@@ -97,14 +79,7 @@ test.describe('staff underwriting', () => {
     page,
     browser,
   }) => {
-    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
-    await page.getByPlaceholder('Type a name to search').fill('Amina');
-    await page.getByText('Amina Owner').click();
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
-    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-    await page.getByLabel('Sum assured').fill('1500000.00');
-    await page.getByRole('button', { name: 'Open case' }).click();
-    await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    await openCaseForAmina(page);
     const caseUrl = page.url();
 
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
@@ -113,6 +88,11 @@ test.describe('staff underwriting', () => {
     await expect(financePage.getByRole('heading', { name: 'Underwriting case' })).toBeVisible();
     await expect(financePage.getByRole('button', { name: 'Submit assessment' })).not.toBeVisible();
     await expect(financePage.getByRole('button', { name: 'Refer to senior underwriter' })).not.toBeVisible();
+    // Declarations are the exception, and deliberately so: taking a proposal is not
+    // underwriting it, so recording what the applicant said is open to any staff member
+    // (and to agents), not just the role that decides the case.
+    await expect(financePage.getByRole('heading', { name: 'Declarations' })).toBeVisible();
+    await expect(financePage.getByRole('button', { name: 'Add a declaration' })).toBeVisible();
     await financeContext.close();
   });
 
@@ -120,14 +100,7 @@ test.describe('staff underwriting', () => {
     page,
     context,
   }) => {
-    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
-    await page.getByPlaceholder('Type a name to search').fill('Amina');
-    await page.getByText('Amina Owner').click();
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
-    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
-    await page.getByLabel('Sum assured').fill('1500000.00');
-    await page.getByRole('button', { name: 'Open case' }).click();
-    await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+    await openCaseForAmina(page);
     const caseUrl = page.url();
 
     // A second tab loads the SAME not-yet-decided case, capturing the
@@ -154,4 +127,72 @@ test.describe('staff underwriting', () => {
 
     await page2.close();
   });
+
+  test('records a declaration with the question as it was put, and a correction adds to the record rather than replacing it', async ({
+    page,
+  }) => {
+    // underwriting.medical_disclosure existed from M4 with zero call sites, while claims
+    // computes and shows requiresContestabilityReview -- a review with nothing to review.
+    await openCaseForAmina(page);
+
+    await expect(page.getByRole('heading', { name: 'Declarations' })).toBeVisible();
+    await expect(page.getByText(/Nothing declared on this case/)).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole('button', { name: 'Add a declaration' }).click();
+    await page.getByLabel('Question code').fill('Q1');
+    await page.getByLabel('Question as asked').fill('Have you ever been treated for heart disease?');
+    await page.getByLabel('Answer').fill('No');
+    await page.getByRole('button', { name: /^Record 1 declaration/ }).click();
+
+    await expect(page.getByText('Have you ever been treated for heart disease?')).toBeVisible({
+      timeout: 15_000,
+    });
+    // One set on the record. Each is a named region, so "how many recordings are on this
+    // case" is a real assertion rather than a text match that could catch anything.
+    await expect(page.getByRole('region', { name: /^Declarations recorded/ })).toHaveCount(1);
+
+    // A real Postgres row through a jsonb column, not the store's memory: the entity had
+    // never been written before, so nothing had ever exercised its JSON binding.
+    await page.reload();
+    await expect(page.getByText('Have you ever been treated for heart disease?')).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // The correction. Both sets stay on the case -- later evidence supersedes earlier evidence
+    // in the reader's judgement, never by deleting what the applicant originally said, which
+    // is the only shape a non-disclosure argument can be made from.
+    await page.getByRole('button', { name: 'Add a declaration' }).click();
+    await page.getByLabel('Question code').fill('Q1');
+    await page.getByLabel('Question as asked').fill('Have you ever been treated for heart disease?');
+    await page.getByLabel('Answer').fill('Yes -- angioplasty 2021, omitted in error');
+    await page.getByLabel('Notes (optional)').fill('Corrected after the specialist report arrived');
+    await page.getByRole('button', { name: /^Record 1 declaration/ }).click();
+
+    await expect(page.getByText('Yes -- angioplasty 2021, omitted in error')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole('region', { name: /^Declarations recorded/ })).toHaveCount(2);
+    // The original "No" is still there, in its own set, beside the correction.
+    await expect(page.getByRole('region', { name: /^Declarations recorded/ }).first())
+      .toContainText('No');
+    await expect(page.getByText('Corrected after the specialist report arrived')).toBeVisible();
+  });
 });
+
+/**
+ * The one preamble every test that needs a real case shares: `POST /underwriting/cases` is the
+ * only way onto this domain (see the file header), so each test opens its own.
+ *
+ * A real POST -> 201 -> navigation to the new case's own url. The case id is server-generated,
+ * so the caller matches the url pattern and reads `page.url()` rather than any literal value.
+ */
+async function openCaseForAmina(page: Page) {
+  await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
+  await page.getByPlaceholder('Type a name to search').fill('Amina');
+  await page.getByText('Amina Owner').click();
+  await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+  await expect(page.getByText('Resolving product version…')).not.toBeVisible();
+  await page.getByLabel('Sum assured').fill('1500000.00');
+  await page.getByRole('button', { name: 'Open case' }).click();
+  await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+}

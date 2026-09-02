@@ -127,6 +127,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
+            "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyloan.PolicyLoanApiImpl.originateLoan reads

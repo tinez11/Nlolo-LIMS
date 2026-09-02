@@ -9,8 +9,12 @@ import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.domain.*;
+import tz.co.nlolo.lifeplatform.underwriting.infrastructure.MedicalDisclosureRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.RiskAssessmentRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.UnderwritingCaseRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,10 +40,14 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ReferenceDataApi referenceDataApi;
     private final RulesEnginePort rulesEnginePort;
     private final ApplicationEventPublisher eventPublisher;
+    private final MedicalDisclosureRepository medicalDisclosureRepository;
+    /** Serialises the disclosure Q&A set into its JSONB column -- see recordDisclosures. */
+    private final ObjectMapper objectMapper;
 
     public UnderwritingApiImpl(UnderwritingCaseRepository underwritingCaseRepository, RiskAssessmentRepository riskAssessmentRepository,
                                 PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi, RulesEnginePort rulesEnginePort,
-                                ApplicationEventPublisher eventPublisher) {
+                                ApplicationEventPublisher eventPublisher,
+                                MedicalDisclosureRepository medicalDisclosureRepository, ObjectMapper objectMapper) {
         this.underwritingCaseRepository = underwritingCaseRepository;
         this.riskAssessmentRepository = riskAssessmentRepository;
         this.partyApi = partyApi;
@@ -47,6 +55,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         this.referenceDataApi = referenceDataApi;
         this.rulesEnginePort = rulesEnginePort;
         this.eventPublisher = eventPublisher;
+        this.medicalDisclosureRepository = medicalDisclosureRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -118,6 +128,66 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             eventPublisher.publishEvent(DomainEventEnvelope.of("underwriting.UnderwritingDecisionMade", tenantId, payload));
         }
         return toView(underwritingCase);
+    }
+
+    @Override
+    @Transactional
+    public MedicalDisclosureView recordDisclosures(UUID caseId, List<DisclosureAnswer> answers, String recordedBy) {
+        UUID tenantId = TenantContext.get();
+        // Confirms the case exists in this tenant before writing a child row against it --
+        // same anti-enumeration shape as everywhere else in this class.
+        findOrThrow(caseId, tenantId);
+        if (answers == null || answers.isEmpty()) {
+            throw new UnderwritingValidationException("A disclosure set must contain at least one answer");
+        }
+
+        MedicalDisclosure disclosure = new MedicalDisclosure(tenantId, caseId, writeJson(answers), recordedBy);
+        medicalDisclosureRepository.save(disclosure);
+        return toDisclosureView(disclosure);
+    }
+
+    @Override
+    public List<MedicalDisclosureView> listDisclosures(UUID caseId) {
+        UUID tenantId = TenantContext.get();
+        findOrThrow(caseId, tenantId);
+        return medicalDisclosureRepository
+            .findByTenantIdAndCaseIdOrderByCreatedAtAscMedicalDisclosureIdAsc(tenantId, caseId)
+            .stream()
+            .map(this::toDisclosureView)
+            .toList();
+    }
+
+    private MedicalDisclosureView toDisclosureView(MedicalDisclosure disclosure) {
+        return new MedicalDisclosureView(disclosure.getMedicalDisclosureId(), disclosure.getCaseId(),
+            readJson(disclosure.getQuestionResponseSet()), disclosure.getRecordedBy(), disclosure.getCreatedAt());
+    }
+
+    /**
+     * The Q&A set is a JSONB column holding a JSON array, because the question set is
+     * product-specific and this module does not own it. Serialised here rather than mapped to a
+     * child table for the same reason: a table would impose a shape the platform has no authority
+     * to define.
+     *
+     * <p>A serialisation failure is not swallowed. Losing a disclosure quietly is the one outcome
+     * this whole feature exists to prevent.
+     */
+    private String writeJson(List<DisclosureAnswer> answers) {
+        try {
+            return objectMapper.writeValueAsString(answers);
+        } catch (JsonProcessingException e) {
+            throw new UnderwritingValidationException("Could not record disclosures: " + e.getOriginalMessage());
+        }
+    }
+
+    private List<DisclosureAnswer> readJson(String json) {
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<DisclosureAnswer>>() {});
+        } catch (JsonProcessingException e) {
+            // Stored JSON that no longer parses means the shape changed under a row that already
+            // exists. Failing loudly beats returning an empty list, which would read as "nothing
+            // was disclosed" -- the most misleading answer this endpoint could give.
+            throw new IllegalStateException("Stored disclosure set is not readable as answers", e);
+        }
     }
 
     private static boolean isDecided(UnderwritingCase underwritingCase) {

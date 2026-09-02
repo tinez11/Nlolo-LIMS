@@ -247,7 +247,7 @@ required check trains people to ignore CI.
 4. `RegisterCorporateRequest.contactInfo` — declare its real properties: `phoneNumber` (`^\+255\d{9}$`) and `email`, both optional, object itself required
 5. `PageMeta` — add `required: [page, pageSize, totalElements]`
 6. `openapi-policy.yaml` — add `SURRENDER` to `BenefitType` (present in Java, missing from the spec)
-7. `openapi-underwriting.yaml` — **remove `medicalDisclosure`**, see §11
+7. `openapi-underwriting.yaml` — ~~**remove `medicalDisclosure`**~~ removed, and disclosures then built as their own resource, see §11
 
 **Housekeeping:**
 
@@ -294,12 +294,26 @@ permanently in an append-only table. The vocabulary needs ratifying — and then
 enforcing in the spec and backend — before any UI mints it. Same shape as the M7
 commission-semantics doc void.
 
-**`medicalDisclosure`.** Advertised in the spec, absent from the Java DTO,
+**`medicalDisclosure`.** ~~Advertised in the spec, absent from the Java DTO,
 silently discarded with a 201 (Spring Boot's `FAIL_ON_UNKNOWN_PROPERTIES=false`).
 The `MedicalDisclosure` entity and repository exist with zero call sites, and
 `RiskProfile` explicitly excludes occupation/smoker factors for want of a
 structured source. A form here would appear to work and throw the user's input
-away. Removed from the spec; wiring it is backend feature work.
+away. Removed from the spec; wiring it is backend feature work.~~ **Closed** —
+but as its own resource, not as a field on the create request. `POST/GET
+/underwriting/cases/{caseId}/disclosures` plus `DisclosurePanel` on the case
+detail screen. A proposal form is answered in one sitting and can be re-taken
+when new evidence arrives, and a correction is *additional* evidence rather than
+an edit, which a field on `OpenCaseRequest` cannot express.
+
+The deferral's own reasoning still holds and shaped the fix: the
+platform does not own the question set, so it records the question **as asked**
+in the applicant's hearing rather than validating against a canonical list it
+would be inventing. And it is deliberately not an input to the decision —
+`SimpleRulesEngine` has no validated thresholds, so rating on a declared
+condition needs an actuary, while *recording* the evidence has an honest answer
+today. This is what gives `Claim.requiresContestabilityReview`, computed and
+shown on every claim since M6, something to actually review.
 
 **Other deferrals:** CORS bean; the underwriting case-queue endpoint; party
 search; paginating the 11 bare-array endpoints; `additionalProperties: false` on

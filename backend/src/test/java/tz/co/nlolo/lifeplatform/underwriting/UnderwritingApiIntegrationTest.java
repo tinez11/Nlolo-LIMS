@@ -47,6 +47,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
+            "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql");
     }
 
@@ -309,6 +310,102 @@ class UnderwritingApiIntegrationTest {
 
         assertThrows(UnderwritingCaseAlreadyDecidedException.class, () ->
             underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Actually fine", new BigDecimal("5"), "underwriter2"));
+    }
+
+    // ---- Medical disclosures ------------------------------------------------------------
+    //
+    // The medical_disclosure table has existed since M4 with ZERO call sites, while claims
+    // computes and displays Claim.requiresContestabilityReview -- a review with nothing to
+    // review, because nothing on this platform held any evidence of what had been disclosed.
+
+    private List<DisclosureAnswer> twoAnswers() {
+        return List.of(
+            new DisclosureAnswer("Q1", "Have you ever been treated for heart disease?", "No", null),
+            new DisclosureAnswer("Q2", "Do you smoke?", "Yes, 10 a day since 2015", "Volunteered without prompting"));
+    }
+
+    @Test
+    void disclosuresRoundTripWithTheirQuestionsAndWhoRecordedThem() {
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+
+        MedicalDisclosureView recorded = underwritingApi.recordDisclosures(caseId, twoAnswers(), "agent.senior");
+        assertEquals(caseId, recorded.caseId());
+        assertEquals("agent.senior", recorded.recordedBy());
+
+        List<MedicalDisclosureView> found = underwritingApi.listDisclosures(caseId);
+        assertEquals(1, found.size());
+        List<DisclosureAnswer> answers = found.get(0).answers();
+        assertEquals(2, answers.size());
+        // The WORDING is what a contest turns on, so it must survive the round trip -- not just
+        // the code, which a later edit to the form could redefine.
+        assertEquals("Have you ever been treated for heart disease?", answers.get(0).question());
+        assertEquals("Yes, 10 a day since 2015", answers.get(1).answer());
+        assertEquals("Volunteered without prompting", answers.get(1).notes());
+    }
+
+    @Test
+    void aSecondDisclosureSetIsAddedRatherThanReplacingTheFirst() {
+        // Both stay on the case. Later evidence supersedes earlier evidence in the reader's
+        // judgement, not by deleting what was said before -- which is the only shape a
+        // non-disclosure argument can be made from.
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+        underwritingApi.recordDisclosures(caseId, twoAnswers(), "agent.senior");
+        underwritingApi.recordDisclosures(caseId,
+            List.of(new DisclosureAnswer("Q1", "Have you ever been treated for heart disease?",
+                "Yes -- angioplasty 2021, omitted in error", "Corrected after specialist report")),
+            "underwriter1");
+
+        List<MedicalDisclosureView> found = underwritingApi.listDisclosures(caseId);
+        assertEquals(2, found.size(), "the original declaration must still be on the record");
+        assertEquals("agent.senior", found.get(0).recordedBy(), "oldest first");
+        assertEquals("underwriter1", found.get(1).recordedBy());
+    }
+
+    @Test
+    void disclosuresCanStillBeRecordedAfterTheCaseIsDecided() {
+        // Deliberate. A non-disclosure usually surfaces when a claim is made, long after the
+        // case closed; refusing late entries would push that evidence off the platform, which
+        // is exactly where it is today.
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        assertEquals(DecisionOutcome.ACCEPT, underwritingApi.getCase(caseId).decisionOutcome());
+
+        underwritingApi.recordDisclosures(caseId, twoAnswers(), "claims.assessor");
+        assertEquals(1, underwritingApi.listDisclosures(caseId).size());
+    }
+
+    @Test
+    void recordingDisclosuresDoesNotChangeTheDecision() {
+        // The evidence is recorded; it is NOT rated on. Mapping a declared condition to a risk
+        // score is actuarial policy this codebase does not have -- SimpleRulesEngine is an
+        // explicit placeholder -- and RiskProfile requires new rating data to extend the profile
+        // and the engine together rather than be invented.
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        var before = underwritingApi.getCase(caseId);
+
+        underwritingApi.recordDisclosures(caseId,
+            List.of(new DisclosureAnswer("Q1", "Any serious illness?", "Yes -- extensive history", null)),
+            "agent.senior");
+
+        var after = underwritingApi.getCase(caseId);
+        assertEquals(before.decisionOutcome(), after.decisionOutcome());
+        assertEquals(before.decisionDecidedAt(), after.decisionDecidedAt());
+    }
+
+    @Test
+    void anEmptyDisclosureSetIsRefused() {
+        // A row that records that nothing was asked is not evidence, and would read as
+        // "we asked and they declared nothing" -- the most misleading thing this table could say.
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+        assertThrows(UnderwritingValidationException.class, () ->
+            underwritingApi.recordDisclosures(caseId, List.of(), "agent.senior"));
+    }
+
+    @Test
+    void disclosuresOnAnUnknownCaseAre404NotAnEmptyList() {
+        assertThrows(UnderwritingCaseNotFoundException.class, () ->
+            underwritingApi.listDisclosures(UUID.randomUUID()));
     }
 
     @Test

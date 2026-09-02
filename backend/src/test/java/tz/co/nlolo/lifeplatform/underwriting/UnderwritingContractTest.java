@@ -52,6 +52,7 @@ class UnderwritingContractTest {
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
+            "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
@@ -277,6 +278,79 @@ class UnderwritingContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
             .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.page.totalElements").value(1));
+    }
+
+    // --- Disclosures ------------------------------------------------------------------------
+
+    @Test
+    void recordAndListDisclosuresMatchTheOpenApiContract() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+        String caseId = JsonPath.read(
+            openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId()), "$.caseId");
+
+        // Recorded by an AGENT, not an underwriter: taking a proposal is not underwriting it,
+        // and the person who asked the questions is the one who writes down the answers.
+        mockMvc.perform(post("/underwriting/cases/" + caseId + "/disclosures")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"answers":[{"questionCode":"Q1","question":"Have you ever been treated for heart disease?","answer":"No"},
+                                {"questionCode":"Q2","question":"Do you smoke?","answer":"Yes, 10 a day","notes":"Volunteered"}]}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        mockMvc.perform(get("/underwriting/cases/" + caseId + "/disclosures")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                .jsonPath("$[0].answers.length()").value(2))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                .jsonPath("$[0].answers[0].question").value("Have you ever been treated for heart disease?"));
+    }
+
+    @Test
+    void aDisclosureSetWithNoAnswersIsRejectedWith422() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+        String caseId = JsonPath.read(
+            openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId()), "$.caseId");
+
+        // 400, not 422: @NotEmpty on the request body means Bean Validation rejects the
+        // request shape before any domain code runs, and this platform maps that to 400. The
+        // domain's own UnderwritingValidationException is the 422 -- it is reachable through
+        // UnderwritingApi directly (see anEmptyDisclosureSetIsRefused) and is the backstop for
+        // any caller that is not this controller.
+        mockMvc.perform(post("/underwriting/cases/" + caseId + "/disclosures")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"answers\":[]}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anAnswerWithNoQuestionTextIsRejected() throws Exception {
+        // The wording is what a contest turns on. A row carrying a code and an answer but no
+        // question looks like evidence and is not.
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+        String caseId = JsonPath.read(
+            openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId()), "$.caseId");
+
+        mockMvc.perform(post("/underwriting/cases/" + caseId + "/disclosures")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"answers\":[{\"questionCode\":\"Q1\",\"question\":\"\",\"answer\":\"No\"}]}"))
+            .andExpect(status().isBadRequest());
     }
 
     // --- Agent scoping, which this endpoint had none of --------------------------------------

@@ -298,6 +298,9 @@ export const POLICY_STATUSES: readonly PolicyStatus[] = [
  * open it, from that response -- there is no way to read it back afterward.
  */
 export type UnderwritingCaseView = UnderwritingComponents['schemas']['UnderwritingCaseView'];
+export type MedicalDisclosureView = UnderwritingComponents['schemas']['MedicalDisclosureView'];
+export type DisclosureAnswer = UnderwritingComponents['schemas']['DisclosureAnswer'];
+export type RecordDisclosuresRequest = UnderwritingComponents['schemas']['RecordDisclosuresRequest'];
 export type UnderwritingCaseStatus = NonNullable<UnderwritingCaseView['status']>;
 export const UNDERWRITING_CASE_STATUSES: readonly UnderwritingCaseStatus[] = ['OPEN', 'IN_REVIEW', 'DECIDED'];
 export type UnderwritingReferralStatus = NonNullable<UnderwritingCaseView['referralStatus']>;

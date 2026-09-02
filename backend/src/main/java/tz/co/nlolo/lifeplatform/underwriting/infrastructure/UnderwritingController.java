@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.MedicalDisclosureView;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseStatus;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
@@ -19,6 +20,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -104,5 +106,32 @@ public class UnderwritingController {
     public ResponseEntity<Void> referCase(@PathVariable UUID caseId) {
         underwritingApi.referToSeniorUnderwriter(caseId);
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Records what an applicant declared on a proposal form.
+     *
+     * <p>REALM_AGENTS or REALM_STAFF, deliberately NOT the UNDERWRITER role that gates assessment
+     * and referral. Taking a proposal is not underwriting it -- the agent sitting with the
+     * customer is the person who asks the questions and writes down the answers, and requiring an
+     * underwriter would put the record in the hands of someone who was not in the room.
+     *
+     * <p>The {@code medical_disclosure} table has existed since M4 with no writer at all, while
+     * claims computes and displays {@code requiresContestabilityReview} -- a review with nothing
+     * to review. This is the writer.
+     */
+    @PostMapping("/cases/{caseId}/disclosures")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<MedicalDisclosureView> recordDisclosures(@PathVariable UUID caseId,
+            @Valid @RequestBody RecordDisclosuresRequest request, @AuthenticationPrincipal Jwt jwt) {
+        MedicalDisclosureView view = underwritingApi.recordDisclosures(caseId,
+            request.toApiAnswers(), jwt.getSubject());
+        return ResponseEntity.status(HttpStatus.CREATED).body(view);
+    }
+
+    @GetMapping("/cases/{caseId}/disclosures")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<MedicalDisclosureView>> listDisclosures(@PathVariable UUID caseId) {
+        return ResponseEntity.ok(underwritingApi.listDisclosures(caseId));
     }
 }

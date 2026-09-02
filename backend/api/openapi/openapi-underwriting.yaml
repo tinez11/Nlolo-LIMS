@@ -130,8 +130,114 @@ paths:
       responses:
         '200': { description: Referral recorded }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /underwriting/cases/{caseId}/disclosures:
+    post:
+      summary: Record what the applicant declared on the proposal form
+      description: >-
+        AGENTS or STAFF, deliberately not the UNDERWRITER role that gates assessment and
+        referral: taking a proposal is not underwriting it, and the person who asked the
+        questions is the one who should record the answers.
+
+
+        Recordable at any point in a case's life, including after a decision -- a
+        non-disclosure usually surfaces when a claim is made, long after the case closed, and
+        the record exists to say what was asked and answered at the time. Recording a second
+        set does not amend the first; both stay on the case.
+
+
+        Does NOT feed the decision. Mapping a declared condition to a risk score is actuarial
+        policy this platform does not have -- SimpleRulesEngine is an explicit placeholder
+        with no validated thresholds -- and RiskProfile requires that new rating data extend
+        the profile and the engine together rather than being invented here.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordDisclosuresRequest' }
+      responses:
+        '201':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MedicalDisclosureView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { description: "No such case in this tenant" }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+    get:
+      summary: Every disclosure set recorded on this case, oldest first
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MedicalDisclosureView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { description: "No such case in this tenant" }
 components:
   schemas:
+    DisclosureAnswer:
+      description: >-
+        One question the applicant was asked and what they answered. The platform does not own
+        the question set -- which questions a proposal form asks is product-specific and shaped
+        by what the regulator and reinsurer require -- so it records what was asked rather than
+        validating it against a canonical list.
+      type: object
+      required: [questionCode, question, answer]
+      properties:
+        questionCode:
+          description: The product's own identifier, so answers stay comparable when wording is edited.
+          type: string
+        question:
+          description: >-
+            The wording actually put to the applicant. Stored rather than looked up: contesting
+            a claim turns on what the person was asked at the time, not on what the current
+            version of the form says.
+          type: string
+        answer:
+          description: >-
+            Free text, not a boolean. "Have you ever been treated for heart disease" is often
+            answered with a qualification, and flattening that to yes/no discards the part a
+            reviewer needs.
+          type: string
+        notes: { type: [string, "null"] }
+    RecordDisclosuresRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/DisclosureAnswer' }
+    MedicalDisclosureView:
+      type: object
+      properties:
+        medicalDisclosureId: { type: string, format: uuid }
+        caseId: { type: string, format: uuid }
+        answers:
+          type: array
+          items: { $ref: '#/components/schemas/DisclosureAnswer' }
+        recordedBy:
+          description: JWT subject of whoever took the proposal -- who asked, not just when.
+          type: [string, "null"]
+        recordedAt: { type: string, format: date-time }
     OpenCaseRequest:
       type: object
       # sumAssured uses the platform's shared Money schema (a decimal STRING amount,
@@ -161,13 +267,12 @@ components:
             is a genuine direct sale.
           type: [string, "null"]
           format: uuid
-        # medicalDisclosure was declared here but never existed in OpenCaseRequest.java.
-        # Spring Boot defaults FAIL_ON_UNKNOWN_PROPERTIES=false, so a client sending it got
-        # a 201 with the disclosure silently discarded. The MedicalDisclosure entity and its
-        # repository exist with zero call sites, and RiskProfile deliberately excludes
-        # occupation/smoker factors for want of a structured source. Removed rather than left
-        # advertising a field that accepts input and throws it away; re-add it here when the
-        # backend actually persists and rates on it.
+        # medicalDisclosure is deliberately NOT a field here. It was once declared on this
+        # request and never existed in OpenCaseRequest.java, so a client sending one got a 201
+        # and had it silently discarded. Disclosures are now real, but as their own resource --
+        # POST /underwriting/cases/{caseId}/disclosures -- because a proposal form is answered
+        # in a sitting and can be re-taken when new evidence arrives, which a field on the
+        # create request cannot express.
     SubmitAssessmentRequest:
       type: object
       required: [assessmentType, findings]

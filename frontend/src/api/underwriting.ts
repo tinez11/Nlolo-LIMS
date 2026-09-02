@@ -1,5 +1,13 @@
 import { get, post } from '@/lib/http';
-import type { OpenCaseRequest, Page, SubmitAssessmentRequest, UnderwritingCaseStatus, UnderwritingCaseView } from './types';
+import type {
+  MedicalDisclosureView,
+  OpenCaseRequest,
+  Page,
+  RecordDisclosuresRequest,
+  SubmitAssessmentRequest,
+  UnderwritingCaseStatus,
+  UnderwritingCaseView,
+} from './types';
 
 /**
  * Underwriting read/write surface.
@@ -96,4 +104,28 @@ export function submitAssessment(
  *  an already-decided case, and repeatable). */
 export function referCase(caseId: string): Promise<void> {
   return post<void>(`/underwriting/cases/${encodeURIComponent(caseId)}/referral`);
+}
+
+/**
+ * `POST /underwriting/cases/{caseId}/disclosures` -- agents or staff, deliberately NOT the
+ * UNDERWRITER role that gates assessment: the person who asked the questions records the
+ * answers.
+ *
+ * The medical_disclosure table existed from M4 with no writer at all, while claims computes
+ * and displays `requiresContestabilityReview` -- a review with nothing to review. This is what
+ * gives it something.
+ */
+export function recordDisclosures(
+  caseId: string,
+  request: RecordDisclosuresRequest,
+): Promise<MedicalDisclosureView> {
+  return post<MedicalDisclosureView>(
+    `/underwriting/cases/${encodeURIComponent(caseId)}/disclosures`,
+    request,
+  );
+}
+
+/** `GET /underwriting/cases/{caseId}/disclosures` -- oldest first; a later set never replaces an earlier one. */
+export function listDisclosures(caseId: string): Promise<MedicalDisclosureView[]> {
+  return get<MedicalDisclosureView[]>(`/underwriting/cases/${encodeURIComponent(caseId)}/disclosures`);
 }

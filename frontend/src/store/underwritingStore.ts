@@ -1,7 +1,22 @@
 import { create } from 'zustand';
-import { getCase, listCases, openCase, referCase, submitAssessment } from '@/api/underwriting';
+import {
+  getCase,
+  listCases,
+  listDisclosures,
+  openCase,
+  recordDisclosures,
+  referCase,
+  submitAssessment,
+} from '@/api/underwriting';
 import type { UnderwritingListParams } from '@/api/underwriting';
-import type { OpenCaseRequest, Page, SubmitAssessmentRequest, UnderwritingCaseView } from '@/api/types';
+import type {
+  MedicalDisclosureView,
+  OpenCaseRequest,
+  Page,
+  RecordDisclosuresRequest,
+  SubmitAssessmentRequest,
+  UnderwritingCaseView,
+} from '@/api/types';
 import { idle, success, track, type Resource } from './createResourceSlice';
 
 /**
@@ -22,6 +37,10 @@ interface UnderwritingState {
   // failed submission on one case must not corrupt another's state.
   submittingAssessment: Keyed<UnderwritingCaseView>;
   referring: Keyed<true>;
+  // Read and write kept in separate slots, keyed by caseId: a failed recording must not
+  // discard the disclosures already on screen, which are the evidence a reader came for.
+  disclosures: Keyed<MedicalDisclosureView[]>;
+  recordingDisclosures: Keyed<true>;
 
   loadList: (params: UnderwritingListParams) => Promise<void>;
   openCase: (request: OpenCaseRequest) => Promise<void>;
@@ -30,6 +49,9 @@ interface UnderwritingState {
   submitAssessment: (caseId: string, request: SubmitAssessmentRequest) => Promise<void>;
   resetSubmitAssessment: (caseId: string) => void;
   referCase: (caseId: string) => Promise<void>;
+  loadDisclosures: (caseId: string) => Promise<void>;
+  recordDisclosures: (caseId: string, request: RecordDisclosuresRequest) => Promise<void>;
+  resetRecordDisclosures: (caseId: string) => void;
   resetReferCase: (caseId: string) => void;
 }
 
@@ -39,6 +61,8 @@ export const useUnderwritingStore = create<UnderwritingState>((set, getState) =>
   cases: {},
   submittingAssessment: {},
   referring: {},
+  disclosures: {},
+  recordingDisclosures: {},
 
   loadList: (params) =>
     track(
@@ -88,6 +112,37 @@ export const useUnderwritingStore = create<UnderwritingState>((set, getState) =>
       return { submittingAssessment: rest };
     }),
 
+  loadDisclosures: (caseId) =>
+    track(
+      `underwriting.disclosures.${caseId}`,
+      getState().disclosures[caseId] ?? idle<MedicalDisclosureView[]>(),
+      (next) => set((s) => ({ disclosures: { ...s.disclosures, [caseId]: next } })),
+      () => listDisclosures(caseId),
+    ),
+
+  recordDisclosures: (caseId, request) =>
+    track(
+      `underwriting.recordDisclosures.${caseId}`,
+      getState().recordingDisclosures[caseId] ?? idle<true>(),
+      (next) => set((s) => ({ recordingDisclosures: { ...s.recordingDisclosures, [caseId]: next } })),
+      // Explicit Promise<true>: see productStore.publishVersion for why the annotation is
+      // required to stop TypeScript widening the literal to boolean.
+      async (): Promise<true> => {
+        await recordDisclosures(caseId, request);
+        // The POST returns the one new set, not the whole list, and a second recording adds
+        // to the case rather than replacing it -- so refetch to show the full record.
+        await getState().loadDisclosures(caseId);
+        return true;
+      },
+    ),
+
+  resetRecordDisclosures: (caseId) =>
+    set((s) => {
+      if (!(caseId in s.recordingDisclosures)) return s;
+      const { [caseId]: _discard, ...rest } = s.recordingDisclosures;
+      return { recordingDisclosures: rest };
+    }),
+
   referCase: (caseId) =>
     track(
       `underwriting.refer.${caseId}`,
@@ -117,3 +172,7 @@ export const selectSubmittingAssessment = (caseId: string) => (s: UnderwritingSt
   s.submittingAssessment[caseId] ?? idle<UnderwritingCaseView>();
 export const selectReferring = (caseId: string) => (s: UnderwritingState) =>
   s.referring[caseId] ?? idle<true>();
+export const selectDisclosures = (caseId: string) => (s: UnderwritingState) =>
+  s.disclosures[caseId] ?? idle<MedicalDisclosureView[]>();
+export const selectRecordingDisclosures = (caseId: string) => (s: UnderwritingState) =>
+  s.recordingDisclosures[caseId] ?? idle<true>();
