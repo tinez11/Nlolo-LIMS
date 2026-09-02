@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { UNDERWRITING_CASE_STATUSES, type UnderwritingCaseStatus, type UnderwritingCaseView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
+import { PartyName } from '@/components/PartyName';
 import { StatCards, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
@@ -83,7 +84,13 @@ export function UnderwritingQueuePage() {
     {
       key: 'applicantPartyId',
       header: 'Applicant',
-      render: (c) => <span className="font-mono text-xs">{c.applicantPartyId ?? '—'}</span>,
+      // The underwriter's whole job on this screen is deciding which case to
+      // open next, and a column of raw ids cannot support that: on the live
+      // queue, 17 of 20 rows rendered the same applicant uuid. `PartyName`
+      // caches per id, so a queue of 20 rows costs one request per distinct
+      // person, not one per row.
+      render: (c) =>
+        c.applicantPartyId ? <PartyName partyId={c.applicantPartyId} /> : '—',
     },
     {
       key: 'productId',

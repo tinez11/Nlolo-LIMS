@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { LICENSE_STATUSES, type AgentView, type LicenseStatus } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
+import { PartyName } from '@/components/PartyName';
 import { StatCards, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
@@ -23,11 +24,15 @@ const DEFAULT_PAGE_SIZE = 20;
  * point onto the domain that existed server-side. PLAN.md §7 recorded that as a
  * deliberate exception. This retires it — the nav item is a real list now.
  *
- * There is no name column, and that is not an omission. An agent has no name in
- * the distribution context; the person's name lives in `party`, reached through
- * `partyId`, so a name column would mean a second request per row. Search
- * therefore matches the LICENCE NUMBER, which is the agent's human-facing
- * identifier here.
+ * An agent has no name in the distribution context -- the person's name lives in
+ * `party`, reached through `partyId`. That used to mean the Party column showed
+ * a raw id, on the grounds that resolving it would cost a request per row.
+ * `PartyName` now caches per id across every instance, so the column shows the
+ * person and the page costs one request per distinct party.
+ *
+ * Search still matches the LICENCE NUMBER, not the name: it is the agent's
+ * human-facing identifier in this context, and `GET /agents` has no name filter
+ * to offer.
  */
 export function AgentsPage() {
   const [params, setParams] = useSearchParams();
@@ -108,9 +113,11 @@ export function AgentsPage() {
       key: 'partyId',
       header: 'Party',
       secondary: true,
-      // The person's name lives in `party`; resolving it here would be a second
-      // request per row, so the id is shown rather than a name that would be wrong.
-      render: (a) => <span className="font-mono text-xs text-muted-foreground">{a.partyId ?? '—'}</span>,
+      // The person's name lives in `party`, not in the distribution context. The
+      // objection to resolving it here used to be a second request per row;
+      // `PartyName` caches per id across every instance, so that cost is now one
+      // request per distinct person for the whole page.
+      render: (a) => (a.partyId ? <PartyName partyId={a.partyId} /> : '—'),
     },
     {
       key: 'hierarchyParentId',

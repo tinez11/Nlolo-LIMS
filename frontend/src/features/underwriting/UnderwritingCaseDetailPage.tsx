@@ -8,6 +8,7 @@ import { ASSESSMENT_TYPES } from '@/api/types';
 import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
+import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -257,8 +258,8 @@ export function UnderwritingCaseDetailPage() {
                   label="Applicant"
                   value={
                     view.applicantPartyId ? (
-                      <Link to={`/staff/parties/${view.applicantPartyId}`} className="font-mono text-xs underline">
-                        {view.applicantPartyId}
+                      <Link to={`/staff/parties/${view.applicantPartyId}`} className="underline">
+                        <PartyName partyId={view.applicantPartyId} />
                       </Link>
                     ) : (
                       '—'

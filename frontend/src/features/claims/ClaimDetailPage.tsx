@@ -5,6 +5,7 @@ import { useAuth } from 'react-oidc-context';
 import { canSeeFinance, readIdentity, staffRoles } from '@/auth/claims';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
+import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -135,8 +136,8 @@ export function ClaimDetailPage() {
                 <Field
                   label="Claimant"
                   value={
-                    <Link to={`/staff/parties/${claim.claimantPartyId}`} className="font-mono text-xs underline">
-                      {claim.claimantPartyId}
+                    <Link to={`/staff/parties/${claim.claimantPartyId}`} className="underline">
+                      <PartyName partyId={claim.claimantPartyId} />
                     </Link>
                   }
                 />

@@ -2,6 +2,7 @@ import { ArrowRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Field } from '@/components/Field';
+import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -41,7 +42,7 @@ export function UnderwritingCaseDrawer({
       <SheetContent aria-label="Underwriting case preview">
         <SheetHeader
           title="Underwriting case"
-          subtitle={uwCase?.applicantPartyId}
+          subtitle={uwCase?.applicantPartyId ? <PartyName partyId={uwCase.applicantPartyId} /> : undefined}
           action={uwCase?.status ? <StatusBadge kind="underwritingCase" value={uwCase.status} /> : undefined}
         />
 
@@ -57,7 +58,12 @@ export function UnderwritingCaseDrawer({
 
           {uwCase && (
             <dl className="space-y-0">
-              <Field label="Applicant" value={<span className="font-mono text-xs">{uwCase.applicantPartyId}</span>} />
+              <Field
+                label="Applicant"
+                value={
+                  uwCase.applicantPartyId ? <PartyName partyId={uwCase.applicantPartyId} /> : '—'
+                }
+              />
               <Field label="Product" value={<span className="font-mono text-xs">{uwCase.productId}</span>} />
               <Field
                 label="Decision"

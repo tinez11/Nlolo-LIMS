@@ -40,8 +40,37 @@ async function addPartyRow(page: Page, nameQuery: string, resultText: string, sh
   await page.getByRole('button', { name: 'Add beneficiary' }).click();
   await page.getByRole('button', { name: 'Search for the beneficiary by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill(nameQuery);
-  await page.getByText(resultText).click();
+  await selectPickerOption(page, resultText);
   await page.getByRole('spinbutton').fill(String(sharePercent));
+}
+
+/**
+ * Pick a party from the open PartyPicker, scoped to the picker's own listbox.
+ *
+ * The scoping is load-bearing HERE specifically, and the reason is worth keeping.
+ * A bare `getByText('Amina Owner')` resolves against the whole page, and this is
+ * the one picker that lives on the POLICY DETAIL page -- which renders the
+ * policyholder's name too, as a link to their party page. The link exists on
+ * first paint; the search results arrive a request later. So the unscoped
+ * locator matched the policyholder link, clicked it, and navigated away to
+ * `/staff/parties/<id>` before the dropdown had rendered anything at all. The
+ * visible symptom was a timeout three lines later on a missing spinbutton,
+ * which points nowhere near the real cause.
+ *
+ * Roughly twenty other specs still use the unscoped form and pass, because
+ * their picker sits on a create form where the party's name appears nowhere
+ * else on the page. That is luck, not correctness: the day any of those screens
+ * starts showing a party name, they break exactly like this one did.
+ */
+async function selectPickerOption(page: Page, resultText: string) {
+  await page.getByRole('option', { name: resultText }).click();
+}
+
+/** The Beneficiaries panel on the policy detail page, for scoping assertions to it. */
+function beneficiariesPanel(page: Page) {
+  return page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Beneficiaries' }) });
 }
 
 test.describe('staff beneficiaries edit', () => {
@@ -96,7 +125,7 @@ test.describe('staff beneficiaries edit', () => {
     // hasParty == hasFreeform check rejects independent of the declared type.
     await page.getByRole('button', { name: 'Search for the beneficiary by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
-    await page.getByText('Amina Owner').click();
+    await selectPickerOption(page, 'Amina Owner');
     await page.getByRole('combobox').selectOption('FREEFORM');
     await page.getByPlaceholder('Designee, e.g. "My Estate"').fill('Also this');
     await page.getByRole('spinbutton').fill('100');
@@ -155,10 +184,18 @@ test.describe('staff beneficiaries edit', () => {
     await expect(page.getByRole('button', { name: 'Edit beneficiaries' })).toBeVisible();
     // The whole point: PartyName resolves the id to a real name, not
     // `d9937444-3873-4336-9cb7-addb486f3e1b` showing up raw in the read view.
-    await expect(page.getByText('Amina Owner')).toBeVisible();
+    //
+    // Scoped to the Beneficiaries panel, and it has to be. This fixture's
+    // beneficiary IS the policyholder, and the Policyholder field on this same
+    // page now resolves to a name too -- so a page-wide `getByText('Amina
+    // Owner')` matches twice and fails strict mode. Worse, it would pass while
+    // proving nothing: the policyholder's name alone would satisfy it even if
+    // the beneficiary still rendered a raw uuid, which is the exact regression
+    // this test exists to catch.
+    await expect(beneficiariesPanel(page).getByText('Amina Owner')).toBeVisible();
 
     await page.reload();
-    await expect(page.getByText('Amina Owner')).toBeVisible();
+    await expect(beneficiariesPanel(page).getByText('Amina Owner')).toBeVisible();
 
     // Restore the shared fixture to the seeded baseline (empty).
     await openEdit(page);

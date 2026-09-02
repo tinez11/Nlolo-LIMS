@@ -92,7 +92,17 @@ test.describe('staff issue policy', () => {
     await expect(page.getByText('TZS 2,000,000.00').first()).toBeVisible();
     // Proves the picker actually put the SELECTED party's id in the payload --
     // not just that the UI looked right after submission.
-    await expect(page.getByText('d9937444-3873-4336-9cb7-addb486f3e1b')).toBeVisible();
+    //
+    // The policyholder renders as a NAME now, not a raw uuid, so asserting the
+    // uuid is visible as text no longer works. Asserting the name alone would be
+    // a weaker test than the one it replaces: it would pass on any party called
+    // "Amina Owner" and stop checking which id round-tripped. The link's href
+    // carries the id the server actually stored, so this checks both halves at
+    // once -- the right id came back, AND it resolves to the right person.
+    await expect(page.getByRole('link', { name: 'Amina Owner' })).toHaveAttribute(
+      'href',
+      '/staff/parties/d9937444-3873-4336-9cb7-addb486f3e1b',
+    );
 
     // Reload from scratch -- proves this is a real Postgres row, not the
     // store's in-memory state surviving a soft navigation.

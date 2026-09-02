@@ -2,6 +2,7 @@ import { ArrowRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Field } from '@/components/Field';
+import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -73,11 +74,7 @@ export function ClaimDrawer({ claimId, onClose }: { claimId: string | null; onCl
                 />
               )}
               <ClaimDetailsFields details={claim.details} />
-              <Field
-                label="Claimant"
-                value={<span className="font-mono text-xs">{claim.claimantPartyId}</span>}
-                note="No party lookup endpoint exists yet"
-              />
+              <Field label="Claimant" value={<PartyName partyId={claim.claimantPartyId} />} />
             </dl>
           )}
         </SheetBody>

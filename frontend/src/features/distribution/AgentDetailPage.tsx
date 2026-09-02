@@ -5,6 +5,7 @@ import { useAuth } from 'react-oidc-context';
 import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
+import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -100,8 +101,8 @@ export function AgentDetailPage() {
                   label="Party"
                   value={
                     agent.partyId ? (
-                      <Link to={`/staff/parties/${agent.partyId}`} className="font-mono text-xs underline">
-                        {agent.partyId}
+                      <Link to={`/staff/parties/${agent.partyId}`} className="underline">
+                        <PartyName partyId={agent.partyId} />
                       </Link>
                     ) : (
                       '—'

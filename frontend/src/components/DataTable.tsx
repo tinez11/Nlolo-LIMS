@@ -98,16 +98,36 @@ export function DataTable<T>({
                     {/* The first cell carries the activation control so the row is
                         reachable by keyboard and announced as one action, instead of
                         a click handler on a <tr> that no screen reader can find. */}
+                    {/* `justify-end` is what actually right-aligns a numeric cell.
+                        The `text-right` on the <td> above cannot: these wrappers are
+                        flex containers, and text-align does not position a flex item
+                        -- justify-content does. Without this the <th> right-aligned
+                        and the <td> did not, leaving every numeric column's values
+                        ~100px left of their own header. It stayed invisible on
+                        /policies only because every value there happens to be the
+                        same character length; on /gl-postings the gap was ~140px.
+                        Global `tabular-nums` exists so figures compare vertically,
+                        which is worth nothing if the column does not line up. */}
                     {interactive && index === 0 ? (
                       <button
                         type="button"
                         onClick={() => onRowActivate(row)}
-                        className="-mx-1 flex h-11 w-full items-center rounded px-1 text-left"
+                        className={cn(
+                          '-mx-1 flex h-11 w-full items-center rounded px-1',
+                          column.align === 'right' ? 'justify-end text-right' : 'text-left',
+                        )}
                       >
                         {column.render(row)}
                       </button>
                     ) : (
-                      <div className="flex h-11 items-center">{column.render(row)}</div>
+                      <div
+                        className={cn(
+                          'flex h-11 items-center',
+                          column.align === 'right' && 'justify-end',
+                        )}
+                      >
+                        {column.render(row)}
+                      </div>
                     )}
                   </td>
                 ))}

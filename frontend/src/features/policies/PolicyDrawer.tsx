@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -93,14 +94,11 @@ export function PolicyDrawer({
                 label="Policyholder"
                 value={
                   policy.policyholderPartyId ? (
-                    <span className="font-mono text-xs">{policy.policyholderPartyId}</span>
+                    <PartyName partyId={policy.policyholderPartyId} />
                   ) : (
                     '—'
                   )
                 }
-                // There is no party search or party list endpoint, so a party id
-                // cannot currently be resolved to a name from a policy row.
-                note="No party lookup endpoint exists yet"
               />
               <Field
                 label="Agent of record"

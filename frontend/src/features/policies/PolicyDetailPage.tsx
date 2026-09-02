@@ -7,6 +7,7 @@ import { useAuth } from 'react-oidc-context';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { PageHeader } from '@/components/PageHeader';
+import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -149,11 +150,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   value={
                     policy.policyholderPartyId ? (
                       isStaff ? (
-                        <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="font-mono text-xs underline">
-                          {policy.policyholderPartyId}
+                        <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="underline">
+                          <PartyName partyId={policy.policyholderPartyId} />
                         </Link>
                       ) : (
-                        <span className="font-mono text-xs">{policy.policyholderPartyId}</span>
+                        <PartyName partyId={policy.policyholderPartyId} />
                       )
                     ) : (
                       '—'
