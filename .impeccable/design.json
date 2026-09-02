@@ -1,0 +1,337 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-02T00:00:00.000Z",
+  "title": "Design System: Life Platform Console",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Ledger Ink",
+        "canonical": "oklch(0.16 0 0)",
+        "dark": "oklch(0.97 0 0)",
+        "note": "Body text, primary button ground, and focus ring. The system's only 'brand' colour, and deliberately a neutral so no insurer tenant owns it. Ink and paper swap roles in dark mode rather than dimming.",
+        "tonalRamp": ["oklch(0.15 0 0)", "oklch(0.26 0 0)", "oklch(0.37 0 0)", "oklch(0.48 0 0)", "oklch(0.59 0 0)", "oklch(0.70 0 0)", "oklch(0.83 0 0)", "oklch(0.95 0 0)"]
+      },
+      "ink-inverse": {
+        "role": "primary",
+        "displayName": "Ink Inverse",
+        "canonical": "oklch(0.99 0 0)",
+        "dark": "oklch(0.16 0 0)",
+        "note": "Text on a Ledger Ink ground. Never used as a surface.",
+        "tonalRamp": ["oklch(0.15 0 0)", "oklch(0.26 0 0)", "oklch(0.37 0 0)", "oklch(0.48 0 0)", "oklch(0.59 0 0)", "oklch(0.70 0 0)", "oklch(0.83 0 0)", "oklch(0.99 0 0)"]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper White",
+        "canonical": "oklch(1 0 0)",
+        "dark": "oklch(0.185 0 0)",
+        "note": "Every panel, table, card and slide-over surface. In dark mode it sits one step ABOVE the page ground, so a panel reads as laid on the page.",
+        "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.26 0 0)", "oklch(0.37 0 0)", "oklch(0.48 0 0)", "oklch(0.59 0 0)", "oklch(0.72 0 0)", "oklch(0.88 0 0)", "oklch(1 0 0)"]
+      },
+      "paper-muted": {
+        "role": "neutral",
+        "displayName": "Quiet Paper",
+        "canonical": "oklch(0.985 0 0)",
+        "dark": "oklch(0.165 0 0)",
+        "note": "The sidebar ground and the skeleton-row fill. The one place a tonal shift, rather than a hairline, marks a region.",
+        "tonalRamp": ["oklch(0.15 0 0)", "oklch(0.26 0 0)", "oklch(0.37 0 0)", "oklch(0.48 0 0)", "oklch(0.62 0 0)", "oklch(0.76 0 0)", "oklch(0.90 0 0)", "oklch(0.985 0 0)"]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(0.52 0 0)",
+        "dark": "oklch(0.68 0 0)",
+        "note": "Labels, table headers, descriptions, inactive nav items. Roughly 70% of all text on screen.",
+        "tonalRamp": ["oklch(0.15 0 0)", "oklch(0.26 0 0)", "oklch(0.37 0 0)", "oklch(0.52 0 0)", "oklch(0.63 0 0)", "oklch(0.74 0 0)", "oklch(0.86 0 0)", "oklch(0.95 0 0)"]
+      },
+      "subtle-ink": {
+        "role": "neutral",
+        "displayName": "Subtle Ink",
+        "canonical": "oklch(0.63 0 0)",
+        "dark": "oklch(0.57 0 0)",
+        "note": "The quietest legible tier: the em dash standing for an absent value, nav group captions, field notes, trace IDs.",
+        "tonalRamp": ["oklch(0.15 0 0)", "oklch(0.28 0 0)", "oklch(0.40 0 0)", "oklch(0.52 0 0)", "oklch(0.63 0 0)", "oklch(0.75 0 0)", "oklch(0.86 0 0)", "oklch(0.95 0 0)"]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "oklch(0.918 0 0)",
+        "dark": "oklch(1 0 0 / 11%)",
+        "note": "The hairline. Applied globally to `*` as the default border colour, so any element that grows a border grows the right one.",
+        "tonalRamp": ["oklch(0.18 0 0)", "oklch(0.30 0 0)", "oklch(0.42 0 0)", "oklch(0.55 0 0)", "oklch(0.68 0 0)", "oklch(0.80 0 0)", "oklch(0.918 0 0)", "oklch(0.97 0 0)"]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Rule Strong",
+        "canonical": "oklch(0.85 0 0)",
+        "dark": "oklch(1 0 0 / 20%)",
+        "note": "A rule doing extra work: a selected stat card, a hovered interactive card, the ring around an unrecognised status literal.",
+        "tonalRamp": ["oklch(0.18 0 0)", "oklch(0.30 0 0)", "oklch(0.42 0 0)", "oklch(0.55 0 0)", "oklch(0.68 0 0)", "oklch(0.78 0 0)", "oklch(0.85 0 0)", "oklch(0.95 0 0)"]
+      },
+      "hover": {
+        "role": "neutral",
+        "displayName": "Hover Ground",
+        "canonical": "oklch(0.968 0 0)",
+        "dark": "oklch(1 0 0 / 5%)",
+        "note": "The interaction ground for a pointer. Deliberately one step lighter than Selected so a hovered row and a selected row are never confusable.",
+        "tonalRamp": ["oklch(0.16 0 0)", "oklch(0.28 0 0)", "oklch(0.40 0 0)", "oklch(0.54 0 0)", "oklch(0.68 0 0)", "oklch(0.82 0 0)", "oklch(0.92 0 0)", "oklch(0.968 0 0)"]
+      },
+      "selected": {
+        "role": "neutral",
+        "displayName": "Selected Ground",
+        "canonical": "oklch(0.955 0 0)",
+        "dark": "oklch(1 0 0 / 8%)",
+        "note": "Persistent selection: the active nav item, the row currently previewed in the drawer, a chosen stat filter.",
+        "tonalRamp": ["oklch(0.16 0 0)", "oklch(0.28 0 0)", "oklch(0.40 0 0)", "oklch(0.54 0 0)", "oklch(0.68 0 0)", "oklch(0.82 0 0)", "oklch(0.91 0 0)", "oklch(0.955 0 0)"]
+      },
+      "status-neutral-bg": {
+        "role": "tertiary",
+        "displayName": "Slate Ground",
+        "canonical": "oklch(0.96 0.002 250)",
+        "dark": "oklch(0.28 0.006 250)",
+        "note": "Bucket 1 of 6. Closed without incident, or no state worth reporting. WAIVED lives here.",
+        "tonalRamp": ["oklch(0.22 0.006 250)", "oklch(0.32 0.008 250)", "oklch(0.42 0.008 250)", "oklch(0.53 0.007 250)", "oklch(0.65 0.006 250)", "oklch(0.78 0.004 250)", "oklch(0.90 0.003 250)", "oklch(0.96 0.002 250)"]
+      },
+      "status-neutral-fg": {
+        "role": "tertiary",
+        "displayName": "Slate",
+        "canonical": "oklch(0.42 0.008 250)",
+        "dark": "oklch(0.80 0.01 250)",
+        "note": "Foreground of the neutral bucket. Pairs only with Slate Ground.",
+        "tonalRamp": ["oklch(0.22 0.006 250)", "oklch(0.32 0.008 250)", "oklch(0.42 0.008 250)", "oklch(0.53 0.007 250)", "oklch(0.65 0.006 250)", "oklch(0.78 0.004 250)", "oklch(0.90 0.003 250)", "oklch(0.96 0.002 250)"]
+      },
+      "status-pending-bg": {
+        "role": "tertiary",
+        "displayName": "Periwinkle Ground",
+        "canonical": "oklch(0.95 0.032 240)",
+        "dark": "oklch(0.30 0.055 250)",
+        "note": "Bucket 2 of 6. Waiting on someone. REOPENED lives here.",
+        "tonalRamp": ["oklch(0.24 0.07 245)", "oklch(0.34 0.11 248)", "oklch(0.45 0.14 250)", "oklch(0.56 0.13 248)", "oklch(0.68 0.10 245)", "oklch(0.80 0.07 242)", "oklch(0.90 0.045 240)", "oklch(0.95 0.032 240)"]
+      },
+      "status-pending-fg": {
+        "role": "tertiary",
+        "displayName": "Periwinkle",
+        "canonical": "oklch(0.45 0.14 250)",
+        "dark": "oklch(0.82 0.09 245)",
+        "note": "Foreground of the pending bucket.",
+        "tonalRamp": ["oklch(0.24 0.07 245)", "oklch(0.34 0.11 248)", "oklch(0.45 0.14 250)", "oklch(0.56 0.13 248)", "oklch(0.68 0.10 245)", "oklch(0.80 0.07 242)", "oklch(0.90 0.045 240)", "oklch(0.95 0.032 240)"]
+      },
+      "status-active-bg": {
+        "role": "tertiary",
+        "displayName": "Teal Ground",
+        "canonical": "oklch(0.95 0.036 190)",
+        "dark": "oklch(0.29 0.045 195)",
+        "note": "Bucket 3 of 6. Live and running normally: in force, in progress.",
+        "tonalRamp": ["oklch(0.24 0.05 196)", "oklch(0.34 0.07 196)", "oklch(0.44 0.09 195)", "oklch(0.55 0.085 194)", "oklch(0.67 0.07 192)", "oklch(0.79 0.055 191)", "oklch(0.90 0.045 190)", "oklch(0.95 0.036 190)"]
+      },
+      "status-active-fg": {
+        "role": "tertiary",
+        "displayName": "Teal",
+        "canonical": "oklch(0.44 0.09 195)",
+        "dark": "oklch(0.83 0.08 190)",
+        "note": "Foreground of the active bucket.",
+        "tonalRamp": ["oklch(0.24 0.05 196)", "oklch(0.34 0.07 196)", "oklch(0.44 0.09 195)", "oklch(0.55 0.085 194)", "oklch(0.67 0.07 192)", "oklch(0.79 0.055 191)", "oklch(0.90 0.045 190)", "oklch(0.95 0.036 190)"]
+      },
+      "status-success-bg": {
+        "role": "tertiary",
+        "displayName": "Moss Ground",
+        "canonical": "oklch(0.95 0.043 150)",
+        "dark": "oklch(0.28 0.05 152)",
+        "note": "Bucket 4 of 6. A good terminal outcome. LOADED lives here: an acceptance, with premium loading.",
+        "tonalRamp": ["oklch(0.23 0.06 153)", "oklch(0.33 0.09 152)", "oklch(0.43 0.11 152)", "oklch(0.55 0.105 151)", "oklch(0.67 0.085 151)", "oklch(0.79 0.065 150)", "oklch(0.90 0.05 150)", "oklch(0.95 0.043 150)"]
+      },
+      "status-success-fg": {
+        "role": "tertiary",
+        "displayName": "Moss",
+        "canonical": "oklch(0.43 0.11 152)",
+        "dark": "oklch(0.83 0.11 150)",
+        "note": "Foreground of the success bucket.",
+        "tonalRamp": ["oklch(0.23 0.06 153)", "oklch(0.33 0.09 152)", "oklch(0.43 0.11 152)", "oklch(0.55 0.105 151)", "oklch(0.67 0.085 151)", "oklch(0.79 0.065 150)", "oklch(0.90 0.05 150)", "oklch(0.95 0.043 150)"]
+      },
+      "status-warning-bg": {
+        "role": "tertiary",
+        "displayName": "Amber Ground",
+        "canonical": "oklch(0.96 0.055 92)",
+        "dark": "oklch(0.31 0.06 78)",
+        "note": "Bucket 5 of 6. Unresolved, needs a person. IN_DOUBT, POSTPONED and IN_GRACE all live here.",
+        "tonalRamp": ["oklch(0.25 0.06 72)", "oklch(0.35 0.09 74)", "oklch(0.47 0.11 75)", "oklch(0.58 0.11 80)", "oklch(0.70 0.10 85)", "oklch(0.82 0.085 89)", "oklch(0.91 0.07 91)", "oklch(0.96 0.055 92)"]
+      },
+      "status-warning-fg": {
+        "role": "tertiary",
+        "displayName": "Amber",
+        "canonical": "oklch(0.47 0.11 75)",
+        "dark": "oklch(0.86 0.10 88)",
+        "note": "Foreground of the warning bucket.",
+        "tonalRamp": ["oklch(0.25 0.06 72)", "oklch(0.35 0.09 74)", "oklch(0.47 0.11 75)", "oklch(0.58 0.11 80)", "oklch(0.70 0.10 85)", "oklch(0.82 0.085 89)", "oklch(0.91 0.07 91)", "oklch(0.96 0.055 92)"]
+      },
+      "status-danger-bg": {
+        "role": "tertiary",
+        "displayName": "Rust Ground",
+        "canonical": "oklch(0.95 0.035 22)",
+        "dark": "oklch(0.30 0.07 25)",
+        "note": "Bucket 6 of 6. Failed, refused or forced. FORCED_LAPSE_TRIGGERED lives here. Also the ground of the danger button.",
+        "tonalRamp": ["oklch(0.26 0.10 25)", "oklch(0.37 0.14 25)", "oklch(0.48 0.17 25)", "oklch(0.59 0.155 24)", "oklch(0.70 0.12 23)", "oklch(0.81 0.085 23)", "oklch(0.90 0.055 22)", "oklch(0.95 0.035 22)"]
+      },
+      "status-danger-fg": {
+        "role": "tertiary",
+        "displayName": "Rust",
+        "canonical": "oklch(0.48 0.17 25)",
+        "dark": "oklch(0.83 0.12 22)",
+        "note": "Foreground of the danger bucket, and the ground of the danger button variant.",
+        "tonalRamp": ["oklch(0.26 0.10 25)", "oklch(0.37 0.14 25)", "oklch(0.48 0.17 25)", "oklch(0.59 0.155 24)", "oklch(0.70 0.12 23)", "oklch(0.81 0.085 23)", "oklch(0.90 0.055 22)", "oklch(0.95 0.035 22)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The stat-card figure, and nothing else. Exactly one occurrence in the codebase, by design." },
+      "headline": { "displayName": "Headline", "purpose": "The page <h1> in PageHeader. One occurrence, because one component owns it." },
+      "title": { "displayName": "Title", "purpose": "Slide-over title and the heaviest in-panel headings." },
+      "body": { "displayName": "Body", "purpose": "The content tier: table cell values, form control text, buttons, nav items, gate titles. Reserved for what carries the answer. 98 uses." },
+      "label": { "displayName": "Label", "purpose": "The most-used size in the system by a wide margin (226 uses) and the true default for chrome: table headers, field labels, descriptions, stat labels. The compression is a confirmed density decision, not drift." },
+      "micro": { "displayName": "Micro", "purpose": "Notes, error messages, badge counts, trace IDs, stat hints. The legibility floor." },
+      "eyebrow": { "displayName": "Eyebrow", "purpose": "Sidebar group captions and gate-panel titles. The only uppercase in the system, and it is structural labelling, never a marketing device." },
+      "mono": { "displayName": "Mono", "purpose": "Trace IDs and machine identifiers. Selectable, not decorative." }
+    },
+    "shadows": [
+      {
+        "name": "floating-layer",
+        "value": "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
+        "purpose": "The right-hand slide-over only. Paired with a left hairline and a black/20 backdrop (black/50 in dark), because the shadow alone does not separate reliably against a dark ground."
+      },
+      {
+        "name": "floating-menu",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Popovers: the date picker and the party picker. Nothing else in the system carries a shadow."
+      }
+    ],
+    "motion": [
+      { "name": "colors", "value": "transition: color 150ms, background-color 150ms, border-color 150ms", "purpose": "The default and near-only transition. Applied to buttons, nav items, table rows and stat cards. No transform, no lift." },
+      { "name": "overlay", "value": "200ms", "purpose": "Slide-over slide-in-from-right plus backdrop fade. The single longest motion in the product." },
+      { "name": "spin", "value": "1s linear infinite", "purpose": "The loading spinner. Shown only when a value is genuinely in flight." },
+      { "name": "pulse", "value": "2s cubic-bezier(0.4, 0, 0.6, 1) infinite", "purpose": "Skeleton rows at staggered widths, so a table does not jump when real data lands." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px", "note": "The only breakpoint doing real work: reveals table columns marked `secondary`. Below it, the identifying column always survives." },
+      { "name": "lg", "value": "1024px", "note": "Stat row steps from two columns to four." }
+    ],
+    "focus": {
+      "value": "outline: 2px solid var(--color-ring); outline-offset: 2px",
+      "purpose": "Applied globally via :focus-visible. Visible for keyboard users, never suppressed on any control."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ledger Ink ground, inverse text. Reserved for the one action a screen exists to perform.",
+      "html": "<button class=\"ds-btn-primary\">Issue policy</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border: none; border-radius: 0.375rem; background: var(--color-accent, oklch(0.16 0 0)); color: var(--color-accent-foreground, oklch(0.99 0 0)); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; white-space: nowrap; cursor: pointer; transition: opacity 150ms, background-color 150ms; } .ds-btn-primary:hover { opacity: 0.9; } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-ring, oklch(0.16 0 0)); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.5; pointer-events: none; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "The DEFAULT variant, and most buttons in the console are this. A page with three equally-weighted primary buttons has no primary action.",
+      "html": "<button class=\"ds-btn-outline\"><svg class=\"ds-btn-outline-i\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg>Add beneficiary</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border: 1px solid var(--color-border, oklch(0.918 0 0)); border-radius: 0.375rem; background: var(--color-surface, oklch(1 0 0)); color: var(--color-foreground, oklch(0.16 0 0)); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 150ms, border-color 150ms; } .ds-btn-outline-i { width: 16px; height: 16px; flex-shrink: 0; } .ds-btn-outline:hover { background: var(--color-hover, oklch(0.968 0 0)); } .ds-btn-outline:focus-visible { outline: 2px solid var(--color-ring, oklch(0.16 0 0)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Hairline field at 36px with its caption above and validation message below. NOTE: this treatment exists as a copy-pasted class string in 70+ places and as no shared component — the single largest consistency risk in the system.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Sum assured (TZS)</span><input class=\"ds-input\" value=\"25,000,000.00\" /><p class=\"ds-field-error\">Must be a decimal with at most two places.</p></label>",
+      "css": ".ds-field { display: block; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-field-label { display: block; margin-bottom: 4px; font-size: 0.75rem; font-weight: 500; color: var(--color-muted-foreground, oklch(0.52 0 0)); } .ds-input { height: 36px; width: 100%; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--color-input, oklch(0.918 0 0)); border-radius: 0.375rem; background: var(--color-surface, oklch(1 0 0)); color: var(--color-foreground, oklch(0.16 0 0)); font-family: inherit; font-size: 0.875rem; font-variant-numeric: tabular-nums; } .ds-input:focus-visible { outline: 2px solid var(--color-ring, oklch(0.16 0 0)); outline-offset: 2px; } .ds-field-error { margin: 4px 0 0; font-size: 0.6875rem; color: var(--color-status-danger-fg, oklch(0.48 0.17 25)); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "status-badge",
+      "description": "The signature component. One pill maps ~25 backend enums through six semantic buckets. An unrecognised literal gains an inset ring and a trailing '?' rather than silently defaulting; an absent status renders an em dash, never a grey 'Unknown'.",
+      "html": "<span class=\"ds-badge ds-badge-active\">In force</span> <span class=\"ds-badge ds-badge-warning\">In doubt</span> <span class=\"ds-badge ds-badge-danger\">Forced lapse triggered</span> <span class=\"ds-badge ds-badge-neutral ds-badge-unknown\">Novel state<span aria-hidden=\"true\">?</span></span> <span class=\"ds-badge-absent\">—</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 0.75rem; font-weight: 500; white-space: nowrap; } .ds-badge-neutral { background: var(--color-status-neutral-bg, oklch(0.96 0.002 250)); color: var(--color-status-neutral-fg, oklch(0.42 0.008 250)); } .ds-badge-pending { background: var(--color-status-pending-bg, oklch(0.95 0.032 240)); color: var(--color-status-pending-fg, oklch(0.45 0.14 250)); } .ds-badge-active { background: var(--color-status-active-bg, oklch(0.95 0.036 190)); color: var(--color-status-active-fg, oklch(0.44 0.09 195)); } .ds-badge-success { background: var(--color-status-success-bg, oklch(0.95 0.043 150)); color: var(--color-status-success-fg, oklch(0.43 0.11 152)); } .ds-badge-warning { background: var(--color-status-warning-bg, oklch(0.96 0.055 92)); color: var(--color-status-warning-fg, oklch(0.47 0.11 75)); } .ds-badge-danger { background: var(--color-status-danger-bg, oklch(0.95 0.035 22)); color: var(--color-status-danger-fg, oklch(0.48 0.17 25)); } .ds-badge-unknown { box-shadow: inset 0 0 0 1px var(--color-border-strong, oklch(0.85 0 0)); } .ds-badge-absent { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; color: var(--color-subtle-foreground, oklch(0.63 0 0)); }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Group caption in Eyebrow type, then items in Body type. Active takes the Selected ground and full-strength ink. A count badge carries screen-reader text naming what was counted, because '3' alone reads as '3 claims', which is not what it means.",
+      "html": "<nav class=\"ds-nav\"><p class=\"ds-nav-group\">Policies &amp; claims</p><a class=\"ds-nav-item ds-nav-item-active\" href=\"#\"><svg class=\"ds-nav-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/></svg><span class=\"ds-nav-label\">Policies</span></a><a class=\"ds-nav-item\" href=\"#\"><svg class=\"ds-nav-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 12h-5M15 8h-5M19 17V5a2 2 0 0 0-2-2H4\"/><path d=\"M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3\"/></svg><span class=\"ds-nav-label\">Claims</span><span class=\"ds-nav-badge\" title=\"Claims registered but not yet assessed\">4</span></a></nav>",
+      "css": ".ds-nav { width: 224px; padding: 8px; background: var(--color-surface-muted, oklch(0.985 0 0)); font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-nav-group { margin: 0 0 6px; padding: 0 8px; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; color: var(--color-subtle-foreground, oklch(0.63 0 0)); } .ds-nav-item { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; padding: 6px 8px; border-radius: 0.375rem; font-size: 0.875rem; color: var(--color-muted-foreground, oklch(0.52 0 0)); text-decoration: none; transition: background-color 150ms, color 150ms; } .ds-nav-icon { width: 16px; height: 16px; flex-shrink: 0; } .ds-nav-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-nav-item:hover { background: var(--color-hover, oklch(0.968 0 0)); color: var(--color-foreground, oklch(0.16 0 0)); } .ds-nav-item-active { background: var(--color-selected, oklch(0.955 0 0)); color: var(--color-foreground, oklch(0.16 0 0)); font-weight: 500; } .ds-nav-item:focus-visible { outline: 2px solid var(--color-ring, oklch(0.16 0 0)); outline-offset: 2px; } .ds-nav-badge { flex-shrink: 0; padding: 0 6px; border-radius: 9999px; background: var(--color-selected, oklch(0.955 0 0)); font-size: 0.6875rem; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--color-muted-foreground, oklch(0.52 0 0)); }"
+    },
+    {
+      "name": "Stat Card",
+      "kind": "card",
+      "refersTo": "card-stat",
+      "description": "Counts only. No trend arrows, because this platform has no analytics endpoint and a card reading '↗ 12% wk/wk' would have nothing behind it. The hint line names exactly what was counted.",
+      "html": "<div class=\"ds-stats\"><div class=\"ds-stat\"><p class=\"ds-stat-label\">Policies</p><p class=\"ds-stat-value\">1,284</p><p class=\"ds-stat-hint\">Matching the current filter</p></div><button class=\"ds-stat ds-stat-selected\" type=\"button\" aria-pressed=\"true\"><p class=\"ds-stat-label\">In grace</p><p class=\"ds-stat-value\">37</p><p class=\"ds-stat-hint\">Premium overdue, cover still on</p></button><div class=\"ds-stat\"><p class=\"ds-stat-label\">Lapsed</p><p class=\"ds-stat-value ds-stat-absent\">—</p><p class=\"ds-stat-hint\">Not available</p></div></div>",
+      "css": ".ds-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-stat { display: block; width: 100%; padding: 12px 16px; border: 1px solid var(--color-border, oklch(0.918 0 0)); border-radius: 0.5rem; background: var(--color-surface, oklch(1 0 0)); text-align: left; cursor: default; transition: background-color 150ms, border-color 150ms; } button.ds-stat { cursor: pointer; } button.ds-stat:hover { border-color: var(--color-border-strong, oklch(0.85 0 0)); } .ds-stat-selected { border-color: var(--color-border-strong, oklch(0.85 0 0)); background: var(--color-selected, oklch(0.955 0 0)); } .ds-stat:focus-visible { outline: 2px solid var(--color-ring, oklch(0.16 0 0)); outline-offset: 2px; } .ds-stat-label { margin: 0; font-size: 0.75rem; color: var(--color-muted-foreground, oklch(0.52 0 0)); } .ds-stat-value { margin: 4px 0 0; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.015em; font-variant-numeric: tabular-nums; color: var(--color-foreground, oklch(0.16 0 0)); } .ds-stat-absent { color: var(--color-subtle-foreground, oklch(0.63 0 0)); } .ds-stat-hint { margin: 2px 0 0; font-size: 0.6875rem; color: var(--color-subtle-foreground, oklch(0.63 0 0)); }"
+    },
+    {
+      "name": "Data Table Row",
+      "kind": "custom",
+      "refersTo": "table-row",
+      "description": "44px rows, hairline separated, numerics right-aligned against global tabular figures. The first cell carries a real button filling the row height, so the row is keyboard-reachable and announced as one action.",
+      "html": "<table class=\"ds-table\"><thead><tr><th scope=\"col\">Policy</th><th scope=\"col\">Status</th><th scope=\"col\" class=\"ds-num\">Sum assured</th></tr></thead><tbody><tr><td><button class=\"ds-row-activate\" type=\"button\">POL-000142</button></td><td><div class=\"ds-cell\"><span class=\"ds-badge ds-badge-active\">In force</span></div></td><td class=\"ds-num\"><div class=\"ds-cell\">25,000,000.00</div></td></tr><tr class=\"ds-row-selected\" aria-current=\"true\"><td><button class=\"ds-row-activate\" type=\"button\">POL-000143</button></td><td><div class=\"ds-cell\"><span class=\"ds-badge ds-badge-warning\">In grace</span></div></td><td class=\"ds-num\"><div class=\"ds-cell\">4,500,000.00</div></td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: collapse; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 0.875rem; font-variant-numeric: tabular-nums; background: var(--color-surface, oklch(1 0 0)); color: var(--color-foreground, oklch(0.16 0 0)); } .ds-table th { padding: 10px 16px; border-bottom: 1px solid var(--color-border, oklch(0.918 0 0)); text-align: left; font-size: 0.75rem; font-weight: 500; color: var(--color-muted-foreground, oklch(0.52 0 0)); } .ds-table td { padding: 0 16px; border-bottom: 1px solid var(--color-border, oklch(0.918 0 0)); vertical-align: middle; } .ds-table tbody tr:last-child td { border-bottom: 0; } .ds-table tbody tr:hover { background: var(--color-hover, oklch(0.968 0 0)); } .ds-row-selected, .ds-row-selected:hover { background: var(--color-selected, oklch(0.955 0 0)); } .ds-cell { display: flex; align-items: center; height: 44px; } .ds-num { text-align: right; } .ds-num .ds-cell { justify-content: flex-end; } .ds-row-activate { display: flex; align-items: center; width: 100%; height: 44px; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: 0.25rem; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; } .ds-row-activate:focus-visible { outline: 2px solid var(--color-ring, oklch(0.16 0 0)); outline-offset: -2px; } .ds-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; white-space: nowrap; } .ds-badge-active { background: var(--color-status-active-bg, oklch(0.95 0.036 190)); color: var(--color-status-active-fg, oklch(0.44 0.09 195)); } .ds-badge-warning { background: var(--color-status-warning-bg, oklch(0.96 0.055 92)); color: var(--color-status-warning-fg, oklch(0.47 0.11 75)); }"
+    },
+    {
+      "name": "Gate Panel",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "The component that makes this an insurance console rather than a CRUD app. Renders business preconditions; the panel ground takes the danger tint if any HARD gate fails, the warning tint if only soft gates fail, Quiet Paper if all pass. Marker glyph colour is the matching -bg token, never white, so the pair inverts correctly in dark mode. An empty gate set renders nothing.",
+      "html": "<section class=\"ds-gates ds-gates-warn\"><p class=\"ds-gates-title\">Before registering this claim</p><ul class=\"ds-gates-list\"><li class=\"ds-gate\"><span class=\"ds-gate-mark ds-gate-ok\" aria-hidden=\"true\">✓</span><div><p class=\"ds-gate-title\">Risk had commenced</p><p class=\"ds-gate-detail\">Policy issued 14 Mar 2024, before the date of event.</p></div><span class=\"ds-sr\">Check passed</span></li><li class=\"ds-gate\"><span class=\"ds-gate-mark ds-gate-soft\" aria-hidden=\"true\">!</span><div><p class=\"ds-gate-title\">Coverage history needs a person</p><p class=\"ds-gate-detail\">The policy is in grace today. A lapsed policy routes to investigation; it is never auto-refused.</p></div><span class=\"ds-sr\">Check failed</span></li></ul></section>",
+      "css": ".ds-gates { padding: 12px; border: 1px solid var(--color-border, oklch(0.918 0 0)); border-radius: 0.375rem; background: var(--color-surface-muted, oklch(0.985 0 0)); font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-gates-warn { border-color: color-mix(in oklch, var(--color-status-warning-fg, oklch(0.47 0.11 75)) 40%, transparent); background: var(--color-status-warning-bg, oklch(0.96 0.055 92)); } .ds-gates-hard { border-color: color-mix(in oklch, var(--color-status-danger-fg, oklch(0.48 0.17 25)) 40%, transparent); background: var(--color-status-danger-bg, oklch(0.95 0.035 22)); } .ds-gates-title { margin: 0 0 8px; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.03em; text-transform: uppercase; color: var(--color-muted-foreground, oklch(0.52 0 0)); } .ds-gates-list { margin: 0; padding: 0; list-style: none; } .ds-gate { display: flex; align-items: flex-start; gap: 10px; } .ds-gate + .ds-gate { margin-top: 8px; } .ds-gate-mark { display: grid; place-items: center; flex-shrink: 0; width: 16px; height: 16px; margin-top: 2px; border-radius: 9999px; font-size: 10px; font-weight: 700; } .ds-gate-ok { background: var(--color-status-success-fg, oklch(0.43 0.11 152)); color: var(--color-status-success-bg, oklch(0.95 0.043 150)); } .ds-gate-soft { background: var(--color-status-warning-fg, oklch(0.47 0.11 75)); color: var(--color-status-warning-bg, oklch(0.96 0.055 92)); } .ds-gate-hard { background: var(--color-status-danger-fg, oklch(0.48 0.17 25)); color: var(--color-status-danger-bg, oklch(0.95 0.035 22)); } .ds-gate-title { margin: 0; font-size: 0.875rem; font-weight: 500; color: var(--color-foreground, oklch(0.16 0 0)); } .ds-gate-detail { margin: 0; font-size: 0.75rem; color: var(--color-muted-foreground, oklch(0.52 0 0)); } .ds-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Ledger",
+    "overview": "This console is a bound accounting ledger rendered in software. Ink on paper, ruled hairlines, figures standing in true columns, and colour used only where a clerk would once have reached for a coloured stamp. Nothing here is decorative, because nothing in a ledger ever was: the beauty is in the ruling, the alignment and the fact that the totals can be trusted. A staff member spends their whole working day inside this surface, so it is built to be read rather than admired, and to be read for eight hours without fatigue.\n\nThe doctrine that gives the world its edge is inherited straight from the product: render only what the platform can prove. There are no analytics endpoints on this platform, so there are no trend arrows, no sparklines and no percentage deltas. The stat row shows counts. A status the build has never seen is ringed and flagged rather than quietly dressed as a neutral. An absent value is an em dash, never a grey pill reading \"Unknown\". This refusal is not a limitation the design works around — it is the design's argument, and it is what makes the console feel like a record instead of a dashboard.\n\nCharacter is confident and tactile. The palette is achromatic and the structure is flat, but the controls should feel pressable and the boundaries should feel drawn on purpose — a ledger is a physical object, and the pen has weight. This is a deliberate small step forward from the incumbent build, which is quieter than this: hover today is a background-colour swap and little else. Where this file states a tactile behaviour that the code has not yet grown, it is stating the target, and the gap is a backlog item rather than licence to invent a different world. The system is emphatically not soft, rounded, playful, gradient-lit or glassy, and it carries no insurer's brand — several insurers are tenants of the same console, so the identity belongs to the platform.",
+    "keyCharacteristics": [
+      "Achromatic by default; six status hues are the entire chromatic vocabulary",
+      "Hairline rules and tonal surfaces carry all structure — no shadows at rest",
+      "Tabular figures globally, so every money and date column reads as a column",
+      "A compressed, functional type scale that prizes density over display",
+      "Dark mode is a first-class peer, not a filter: every token is defined twice",
+      "Vendor-neutral and tenant-invisible by construction"
+    ],
+    "rules": [
+      { "name": "The Six Buckets Rule", "body": "Six status buckets are the complete chromatic vocabulary of this system. A seventh bucket is never added; a new backend enum is mapped onto an existing one, and if it genuinely fits none, that is a product conversation and not a colour decision.", "section": "colors" },
+      { "name": "The Stamp Rule", "body": "Colour reports state and does nothing else. It never marks hierarchy, never brands a section, never highlights a call to action, and never decorates. A screen on which nothing notable is happening is entirely achromatic — and that emptiness is information.", "section": "colors" },
+      { "name": "The Both Themes Rule", "body": "Every colour is declared as a token in :root and redefined in .dark. A component never branches on theme and never hard-codes a hex. A colour that exists in only one theme is not finished.", "section": "colors" },
+      { "name": "The Inverted-Pair Rule", "body": "When a status hue is used as a solid ground, its foreground is the matching -bg token, never white. The pair inverts together across themes, so text-white on a -fg ground would be white-on-light in dark mode.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "font-variant-numeric: tabular-nums is set on body and is never overridden. Every figure in this product is meant to be compared vertically against the figure above it.", "section": "typography" },
+      { "name": "The Two-Peaks Rule", "body": "Exactly two type sizes above body exist on any screen: the page headline and, on list screens, the stat figure. A screen that grows a third display size has invented a hierarchy the system does not have.", "section": "typography" },
+      { "name": "The Uppercase-Is-Structure Rule", "body": "Uppercase marks a navigational or sectional group caption. It is never used for a button, a badge, a status, or emphasis.", "section": "typography" },
+      { "name": "The 24 Rule", "body": "The page gutter is 24px, and every element that meets the page edge aligns to it — header, stat row, empty state, error panel. An element that sets its own page margin has broken the ledger's ruling.", "section": "layout" },
+      { "name": "The 44px Row Rule", "body": "A table row is 44px and the activation control fills it. Row height and touch target are one number, so they cannot drift apart.", "section": "layout" },
+      { "name": "The Floating-Layer Rule", "body": "A shadow means 'this element is not on the page.' If the element is on the page, it has a hairline and no shadow. There is no third option, and there is no such thing as a subtle resting elevation here.", "section": "elevation" },
+      { "name": "The Pill-for-State Rule", "body": "Full radius is reserved for elements reporting a state. A fully-rounded button would be lying about what it is.", "section": "shapes" },
+      { "name": "The One-Radius Rule", "body": "6px unless there is a stated reason. Two radii inside one component is a mistake, not a texture.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do define every new colour twice — in :root and in .dark. A token that exists in one theme is unfinished.",
+      "Do map a new backend enum onto one of the six existing status buckets, and take the literal from the OpenAPI spec or the Java enum rather than typing it from memory.",
+      "Do right-align every numeric column and leave the global tabular-nums alone.",
+      "Do align anything meeting the page edge to the 24px gutter.",
+      "Do put a wide table in its own overflow-x container so the page body never scrolls sideways.",
+      "Do make an activatable row a real <button> in the first cell, filling the 44px row height.",
+      "Do render an absent value as an em dash in Subtle Ink, and label it for screen readers when the absence is meaningful.",
+      "Do give an icon-only control an aria-label, and give any badge or marker that carries meaning by colour a screen-reader text equivalent.",
+      "Do use the outline button as the default and reserve Ledger Ink for the one action the screen exists to perform."
+    ],
+    "donts": [
+      "Don't hard-code a hex, an oklch() or an rgb() in a component. Every colour is a token; the sole sanctioned exception is the hashed avatar hue, which is computed from an identifier.",
+      "Don't add a seventh status bucket, or use a status hue for anything that is not a status.",
+      "Don't add a trend arrow, sparkline, percentage delta or any aggregate this platform has no endpoint for. Counts only.",
+      "Don't put a mutating action inside the slide-over. If it changes money, cover or a case, it belongs on a page.",
+      "Don't give anything a resting shadow. Shadow means 'floating above the page', and the only floating things are the slide-over and popovers.",
+      "Don't introduce a third display size on a screen. Two peaks: the page headline, and the stat figure.",
+      "Don't use uppercase for anything but a group caption.",
+      "Don't suppress the :focus-visible outline, on any control, ever.",
+      "Don't introduce a tenant name, tenant switcher or per-insurer branding. Tenancy is invisible by design and the console is white-label by requirement.",
+      "Don't render a grey 'Unknown' pill for a missing status, or a spinner for a value whose load has already failed.",
+      "Don't copy the input class string into a new file. It is already duplicated past seventy times; the next one should be extracting the component, not adding to the count."
+    ]
+  }
+}

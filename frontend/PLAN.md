@@ -432,3 +432,188 @@ open item in the M13 design spec.
   trap §6's "stat cards are counts only" rule exists to avoid.
 - **Screens for the four undesigned contexts.** Leads, needs analysis,
   quotations, proposals and service cases are backend work first.
+
+---
+
+## 14. Design decisions — 2026-09-02
+
+Added after an `$impeccable` pass over `frontend/src`: an unanchored design
+review, a deterministic detector run, and a live authenticated browser
+assessment against the running stack. Two new documents landed at the repo root
+and are now the durable record for anything design-facing:
+
+- **`PRODUCT.md`** — product truth. Confirmed: primary user is back-office staff
+  at a desk on a large monitor; this is a **multi-tenant product sold to
+  Tanzanian insurers**, so the identity must stay vendor-neutral and
+  white-labellable; **English only**, indefinitely; **WCAG 2.2 AA is a
+  self-imposed floor**, not a regulatory mandate.
+- **`DESIGN.md`** (+ `.impeccable/design.json`) — the incumbent visual system,
+  extracted rather than invented. North Star **"The Ledger"**.
+
+The critique snapshot lives at `.impeccable/critique/` and carries the full
+backlog. This section records only what was **decided**, so a later reader does
+not have to reconstruct it from a report.
+
+### 14.1 Two defects fixed, both P0
+
+**Right-aligned numeric columns were not right-aligned.** `DataTable` put
+`text-right` on the `<td>` but wrapped every cell in
+`<div className="flex h-11 items-center">`. `text-align` does not position a
+flex item; `justify-content` does. So the `<th>` right-aligned and the `<td>`
+did not — measured at ~103px of drift on `/staff/policies` and ~140px on
+`/staff/gl-postings`. It hid on policies only because every value there happens
+to be the same character length.
+
+This one matters beyond tidiness: global `font-variant-numeric: tabular-nums` is
+set on `body` specifically so figures compare vertically, and the flex wrapper
+was discarding the alignment that makes tabular figures worth having. Two
+decimal points in one TZS column would not have lined up. `DataTable` is the
+only `<table>` in the codebase, so one conditional fixed every numeric column in
+the console.
+
+**People were UUIDs on every screen where a decision is made.** `PartyName`
+already existed, worked, and was used in exactly one place. Meanwhile 9 read-only
+party references rendered a raw uuid — including the underwriting queue's
+Applicant column, where the live stack showed **17 of 20 rows carrying the
+identical uuid**, making the queue impossible to triage without opening every
+case. Two of those sites carried the note *"No party lookup endpoint exists
+yet"*, which stopped being true when party search closed (§12.2).
+
+`PartyName` now caches per id at module scope with in-flight deduplication, so
+the old objection — a second request per row — costs one request per distinct
+person for a whole page. The id is never discarded; it stays on the `title`.
+
+Two things were deliberately **not** changed, because the review had them wrong:
+`ClientsPage` already leads with a `displayName` column and its "Party id" is a
+legitimate secondary id column; and **`agentOfRecordId` is an agent id, not a
+party id**, so resolving it through `PartyName` would 404.
+
+### 14.2 Density is deliberate, and DESIGN.md now says so
+
+Measured type distribution: 226 uses of 0.75rem, 98 of 0.875rem, 94 of
+0.6875rem, 16 of 0.625rem, and exactly one each of the two largest sizes.
+**Confirmed as intended** — an operator wants rows on screen, and density beats
+comfort on this surface. DESIGN.md was corrected to describe 0.75rem as the
+workhorse rather than as a "label" size the code contradicts.
+
+Two genuine drifts stay on the record: `ui/button.tsx`'s 0.8125rem small size
+and `RealmPicker`'s 1.125rem `<h1>` exist in no scale. And the 16 uses of
+0.625rem are the one part worth raising — density justifies 12px, nothing
+justifies 10px.
+
+### 14.3 Decided: gates become mandatory scaffolding for a mutation
+
+**The design-specificity verdict was "authored in its judgment, generic in its
+form."** The shell is a self-declared Attio-style CRM (§2) and that stays — it
+works, and replacing it buys nothing. What does not stay is that `GatePanel`,
+described in DESIGN.md as *the component that makes this an insurance console
+rather than a CRUD app*, ships on **one screen out of thirty-four**, and that
+`issueGates` — promised by name in §13 C2 — was never written.
+
+**The decision: a mutating surface declares its preconditions before it renders
+a submit button.** Not a garnish on the screens that happened to get one. This
+is what puts the domain on the glass without touching the shell, and it reuses a
+seam that already exists and is already tested with no DOM.
+
+The doctrine from §13 C2 governs every new gate and is not negotiable: **a gate
+asserts only what the platform can actually prove.** `claimGates` is the
+reference implementation precisely because it refuses to claim
+coverage-as-at-the-date-of-event — the endpoint that looks like it answers that
+ignores its own `asOf` parameter. A gate that overstates is worse than no gate,
+because staff will learn to trust it.
+
+Candidate surfaces, with what looks provable today. **Each needs its data path
+verified on the wire before its gate is written** — checking that a field exists
+is not checking that it is populated, which is the mistake §13 C2 already
+records making once:
+
+| Surface | Likely provable | Notes |
+| --- | --- | --- |
+| `IssuePolicyPage` | policyholder `kycStatus`; agent-of-record `licenseStatus` / `licenseExpiryDate`; product version active as-of | The `issueGates` that §13 C2 promised. Writing business through an expired agent licence is a real regulatory gate and the data is already on `AgentView`. KYC should be **soft** unless the backend is confirmed to refuse it — a hard gate the API does not enforce is the UI inventing a rule. |
+| `ClaimSettlementPanel` | assessor ≠ decider; approved amount vs the policy's sum assured; contestability review outstanding | The highest-value one. `ClaimsApiImpl` already refuses the same person assessing and deciding, and today the manager discovers that as a 422 **after** committing. The UI holds both identities and can say so first. |
+| Reinstate a lapsed policy | current status; premium arrears | Must state what arrears the reinstatement creates. |
+| KYC verify / reject | identity evidence on record | Also fixes the defect where Verify/Reject are gated on *this session's* upload, so a reviewer returning to a document already listed cannot act on it. |
+| `LoansPanel` | cash value | Already has a disabled-reason tooltip. A gate should say plainly that cash value is 0.00 platform-wide until the backend credits it, rather than hiding the reason in a `title`. |
+
+Deliberately **excluded** for now: anything needing an underwriting decision
+joined to a policy, because `GET /policies` does not re-surface
+`underwritingCaseId` (recorded in `UnderwritingCaseDetailPage`). That is a
+backend gap, not a gate to invent around.
+
+### 14.4 Still open, in priority order
+
+Carried from the critique snapshot, none of it done:
+
+1. **Nothing confirms, and nothing asks before the irreversible.** Zero
+   confirmation dialogs and zero success confirmations exist. Approving a payout
+   is acknowledged only by the panel vanishing. Wants a `ConfirmAct` step and a
+   persistent success block — decision, amount, timestamp, journal reference.
+2. **Four AA breaches**, measured by two independent engines: `--subtle-foreground`
+   at 3.35–3.50:1 light and 4.31–4.42:1 dark, rendered at 11px; `--input` at
+   ~1.27:1 against `--surface`, so every field boundary fails 1.4.11; no skip
+   link (19 tab stops to the first row, Level A); no `aria-invalid` /
+   `aria-describedby` on ~98 inputs, with `FormField` nesting the error inside
+   the `<label>` so it folds into the accessible name.
+3. **The design system is a copy-paste convention.** §13 C3 fixed this once for
+   `FormField`. It has recurred: 7 byte-identical `Panel` components, 8
+   `FilterChip`s, 98 input class strings in 24 variants. The accessibility fix
+   above is blocked on this — otherwise it is 98 edits.
+4. **No tabs anywhere**, though §6 and `PRODUCT.md` both promise tabbed detail
+   pages and `@radix-ui/react-tabs` is installed and imported nowhere. Detail
+   pages are 8 co-equal panels with every heading at body size.
+5. **The stat row is dead weight.** Every list screen passes one stat into a
+   four-column grid: measured at 1440px, a 282px card in a 1216px row, 77% empty,
+   restating the count the pager prints below it.
+6. **Nothing built for eight-hour use** — no keyboard shortcuts, no command
+   palette (§7 assumes one exists), no bulk actions, and Claims search matches
+   policy number only, so an assessor cannot find a claim by claimant name.
+
+Three dead dependencies to remove: `@radix-ui/react-tabs`,
+`@radix-ui/react-tooltip`, `@radix-ui/react-avatar`.
+
+**Not a priority, and recorded so it is not re-raised:** at 390px the console is
+unusable — the 224px sidebar takes 57% of the viewport and the 166px remainder
+scrolls horizontally. Desktop-at-a-desk is the confirmed primary context and
+**1024×768 holds up cleanly** with no clipping or overflow. That is the real
+floor and it passes.
+
+### 14.5 The e2e fallout, and the latent trap it exposed
+
+Resolving ids to names broke 3 of 89 e2e tests, all in two specs, and the
+diagnosis is worth keeping because the symptom pointed nowhere near the cause.
+
+**`staff-beneficiaries`** failed with a timeout on a missing share-percent
+input. The failure snapshot showed the browser sitting on `/staff/parties/<id>`
+under an `<h1>` of "Amina Owner": the click had navigated off the page.
+`addPartyRow` picked from the party search dropdown with a bare
+`page.getByText('Amina Owner').click()`, and the Policyholder field on that same
+page now renders that name inside a link. **The link exists on first paint; the
+search results arrive a request later**, so Playwright matched the link, clicked
+it, and left before the dropdown had rendered anything.
+
+**The latent trap:** roughly twenty specs use that identical unscoped
+`getByText('Amina Owner').click()` and every one of them passed. They survive
+only because their picker sits on a *create form*, where the party's name
+appears nowhere else on the page. That is luck. Any screen that starts showing a
+party name breaks its spec the same way, with the same misleading symptom. Only
+the two genuinely-broken specs were changed — rewriting eighteen passing ones is
+churn — but `selectPickerOption` in `staff-beneficiaries.spec.ts` carries the
+explanation for whoever hits it next.
+
+**Two fixes worth more than the failures they cleared:**
+
+- `staff-issue-policy` asserted the raw uuid was *visible*, to prove the picker
+  put the selected party's id in the payload. Swapping that for the name would
+  have been **weaker** than the test it replaced — it would pass for any party
+  called "Amina Owner" and stop checking which id round-tripped. It now asserts
+  the policyholder link's `href`, which checks both halves at once.
+- The beneficiaries read-view test then hit strict mode, because this fixture's
+  beneficiary *is* the policyholder and both now resolve to a name. Scoping the
+  assertion to the Beneficiaries panel was not cosmetic: page-wide, the
+  policyholder's name alone would satisfy it **even if the beneficiary still
+  rendered a raw uuid** — the exact regression the test exists to catch. It
+  would have passed while proving nothing.
+
+The general shape, and the reason it recurs here: **rendering a name where an id
+used to be creates page-wide duplicates of text that specs assumed was unique.**
+Unit tests cannot see any of it — 557 passed green through all three failures.
