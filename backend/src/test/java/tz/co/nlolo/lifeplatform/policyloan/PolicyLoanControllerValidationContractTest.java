@@ -80,6 +80,7 @@ class PolicyLoanControllerValidationContractTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
+            "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

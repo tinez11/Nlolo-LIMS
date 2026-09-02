@@ -68,6 +68,67 @@ paths:
                 items: { $ref: '#/components/schemas/LoanView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /loans/forced-lapse-review-queue:
+    get:
+      summary: Loans whose balance has grown and whose forced-lapse shortfall test is outstanding
+      description: >
+        Operational worklist filled by the daily interest-accrual sweep
+        (db-migrations/_post-migration/configure-loan-interest-accrual.sql). The sweep grows loan
+        balances cross-tenant in SQL but cannot run the shortfall test itself — that needs the
+        policy's cash value, which this module reads only through policy's public API — so it
+        flags each loan it accrued and this queue is how a caller finds them. Drain it with
+        POST /loans/{loanId}/forced-lapse-evaluation. STAFF only: it spans the whole loan book
+        rather than one policy, so the own-policy-only check the other operations apply has
+        nothing to bind to. Ordered oldest-flagged first.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LoanView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /loans/{loanId}/forced-lapse-evaluation:
+    post:
+      summary: Run the forced-lapse shortfall test for one loan
+      description: >
+        Compares the loan's outstanding balance (principal plus accrued interest, net of
+        repayments) against the policy's cash value. If the balance is strictly greater, the loan
+        moves to FORCED_LAPSE_TRIGGERED and the policy is LAPSED — "automatic policy termination
+        when loan balance plus interest exceeds cash value" (docs/01-domain-map.md:224). If it is
+        not, the loan is left as it is and only cleared from the review queue. Idempotent, and
+        safe to call on a terminal loan, which is a normal consequence of draining the queue.
+        200 rather than 202: this completes synchronously, with no external rail involved.
+        STAFF only, because it can terminate a policy.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Shortfall test completed — the loan as it now stands
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '500':
+          description: >
+            Documented deliberately, because there is one reachable case and callers should not
+            read it as a transient fault: the loan and the policy's cash value are denominated in
+            different currencies. No conversion is defined on this platform, and guessing one
+            would terminate a policy on a wrong comparison, so the operation refuses rather than
+            converts. That state is a data defect to be fixed, not retried — hence 500 and not a
+            409, which would misrepresent a bug as a business conflict.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /loans/{loanId}:
     get:
       summary: Get loan detail and current outstanding balance

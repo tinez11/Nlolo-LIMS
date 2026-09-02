@@ -59,6 +59,14 @@ public interface PolicyApi {
     CoverageStatusView getCoverageStatus(String policyNumber, LocalDate asOf);
     boolean isPolicyInForce(String policyNumber, LocalDate asOf);
 
+    /**
+     * The policy's cash value, for {@code policyloan}'s forced-lapse shortfall test
+     * ({@code docs/01-domain-map.md:224}: "loan balance plus interest exceeds cash value"). A
+     * pure read -- no event, no charge applied. See {@link CashValueView} for why
+     * {@link #quoteSurrenderValue} cannot serve this purpose.
+     */
+    CashValueView getCashValue(String policyNumber);
+
     UUID reserveLoanValue(String policyNumber, BigDecimal amount, String currency, Duration ttl);
     void confirmReservation(UUID reservationId);
     void releaseReservation(UUID reservationId);
@@ -73,6 +81,19 @@ public interface PolicyApi {
     void suspendPolicy(String policyNumber, String reason, String suspendedBy);
     void resumeSuspendedPolicy(String policyNumber, String resumedBy);
     void lapsePolicy(String policyNumber, String lapsedBy);
+
+    /**
+     * Whether {@link #lapsePolicy} would succeed right now -- for a caller that must lapse a
+     * policy as a side effect of its own work and cannot simply attempt it.
+     *
+     * <p>Attempting and catching is not an option across a {@code @Transactional} boundary: the
+     * inner boundary marks the whole transaction rollback-only before the caller sees the
+     * exception, so the caller's commit fails with {@code UnexpectedRollbackException} however
+     * carefully it handles the failure. {@code policyloan}'s forced lapse hit precisely that.
+     * Backed by {@code Policy.canLapse()}, which is the same predicate {@code lapse()} itself
+     * guards on -- so this answer cannot drift from the action.
+     */
+    boolean isLapsable(String policyNumber);
     void reinstatePolicy(String policyNumber, String reinstatedBy);
 
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */

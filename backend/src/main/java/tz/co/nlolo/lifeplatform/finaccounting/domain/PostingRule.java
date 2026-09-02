@@ -23,6 +23,26 @@ import java.util.Optional;
  * cash and creates no immediate obligation -- the obligation attaches per invoice, which
  * {@code PremiumInvoiceGenerated} above captures. What genuinely belongs at issuance is LRC/CSM
  * initial recognition, which is C1-blocked.
+ *
+ * <p><b>ACCRUED LOAN INTEREST IS NOT POSTED, AND THAT IS A KNOWN GAP -- stated here rather than
+ * left to be discovered.</b> {@code policyloan.accrue_loan_interest()}
+ * (db-migrations/_post-migration/configure-loan-interest-accrual.sql) writes an
+ * {@code INTEREST_ACCRUAL} entry to the loan's own ledger daily, so a loan's outstanding balance
+ * is correct. Nothing reaches the GENERAL ledger, for two independent reasons:
+ * <ul>
+ *   <li>The accrual is a cross-tenant SQL sweep, and a Postgres backend session has no Spring
+ *       {@code ApplicationEventPublisher}, so no {@code LoanInterestAccrued} event exists for
+ *       this class to map. Publishing one would need the per-tenant Java half to detect
+ *       unposted accruals and emit them -- real work, not a line in this map.</li>
+ *   <li>The natural entry is DR {@code 1400 Policy Loan Receivable} / CR a {@code 4xxx} interest
+ *       income account, and this class states above that NO {@code 4xxx} account is seeded on
+ *       purpose. Loan interest is arguably outside the LRC/CSM problem that blocks {@code 4xxx}
+ *       for premium -- it is not insurance revenue -- but that is a FINANCE call, not one to make
+ *       silently while wiring a sweep.</li>
+ * </ul>
+ * Consequence, plainly: {@code 1400} reflects principal disbursed and repaid, never interest
+ * earned, so interest income is understated by exactly the accrued amount. The trial balance
+ * still balances, which is precisely why this needs saying out loud.
  */
 public final class PostingRule {
 

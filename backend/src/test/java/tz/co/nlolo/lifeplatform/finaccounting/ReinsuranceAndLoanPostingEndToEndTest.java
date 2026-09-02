@@ -180,6 +180,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
+            "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",

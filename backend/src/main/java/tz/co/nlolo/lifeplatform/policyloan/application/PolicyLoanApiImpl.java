@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.policyloan.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.policy.api.CashValueView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policyloan.api.*;
 import tz.co.nlolo.lifeplatform.policyloan.domain.LoanInterestTerm;
@@ -11,6 +12,8 @@ import tz.co.nlolo.lifeplatform.policyloan.infrastructure.LoanInterestTermReposi
 import tz.co.nlolo.lifeplatform.policyloan.infrastructure.LoanTransactionRepository;
 import tz.co.nlolo.lifeplatform.policyloan.infrastructure.PolicyLoanRepository;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +29,8 @@ import java.util.UUID;
 
 @Service
 public class PolicyLoanApiImpl implements PolicyLoanApi {
+
+    private static final Logger log = LoggerFactory.getLogger(PolicyLoanApiImpl.class);
 
     /** Module-Architecture-B1's TTL -- the same value passed by every Task 8 test. Not
      * externalized as a refdata parameter in M3 -- it governs an internal protocol timing, not
@@ -285,15 +290,135 @@ public class PolicyLoanApiImpl implements PolicyLoanApi {
         return toView(loan);
     }
 
+    /**
+     * The automatic forced-lapse path, and the tenant-scoped half of the interest-accrual sweep.
+     *
+     * <p>{@code docs/01-domain-map.md:224}: Forced Lapse is "automatic policy termination when
+     * loan balance plus interest exceeds cash value". Before this existed, nothing on the
+     * platform evaluated that condition -- {@code triggerForcedLapse} was called only from a
+     * test, so {@code FORCED_LAPSE_TRIGGERED} was unreachable in production and a loan could grow
+     * past the policy's cash value indefinitely with no consequence.
+     *
+     * <p>Idempotent by construction: a loan already past DISBURSED/REPAYING has nothing to test,
+     * and a healthy loan is only un-flagged. Clearing the flag on BOTH outcomes is deliberate --
+     * leaving it set would re-queue the same healthy loan forever, and the next accrual re-flags
+     * it anyway, so nothing is lost.
+     */
+    @Override
+    @Transactional
+    public LoanView evaluateForcedLapse(UUID loanId) {
+        UUID tenantId = TenantContext.get();
+        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+
+        // A loan that is SETTLED, already FORCED_LAPSE_TRIGGERED, DISBURSEMENT_FAILED, or not yet
+        // disbursed has no shortfall to test. Checked here rather than letting
+        // markForcedLapseTriggered throw, because being asked to re-check a terminal loan is a
+        // normal consequence of draining a queue, not a caller error.
+        if (!"DISBURSED".equals(loan.getStatus()) && !"REPAYING".equals(loan.getStatus())) {
+            loan.clearForcedLapseReview();
+            policyLoanRepository.save(loan);
+            return toView(loan);
+        }
+
+        BigDecimal outstanding = computeOutstandingBalance(loan);
+        CashValueView cashValue = policyApi.getCashValue(loan.getPolicyNumber());
+
+        // Refuse to compare money in two currencies rather than guessing an FX rate: the wrong
+        // answer here terminates a customer's policy. Both sides default to TZS and nothing on
+        // this platform converts, so a mismatch is a data defect that must surface loudly.
+        if (!loan.getPrincipalCurrency().equals(cashValue.cashValueCurrency())) {
+            throw new IllegalStateException("Cannot evaluate forced lapse for loan " + loanId + ": loan is in "
+                + loan.getPrincipalCurrency() + " but policy " + loan.getPolicyNumber() + "'s cash value is in "
+                + cashValue.cashValueCurrency() + " -- no conversion is defined on this platform");
+        }
+
+        // Strictly greater than: a balance exactly equal to cash value is still fully covered.
+        if (outstanding.compareTo(cashValue.cashValueAmount()) > 0) {
+            return forceLapse(loan, tenantId, "Outstanding balance " + outstanding.toPlainString() + " "
+                + loan.getPrincipalCurrency() + " exceeds cash value " + cashValue.cashValueAmount().toPlainString()
+                + " " + cashValue.cashValueCurrency());
+        }
+
+        loan.clearForcedLapseReview();
+        policyLoanRepository.save(loan);
+        return toView(loan);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<LoanView> listLoansPendingForcedLapseReview() {
+        return policyLoanRepository
+            .findByTenantIdAndForcedLapseReviewDueAtIsNotNullOrderByForcedLapseReviewDueAtAsc(TenantContext.get())
+            .stream().map(this::toView).toList();
+    }
+
     @Override
     @Transactional
     public LoanView triggerForcedLapse(UUID loanId, String reason) {
         UUID tenantId = TenantContext.get();
-        PolicyLoan loan = findLoanOrThrow(loanId, tenantId);
+        return forceLapse(findLoanOrThrow(loanId, tenantId), tenantId, reason);
+    }
+
+    /**
+     * The one place a forced lapse actually happens, shared by the automatic
+     * ({@link #evaluateForcedLapse}) and manual ({@link #triggerForcedLapse}) paths.
+     *
+     * <p><b>The policy lapse is the half that was missing.</b> This module published
+     * {@code policyloan.LoanForcedLapseTriggered} and NOTHING consumed it -- not policy, not
+     * anything -- so the event was inert and the policy stayed in force no matter how far the
+     * loan outgrew its cash value. Terminating the policy is what "forced lapse" means
+     * ({@code docs/01-domain-map.md:224}: "automatic policy termination when..."), so it is done
+     * here as a synchronous call on {@code PolicyApi} rather than by adding a consumer for the
+     * event: policyloan already calls policy synchronously for the reserve/confirm/release
+     * protocol, and a lapse that is merely announced is exactly the failure being fixed.
+     */
+    private LoanView forceLapse(PolicyLoan loan, UUID tenantId, String reason) {
         loan.markForcedLapseTriggered();
+        loan.clearForcedLapseReview();
         policyLoanRepository.save(loan);
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanForcedLapseTriggered", tenantId,
-            Map.of("loanId", loanId, "policyNumber", loan.getPolicyNumber(), "triggeredAt", Instant.now().toString())));
+
+        // ASK, do not attempt-and-catch. PolicyApi.lapsePolicy is @Transactional and joins this
+        // transaction, so an InvalidPolicyStateException from it marks the WHOLE transaction
+        // rollback-only before this method could ever catch it -- the commit then dies with
+        // UnexpectedRollbackException regardless of how carefully the exception is handled. That
+        // was not a theoretical concern: the attempt-and-catch version of this method failed
+        // ForcedLapseEndToEndTest.theLoanTransitionStandsEvenWhenThePolicyCannotBeLapsed exactly
+        // that way. isLapsable is backed by the same Policy.canLapse() predicate lapse() guards
+        // on, so this cannot drift from what lapsePolicy will actually accept.
+        //
+        // Yes, this is check-then-act, and that is safe here rather than merely tolerated. Both
+        // calls join THIS transaction and share one persistence context, so lapsePolicy re-reads
+        // the very entity isLapsable just examined -- the status cannot move between them from
+        // inside. A concurrent transaction committing a status change in the window makes
+        // lapsePolicy throw, which rolls this whole transaction back and surfaces a 409: the
+        // forced lapse is then neither half-applied nor silently skipped, which is the only
+        // property that actually matters for a policy termination.
+        boolean policyLapsed = policyApi.isLapsable(loan.getPolicyNumber());
+        if (policyLapsed) {
+            policyApi.lapsePolicy(loan.getPolicyNumber(), "policyloan:forced-lapse");
+        } else {
+            // The policy is not ACTIVE or SUSPENDED, so either the termination this lapse intends
+            // is already true (LAPSED / SURRENDERED / MATURED / terminated-for-claim) or the
+            // policy is REINSTATED -- which isPolicyInForce() treats as in force but
+            // Policy.lapse() refuses, a PRE-EXISTING gap in policy's state machine that is not
+            // this module's to close. Either way the loan-side transition and the event must
+            // still stand: this module's record of a forced lapse cannot be held hostage to
+            // policy's state, and dropping the outcome silently is what made the original
+            // missing-consumer bug invisible for so long.
+            log.warn("Forced lapse recorded on loan {} but policy {} is not in a lapsable state -- "
+                + "cover was not terminated by this call", loan.getLoanId(), loan.getPolicyNumber());
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("loanId", loan.getLoanId());
+        payload.put("policyNumber", loan.getPolicyNumber());
+        payload.put("reason", reason);
+        payload.put("triggeredAt", Instant.now().toString());
+        // Carried so a consumer (and any later reconciliation) can tell a forced lapse that
+        // actually terminated cover from one that only recorded the loan-side transition.
+        payload.put("policyLapsed", policyLapsed);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policyloan.LoanForcedLapseTriggered", tenantId, payload));
+
         return toView(loan);
     }
 

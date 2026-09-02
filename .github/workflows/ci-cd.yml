@@ -304,6 +304,22 @@ jobs:
         run: psql "${{ secrets.STAGING_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-pg-partman.sql
       - name: Assert every pg_partman-created partition inherited the parent's RLS/append-only controls
         run: psql "${{ secrets.STAGING_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/verify-partition-controls.sql
+      # Idempotent: CREATE OR REPLACE FUNCTION plus cron.schedule() on an existing job name
+      # updates in place, so re-running on every deploy is safe and is what keeps the function
+      # body in step with the committed file.
+      #
+      # KNOWN GAP, NOT FIXED HERE: configure-billing-sweep.sql (M4) and
+      # configure-commission-close.sql (M7) are still absent from this job, even though both
+      # files' own headers say "Run by the CD pipeline immediately after Flyway migrations
+      # complete." They have therefore never been installed in ANY environment -- verified
+      # against the dev database, where neither billing.sweep_billing_state() nor
+      # distribution.close_commission_statements() so much as EXISTS. That means dunning
+      # escalation and commission-statement closing have never run anywhere. Adding them is a
+      # one-line change each, deliberately left to a decision rather than bundled in: switching
+      # them on moves real invoice statuses to IN_GRACE/OVERDUE and opens arrears cases, which
+      # is a business-process activation, not a wiring fix.
+      - name: Install the policy-loan interest accrual sweep (pg_cron)
+        run: psql "${{ secrets.STAGING_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-loan-interest-accrual.sql
       - name: Rolling deploy
         run: ./scripts/deploy.sh staging ${{ github.sha }}
 
@@ -325,5 +341,10 @@ jobs:
         run: psql "${{ secrets.PRODUCTION_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-pg-partman.sql
       - name: Assert every pg_partman-created partition inherited the parent's RLS/append-only controls
         run: psql "${{ secrets.PRODUCTION_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/verify-partition-controls.sql
+      # See the staging job's note on this step, including the still-open gap that
+      # configure-billing-sweep.sql and configure-commission-close.sql are installed by no
+      # environment at all.
+      - name: Install the policy-loan interest accrual sweep (pg_cron)
+        run: psql "${{ secrets.PRODUCTION_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-loan-interest-accrual.sql
       - name: Rolling deploy
         run: ./scripts/deploy.sh production ${{ github.ref_name }}

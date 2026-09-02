@@ -99,6 +99,7 @@ class PolicyLoanContractTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
+            "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             // NOT optional, and NOT in the task brief's list: every domain event these tests
             // publish (LoanOriginated, LoanDisbursementRequested, LoanRepaid, PolicyIssued, ...)
             // is picked up application-wide by audit.DomainEventAuditListener. It swallows its
@@ -497,6 +498,106 @@ class PolicyLoanContractTest {
                 .content("""
                     {"amount":{"amount":"50000.00","currencyCode":"TZS"},"paymentReference":"PAY-CONTRACT-404"}
                     """))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("LOAN_NOT_FOUND"));
+    }
+
+    /**
+     * {@code GET /loans/forced-lapse-review-queue} must resolve as a LITERAL path and never be
+     * swallowed by {@code GET /loans/{loanId}}, whose {@code @PathVariable UUID loanId} would
+     * fail to parse "forced-lapse-review-queue" and answer 400 instead.
+     *
+     * <p>Spring's {@code PathPatternParser} does sort a literal ahead of a pattern containing a
+     * variable, but that is a claim about framework behavior sitting between two same-prefix
+     * mappings -- worth PINNING rather than asserting in a comment, because the failure mode is a
+     * 400 on a working endpoint and reordering the two handlers would not otherwise show up.
+     */
+    @Test
+    void theForcedLapseReviewQueueResolvesAsALiteralPathNotAsALoanId() throws Exception {
+        mockMvc.perform(get("/loans/forced-lapse-review-queue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // A fresh tenant has nothing queued -- an empty array, not a 400 and not a 404.
+            .andExpect(jsonPath("$").isArray())
+            .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    /**
+     * Both forced-lapse endpoints are STAFF-only, and this is the test that holds them there.
+     * The evaluation can TERMINATE A POLICY, so a customer or agent reaching it -- even against
+     * their own policy, which every other operation on this controller deliberately allows --
+     * would be a customer able to lapse their own cover. The queue is staff-only for a different
+     * reason: it spans the tenant's whole loan book, so the own-policy-only check the other
+     * endpoints apply has nothing to bind to.
+     */
+    @Test
+    void bothForcedLapseEndpointsRejectCustomersAndAgents() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID someParty = UUID.randomUUID();
+        UUID someLoan = UUID.randomUUID();
+
+        mockMvc.perform(get("/loans/forced-lapse-review-queue").with(customerOf(tenantId, someParty)))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(get("/loans/forced-lapse-review-queue").with(agentOf(tenantId)))
+            .andExpect(status().isForbidden());
+
+        // A random loan id is fine: @PreAuthorize runs BEFORE the method body, so a 403 here
+        // proves the gate rather than the lookup. If the gate were missing this would be a 404
+        // instead, which is exactly the difference being asserted.
+        mockMvc.perform(post("/loans/" + someLoan + "/forced-lapse-evaluation")
+                .with(customerOf(tenantId, someParty)))
+            .andExpect(status().isForbidden());
+        mockMvc.perform(post("/loans/" + someLoan + "/forced-lapse-evaluation")
+                .with(agentOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    /**
+     * The shortfall test over HTTP on a well-collateralized loan: 200, the loan untouched, and
+     * the body on-contract. The 200-not-202 distinction is deliberate and declared in the spec --
+     * this operation completes synchronously, with no external rail involved.
+     */
+    @Test
+    void forcedLapseEvaluationLeavesAWellCollateralizedLoanAloneAndMatchesTheContract() throws Exception {
+        Fixture fixture = issuePolicyWithCashValue("LOAN-CONTRACT-FL", "1000000.00");
+
+        String originateResponse = mockMvc.perform(post("/policies/" + fixture.policyNumber() + "/loans")
+                .with(agentOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"requestedAmount":{"amount":"200000.00","currencyCode":"TZS"},"payeeRef":"MPESA-0712345678"}
+                    """))
+            .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
+        UUID loanId = UUID.fromString(JsonPath.read(originateResponse, "$.loanId"));
+
+        // Disbursed so the loan is in a status the shortfall test actually examines; same
+        // no-HTTP-endpoint-by-design reasoning as the repayment test above.
+        TenantContext.set(fixture.tenantId());
+        try {
+            policyLoanApi.markDisbursed(loanId, "MM-TEST-REF", Instant.now());
+        } finally {
+            TenantContext.clear();
+        }
+
+        mockMvc.perform(post("/loans/" + loanId + "/forced-lapse-evaluation")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", fixture.tenantId().toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // 200,000 borrowed against 1,000,000 of cash value: nowhere near a shortfall, so
+            // the loan must come back exactly as it was.
+            .andExpect(jsonPath("$.status").value("DISBURSED"))
+            .andExpect(jsonPath("$.outstandingBalance.amount").value("200000.00"));
+    }
+
+    @Test
+    void forcedLapseEvaluationForNonexistentLoanReturnsNotFoundNotServerError() throws Exception {
+        mockMvc.perform(post("/loans/" + UUID.randomUUID() + "/forced-lapse-evaluation")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString()))))
             .andExpect(status().isNotFound())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.errorCode").value("LOAN_NOT_FOUND"));

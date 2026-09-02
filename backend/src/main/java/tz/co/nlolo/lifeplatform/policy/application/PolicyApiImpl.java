@@ -157,6 +157,29 @@ public class PolicyApiImpl implements PolicyApi {
             Map.of("policyNumber", policyNumber, "changedAt", Instant.now().toString())));
     }
 
+    /**
+     * Deliberately NOT @Transactional-write and deliberately event-free: this is the read
+     * policyloan's forced-lapse sweep-follow-up calls, and a health check that emitted an event
+     * per loan per day would drown every consumer of policy's event stream.
+     *
+     * <p>findById, not lockByPolicyNumber: the caller compares this against a loan balance and
+     * may then lapse the policy, but taking a row lock on policy_account here would hold it
+     * across policyloan's own writes for no benefit -- the decision is advisory either way, since
+     * cash value can move a millisecond later. lapsePolicy re-reads and guards its own state.
+     */
+    @Override
+    public CashValueView getCashValue(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        // findPolicyOrThrow first, so a policy in another tenant answers 404 identically to one
+        // that does not exist (the anti-enumeration property every read on this API preserves)
+        // rather than leaking existence through a different error on the account lookup.
+        findPolicyOrThrow(policyNumber, tenantId);
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+        return new CashValueView(policyNumber, account.getCashValueAmount(), account.getCashValueCurrency(),
+            account.getLoanEncumbranceAmount());
+    }
+
     @Override
     public SurrenderQuoteView quoteSurrenderValue(String policyNumber) {
         UUID tenantId = TenantContext.get();
@@ -436,6 +459,11 @@ public class PolicyApiImpl implements PolicyApi {
         policyRepository.save(policy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyLapsed", tenantId,
             Map.of("policyNumber", policyNumber, "lapsedAt", policy.getLapsedAt().toString())));
+    }
+
+    @Override
+    public boolean isLapsable(String policyNumber) {
+        return findPolicyOrThrow(policyNumber, TenantContext.get()).canLapse();
     }
 
     @Override

@@ -71,6 +71,7 @@ class PolicyLoanApiIntegrationTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
+            "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             // Every policyloan event this test triggers (LoanOriginated, LoanDisbursementRequested,
             // etc.) is picked up application-wide by audit.DomainEventAuditListener, which
             // persists an audit_log row regardless of which module published the event -- without

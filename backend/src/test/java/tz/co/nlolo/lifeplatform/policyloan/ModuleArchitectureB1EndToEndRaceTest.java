@@ -126,6 +126,7 @@ class ModuleArchitectureB1EndToEndRaceTest {
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
+            "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             // Required, and absent from the task brief's list -- see PolicyLoanContractTest's
             // note: audit.DomainEventAuditListener consumes every published domain event
             // application-wide and swallows its own persistence failures.

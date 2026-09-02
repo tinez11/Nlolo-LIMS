@@ -101,6 +101,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
+            "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
             // on every insert (every auto-issued policy in policyIsTenantIsolatedUnderRls/
             // policyLoanIsTenantIsolatedUnderRls below would otherwise fail at persist time), the

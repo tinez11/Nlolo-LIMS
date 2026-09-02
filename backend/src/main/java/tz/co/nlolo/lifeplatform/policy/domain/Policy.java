@@ -168,8 +168,23 @@ public class Policy {
         this.suspensionReason = null;
     }
 
+    /**
+     * Whether {@link #lapse()} would succeed, so a caller can ask instead of attempting and
+     * catching. Extracted from {@code lapse()}'s own guard rather than restated, so there is one
+     * definition of "lapsable" and the question and the action cannot drift apart.
+     *
+     * <p>This exists because catching {@link InvalidPolicyStateException} across a
+     * {@code @Transactional} boundary does not work: the inner boundary marks the whole
+     * transaction rollback-only before the caller ever sees the exception, so the commit fails
+     * with {@code UnexpectedRollbackException} no matter how carefully the caller handles it.
+     * {@code policyloan}'s forced lapse hit exactly that, and asking first is the fix.
+     */
+    public boolean canLapse() {
+        return "ACTIVE".equals(status) || "SUSPENDED".equals(status);
+    }
+
     public void lapse() {
-        if (!"ACTIVE".equals(status) && !"SUSPENDED".equals(status)) {
+        if (!canLapse()) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE or SUSPENDED to LAPSE (current: " + status + ")");
         }
         this.status = "LAPSED";

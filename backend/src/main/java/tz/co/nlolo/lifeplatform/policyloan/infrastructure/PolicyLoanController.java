@@ -24,9 +24,14 @@ import java.util.UUID;
  * authorization idiom, same Jwt-subject-as-audit-field pattern, same accepted-but-unenforced
  * Idempotency-Key header (Global Constraints). markDisbursed/markDisbursementFailed on
  * PolicyLoanApi are driven by policyloan.application.PaymentEventListener consuming payment's
- * confirmation events (M5), not by HTTP -- they and triggerForcedLapse (an internal-only test
- * seam standing in for a future billing-driven forced-lapse, M4) deliberately have no endpoint
- * here. */
+ * confirmation events (M5), not by HTTP -- they deliberately have no endpoint here.
+ *
+ * <p>Forced lapse now has two paths and only ONE of them is exposed. The automatic one --
+ * evaluateForcedLapse, the shortfall test docs/01-domain-map.md:224 specifies -- is a STAFF
+ * endpoint below, together with the review queue the interest-accrual sweep fills.
+ * PolicyLoanApi.triggerForcedLapse, which forces a lapse with NO shortfall test, stays
+ * endpoint-less on purpose: an unconditional policy termination over HTTP is not a capability any
+ * document on this platform asks for, and nothing outside this module needs it. */
 @RestController
 public class PolicyLoanController {
 
@@ -57,6 +62,36 @@ public class PolicyLoanController {
     public ResponseEntity<List<LoanResponseDto>> listLoans(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         enforceCustomerOwnPolicyOnly(policyNumber, jwt, authentication);
         return ResponseEntity.ok(policyLoanApi.listLoansForPolicy(policyNumber).stream().map(LoanResponseDto::from).toList());
+    }
+
+    /**
+     * The forced-lapse review queue the interest-accrual sweep fills. STAFF only, and
+     * deliberately not exposed to customers or agents: it is an operational worklist across the
+     * tenant's whole loan book, not a view of one policy, so the object-level
+     * own-policy-only check every other endpoint here applies has nothing to bind to.
+     *
+     * <p>The literal path segment does not collide with {@code /loans/{loanId}} below: Spring
+     * matches a literal pattern ahead of one containing a variable, so this mapping wins and
+     * {@code {loanId}} never sees this URL and never tries to parse it as a UUID.
+     */
+    @GetMapping("/loans/forced-lapse-review-queue")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<List<LoanResponseDto>> listForcedLapseReviewQueue() {
+        return ResponseEntity.ok(policyLoanApi.listLoansPendingForcedLapseReview().stream().map(LoanResponseDto::from).toList());
+    }
+
+    /**
+     * Runs the shortfall test for one loan and lapses the policy if the balance has outgrown its
+     * cash value. STAFF only: this can terminate a policy, so it is not something a customer or
+     * agent may invoke against their own book. Idempotent -- a healthy loan comes back unchanged.
+     *
+     * <p>200, not 202: unlike origination and repayment, this completes synchronously. Nothing is
+     * requested of an external rail, so there is no async leg to describe.
+     */
+    @PostMapping("/loans/{loanId}/forced-lapse-evaluation")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<LoanResponseDto> evaluateForcedLapse(@PathVariable UUID loanId) {
+        return ResponseEntity.ok(LoanResponseDto.from(policyLoanApi.evaluateForcedLapse(loanId)));
     }
 
     @GetMapping("/loans/{loanId}")

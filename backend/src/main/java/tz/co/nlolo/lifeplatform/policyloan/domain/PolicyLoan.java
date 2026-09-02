@@ -39,6 +39,14 @@ public class PolicyLoan {
     @Column(name = "reservation_id")
     private UUID reservationId;
 
+    // Set by the cross-tenant accrual sweep (db-migrations/_post-migration/
+    // configure-loan-interest-accrual.sql) whenever it grows this loan's balance; cleared once a
+    // tenant-scoped caller has run the shortfall test. See V5's column comment: the sweep cannot
+    // evaluate forced lapse itself, because cash value lives in policy.policy_account and this
+    // module reads that only through PolicyApi.
+    @Column(name = "forced_lapse_review_due_at")
+    private Instant forcedLapseReviewDueAt;
+
     @Version
     private Long version;
 
@@ -73,6 +81,14 @@ public class PolicyLoan {
     public String getStatus() { return status; }
     public Instant getOriginatedAt() { return originatedAt; }
     public UUID getReservationId() { return reservationId; }
+    public Instant getForcedLapseReviewDueAt() { return forcedLapseReviewDueAt; }
+
+    /** Cleared once the shortfall test has actually been run for this loan, whichever way it
+     * came out. Called on the no-shortfall path too: leaving the flag set would re-queue the same
+     * healthy loan on every subsequent pass, and the next accrual re-flags it anyway. */
+    public void clearForcedLapseReview() {
+        this.forcedLapseReviewDueAt = null;
+    }
 
     public void recordReservation(UUID reservationId) {
         this.reservationId = reservationId;
