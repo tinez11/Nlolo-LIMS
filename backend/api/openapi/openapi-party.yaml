@@ -30,6 +30,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartyView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        # An identity document already registered to another party in this tenant
+        # (errorCode DUPLICATE_IDENTITY_DOCUMENT), enforced by the partial unique index
+        # ux_party_individual_identity.
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /parties/corporates:
     post:
       summary: Register a corporate (e.g. an employer or SACCO for a group scheme)
@@ -47,6 +52,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PartyView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        # Spec-truth fix: DuplicateRegistrationNumberException has returned 409
+        # DUPLICATE_REGISTRATION_NUMBER since M1 and was never declared here.
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /parties:
     get:
       summary: List/search parties (staff KYC review queue; agents see only parties they registered)
@@ -249,6 +258,12 @@ paths:
 components:
   schemas:
     RegisterIndividualRequest:
+      description: >-
+        Only fullName, dateOfBirth and contactInfo are required. Everything in the person record
+        is optional on purpose: registration happens in front of a person who may not have the
+        answers to hand, and a half-known record beats none. sex and smokerStatus are the two
+        that matter most downstream -- together with dateOfBirth they are base_rate_table's key,
+        so a party registered without them cannot be priced from its own record.
       type: object
       required: [fullName, dateOfBirth, contactInfo]
       properties:
@@ -259,6 +274,45 @@ components:
           properties:
             phoneNumber: { type: string, pattern: '^\+255\d{9}$' }
             email: { type: [string, "null"], format: email }
+        sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+        smokerStatus:
+          description: >-
+            UNKNOWN means the question was put and not answered, which a product may price
+            deliberately. Absent means nobody asked. The two are not the same and must stay
+            distinguishable.
+          type: [string, "null"]
+          enum: [SMOKER, NON_SMOKER, UNKNOWN, null]
+        idType:
+          description: Required if idNumber is present, and rejected if it is absent.
+          type: [string, "null"]
+          enum: [NATIONAL_ID, PASSPORT, DRIVING_LICENCE, VOTER_ID, null]
+        idNumber: { type: [string, "null"], maxLength: 50 }
+        occupation:
+          description: As declared by the applicant, free text. Not a classification.
+          type: [string, "null"]
+          maxLength: 120
+        occupationClass:
+          description: >-
+            The rating band an underwriter assigns, matching product.rating_table's
+            OCCUPATION_CLASS factor. Free text rather than an enum because the platform owns no
+            canonical occupation list -- refdata backs no dropdown anywhere -- so this is
+            validated at quote time against the product's own bands.
+          type: [string, "null"]
+          maxLength: 30
+        employerName: { type: [string, "null"], maxLength: 255 }
+        nationality: { type: [string, "null"], pattern: '^[A-Za-z]{2}$', example: TZ }
+        address: { $ref: '#/components/schemas/AddressRequest' }
+    AddressRequest:
+      description: >-
+        One address per party, shaped for Tanzanian addressing. Every field optional -- an
+        address is frequently partial at registration.
+      type: [object, "null"]
+      properties:
+        line: { type: [string, "null"], maxLength: 255 }
+        ward: { type: [string, "null"], maxLength: 100 }
+        district: { type: [string, "null"], maxLength: 100 }
+        region: { type: [string, "null"], maxLength: 100 }
+        postalCode: { type: [string, "null"], maxLength: 20 }
     RegisterCorporateRequest:
       type: object
       required: [registeredName, registrationNumber, contactInfo]
@@ -304,6 +358,36 @@ components:
         createdBy:
           description: The JWT subject that registered this party -- what the agents realm is scoped on.
           type: [string, "null"]
+        sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+        smokerStatus:
+          description: UNKNOWN means asked and not answered; absent means nobody asked.
+          type: [string, "null"]
+          enum: [SMOKER, NON_SMOKER, UNKNOWN, null]
+        identityDocument: { $ref: '#/components/schemas/IdentityDocumentView' }
+        occupation: { type: [string, "null"] }
+        occupationClass: { type: [string, "null"] }
+        employerName: { type: [string, "null"] }
+        nationality: { type: [string, "null"], example: TZ }
+        address: { $ref: '#/components/schemas/AddressView' }
+    IdentityDocumentView:
+      description: >-
+        Both fields are set together or both null -- enforced by
+        party_identity_document_complete. The object itself is always present on the response;
+        an unrecorded document is the object with two nulls.
+      type: object
+      properties:
+        type: { type: [string, "null"], enum: [NATIONAL_ID, PASSPORT, DRIVING_LICENCE, VOTER_ID, null] }
+        number: { type: [string, "null"] }
+    AddressView:
+      description: >-
+        Always present on the response; an unrecorded address is the object with five nulls.
+      type: object
+      properties:
+        line: { type: [string, "null"] }
+        ward: { type: [string, "null"] }
+        district: { type: [string, "null"] }
+        region: { type: [string, "null"] }
+        postalCode: { type: [string, "null"] }
     PartyDocumentView:
       description: >-
         One document filed under this party. Metadata only; content is fetched through the

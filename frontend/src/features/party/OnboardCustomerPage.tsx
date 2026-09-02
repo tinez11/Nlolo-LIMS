@@ -150,6 +150,145 @@ function RegisterIndividualForm() {
         />
       </FormField>
 
+      {/* Everything below is optional, and grouped rather than run on as one flat
+          list of thirteen more inputs. The groups are the order a person is
+          actually asked: who they are, what they do, where they live. */}
+      <FieldGroup
+        title="Identity"
+        hint="One document per person. A national ID already on the register is refused."
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="ID type" error={errors.idType?.message}>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              {...register('idType')}
+            >
+              <option value="">Not recorded</option>
+              <option value="NATIONAL_ID">National ID</option>
+              <option value="PASSPORT">Passport</option>
+              <option value="DRIVING_LICENCE">Driving licence</option>
+              <option value="VOTER_ID">Voter ID</option>
+            </select>
+          </FormField>
+
+          <FormField label="ID number" error={errors.idNumber?.message}>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              {...register('idNumber')}
+            />
+          </FormField>
+
+          <FormField label="Nationality" error={errors.nationality?.message}>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+              placeholder="TZ"
+              {...register('nationality')}
+            />
+          </FormField>
+        </div>
+      </FieldGroup>
+
+      <FieldGroup
+        title="Person"
+        // Not decoration: sex and smoker status, with the date of birth above,
+        // are exactly the key of the product's base rate table. A party
+        // registered without them cannot be priced from its own record.
+        hint="Sex and smoker status are rating factors — a quote needs them."
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="Sex" error={errors.sex?.message}>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              {...register('sex')}
+            >
+              <option value="">Not recorded</option>
+              <option value="FEMALE">Female</option>
+              <option value="MALE">Male</option>
+            </select>
+          </FormField>
+
+          <FormField label="Smoker status" error={errors.smokerStatus?.message}>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              {...register('smokerStatus')}
+            >
+              {/* "Not recorded" and "Asked, declined to say" are genuinely
+                  different answers and a product may price them differently. */}
+              <option value="">Not recorded</option>
+              <option value="NON_SMOKER">Non-smoker</option>
+              <option value="SMOKER">Smoker</option>
+              <option value="UNKNOWN">Asked, declined to say</option>
+            </select>
+          </FormField>
+
+          <FormField label="Occupation" error={errors.occupation?.message}>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              placeholder="As the applicant describes it"
+              {...register('occupation')}
+            />
+          </FormField>
+
+          <FormField label="Occupation class" error={errors.occupationClass?.message}>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              placeholder="Rating band"
+              {...register('occupationClass')}
+            />
+          </FormField>
+
+          <div className="col-span-2">
+            <FormField label="Employer" error={errors.employerName?.message}>
+              <input
+                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                {...register('employerName')}
+              />
+            </FormField>
+          </div>
+        </div>
+      </FieldGroup>
+
+      <FieldGroup title="Address">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <FormField label="Street or plot" error={errors.addressLine?.message}>
+              <input
+                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                {...register('addressLine')}
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Ward" error={errors.ward?.message}>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              {...register('ward')}
+            />
+          </FormField>
+
+          <FormField label="District" error={errors.district?.message}>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              {...register('district')}
+            />
+          </FormField>
+
+          <FormField label="Region" error={errors.region?.message}>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              {...register('region')}
+            />
+          </FormField>
+
+          <FormField label="Postal code" error={errors.postalCode?.message}>
+            <input
+              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              {...register('postalCode')}
+            />
+          </FormField>
+        </div>
+      </FieldGroup>
+
       {registering.status === 'error' && registering.error && (
         <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
           {registering.error.detail ?? registering.error.title}
@@ -163,6 +302,35 @@ function RegisterIndividualForm() {
         {registering.status === 'loading' ? 'Registering…' : 'Register individual'}
       </Button>
     </form>
+  );
+}
+
+/**
+ * A titled group of optional fields inside a form.
+ *
+ * A real `<fieldset>`/`<legend>`, not a styled div: the legend names the group to a
+ * screen reader as it enters, which is the whole reason to group thirteen optional
+ * inputs rather than run them together. The hairline-and-caption treatment matches
+ * the console's panels without borrowing the `Panel` silhouette, which means
+ * something else here.
+ */
+function FieldGroup({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <fieldset className="border-t border-border pt-3">
+      <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+        {title}
+      </legend>
+      {hint && <p className="mb-2.5 text-[11px] text-muted-foreground">{hint}</p>}
+      {children}
+    </fieldset>
   );
 }
 

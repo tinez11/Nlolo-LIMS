@@ -59,6 +59,51 @@ test.describe('agents onboard a customer', () => {
     await expect(page.getByLabel('Full name')).toBeVisible();
   });
 
+  /**
+   * The person record through the REAL authenticated path.
+   *
+   * <p>Every other test of these fields either calls PartyApi directly or drives
+   * MockMvc. Nothing sent a sex, a smoker status or a national ID through Keycloak,
+   * the agents-realm token, the Vite proxy and a real Postgres -- which is precisely
+   * the shape of gap this project has shipped a fully green suite over twice.
+   *
+   * <p>The registered id is read off the success panel and the record is then opened
+   * from the agent's own client list, so this also proves the new columns survive a
+   * separate GET rather than only echoing back what the form held in memory.
+   */
+  test('records the person record and reads it back off the client record', async ({ page }) => {
+    await page.goto('/agents/customers/new');
+
+    const suffix = Date.now();
+    const idNumber = `E2E-NIDA-${suffix}`;
+    await page.getByLabel('Full name').fill(`E2E Person Record ${suffix}`);
+    await page.getByLabel('Date of birth').fill(dmy('1988-02-09'));
+
+    await page.getByLabel('ID type').selectOption('NATIONAL_ID');
+    await page.getByLabel('ID number').fill(idNumber);
+    await page.getByLabel('Sex').selectOption('FEMALE');
+    await page.getByLabel('Smoker status').selectOption('NON_SMOKER');
+    await page.getByLabel('Occupation', { exact: true }).fill('Secondary school teacher');
+    await page.getByLabel('Employer').fill('Ilala Secondary School');
+    await page.getByLabel('Region').fill('Dar es Salaam');
+
+    await page.getByRole('button', { name: 'Register individual' }).click();
+    await expect(page.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
+
+    // Open the record the agent just created, from their own client list.
+    await page.goto('/agents/clients');
+    await page.getByPlaceholder('Search by name').fill(`E2E Person Record ${suffix}`);
+    await page.getByRole('button', { name: new RegExp(`E2E Person Record ${suffix}`) }).click();
+
+    await expect(page.getByRole('heading', { level: 2, name: 'Person' })).toBeVisible();
+    await expect(page.getByText('Non-smoker')).toBeVisible();
+    await expect(page.getByText('Secondary school teacher')).toBeVisible();
+    await expect(page.getByText('Ilala Secondary School')).toBeVisible();
+    await expect(page.getByText(idNumber)).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Address' })).toBeVisible();
+    await expect(page.getByText('Dar es Salaam')).toBeVisible();
+  });
+
   test('registers a real corporate under the same agent-assisted path', async ({ page }) => {
     await page.goto('/agents/customers/new');
     await page.getByRole('button', { name: 'Corporate' }).click();

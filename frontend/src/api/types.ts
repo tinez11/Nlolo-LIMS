@@ -222,6 +222,8 @@ export type SuspendPolicyRequest = PolicyComponents['schemas']['SuspendPolicyReq
 export type PartyView = PartyComponents['schemas']['PartyView'];
 /** The full record from `GET /parties/{id}`. Deliberately not what the list returns. */
 export type PartyDetailView = PartyComponents['schemas']['PartyDetailView'];
+/** Always present on a PartyDetailView; an unrecorded document is two nulls. */
+export type IdentityDocumentView = PartyComponents['schemas']['IdentityDocumentView'];
 export type PartyDocumentView = PartyComponents['schemas']['PartyDocumentView'];
 export type KycStatus = NonNullable<PartyView['kycStatus']>;
 export const KYC_STATUSES: readonly KycStatus[] = ['PENDING', 'VERIFIED', 'REJECTED'];

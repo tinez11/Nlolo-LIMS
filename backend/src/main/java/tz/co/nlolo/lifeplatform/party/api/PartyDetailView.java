@@ -35,4 +35,17 @@ public record PartyDetailView(
     String email,
     Instant kycVerifiedAt,
     Instant createdAt,
-    String createdBy) {}
+    String createdBy,
+    // The V2 person record. INDIVIDUAL parties only -- a corporate carries none of
+    // these, and neither does any party registered before the migration, so null here
+    // means "not recorded" and never "zero" or "unknown". `smokerStatus` is the one to
+    // read carefully: UNKNOWN means the question was put and not answered, while null
+    // means nobody asked, and a product may price those differently.
+    Sex sex,
+    SmokerStatus smokerStatus,
+    IdentityDocument identityDocument,
+    String occupation,
+    String occupationClass,
+    String employerName,
+    String nationality,
+    Address address) {}

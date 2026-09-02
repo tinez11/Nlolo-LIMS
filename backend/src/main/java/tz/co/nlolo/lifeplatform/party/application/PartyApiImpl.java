@@ -2,7 +2,10 @@ package tz.co.nlolo.lifeplatform.party.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.party.api.DuplicateIdentityDocumentException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
+import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
+import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -52,12 +55,55 @@ public class PartyApiImpl implements PartyApi {
         this.eventPublisher = eventPublisher;
     }
 
+    /**
+     * The legacy five-argument registration.
+     *
+     * <p>{@code @Transactional} belongs HERE rather than on a {@code default} method on
+     * the interface: the annotation is what makes the delegation below run inside a
+     * transaction, so the party save and its {@code party.PartyRegistered} event stay
+     * atomic. See the note on {@link PartyApi#registerIndividual(String, LocalDate,
+     * String, String, String)} for what breaks otherwise.
+     */
     @Override
     @Transactional
-    public PartyView registerIndividual(String fullName, LocalDate dateOfBirth, String phoneNumber, String email, String registeredBy) {
-        validatePhone(phoneNumber);
+    public PartyView registerIndividual(String fullName, LocalDate dateOfBirth, String phoneNumber,
+                                         String email, String registeredBy) {
+        return registerIndividual(
+            IndividualRegistration.minimal(fullName, dateOfBirth, phoneNumber, email), registeredBy);
+    }
+
+    @Override
+    @Transactional
+    public PartyView registerIndividual(IndividualRegistration registration, String registeredBy) {
+        validatePhone(registration.phoneNumber());
         UUID tenantId = TenantContext.get();
-        Party party = partyRepository.save(Party.newIndividual(tenantId, fullName, dateOfBirth, phoneNumber, email, registeredBy));
+
+        IdentityDocument document = registration.identityDocument();
+        if (document.recorded()
+                && partyRepository.findByTenantIdAndIdTypeAndIdNumber(
+                    tenantId, document.type(), document.number()).isPresent()) {
+            throw new DuplicateIdentityDocumentException(document.type());
+        }
+
+        Party party;
+        try {
+            // saveAndFlush, and the check above is only a nicer error -- exactly the
+            // reasoning registerCorporate already records for registration numbers. The
+            // partial unique index ux_party_individual_identity is the guarantee: two
+            // concurrent requests can both pass the check and race to insert, and partyId
+            // is generated in memory, so a plain save() would not reach the database until
+            // the surrounding transaction commits and the violation would surface far from
+            // here.
+            party = document.recorded()
+                ? partyRepository.saveAndFlush(Party.newIndividual(tenantId, registration, registeredBy))
+                : partyRepository.save(Party.newIndividual(tenantId, registration, registeredBy));
+        } catch (DataIntegrityViolationException ex) {
+            if (document.recorded()) {
+                throw new DuplicateIdentityDocumentException(document.type());
+            }
+            throw ex;
+        }
+
         publishRegistered(party);
         return toView(party);
     }
@@ -109,7 +155,10 @@ public class PartyApiImpl implements PartyApi {
         return new PartyDetailView(party.getPartyId(), party.getPartyType(), party.getKycStatus(),
             party.getDisplayName(), party.getDateOfBirth(), party.getRegistrationNumber(),
             party.getPhoneNumber(), party.getEmail(), party.getKycVerifiedAt(), party.getCreatedAt(),
-            party.getCreatedBy());
+            party.getCreatedBy(),
+            party.getSex(), party.getSmokerStatus(), party.getIdentityDocument(),
+            party.getOccupation(), party.getOccupationClass(), party.getEmployerName(),
+            party.getNationality(), party.getAddress());
     }
 
     @Override

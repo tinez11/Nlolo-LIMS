@@ -58,6 +58,7 @@ class PartyContractTest {
     static void applyMigrations() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
+            "db-migrations/party/V2__individual_person_record.sql",
             // GET /parties/{id}/documents reads document.document_record through DocumentApi, so
             // this class now needs the document schema too -- without it the endpoint 500s on a
             // missing relation, which is exactly how it first failed.
@@ -92,6 +93,91 @@ class PartyContractTest {
                     {"fullName":"Amina Hassan","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345678","email":"amina@example.tz"}}
                     """))
             .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * The person record over real HTTP, not through {@code PartyApi}.
+     *
+     * <p>This exists because the controller hand-maps twelve fields from {@code
+     * RegisterIndividualRequest} into {@code IndividualRegistration}, and every other
+     * test of those fields calls the API directly -- so a transposed pair (occupation
+     * into occupationClass, ward into district) would have passed everything and only
+     * shown up as wrong data on a client record. Unknown request keys are silently
+     * dropped platform-wide, so a misspelled property here would 201 and discard the
+     * value; reading the record back is what makes that detectable.
+     */
+    @Test
+    void registeringWithThePersonRecordRoundTripsOverHttp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        var jwtCustomizer = jwt()
+            .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+
+        String body = mockMvc.perform(post("/parties/individuals")
+                .with(jwtCustomizer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Neema Mushi","dateOfBirth":"1988-02-09",
+                     "contactInfo":{"phoneNumber":"+255713111222"},
+                     "sex":"FEMALE","smokerStatus":"NON_SMOKER",
+                     "idType":"NATIONAL_ID","idNumber":"HTTP-ROUNDTRIP-0001",
+                     "occupation":"Secondary school teacher","occupationClass":"PROF_1",
+                     "employerName":"Ilala Secondary School","nationality":"tz",
+                     "address":{"line":"Plot 44, Uhuru Road","ward":"Upanga",
+                                "district":"Ilala","region":"Dar es Salaam","postalCode":"11101"}}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+
+        String partyId = com.jayway.jsonpath.JsonPath.read(body, "$.partyId");
+
+        mockMvc.perform(get("/parties/{partyId}", partyId).with(jwtCustomizer))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.sex").value("FEMALE"))
+            .andExpect(jsonPath("$.smokerStatus").value("NON_SMOKER"))
+            .andExpect(jsonPath("$.identityDocument.type").value("NATIONAL_ID"))
+            .andExpect(jsonPath("$.identityDocument.number").value("HTTP-ROUNDTRIP-0001"))
+            .andExpect(jsonPath("$.occupation").value("Secondary school teacher"))
+            .andExpect(jsonPath("$.occupationClass").value("PROF_1"))
+            .andExpect(jsonPath("$.employerName").value("Ilala Secondary School"))
+            // Upper-cased on the way in, so a return or a quote never case-folds it.
+            .andExpect(jsonPath("$.nationality").value("TZ"))
+            // Each address field asserted separately: a swap between ward and district
+            // is exactly the mapping slip this test is here to catch.
+            .andExpect(jsonPath("$.address.line").value("Plot 44, Uhuru Road"))
+            .andExpect(jsonPath("$.address.ward").value("Upanga"))
+            .andExpect(jsonPath("$.address.district").value("Ilala"))
+            .andExpect(jsonPath("$.address.region").value("Dar es Salaam"))
+            .andExpect(jsonPath("$.address.postalCode").value("11101"));
+    }
+
+    /** The 409 the partial unique index produces, as a real status and errorCode. */
+    @Test
+    void aDuplicateIdentityDocumentIsRejectedWith409() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        var jwtCustomizer = jwt()
+            .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+        String payload = """
+            {"fullName":"%s","dateOfBirth":"1990-01-01","contactInfo":{},
+             "idType":"NATIONAL_ID","idNumber":"HTTP-DUPLICATE-0001"}
+            """;
+
+        mockMvc.perform(post("/parties/individuals").with(jwtCustomizer)
+                .contentType(MediaType.APPLICATION_JSON).content(payload.formatted("First Holder")))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/parties/individuals").with(jwtCustomizer)
+                .contentType(MediaType.APPLICATION_JSON).content(payload.formatted("Second Holder")))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("DUPLICATE_IDENTITY_DOCUMENT"))
+            // The number is a government identifier and error text reaches logs and
+            // screens, so the message names the document type and never echoes it back.
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.not(
+                org.hamcrest.Matchers.containsString("HTTP-DUPLICATE-0001"))))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 

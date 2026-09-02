@@ -3,7 +3,10 @@ package tz.co.nlolo.lifeplatform.party.infrastructure;
 import tz.co.nlolo.lifeplatform.AllowedDocumentContentTypes;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
+import tz.co.nlolo.lifeplatform.party.api.Address;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
+import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
+import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
@@ -50,10 +53,20 @@ public class PartyController {
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PartyView> registerIndividual(@Valid @RequestBody RegisterIndividualRequest request,
                                                           @AuthenticationPrincipal Jwt jwt) {
-        PartyView view = partyApi.registerIndividual(request.fullName(), request.dateOfBirth(),
+        IndividualRegistration registration = new IndividualRegistration(
+            request.fullName(),
+            request.dateOfBirth(),
             request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
             request.contactInfo() != null ? request.contactInfo().email() : null,
-            jwt.getSubject());
+            request.sex(),
+            request.smokerStatus(),
+            new IdentityDocument(request.idType(), request.idNumber()),
+            request.occupation(),
+            request.occupationClass(),
+            request.employerName(),
+            request.nationality(),
+            request.address() != null ? request.address().toAddress() : Address.none());
+        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 

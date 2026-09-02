@@ -14,8 +14,10 @@ import type {
   AgentView,
   BeneficiaryOfView,
   ClaimView,
+  IdentityDocumentView,
   KycStatus,
   Page,
+  PartyDetailView,
   PartyDocumentView,
   PolicyView,
   UnderwritingCaseView,
@@ -201,6 +203,17 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                 <Field label="Registration no." value={party.registrationNumber ?? '—'} />
                 <Field label="Phone" value={party.phoneNumber ?? '—'} />
                 <Field label="Email" value={party.email ?? '—'} />
+                {party.identityDocument?.type && (
+                  <Field
+                    label={ID_TYPE_LABELS[party.identityDocument.type]}
+                    value={
+                      <span className="font-mono text-xs select-all">
+                        {party.identityDocument.number ?? '—'}
+                      </span>
+                    }
+                  />
+                )}
+                <Field label="Nationality" value={party.nationality ?? '—'} />
                 <Field
                   label="KYC decided"
                   value={party.kycVerifiedAt ? formatInstant(party.kycVerifiedAt) : '—'}
@@ -216,6 +229,48 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
               </dl>
             )}
           </Panel>
+
+          {/* Rendered only for individuals, and only when something is on record.
+              A corporate has none of this, and an empty panel of eight em dashes
+              would read as data the platform lost rather than never asked for. */}
+          {party?.partyType === 'INDIVIDUAL' && hasPersonRecord(party) && (
+            <Panel
+              title="Person"
+              subtitle="Underwriting facts. Sex, smoker status and date of birth are what a premium is rated on."
+            >
+              <dl className="px-4 pb-2">
+                <Field label="Sex" value={party.sex ? SEX_LABELS[party.sex] : '—'} />
+                <Field
+                  label="Smoker status"
+                  value={party.smokerStatus ? SMOKER_LABELS[party.smokerStatus] : '—'}
+                  // The distinction the column exists to preserve: UNKNOWN is a
+                  // recorded answer a product may price; absent means nobody asked.
+                  {...(party.smokerStatus ? {} : { note: 'Never asked — not the same as declined.' })}
+                />
+                <Field label="Occupation" value={party.occupation ?? '—'} />
+                <Field
+                  label="Occupation class"
+                  value={party.occupationClass ?? '—'}
+                  {...(party.occupationClass
+                    ? {}
+                    : { note: 'Unclassified — a quote cannot apply an occupation loading.' })}
+                />
+                <Field label="Employer" value={party.employerName ?? '—'} />
+              </dl>
+            </Panel>
+          )}
+
+          {party?.partyType === 'INDIVIDUAL' && hasAddress(party) && (
+            <Panel title="Address">
+              <dl className="px-4 pb-2">
+                <Field label="Street or plot" value={party.address?.line ?? '—'} />
+                <Field label="Ward" value={party.address?.ward ?? '—'} />
+                <Field label="District" value={party.address?.district ?? '—'} />
+                <Field label="Region" value={party.address?.region ?? '—'} />
+                <Field label="Postal code" value={party.address?.postalCode ?? '—'} />
+              </dl>
+            </Panel>
+          )}
 
           <Panel
             title="Documents"
@@ -281,6 +336,44 @@ function PanelState({
  * see the shape of someone's holdings; the full list is one click away on the screen
  * that owns it.
  */
+/**
+ * Backend literals rendered as English. Kept as explicit maps rather than a generic
+ * humaniser so a literal added server-side fails the typecheck here instead of
+ * silently rendering as `DRIVING_LICENCE`.
+ */
+const ID_TYPE_LABELS: Record<NonNullable<IdentityDocumentView['type']>, string> = {
+  NATIONAL_ID: 'National ID',
+  PASSPORT: 'Passport',
+  DRIVING_LICENCE: 'Driving licence',
+  VOTER_ID: 'Voter ID',
+};
+
+const SEX_LABELS: Record<NonNullable<PartyDetailView['sex']>, string> = {
+  FEMALE: 'Female',
+  MALE: 'Male',
+};
+
+const SMOKER_LABELS: Record<NonNullable<PartyDetailView['smokerStatus']>, string> = {
+  SMOKER: 'Smoker',
+  NON_SMOKER: 'Non-smoker',
+  // Not "Unknown": the value means the question was put and the applicant declined,
+  // which is a recorded answer a product may price. An absent value is the unknown.
+  UNKNOWN: 'Declined to say',
+};
+
+/** Whether any V2 person fact is on record, so the panel is not eight em dashes. */
+function hasPersonRecord(party: PartyDetailView): boolean {
+  return Boolean(
+    party.sex ?? party.smokerStatus ?? party.occupation ?? party.occupationClass ?? party.employerName,
+  );
+}
+
+function hasAddress(party: PartyDetailView): boolean {
+  const address = party.address;
+  if (!address) return false;
+  return Boolean(address.line ?? address.ward ?? address.district ?? address.region ?? address.postalCode);
+}
+
 const PANEL_ROW_CAP = 6;
 
 /**

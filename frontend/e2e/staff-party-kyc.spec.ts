@@ -40,7 +40,18 @@ test.describe('staff party KYC verification', () => {
     await page.getByRole('button', { name: 'Issue policy' }).click();
     await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
 
-    await page.getByRole('link', { name: REAL_PARTY_ID }).click();
+    // Located by href, not by link text. The policyholder used to render as a raw
+    // uuid and this clicked it by name; it now resolves to "Amina Owner" through
+    // PartyName, and the href is both the stable handle and the thing this step
+    // actually cares about -- that the policy drills in to the RIGHT party.
+    //
+    // Worth knowing why this only started failing once PartyName gained a cache:
+    // before, every mount refetched, so there was always a brief frame rendering the
+    // raw uuid fallback, and the by-name click won that race. The cache removed the
+    // frame and turned a latent flake into a deterministic failure.
+    const policyholderLink = page.locator(`a[href="/staff/parties/${REAL_PARTY_ID}"]`);
+    await expect(policyholderLink).toBeVisible();
+    await policyholderLink.click();
     await expect(page).toHaveURL(`/staff/parties/${REAL_PARTY_ID}`);
     await expect(page.getByRole('heading', { level: 2, name: 'KYC verification' })).toBeVisible();
 

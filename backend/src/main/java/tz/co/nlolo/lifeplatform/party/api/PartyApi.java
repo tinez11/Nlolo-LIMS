@@ -8,7 +8,36 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface PartyApi {
-    PartyView registerIndividual(String fullName, LocalDate dateOfBirth, String phoneNumber, String email, String registeredBy);
+    /**
+     * Register a person, with whatever of the person record is known.
+     *
+     * @throws DuplicateIdentityDocumentException if the registration carries an
+     *     identity document already registered to another party in this tenant.
+     */
+    PartyView registerIndividual(IndividualRegistration registration, String registeredBy);
+
+    /**
+     * The pre-Build-1 registration: name, date of birth, contact details.
+     *
+     * <p>Kept as an overload because roughly fifty callers -- almost all of them test
+     * fixtures that care about nothing but "a party exists" -- would otherwise have had
+     * to grow twelve arguments they have no opinion about.
+     *
+     * <p><b>Declared abstract here on purpose, and NOT a {@code default} method.</b> As a
+     * default method it carried no {@code @Transactional}, so Spring's proxy passed it
+     * straight to the target and the delegating call to the two-argument form became a
+     * self-invocation that never re-entered the proxy. Registration then ran outside any
+     * transaction: the row still saved (Spring Data opens its own), but
+     * {@code @TransactionalEventListener(AFTER_COMMIT)} drops events published with no
+     * transaction active, so {@code party.PartyRegistered} silently stopped reaching the
+     * audit log for every legacy caller. Caught by
+     * {@code registeringAnIndividualPublishesEventThatReachesAuditLog}. The
+     * implementation carries the annotation instead, which makes the delegation safe
+     * because the transaction is already open by the time it happens.
+     */
+    PartyView registerIndividual(String fullName, LocalDate dateOfBirth, String phoneNumber,
+                                  String email, String registeredBy);
+
     PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber, String email, String registeredBy);
 
     /**

@@ -4,8 +4,15 @@ import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
+import tz.co.nlolo.lifeplatform.party.api.Address;
+import tz.co.nlolo.lifeplatform.party.api.DuplicateIdentityDocumentException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
+import tz.co.nlolo.lifeplatform.party.api.IdType;
+import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
+import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
+import tz.co.nlolo.lifeplatform.party.api.Sex;
+import tz.co.nlolo.lifeplatform.party.api.SmokerStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
@@ -55,6 +62,7 @@ class PartyApiIntegrationTest {
     static void applyMigrations() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
+            "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -98,6 +106,94 @@ class PartyApiIntegrationTest {
 
         Assertions.assertThrows(DuplicateRegistrationNumberException.class,
             () -> partyApi.registerCorporate("Acme SACCO Duplicate", "REG-001", "+255712345001", "acme2@example.tz", "test-agent"));
+    }
+
+    @Test
+    void thePersonRecordRoundTripsThroughRegistrationAndDetailRead() {
+        var registered = partyApi.registerIndividual(new IndividualRegistration(
+            "Neema Mushi", LocalDate.of(1988, 2, 9), "+255713111222", "neema@example.tz",
+            Sex.FEMALE, SmokerStatus.NON_SMOKER,
+            new IdentityDocument(IdType.NATIONAL_ID, "19880209-11111-00001-22"),
+            "Secondary school teacher", "PROF_1", "Ilala Secondary School", "tz",
+            new Address("Plot 44, Uhuru Road", "Upanga", "Ilala", "Dar es Salaam", "11101")),
+            "test-agent");
+
+        var detail = partyApi.getPartyDetail(registered.partyId());
+
+        assertThat(detail.sex()).isEqualTo(Sex.FEMALE);
+        assertThat(detail.smokerStatus()).isEqualTo(SmokerStatus.NON_SMOKER);
+        assertThat(detail.identityDocument().type()).isEqualTo(IdType.NATIONAL_ID);
+        assertThat(detail.identityDocument().number()).isEqualTo("19880209-11111-00001-22");
+        assertThat(detail.occupation()).isEqualTo("Secondary school teacher");
+        assertThat(detail.occupationClass()).isEqualTo("PROF_1");
+        assertThat(detail.employerName()).isEqualTo("Ilala Secondary School");
+        // Upper-cased on the way in, so a quote or a return never has to case-fold it.
+        assertThat(detail.nationality()).isEqualTo("TZ");
+        assertThat(detail.address().region()).isEqualTo("Dar es Salaam");
+        assertThat(detail.address().postalCode()).isEqualTo("11101");
+    }
+
+    /**
+     * The legacy five-argument overload must still open a transaction.
+     *
+     * <p>Not a redundant duplicate of the audit-log test above: this asserts the shape of
+     * the record it produces, and the two together are what pin the overload's behaviour.
+     * It was briefly a {@code default} method on the interface, which made its delegation
+     * a self-invocation that never re-entered the Spring proxy -- the row still saved, so
+     * only the audit assertion noticed the missing transaction.
+     */
+    @Test
+    void theLegacyOverloadRegistersAPersonRecordOfNulls() {
+        var registered = partyApi.registerIndividual("Juma Legacy", LocalDate.of(1979, 6, 3),
+            "+255713111333", null, "test-agent");
+
+        var detail = partyApi.getPartyDetail(registered.partyId());
+
+        assertThat(detail.displayName()).isEqualTo("Juma Legacy");
+        // Null, NOT a defaulted UNKNOWN: nobody asked, and that has to stay
+        // distinguishable from an applicant who was asked and declined.
+        assertThat(detail.sex()).isNull();
+        assertThat(detail.smokerStatus()).isNull();
+        assertThat(detail.identityDocument().recorded()).isFalse();
+        assertThat(detail.address().recorded()).isFalse();
+    }
+
+    @Test
+    void theSameIdentityDocumentCannotBeRegisteredTwice() {
+        partyApi.registerIndividual(registrationWithNationalId("First Registration", "NIDA-DUP-001"),
+            "test-agent");
+
+        Assertions.assertThrows(DuplicateIdentityDocumentException.class,
+            () -> partyApi.registerIndividual(
+                registrationWithNationalId("Second Registration", "NIDA-DUP-001"), "test-agent"));
+    }
+
+    @Test
+    void theSameNumberUnderADifferentDocumentTypeIsNotADuplicate() {
+        partyApi.registerIndividual(registrationWithNationalId("National ID Holder", "SHARED-123"),
+            "test-agent");
+
+        var passportHolder = partyApi.registerIndividual(new IndividualRegistration(
+            "Passport Holder", LocalDate.of(1990, 1, 1), null, null, null, null,
+            new IdentityDocument(IdType.PASSPORT, "SHARED-123"),
+            null, null, null, null, Address.none()), "test-agent");
+
+        assertThat(passportHolder.partyId()).isNotNull();
+    }
+
+    /** A type without a number, or a number without a type, is rejected before it can be stored. */
+    @Test
+    void anIncompleteIdentityDocumentIsRejected() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+            () -> new IdentityDocument(IdType.PASSPORT, null));
+        Assertions.assertThrows(IllegalArgumentException.class,
+            () -> new IdentityDocument(null, "A1234567"));
+    }
+
+    private static IndividualRegistration registrationWithNationalId(String fullName, String idNumber) {
+        return new IndividualRegistration(fullName, LocalDate.of(1990, 1, 1), null, null,
+            null, null, new IdentityDocument(IdType.NATIONAL_ID, idNumber),
+            null, null, null, null, Address.none());
     }
 
     @Test

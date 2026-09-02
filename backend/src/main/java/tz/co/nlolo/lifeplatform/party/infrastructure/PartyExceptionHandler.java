@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.party.infrastructure;
 
+import tz.co.nlolo.lifeplatform.party.api.DuplicateIdentityDocumentException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
 import org.springframework.core.Ordered;
@@ -49,6 +50,11 @@ public class PartyExceptionHandler {
     @ExceptionHandler(PartyNotFoundException.class)
     public ProblemDetail handleNotFound(PartyNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "PARTY_NOT_FOUND");
+    }
+
+    @ExceptionHandler(DuplicateIdentityDocumentException.class)
+    public ProblemDetail handleDuplicateIdentity(DuplicateIdentityDocumentException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "DUPLICATE_IDENTITY_DOCUMENT");
     }
 
     @ExceptionHandler(DuplicateRegistrationNumberException.class)

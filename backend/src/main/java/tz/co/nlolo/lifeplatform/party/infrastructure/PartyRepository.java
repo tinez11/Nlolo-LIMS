@@ -9,11 +9,20 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import tz.co.nlolo.lifeplatform.party.api.IdType;
+
 import java.util.Set;
 import java.util.UUID;
 
 public interface PartyRepository extends JpaRepository<Party, UUID> {
     Optional<Party> findByTenantIdAndRegistrationNumber(UUID tenantId, String registrationNumber);
+
+    /**
+     * The fast-path duplicate check behind {@code ux_party_individual_identity}. The index
+     * is the guarantee; this only lets the caller raise a domain exception instead of
+     * surfacing a raw constraint violation.
+     */
+    Optional<Party> findByTenantIdAndIdTypeAndIdNumber(UUID tenantId, IdType idType, String idNumber);
 
     /** Four combinations of two optional filters -- same shape as PolicyApiImpl.searchPolicies's
      *  own branching, kept as plain derived methods (not a null-safe JPQL query) since two
