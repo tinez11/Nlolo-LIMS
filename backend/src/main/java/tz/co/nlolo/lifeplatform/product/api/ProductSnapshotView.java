@@ -14,4 +14,9 @@ import java.util.UUID;
  */
 public record ProductSnapshotView(UUID productId, UUID productVersionId, LocalDate effectiveDate,
                                    IfrsMeasurementModel ifrsMeasurementModel, int gracePeriodDays, BigDecimal maxLoanToValuePercent,
-                                   ProductCategory category, String surrenderChargeScheduleJson) {}
+                                   ProductCategory category, String surrenderChargeScheduleJson,
+                                   // Build 3 stored these and Build 3 did not expose them, so nothing could
+                                   // read a bound it had just written. Its round-trip test read them back
+                                   // through ProductVersionRepository rather than through this view, which
+                                   // is why the gap survived a green suite. issueGates reads them here.
+                                   EligibilityBounds eligibility) {}

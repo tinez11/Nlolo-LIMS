@@ -9,9 +9,14 @@ import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
-import { formatDate } from '@/lib/dates';
+import { GatePanel } from '@/components/GatePanel';
+import { formatDate, todayIso } from '@/lib/dates';
+import { UUID_PATTERN } from '@/lib/patterns';
+import { hasHardFailure, issueGates, softBreaches } from '@/gates/issueGates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
+import { selectParty, usePartyStore } from '@/store/partyStore';
+import { selectAgent, useDistributionStore } from '@/store/distributionStore';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import { blankBeneficiaryRow } from './beneficiaryForm';
 import {
@@ -76,7 +81,42 @@ export function IssuePolicyPage() {
   // Display only: Policy.applyTerm derives and stores the value that counts.
   const maturity = maturityPreview(watch('commencementDate'), watch('policyTermMonths'));
 
+  // ---- Preconditions -------------------------------------------------------
+  // PLAN.md §14.3: a mutating surface declares its preconditions before it renders
+  // a submit button. The gates are a pure function of already-fetched records, so
+  // everything here is fetching, never deciding.
+  const policyholderPartyId = watch('policyholderPartyId');
+  const agentOfRecordId = watch('agentOfRecordId');
+  const commencementDate = watch('commencementDate');
+  const policyTermMonths = watch('policyTermMonths');
+  const sumAssuredAmount = watch('sumAssuredAmount');
+
+  const loadParty = usePartyStore((s) => s.loadParty);
+  const policyholder = usePartyStore(selectParty(policyholderPartyId));
+  useEffect(() => {
+    if (policyholderPartyId) void loadParty(policyholderPartyId);
+  }, [policyholderPartyId, loadParty]);
+
+  const loadAgent = useDistributionStore((s) => s.loadAgent);
+  const agent = useDistributionStore(selectAgent(agentOfRecordId));
+  useEffect(() => {
+    // Only a well-formed id is worth a request; the field accepts free text.
+    if (agentOfRecordId && UUID_PATTERN.test(agentOfRecordId)) void loadAgent(agentOfRecordId);
+  }, [agentOfRecordId, loadAgent]);
+
   const snapshot = useProductStore(selectProductSnapshot(productId));
+
+  const gates = issueGates({
+    snapshot: snapshot.data ?? null,
+    policyholder: policyholder.data ?? null,
+    agent: agent.data ?? null,
+    commencementDate: commencementDate || null,
+    policyTermMonths: policyTermMonths ? Number(policyTermMonths) : null,
+    sumAssured: sumAssuredAmount ? Number(sumAssuredAmount) : null,
+    today: todayIso(),
+  });
+  const blocked = hasHardFailure(gates);
+  const breaches = softBreaches(gates);
 
   // Resolving productVersionId is a side effect of picking a product, not
   // something the user fills in directly -- there is no screen anywhere that
@@ -284,12 +324,28 @@ export function IssuePolicyPage() {
           />
         </FormField>
 
+        <GatePanel gates={gates} title="Before issuing" />
+
         <FormField label="Reason for manual issue" error={errors.reasonForManualIssue?.message}>
           <input
             className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
-            placeholder="Feeds the audit trail"
+            placeholder={
+              breaches.length > 0
+                ? 'Say why the flagged check above is acceptable'
+                : 'Feeds the audit trail'
+            }
             {...register('reasonForManualIssue')}
           />
+          {/* The only place a soft breach gets recorded. Without this the panel is a
+              warning staff learn to click past, which launders the decision rather
+              than capturing it. */}
+          {breaches.length > 0 && (
+            <p className="mt-1 text-[11px] text-status-warning-fg">
+              {breaches.length === 1
+                ? 'One check above is flagged — this reason is where that decision is recorded.'
+                : `${breaches.length} checks above are flagged — this reason is where those decisions are recorded.`}
+            </p>
+          )}
         </FormField>
 
         <div className="rounded-md border border-border p-3">
@@ -381,7 +437,20 @@ export function IssuePolicyPage() {
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={issuing.status === 'loading'}>
+          {/* A hard gate means the platform will refuse this anyway -- an age with no
+              rate cell cannot be priced, and a term the product does not offer is the
+              wrong product. Disabling states that here rather than after a round trip.
+              A SOFT breach never disables: above retention is cedeable business, and
+              refusing it in the console would be the UI declining a case the insurer
+              would write. */}
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={issuing.status === 'loading' || blocked}
+            {...(blocked
+              ? { title: 'A check above must pass before this policy can be issued' }
+              : {})}
+          >
             {issuing.status === 'loading' ? 'Issuing…' : 'Issue policy'}
           </Button>
           <Button asChild variant="ghost">

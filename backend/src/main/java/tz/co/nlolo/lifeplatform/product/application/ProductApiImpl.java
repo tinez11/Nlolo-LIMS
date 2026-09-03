@@ -204,7 +204,8 @@ public class ProductApiImpl implements ProductApi {
         return new ProductSnapshotView(productId, version.getProductVersionId(), version.getEffectiveDate(),
             IfrsMeasurementModel.valueOf(definition.getIfrsMeasurementModel()),
             version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
-            ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson());
+            ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson(),
+            version.getEligibilityBounds());
     }
 
     /**
@@ -452,7 +453,11 @@ public class ProductApiImpl implements ProductApi {
             .orElseThrow(() -> new ProductNotFoundException(version.getProductId()));
         return new ProductSnapshotView(version.getProductId(), productVersionId, version.getEffectiveDate(),
             IfrsMeasurementModel.valueOf(definition.getIfrsMeasurementModel()), version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
-            ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson());
+            ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson(),
+            // The by-version-id lookup carries the bounds too. It is what
+            // PolicyController.manualIssue resolves, so omitting them here would leave the
+            // issue path unable to see the very bounds its gates are meant to check.
+            version.getEligibilityBounds());
     }
 
     private ProductSummaryView toSummaryView(ProductDefinition p) {

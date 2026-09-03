@@ -358,3 +358,9 @@ components:
         maxLoanToValuePercent: { type: number }
         category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
         surrenderChargeScheduleJson: { type: [string, "null"], description: Raw JSON surrender-charge schedule from product_version.surrender_charge_schedule; null until a future milestone adds a way to author it. }
+        eligibility:
+          description: >-
+            What this version will accept. Always present; an unbounded version is the object with
+            six nulls. Read by the issue screen's gates, where entry age and term are hard refusals
+            and sum assured is a soft flag.
+          allOf: [{ $ref: '#/components/schemas/EligibilityBounds' }]
