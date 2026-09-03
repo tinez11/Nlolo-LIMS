@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { AuditEntryView } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
@@ -6,10 +6,10 @@ import { PageHeader } from '@/components/PageHeader';
 import { StatCards, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useAuditStore } from '@/store/auditStore';
+import { FilterChip } from '@/components/FilterChip';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -196,11 +196,23 @@ export function AuditLogPage() {
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
-            <FilterChip label="All modules" active={module === undefined} onClick={() => update({ module: undefined })} />
+            {/* `mono` on every chip here, including the prose one, because that
+                is exactly how this row already rendered: the module names are
+                identifiers, and the local copy of FilterChip set font-mono for
+                all of them. Preserved rather than "corrected" — restyling a
+                label is a design decision, and slipping one into an extraction
+                is what makes a refactor hard to trust. Worth revisiting alone. */}
+            <FilterChip
+              label="All modules"
+              mono
+              active={module === undefined}
+              onClick={() => update({ module: undefined })}
+            />
             {MODULES.map((value) => (
               <FilterChip
                 key={value}
                 label={value}
+                mono
                 active={module === value}
                 onClick={() => update({ module: value })}
               />
@@ -214,26 +226,3 @@ export function AuditLogPage() {
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-full px-2 py-1 font-mono text-xs transition-colors',
-        active ? 'bg-selected ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
-      )}
-    >
-      {label}
-    </button>
-  );
-}

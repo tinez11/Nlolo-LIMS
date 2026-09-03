@@ -1,5 +1,5 @@
 import { Plus, Search } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { POLICY_STATUSES, type PolicyStatus, type PolicyView } from '@/api/types';
 import { DEFAULT_PAGE_SIZE } from '@/api/policies';
@@ -11,10 +11,10 @@ import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
-import { cn } from '@/lib/cn';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
 import { PolicyDrawer } from './PolicyDrawer';
+import { FilterChip } from '@/components/FilterChip';
 
 /**
  * `GET /policies` is one of only four paged endpoints, so this screen gets the
@@ -291,26 +291,3 @@ export function PoliciesPage({
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-full px-2 py-1 text-xs transition-colors',
-        active ? 'bg-selected ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
-      )}
-    >
-      {label}
-    </button>
-  );
-}

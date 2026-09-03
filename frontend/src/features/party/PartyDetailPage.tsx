@@ -38,6 +38,7 @@ import {
   selectUploadingKycEvidence,
   usePartyStore,
 } from '@/store/partyStore';
+import { Panel } from '@/components/Panel';
 
 const ACCEPTED_EVIDENCE_TYPES = {
   'image/jpeg': ['.jpg', '.jpeg'],
@@ -752,22 +753,3 @@ function BackLink({ onClick }: { onClick: () => void }) {
   );
 }
 
-function Panel({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-border bg-surface">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-      </div>
-      {children}
-    </section>
-  );
-}

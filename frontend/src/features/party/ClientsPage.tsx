@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DEFAULT_PAGE_SIZE } from '@/api/party';
 import { KYC_STATUSES, type KycStatus, type PartyView } from '@/api/types';
@@ -8,9 +8,9 @@ import { StatCards, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectPartyList, usePartyStore } from '@/store/partyStore';
+import { FilterChip } from '@/components/FilterChip';
 
 /**
  * The client register. Everyone this tenant has registered, and the way into one
@@ -271,26 +271,3 @@ export function ClientsPage({
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-full px-2 py-1 text-xs transition-colors',
-        active ? 'bg-selected ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
-      )}
-    >
-      {label}
-    </button>
-  );
-}

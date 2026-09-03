@@ -1,5 +1,5 @@
 import { Plus, Search } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CLAIM_STATUSES, type ClaimStatus, type ClaimView } from '@/api/types';
 import { DEFAULT_PAGE_SIZE } from '@/api/policies';
@@ -9,12 +9,12 @@ import { StatCards, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useClaimStore } from '@/store/claimStore';
 import { ClaimDrawer } from './ClaimDrawer';
+import { FilterChip } from '@/components/FilterChip';
 
 /**
  * `GET /claims` is one of only four paged endpoints on the platform, so this
@@ -277,26 +277,3 @@ export function ClaimsPage({
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-full px-2 py-1 text-xs transition-colors',
-        active ? 'bg-selected ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
-      )}
-    >
-      {label}
-    </button>
-  );
-}

@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { LICENSE_STATUSES, type AgentView, type LicenseStatus } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
@@ -9,10 +9,10 @@ import { StatCards, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useDistributionStore } from '@/store/distributionStore';
+import { FilterChip } from '@/components/FilterChip';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -253,26 +253,3 @@ export function AgentsPage() {
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-full px-2 py-1 text-xs transition-colors',
-        active ? 'bg-selected ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
-      )}
-    >
-      {label}
-    </button>
-  );
-}

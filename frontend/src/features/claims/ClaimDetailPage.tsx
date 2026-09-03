@@ -19,6 +19,7 @@ import { ClaimDetailsFields } from './ClaimDetailsFields';
 import { ClaimReopenPanel } from './ClaimReopenPanel';
 import { ClaimSettlementPanel } from './ClaimSettlementPanel';
 import { EvidencePanel } from './EvidencePanel';
+import { Panel } from '@/components/Panel';
 
 /**
  * The "acts" half of drawer-previews-page-acts.
@@ -172,22 +173,3 @@ function BackLink() {
   );
 }
 
-function Panel({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-border bg-surface">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-      </div>
-      {children}
-    </section>
-  );
-}

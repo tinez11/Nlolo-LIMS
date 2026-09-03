@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PRODUCT_CATEGORIES, type ProductCategory, type ProductSummary } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
@@ -8,10 +8,10 @@ import { StatCards, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/cn';
 import { isInitialLoad, isEmpty } from '@/store/createResourceSlice';
 import { useProductStore } from '@/store/productStore';
 import { ProductDrawer } from './ProductDrawer';
+import { FilterChip } from '@/components/FilterChip';
 
 /**
  * `GET /products` is a bare unpaged array (catalog browsing), so this gets the
@@ -164,26 +164,3 @@ export function ProductsPage() {
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-full px-2 py-1 text-xs transition-colors',
-        active ? 'bg-selected ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
-      )}
-    >
-      {label}
-    </button>
-  );
-}

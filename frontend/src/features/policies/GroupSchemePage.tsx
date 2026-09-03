@@ -31,6 +31,8 @@ import {
   type MemberFormValues,
 } from './addMemberForm';
 import { previewBenefit, type SchemeBasis } from './groupBenefitPreview';
+import { Panel } from '@/components/Panel';
+import { FilterChip } from '@/components/FilterChip';
 
 /**
  * A group scheme: one master policy, many insured lives.
@@ -174,18 +176,24 @@ export function GroupSchemePage() {
                 </p>
               </div>
               <div className="flex items-center gap-1">
-                <FilterChip active={status === undefined} onClick={() => update({ status: undefined })}>
-                  All
-                </FilterChip>
-                <FilterChip active={status === 'ACTIVE'} onClick={() => update({ status: 'ACTIVE' })}>
-                  Active
-                </FilterChip>
+                <FilterChip
+                  label="All"
+                  active={status === undefined}
+                  onClick={() => update({ status: undefined })}
+                />
+                <FilterChip
+                  label="Active"
+                  active={status === 'ACTIVE'}
+                  onClick={() => update({ status: 'ACTIVE' })}
+                />
                 {/* An exited member is never deleted: a claim can arrive after
                     somebody leaves the employer, so "were they covered on the date
                     of event" has to stay answerable. */}
-                <FilterChip active={status === 'EXITED'} onClick={() => update({ status: 'EXITED' })}>
-                  Left
-                </FilterChip>
+                <FilterChip
+                  label="Left"
+                  active={status === 'EXITED'}
+                  onClick={() => update({ status: 'EXITED' })}
+                />
               </div>
             </div>
             {renderMembers()}
@@ -415,31 +423,6 @@ function BackLink() {
   );
 }
 
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'rounded-full border px-2.5 py-1 text-xs transition-colors',
-        active
-          ? 'border-border-strong bg-selected font-medium'
-          : 'border-border text-muted-foreground hover:border-border-strong',
-      )}
-    >
-      {children}
-    </button>
-  );
-}
 
 /**
  * Adding one life.
@@ -637,22 +620,3 @@ function FieldError({ message }: { message: string | undefined }) {
   return <p className="mt-1 text-[11px] text-status-danger-fg">{message}</p>;
 }
 
-function Panel({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-border bg-surface">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-      </div>
-      {children}
-    </section>
-  );
-}
