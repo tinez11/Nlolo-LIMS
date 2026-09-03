@@ -1,10 +1,14 @@
 import { create } from 'zustand';
 import {
+  addSchemeMember,
   getCoverageStatus,
+  getGroupScheme,
   getPolicy,
+  issueGroupScheme,
   issuePolicy,
   listInvoices,
   listLoans,
+  listSchemeMembers,
   originateLoan,
   recordLoanRepayment,
   reinstatePolicy,
@@ -14,18 +18,23 @@ import {
   searchPolicies,
   suspendPolicy,
   waiveInvoice,
+  type MemberListParams,
   type PolicySearchParams,
 } from '@/api/policies';
 import type {
   BeneficiaryInput,
   CoverageStatusView,
+  GroupMemberInput,
+  GroupSchemeView,
   InvoiceView,
+  IssueGroupSchemeRequest,
   LoanRepaymentRequest,
   LoanView,
   ManualIssueRequest,
   OriginateLoanRequest,
   Page,
   PaymentRequest,
+  PolicyMemberView,
   PolicyView,
   SuspendPolicyRequest,
   WaiverRequest,
@@ -74,6 +83,18 @@ interface PolicyState {
   resuming: Keyed<PolicyView>;
   reinstating: Keyed<PolicyView>;
 
+  // Group business. `scheme` and `members` are keyed by policy number, like
+  // `detail` -- the scheme page holds both at once and they load independently,
+  // so a slow member page must not blank the summary above it.
+  scheme: Keyed<GroupSchemeView>;
+  members: Keyed<Page<PolicyMemberView>>;
+  // A single slot: issuing a scheme creates a NEW policy number, so there is
+  // nothing to key against yet -- same shape as `issuing`.
+  issuingScheme: Resource<GroupSchemeView>;
+  // Keyed by policy number, not by member: the member does not exist yet, and a
+  // scheme can only have one add in flight from this screen.
+  addingMember: Keyed<PolicyMemberView>;
+
   loadList: (params: PolicySearchParams) => Promise<void>;
   loadDetail: (policyNumber: string) => Promise<void>;
   loadCoverage: (policyNumber: string, asOf?: string) => Promise<void>;
@@ -109,6 +130,13 @@ interface PolicyState {
   resetResumePolicy: (policyNumber: string) => void;
   reinstatePolicy: (policyNumber: string) => Promise<void>;
   resetReinstatePolicy: (policyNumber: string) => void;
+
+  loadScheme: (policyNumber: string) => Promise<void>;
+  loadMembers: (policyNumber: string, params?: MemberListParams) => Promise<void>;
+  issueGroupScheme: (request: IssueGroupSchemeRequest) => Promise<void>;
+  resetIssueGroupScheme: () => void;
+  addSchemeMember: (policyNumber: string, member: GroupMemberInput) => Promise<void>;
+  resetAddSchemeMember: (policyNumber: string) => void;
 }
 
 export const usePolicyStore = create<PolicyState>((set, getState) => ({
@@ -126,6 +154,10 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   suspending: {},
   resuming: {},
   reinstating: {},
+  scheme: {},
+  members: {},
+  issuingScheme: idle(),
+  addingMember: {},
 
   // Every `track` call below is keyed so a slower, superseded request can never
   // overwrite a faster, newer one -- e.g. clicking through status filter chips
@@ -367,6 +399,65 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       const { [policyNumber]: _discard, ...rest } = s.reinstating;
       return { reinstating: rest };
     }),
+
+  loadScheme: (policyNumber) =>
+    track(
+      `policy.scheme.${policyNumber}`,
+      getState().scheme[policyNumber] ?? idle<GroupSchemeView>(),
+      (next) => set((s) => ({ scheme: { ...s.scheme, [policyNumber]: next } })),
+      () => getGroupScheme(policyNumber),
+    ),
+
+  // Keyed by policy number alone, NOT by the filter or page. The key is what
+  // sequences superseded requests, and paging or switching the status filter
+  // quickly is exactly the case that needs sequencing: it is the same table
+  // either way, and only the most recently REQUESTED view should win. Same
+  // reasoning as `policy.list`.
+  loadMembers: (policyNumber, params = {}) =>
+    track(
+      `policy.members.${policyNumber}`,
+      getState().members[policyNumber] ?? idle<Page<PolicyMemberView>>(),
+      (next) => set((s) => ({ members: { ...s.members, [policyNumber]: next } })),
+      () => listSchemeMembers(policyNumber, params),
+    ),
+
+  issueGroupScheme: (request) =>
+    track(
+      'policy.issueGroupScheme',
+      getState().issuingScheme,
+      (next) => set({ issuingScheme: next }),
+      () => issueGroupScheme(request),
+    ),
+
+  resetIssueGroupScheme: () => set({ issuingScheme: idle() }),
+
+  addSchemeMember: (policyNumber, member) =>
+    track(
+      `policy.addSchemeMember.${policyNumber}`,
+      getState().addingMember[policyNumber] ?? idle<PolicyMemberView>(),
+      (next) => set((s) => ({ addingMember: { ...s.addingMember, [policyNumber]: next } })),
+      async () => {
+        const added = await addSchemeMember(policyNumber, member);
+        // Adding a life moves the scheme's total AND the master policy's sum
+        // assured -- the server restates both in the same transaction. Refetching
+        // all three is what stops the summary above the table from contradicting
+        // the row that was just inserted into it. Awaited so a caller that closes
+        // the form on success never renders the stale totals for a frame.
+        await Promise.all([
+          getState().loadScheme(policyNumber),
+          getState().loadMembers(policyNumber),
+          getState().loadDetail(policyNumber),
+        ]);
+        return added;
+      },
+    ),
+
+  resetAddSchemeMember: (policyNumber) =>
+    set((s) => {
+      if (!(policyNumber in s.addingMember)) return s;
+      const { [policyNumber]: _discard, ...rest } = s.addingMember;
+      return { addingMember: rest };
+    }),
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
@@ -416,3 +507,11 @@ export const selectOriginatingLoan = (policyNumber: string) => (s: PolicyState) 
   s.originatingLoan[policyNumber] ?? idle<true>();
 export const selectRepayingLoan = (loanId: string) => (s: PolicyState) =>
   s.repayingLoan[loanId] ?? idle<true>();
+
+export const selectScheme = (policyNumber: string) => (s: PolicyState) =>
+  s.scheme[policyNumber] ?? idle<GroupSchemeView>();
+export const selectMembers = (policyNumber: string) => (s: PolicyState) =>
+  s.members[policyNumber] ?? idle<Page<PolicyMemberView>>();
+export const selectIssuingScheme = (s: PolicyState) => s.issuingScheme;
+export const selectAddingMember = (policyNumber: string) => (s: PolicyState) =>
+  s.addingMember[policyNumber] ?? idle<PolicyMemberView>();

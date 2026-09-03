@@ -1,7 +1,7 @@
 package tz.co.nlolo.lifeplatform.policy.infrastructure;
 
-import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 
@@ -18,6 +18,8 @@ import java.util.UUID;
  * to", and the service's answer names the basis, which is what somebody fixing a
  * spreadsheet needs.
  *
+ * @param salaryAmount a bare decimal string -- see {@link GroupSchemeGradeInputDto} for
+ *     why money here is neither a JSON number nor a {@code MoneyDto}.
  * @param joinedOn when cover starts for this person. Omit on an opening schedule to mean
  *     the scheme's commencement date. Backdating is normal -- a schedule reaches the
  *     insurer weeks after somebody started -- but a future date is refused.
@@ -25,10 +27,11 @@ import java.util.UUID;
 public record GroupMemberInputDto(
     @NotNull UUID memberPartyId,
     @Size(max = 30) String gradeCode,
-    @DecimalMin("0.01") BigDecimal salaryAmount,
+    @Pattern(regexp = MoneyAmounts.POSITIVE_AMOUNT) String salaryAmount,
     LocalDate joinedOn) {
 
     public PolicyApi.MemberInput toApiInput() {
-        return new PolicyApi.MemberInput(memberPartyId, gradeCode, salaryAmount, joinedOn);
+        return new PolicyApi.MemberInput(memberPartyId, gradeCode,
+            salaryAmount != null ? new BigDecimal(salaryAmount) : null, joinedOn);
     }
 }

@@ -19,20 +19,27 @@ import java.util.UUID;
  */
 public record GroupSchemeResponseDto(String policyNumber, UUID policyholderPartyId, PolicyStatus status,
                                       LocalDate commencementDate, Integer policyTermMonths,
-                                      BenefitBasis benefitBasis, BigDecimal flatBenefitAmount,
+                                      BenefitBasis benefitBasis, MoneyDto flatBenefit,
+                                      // A ratio, not money -- 3.5x has no currency. Same
+                                      // reading that keeps sharePercent a plain number.
                                       BigDecimal salaryMultiple, MoneyDto fcl,
                                       long activeMemberCount, MoneyDto totalCovered,
                                       long membersRequiringEvidence,
                                       List<GroupSchemeGradeDto> grades) {
 
     public static GroupSchemeResponseDto from(GroupSchemeView view) {
+        String currency = view.currency();
         return new GroupSchemeResponseDto(view.policyNumber(), view.policyholderPartyId(), view.status(),
             view.commencementDate(), view.policyTermMonths(), view.benefitBasis(),
-            view.flatBenefitAmount(), view.salaryMultiple(),
-            view.fclAmount() != null ? new MoneyDto(view.fclAmount().toPlainString(), view.currency()) : null,
+            money(view.flatBenefitAmount(), currency), view.salaryMultiple(),
+            money(view.fclAmount(), currency),
             view.activeMemberCount(),
-            new MoneyDto(view.totalCoveredAmount().toPlainString(), view.currency()),
+            money(view.totalCoveredAmount(), currency),
             view.membersRequiringEvidence(),
-            view.grades().stream().map(GroupSchemeGradeDto::from).toList());
+            view.grades().stream().map(g -> GroupSchemeGradeDto.from(g, currency)).toList());
+    }
+
+    private static MoneyDto money(BigDecimal amount, String currency) {
+        return amount != null ? new MoneyDto(amount.toPlainString(), currency) : null;
     }
 }

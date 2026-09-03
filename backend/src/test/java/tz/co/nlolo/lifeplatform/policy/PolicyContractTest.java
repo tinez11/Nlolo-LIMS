@@ -840,7 +840,7 @@ class PolicyContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
-                     "benefitBasis":"FLAT","flatBenefitAmount":5000000.00,"currency":"TZS",
+                     "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
                      "openingSchedule":[{"memberPartyId":"%s"},{"memberPartyId":"%s"}],
                      "premium":{"amount":"1200000.00","currencyCode":"TZS"},
                      "premiumFrequency":"ANNUALLY","reasonForManualIssue":"Contract test scheme"}
@@ -893,9 +893,9 @@ class PolicyContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
-                     "benefitBasis":"SALARY_MULTIPLE","salaryMultiple":3,"fclAmount":30000000.00,
+                     "benefitBasis":"SALARY_MULTIPLE","salaryMultiple":3,"fclAmount":"30000000.00",
                      "currency":"TZS",
-                     "openingSchedule":[{"memberPartyId":"%s","salaryAmount":20000000.00}],
+                     "openingSchedule":[{"memberPartyId":"%s","salaryAmount":"20000000.00"}],
                      "premium":{"amount":"900000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY"}
                     """.formatted(employer, product.productVersionId(), founding)))
             .andExpect(status().isCreated())
@@ -917,8 +917,8 @@ class PolicyContractTest {
             .andExpect(jsonPath("$.items[0].underwritingStatus").value("EVIDENCE_REQUIRED"))
             // Both figures are carried, and they differ. The gap IS the outstanding
             // underwriting; sending only one of them would hide it.
-            .andExpect(jsonPath("$.items[0].benefitAmount").value(60000000.00))
-            .andExpect(jsonPath("$.items[0].coveredAmount").value(30000000.00))
+            .andExpect(jsonPath("$.items[0].benefit.amount").value("60000000.00"))
+            .andExpect(jsonPath("$.items[0].covered.amount").value("30000000.00"))
             .andExpect(jsonPath("$.page.totalElements").value(1));
 
         mockMvc.perform(post("/group-schemes/" + policyNumber + "/members")
@@ -926,12 +926,12 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"memberPartyId":"%s","salaryAmount":5000000.00}
+                    {"memberPartyId":"%s","salaryAmount":"5000000.00"}
                     """.formatted(joiner)))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.underwritingStatus").value("WITHIN_FCL"))
-            .andExpect(jsonPath("$.coveredAmount").value(15000000.00));
+            .andExpect(jsonPath("$.covered.amount").value("15000000.00"));
 
         // 30,000,000 (capped) + 15,000,000 (in full), restated on the contract itself.
         mockMvc.perform(get("/policies/" + policyNumber)
@@ -975,7 +975,7 @@ class PolicyContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
-                     "benefitBasis":"FLAT","flatBenefitAmount":1000000.00,"currency":"TZS",
+                     "benefitBasis":"FLAT","flatBenefitAmount":"1000000.00","currency":"TZS",
                      "openingSchedule":[],
                      "premium":{"amount":"100000.00","currencyCode":"TZS"}}
                     """.formatted(employer, product.productVersionId())))

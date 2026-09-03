@@ -69,6 +69,27 @@ export const STATUS_MAPS = {
     FORCED_LAPSE_TRIGGERED: 'danger',
   },
 
+  // policy/api/MemberStatus.java -- a life on a group scheme.
+  member: {
+    ACTIVE: 'active',
+    EXITED: 'neutral', // left the employer; the row stays, because claims arrive late
+  },
+
+  // policy/api/MemberUnderwritingStatus.java -- where a member stands against the
+  // scheme's free cover limit.
+  //
+  // EVIDENCE_REQUIRED and DECLINED produce the SAME covered amount and are
+  // deliberately different colours: one is a queue somebody has to work, the other
+  // is finished business. Colouring them alike would hide the only difference that
+  // matters. DECLINED is `warning` rather than `danger` because the member is not
+  // uninsured -- they keep the free cover limit; the excess was refused.
+  memberUnderwriting: {
+    WITHIN_FCL: 'success', // fully covered, no evidence needed
+    EVIDENCE_REQUIRED: 'pending', // over the limit, underwriting outstanding
+    ACCEPTED: 'success', // excess granted
+    DECLINED: 'warning', // excess refused; cover stays at the limit
+  },
+
   // underwriting/api/UnderwritingCaseStatus.java
   underwritingCase: {
     OPEN: 'pending',

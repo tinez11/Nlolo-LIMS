@@ -31,6 +31,28 @@ export type BeneficiaryInput = PolicyComponents['schemas']['BeneficiaryInput'];
 export type BeneficiaryOfView = PolicyComponents['schemas']['BeneficiaryOfView'];
 export type CoverageStatusView = PolicyComponents['schemas']['CoverageStatusView'];
 
+/**
+ * Group business: one master policy, many insured lives.
+ *
+ * A `GroupSchemeView` is the same contract a `PolicyView` describes, read as a
+ * scheme instead of as a policy. Both are fetched for the scheme page — the
+ * policy read answers premium and lifecycle, the scheme read answers who is
+ * covered and for how much.
+ */
+export type GroupSchemeView = PolicyComponents['schemas']['GroupSchemeView'];
+export type BenefitBasis = NonNullable<GroupSchemeView['benefitBasis']>;
+export type GroupSchemeGrade = PolicyComponents['schemas']['GroupSchemeGrade'];
+export type PolicyMemberView = PolicyComponents['schemas']['PolicyMemberView'];
+export type MemberStatus = NonNullable<PolicyMemberView['status']>;
+/**
+ * Four states, not a boolean. `EVIDENCE_REQUIRED` and `DECLINED` produce the same
+ * covered amount and mean opposite things about whether anyone is still waiting.
+ */
+export type MemberUnderwritingStatus = NonNullable<PolicyMemberView['underwritingStatus']>;
+export type IssueGroupSchemeRequest = PolicyComponents['schemas']['IssueGroupSchemeRequest'];
+export type GroupSchemeGradeInput = PolicyComponents['schemas']['GroupSchemeGradeInput'];
+export type GroupMemberInput = PolicyComponents['schemas']['GroupMemberInput'];
+
 export type InvoiceView = BillingComponents['schemas']['InvoiceView'];
 export type LoanView = PolicyLoanComponents['schemas']['LoanView'];
 

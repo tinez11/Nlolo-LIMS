@@ -738,12 +738,13 @@ public class PolicyApiImpl implements PolicyApi {
         findPolicyOrThrow(policyNumber, tenantId);
         findSchemeOrThrow(policyNumber, tenantId);
 
+        String currency = findSchemeOrThrow(policyNumber, tenantId).getCurrency();
         Page<PolicyMember> members = policyMemberRepository.findMembers(
             tenantId, policyNumber, status != null ? status.name() : null, pageable);
         if (members.isEmpty()) {
             // Short-circuit rather than pass an empty list to an IN clause, which is a
             // Postgres syntax error rather than an empty result.
-            return members.map(m -> toMemberView(m, null));
+            return members.map(m -> toMemberView(m, null, currency));
         }
 
         // One query for the whole page. Resolving each member's benefit individually
@@ -756,7 +757,7 @@ public class PolicyApiImpl implements PolicyApi {
                 .collect(Collectors.toMap(
                     PolicyMemberBenefitRepository.InForceBenefitRow::getPolicyMemberId, r -> r));
 
-        return members.map(m -> toMemberView(m, benefits.get(m.getPolicyMemberId())));
+        return members.map(m -> toMemberView(m, benefits.get(m.getPolicyMemberId()), currency));
     }
 
     @Override
@@ -813,7 +814,7 @@ public class PolicyApiImpl implements PolicyApi {
             "schemeTotalCovered", Map.of("amount", total.toPlainString(),
                 "currencyCode", scheme.getCurrency()))));
 
-        return toMemberView(saved, valuation, member.salaryAmount(), joinedOn);
+        return toMemberView(saved, valuation, member.salaryAmount(), scheme.getCurrency(), joinedOn);
     }
 
     /** One opening-schedule row and what the scheme's basis makes of it. */
@@ -946,14 +947,15 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     private PolicyMemberView toMemberView(PolicyMember m, GroupBenefitCalculator.Valuation valuation,
-                                           BigDecimal salaryAmount, LocalDate effectiveFrom) {
+                                           BigDecimal salaryAmount, String currency, LocalDate effectiveFrom) {
         return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
-            valuation.benefitAmount(), valuation.coveredAmount(), effectiveFrom);
+            valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom);
     }
 
-    private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit) {
+    private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
+                                           String currency) {
         return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(),
@@ -963,6 +965,7 @@ public class PolicyApiImpl implements PolicyApi {
             benefit != null ? benefit.getSalaryAmount() : null,
             benefit != null ? benefit.getBenefitAmount() : null,
             benefit != null ? benefit.getCoveredAmount() : null,
+            currency,
             benefit != null ? benefit.getEffectiveFrom() : null);
     }
 
@@ -986,6 +989,6 @@ public class PolicyApiImpl implements PolicyApi {
             beneficiaryViews,
             policy.getCommencementDate(), policy.getPolicyTermMonths(),
             policy.getPremiumPayingTermMonths(), policy.getMaturityDate(),
-            policy.getLifeAssuredPartyId());
+            policy.getLifeAssuredPartyId(), policy.getProductCategory());
     }
 }

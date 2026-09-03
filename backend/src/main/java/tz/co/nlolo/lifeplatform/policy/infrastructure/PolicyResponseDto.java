@@ -17,7 +17,9 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
                                  // term, and on every policy issued before the migration.
                                  LocalDate commencementDate, Integer policyTermMonths,
                                  Integer premiumPayingTermMonths, LocalDate maturityDate,
-                                 UUID lifeAssuredPartyId) {
+                                 UUID lifeAssuredPartyId,
+                                 /** GROUP_LIFE means the lives are a member schedule, not this record. */
+                                 String productCategory) {
 
     public static PolicyResponseDto from(PolicyView view) {
         return new PolicyResponseDto(view.policyNumber(), view.policyholderPartyId(), view.productId(), view.productVersionId(),
@@ -28,6 +30,6 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
             view.beneficiaries(),
             view.commencementDate(), view.policyTermMonths(),
             view.premiumPayingTermMonths(), view.maturityDate(),
-            view.lifeAssuredPartyId());
+            view.lifeAssuredPartyId(), view.productCategory());
     }
 }

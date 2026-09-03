@@ -621,3 +621,23 @@ explanation for whoever hits it next.
 The general shape, and the reason it recurs here: **rendering a name where an id
 used to be creates page-wide duplicates of text that specs assumed was unique.**
 Unit tests cannot see any of it — 557 passed green through all three failures.
+
+**A third shape, found 2026-09-03 while adding the group-scheme specs:** a page
+carrying real `<select>` elements makes a bare `getByRole('option')` ambiguous,
+because a native `<option>` answers to the option role exactly as the party
+picker's cmdk items do. On the scheme form it resolved to "Select a group
+product" — permanently invisible, so the click retried for the full 60s timeout
+and the error named the wrong control entirely. Always give the option a name.
+Two neighbouring traps from the same afternoon: `getByLabel('Annual salary')`
+also matches "Multiple of annual salary" (labels match on substring — pass
+`exact: true`), and a policy number on `/staff/policies` is a row-activation
+*button*, not a link, so `getByRole('link', {name: /^POL-/})` waits forever.
+
+**Known flake, not a regression:** `staff-beneficiaries`'s two picker tests
+failed once with the option "outside of the viewport" after ~100 retries, in a
+four-spec batch. Bisected properly rather than assumed: they pass with the
+change in place both isolated and in the same four-spec batch re-run, and the
+run that failed was the only one of three to do so. A popover-positioning race,
+pre-existing and intermittent. Worth fixing when someone touches that spec —
+scrolling the trigger into view before opening it — but it is not caused by, and
+does not block, the group-scheme work.

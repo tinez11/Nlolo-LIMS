@@ -665,6 +665,16 @@ components:
             existed.
           type: [string, "null"]
           format: date
+        productCategory:
+          description: >-
+            What kind of contract this is, copied from the product at issuance. Stored since
+            M3 and exposed only now: nothing reading a policy could previously tell an
+            individual term-life contract from a 500-life group scheme. That matters, because
+            a GROUP_LIFE policy's lives are its member schedule — its lifeAssuredPartyId is
+            deliberately null rather than merely missing — and it is the one kind of policy
+            that also answers on /group-schemes/{policyNumber}.
+          type: [string, "null"]
+          enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, null]
     IssueGroupSchemeRequest:
       description: >-
         No sumAssured field, deliberately: a scheme's sum assured is the total of its members'
@@ -690,21 +700,33 @@ components:
             employer schemes; graded splits by staff category.
           type: string
           enum: [FLAT, SALARY_MULTIPLE, GRADED]
-        flatBenefitAmount: { type: [number, "null"], exclusiveMinimum: 0 }
-        salaryMultiple: { type: [number, "null"], exclusiveMinimum: 0 }
+        flatBenefitAmount:
+          description: >-
+            A bare decimal string against this scheme's `currency`, not a JSON number and not
+            a Money object. Not a number because money on this platform never travels as one:
+            a decimal that survives Postgres and Java exactly should not become a double on
+            the last hop. Not a Money because the scheme declares one currency for everything
+            on it, and a per-field currency code could only agree with it or contradict it.
+          type: [string, "null"]
+          pattern: '^(?!0+(\.0{1,2})?$)\d+(\.\d{1,2})?$'
+        salaryMultiple:
+          description: >-
+            A ratio, not money -- 3.5x has no currency -- so this one genuinely is a number.
+          type: [number, "null"]
+          exclusiveMinimum: 0
         fclAmount:
           description: >-
             Free cover limit -- the benefit a member gets WITHOUT medical evidence. Omit
             entirely for a scheme that has none, which is a real design for small flat schemes
             and is NOT the same as a limit of zero (that would send every member to
-            underwriting). Zero is therefore rejected rather than reinterpreted.
-          type: [number, "null"]
-          exclusiveMinimum: 0
+            underwriting). Zero is therefore rejected by the pattern rather than reinterpreted.
+          type: [string, "null"]
+          pattern: '^(?!0+(\.0{1,2})?$)\d+(\.\d{1,2})?$'
         currency: { type: string, pattern: '^[A-Z]{3}$' }
         grades:
           description: Required on a GRADED scheme, rejected on any other.
           type: array
-          items: { $ref: '#/components/schemas/GroupSchemeGrade' }
+          items: { $ref: '#/components/schemas/GroupSchemeGradeInput' }
         openingSchedule:
           description: >-
             At least one life. A scheme issued empty would have a sum assured of nil, which
@@ -728,12 +750,22 @@ components:
           minimum: 1
         reasonForManualIssue: { type: [string, "null"] }
       required: [policyholderPartyId, productVersionId, benefitBasis, currency, openingSchedule, premium]
-    GroupSchemeGrade:
+    GroupSchemeGradeInput:
       type: object
       properties:
         gradeCode: { type: string, maxLength: 30 }
-        benefitAmount: { type: number, exclusiveMinimum: 0 }
+        benefitAmount:
+          description: A bare decimal string against the scheme's currency — see IssueGroupSchemeRequest.flatBenefitAmount.
+          type: string
+          pattern: '^(?!0+(\.0{1,2})?$)\d+(\.\d{1,2})?$'
       required: [gradeCode, benefitAmount]
+    GroupSchemeGrade:
+      description: One band as read back, with the scheme's currency attached to the figure.
+      type: object
+      properties:
+        gradeCode: { type: string, maxLength: 30 }
+        benefit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+      required: [gradeCode, benefit]
     GroupMemberInput:
       description: >-
         gradeCode and salaryAmount are each required on exactly one benefit basis and rejected
@@ -744,7 +776,10 @@ components:
       properties:
         memberPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         gradeCode: { type: [string, "null"], maxLength: 30 }
-        salaryAmount: { type: [number, "null"], exclusiveMinimum: 0 }
+        salaryAmount:
+          description: A bare decimal string against the scheme's currency — see IssueGroupSchemeRequest.flatBenefitAmount.
+          type: [string, "null"]
+          pattern: '^(?!0+(\.0{1,2})?$)\d+(\.\d{1,2})?$'
         joinedOn:
           description: >-
             When cover starts for this person. Omit on an opening schedule to mean the scheme's
@@ -761,8 +796,14 @@ components:
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
         benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }
-        flatBenefitAmount: { type: [number, "null"] }
-        salaryMultiple: { type: [number, "null"] }
+        flatBenefit:
+          description: Null unless the basis is FLAT.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+        salaryMultiple:
+          description: A ratio, not money. Null unless the basis is SALARY_MULTIPLE.
+          type: [number, "null"]
         fcl:
           description: Null for a scheme with no free cover limit. Never rendered as zero -- the two mean opposite things.
           allOf:
@@ -787,10 +828,11 @@ components:
           items: { $ref: '#/components/schemas/GroupSchemeGrade' }
     PolicyMemberView:
       description: >-
-        benefitAmount and coveredAmount differ whenever the free cover limit bites: a 150m
-        benefit against a 100m limit is 100m of real cover while evidence is outstanding.
-        coveredAmount is the figure a claim pays and the only one that should be quoted to a
-        member as "your cover".
+        `benefit` and `covered` differ whenever the free cover limit bites: a 150m benefit
+        against a 100m limit is 100m of real cover while evidence is outstanding. `covered`
+        is the figure a claim pays and the only one that should be quoted to a member as
+        "your cover". Each carries the scheme's currency, so no reader has to fetch the
+        scheme to know what the number is denominated in.
 
 
         All three money fields are null for a member whose cover has not started as at today --
@@ -813,11 +855,19 @@ components:
           type: string
           enum: [WITHIN_FCL, EVIDENCE_REQUIRED, ACCEPTED, DECLINED]
         underwritingCaseId: { type: [string, "null"], format: uuid }
-        salaryAmount:
+        salary:
           description: The input the benefit came from. Null on any scheme that is not SALARY_MULTIPLE.
-          type: [number, "null"]
-        benefitAmount: { type: [number, "null"] }
-        coveredAmount: { type: [number, "null"] }
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+        benefit:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+        covered:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
         benefitEffectiveFrom:
           description: >-
             The date the in-force benefit row took effect, so a benefit set at inception is

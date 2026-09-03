@@ -28,6 +28,8 @@ import { GlPostingsPage } from '@/features/finaccounting/GlPostingsPage';
 import { ClientsPage } from '@/features/party/ClientsPage';
 import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
 import { PartyDetailPage } from '@/features/party/PartyDetailPage';
+import { GroupSchemePage } from '@/features/policies/GroupSchemePage';
+import { IssueGroupSchemePage } from '@/features/policies/IssueGroupSchemePage';
 import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
 import { PoliciesPage } from '@/features/policies/PoliciesPage';
 import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
@@ -170,6 +172,21 @@ const STAFF_SCREENS: Screen[] = [
   },
   { path: 'policies/new', element: <IssuePolicyPage />, reach: 'drill-in' },
   { path: 'policies/:policyNumber', element: <PolicyDetailPage />, reach: 'drill-in' },
+
+  // Setting up a scheme is a NEW-BUSINESS act, so unlike the scheme record below
+  // it earns a nav item: nobody arrives at it by drilling into something that
+  // already exists. Its sibling `policies/new` is deliberately drill-in only --
+  // manual issue is an exception path, and a scheme is not.
+  {
+    path: 'group-schemes/new',
+    element: <IssueGroupSchemePage />,
+    reach: { group: 'new-business', label: 'Group scheme', icon: Users },
+  },
+  // Drill-in from the policy record, not a nav item. An existing scheme is reached
+  // by finding the contract first -- the same way a policy is -- and a sidebar
+  // entry would lead to a "paste a policy number" screen, which reads as broken
+  // software (PLAN.md §7). The policy page links here when the policy is a scheme.
+  { path: 'group-schemes/:policyNumber', element: <GroupSchemePage />, reach: 'drill-in' },
 
   {
     path: 'claims',

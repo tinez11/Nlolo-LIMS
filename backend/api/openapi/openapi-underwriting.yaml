@@ -267,6 +267,43 @@ components:
             is a genuine direct sale.
           type: [string, "null"]
           format: uuid
+        # The four proposal-identity fields below (Build 4b) reached
+        # OpenCaseRequest.java and UnderwritingCaseView in this same document, but
+        # were never added HERE. Nothing caught it: swagger-request-validator does
+        # not reject undeclared request properties without additionalProperties:
+        # false, so the contract test stayed green while the generated request type
+        # omitted all four -- which is what actually surfaced it, as four typecheck
+        # errors in the console's own openCaseForm test. A request schema that is a
+        # subset of what the endpoint accepts is not a smaller contract, it is a
+        # wrong one: every generated client is built from it.
+        lifeAssuredPartyId:
+          description: >-
+            Whose life is insured, when that is not the applicant — a parent insures a child,
+            an employer its staff. Omitting it means self-insured, and the service resolves it
+            to the applicant rather than storing a null, so a newly opened case always answers
+            the question.
+          # `nullable: true` over an allOf-wrapped $ref, not oneOf with a
+          # {type: "null"} branch -- see UnderwritingCaseView.lifeAssuredPartyId
+          # below for why that spelling switches validation off entirely.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/PartyRef'
+          nullable: true
+        branch:
+          description: Which office took the proposal.
+          type: [string, "null"]
+          maxLength: 100
+        sourceOfBusiness:
+          description: >-
+            Free text, deliberately not an enum — the platform does not own this vocabulary,
+            and minting one here would make it the de facto schema before anybody ratified it.
+          type: [string, "null"]
+          maxLength: 60
+        proposedCommencementDate:
+          description: >-
+            When the applicant wants risk to start. A proposal taken today commonly asks for
+            cover from the first of next month.
+          type: [string, "null"]
+          format: date
         # medicalDisclosure is deliberately NOT a field here. It was once declared on this
         # request and never existed in OpenCaseRequest.java, so a client sending one got a 201
         # and had it silently discarded. Disclosures are now real, but as their own resource --

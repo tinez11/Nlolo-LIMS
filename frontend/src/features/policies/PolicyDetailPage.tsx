@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Ban, Pause, Play, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Ban, Pause, Play, RotateCcw, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
@@ -99,6 +99,19 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         actions={
           <>
             {policy?.status && <StatusBadge kind="policy" value={policy.status} />}
+            {/* Only on a scheme, and only in the staff console -- the members
+                endpoint is staff-only, so an agent following this link would get a
+                403 rather than a page. A group policy read here answers "one
+                contract, 500 lives, sum assured X", which is true and useless to
+                somebody administering the schedule; this is the way across. */}
+            {isStaff && policy?.productCategory === 'GROUP_LIFE' && (
+              <Button asChild size="sm">
+                <Link to={`/staff/group-schemes/${encodeURIComponent(policyNumber)}`}>
+                  <Users />
+                  Member schedule
+                </Link>
+              </Button>
+            )}
             {/* POST /policies/{n}/surrender genuinely returns 501 -- the surrender
                 choreography was deferred with the workflow engine. Rendered disabled
                 rather than as a live button that produces an error. */}
@@ -125,7 +138,18 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           <Panel title="Policy">
             {policy && (
               <dl className="px-4 pb-2">
-                <Field label="Sum assured" value={formatMoney(policy.sumAssured)} emphasis />
+                <Field
+                  label="Sum assured"
+                  value={formatMoney(policy.sumAssured)}
+                  emphasis
+                  // On a scheme this figure is not a term of the contract anyone
+                  // typed -- it is the total of the member schedule, restated
+                  // whenever somebody joins or leaves. Saying so stops it being
+                  // read as a fixed sum that has quietly changed.
+                  {...(policy.productCategory === 'GROUP_LIFE'
+                    ? { note: 'The total of every covered member — it moves as the schedule does.' }
+                    : {})}
+                />
                 <Field
                   label="Premium"
                   value={

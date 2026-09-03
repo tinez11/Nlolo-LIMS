@@ -13,7 +13,13 @@ import java.util.UUID;
 /**
  * One insured life on a scheme.
  *
- * <p>{@code benefit} and {@code covered} are both sent, and they differ whenever the free
+ * <p>Every amount is a {@link MoneyDto} -- a decimal string plus a currency code, never a
+ * JSON number. Money on this platform is always spelled that way, because a JSON number
+ * is a double by the time it reaches a browser and a decimal that survives Postgres and
+ * Java exactly should not lose that on the last hop. The scheme's currency rides along on
+ * each figure rather than being looked up from the scheme by every caller.
+ *
+ * <p>{@code benefit} and {@code covered} both appear, and they differ whenever the free
  * cover limit bites. The console shows {@code covered} as the member's cover, because that
  * is the figure a claim pays; {@code benefit} is shown beside it only when it is larger,
  * so the gap is visible rather than implied.
@@ -25,14 +31,21 @@ import java.util.UUID;
 public record PolicyMemberResponseDto(UUID policyMemberId, UUID memberPartyId, String gradeCode,
                                        LocalDate joinedOn, LocalDate leftOn, MemberStatus status,
                                        MemberUnderwritingStatus underwritingStatus, UUID underwritingCaseId,
-                                       BigDecimal salaryAmount, BigDecimal benefitAmount,
-                                       BigDecimal coveredAmount, LocalDate benefitEffectiveFrom) {
+                                       MoneyDto salary, MoneyDto benefit, MoneyDto covered,
+                                       LocalDate benefitEffectiveFrom) {
 
     public static PolicyMemberResponseDto from(PolicyMemberView view) {
         return new PolicyMemberResponseDto(view.policyMemberId(), view.memberPartyId(), view.gradeCode(),
             view.joinedOn(), view.leftOn(), view.status(), view.underwritingStatus(),
-            view.underwritingCaseId(), view.salaryAmount(), view.benefitAmount(),
-            view.coveredAmount(), view.benefitEffectiveFrom());
+            view.underwritingCaseId(),
+            money(view.salaryAmount(), view.currency()),
+            money(view.benefitAmount(), view.currency()),
+            money(view.coveredAmount(), view.currency()),
+            view.benefitEffectiveFrom());
+    }
+
+    private static MoneyDto money(BigDecimal amount, String currency) {
+        return amount != null ? new MoneyDto(amount.toPlainString(), currency) : null;
     }
 
     /** Same envelope shape as {@link PolicySearchResponse}, so the console pages both alike. */

@@ -157,7 +157,40 @@ twice while never showing another — on a member roll that is a person who beli
 insured and is missing from the page nobody scrolled twice. Same defect shape PLAN.md §10
 records finding four times, once deciding an agent's commission rate.
 
-**Tests.** 16 integration (Testcontainers) + 12 unit + 4 contract, all green.
+**Console.** Two screens. `IssueGroupSchemePage` sets a scheme up — basis, grade
+table, free cover limit, opening schedule — with a **running total that is labelled as
+derived**, not typed. `GroupSchemePage` is the scheme record: headcount, total sum insured,
+the count of members awaiting evidence, the member schedule with a real pager, and adding a
+life. The policy page links across only when `productCategory` is `GROUP_LIFE`.
+
+**`PolicyView.productCategory`.** Stored since M3 and never exposed, so nothing reading a
+policy could tell an individual term-life contract from a 500-life scheme. Added, because
+the cross-link needs it and because a reader needs it: a GROUP_LIFE policy's
+`lifeAssuredPartyId` is deliberately null rather than merely missing.
+
+**The free cover limit is shown while typing, not after saving.**
+`groupBenefitPreview.ts` mirrors `GroupBenefitCalculator` so the console can say "covered
+for 100m immediately; the remaining 20m needs medical evidence" as a salary is entered.
+Discovering that on the next screen is discovering it too late to ask the member about it
+while they are still there. The server stays the authority — nothing computed here is sent
+— and both sides run the same worked examples, so drift shows up as a red test.
+
+**Money never becomes a double.** The preview multiplies in scaled `BigInt` and rounds
+HALF_UP, matching `BigDecimal.setScale(2, HALF_UP)`; the running total sums in integer
+cents. `lib/money.ts` bans arithmetic on money for exactly this reason, and a 500-life
+schedule is 500 opportunities to accumulate float error.
+
+**Wire shape corrected mid-build.** The first cut of the member and scheme DTOs sent
+`BigDecimal` money as bare JSON numbers. Every other money amount on this platform is a
+decimal string plus a currency code, and `lib/money.ts` calls a JSON number for money "a
+correctness bug, not a style preference". Reshaped: responses carry `Money`, requests carry
+bare decimal strings against the scheme's single `currency` — a per-field currency code
+could only agree with the scheme's or contradict it. `salaryMultiple` stays a number,
+because a ratio is not money.
+
+**Tests.** 16 integration (Testcontainers) + 12 unit + 4 contract on the backend; 45
+console unit tests across the preview, the add-member form and the issue form; 4 e2e specs
+against the real stack.
 
 ---
 

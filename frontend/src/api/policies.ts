@@ -4,7 +4,12 @@ import type {
   BeneficiaryInput,
   BeneficiaryOfView,
   CoverageStatusView,
+  GroupMemberInput,
+  GroupSchemeView,
   InvoiceView,
+  IssueGroupSchemeRequest,
+  MemberStatus,
+  PolicyMemberView,
   LoanRepaymentRequest,
   LoanView,
   ManualIssueRequest,
@@ -232,4 +237,103 @@ export function reinstatePolicy(policyNumber: string): Promise<PolicyView> {
  */
 export function beneficiaryOf(partyId: string): Promise<BeneficiaryOfView[]> {
   return get<BeneficiaryOfView[]>('/beneficiaries', { params: { partyId } });
+}
+
+// --- Group business ---------------------------------------------------------
+//
+// `/group-schemes` is its own resource, not a branch under `/policies`. A scheme
+// read as a policy answers "one contract, 500 lives, sum assured X" -- true, and
+// useless to somebody administering the schedule. Staff only, all four.
+
+/**
+ * `POST /group-schemes` -- issues the master policy, the scheme, its grades and
+ * its opening schedule in one call.
+ *
+ * There is no `sumAssured` to send: a scheme's sum assured IS the total of its
+ * members' cover, derived server-side from `openingSchedule`. That is also why a
+ * scheme cannot be issued empty -- 409, not a scheme with nothing in it.
+ *
+ * No `Idempotency-Key`: the endpoint declares none, so a second submission
+ * genuinely creates a second scheme. The form's own in-flight disabling is the
+ * only guard against a double-click, exactly as with `issuePolicy`.
+ */
+export function issueGroupScheme(request: IssueGroupSchemeRequest): Promise<GroupSchemeView> {
+  return post<GroupSchemeView>('/group-schemes', request);
+}
+
+/**
+ * `GET /group-schemes/{n}` -- configuration plus derived totals.
+ *
+ * 409, not 404, when the policy exists but is an individual policy. The two are
+ * different answers and the caller should not conflate them: one is a dead end,
+ * the other is a policy to go and look at.
+ */
+export function getGroupScheme(policyNumber: string): Promise<GroupSchemeView> {
+  return get<GroupSchemeView>(`/group-schemes/${encodeURIComponent(policyNumber)}`);
+}
+
+/** Server caps member pages at 200. */
+export const MAX_MEMBER_PAGE_SIZE = 200;
+export const DEFAULT_MEMBER_PAGE_SIZE = 25;
+
+export interface MemberListParams {
+  /** Omit for every member including those who have left. */
+  status?: MemberStatus;
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * `GET /group-schemes/{n}/members` -- one page of the schedule, each row carrying
+ * the benefit in force for that member today.
+ *
+ * The sort is fixed server-side and total (join date, then member id). It is not a
+ * caller choice on purpose: a bulk schedule gives every row the same join date, and
+ * paging an order with ties can show one member twice while omitting another.
+ *
+ * Same defensive normalization as `searchPolicies`: the envelope's `items` and
+ * `page` are both optional on the wire.
+ */
+export async function listSchemeMembers(
+  policyNumber: string,
+  params: MemberListParams = {},
+): Promise<Page<PolicyMemberView>> {
+  const page = params.page ?? 0;
+  const pageSize = Math.min(params.pageSize ?? DEFAULT_MEMBER_PAGE_SIZE, MAX_MEMBER_PAGE_SIZE);
+
+  const body = await get<{
+    items?: PolicyMemberView[];
+    page?: { page?: number; pageSize?: number; totalElements?: number };
+  }>(`/group-schemes/${encodeURIComponent(policyNumber)}/members`, {
+    params: { ...(params.status ? { status: params.status } : {}), page, pageSize },
+  });
+
+  return {
+    items: body.items ?? [],
+    page: {
+      page: body.page?.page ?? page,
+      pageSize: body.page?.pageSize ?? pageSize,
+      totalElements: body.page?.totalElements ?? 0,
+    },
+  };
+}
+
+/**
+ * `POST /group-schemes/{n}/members` -- adds one life.
+ *
+ * Rejections worth showing verbatim rather than rewording, because each names a
+ * fix: already an active member, a join date in the future or before the scheme
+ * commenced, and inputs that do not match the scheme's benefit basis (a salary on
+ * a flat scheme, a grade the scheme does not have).
+ *
+ * The scheme's total moves as a result, so callers refetch the scheme after this.
+ */
+export function addSchemeMember(
+  policyNumber: string,
+  member: GroupMemberInput,
+): Promise<PolicyMemberView> {
+  return post<PolicyMemberView>(
+    `/group-schemes/${encodeURIComponent(policyNumber)}/members`,
+    member,
+  );
 }

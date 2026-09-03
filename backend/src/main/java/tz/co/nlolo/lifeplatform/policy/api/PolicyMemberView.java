@@ -17,9 +17,14 @@ import java.util.UUID;
  *     opening the history.
  * @param salaryAmount the input the benefit came from. Null on any scheme that is not
  *     SALARY_MULTIPLE, where no salary was ever collected.
+ * @param currency the scheme's currency, carried here so the amounts above are never
+ *     handed to a caller without one. A scheme has exactly one, and a member cannot have
+ *     a different one -- but an amount travelling without its currency is how a figure
+ *     ends up rendered as the wrong money somewhere down the line.
  */
 public record PolicyMemberView(UUID policyMemberId, UUID memberPartyId, String gradeCode,
                                 LocalDate joinedOn, LocalDate leftOn, MemberStatus status,
                                 MemberUnderwritingStatus underwritingStatus, UUID underwritingCaseId,
                                 BigDecimal salaryAmount, BigDecimal benefitAmount,
-                                BigDecimal coveredAmount, LocalDate benefitEffectiveFrom) {}
+                                BigDecimal coveredAmount, String currency,
+                                LocalDate benefitEffectiveFrom) {}
