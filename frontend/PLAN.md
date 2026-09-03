@@ -242,6 +242,10 @@ required check trains people to ignore CI.
 
    The genuinely valuable generated-type fix in this area was **`PageMeta` `required`** (item 5) — those three fields really were optional and are now required.
 
+   **Measured 2026-09-03, while adding the group-scheme paths:** `swagger-request-validator` **does not catch a scalar type mismatch in a response body.** Declaring `activeMemberCount` as `type: string` while the controller returns the number `2` passes. Probed both ways to be sure of the boundary — the same schema with a bogus `required: [...]` entry fails loudly, on both the new paths and the existing ones, so the validator is genuinely running and genuinely reaching these schemas. What it enforces is structure (required, presence, path/verb/status coverage); what it does not enforce is that a declared scalar type matches the JSON emitted.
+
+   So a contract test proves the endpoint is *described*, not that every field's type is right. Assert values with `jsonPath` alongside `isValid` — a `jsonPath("$.x").value(2)` catches what the schema check does not — and treat "the contract test is green" as a weaker claim than it sounds.
+
 **Spec-truth fixes:**
 
 4. `RegisterCorporateRequest.contactInfo` — declare its real properties: `phoneNumber` (`^\+255\d{9}$`) and `email`, both optional, object itself required

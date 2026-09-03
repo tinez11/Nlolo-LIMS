@@ -81,6 +81,8 @@ class PolicyContractTest {
             "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V8__group_policies_have_no_single_life_assured.sql",
+            "db-migrations/policy/V9__group_scheme_and_members.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -810,5 +812,173 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
+    // --- Group business ------------------------------------------------------------------
+    //
+    // The whole scheme surface goes over real HTTP and through the OpenAPI validator, because
+    // the wire shape is where a group scheme is easiest to get quietly wrong: `fcl` is nullable
+    // and means something different from zero, and every member money field is nullable for a
+    // member not yet in force. A schema that disagrees with the controller on any of those
+    // produces a page that renders "0" where it should say "no limit".
+
+    private UUID staffRegisteredPerson(UUID tenantId, String phoneSuffix) throws Exception {
+        return registerApplicant(tenantId, phoneSuffix);
+    }
+
+    @Test
+    void issuingAGroupSchemeOverHttpMatchesTheSpecAndDerivesItsTotal() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID employer = staffRegisteredPerson(tenantId, "8001");
+        UUID memberOne = staffRegisteredPerson(tenantId, "8002");
+        UUID memberTwo = staffRegisteredPerson(tenantId, "8003");
+        ProductFixture product = publishProduct(tenantId, "GRP-CONTRACT-01", "GROUP_LIFE");
+
+        String response = mockMvc.perform(post("/group-schemes")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                     "benefitBasis":"FLAT","flatBenefitAmount":5000000.00,"currency":"TZS",
+                     "openingSchedule":[{"memberPartyId":"%s"},{"memberPartyId":"%s"}],
+                     "premium":{"amount":"1200000.00","currencyCode":"TZS"},
+                     "premiumFrequency":"ANNUALLY","reasonForManualIssue":"Contract test scheme"}
+                    """.formatted(employer, product.productVersionId(), memberOne, memberTwo)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // Derived from the two-life schedule, not supplied by the caller.
+            .andExpect(jsonPath("$.totalCovered.amount").value("10000000.00"))
+            .andExpect(jsonPath("$.activeMemberCount").value(2))
+            .andExpect(jsonPath("$.membersRequiringEvidence").value(0))
+            // A scheme with no free cover limit sends null, never zero: the two mean
+            // opposite things, and a screen that reads a zero here would show "everyone
+            // needs underwriting" for a scheme where nobody does.
+            .andExpect(jsonPath("$.fcl").doesNotExist())
+            .andReturn().getResponse().getContentAsString();
+
+        String policyNumber = JsonPath.read(response, "$.policyNumber");
+
+        mockMvc.perform(get("/group-schemes/" + policyNumber)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.totalCovered.amount").value("10000000.00"));
+
+        // The master policy reads back as a policy too, carrying the same total.
+        mockMvc.perform(get("/policies/" + policyNumber)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.sumAssured.amount").value("10000000.00"))
+            // V8: the lives are the schedule, so the master names none.
+            .andExpect(jsonPath("$.lifeAssuredPartyId").doesNotExist());
+    }
+
+    @Test
+    void theMemberScheduleAndAJoinerMatchTheSpec() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID employer = staffRegisteredPerson(tenantId, "8101");
+        UUID founding = staffRegisteredPerson(tenantId, "8102");
+        UUID joiner = staffRegisteredPerson(tenantId, "8103");
+        ProductFixture product = publishProduct(tenantId, "GRP-CONTRACT-02", "GROUP_LIFE");
+
+        // 3x salary against a 30,000,000 free cover limit: the founding member on
+        // 20,000,000 is worth 60,000,000 and is therefore over it.
+        String scheme = mockMvc.perform(post("/group-schemes")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                     "benefitBasis":"SALARY_MULTIPLE","salaryMultiple":3,"fclAmount":30000000.00,
+                     "currency":"TZS",
+                     "openingSchedule":[{"memberPartyId":"%s","salaryAmount":20000000.00}],
+                     "premium":{"amount":"900000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY"}
+                    """.formatted(employer, product.productVersionId(), founding)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.membersRequiringEvidence").value(1))
+            // Covered up to the limit, not for the full benefit, and not for nothing.
+            .andExpect(jsonPath("$.totalCovered.amount").value("30000000.00"))
+            .andExpect(jsonPath("$.fcl.amount").value("30000000.00"))
+            .andReturn().getResponse().getContentAsString();
+        String policyNumber = JsonPath.read(scheme, "$.policyNumber");
+
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .queryParam("status", "ACTIVE")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].underwritingStatus").value("EVIDENCE_REQUIRED"))
+            // Both figures are carried, and they differ. The gap IS the outstanding
+            // underwriting; sending only one of them would hide it.
+            .andExpect(jsonPath("$.items[0].benefitAmount").value(60000000.00))
+            .andExpect(jsonPath("$.items[0].coveredAmount").value(30000000.00))
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+
+        mockMvc.perform(post("/group-schemes/" + policyNumber + "/members")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"memberPartyId":"%s","salaryAmount":5000000.00}
+                    """.formatted(joiner)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.underwritingStatus").value("WITHIN_FCL"))
+            .andExpect(jsonPath("$.coveredAmount").value(15000000.00));
+
+        // 30,000,000 (capped) + 15,000,000 (in full), restated on the contract itself.
+        mockMvc.perform(get("/policies/" + policyNumber)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.sumAssured.amount").value("45000000.00"));
+    }
+
+    /**
+     * An individual policy read as a scheme answers 409, not 404.
+     *
+     * <p>"There is no such policy" and "this one is an individual policy" send whoever
+     * asked to different places, and a console that got 404 for the second would show a
+     * dead end where it should show the policy.
+     */
+    @Test
+    void anIndividualPolicyReadAsASchemeIsAConflictNotANotFound() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String individual = manualIssue(tenantId, "GRP-CONTRACT-NOT-A-SCHEME").policyNumber();
+
+        mockMvc.perform(get("/group-schemes/" + individual)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("INVALID_POLICY_STATE"));
+    }
+
+    @Test
+    void aSchemeWithAnEmptyScheduleIsRejectedBeforeItReachesTheService() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID employer = staffRegisteredPerson(tenantId, "8201");
+        ProductFixture product = publishProduct(tenantId, "GRP-CONTRACT-03", "GROUP_LIFE");
+
+        // @NotEmpty on the DTO, so this is a 422 from Bean Validation rather than the
+        // service's own 409 -- both refuse it, and the earlier one gives a field name.
+        mockMvc.perform(post("/group-schemes")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                     "benefitBasis":"FLAT","flatBenefitAmount":1000000.00,"currency":"TZS",
+                     "openingSchedule":[],
+                     "premium":{"amount":"100000.00","currencyCode":"TZS"}}
+                    """.formatted(employer, product.productVersionId())))
+            .andExpect(status().is4xxClientError());
     }
 }

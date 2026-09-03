@@ -77,6 +77,103 @@ public interface PolicyApi {
 
     record EndorsementInput(String endorsementType, LocalDate effectiveDate, Map<String, Object> changes) {}
 
+    // ---------------------------------------------------------------------------------
+    // Group business.
+    //
+    // One master policy, many insured members. ABC Company buys Group Life for 500
+    // employees: the COMPANY is the policyholder, the 500 employees are the lives, and a
+    // member is NOT a policy of their own. Everything below hangs off one policy number.
+    // ---------------------------------------------------------------------------------
+
+    /** One band on a GRADED scheme: a staff category and what it is worth. */
+    record GradeInput(String gradeCode, BigDecimal benefitAmount) {}
+
+    /**
+     * One life, on the opening schedule or joining later.
+     *
+     * @param gradeCode required on a GRADED scheme, and rejected on any other -- a grade
+     *     on a flat scheme is a caller who believes something about the contract that is
+     *     not true.
+     * @param salaryAmount required on a SALARY_MULTIPLE scheme, and rejected on any other.
+     * @param joinedOn when cover starts for this member. Null means the scheme's
+     *     commencement date, which is what an opening-schedule row means.
+     */
+    record MemberInput(UUID memberPartyId, String gradeCode, BigDecimal salaryAmount, LocalDate joinedOn) {}
+
+    /**
+     * Issue a master group policy together with its scheme, grades and opening schedule.
+     *
+     * <p>Deliberately one call rather than issue-then-populate. The sum assured of a
+     * scheme <b>is</b> the total of its members' cover, so a scheme issued empty has a sum
+     * assured of zero -- which the {@code policy_sum_assured_positive} check rejects, and
+     * rightly: a contract insuring nobody for nothing is not a policy. Issuing atomically
+     * also means a failure part-way through the schedule leaves no half-populated scheme
+     * for somebody to find and mistake for a complete one.
+     *
+     * <p>There is no {@code sumAssuredAmount} parameter for the same reason there is no
+     * {@code maturityDate} on {@link IssueRequest}: it is derived from the opening
+     * schedule in exactly one place, and a caller able to supply it is a caller able to
+     * supply one that disagrees with the members underneath it.
+     *
+     * @param commencementDate when the scheme's risk starts. <b>May not be in the future
+     *     in this slice</b> -- see {@link #issueGroupScheme}.
+     * @param policyTermMonths null for the usual annually renewable scheme.
+     */
+    record IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
+                                    UUID agentOfRecordId,
+                                    BenefitBasis benefitBasis, BigDecimal flatBenefitAmount,
+                                    BigDecimal salaryMultiple, BigDecimal fclAmount, String currency,
+                                    List<GradeInput> grades, List<MemberInput> openingSchedule,
+                                    BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                                    LocalDate commencementDate, Integer policyTermMonths,
+                                    String reasonForManualIssue) {}
+
+    /**
+     * Issue a scheme. The product must be a GROUP_LIFE product, and the opening schedule
+     * must name at least one life.
+     *
+     * <p><b>Commencement may not be in the future here.</b> Backdated is fine and common
+     * -- a schedule reaches the insurer weeks after cover started -- but a scheme
+     * commencing next month would carry a sum assured its members do not yet contribute
+     * to, and the stored total and the derived total would disagree for a month. Making
+     * the whole total date-aware is the first thing the next slice should do; refusing
+     * the case is the honest version of not having done it yet.
+     *
+     * @throws InvalidPolicyStateException if the product is not GROUP_LIFE, the schedule
+     *     is empty, or commencement is in the future
+     */
+    GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy);
+
+    /**
+     * A scheme's configuration and current totals.
+     *
+     * @throws PolicyNotFoundException if no such policy exists in this tenant
+     * @throws InvalidPolicyStateException if the policy exists but is not a scheme --
+     *     distinct from not-found on purpose, because "you are looking at an individual
+     *     policy" and "there is no such policy" send a caller to different places
+     */
+    GroupSchemeView getGroupScheme(String policyNumber);
+
+    /**
+     * One page of a scheme's members, each with the benefit currently in force for them.
+     *
+     * @param status null for every member including those who have left. An exited member
+     *     stays on the roll because a claim can arrive after somebody leaves.
+     */
+    Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, Pageable pageable);
+
+    /**
+     * Add one life to an existing scheme, valuing them against the scheme's basis and
+     * testing them against its free cover limit.
+     *
+     * <p>Restates the master policy's sum assured in the same transaction, so the contract
+     * total and the member schedule cannot disagree even for an instant.
+     *
+     * @throws InvalidPolicyStateException if the person is already an active member, the
+     *     policy is not in force, or the input does not match the scheme's basis
+     */
+    PolicyMemberView addMember(String policyNumber, MemberInput member, String addedBy);
+
     PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy);
     PolicyView applyEndorsement(String policyNumber, EndorsementInput request, String appliedBy);
     void replaceBeneficiaries(String policyNumber, List<BeneficiaryInput> beneficiaries, String changedBy);

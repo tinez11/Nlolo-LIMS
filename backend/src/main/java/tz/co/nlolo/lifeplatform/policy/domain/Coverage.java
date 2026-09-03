@@ -46,6 +46,21 @@ public class Coverage {
         this.sumAssuredCurrency = sumAssuredCurrency;
     }
 
+    /**
+     * Restate the insured amount after a group scheme's member schedule changed.
+     *
+     * <p>The coverage row is what {@code getCoverageStatus} answers with, so leaving it at
+     * the inception total while the policy's own sum assured moves would give the platform
+     * two different answers to "how much is this scheme insured for" depending on which
+     * endpoint you asked. The service keeps both in step inside one transaction.
+     */
+    public void restateSumAssured(BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            throw new IllegalArgumentException("A coverage amount must be positive");
+        }
+        this.sumAssuredAmount = amount;
+    }
+
     public UUID getCoverageId() { return coverageId; }
     public String getPolicyNumber() { return policyNumber; }
     public String getBenefitType() { return benefitType; }

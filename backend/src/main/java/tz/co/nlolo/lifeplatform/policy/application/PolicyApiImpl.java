@@ -9,6 +9,7 @@ import tz.co.nlolo.lifeplatform.policy.domain.*;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.*;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceCodeView;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
@@ -29,11 +30,13 @@ import java.time.LocalDate;
 import java.time.Period;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class PolicyApiImpl implements PolicyApi {
@@ -46,6 +49,10 @@ public class PolicyApiImpl implements PolicyApi {
     private final BeneficiaryRepository beneficiaryRepository;
     private final CoverageRepository coverageRepository;
     private final LoanValueReservationRepository loanValueReservationRepository;
+    private final GroupSchemeRepository groupSchemeRepository;
+    private final GroupSchemeGradeRepository groupSchemeGradeRepository;
+    private final PolicyMemberRepository policyMemberRepository;
+    private final PolicyMemberBenefitRepository policyMemberBenefitRepository;
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
@@ -56,6 +63,8 @@ public class PolicyApiImpl implements PolicyApi {
     public PolicyApiImpl(PolicyRepository policyRepository, PolicyAccountRepository policyAccountRepository,
                           EndorsementRepository endorsementRepository, BeneficiaryRepository beneficiaryRepository,
                           CoverageRepository coverageRepository, LoanValueReservationRepository loanValueReservationRepository,
+                          GroupSchemeRepository groupSchemeRepository, GroupSchemeGradeRepository groupSchemeGradeRepository,
+                          PolicyMemberRepository policyMemberRepository, PolicyMemberBenefitRepository policyMemberBenefitRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
@@ -65,6 +74,10 @@ public class PolicyApiImpl implements PolicyApi {
         this.beneficiaryRepository = beneficiaryRepository;
         this.coverageRepository = coverageRepository;
         this.loanValueReservationRepository = loanValueReservationRepository;
+        this.groupSchemeRepository = groupSchemeRepository;
+        this.groupSchemeGradeRepository = groupSchemeGradeRepository;
+        this.policyMemberRepository = policyMemberRepository;
+        this.policyMemberBenefitRepository = policyMemberBenefitRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
@@ -564,6 +577,393 @@ public class PolicyApiImpl implements PolicyApi {
             throw new BeneficiaryValidationException("Beneficiary shares must sum to 100, got " + totalShare);
         }
         return built;
+    }
+
+    // =================================================================================
+    // Group business
+    // =================================================================================
+
+    @Override
+    @Transactional
+    public GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy) {
+        UUID tenantId = TenantContext.get();
+        partyApi.getParty(request.policyholderPartyId()); // the employer must exist
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
+        if (snapshot.category() != ProductCategory.GROUP_LIFE) {
+            // Without this a scheme could be hung off a term-life product, and every
+            // reader downstream that branches on category -- reserving, reporting,
+            // commission -- would treat 500 lives as one.
+            throw new InvalidPolicyStateException(
+                "A group scheme needs a GROUP_LIFE product; this one is " + snapshot.category());
+        }
+
+        LocalDate today = LocalDate.now();
+        LocalDate commencement = request.commencementDate() != null ? request.commencementDate() : today;
+        if (commencement.isAfter(today)) {
+            throw new InvalidPolicyStateException(
+                "A scheme cannot commence in the future yet: its sum assured is the total of its members' "
+                    + "cover, and until commencement that total would be nil while the contract said otherwise");
+        }
+
+        List<MemberInput> schedule = request.openingSchedule() != null ? request.openingSchedule() : List.of();
+        if (schedule.isEmpty()) {
+            throw new InvalidPolicyStateException(
+                "A scheme must be issued with at least one member: its sum assured is the total of its "
+                    + "members' cover, and a scheme insuring nobody has none");
+        }
+
+        Map<String, BigDecimal> gradeTable = gradeTableFor(request.benefitBasis(), request.grades());
+
+        // Value EVERYBODY before writing anything. A 400-row schedule with one bad row
+        // must not leave 399 members and a scheme priced for them behind -- and the
+        // valuation is where a bad row shows up, since it is the only step that reads
+        // each member's own numbers.
+        List<ValuedMember> valued = new ArrayList<>(schedule.size());
+        Set<UUID> seen = new HashSet<>();
+        for (MemberInput input : schedule) {
+            if (input.memberPartyId() == null) {
+                throw new InvalidPolicyStateException("Every row of the opening schedule must name a person");
+            }
+            if (!seen.add(input.memberPartyId())) {
+                // ux_policy_member_active would catch this as a constraint violation. Here
+                // it arrives as a sentence naming the duplicate, which is what somebody
+                // fixing a spreadsheet needs.
+                throw new InvalidPolicyStateException(
+                    "Party " + input.memberPartyId() + " appears twice on the opening schedule");
+            }
+            valued.add(new ValuedMember(input,
+                valueMember(request.benefitBasis(), request.flatBenefitAmount(), request.salaryMultiple(),
+                    request.fclAmount(), gradeTable, input)));
+        }
+
+        BigDecimal total = valued.stream()
+            .map(v -> v.valuation().coveredAmount())
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // GRP- rather than POL-: a scheme is visibly a scheme to whoever reads the number
+        // off a call. Same placeholder generation strategy as issuePolicy, and the same
+        // flag applies -- no sequence generator is wired here yet.
+        String policyNumber = "GRP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+
+        Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(),
+            request.productVersionId(), snapshot.category().name(), request.agentOfRecordId(),
+            total, request.currency(), request.premiumAmount(), request.premiumCurrency(),
+            request.premiumFrequency(), null, issuedBy);
+        policy.applyTerm(commencement, request.policyTermMonths(), null);
+        // Deliberately no recordLifeAssured: migration V8. An employer is not a life
+        // assured, and the lives are the schedule below.
+        policy.activate(today);
+        policyRepository.save(policy);
+
+        policyAccountRepository.save(new PolicyAccount(policyNumber, tenantId, BigDecimal.ZERO, request.currency()));
+        coverageRepository.save(new Coverage(tenantId, policyNumber, BenefitType.DEATH.name(), total, request.currency()));
+
+        groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),
+            request.flatBenefitAmount(), request.salaryMultiple(), request.fclAmount(),
+            request.currency(), issuedBy));
+        if (request.benefitBasis() == BenefitBasis.GRADED) {
+            request.grades().forEach(g -> groupSchemeGradeRepository.save(
+                new GroupSchemeGrade(tenantId, policyNumber, g.gradeCode(), g.benefitAmount())));
+        }
+
+        for (ValuedMember v : valued) {
+            LocalDate joinedOn = v.input().joinedOn() != null ? v.input().joinedOn() : commencement;
+            if (joinedOn.isAfter(today)) {
+                throw new InvalidPolicyStateException(
+                    "Member " + v.input().memberPartyId() + " cannot join in the future");
+            }
+            persistMember(tenantId, policyNumber, v.input(), v.valuation(), joinedOn, issuedBy);
+        }
+
+        // The same payload issuePolicy emits, because a scheme needs everything an
+        // individual policy needs downstream: billing raises the employer's invoice
+        // schedule from it, distribution accrues the broker's commission, and
+        // regreporting writes the policy_dimension row the regulator's return reads. A
+        // group policy that skipped this would be invisible to all three.
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("policyNumber", policyNumber);
+        payload.put("policyholderPartyId", request.policyholderPartyId());
+        payload.put("productId", request.productId());
+        payload.put("productVersionId", request.productVersionId());
+        payload.put("sumAssured", Map.of("amount", total.toPlainString(), "currencyCode", request.currency()));
+        payload.put("issueDate", policy.getIssueDate().toString());
+        payload.put("premium", Map.of("amount", request.premiumAmount().toPlainString(), "currencyCode", request.premiumCurrency()));
+        payload.put("premiumFrequency", request.premiumFrequency());
+        payload.put("agentOfRecordId", request.agentOfRecordId());
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupSchemeIssued", tenantId, Map.of(
+            "policyNumber", policyNumber,
+            "benefitBasis", request.benefitBasis().name(),
+            "memberCount", valued.size(),
+            "totalCovered", Map.of("amount", total.toPlainString(), "currencyCode", request.currency()))));
+
+        // Read back through the derived path rather than returning the figure just
+        // computed, so what issuance answers with is exactly what the scheme page will
+        // show. If the two ever disagree, the caller sees it immediately instead of a
+        // week later on a reconciliation.
+        policyMemberBenefitRepository.flush();
+        return getGroupScheme(policyNumber);
+    }
+
+    @Override
+    public GroupSchemeView getGroupScheme(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        GroupScheme scheme = findSchemeOrThrow(policyNumber, tenantId);
+
+        long activeMembers = policyMemberRepository
+            .countByTenantIdAndPolicyNumberAndStatus(tenantId, policyNumber, MemberStatus.ACTIVE.name());
+        long awaitingEvidence = policyMemberRepository
+            .countByTenantIdAndPolicyNumberAndStatusAndUnderwritingStatus(tenantId, policyNumber,
+                MemberStatus.ACTIVE.name(), MemberUnderwritingStatus.EVIDENCE_REQUIRED);
+        BigDecimal totalCovered = policyMemberBenefitRepository
+            .totalCovered(tenantId, policyNumber, LocalDate.now());
+
+        List<GroupSchemeGradeView> grades = groupSchemeGradeRepository
+            .findByTenantIdAndPolicyNumberOrderByGradeCode(tenantId, policyNumber).stream()
+            .map(g -> new GroupSchemeGradeView(g.getGradeCode(), g.getBenefitAmount()))
+            .toList();
+
+        return new GroupSchemeView(policyNumber, policy.getPolicyholderPartyId(),
+            PolicyStatus.valueOf(policy.getStatus()), policy.getCommencementDate(),
+            policy.getPolicyTermMonths(), scheme.getBenefitBasis(), scheme.getFlatBenefitAmount(),
+            scheme.getSalaryMultiple(), scheme.getFclAmount(), scheme.getCurrency(),
+            activeMembers, totalCovered, awaitingEvidence, grades);
+    }
+
+    @Override
+    public Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+        findPolicyOrThrow(policyNumber, tenantId);
+        findSchemeOrThrow(policyNumber, tenantId);
+
+        Page<PolicyMember> members = policyMemberRepository.findMembers(
+            tenantId, policyNumber, status != null ? status.name() : null, pageable);
+        if (members.isEmpty()) {
+            // Short-circuit rather than pass an empty list to an IN clause, which is a
+            // Postgres syntax error rather than an empty result.
+            return members.map(m -> toMemberView(m, null));
+        }
+
+        // One query for the whole page. Resolving each member's benefit individually
+        // would be 25 round trips to draw a page and 500 to draw the schedule.
+        Map<UUID, PolicyMemberBenefitRepository.InForceBenefitRow> benefits =
+            policyMemberBenefitRepository.findInForceForMembers(tenantId,
+                    members.getContent().stream().map(PolicyMember::getPolicyMemberId).toList(),
+                    LocalDate.now())
+                .stream()
+                .collect(Collectors.toMap(
+                    PolicyMemberBenefitRepository.InForceBenefitRow::getPolicyMemberId, r -> r));
+
+        return members.map(m -> toMemberView(m, benefits.get(m.getPolicyMemberId())));
+    }
+
+    @Override
+    @Transactional
+    public PolicyMemberView addMember(String policyNumber, MemberInput member, String addedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        GroupScheme scheme = findSchemeOrThrow(policyNumber, tenantId);
+        if (!policy.isInForce()) {
+            throw new InvalidPolicyStateException("Scheme " + policyNumber
+                + " must be in force to add a member (current: " + policy.getStatus() + ")");
+        }
+        if (member.memberPartyId() == null) {
+            throw new InvalidPolicyStateException("A member must name a person");
+        }
+        partyApi.getParty(member.memberPartyId());
+        if (policyMemberRepository.existsByTenantIdAndPolicyNumberAndMemberPartyIdAndStatus(
+                tenantId, policyNumber, member.memberPartyId(), MemberStatus.ACTIVE.name())) {
+            throw new InvalidPolicyStateException("That person is already an active member of scheme " + policyNumber);
+        }
+
+        LocalDate today = LocalDate.now();
+        LocalDate joinedOn = member.joinedOn() != null ? member.joinedOn() : today;
+        if (joinedOn.isAfter(today)) {
+            // Backdating is normal -- a schedule reaches the insurer weeks after somebody
+            // started. Forward-dating is not supported until the scheme total is date-aware.
+            throw new InvalidPolicyStateException(
+                "A member cannot be added with a future join date; record them on the day cover starts");
+        }
+        if (policy.getCommencementDate() != null && joinedOn.isBefore(policy.getCommencementDate())) {
+            throw new InvalidPolicyStateException("A member cannot join before the scheme commenced on "
+                + policy.getCommencementDate());
+        }
+
+        GroupBenefitCalculator.Valuation valuation = valueMember(scheme.getBenefitBasis(),
+            scheme.getFlatBenefitAmount(), scheme.getSalaryMultiple(), scheme.getFclAmount(),
+            gradeTableFor(tenantId, policyNumber, scheme.getBenefitBasis()), member);
+
+        PolicyMember saved = persistMember(tenantId, policyNumber, member, valuation, joinedOn, addedBy);
+
+        // Flush so the derived total below sees the row just written, then restate the
+        // contract total from it -- inside this transaction, so the master policy and its
+        // member schedule cannot disagree even for an instant.
+        policyMemberBenefitRepository.flush();
+        BigDecimal total = restateSchemeTotal(policy, tenantId, today);
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, Map.of(
+            "policyNumber", policyNumber,
+            "memberPartyId", member.memberPartyId(),
+            "joinedOn", joinedOn.toString(),
+            "coveredAmount", Map.of("amount", valuation.coveredAmount().toPlainString(),
+                "currencyCode", scheme.getCurrency()),
+            "underwritingStatus", valuation.underwritingStatus().name(),
+            "schemeTotalCovered", Map.of("amount", total.toPlainString(),
+                "currencyCode", scheme.getCurrency()))));
+
+        return toMemberView(saved, valuation, member.salaryAmount(), joinedOn);
+    }
+
+    /** One opening-schedule row and what the scheme's basis makes of it. */
+    private record ValuedMember(MemberInput input, GroupBenefitCalculator.Valuation valuation) {}
+
+    /**
+     * Check one member's inputs against the scheme's basis, then value them.
+     *
+     * <p>The rejections matter as much as the arithmetic: a grade code on a flat scheme,
+     * or a salary on a graded one, is a caller who believes something about this contract
+     * that is not true. Accepting and ignoring it would let a scheme administrator upload
+     * a salaried schedule to a flat scheme and see plausible, wrong numbers.
+     */
+    private GroupBenefitCalculator.Valuation valueMember(BenefitBasis basis, BigDecimal flatBenefitAmount,
+                                                          BigDecimal salaryMultiple, BigDecimal fclAmount,
+                                                          Map<String, BigDecimal> gradeTable, MemberInput member) {
+        BigDecimal gradeBenefit = null;
+        switch (basis) {
+            case FLAT -> {
+                rejectPresent(member.gradeCode(), "This scheme pays a flat benefit, so a grade means nothing on it");
+                rejectPresent(member.salaryAmount(), "This scheme pays a flat benefit, so a salary means nothing on it");
+            }
+            case SALARY_MULTIPLE -> {
+                rejectPresent(member.gradeCode(), "This scheme values members by salary, so a grade means nothing on it");
+                if (member.salaryAmount() == null) {
+                    throw new InvalidPolicyStateException(
+                        "This scheme values members at " + salaryMultiple + "x salary, so every member needs one");
+                }
+            }
+            case GRADED -> {
+                rejectPresent(member.salaryAmount(), "This scheme values members by grade, so a salary means nothing on it");
+                if (member.gradeCode() == null) {
+                    throw new InvalidPolicyStateException("This scheme values members by grade, so every member needs one");
+                }
+                gradeBenefit = gradeTable.get(member.gradeCode());
+                if (gradeBenefit == null) {
+                    throw new InvalidPolicyStateException("Grade " + member.gradeCode()
+                        + " is not on this scheme's grade table (" + String.join(", ", gradeTable.keySet()) + ")");
+                }
+            }
+        }
+        try {
+            BigDecimal benefit = GroupBenefitCalculator.benefitFor(
+                basis, flatBenefitAmount, salaryMultiple, member.salaryAmount(), gradeBenefit);
+            return GroupBenefitCalculator.evaluate(benefit, fclAmount);
+        } catch (IllegalArgumentException e) {
+            // The calculator speaks in domain terms already; re-wrapped so a bad request
+            // reaches the caller as 409 rather than as a 500.
+            throw new InvalidPolicyStateException(e.getMessage());
+        }
+    }
+
+    private static void rejectPresent(Object value, String message) {
+        if (value != null) throw new InvalidPolicyStateException(message);
+    }
+
+    /** The grade table as supplied on an issue request, validated. Empty unless GRADED. */
+    private Map<String, BigDecimal> gradeTableFor(BenefitBasis basis, List<GradeInput> grades) {
+        if (basis != BenefitBasis.GRADED) {
+            if (grades != null && !grades.isEmpty()) {
+                throw new InvalidPolicyStateException(
+                    "Only a graded scheme has a grade table; this one is " + basis);
+            }
+            return Map.of();
+        }
+        if (grades == null || grades.isEmpty()) {
+            throw new InvalidPolicyStateException("A graded scheme needs at least one grade to value anybody");
+        }
+        Map<String, BigDecimal> table = new LinkedHashMap<>();
+        for (GradeInput g : grades) {
+            if (g.gradeCode() == null || g.gradeCode().isBlank()) {
+                throw new InvalidPolicyStateException("Every grade needs a code");
+            }
+            if (g.benefitAmount() == null || g.benefitAmount().signum() <= 0) {
+                throw new InvalidPolicyStateException("Grade " + g.gradeCode() + " needs a positive benefit");
+            }
+            if (table.put(g.gradeCode(), g.benefitAmount()) != null) {
+                throw new InvalidPolicyStateException("Grade " + g.gradeCode() + " is listed twice");
+            }
+        }
+        return table;
+    }
+
+    /** The grade table as stored. Empty unless GRADED, where it is loaded from the scheme. */
+    private Map<String, BigDecimal> gradeTableFor(UUID tenantId, String policyNumber, BenefitBasis basis) {
+        if (basis != BenefitBasis.GRADED) return Map.of();
+        Map<String, BigDecimal> table = new LinkedHashMap<>();
+        groupSchemeGradeRepository.findByTenantIdAndPolicyNumberOrderByGradeCode(tenantId, policyNumber)
+            .forEach(g -> table.put(g.getGradeCode(), g.getBenefitAmount()));
+        return table;
+    }
+
+    private PolicyMember persistMember(UUID tenantId, String policyNumber, MemberInput input,
+                                        GroupBenefitCalculator.Valuation valuation, LocalDate joinedOn,
+                                        String createdBy) {
+        PolicyMember member = policyMemberRepository.save(new PolicyMember(tenantId, policyNumber,
+            input.memberPartyId(), input.gradeCode(), joinedOn, valuation.underwritingStatus(), createdBy));
+        // The benefit is effective from the day cover starts for this member, not from
+        // today: a schedule that arrives late still describes cover that began when the
+        // person joined, and a claim in between is paid on this row.
+        policyMemberBenefitRepository.save(new PolicyMemberBenefit(tenantId, member.getPolicyMemberId(),
+            joinedOn, input.salaryAmount(), valuation.benefitAmount(), valuation.coveredAmount(), createdBy));
+        return member;
+    }
+
+    /**
+     * Restate the master policy's -- and its coverage row's -- sum assured from the member
+     * schedule.
+     *
+     * <p>Both, because {@code getCoverageStatus} answers from the coverage row and the
+     * policy list answers from the policy. Restating one and not the other would give the
+     * platform two different answers to "how much is this scheme insured for" depending on
+     * which screen you were standing in front of.
+     */
+    private BigDecimal restateSchemeTotal(Policy policy, UUID tenantId, LocalDate asOf) {
+        BigDecimal total = policyMemberBenefitRepository.totalCovered(tenantId, policy.getPolicyNumber(), asOf);
+        policy.restateSumAssured(total);
+        coverageRepository.findByPolicyNumberAndActiveTrue(policy.getPolicyNumber()).stream()
+            .filter(c -> BenefitType.DEATH.name().equals(c.getBenefitType()))
+            .forEach(c -> c.restateSumAssured(total));
+        return total;
+    }
+
+    private GroupScheme findSchemeOrThrow(String policyNumber, UUID tenantId) {
+        return groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
+            // Distinct from not-found on purpose: "this is an individual policy" and
+            // "there is no such policy" send whoever asked to different places.
+            .orElseThrow(() -> new InvalidPolicyStateException(
+                "Policy " + policyNumber + " is not a group scheme"));
+    }
+
+    private PolicyMemberView toMemberView(PolicyMember m, GroupBenefitCalculator.Valuation valuation,
+                                           BigDecimal salaryAmount, LocalDate effectiveFrom) {
+        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(), m.getGradeCode(),
+            m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
+            m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
+            valuation.benefitAmount(), valuation.coveredAmount(), effectiveFrom);
+    }
+
+    private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit) {
+        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(), m.getGradeCode(),
+            m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
+            m.getUnderwritingStatus(), m.getUnderwritingCaseId(),
+            // Null across the money fields means a member whose cover has not started yet
+            // as at today -- rendered as "not yet in force" rather than as a zero, which
+            // would read as "insured for nothing".
+            benefit != null ? benefit.getSalaryAmount() : null,
+            benefit != null ? benefit.getBenefitAmount() : null,
+            benefit != null ? benefit.getCoveredAmount() : null,
+            benefit != null ? benefit.getEffectiveFrom() : null);
     }
 
     private Policy findPolicyOrThrow(String policyNumber, UUID tenantId) {

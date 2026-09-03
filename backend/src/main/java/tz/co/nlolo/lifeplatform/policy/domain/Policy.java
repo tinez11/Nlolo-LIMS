@@ -188,6 +188,36 @@ public class Policy {
             : null;
     }
 
+    /**
+     * Restate a group scheme's sum assured after its member schedule changed.
+     *
+     * <p>A scheme's sum assured <b>is</b> the total of what its members are covered for.
+     * Leaving it at the inception figure would mean a scheme that has taken on 40 joiners
+     * still reports the total it was issued with -- a number that is wrong on the policy
+     * list, wrong on a reinsurance return, and wrong in exactly the direction that
+     * understates exposure.
+     *
+     * <p>Refused on anything but a GROUP_LIFE policy, deliberately. Without that guard
+     * this is a public "set the sum assured" method on the aggregate, and an individual
+     * policy's sum assured may only move by endorsement -- a rule this would quietly
+     * route around.
+     */
+    public void restateSumAssured(BigDecimal total) {
+        if (!"GROUP_LIFE".equals(productCategory)) {
+            throw new InvalidPolicyStateException(
+                "Only a group scheme's sum assured is restated from its members; policy "
+                    + policyNumber + " is " + productCategory + " and changes by endorsement");
+        }
+        if (total == null || total.signum() <= 0) {
+            // Mirrors policy_sum_assured_positive. Reaching zero means the last member
+            // left, and an empty scheme is a scheme to close, not one to carry at nil.
+            throw new IllegalArgumentException(
+                "A scheme's sum assured must stay positive; a scheme with no covered members should be lapsed");
+        }
+        this.sumAssuredAmount = total;
+        this.updatedAt = Instant.now();
+    }
+
     public String getPolicyNumber() { return policyNumber; }
     public UUID getTenantId() { return tenantId; }
     public UUID getPolicyholderPartyId() { return policyholderPartyId; }

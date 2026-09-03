@@ -404,6 +404,153 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/BeneficiaryOfView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /group-schemes:
+    post:
+      summary: Issue a master group policy with its opening member schedule
+      description: >-
+        One master policy, many insured lives. ABC Company buys Group Life for 500 employees:
+        the company is the policyholder, the employees are the lives, and a member is not a
+        policy of their own.
+
+
+        Issued together with its opening schedule rather than issued-then-populated, because a
+        scheme's sum assured IS the total of its members' cover -- a scheme issued empty has a
+        sum assured of nil, which policy_sum_assured_positive rejects and rightly. Atomicity
+        also means a failure part-way through a 500-row schedule leaves no half-populated
+        scheme for somebody to find and mistake for a complete one.
+
+
+        There is deliberately no sumAssured field. It is derived from openingSchedule in one
+        place; a caller able to supply it is a caller able to supply one that disagrees with
+        the schedule underneath it.
+
+
+        Staff only: a scheme is set up from a submitted employee schedule at a desk, and no
+        agent- or customer-facing flow for it has been designed.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueGroupSchemeRequest' }
+      responses:
+        '201':
+          description: Scheme issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupSchemeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409':
+          description: >-
+            The product is not GROUP_LIFE, the schedule is empty or names somebody twice, the
+            commencement date is in the future, or a member's inputs do not match the scheme's
+            benefit basis.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /group-schemes/{policyNumber}:
+    get:
+      summary: Get a scheme's configuration and current totals
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupSchemeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >-
+            The policy exists but is an individual policy, not a scheme. Distinct from 404 on
+            purpose: "you are looking at an individual policy" and "there is no such policy"
+            send whoever asked to different places.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /group-schemes/{policyNumber}/members:
+    get:
+      summary: One page of a scheme's member schedule
+      description: >-
+        Ordered by joinedOn then member id -- a TOTAL order. A bulk schedule gives every row
+        the same join date, and paging a query whose order has ties can show one member twice
+        while never showing another: on a member roll that is a person who believes they are
+        insured and is missing from the page nobody scrolled twice.
+
+
+        Each row carries the benefit in force for that member as at today, resolved for the
+        whole page in one query.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: status
+          in: query
+          required: false
+          description: >-
+            Omit for every member including those who have left. An exited member is never
+            deleted: a claim can arrive after somebody leaves the employer, and "were they
+            covered on the date of event" needs the dates to still exist.
+          schema: { type: string, enum: [ACTIVE, EXITED] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 25, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyMemberPage' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+    post:
+      summary: Add one life to an existing scheme
+      description: >-
+        Values the member against the scheme's basis, tests them against its free cover limit,
+        and restates the master policy's sum assured in the same transaction -- so the contract
+        total and the member schedule cannot disagree even for an instant.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupMemberInput' }
+      responses:
+        '201':
+          description: Member added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyMemberView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >-
+            Already an active member, the scheme is not in force, the join date is in the future
+            or before commencement, or the inputs do not match the scheme's benefit basis.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
 components:
   schemas:
     BeneficiaryOfView:
@@ -518,6 +665,172 @@ components:
             existed.
           type: [string, "null"]
           format: date
+    IssueGroupSchemeRequest:
+      description: >-
+        No sumAssured field, deliberately: a scheme's sum assured is the total of its members'
+        cover, derived from openingSchedule in one place. Which of flatBenefitAmount /
+        salaryMultiple / grades is required depends on benefitBasis, so none can be marked
+        required here -- the service checks the combination and answers 409 naming what is
+        missing, which says more than a schema-level "required" could.
+      type: object
+      properties:
+        policyholderPartyId:
+          description: The employer or association that owns the contract. Not a life assured.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/PartyRef'
+        productVersionId: { type: string, format: uuid }
+        agentOfRecordId:
+          description: Present-but-nullable. A scheme sold direct has no broker.
+          type: [string, "null"]
+          format: uuid
+        benefitBasis:
+          description: >-
+            How each member's benefit is arrived at. One basis per scheme: flat is typical for
+            SACCO, funeral and credit-linked cover; salary multiple is the standard for formal
+            employer schemes; graded splits by staff category.
+          type: string
+          enum: [FLAT, SALARY_MULTIPLE, GRADED]
+        flatBenefitAmount: { type: [number, "null"], exclusiveMinimum: 0 }
+        salaryMultiple: { type: [number, "null"], exclusiveMinimum: 0 }
+        fclAmount:
+          description: >-
+            Free cover limit -- the benefit a member gets WITHOUT medical evidence. Omit
+            entirely for a scheme that has none, which is a real design for small flat schemes
+            and is NOT the same as a limit of zero (that would send every member to
+            underwriting). Zero is therefore rejected rather than reinterpreted.
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        grades:
+          description: Required on a GRADED scheme, rejected on any other.
+          type: array
+          items: { $ref: '#/components/schemas/GroupSchemeGrade' }
+        openingSchedule:
+          description: >-
+            At least one life. A scheme issued empty would have a sum assured of nil, which
+            policy_sum_assured_positive rejects -- a contract insuring nobody for nothing is
+            not a policy.
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/GroupMemberInput' }
+        premium: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        commencementDate:
+          description: >-
+            When the scheme's risk starts. Backdating is normal -- a schedule reaches the
+            insurer weeks after cover started -- but a future date is refused for now: the
+            stored total and the derived total would disagree until commencement.
+          type: [string, "null"]
+          format: date
+        policyTermMonths:
+          description: Null for the usual annually renewable scheme.
+          type: [integer, "null"]
+          minimum: 1
+        reasonForManualIssue: { type: [string, "null"] }
+      required: [policyholderPartyId, productVersionId, benefitBasis, currency, openingSchedule, premium]
+    GroupSchemeGrade:
+      type: object
+      properties:
+        gradeCode: { type: string, maxLength: 30 }
+        benefitAmount: { type: number, exclusiveMinimum: 0 }
+      required: [gradeCode, benefitAmount]
+    GroupMemberInput:
+      description: >-
+        gradeCode and salaryAmount are each required on exactly one benefit basis and rejected
+        on the others -- a grade on a flat scheme is a caller who believes something about the
+        contract that is not true. The condition cannot be expressed here, so the service
+        answers 409 naming the basis.
+      type: object
+      properties:
+        memberPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        gradeCode: { type: [string, "null"], maxLength: 30 }
+        salaryAmount: { type: [number, "null"], exclusiveMinimum: 0 }
+        joinedOn:
+          description: >-
+            When cover starts for this person. Omit on an opening schedule to mean the scheme's
+            commencement date. Backdating is allowed; a future date is refused.
+          type: [string, "null"]
+          format: date
+      required: [memberPartyId]
+    GroupSchemeView:
+      type: object
+      properties:
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED] }
+        commencementDate: { type: [string, "null"], format: date }
+        policyTermMonths: { type: [integer, "null"] }
+        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }
+        flatBenefitAmount: { type: [number, "null"] }
+        salaryMultiple: { type: [number, "null"] }
+        fcl:
+          description: Null for a scheme with no free cover limit. Never rendered as zero -- the two mean opposite things.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+        activeMemberCount: { type: integer }
+        totalCovered:
+          description: >-
+            What every active member is actually covered for. Derived from the schedule on
+            every read, and equal to the master policy's sum assured, which the service
+            restates inside the same transaction as any membership change.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+        membersRequiringEvidence:
+          description: >-
+            Active members over the free cover limit with underwriting still outstanding -- the
+            queue a scheme administrator works, counted here so nobody has to find them by eye
+            down a 500-row schedule.
+          type: integer
+        grades:
+          type: array
+          items: { $ref: '#/components/schemas/GroupSchemeGrade' }
+    PolicyMemberView:
+      description: >-
+        benefitAmount and coveredAmount differ whenever the free cover limit bites: a 150m
+        benefit against a 100m limit is 100m of real cover while evidence is outstanding.
+        coveredAmount is the figure a claim pays and the only one that should be quoted to a
+        member as "your cover".
+
+
+        All three money fields are null for a member whose cover has not started as at today --
+        to be rendered as "not yet in force", never as a zero, which would read as insured for
+        nothing.
+      type: object
+      properties:
+        policyMemberId: { type: string, format: uuid }
+        memberPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        gradeCode: { type: [string, "null"] }
+        joinedOn: { type: string, format: date }
+        leftOn: { type: [string, "null"], format: date }
+        status: { type: string, enum: [ACTIVE, EXITED] }
+        underwritingStatus:
+          description: >-
+            Four states, not a boolean. EVIDENCE_REQUIRED ("over the limit, underwriting
+            outstanding") and DECLINED ("over the limit, excess refused, cover stays at the
+            limit") produce the same covered amount and mean different things, and a claim
+            assessor has to be able to tell them apart.
+          type: string
+          enum: [WITHIN_FCL, EVIDENCE_REQUIRED, ACCEPTED, DECLINED]
+        underwritingCaseId: { type: [string, "null"], format: uuid }
+        salaryAmount:
+          description: The input the benefit came from. Null on any scheme that is not SALARY_MULTIPLE.
+          type: [number, "null"]
+        benefitAmount: { type: [number, "null"] }
+        coveredAmount: { type: [number, "null"] }
+        benefitEffectiveFrom:
+          description: >-
+            The date the in-force benefit row took effect, so a benefit set at inception is
+            distinguishable from one restated at renewal without opening the history.
+          type: [string, "null"]
+          format: date
+    PolicyMemberPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PolicyMemberView' }
+        page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
     CoverageStatusView:
       type: object
       properties:

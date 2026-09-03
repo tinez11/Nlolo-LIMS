@@ -141,6 +141,71 @@ public class PolicyController {
         return ResponseEntity.ok(PolicySearchResponse.from(result));
     }
 
+    // =================================================================================
+    // Group business
+    //
+    // Its own /group-schemes resource rather than a branch inside /policies. A scheme
+    // read as a policy answers "one contract, 500 lives, sum assured X" -- true, and
+    // useless to somebody administering the schedule. The master policy stays readable at
+    // GET /policies/{policyNumber} for everything a policy read is for.
+    // =================================================================================
+
+    /**
+     * Issue a scheme with its opening schedule in one call.
+     *
+     * <p>Staff only. A scheme is set up from a submitted employee schedule at a desk, and
+     * no agent- or customer-facing flow for it has been designed -- opening one now
+     * because the endpoint exists would be a guess at a screen nobody has drawn.
+     */
+    @PostMapping("/group-schemes")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<GroupSchemeResponseDto> issueGroupScheme(
+            @Valid @RequestBody IssueGroupSchemeRequestDto request, @AuthenticationPrincipal Jwt jwt) {
+        // productId comes from the version, never from the caller: a request naming both
+        // could name a version belonging to a different product, and the service would
+        // then check the category of one and issue against the other.
+        ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(request.productVersionId());
+        GroupSchemeView view = policyApi.issueGroupScheme(request.toApiRequest(snapshot.productId()), jwt.getSubject());
+        return ResponseEntity.status(HttpStatus.CREATED).body(GroupSchemeResponseDto.from(view));
+    }
+
+    @GetMapping("/group-schemes/{policyNumber}")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<GroupSchemeResponseDto> getGroupScheme(@PathVariable String policyNumber) {
+        return ResponseEntity.ok(GroupSchemeResponseDto.from(policyApi.getGroupScheme(policyNumber)));
+    }
+
+    /**
+     * One page of the member schedule.
+     *
+     * <p>The sort is fixed and TOTAL: {@code joinedOn} then the member id. A bulk schedule
+     * gives every row the same join date, and paging a query whose order has ties can show
+     * one member twice while never showing another -- on a member roll, a person who
+     * believes they are insured and is missing from the page nobody scrolled twice.
+     *
+     * @param status omit for every member including those who have left
+     */
+    @GetMapping("/group-schemes/{policyNumber}/members")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyMemberResponseDto.PageResponse> listMembers(
+            @PathVariable String policyNumber,
+            @RequestParam(required = false) MemberStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int pageSize) {
+        Page<PolicyMemberView> result = policyApi.listMembers(policyNumber, status,
+            PageRequest.of(page, Math.min(pageSize, 200),
+                Sort.by(Sort.Direction.ASC, "joinedOn").and(Sort.by(Sort.Direction.ASC, "policyMemberId"))));
+        return ResponseEntity.ok(PolicyMemberResponseDto.PageResponse.from(result));
+    }
+
+    @PostMapping("/group-schemes/{policyNumber}/members")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyMemberResponseDto> addMember(@PathVariable String policyNumber,
+            @Valid @RequestBody GroupMemberInputDto request, @AuthenticationPrincipal Jwt jwt) {
+        PolicyMemberView view = policyApi.addMember(policyNumber, request.toApiInput(), jwt.getSubject());
+        return ResponseEntity.status(HttpStatus.CREATED).body(PolicyMemberResponseDto.from(view));
+    }
+
     @PostMapping("/policies/{policyNumber}/endorsements")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PolicyResponseDto> applyEndorsement(@PathVariable String policyNumber, @Valid @RequestBody EndorsementRequestDto request,
