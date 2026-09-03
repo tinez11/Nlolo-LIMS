@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
@@ -28,6 +28,7 @@ import {
   toApiRequest,
   type SubmitAssessmentFormValues,
 } from './submitAssessmentForm';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { Panel } from '@/components/Panel';
 import { Input, Select, Textarea } from '@/components/ui/input';
 
@@ -99,8 +100,14 @@ export function UnderwritingCaseDetailPage() {
     defaultValues: blankSubmitAssessmentForm(),
   });
 
-  async function onSubmit(values: SubmitAssessmentFormValues) {
+  // Validated first, confirmed second -- see ClaimSettlementPanel.
+  const [pending, setPending] = useState<SubmitAssessmentFormValues | null>(null);
+
+  async function commitAssessment(values: SubmitAssessmentFormValues) {
     await submitAssessment(caseId, toApiRequest(values));
+    if (useUnderwritingStore.getState().submittingAssessment[caseId]?.status === 'success') {
+      setPending(null);
+    }
   }
 
   const view = detail.data;
@@ -181,7 +188,7 @@ export function UnderwritingCaseDetailPage() {
             >
               <form
                 className="space-y-4 p-4"
-                onSubmit={(e) => void handleSubmit(onSubmit)(e)}
+                onSubmit={(e) => void handleSubmit(setPending)(e)}
               >
                 <FormField label="Assessment type">
                   <Select
@@ -225,13 +232,39 @@ export function UnderwritingCaseDetailPage() {
                   </div>
                 )}
 
-                <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
-                  {submitting.status === 'loading'
-                    ? 'Submitting…'
-                    : isPostponed
-                      ? 'Submit further evidence'
-                      : 'Submit assessment'}
-                </Button>
+                {pending ? (
+                  <ConfirmAct
+                    heading={isPostponed ? 'Re-decide this case?' : 'Decide this case?'}
+                    consequence={
+                      <>
+                        Submitting a <strong>{pending.assessmentType}</strong> assessment decides
+                        the case outright. There is no separate accept, decline or rate-up step
+                        after this.
+                      </>
+                    }
+                    /*
+                      Both branches are UnderwritingApiImpl's actual behaviour:
+                      decideIfPossible runs unconditionally on every POST, and a
+                      second call against an already-decided case throws
+                      UnderwritingCaseAlreadyDecidedException -- except where the
+                      outcome was POSTPONED, which is the one status that keeps
+                      accepting evidence.
+                    */
+                    reversal={
+                      isPostponed
+                        ? 'A postponed case can be re-decided, so this can be superseded by further evidence — but each decision is published and stays on the record.'
+                        : 'The decision is final: a second assessment on a decided case is refused, and an acceptance issues a policy automatically.'
+                    }
+                    confirmLabel={isPostponed ? 'Submit and re-decide' : 'Submit and decide'}
+                    busy={submitting.status === 'loading'}
+                    onConfirm={() => void commitAssessment(pending)}
+                    onCancel={() => setPending(null)}
+                  />
+                ) : (
+                  <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
+                    {isPostponed ? 'Submit further evidence' : 'Submit assessment'}
+                  </Button>
+                )}
               </form>
             </Panel>
           ) : null}

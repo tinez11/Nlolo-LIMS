@@ -612,6 +612,56 @@ explanation. Every gate carries screen-reader text stating its outcome, because
 the marker is colour and glyph only. An empty gate set renders nothing — the
 panel appears when there is something to say, never as an empty frame.
 
+### Confirm Act (Signature)
+
+The second, deliberate click in front of an action that cannot be taken back.
+Shares the Gate Panel silhouette — a bordered 6px region, danger tint when money
+leaves or a benefit is refused, Quiet Paper otherwise — because it is the same
+idea pointed the other way: the gate says what must be true before, this says
+what becomes true after.
+
+**Inline, never a modal.** A dialog that closes on a backdrop click is the wrong
+shape for "move money", and inline keeps the values being committed on screen
+above it, so the operator re-reads the real thing rather than a summary of it.
+Nothing traps focus, so it is announced as a named `group` — calling it a dialog
+would describe an interaction the user is not in.
+
+Three lines, in order: the question, the consequence **with the real values**
+("Pay TZS 1,240,000.00 to Juma Senior"), and what happens if this is wrong. The
+third is a required prop, not an optional one — writing the confirmation forces
+someone to have answered it.
+
+**The confirming button carries the verb, never "Confirm" or "Yes", and never
+the arming button's own words.** Two identical-looking buttons a click apart is
+how the second click becomes as automatic as the first.
+
+**The consequence must be true of the backend.** This is the Gate Panel doctrine
+— *assert only what the platform can prove* — applied to outcomes. Where
+something is genuinely recoverable the copy says how, so that the warnings on the
+actions with no way back keep their meaning. A confirmation that cries wolf is
+worse than none, because it teaches the room to click through them.
+
+### Receipt
+
+What happened, left where the form was. Success ground and `-fg` ink, a check
+glyph, then label/value pairs and an optional note. Announced as a `status`, not
+an `alert`: a result is not a problem.
+
+**Persistent, not a toast.** A toast is gone in four seconds and cannot be
+re-read, copied or screenshotted for a file note. Where being wrong costs money,
+the record of what was done outlives the moment.
+
+**Only facts the server returned.** The lines come from the response the caller
+actually got; anything the client merely knows goes in the note, worded so the
+difference is visible. A receipt with no lines is the honest rendering of a `202`
+with no body, not a gap to fill with invented fields.
+
+Shown only where the screen does not otherwise reveal the outcome — a settlement,
+whose consequence is an invisible policy closure, and a payout, which answers
+`202` with nothing. Waiving, reinstating and a KYC decision each change a status
+badge already on the page, and a receipt restating it would be a second copy of
+the same fact.
+
 ### Loading, Empty and Error States
 
 One shared set, so every screen fails identically. Skeleton rows are Quiet-Paper

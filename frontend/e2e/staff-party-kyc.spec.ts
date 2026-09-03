@@ -68,6 +68,12 @@ async function rejectThenVerify(page: import('@playwright/test').Page) {
   });
   await expect(page.getByText(/Evidence uploaded:/)).toBeVisible({ timeout: 15_000 });
   await page.getByRole('button', { name: 'Reject' }).click();
+  // A KYC decision gates whether this client can hold a policy, so it takes a
+  // second click -- but it is genuinely re-decidable (Party.updateKycStatus
+  // assigns with no guard on the previous status), and the copy says so rather
+  // than claiming an irreversibility the backend does not have.
+  await expect(page.getByText(/can be changed later/)).toBeVisible();
+  await page.getByRole('button', { name: 'Reject identity' }).click();
   await expect(page.getByText('Rejected')).toBeVisible({ timeout: 15_000 });
 
   // Then verify -- a fresh upload, since the same documentRef could in
@@ -80,5 +86,6 @@ async function rejectThenVerify(page: import('@playwright/test').Page) {
   });
   await expect(page.getByText(/Evidence uploaded:/)).toBeVisible({ timeout: 15_000 });
   await page.getByRole('button', { name: 'Verify' }).click();
+  await page.getByRole('button', { name: 'Verify identity' }).click();
   await expect(page.getByText('Verified')).toBeVisible({ timeout: 15_000 });
 }

@@ -115,6 +115,12 @@ test.describe('staff claims adjudication', () => {
     await managerPage.getByLabel('Payee reference').fill('MOBILE-MONEY-E2E-1');
     await managerPage.getByRole('button', { name: 'Approve claim' }).click();
 
+    // Approving moves money AND closes the policy permanently -- Claim.reopen()'s
+    // own Javadoc records that reopening never reverses the closure -- so the
+    // confirmation says exactly that before the second, deliberate click.
+    await expect(managerPage.getByText(/policy closes permanently/)).toBeVisible();
+    await managerPage.getByRole('button', { name: 'Approve and pay' }).click();
+
     // decideSettlement's approve path publishes ClaimApproved AND ClaimSettlementRequested in
     // the same call, and the AFTER_COMMIT chain that follows is synchronous: payment submits the
     // disbursement to the mobile-money rail, the local mock rail answers ACCEPTED with a
@@ -166,6 +172,12 @@ test.describe('staff claims adjudication', () => {
     await managerPage.getByRole('button', { name: 'Reject', exact: true }).click();
     await managerPage.getByLabel('Rejection reason (optional)').fill('Insufficient evidence');
     await managerPage.getByRole('button', { name: 'Reject claim' }).click();
+
+    // Rejection IS recoverable -- a claims manager can reopen it -- and the
+    // confirmation says so rather than crying wolf. That distinction is the
+    // whole reason the approval warning above still means something.
+    await expect(managerPage.getByText(/can reopen a rejected claim/)).toBeVisible();
+    await managerPage.getByRole('button', { name: 'Record the rejection' }).click();
     await expect(managerPage.getByText('Rejected', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     // Claim.reopen() has no separation-of-duties guard at all -- the same

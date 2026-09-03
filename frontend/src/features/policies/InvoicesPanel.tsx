@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import type { InvoiceView } from '@/api/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
@@ -117,7 +118,7 @@ function InvoiceRow({ policyNumber, invoice }: { policyNumber: string; invoice: 
       {action === 'waive' && invoiceId && (
         <WaiveForm
           policyNumber={policyNumber}
-          invoiceId={invoiceId}
+          invoice={invoice}
           onDone={() => setAction(null)}
         />
       )}
@@ -134,13 +135,16 @@ function InvoiceRow({ policyNumber, invoice }: { policyNumber: string; invoice: 
 
 function WaiveForm({
   policyNumber,
-  invoiceId,
+  invoice,
   onDone,
 }: {
   policyNumber: string;
-  invoiceId: string;
+  // The whole invoice, so the confirmation can name the amount and say what
+  // waiving a PAID one would mean. An id alone cannot describe the consequence.
+  invoice: InvoiceView;
   onDone: () => void;
 }) {
+  const invoiceId = invoice.invoiceId ?? '';
   const waiveInvoice = usePolicyStore((s) => s.waiveInvoice);
   const resetWaiveInvoice = usePolicyStore((s) => s.resetWaiveInvoice);
   const waiving = usePolicyStore(selectWaivingInvoice(invoiceId));
@@ -159,13 +163,15 @@ function WaiveForm({
     defaultValues: blankWaiveInvoiceForm(),
   });
 
-  async function onSubmit(values: WaiveInvoiceFormValues) {
+  const [pending, setPending] = useState<WaiveInvoiceFormValues | null>(null);
+
+  async function commit(values: WaiveInvoiceFormValues) {
     await waiveInvoice(policyNumber, invoiceId, toWaiverApiRequest(values));
     if (usePolicyStore.getState().waivingInvoice[invoiceId]?.status === 'success') onDone();
   }
 
   return (
-    <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+    <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(setPending)(e)}>
       <FormField label="Reason" error={errors.reason?.message}>
         <Input
           inputSize="sm"
@@ -180,14 +186,47 @@ function WaiveForm({
         </p>
       )}
 
-      <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" disabled={waiving.status === 'loading'}>
-          {waiving.status === 'loading' ? 'Waiving…' : 'Waive invoice'}
-        </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
+      {pending ? (
+        <ConfirmAct
+          heading="Waive this invoice?"
+          tone="danger"
+          consequence={
+            <>
+              Write off <strong>{formatMoney(invoice.amount)}</strong> due{' '}
+              {formatDate(invoice.dueDate)}, on the grounds:{' '}
+              <strong>{pending.reason}</strong>.
+            </>
+          }
+          /*
+            Both halves are PremiumInvoice's real behaviour, not a caution:
+            waive() sets WAIVED with no status guard whatsoever -- it will
+            happily waive a PAID invoice -- and the payment path documents WAIVED
+            as terminal and never overwritten by a late payment. So this is one
+            of the few genuinely one-way doors in the console, and on an already
+            paid invoice it is also a silent contradiction of the money received.
+          */
+          reversal={
+            invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID'
+              ? `This invoice is already ${invoice.status === 'PAID' ? 'paid' : 'partly paid'}. Waiving is still permitted and cannot be undone — the payment stays recorded against an invoice that then reads as written off.`
+              : 'Waived is permanent: it cannot be un-waived, and a payment arriving later will not clear it.'
+          }
+          // Not "Waive invoice" again: the arming button already says that, and
+          // two identical buttons a click apart defeat the point of the second.
+          confirmLabel="Write off invoice"
+          busy={waiving.status === 'loading'}
+          onConfirm={() => void commit(pending)}
+          onCancel={() => setPending(null)}
+        />
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <Button type="submit" size="sm">
+            Waive invoice
+          </Button>
+          <Button type="button" size="sm" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

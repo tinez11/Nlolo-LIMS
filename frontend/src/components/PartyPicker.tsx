@@ -182,6 +182,20 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
         <Popover.Content
           align="start"
           sideOffset={4}
+          // Keeps the dropdown inside the window when the trigger sits low on a
+          // long page. Radix flips sides on its own, but that only helps if the
+          // content FITS on the flipped side; a 264px list against 200px of free
+          // space still overflows, so the list is also capped at the height
+          // Radix reports as available (below).
+          //
+          // This was tried as a fix for the intermittent e2e failure in PLAN.md
+          // §14.5 and DID NOT fix it -- kept because it is a real improvement on
+          // its own, but the flake has a different cause. The failure screenshot
+          // shows the page scrolled DOWN with this panel off the TOP of the
+          // viewport, which points at the portalled, fixed-position content
+          // chasing a trigger inside the scrolling <main>, not at overflow below
+          // the fold.
+          collisionPadding={8}
           className="z-50 w-[--radix-popover-trigger-width] rounded-md border border-border bg-surface shadow-lg"
         >
           <CommandPrimitive shouldFilter={false}>
@@ -191,7 +205,10 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
               placeholder="Type a name to search"
               className="h-9 w-full border-b border-border bg-transparent px-2.5 text-sm outline-none"
             />
-            <CommandPrimitive.List className="max-h-64 overflow-y-auto p-1">
+            {/* 16rem, or whatever Radix says is actually left on screen —
+                whichever is smaller. The var only exists because avoidCollisions
+                is on (its default). */}
+            <CommandPrimitive.List className="max-h-[min(16rem,var(--radix-popover-content-available-height))] overflow-y-auto p-1">
               {trimmed.length < MIN_QUERY_LENGTH && !isUuid && (
                 <p className="px-2.5 py-2 text-xs text-muted-foreground">Type a name to search</p>
               )}

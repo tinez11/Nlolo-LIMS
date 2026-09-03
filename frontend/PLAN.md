@@ -549,10 +549,11 @@ backend gap, not a gate to invent around.
 Carried from the critique snapshot. Items 2 and 3 are **done** (2026-09-03, see
 §14.6); the rest stands.
 
-1. **Nothing confirms, and nothing asks before the irreversible.** Zero
+1. ~~**Nothing confirms, and nothing asks before the irreversible.** Zero
    confirmation dialogs and zero success confirmations exist. Approving a payout
-   is acknowledged only by the panel vanishing. Wants a `ConfirmAct` step and a
-   persistent success block — decision, amount, timestamp, journal reference.
+   is acknowledged only by the panel vanishing.~~ **Done** — §14.7. Two of the
+   critique's own specifics were checked and not followed: KYC rejection is not
+   irreversible, and no endpoint returns a journal reference.
 2. ~~**Four AA breaches**: `--subtle-foreground` at 3.35–3.50:1 light and
    4.31–4.42:1 dark at 11px; `--input` at ~1.27:1 against `--surface`; no skip
    link (19 tab stops to the first row); no `aria-invalid`/`aria-describedby` on
@@ -634,14 +635,32 @@ also matches "Multiple of annual salary" (labels match on substring — pass
 `exact: true`), and a policy number on `/staff/policies` is a row-activation
 *button*, not a link, so `getByRole('link', {name: /^POL-/})` waits forever.
 
-**Known flake, not a regression:** `staff-beneficiaries`'s two picker tests
-failed once with the option "outside of the viewport" after ~100 retries, in a
-four-spec batch. Bisected properly rather than assumed: they pass with the
-change in place both isolated and in the same four-spec batch re-run, and the
-run that failed was the only one of three to do so. A popover-positioning race,
-pre-existing and intermittent. Worth fixing when someone touches that spec —
-scrolling the trigger into view before opening it — but it is not caused by, and
-does not block, the group-scheme work.
+**Known flake, still open, not a regression.** `staff-beneficiaries`'s picker
+tests intermittently fail with the option "outside of the viewport" after ~100
+retries. Bisected properly rather than assumed: they pass with the day's changes
+in place both isolated and in a re-run of the same batch, so nothing this session
+caused it. Observed roughly one run in four across the day, on two different
+tests in that file.
+
+**One attempted fix, which did not work, recorded so nobody repeats it.** The
+first theory was overflow below the fold, so `PartyPicker`'s popover gained
+`collisionPadding` and a list capped at
+`var(--radix-popover-content-available-height)`. It still flaked on the next
+three runs. That change is **kept** — a dropdown running past the fold is a real
+defect regardless — but its comment now says plainly that it is not the cure.
+
+**What the evidence actually points at.** Reading the failure screenshot rather
+than theorising further: the page is scrolled DOWN to the Loans panel with the
+beneficiaries form off the TOP of the viewport. So the trigger is above the fold,
+not below it, and the likely mechanism is a portalled, `position: fixed` popover
+chasing a trigger that lives inside the scrolling `<main>` — Playwright scrolls to
+bring the option into view, that scroll moves the trigger, Radix repositions, and
+the two chase each other until the timeout. cmdk's own `scrollIntoView` on the
+auto-selected first item is a plausible trigger for the first scroll.
+
+If so the fix is structural — render the content un-portalled so it scrolls with
+its container, or pin the scroll before opening — not another positioning prop.
+Worth an hour when someone next has cause to be in that component.
 
 ### 14.6 The design system became components, and the AA breaches went with it
 
@@ -724,3 +743,60 @@ wrapping `<label>` to an explicit `htmlFor` silently un-named `DatePicker` and
 And `role="alert"` on the error changed its role away from `paragraph`, which one
 spec asserted on. §14.5 already records the same shape breaking 11 of 24 spec
 files with every unit test green; this is the third time.
+
+### 14.7 Confirmations and receipts, written from the backend rather than the brief
+
+Done 2026-09-03, clearing item 1 of §14.4. Two components, six surfaces, and two
+places where the critique's own prescription was checked and found wrong.
+
+**`ConfirmAct`** — inline, not a modal. A dialog you dismiss by clicking the
+backdrop is the wrong shape for "move money", and inline keeps the values being
+committed on screen above it. Validation runs **first**: `handleSubmit` parks the
+validated values and the confirmation describes them, because confirming an
+amount and then being told it was malformed is how a confirmation becomes a
+formality to click past.
+
+**`Receipt`** — persistent where the form was, because a toast cannot be re-read
+or screenshotted for a file note.
+
+**Every consequence line is a fact checked in the Java**, applying the §14.3 gate
+doctrine — *assert only what the platform can prove* — to outcomes:
+
+| Surface | What it says, and where that came from |
+| --- | --- |
+| Approve settlement | Money moves **and the policy closes permanently**. `PaymentEventListener` closes the policy on settlement and `Policy` has no transition out of MATURED/SURRENDERED — `Claim.reopen()`'s own Javadoc records the asymmetry. Nothing on that screen would otherwise reveal it. |
+| Reject claim | Says it **can** be reopened, because `reopen()` accepts REJECTED. |
+| Request payout | Names amount and payee; a failed payout cannot be retried from that form, because `payment` dedupes on the Idempotency-Key and drops a resubmission carrying the old one. |
+| Submit assessment | It *is* the decision — `decideIfPossible` runs on every POST — and a second one 409s, **except** on POSTPONED, which the copy distinguishes. |
+| Waive invoice | `waive()` has no status guard at all and WAIVED is never overwritten by a later payment. On an already-paid invoice the copy says exactly that. |
+| Reinstate policy | LAPSED → REINSTATED and never written back to ACTIVE; undoing it means lapsing again, as a separate event. |
+
+**Two departures from the critique, both deliberate.**
+
+It listed **KYC rejection among the irreversible six. It is not** —
+`Party.updateKycStatus` assigns with no guard on the previous status, so a
+rejected identity can be verified later. It still gets a confirmation, because it
+gates whether someone can hold a policy, but the copy says it is re-decidable.
+Dressing it as permanent would be the expensive kind of wrong: a warning that
+cries wolf teaches the room to click through *all* of them, including the ones
+that mean it.
+
+It also asked the receipt to carry a **journal reference. No endpoint returns
+one**, and `POST .../payout` answers 202 with no body at all. Printing the
+client's own idempotency key in a slot labelled "reference" would look exactly
+like a server-issued receipt number and be nothing of the kind — the same defect
+as a stat card with no data behind it. So the payout receipt carries the period
+and amount off the statement already loaded, and says plainly that the money is
+requested rather than paid.
+
+**Receipts only where the screen does not otherwise say.** Settlement (invisible
+policy closure) and payout (202, no body) get one. Waive, reinstate and KYC each
+flip a status badge already on the page; a receipt restating it would be a second
+copy of the same fact, and §14.5 records what duplicated page text does to this
+suite.
+
+**Verified:** typecheck, lint, 675 unit tests (13 new, covering that the
+confirming button never carries a generic assent and that the receipt announces
+as `status` rather than `alert`), and the full e2e suite. Five spec files gained
+the second click — which is the suite proving the guard is really there, since
+every one of them failed to reach its action without it.

@@ -52,6 +52,7 @@ test.describe('staff underwriting', () => {
     await page.getByLabel('Findings').fill('E2E test assessment, standard risk');
     await page.getByLabel('Risk score (optional)').fill('10');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
+    await page.getByRole('button', { name: 'Submit and decide' }).click();
 
     await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
     // The assessment form is gone -- there is no way to submit a second one
@@ -112,10 +113,12 @@ test.describe('staff underwriting', () => {
 
     await page.getByLabel('Findings').fill('Tab A decides first');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
+    await page.getByRole('button', { name: 'Submit and decide' }).click();
     await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
 
     await page2.getByLabel('Findings').fill('Tab B arrives too late');
     await page2.getByRole('button', { name: 'Submit assessment' }).click();
+    await page2.getByRole('button', { name: 'Submit and decide' }).click();
     await expect(page2.getByRole('alert')).toBeVisible({ timeout: 15_000 });
 
     // `submittingAssessment` is keyed by case id and outlives this form's own
@@ -138,6 +141,7 @@ test.describe('staff underwriting', () => {
     // >= 90 is SimpleRulesEngine's POSTPONE threshold.
     await page.getByLabel('Risk score (optional)').fill('95');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
+    await page.getByRole('button', { name: 'Submit and decide' }).click();
 
     await expect(page.getByText('Postponed', { exact: true })).toBeVisible({ timeout: 15_000 });
     // The form survives, and says what it is now for.
@@ -154,6 +158,7 @@ test.describe('staff underwriting', () => {
     await page.getByLabel('Findings').fill('Specialist report clear');
     await page.getByLabel('Risk score (optional)').fill('10');
     await page.getByRole('button', { name: 'Submit further evidence' }).click();
+    await page.getByRole('button', { name: 'Submit and re-decide' }).click();
 
     // Resolved for real -- and the engine weighed the LATEST assessment per type, not the
     // worst one ever recorded, or the 95 above would postpone it forever.

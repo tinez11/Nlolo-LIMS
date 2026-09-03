@@ -26,6 +26,7 @@ import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
 import {
@@ -457,6 +458,9 @@ function ReinstateAction({ policyNumber }: { policyNumber: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [policyNumber]);
 
+  // No form here, so the arming click is the button itself.
+  const [armed, setArmed] = useState(false);
+
   return (
     <div className="space-y-2 px-4 pb-4">
       {reinstating.status === 'error' && reinstating.error && (
@@ -464,10 +468,37 @@ function ReinstateAction({ policyNumber }: { policyNumber: string }) {
           {reinstating.error.detail ?? reinstating.error.title}
         </p>
       )}
-      <Button size="sm" disabled={reinstating.status === 'loading'} onClick={() => void reinstatePolicy(policyNumber)}>
-        <RotateCcw />
-        {reinstating.status === 'loading' ? 'Reinstating…' : 'Reinstate'}
-      </Button>
+      {armed ? (
+        <ConfirmAct
+          heading="Reinstate this policy?"
+          consequence={
+            <>
+              Puts <strong>{policyNumber}</strong> back in force and restarts billing on it.
+            </>
+          }
+          /*
+            Policy.reinstate() moves LAPSED -> REINSTATED, and there is no
+            transition back: a reinstated policy stays labelled REINSTATED for
+            audit and actuarial purposes rather than being written back to
+            ACTIVE. Undoing it means lapsing the policy again, which is a
+            different event with its own record -- said plainly, because
+            "reinstate" sounds like an undo and is not one.
+          */
+          reversal="A reinstated policy keeps that label permanently — it is never written back to ACTIVE. Undoing this means lapsing the policy again, as a separate event."
+          confirmLabel="Reinstate policy"
+          busy={reinstating.status === 'loading'}
+          onConfirm={() => {
+            void reinstatePolicy(policyNumber);
+            setArmed(false);
+          }}
+          onCancel={() => setArmed(false)}
+        />
+      ) : (
+        <Button size="sm" onClick={() => setArmed(true)}>
+          <RotateCcw />
+          Reinstate
+        </Button>
+      )}
     </div>
   );
 }

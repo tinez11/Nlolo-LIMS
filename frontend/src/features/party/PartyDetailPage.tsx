@@ -1,8 +1,9 @@
 import { ArrowLeft, Check, FileCheck, X } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -669,9 +670,16 @@ function KycPanel({
 
   const documentRef = uploading.status === 'success' ? uploading.data?.documentRef : undefined;
 
+  // Which decision is awaiting its second click. There is no form here, so the
+  // first click arms rather than submits.
+  const [pending, setPending] = useState<KycStatus | null>(null);
+
   async function decide(status: KycStatus) {
     if (!documentRef) return;
     await submitKyc(partyId, status, documentRef);
+    if (usePartyStore.getState().submittingKyc[partyId]?.status === 'success') {
+      setPending(null);
+    }
   }
 
   return (
@@ -707,26 +715,60 @@ function KycPanel({
           <p className="text-[11px] text-muted-foreground">
             Evidence uploaded: <span className="font-mono">{documentRef}</span>
           </p>
-          <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={deciding.status === 'loading' || currentStatus === 'VERIFIED'}
-              onClick={() => void decide('VERIFIED')}
-            >
-              <Check />
-              Verify
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={deciding.status === 'loading' || currentStatus === 'REJECTED'}
-              onClick={() => void decide('REJECTED')}
-            >
-              <X />
-              Reject
-            </Button>
-          </div>
+          {pending ? (
+            <ConfirmAct
+              heading={pending === 'VERIFIED' ? 'Verify this identity?' : 'Reject this identity?'}
+              tone={pending === 'VERIFIED' ? 'primary' : 'danger'}
+              consequence={
+                pending === 'VERIFIED' ? (
+                  <>
+                    Mark this client KYC-verified against the evidence{' '}
+                    <span className="font-mono">{documentRef}</span>. They become eligible to
+                    hold a policy.
+                  </>
+                ) : (
+                  <>
+                    Refuse this client&rsquo;s identity evidence. They cannot be taken on as a
+                    policyholder while their KYC reads rejected.
+                  </>
+                )
+              }
+              /*
+                Deliberately NOT phrased as irreversible, because it is not:
+                Party.updateKycStatus assigns the new status with no guard on the
+                old one, so a rejected identity can be verified later and the
+                reverse. The critique listed this among the irreversible six; it
+                was checked rather than taken, and a confirmation that overstates
+                is how every confirmation on the screen stops being read.
+              */
+              reversal="A KYC decision can be changed later by re-deciding against fresh evidence — but it is recorded, and it gates whether this client can hold a policy in the meantime."
+              confirmLabel={pending === 'VERIFIED' ? 'Verify identity' : 'Reject identity'}
+              busy={deciding.status === 'loading'}
+              onConfirm={() => void decide(pending)}
+              onCancel={() => setPending(null)}
+            />
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={currentStatus === 'VERIFIED'}
+                onClick={() => setPending('VERIFIED')}
+              >
+                <Check />
+                Verify
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={currentStatus === 'REJECTED'}
+                onClick={() => setPending('REJECTED')}
+              >
+                <X />
+                Reject
+              </Button>
+            </div>
+          )}
           {deciding.status === 'error' && deciding.error && (
             <p role="alert" className="text-[11px] text-status-danger-fg">
               {deciding.error.detail ?? deciding.error.title}

@@ -48,6 +48,14 @@ test.describe('staff billing', () => {
     await page.getByLabel('Reason').fill('E2E goodwill waiver, hardship case');
     await page.getByRole('button', { name: 'Waive invoice' }).click();
 
+    // Waiving is one of the platform's genuinely one-way doors -- PremiumInvoice
+    // marks WAIVED with no status guard and never overwrites it, even for a
+    // payment arriving later -- so it now takes a second, deliberate click. The
+    // confirming button deliberately does NOT repeat "Waive invoice": two
+    // identical buttons a click apart would make the second one reflex.
+    await expect(page.getByText(/cannot be un-waived/)).toBeVisible();
+    await page.getByRole('button', { name: 'Write off invoice' }).click();
+
     await expect(page.getByText('Waived').first()).toBeVisible({ timeout: 15_000 });
   });
 
@@ -65,7 +73,11 @@ test.describe('staff billing', () => {
     await page.getByLabel('Reason').fill('too short');
     await page.getByRole('button', { name: 'Waive invoice' }).click();
 
+    // Validation runs BEFORE the confirmation, deliberately: confirming an
+    // action and then being told the form was invalid would teach people to
+    // click through the confirmation without reading it.
     await expect(page.getByText('Must be at least 10 characters')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Write off invoice' })).toHaveCount(0);
     expect(requestFired).toBe(false);
   });
 

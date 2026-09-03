@@ -232,6 +232,11 @@ test.describe('staff distribution', () => {
     // fabricated rejection.
     await financePage.getByPlaceholder('Payee mobile-money reference').first().fill('255700000000');
     await financePage.getByRole('button', { name: 'Request payout' }).first().click();
+
+    // Money leaving now takes a second, deliberate click, and the confirmation
+    // names the amount and payee rather than saying "are you sure".
+    await expect(financePage.getByText(/cannot be recalled/)).toBeVisible();
+    await financePage.getByRole('button', { name: 'Pay out' }).first().click();
     await expect(financePage.getByRole('alert')).toBeVisible({ timeout: 15_000 });
 
     await financeContext.close();
