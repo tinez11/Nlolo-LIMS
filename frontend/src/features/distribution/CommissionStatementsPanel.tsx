@@ -19,6 +19,7 @@ import {
   toApiRequest,
   type RequestPayoutFormValues,
 } from './requestPayoutForm';
+import { Input } from '@/components/ui/input';
 
 /**
  * `GET /agents/{agentId}/commission-statements` -- a bare array, no pager,
@@ -50,8 +51,8 @@ export function CommissionStatementsPanel({ agentId, canManage }: { agentId: str
     <div className="p-4">
       <label className="mb-3 block w-32">
         <span className="mb-1 block text-xs font-medium text-muted-foreground">Period (optional)</span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="YYYY-MM"
           value={period}
           onChange={(e) => setPeriod(e.target.value)}
@@ -171,8 +172,8 @@ function PayoutForm({ agentId, statementId }: { agentId: string; statementId: st
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
       <div className="flex-1">
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="Payee mobile-money reference"
           {...register('payeeRef')}
         />

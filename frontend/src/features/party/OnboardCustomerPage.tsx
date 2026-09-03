@@ -25,6 +25,7 @@ import {
   toApiRequest as toIndividualApiRequest,
   type RegisterIndividualFormValues,
 } from './registerIndividualForm';
+import { Input, Select } from '@/components/ui/input';
 
 type CustomerType = 'INDIVIDUAL' | 'CORPORATE';
 
@@ -113,8 +114,7 @@ function RegisterIndividualForm() {
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       <FormField label="Full name" error={errors.fullName?.message}>
-        <input
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+        <Input
           placeholder="Amina Hassan"
           {...register('fullName')}
         />
@@ -135,16 +135,14 @@ function RegisterIndividualForm() {
       </FormField>
 
       <FormField label="Phone number (optional)" error={errors.phoneNumber?.message}>
-        <input
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+        <Input
           placeholder="+255712345678"
           {...register('phoneNumber')}
         />
       </FormField>
 
       <FormField label="Email (optional)" error={errors.email?.message}>
-        <input
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+        <Input
           placeholder="amina@example.tz"
           {...register('email')}
         />
@@ -159,8 +157,7 @@ function RegisterIndividualForm() {
       >
         <div className="grid grid-cols-2 gap-3">
           <FormField label="ID type" error={errors.idType?.message}>
-            <select
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Select
               {...register('idType')}
             >
               <option value="">Not recorded</option>
@@ -168,19 +165,18 @@ function RegisterIndividualForm() {
               <option value="PASSPORT">Passport</option>
               <option value="DRIVING_LICENCE">Driving licence</option>
               <option value="VOTER_ID">Voter ID</option>
-            </select>
+            </Select>
           </FormField>
 
           <FormField label="ID number" error={errors.idNumber?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               {...register('idNumber')}
             />
           </FormField>
 
           <FormField label="Nationality" error={errors.nationality?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+            <Input
+              className="uppercase"
               placeholder="TZ"
               {...register('nationality')}
             />
@@ -197,19 +193,17 @@ function RegisterIndividualForm() {
       >
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Sex" error={errors.sex?.message}>
-            <select
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Select
               {...register('sex')}
             >
               <option value="">Not recorded</option>
               <option value="FEMALE">Female</option>
               <option value="MALE">Male</option>
-            </select>
+            </Select>
           </FormField>
 
           <FormField label="Smoker status" error={errors.smokerStatus?.message}>
-            <select
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Select
               {...register('smokerStatus')}
             >
               {/* "Not recorded" and "Asked, declined to say" are genuinely
@@ -218,20 +212,18 @@ function RegisterIndividualForm() {
               <option value="NON_SMOKER">Non-smoker</option>
               <option value="SMOKER">Smoker</option>
               <option value="UNKNOWN">Asked, declined to say</option>
-            </select>
+            </Select>
           </FormField>
 
           <FormField label="Occupation" error={errors.occupation?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               placeholder="As the applicant describes it"
               {...register('occupation')}
             />
           </FormField>
 
           <FormField label="Occupation class" error={errors.occupationClass?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               placeholder="Rating band"
               {...register('occupationClass')}
             />
@@ -239,8 +231,7 @@ function RegisterIndividualForm() {
 
           <div className="col-span-2">
             <FormField label="Employer" error={errors.employerName?.message}>
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Input
                 {...register('employerName')}
               />
             </FormField>
@@ -252,37 +243,32 @@ function RegisterIndividualForm() {
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <FormField label="Street or plot" error={errors.addressLine?.message}>
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Input
                 {...register('addressLine')}
               />
             </FormField>
           </div>
 
           <FormField label="Ward" error={errors.ward?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               {...register('ward')}
             />
           </FormField>
 
           <FormField label="District" error={errors.district?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               {...register('district')}
             />
           </FormField>
 
           <FormField label="Region" error={errors.region?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               {...register('region')}
             />
           </FormField>
 
           <FormField label="Postal code" error={errors.postalCode?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               {...register('postalCode')}
             />
           </FormField>
@@ -373,32 +359,28 @@ function RegisterCorporateForm() {
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       <FormField label="Registered name" error={errors.registeredName?.message}>
-        <input
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+        <Input
           placeholder="Kilimanjaro SACCO"
           {...register('registeredName')}
         />
       </FormField>
 
       <FormField label="Registration number" error={errors.registrationNumber?.message}>
-        <input
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+        <Input
           placeholder="REG-0001"
           {...register('registrationNumber')}
         />
       </FormField>
 
       <FormField label="Phone number (optional)" error={errors.phoneNumber?.message}>
-        <input
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+        <Input
           placeholder="+255712345678"
           {...register('phoneNumber')}
         />
       </FormField>
 
       <FormField label="Email (optional)" error={errors.email?.message}>
-        <input
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+        <Input
           placeholder="finance@kilimanjaro-sacco.tz"
           {...register('email')}
         />

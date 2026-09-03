@@ -16,6 +16,7 @@ import {
   toRecordDisclosuresRequest,
   type AnswerDraft,
 } from './disclosureForm';
+import { Input } from '@/components/ui/input';
 
 /**
  * What an applicant declared on the proposal form, and the form for recording it.
@@ -108,8 +109,8 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
           <div key={index} className="space-y-2 rounded-md border border-border p-3">
             <div className="flex items-start gap-2">
               <FormField label="Question code">
-                <input
-                  className="h-8 w-28 rounded-md border border-input bg-surface px-2 font-mono text-xs"
+                <Input
+                  inputSize="sm" className="w-28 font-mono"
                   placeholder="Q1"
                   value={draft.questionCode}
                   onChange={(e) =>
@@ -121,8 +122,8 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
               </FormField>
               <div className="flex-1">
                 <FormField label="Question as asked">
-                  <input
-                    className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+                  <Input
+                    inputSize="sm"
                     placeholder="Have you ever been treated for heart disease?"
                     value={draft.question}
                     onChange={(e) =>
@@ -144,8 +145,8 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
               </Button>
             </div>
             <FormField label="Answer">
-              <input
-                className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              <Input
+                inputSize="sm"
                 placeholder="No — or the answer in the applicant's own terms"
                 value={draft.answer}
                 onChange={(e) =>
@@ -154,8 +155,8 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
               />
             </FormField>
             <FormField label="Notes (optional)">
-              <input
-                className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              <Input
+                inputSize="sm"
                 value={draft.notes}
                 onChange={(e) =>
                   setDrafts((rows) => rows.map((r, i) => (i === index ? { ...r, notes: e.target.value } : r)))

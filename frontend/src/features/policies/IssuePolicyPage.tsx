@@ -27,6 +27,7 @@ import {
   type PolicyIssueFormInput,
   type PolicyIssueFormValues,
 } from './policyIssueForm';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * `POST /policies/manual-issue` -- the staff exception path. Unlike every other
@@ -212,8 +213,7 @@ export function IssuePolicyPage() {
           ) : products.status === 'error' ? (
             <p className="text-xs text-status-danger-fg">Could not load products.</p>
           ) : (
-            <select
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Select
               {...register('productId')}
             >
               <option value="">Select a product</option>
@@ -222,7 +222,7 @@ export function IssuePolicyPage() {
                   {p.productName} ({p.productCode})
                 </option>
               ))}
-            </select>
+            </Select>
           )}
           {productId && isInitialLoad(snapshot) && (
             <p className="mt-1 text-[11px] text-muted-foreground">Resolving product version…</p>
@@ -231,15 +231,14 @@ export function IssuePolicyPage() {
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField label="Sum assured" error={errors.sumAssuredAmount?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               placeholder="2000000.00"
               {...register('sumAssuredAmount')}
             />
           </FormField>
           <FormField label="Currency" error={errors.sumAssuredCurrency?.message}>
-            <input
-              className="h-9 w-20 rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+            <Input
+              className="w-20 uppercase"
               {...register('sumAssuredCurrency')}
             />
           </FormField>
@@ -247,23 +246,21 @@ export function IssuePolicyPage() {
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField label="Premium" error={errors.premiumAmount?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               placeholder="800.00"
               {...register('premiumAmount')}
             />
           </FormField>
           <FormField label="Currency" error={errors.premiumCurrency?.message}>
-            <input
-              className="h-9 w-20 rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+            <Input
+              className="w-20 uppercase"
               {...register('premiumCurrency')}
             />
           </FormField>
         </div>
 
         <FormField label="Premium frequency">
-          <select
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+          <Select
             {...register('premiumFrequency')}
           >
             {PREMIUM_FREQUENCIES.map((f) => (
@@ -271,7 +268,7 @@ export function IssuePolicyPage() {
                 {f}
               </option>
             ))}
-          </select>
+          </Select>
         </FormField>
 
         {/* The policy term. Optional as a group: whole life, an annuity and an
@@ -301,9 +298,9 @@ export function IssuePolicyPage() {
             </FormField>
 
             <FormField label="Policy term (months)" error={errors.policyTermMonths?.message}>
-              <input
+              <Input
                 inputMode="numeric"
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                
                 placeholder="240"
                 {...register('policyTermMonths')}
               />
@@ -313,9 +310,9 @@ export function IssuePolicyPage() {
               label="Premium-paying term (months)"
               error={errors.premiumPayingTermMonths?.message}
             >
-              <input
+              <Input
                 inputMode="numeric"
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                
                 placeholder="Same as the policy term"
                 {...register('premiumPayingTermMonths')}
               />
@@ -337,8 +334,8 @@ export function IssuePolicyPage() {
         </fieldset>
 
         <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm"
+          <Input
+            className="font-mono"
             placeholder="uuid, or leave blank for a direct/online policy"
             {...register('agentOfRecordId')}
           />
@@ -347,8 +344,7 @@ export function IssuePolicyPage() {
         <GatePanel gates={gates} title="Before issuing" />
 
         <FormField label="Reason for manual issue" error={errors.reasonForManualIssue?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+          <Input
             placeholder={
               breaches.length > 0
                 ? 'Say why the flagged check above is acceptable'
@@ -376,13 +372,13 @@ export function IssuePolicyPage() {
               return (
                 <div key={field.id} className="rounded-md border border-border p-2.5">
                   <div className="flex items-center gap-2">
-                    <select
-                      className="h-8 rounded-md border border-input bg-surface px-2 text-xs"
+                    <Select
+                      inputSize="sm"
                       {...register(`beneficiaries.${index}.type`)}
                     >
                       <option value="PARTY">Party</option>
                       <option value="FREEFORM">Freeform</option>
-                    </select>
+                    </Select>
                     {type === 'PARTY' ? (
                       <Controller
                         control={control}
@@ -398,19 +394,19 @@ export function IssuePolicyPage() {
                         )}
                       />
                     ) : (
-                      <input
-                        className="h-8 flex-1 rounded-md border border-input bg-surface px-2 text-xs"
+                      <Input
+                        inputSize="sm" className="flex-1"
                         placeholder={'Designee, e.g. "My Estate"'}
                         {...register(`beneficiaries.${index}.freeformDesignee`)}
                       />
                     )}
                     <div className="flex items-center gap-1">
-                      <input
+                      <Input
                         type="number"
                         min={0}
                         max={100}
                         step="0.01"
-                        className="h-8 w-20 rounded-md border border-input bg-surface px-2 text-right text-xs"
+                        inputSize="sm" className="w-20 text-right"
                         {...register(`beneficiaries.${index}.sharePercent`)}
                       />
                       <span className="text-xs text-muted-foreground">%</span>

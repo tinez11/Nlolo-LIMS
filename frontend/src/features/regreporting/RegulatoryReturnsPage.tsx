@@ -18,6 +18,7 @@ import {
   type GenerateReturnFormValues,
 } from './generateReturnForm';
 import { RegulatoryReturnDrawer } from './RegulatoryReturnDrawer';
+import { Input } from '@/components/ui/input';
 
 /**
  * `POST /regulatory-returns` + `GET` -- fully built and staff-reachable
@@ -150,16 +151,16 @@ function GenerateReturnForm({ onDone }: { onDone: (returnId?: string) => void })
           <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
             Return type
           </span>
-          <input
-            className="h-8 w-52 rounded-md border border-input bg-surface px-2 text-xs"
+          <Input
+            inputSize="sm" className="w-52"
             placeholder="QUARTERLY_PRUDENTIAL"
             {...register('returnType')}
           />
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Period</span>
-          <input
-            className="h-8 w-32 rounded-md border border-input bg-surface px-2 text-xs"
+          <Input
+            inputSize="sm" className="w-32"
             placeholder="2026-Q1"
             {...register('period')}
           />

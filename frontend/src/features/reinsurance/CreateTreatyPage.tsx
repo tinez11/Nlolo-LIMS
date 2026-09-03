@@ -17,6 +17,7 @@ import {
   toApiRequest,
   type CreateTreatyFormValues,
 } from './createTreatyForm';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * `POST /treaties` -- staff FINANCE_OFFICER/ADMIN only. `treatyType` switches
@@ -77,16 +78,14 @@ export function CreateTreatyPage() {
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <FormField label="Reinsurer name" error={errors.reinsurerName?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+          <Input
             placeholder="Africa Re"
             {...register('reinsurerName')}
           />
         </FormField>
 
         <FormField label="Treaty type">
-          <select
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+          <Select
             value={treatyType}
             onChange={(e) => {
               const next = e.target.value as CreateTreatyFormValues['treatyType'];
@@ -98,20 +97,19 @@ export function CreateTreatyPage() {
                 {type.replace(/_/g, ' ')}
               </option>
             ))}
-          </select>
+          </Select>
         </FormField>
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField label="Retention limit" error={errors.retentionLimitAmount?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               placeholder="5000000.00"
               {...register('retentionLimitAmount')}
             />
           </FormField>
           <FormField label="Currency" error={errors.retentionLimitCurrency?.message}>
-            <input
-              className="h-9 w-20 rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+            <Input
+              className="w-20 uppercase"
               {...register('retentionLimitCurrency')}
             />
           </FormField>
@@ -120,8 +118,7 @@ export function CreateTreatyPage() {
         {treatyType === 'QUOTA_SHARE' && (
           <FormField label="Cession percent" error={fieldError(errors, 'cessionPercent')}>
             <div className="flex items-center gap-1">
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Input
                 placeholder="25.00"
                 {...register('cessionPercent')}
               />

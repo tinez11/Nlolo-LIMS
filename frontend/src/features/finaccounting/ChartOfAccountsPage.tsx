@@ -23,6 +23,7 @@ import {
   toApiRequest as toRenameApiRequest,
   type RenameAccountFormValues,
 } from './renameAccountForm';
+import { Input } from '@/components/ui/input';
 
 /**
  * `GET /chart-of-accounts` -- a bare array, no pager. Rows are either
@@ -155,16 +156,16 @@ function CreateAccountForm({ onDone }: { onDone: () => void }) {
           <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
             Account code
           </span>
-          <input
-            className="h-8 w-24 rounded-md border border-input bg-surface px-2 font-mono text-xs"
+          <Input
+            inputSize="sm" className="w-24 font-mono"
             placeholder="1900"
             {...register('accountCode')}
           />
         </label>
         <label className="block flex-1">
           <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
-          <input
-            className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+          <Input
+            inputSize="sm"
             placeholder="Petty cash"
             {...register('name')}
           />
@@ -236,8 +237,8 @@ function RenameAccountForm({
     >
       <label className="block">
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           {...register('name')}
         />
         {errors.name?.message && (

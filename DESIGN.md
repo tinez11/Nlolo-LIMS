@@ -243,12 +243,20 @@ the only colour permitted anywhere in the system.
   fill. The one place a tonal shift, rather than a rule, marks a region.
 - **Muted Ink** (`oklch(0.52 0 0)`): labels, table headers, descriptions,
   inactive nav items. The workhorse secondary — roughly 70% of all text on screen.
-- **Subtle Ink** (`oklch(0.63 0 0)`): the quietest legible tier — the em dash that
-  stands for an absent value, nav group captions, field notes, trace IDs.
+- **Subtle Ink** (`oklch(0.55 0 0)`): the quietest legible tier — the em dash that
+  stands for an absent value, nav group captions, field notes, trace IDs. 4.85:1
+  on Paper. It was `0.63` and therefore 3.50:1, which is a fail at the 11px this
+  tier is always rendered at: there is no large-text exemption to appeal to, and
+  a trace ID nobody can read is a support call nobody can close.
 - **Rule** (`oklch(0.918 0 0)`): the hairline. Applied globally to `*` as the
   default border colour, so any element that grows a border grows the right one.
 - **Rule Strong** (`oklch(0.85 0 0)`): a rule that is doing more work — a selected
   stat card, a hovered interactive card, the ring around an unrecognised status.
+- **Input Rule** (`oklch(0.66 0 0)` light / `oklch(1 0 0 / 38%)` dark): the edge of
+  a control, and **deliberately darker than Rule**. The two were the same value,
+  which read as tidy and was wrong: a panel edge is decoration, while the edge of
+  a field is the only thing saying *you can type here*, and WCAG 1.4.11 asks 3:1
+  of it. At `0.918` it was 1.27:1. This is 3.11:1.
 - **Hover** (`oklch(0.968 0 0)`) and **Selected** (`oklch(0.955 0 0)`): the two
   interaction grounds. Selected is deliberately one step deeper than hover so a
   hovered row and a selected row are never confusable.
@@ -491,19 +499,34 @@ component is a mistake, not a texture.
 
 ### Inputs / Fields
 
-- **Style:** Paper ground, 1px Input-token border, 6px radius, 36px tall (32px in
-  compact contexts), 10px horizontal padding. Textareas use the same treatment
-  with a `min-height` and 8px vertical padding.
-- **Label:** `FormField` wraps the control in a `<label>` so association is
-  implicit and no `htmlFor`/`id` pair can drift. Caption is Label type in Muted
-  Ink, 4px above the control.
-- **Error:** Micro type in the danger `-fg` hue, 4px below the control. Server
-  field errors from a `400` bind onto the same slot.
-- **Focus:** the global ring; no border colour change, no glow.
+`components/ui/input` — `Input`, `Select`, `Textarea`.
 
-*Known drift:* this treatment is copy-pasted as a literal class string in **over
-70 places** and exists as no shared component. It is a system rule in practice
-and an accident waiting to happen in fact.
+- **Style:** Paper ground, 1px Input Rule border, 6px radius. Two sizes, matching
+  the button scale so a field and the button beside it agree: `md` is 36px with
+  10px padding, `sm` is 32px with 8px. Textarea is the same treatment with the
+  caller's `min-height` and 8px vertical padding.
+- **Label:** `FormField` renders a real `<label htmlFor>` and hands the control
+  its `id` through context, so no call site owns the pairing and none can drift.
+  Caption is Label type in Muted Ink, 4px above the control.
+- **Error:** Micro type in the danger `-fg` hue, 4px below the control and
+  **outside the label**. It carries `role="alert"` and its own id, which the
+  control names in `aria-describedby`; the control also takes `aria-invalid`, and
+  the red border keys off that same attribute rather than a separate class — so
+  what a field looks like and what it announces cannot disagree. Server field
+  errors from a `400` bind onto the same slot.
+- **Focus:** `focus-visible` only, so a mouse click does not draw the keyboard
+  ring. The ring shifts to the danger hue on an invalid field.
+
+The error used to live *inside* the label. That folds it into the control's
+accessible name, so a rejected field announced "Sum assured Must be at least
+0.01" as its **name** — and kept announcing it after the user fixed the problem,
+because a name is not a thing that changes. An error is a description.
+
+*Resolved drift:* this treatment was a literal class string in **136 places across
+24 variants**, with two of those variants quietly acting as a size scale. That is
+why the ARIA wiring above lives in the component: as 136 hand-written attributes
+it would never have been finished, and the parts that were would have drifted the
+first time somebody copied a neighbouring field.
 
 ### Status Badge
 

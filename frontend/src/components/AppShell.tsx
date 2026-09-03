@@ -27,6 +27,23 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
 
   return (
     <div className="flex h-full">
+      {/*
+        Skip link. Measured at 19 tab stops from page load to the first table
+        row, on every single navigation, because the whole sidebar sits ahead of
+        the content in the tab order. WCAG 2.4.1 is Level A.
+
+        Visually hidden until focused rather than always on screen: `sr-only`
+        alone would make it unreachable for a sighted keyboard user, who needs to
+        SEE where the first Tab went. It is the first focusable thing in the DOM,
+        which is the only position that helps.
+      */}
+      <a
+        href="#main"
+        className="sr-only rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-foreground focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50"
+      >
+        Skip to content
+      </a>
+
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface-muted">
         <div className="px-4 py-4">
           <p className="text-sm font-semibold tracking-tight">Life Platform</p>
@@ -78,7 +95,12 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         <UserBlock identity={identity} />
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+      {/* tabIndex={-1} so the skip link's target can actually take focus --
+          without it the browser scrolls but leaves focus behind in the sidebar,
+          and the next Tab carries on through the nav as if nothing happened. */}
+      <main id="main" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto focus:outline-none">
+        {children}
+      </main>
     </div>
   );
 }

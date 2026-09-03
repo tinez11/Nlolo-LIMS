@@ -34,6 +34,7 @@ import {
   type SuspendPolicyFormValues,
 } from './suspendPolicyForm';
 import { Panel } from '@/components/Panel';
+import { Input } from '@/components/ui/input';
 
 /**
  * The "acts" half of drawer-previews-page-acts: the full record, and where any
@@ -396,8 +397,8 @@ function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: (
     >
       <label className="block">
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Reason</span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="Employer group scheme in arrears"
           {...register('reason')}
         />

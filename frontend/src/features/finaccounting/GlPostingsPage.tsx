@@ -10,6 +10,7 @@ import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useFinaccountingStore } from '@/store/finaccountingStore';
 import { GlPostingDrawer } from './GlPostingDrawer';
+import { Input } from '@/components/ui/input';
 
 /**
  * `GET /gl-postings` is one of only four paged endpoints on the platform
@@ -186,8 +187,8 @@ export function GlPostingsPage() {
           >
             <label className="block">
               <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Period</span>
-              <input
-                className="h-8 w-28 rounded-md border border-input bg-surface px-2 text-xs"
+              <Input
+                inputSize="sm" className="w-28"
                 placeholder="YYYY-MM"
                 value={periodInput}
                 onChange={(e) => setPeriodInput(e.target.value)}
@@ -195,8 +196,8 @@ export function GlPostingsPage() {
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Policy number</span>
-              <input
-                className="h-8 w-40 rounded-md border border-input bg-surface px-2 font-mono text-xs"
+              <Input
+                inputSize="sm" className="w-40 font-mono"
                 placeholder="POL-XXXXXXXX"
                 value={policyNumberInput}
                 onChange={(e) => setPolicyNumberInput(e.target.value)}

@@ -22,6 +22,7 @@ import {
   type ClaimDetailsFormValues,
   type RegisterClaimFormValues,
 } from './claimRegisterForm';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * `POST /claims` is one of only six endpoints on the platform that HARD-REQUIRES
@@ -134,8 +135,8 @@ export function RegisterClaimPage() {
         onSubmit={(e) => void handleSubmit(onSubmit)(e)}
       >
         <FormField label="Policy number" error={errors.policyNumber?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm"
+          <Input
+            className="font-mono"
             placeholder="POL-XXXXXXXX"
             {...register('policyNumber')}
           />
@@ -185,8 +186,7 @@ export function RegisterClaimPage() {
         />
 
         <FormField label="Claim type">
-          <select
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+          <Select
             value={claimType}
             onChange={(e) =>
               setValue('details', blankDetailsFor(e.target.value as ClaimDetailsFormValues['claimType']))
@@ -197,17 +197,17 @@ export function RegisterClaimPage() {
                 {type}
               </option>
             ))}
-          </select>
+          </Select>
         </FormField>
 
         <div className="rounded-md border border-border p-3">
           {claimType === 'DEATH' && (
             <div className="space-y-3">
               <FormField label="Cause of death" error={detailError('causeOfDeath')}>
-                <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.causeOfDeath')} />
+                <Input  {...register('details.causeOfDeath')} />
               </FormField>
               <FormField label="Place of death" error={detailError('placeOfDeath')}>
-                <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.placeOfDeath')} />
+                <Input  {...register('details.placeOfDeath')} />
               </FormField>
               <FormField label="Date of death" error={detailError('dateOfDeath')}>
                 <Controller
@@ -223,7 +223,7 @@ export function RegisterClaimPage() {
                 />
               </FormField>
               <FormField label="Attending physician" error={detailError('attendingPhysician')}>
-                <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.attendingPhysician')} />
+                <Input  {...register('details.attendingPhysician')} />
               </FormField>
             </div>
           )}
@@ -231,7 +231,7 @@ export function RegisterClaimPage() {
           {claimType === 'DISABILITY' && (
             <div className="space-y-3">
               <FormField label="Disability type" error={detailError('disabilityType')}>
-                <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.disabilityType')} />
+                <Input  {...register('details.disabilityType')} />
               </FormField>
               <FormField label="Onset date" error={detailError('onsetDate')}>
                 <Controller
@@ -252,8 +252,7 @@ export function RegisterClaimPage() {
               </label>
               <FormField label="Impairment percent" error={detailError('impairmentPercent')}>
                 <div className="flex items-center gap-1">
-                  <input
-                    className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                  <Input
                     placeholder="62.50"
                     {...register('details.impairmentPercent')}
                   />
@@ -266,7 +265,7 @@ export function RegisterClaimPage() {
           {claimType === 'CRITICAL_ILLNESS' && (
             <div className="space-y-3">
               <FormField label="Diagnosis" error={detailError('diagnosis')}>
-                <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm" {...register('details.diagnosis')} />
+                <Input  {...register('details.diagnosis')} />
               </FormField>
               <FormField label="Diagnosis date" error={detailError('diagnosisDate')}>
                 <Controller
@@ -282,7 +281,7 @@ export function RegisterClaimPage() {
                 />
               </FormField>
               <FormField label="ICD code" error={detailError('icdCode')}>
-                <input className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm" {...register('details.icdCode')} />
+                <Input className="font-mono" {...register('details.icdCode')} />
               </FormField>
             </div>
           )}

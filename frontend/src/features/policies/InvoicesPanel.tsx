@@ -27,6 +27,7 @@ import {
   waiveInvoiceFormSchema,
   type WaiveInvoiceFormValues,
 } from './waiveInvoiceForm';
+import { Input } from '@/components/ui/input';
 
 /**
  * `POST /invoices/{invoiceId}/waiver` (staff only) and `.../payment-request`
@@ -166,8 +167,8 @@ function WaiveForm({
     <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       <label className="block">
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Reason</span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="Goodwill gesture, customer hardship"
           {...register('reason')}
         />
@@ -235,8 +236,8 @@ function PaymentRequestForm({
     <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       <label className="block">
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Payer reference</span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="Mobile-money source"
           {...register('payerRef')}
         />

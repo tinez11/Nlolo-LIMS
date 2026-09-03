@@ -29,6 +29,7 @@ import {
   type SubmitAssessmentFormValues,
 } from './submitAssessmentForm';
 import { Panel } from '@/components/Panel';
+import { Input, Select, Textarea } from '@/components/ui/input';
 
 /**
  * Reached from `OpenUnderwritingCasePage`'s own redirect, a direct visit to a
@@ -183,8 +184,7 @@ export function UnderwritingCaseDetailPage() {
                 onSubmit={(e) => void handleSubmit(onSubmit)(e)}
               >
                 <FormField label="Assessment type">
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                  <Select
                     {...register('assessmentType')}
                   >
                     {ASSESSMENT_TYPES.map((t) => (
@@ -192,20 +192,20 @@ export function UnderwritingCaseDetailPage() {
                         {t}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </FormField>
 
                 <FormField label="Findings" error={errors.findings?.message}>
-                  <textarea
-                    className="min-h-20 w-full rounded-md border border-input bg-surface px-2.5 py-2 text-sm"
+                  <Textarea
+                    className="min-h-20"
                     placeholder="Standard risk, no adverse findings"
                     {...register('findings')}
                   />
                 </FormField>
 
                 <FormField label="Risk score (optional)" error={errors.riskScore?.message}>
-                  <input
-                    className="h-9 w-32 rounded-md border border-input bg-surface px-2.5 text-sm"
+                  <Input
+                    className="w-32"
                     placeholder="10"
                     {...register('riskScore')}
                   />

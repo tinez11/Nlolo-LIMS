@@ -22,6 +22,7 @@ import {
   toApiRequest,
   type GroupSchemeIssueFormValues,
 } from './groupSchemeIssueForm';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * `POST /group-schemes` — the master policy, the scheme and its opening schedule
@@ -185,8 +186,7 @@ export function IssueGroupSchemePage() {
               before setting up a scheme.
             </p>
           ) : (
-            <select
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Select
               {...register('productId')}
             >
               <option value="">Select a group product</option>
@@ -195,7 +195,7 @@ export function IssueGroupSchemePage() {
                   {p.productName} ({p.productCode})
                 </option>
               ))}
-            </select>
+            </Select>
           )}
         </FormField>
 
@@ -211,28 +211,27 @@ export function IssueGroupSchemePage() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField label="Basis">
-              <select
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Select
                 {...register('benefitBasis')}
               >
                 <option value="FLAT">Flat — the same benefit for everyone</option>
                 <option value="SALARY_MULTIPLE">Salary multiple</option>
                 <option value="GRADED">Graded by staff category</option>
-              </select>
+              </Select>
             </FormField>
 
             <FormField label="Currency" error={errors.currency?.message}>
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+              <Input
+                className="uppercase"
                 {...register('currency')}
               />
             </FormField>
 
             {benefitBasis === 'FLAT' && (
               <FormField label="Benefit per member" error={errors.flatBenefitAmount?.message}>
-                <input
+                <Input
                   inputMode="decimal"
-                  className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                  
                   placeholder="5000000.00"
                   {...register('flatBenefitAmount')}
                 />
@@ -241,9 +240,9 @@ export function IssueGroupSchemePage() {
 
             {benefitBasis === 'SALARY_MULTIPLE' && (
               <FormField label="Multiple of annual salary" error={errors.salaryMultiple?.message}>
-                <input
+                <Input
                   inputMode="decimal"
-                  className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                  
                   placeholder="3"
                   {...register('salaryMultiple')}
                 />
@@ -251,9 +250,9 @@ export function IssueGroupSchemePage() {
             )}
 
             <FormField label="Free cover limit (optional)" error={errors.fclAmount?.message}>
-              <input
+              <Input
                 inputMode="decimal"
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                
                 placeholder="100000000.00"
                 {...register('fclAmount')}
               />
@@ -282,16 +281,15 @@ export function IssueGroupSchemePage() {
                 {grades.fields.map((field, index) => (
                   <div key={field.id} className="grid grid-cols-[1fr_1fr_auto] items-start gap-2">
                     <FormField label="Grade" error={errors.grades?.[index]?.gradeCode?.message}>
-                      <input
-                        className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                      <Input
                         placeholder="MANAGEMENT"
                         {...register(`grades.${index}.gradeCode`)}
                       />
                     </FormField>
                     <FormField label="Benefit" error={errors.grades?.[index]?.benefitAmount?.message}>
-                      <input
+                      <Input
                         inputMode="decimal"
-                        className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                        
                         placeholder="50000000.00"
                         {...register(`grades.${index}.benefitAmount`)}
                       />
@@ -365,9 +363,9 @@ export function IssueGroupSchemePage() {
                     label="Annual salary"
                     error={errors.openingSchedule?.[index]?.salaryAmount?.message}
                   >
-                    <input
+                    <Input
                       inputMode="decimal"
-                      className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                      
                       placeholder="4000000.00"
                       {...register(`openingSchedule.${index}.salaryAmount`)}
                     />
@@ -376,8 +374,7 @@ export function IssueGroupSchemePage() {
 
                 {benefitBasis === 'GRADED' && (
                   <FormField label="Grade" error={errors.openingSchedule?.[index]?.gradeCode?.message}>
-                    <select
-                      className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                    <Select
                       {...register(`openingSchedule.${index}.gradeCode`)}
                     >
                       <option value="">Choose a grade…</option>
@@ -389,7 +386,7 @@ export function IssueGroupSchemePage() {
                             {code}
                           </option>
                         ))}
-                    </select>
+                    </Select>
                   </FormField>
                 )}
 
@@ -445,22 +442,21 @@ export function IssueGroupSchemePage() {
 
           <div className="grid gap-3 sm:grid-cols-2">
             <FormField label="Premium" error={errors.premiumAmount?.message}>
-              <input
+              <Input
                 inputMode="decimal"
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                
                 placeholder="1200000.00"
                 {...register('premiumAmount')}
               />
             </FormField>
             <FormField label="Premium currency" error={errors.premiumCurrency?.message}>
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+              <Input
+                className="uppercase"
                 {...register('premiumCurrency')}
               />
             </FormField>
             <FormField label="Frequency">
-              <select
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Select
                 {...register('premiumFrequency')}
               >
                 {PREMIUM_FREQUENCIES.map((f) => (
@@ -468,7 +464,7 @@ export function IssueGroupSchemePage() {
                     {f}
                   </option>
                 ))}
-              </select>
+              </Select>
             </FormField>
             <FormField label="Risk commences" error={errors.commencementDate?.message}>
               <Controller
@@ -483,16 +479,15 @@ export function IssueGroupSchemePage() {
               </p>
             </FormField>
             <FormField label="Term in months (optional)" error={errors.policyTermMonths?.message}>
-              <input
+              <Input
                 inputMode="numeric"
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                
                 placeholder="Leave blank — most schemes renew annually"
                 {...register('policyTermMonths')}
               />
             </FormField>
             <FormField label="Note for the record (optional)" error={errors.reasonForManualIssue?.message}>
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Input
                 placeholder="Signed schedule received 1 September"
                 {...register('reasonForManualIssue')}
               />

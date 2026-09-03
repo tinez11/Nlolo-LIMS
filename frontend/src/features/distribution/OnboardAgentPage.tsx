@@ -16,6 +16,7 @@ import {
   toApiRequest,
   type OnboardAgentFormValues,
 } from './onboardAgentForm';
+import { Input } from '@/components/ui/input';
 
 /**
  * `POST /agents` -- the only entry point onto this domain that exists
@@ -90,8 +91,7 @@ export function OnboardAgentPage() {
         </FormField>
 
         <FormField label="License number" error={errors.licenseNumber?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+          <Input
             placeholder="LIC-0001"
             {...register('licenseNumber')}
           />
@@ -112,8 +112,8 @@ export function OnboardAgentPage() {
         </FormField>
 
         <FormField label="Hierarchy parent id (optional)" error={errors.hierarchyParentId?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm"
+          <Input
+            className="font-mono"
             placeholder="uuid, or leave blank for the top of the hierarchy"
             {...register('hierarchyParentId')}
           />

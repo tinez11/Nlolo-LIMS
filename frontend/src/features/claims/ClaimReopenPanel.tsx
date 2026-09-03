@@ -10,6 +10,7 @@ import {
   toApiRequest,
   type ReopenClaimFormValues,
 } from './reopenClaimForm';
+import { Textarea } from '@/components/ui/input';
 
 /**
  * `POST /claims/{claimId}/reopen` -- `CLAIMS_MANAGER` role only, rendered by
@@ -53,8 +54,8 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
       )}
 
       <FormField label="Reason" error={errors.reason?.message}>
-        <textarea
-          className="min-h-16 w-full rounded-md border border-input bg-surface px-2.5 py-2 text-sm"
+        <Textarea
+          className="min-h-16"
           placeholder="New evidence submitted"
           {...register('reason')}
         />

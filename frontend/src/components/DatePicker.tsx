@@ -5,6 +5,7 @@ import { DayPicker, dateMatchModifiers, type Matcher } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import { cn } from '@/lib/cn';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
+import { useFieldControl } from './fieldControl';
 
 /**
  * A date field in the shape of MUI X's DatePicker -- a three-section typed field
@@ -151,6 +152,21 @@ export function DatePicker({ value, onChange, disabled }: DatePickerProps) {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const errorId = useId();
+  /**
+   * The id `FormField`'s `<label htmlFor>` points at, when this sits inside one.
+   *
+   * Load-bearing, and easy to lose: FormField used to WRAP its child in the
+   * label, so this input was named implicitly and needed nothing. Now the label
+   * is explicit, so a control that ignores the context has a label pointing at
+   * an element that does not exist -- and the field goes from correctly named to
+   * anonymous. Caught by the e2e suite (`getByLabel('Date of event')` timing out
+   * across eight specs), which is exactly the kind of thing unit tests do not see.
+   *
+   * Only the id is taken. This component does its own `aria-invalid` for a
+   * malformed or out-of-range date, which is a different failure from the
+   * schema-level one FormField knows about.
+   */
+  const { id: fieldId } = useFieldControl();
 
   const thisYear = new Date().getFullYear();
   const minYear = disabled?.before ? disabled.before.getFullYear() : thisYear - YEARS_BACK;
@@ -421,6 +437,7 @@ export function DatePicker({ value, onChange, disabled }: DatePickerProps) {
       >
         <input
           ref={inputRef}
+          {...(fieldId ? { id: fieldId } : {})}
           value={display}
           // Keystrokes are handled in onKeyDown and prevented, so this only ever
           // fires for a write that bypassed the keyboard -- see `adopt`.

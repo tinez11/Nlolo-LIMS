@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectPartyList, usePartyStore } from '@/store/partyStore';
 import { FilterChip } from '@/components/FilterChip';
+import { Input } from '@/components/ui/input';
 
 /**
  * The client register. Everyone this tenant has registered, and the way into one
@@ -254,12 +255,12 @@ export function ClientsPage({
                 update({ q: typeof value === 'string' ? value.trim() : '' });
               }}
             >
-              <input
+              <Input
                 name="q"
                 defaultValue={q}
                 placeholder="Search by name"
                 aria-label="Search by name"
-                className="h-8 w-56 rounded-md border border-input bg-surface px-2.5 text-sm"
+                inputSize="sm" className="w-56 px-2.5 text-sm"
               />
             </form>
           </div>

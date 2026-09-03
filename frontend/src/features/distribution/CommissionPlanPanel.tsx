@@ -20,6 +20,7 @@ import {
   type CreateCommissionPlanFormValues,
   type RuleRowFormValues,
 } from './createCommissionPlanForm';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * `GET /agents/{agentId}/commission-plan?productId=...` -- resolves the
@@ -54,8 +55,7 @@ export function CommissionPlanPanel({
     <div className="p-4">
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-muted-foreground">Product</span>
-        <select
-          className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+        <Select
           value={productId}
           onChange={(e) => setProductId(e.target.value)}
         >
@@ -65,7 +65,7 @@ export function CommissionPlanPanel({
               {p.productName} ({p.productCode})
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       {productId && isInitialLoad(plan) && <LoadingBlock label="Resolving plan" />}
@@ -158,8 +158,8 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
           return (
             <div key={field.id} className="rounded-md border border-border p-2.5">
               <div className="flex items-center gap-2">
-                <select
-                  className="h-8 rounded-md border border-input bg-surface px-2 text-xs"
+                <Select
+                  inputSize="sm"
                   {...register(`rules.${index}.tierType`)}
                 >
                   {PLANNABLE_TIER_TYPES.map((t) => (
@@ -167,15 +167,15 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
                       {t.replace(/_/g, ' ')}
                     </option>
                   ))}
-                </select>
-                <select
-                  className="h-8 rounded-md border border-input bg-surface px-2 text-xs"
+                </Select>
+                <Select
+                  inputSize="sm"
                   value={mode}
                   onChange={(e) => setMode(index, e.target.value as RuleRowFormValues['mode'])}
                 >
                   <option value="rate">Rate</option>
                   <option value="flat">Flat amount</option>
-                </select>
+                </Select>
                 <Button
                   type="button"
                   size="icon"
@@ -188,20 +188,20 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
               </div>
 
               {mode === 'rate' ? (
-                <input
-                  className="mt-2 h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+                <Input
+                  inputSize="sm" className="mt-2"
                   placeholder="0.1000 (10%)"
                   {...register(`rules.${index}.rate`)}
                 />
               ) : (
                 <div className="mt-2 flex gap-2">
-                  <input
-                    className="h-8 flex-1 rounded-md border border-input bg-surface px-2 text-xs"
+                  <Input
+                    inputSize="sm" className="flex-1"
                     placeholder="5000.00"
                     {...register(`rules.${index}.flatAmount`)}
                   />
-                  <input
-                    className="h-8 w-20 rounded-md border border-input bg-surface px-2 text-xs uppercase"
+                  <Input
+                    inputSize="sm" className="w-20 uppercase"
                     {...register(`rules.${index}.flatCurrency`)}
                   />
                 </div>

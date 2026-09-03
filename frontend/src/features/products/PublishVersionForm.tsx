@@ -16,6 +16,7 @@ import {
   type PublishVersionFormInput,
   type PublishVersionFormValues,
 } from './publishVersionSchema';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * Publishing a version is the ONLY way a product ever becomes visible through
@@ -92,8 +93,7 @@ export function PublishVersionForm({
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="IFRS measurement model">
-          <select
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+          <Select
             {...register('ifrsMeasurementModel')}
           >
             {IFRS_MEASUREMENT_MODELS.map((m) => (
@@ -101,7 +101,7 @@ export function PublishVersionForm({
                 {m}
               </option>
             ))}
-          </select>
+          </Select>
         </FormField>
         <FormField label="Effective date" error={errors.effectiveDate?.message}>
           <Controller
@@ -144,49 +144,49 @@ export function PublishVersionForm({
 
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Minimum entry age" error={errors.minEntryAge?.message}>
-            <input
+            <Input
               inputMode="numeric"
-              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              inputSize="sm"
               placeholder="18"
               {...register('minEntryAge')}
             />
           </FormField>
           <FormField label="Maximum entry age" error={errors.maxEntryAge?.message}>
-            <input
+            <Input
               inputMode="numeric"
-              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              inputSize="sm"
               placeholder="65"
               {...register('maxEntryAge')}
             />
           </FormField>
 
           <FormField label="Minimum term (months)" error={errors.minTermMonths?.message}>
-            <input
+            <Input
               inputMode="numeric"
-              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              inputSize="sm"
               placeholder="60"
               {...register('minTermMonths')}
             />
           </FormField>
           <FormField label="Maximum term (months)" error={errors.maxTermMonths?.message}>
-            <input
+            <Input
               inputMode="numeric"
-              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              inputSize="sm"
               placeholder="360"
               {...register('maxTermMonths')}
             />
           </FormField>
 
           <FormField label="Minimum sum assured" error={errors.minSumAssured?.message}>
-            <input
-              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+            <Input
+              inputSize="sm"
               placeholder="500000.00"
               {...register('minSumAssured')}
             />
           </FormField>
           <FormField label="Maximum sum assured" error={errors.maxSumAssured?.message}>
-            <input
-              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+            <Input
+              inputSize="sm"
               placeholder="300000000.00"
               {...register('maxSumAssured')}
             />
@@ -201,8 +201,8 @@ export function PublishVersionForm({
         <div className="space-y-2">
           {ratingTable.fields.map((field, index) => (
             <div key={field.id} className="flex items-center gap-2">
-              <select
-                className="h-8 rounded-md border border-input bg-surface px-2 text-xs"
+              <Select
+                inputSize="sm"
                 {...register(`ratingTable.${index}.factorType`)}
               >
                 {RATING_FACTOR_TYPES.map((t) => (
@@ -210,9 +210,9 @@ export function PublishVersionForm({
                     {t}
                   </option>
                 ))}
-              </select>
-              <input
-                className="h-8 flex-1 rounded-md border border-input bg-surface px-2 text-xs"
+              </Select>
+              <Input
+                inputSize="sm" className="flex-1"
                 placeholder="Band, e.g. 18-30"
                 {...register(`ratingTable.${index}.band`)}
               />
@@ -222,28 +222,28 @@ export function PublishVersionForm({
                   something and the backend refuses them anywhere else. */}
               {ratingRows?.[index]?.factorType === 'AGE' && (
                 <>
-                  <input
+                  <Input
                     type="number"
                     min={0}
-                    className="h-8 w-16 rounded-md border border-input bg-surface px-2 text-right text-xs"
+                    inputSize="sm" className="w-16 text-right"
                     placeholder="from"
                     aria-label={`Rating factor ${index + 1} from age`}
                     {...register(`ratingTable.${index}.ageFrom`)}
                   />
-                  <input
+                  <Input
                     type="number"
                     min={0}
-                    className="h-8 w-16 rounded-md border border-input bg-surface px-2 text-right text-xs"
+                    inputSize="sm" className="w-16 text-right"
                     placeholder="to"
                     aria-label={`Rating factor ${index + 1} to age`}
                     {...register(`ratingTable.${index}.ageTo`)}
                   />
                 </>
               )}
-              <input
+              <Input
                 type="number"
                 step="0.01"
-                className="h-8 w-24 rounded-md border border-input bg-surface px-2 text-right text-xs"
+                inputSize="sm" className="w-24 text-right"
                 placeholder="1.0"
                 {...register(`ratingTable.${index}.multiplier`)}
               />
@@ -279,8 +279,8 @@ export function PublishVersionForm({
         <div className="space-y-2">
           {benefitSchedule.fields.map((field, index) => (
             <div key={field.id} className="flex items-center gap-2">
-              <select
-                className="h-8 rounded-md border border-input bg-surface px-2 text-xs"
+              <Select
+                inputSize="sm"
                 {...register(`benefitSchedule.${index}.benefitType`)}
               >
                 {BENEFIT_TYPES.map((t) => (
@@ -288,9 +288,9 @@ export function PublishVersionForm({
                     {t}
                   </option>
                 ))}
-              </select>
-              <input
-                className="h-8 flex-1 rounded-md border border-input bg-surface px-2 text-xs"
+              </Select>
+              <Input
+                inputSize="sm" className="flex-1"
                 placeholder="Calculation method"
                 {...register(`benefitSchedule.${index}.calculationMethod`)}
               />
@@ -326,15 +326,15 @@ export function PublishVersionForm({
           <div className="space-y-2">
             {fundDefinitions.fields.map((field, index) => (
               <div key={field.id} className="flex items-center gap-2">
-                <input
-                  className="h-8 flex-1 rounded-md border border-input bg-surface px-2 text-xs"
+                <Input
+                  inputSize="sm" className="flex-1"
                   placeholder="Fund code"
                   {...register(`fundDefinitions.${index}.fundCode`)}
                 />
-                <input
+                <Input
                   type="number"
                   step="0.01"
-                  className="h-8 w-28 rounded-md border border-input bg-surface px-2 text-right text-xs"
+                  inputSize="sm" className="w-28 text-right"
                   placeholder="Current NAV"
                   {...register(`fundDefinitions.${index}.currentNav`)}
                 />

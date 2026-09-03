@@ -12,6 +12,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import { useUnderwritingStore } from '@/store/underwritingStore';
 import { blankOpenCaseForm, openCaseFormSchema, toApiRequest, type OpenCaseFormValues } from './openCaseForm';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
@@ -140,8 +141,7 @@ export function OpenUnderwritingCasePage() {
           ) : products.status === 'error' ? (
             <p className="text-xs text-status-danger-fg">Could not load products.</p>
           ) : (
-            <select
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Select
               {...register('productId')}
             >
               <option value="">Select a product</option>
@@ -150,7 +150,7 @@ export function OpenUnderwritingCasePage() {
                   {p.productName} ({p.productCode})
                 </option>
               ))}
-            </select>
+            </Select>
           )}
           {productId && isInitialLoad(snapshot) && (
             <p className="mt-1 text-[11px] text-muted-foreground">Resolving product version…</p>
@@ -159,15 +159,14 @@ export function OpenUnderwritingCasePage() {
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField label="Sum assured" error={errors.sumAssuredAmount?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               placeholder="1500000.00"
               {...register('sumAssuredAmount')}
             />
           </FormField>
           <FormField label="Currency" error={errors.sumAssuredCurrency?.message}>
-            <input
-              className="h-9 w-20 rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+            <Input
+              className="w-20 uppercase"
               {...register('sumAssuredCurrency')}
             />
           </FormField>
@@ -178,8 +177,8 @@ export function OpenUnderwritingCasePage() {
             agent of record. Leaving it blank records a direct sale, which is a real thing
             and not a default to fall into by accident. */}
         <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
-          <input
-            className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-xs"
+          <Input
+            className="font-mono text-xs"
             placeholder="00000000-0000-0000-0000-000000000000"
             {...register('agentOfRecordId')}
           />
@@ -198,15 +197,13 @@ export function OpenUnderwritingCasePage() {
 
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Branch" error={errors.branch?.message}>
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Input
                 {...register('branch')}
               />
             </FormField>
 
             <FormField label="Source of business" error={errors.sourceOfBusiness?.message}>
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Input
                 placeholder="e.g. Bancassurance"
                 {...register('sourceOfBusiness')}
               />

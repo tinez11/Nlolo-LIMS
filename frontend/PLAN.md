@@ -546,22 +546,24 @@ backend gap, not a gate to invent around.
 
 ### 14.4 Still open, in priority order
 
-Carried from the critique snapshot, none of it done:
+Carried from the critique snapshot. Items 2 and 3 are **done** (2026-09-03, see
+§14.6); the rest stands.
 
 1. **Nothing confirms, and nothing asks before the irreversible.** Zero
    confirmation dialogs and zero success confirmations exist. Approving a payout
    is acknowledged only by the panel vanishing. Wants a `ConfirmAct` step and a
    persistent success block — decision, amount, timestamp, journal reference.
-2. **Four AA breaches**, measured by two independent engines: `--subtle-foreground`
-   at 3.35–3.50:1 light and 4.31–4.42:1 dark, rendered at 11px; `--input` at
-   ~1.27:1 against `--surface`, so every field boundary fails 1.4.11; no skip
-   link (19 tab stops to the first row, Level A); no `aria-invalid` /
-   `aria-describedby` on ~98 inputs, with `FormField` nesting the error inside
-   the `<label>` so it folds into the accessible name.
-3. **The design system is a copy-paste convention.** §13 C3 fixed this once for
-   `FormField`. It has recurred: 7 byte-identical `Panel` components, 8
-   `FilterChip`s, 98 input class strings in 24 variants. The accessibility fix
-   above is blocked on this — otherwise it is 98 edits.
+2. ~~**Four AA breaches**: `--subtle-foreground` at 3.35–3.50:1 light and
+   4.31–4.42:1 dark at 11px; `--input` at ~1.27:1 against `--surface`; no skip
+   link (19 tab stops to the first row); no `aria-invalid`/`aria-describedby` on
+   ~98 inputs, with `FormField` nesting the error inside the `<label>`.~~ **All
+   four fixed** — §14.6.
+3. ~~**The design system is a copy-paste convention.** 7 byte-identical `Panel`
+   components, 8 `FilterChip`s, 98 input class strings in 24 variants.~~
+   **Extracted** — §14.6. What remains of this item is the smaller half: 17
+   hand-rolled 11px labels still bypass `FormField`, and there is no lint rule
+   banning `border-input` outside `components/ui/`, so nothing yet stops the
+   habit recurring a fifth time.
 4. **No tabs anywhere**, though §6 and `PRODUCT.md` both promise tabbed detail
    pages and `@radix-ui/react-tabs` is installed and imported nowhere. Detail
    pages are 8 co-equal panels with every heading at body size.
@@ -641,3 +643,64 @@ run that failed was the only one of three to do so. A popover-positioning race,
 pre-existing and intermittent. Worth fixing when someone touches that spec —
 scrolling the trigger into view before opening it — but it is not caused by, and
 does not block, the group-scheme work.
+
+### 14.6 The design system became components, and the AA breaches went with it
+
+Done 2026-09-03, clearing items 2 and 3 of §14.4. The two halves were one job:
+the accessibility fix could not be made 98 times, so it had to be made once, in
+a component that did not exist yet.
+
+**Extracted.** `Panel` (8 copies, hashed first — all 8 byte-identical),
+`FilterChip` (9 copies, 3 variants), and `components/ui/input` exporting `Input`,
+`Select` and `Textarea` over **136 controls in 24 class-string variants**. Two of
+those variants were a size scale nobody had named: `h-9`/`text-sm` and
+`h-8`/`text-xs` are now `md` and `sm`, matching `Button` so a field and the
+button beside it agree. Per-field one-offs — `w-20`, `uppercase`, `font-mono`,
+`text-right`, `pl-7` — stay as classes, because they are one-offs and not
+variants.
+
+Only one difference across all of it turned out to be real: `AuditLogPage`
+renders event types, which are code, so `font-mono` survives as a `mono` prop
+rather than being flattened.
+
+**All four AA breaches, with the numbers worked rather than copied.**
+
+| | was | now |
+|---|---|---|
+| `--subtle-foreground` light | 3.50:1 | **4.85:1** (`0.63` → `0.55`) |
+| `--subtle-foreground` dark | 4.18:1 on surface | **5.76:1** (`0.57` → `0.65`) |
+| `--input` light | 1.27:1 | **3.11:1** (`0.918` → `0.66`) |
+| `--input` dark | 1.36:1 | **3.04:1** (14% → 38% white) |
+
+The critique proposed `--input: 0.80`. Checked instead of taken: for a neutral
+grey, relative luminance is approximately L³, a model that reproduces the
+critique's own measured 1.27:1 at L=0.918 exactly — and at L=0.80 gives 1.87:1,
+still failing. 3:1 needs L ≤ 0.67.
+
+`--input` is now **deliberately darker than `--border`**, which does not move.
+They were equal only because nobody had separated the two ideas: a panel edge is
+decoration and 1.4.11 does not reach it, while the edge of a field is the only
+thing saying *you can type here*.
+
+**Skip link** in `AppShell`, `sr-only` until focused, with `tabIndex={-1}` on
+`<main id="main">` so focus actually lands there — without it the browser scrolls
+and leaves focus in the sidebar, and the next Tab carries on through the nav as
+if nothing happened.
+
+**`FormField` no longer wraps everything in a `<label>`.** It renders a real
+`<label htmlFor>`, puts the error outside as a sibling with its own id and
+`role="alert"`, and hands the control its `id`, `aria-invalid` and
+`aria-describedby` through context (`components/fieldControl.ts` — its own module,
+because a file exporting both a component and a hook breaks Fast Refresh). The
+red border keys off `aria-invalid` rather than a separate class, so what a field
+looks like and what it announces cannot drift apart.
+
+The old shape was a real defect, not just untidy: everything inside a `<label>`
+folds into the control's accessible name, so a rejected field announced "Sum
+assured Must be at least 0.01" as its **name** — and kept announcing it after the
+user fixed the problem, because a name is not a thing that changes.
+
+**Verified:** typecheck, lint, 662 unit tests, and the full e2e suite. Running
+e2e was not optional here — this touched every form on the platform, and §14.5
+records a component rewrite breaking 11 of 24 spec files with every unit test
+green.

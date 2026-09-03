@@ -11,6 +11,7 @@ import {
   toApiRequest,
   type SubmitClaimAssessmentFormValues,
 } from './submitClaimAssessmentForm';
+import { Input, Textarea } from '@/components/ui/input';
 
 /**
  * `POST /claims/{claimId}/assessments` -- `CLAIMS_ASSESSOR` role only, rendered
@@ -61,8 +62,8 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
     <>
       <form className="space-y-3 p-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <FormField label="Findings" error={errors.findings?.message}>
-          <textarea
-            className="min-h-20 w-full rounded-md border border-input bg-surface px-2.5 py-2 text-sm"
+          <Textarea
+            className="min-h-20"
             placeholder="Standard risk, no adverse findings"
             {...register('findings')}
           />
@@ -70,15 +71,14 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <FormField label="Recommended amount" error={errors.recommendedAmount?.message}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               placeholder="1500000.00"
               {...register('recommendedAmount')}
             />
           </FormField>
           <FormField label="Currency" error={errors.recommendedCurrency?.message}>
-            <input
-              className="h-9 w-20 rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+            <Input
+              className="w-20 uppercase"
               {...register('recommendedCurrency')}
             />
           </FormField>

@@ -12,6 +12,7 @@ import {
   toApiRequest,
   type SettlementDecisionFormValues,
 } from './settlementDecisionForm';
+import { Input, Textarea } from '@/components/ui/input';
 
 /**
  * `POST /claims/{claimId}/settlement-decision` -- `CLAIMS_MANAGER` role only,
@@ -84,22 +85,20 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
         <>
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <FormField label="Approved amount" error={fieldError(errors, 'approvedAmount')}>
-              <input
-                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+              <Input
                 placeholder="1500000.00"
                 {...register('approvedAmount')}
               />
             </FormField>
             <FormField label="Currency" error={fieldError(errors, 'approvedCurrency')}>
-              <input
-                className="h-9 w-20 rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+              <Input
+                className="w-20 uppercase"
                 {...register('approvedCurrency')}
               />
             </FormField>
           </div>
           <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
-            <input
-              className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+            <Input
               placeholder="Mobile-money destination"
               {...register('payeeRef')}
             />
@@ -107,8 +106,8 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
         </>
       ) : (
         <FormField label="Rejection reason (optional)">
-          <textarea
-            className="min-h-16 w-full rounded-md border border-input bg-surface px-2.5 py-2 text-sm"
+          <Textarea
+            className="min-h-16"
             placeholder="Insufficient evidence"
             {...register('rejectionReason')}
           />

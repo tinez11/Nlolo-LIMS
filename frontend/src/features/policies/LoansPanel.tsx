@@ -25,6 +25,7 @@ import {
   toApiRequest as toOriginateApiRequest,
   type OriginateLoanFormValues,
 } from './originateLoanForm';
+import { Input } from '@/components/ui/input';
 
 /** Only these two statuses accept a repayment -- `PolicyLoanApiImpl.recordRepayment`
  *  throws `LoanNotEligibleException` (409) for every other one, and the same pair is
@@ -226,8 +227,8 @@ function OriginateLoanForm({
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
           Loan amount (TZS)
         </span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="500000"
           inputMode="decimal"
           {...register('amount')}
@@ -241,8 +242,8 @@ function OriginateLoanForm({
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
           Payee reference
         </span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="Mobile-money destination"
           {...register('payeeRef')}
         />
@@ -319,8 +320,8 @@ function RepaymentForm({
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
           Repayment amount (TZS)
         </span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="200000"
           inputMode="decimal"
           {...register('amount')}
@@ -334,8 +335,8 @@ function RepaymentForm({
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
           Payment reference
         </span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="Receipt or transaction id"
           {...register('paymentReference')}
         />

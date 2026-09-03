@@ -16,6 +16,7 @@ import {
   type BeneficiaryFormValues,
 } from './beneficiaryForm';
 import { Field } from '@/components/Field';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * The one mutating form in this slice, deliberately placed on the full detail page
@@ -181,13 +182,13 @@ function EditForm({
           return (
             <div key={field.id} className="rounded-md border border-border p-2.5">
               <div className="flex items-center gap-2">
-                <select
-                  className="h-8 rounded-md border border-input bg-surface px-2 text-xs"
+                <Select
+                  inputSize="sm"
                   {...register(`beneficiaries.${index}.type`)}
                 >
                   <option value="PARTY">Party</option>
                   <option value="FREEFORM">Freeform</option>
-                </select>
+                </Select>
 
                 {type === 'PARTY' ? (
                   <Controller
@@ -204,20 +205,20 @@ function EditForm({
                     )}
                   />
                 ) : (
-                  <input
-                    className="h-8 flex-1 rounded-md border border-input bg-surface px-2 text-xs"
+                  <Input
+                    inputSize="sm" className="flex-1"
                     placeholder={'Designee, e.g. "My Estate"'}
                     {...register(`beneficiaries.${index}.freeformDesignee`)}
                   />
                 )}
 
                 <div className="flex items-center gap-1">
-                  <input
+                  <Input
                     type="number"
                     min={0}
                     max={100}
                     step="0.01"
-                    className="h-8 w-20 rounded-md border border-input bg-surface px-2 text-right text-xs"
+                    inputSize="sm" className="w-20 text-right"
                     {...register(`beneficiaries.${index}.sharePercent`)}
                   />
                   <span className="text-xs text-muted-foreground">%</span>

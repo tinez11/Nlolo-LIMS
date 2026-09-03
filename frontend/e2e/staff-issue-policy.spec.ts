@@ -52,8 +52,13 @@ test.describe('staff issue policy', () => {
 
     // Not a bare text match: "Select a product" is ALSO the select's own empty
     // placeholder option, which resolves ambiguously against a plain getByText.
-    // The field error renders as a paragraph specifically.
-    await expect(page.getByRole('paragraph').filter({ hasText: 'Select a product' })).toBeVisible();
+    //
+    // `alert`, not `paragraph`: FormField's error now carries role="alert" so it
+    // is ANNOUNCED when it appears rather than only painted red, which changes
+    // its role away from paragraph. The stricter assertion is the better one --
+    // it now checks that a screen reader would be told, not merely that a <p>
+    // exists somewhere on the page.
+    await expect(page.getByRole('alert').filter({ hasText: 'Select a product' })).toBeVisible();
     expect(requestFired).toBe(false);
   });
 

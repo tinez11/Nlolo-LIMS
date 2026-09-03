@@ -33,6 +33,7 @@ import {
 import { previewBenefit, type SchemeBasis } from './groupBenefitPreview';
 import { Panel } from '@/components/Panel';
 import { FilterChip } from '@/components/FilterChip';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * A group scheme: one master policy, many insured lives.
@@ -529,9 +530,9 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
             <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
               Annual salary
             </span>
-            <input
+            <Input
               inputMode="decimal"
-              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              inputSize="sm"
               placeholder="20000000.00"
               {...register('salaryAmount')}
             />
@@ -542,8 +543,8 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
         {scheme.benefitBasis === 'GRADED' && (
           <label className="block">
             <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Grade</span>
-            <select
-              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+            <Select
+              inputSize="sm"
               {...register('gradeCode')}
             >
               <option value="">Choose a grade…</option>
@@ -552,7 +553,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
                   {code}
                 </option>
               ))}
-            </select>
+            </Select>
             <FieldError message={errors.gradeCode?.message} />
           </label>
         )}
@@ -561,9 +562,9 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
           <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
             Cover starts
           </span>
-          <input
+          <Input
             type="date"
-            className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+            inputSize="sm"
             {...register('joinedOn')}
           />
           <p className="mt-1 text-[11px] text-subtle-foreground">

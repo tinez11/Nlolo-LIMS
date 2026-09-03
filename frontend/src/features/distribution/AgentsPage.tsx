@@ -13,6 +13,7 @@ import { formatDate } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useDistributionStore } from '@/store/distributionStore';
 import { FilterChip } from '@/components/FilterChip';
+import { Input } from '@/components/ui/input';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -236,12 +237,12 @@ export function AgentsPage() {
                 update({ q: typeof value === 'string' ? value.trim() : '' });
               }}
             >
-              <input
+              <Input
                 name="q"
                 defaultValue={q}
                 placeholder="Search by licence number"
                 aria-label="Search by licence number"
-                className="h-8 w-56 rounded-md border border-input bg-surface px-2.5 text-sm"
+                inputSize="sm" className="w-56 px-2.5 text-sm"
               />
             </form>
           </div>

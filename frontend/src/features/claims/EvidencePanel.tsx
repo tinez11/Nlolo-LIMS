@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectAttachingEvidence, selectEvidence, useClaimStore } from '@/store/claimStore';
+import { Input } from '@/components/ui/input';
 
 /**
  * `POST /claims/{claimId}/evidence` + `GET .../evidence` + `GET .../evidence/{ref}`
@@ -125,8 +126,8 @@ function UploadForm({ claimId }: { claimId: string }) {
         <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
           Description (optional)
         </span>
-        <input
-          className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+        <Input
+          inputSize="sm"
           placeholder="Death certificate, page 1"
           value={description}
           onChange={(e) => setDescription(e.target.value)}

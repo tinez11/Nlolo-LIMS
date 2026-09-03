@@ -8,6 +8,7 @@ import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { StatCards, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
@@ -273,11 +274,13 @@ export function PoliciesPage({
             ))}
             <div className="relative ml-auto w-full max-w-55">
               <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
+              <Input
+                inputSize="sm"
                 value={qInput}
                 onChange={(e) => setQInput(e.target.value)}
                 placeholder="Search by policy number"
-                className="h-8 w-full rounded-md border border-input bg-surface pl-7 pr-2.5 text-xs"
+                aria-label="Search by policy number"
+                className="pl-7 pr-2.5"
               />
             </div>
           </div>

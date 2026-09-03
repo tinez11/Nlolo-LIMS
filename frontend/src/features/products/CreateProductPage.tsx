@@ -15,6 +15,7 @@ import {
   type CreateProductFormValues,
 } from './createProductForm';
 import { PublishVersionForm } from './PublishVersionForm';
+import { Input, Select } from '@/components/ui/input';
 
 /**
  * A genuinely two-phase flow, not a stylistic choice: `GET /products` only
@@ -72,21 +73,19 @@ export function CreateProductPage() {
           {created === null ? (
             <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
               <FormField label="Product code" error={errors.productCode?.message}>
-                <input
-                  className="h-9 w-full rounded-md border border-input bg-surface px-2.5 font-mono text-sm"
+                <Input
+                  className="font-mono"
                   placeholder="NEW-TERM-01"
                   {...register('productCode')}
                 />
               </FormField>
               <FormField label="Product name" error={errors.productName?.message}>
-                <input
-                  className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                <Input
                   {...register('productName')}
                 />
               </FormField>
               <FormField label="Category">
-                <select
-                  className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                <Select
                   {...register('category')}
                 >
                   {PRODUCT_CATEGORIES.map((c: ProductCategory) => (
@@ -94,11 +93,11 @@ export function CreateProductPage() {
                       {c.replace(/_/g, ' ')}
                     </option>
                   ))}
-                </select>
+                </Select>
               </FormField>
               <FormField label="Default currency" error={errors.defaultCurrency?.message}>
-                <input
-                  className="h-9 w-24 rounded-md border border-input bg-surface px-2.5 text-sm uppercase"
+                <Input
+                  className="w-24 uppercase"
                   {...register('defaultCurrency')}
                 />
               </FormField>

@@ -7,6 +7,7 @@ import type { KycStatus, PartyView } from '@/api/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import type { ApiError } from '@/lib/http';
 import { UUID_PATTERN } from '@/lib/patterns';
+import { useFieldControl } from './fieldControl';
 
 export interface PartyPickerProps {
   /** The selected partyId, or null. If `value` is set but no selection has
@@ -43,6 +44,7 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
   // pre-existing party -- doesn't render as an empty placeholder, and so a
   // 404/network hiccup on that lookup doesn't retry every render.
   const resolvedForValue = useRef<string | null>(null);
+  const { id: fieldId } = useFieldControl();
 
   // A directly-typed/pasted UUID (a staff member copying an id from
   // elsewhere out of habit) searches immediately -- it is already a
@@ -145,6 +147,16 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
         <Popover.Trigger asChild>
           <button
             type="button"
+            // The id FormField's `<label htmlFor>` points at. A <button> is a
+            // labelable element, so the field's caption names this trigger --
+            // which it did implicitly when FormField wrapped its child, and
+            // stopped doing when the label became explicit.
+            {...(fieldId ? { id: fieldId } : {})}
+            // aria-label still wins for the accessible NAME, deliberately: the
+            // twenty-odd specs that reach this control search for the
+            // placeholder text, and more importantly "Search for the
+            // policyholder by name" says what the button does, where the
+            // field's caption only says what the value means.
             aria-label={value && selectedLabel ? selectedLabel : placeholder}
             className="flex h-9 w-full items-center rounded-md border border-input bg-surface px-2.5 text-left text-sm"
           >
