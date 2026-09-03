@@ -3,7 +3,9 @@ package tz.co.nlolo.lifeplatform.policy.infrastructure;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,4 +24,16 @@ public record ManualIssueRequestDto(
     UUID agentOfRecordId,
     String premiumFrequency,
     List<@Valid BeneficiaryInputDto> beneficiaries,
-    @NotBlank String reasonForManualIssue) {}
+    @NotBlank String reasonForManualIssue,
+
+    // The policy term (V6). All optional: a product that does not term -- whole life, an
+    // annuity, an annually renewable group scheme -- genuinely has none, and a policy
+    // issued before the migration has none either.
+    //
+    // There is deliberately no maturityDate. The aggregate derives it in
+    // Policy.applyTerm, so it cannot be supplied wrong from outside; a caller-supplied
+    // value would be rejected by policy_maturity_matches_term for reasons the caller
+    // could not see.
+    LocalDate commencementDate,
+    @Positive Integer policyTermMonths,
+    @Positive Integer premiumPayingTermMonths) {}

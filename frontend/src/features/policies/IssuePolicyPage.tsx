@@ -5,15 +5,18 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { PREMIUM_FREQUENCIES } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
+import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { formatDate } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import { blankBeneficiaryRow } from './beneficiaryForm';
 import {
   blankPolicyIssueForm,
+  maturityPreview,
   policyIssueFormSchema,
   toApiRequest,
   type PolicyIssueFormInput,
@@ -69,6 +72,9 @@ export function IssuePolicyPage() {
   // eslint-disable-next-line react-hooks/incompatible-library -- see RegisterClaimPage
   const productId = watch('productId');
   const beneficiaryRows = watch('beneficiaries');
+
+  // Display only: Policy.applyTerm derives and stores the value that counts.
+  const maturity = maturityPreview(watch('commencementDate'), watch('policyTermMonths'));
 
   const snapshot = useProductStore(selectProductSnapshot(productId));
 
@@ -207,6 +213,68 @@ export function IssuePolicyPage() {
             ))}
           </select>
         </FormField>
+
+        {/* The policy term. Optional as a group: whole life, an annuity and an
+            annually renewable group scheme genuinely have none, so leaving these blank
+            is a real answer rather than an omission. */}
+        <fieldset className="border-t border-border pt-3">
+          <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+            Term
+          </legend>
+          <p className="mb-2.5 text-[11px] text-muted-foreground">
+            Leave blank for a product that does not term — whole life, an annuity, a
+            renewable group scheme.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Commencement date" error={errors.commencementDate?.message}>
+              <Controller
+                control={control}
+                name="commencementDate"
+                render={({ field }) => (
+                  <DatePicker
+                    value={field.value || null}
+                    onChange={(iso) => field.onChange(iso ?? '')}
+                  />
+                )}
+              />
+            </FormField>
+
+            <FormField label="Policy term (months)" error={errors.policyTermMonths?.message}>
+              <input
+                inputMode="numeric"
+                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                placeholder="240"
+                {...register('policyTermMonths')}
+              />
+            </FormField>
+
+            <FormField
+              label="Premium-paying term (months)"
+              error={errors.premiumPayingTermMonths?.message}
+            >
+              <input
+                inputMode="numeric"
+                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                placeholder="Same as the policy term"
+                {...register('premiumPayingTermMonths')}
+              />
+            </FormField>
+
+            {/* The consequence of "240 months", legible before submit. Display only --
+                the aggregate derives and stores the real value. */}
+            <div className="self-end pb-1">
+              <p className="text-[11px] text-muted-foreground">Matures</p>
+              <p className="text-sm tabular-nums">
+                {maturity ? (
+                  formatDate(maturity)
+                ) : (
+                  <span className="text-subtle-foreground">—</span>
+                )}
+              </p>
+            </div>
+          </div>
+        </fieldset>
 
         <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
           <input

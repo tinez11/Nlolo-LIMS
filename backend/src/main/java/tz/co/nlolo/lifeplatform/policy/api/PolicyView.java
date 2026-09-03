@@ -10,4 +10,11 @@ public record PolicyView(String policyNumber, UUID underwritingCaseId, UUID poli
                           BigDecimal sumAssuredAmount, String sumAssuredCurrency,
                           BigDecimal cashValueAmount, String cashValueCurrency,
                           BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
-                          List<BeneficiaryView> beneficiaries) {}
+                          List<BeneficiaryView> beneficiaries,
+                          // The policy term (V6). Null on every policy issued before it, and on
+                          // products that do not term at all -- whole life, annuities, an annually
+                          // renewable group scheme. maturityDate is derived at issue and stored, so
+                          // a reader never has to do date arithmetic to answer "when does this
+                          // mature", and a sweep can index it.
+                          LocalDate commencementDate, Integer policyTermMonths,
+                          Integer premiumPayingTermMonths, LocalDate maturityDate) {}

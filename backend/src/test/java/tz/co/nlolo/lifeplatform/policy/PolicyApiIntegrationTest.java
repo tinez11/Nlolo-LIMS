@@ -82,6 +82,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
             "db-migrations/policy/V5__beneficiary_party_index.sql",
+            "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
@@ -416,6 +417,75 @@ class PolicyApiIntegrationTest {
         assertEquals(0, new BigDecimal("15000.00").compareTo(view.premiumAmount()));
         assertEquals("TZS", view.premiumCurrency());
         assertEquals("MONTHLY", view.premiumFrequency());
+    }
+
+    @Test
+    void anIssuedPolicyDerivesItsMaturityFromCommencementPlusTerm() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-TERM-01");
+
+        PolicyView view = policyApi.issuePolicy(UUID.randomUUID(), new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("2000000.00"), "TZS", new BigDecimal("800.00"), "TZS", "MONTHLY",
+            null, List.of(), "Term test",
+            LocalDate.of(2026, 3, 1), 240, 120), "test-staff");
+
+        assertEquals(LocalDate.of(2026, 3, 1), view.commencementDate());
+        assertEquals(240, view.policyTermMonths());
+        assertEquals(120, view.premiumPayingTermMonths());
+        // 240 months after 1 Mar 2026. Derived by the aggregate, never supplied.
+        assertEquals(LocalDate.of(2046, 3, 1), view.maturityDate());
+    }
+
+    /**
+     * Whole life, an annuity and an annually renewable group scheme have no term, and
+     * neither does any policy issued before V6. That must stay distinguishable from a
+     * term of zero.
+     */
+    @Test
+    void aPolicyWithNoTermHasNoMaturity() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-TERM-02");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of(), new BigDecimal("800.00"), "TZS", "MONTHLY");
+
+        PolicyView view = policyApi.getPolicy(policyNumber);
+        assertNull(view.commencementDate());
+        assertNull(view.policyTermMonths());
+        assertNull(view.maturityDate());
+    }
+
+    @Test
+    void aPremiumPayingTermLongerThanTheCoverTermIsRejected() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-TERM-03");
+
+        // A limited-payment policy pays for LESS time than it covers. Longer is a data
+        // error, refused before the policy is put in force.
+        assertThrows(IllegalArgumentException.class, () -> policyApi.issuePolicy(UUID.randomUUID(),
+            new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+                new BigDecimal("2000000.00"), "TZS", new BigDecimal("800.00"), "TZS", "MONTHLY",
+                null, List.of(), "Term test",
+                LocalDate.of(2026, 3, 1), 120, 240), "test-staff"));
+    }
+
+    /**
+     * The end-of-month case, which is where a hand-rolled "add N months" goes wrong.
+     * {@code LocalDate.plusMonths} clamps to the last day of a shorter target month;
+     * the frontend's display-only preview has a test asserting the same behaviour so
+     * the two cannot drift.
+     */
+    @Test
+    void maturityClampsToTheLastDayOfAShorterMonth() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-TERM-04");
+
+        PolicyView view = policyApi.issuePolicy(UUID.randomUUID(), new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("2000000.00"), "TZS", new BigDecimal("800.00"), "TZS", "MONTHLY",
+            null, List.of(), "Term test",
+            LocalDate.of(2026, 1, 31), 1, null), "test-staff");
+
+        assertEquals(LocalDate.of(2026, 2, 28), view.maturityDate());
     }
 
     @Test

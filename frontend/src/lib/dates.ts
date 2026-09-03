@@ -28,6 +28,24 @@ export function formatDate(iso: string | null | undefined): string {
   return `${monthName} ${Number(day)}, ${year}`;
 }
 
+/**
+ * A policy term, as the years an insurance person would say out loud.
+ *
+ * Stored in months because a term is authored in months and the derived maturity is
+ * `commencement + N months`; read as years because "20 years" is what appears on the
+ * contract. Whole years render as years, anything else keeps the months so nothing is
+ * rounded away -- a 30-month term must never display as "2 years".
+ */
+export function formatMonths(months: number | null | undefined): string {
+  if (months == null) return NO_DATE;
+  if (months % 12 === 0) {
+    const years = months / 12;
+    return `${years} year${years === 1 ? '' : 's'}`;
+  }
+  if (months < 12) return `${months} month${months === 1 ? '' : 's'}`;
+  return `${Math.floor(months / 12)}y ${months % 12}m`;
+}
+
 /** Format an instant in the viewer's own timezone, which is correct for a timestamp. */
 export function formatInstant(iso: string | null | undefined): string {
   if (!iso) return NO_DATE;

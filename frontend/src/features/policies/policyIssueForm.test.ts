@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { policyIssueFormSchema, toApiRequest } from './policyIssueForm';
+import {
+  blankPolicyIssueForm,
+  maturityPreview,
+  policyIssueFormSchema,
+  toApiRequest,
+} from './policyIssueForm';
 
+// Built on the blank form so the fixture always carries every key a real submission
+// has -- react-hook-form initialises from blankPolicyIssueForm(), so a partial literal
+// would be testing a shape the form never produces.
 const valid = () => ({
+  ...blankPolicyIssueForm(),
   policyholderPartyId: '11111111-1111-4111-8111-111111111111',
   productId: '22222222-2222-4222-8222-222222222222',
   productVersionId: '33333333-3333-4333-8333-333333333333',
@@ -134,5 +143,94 @@ describe('toApiRequest', () => {
 
   it('produces an empty beneficiaries array from an empty form', () => {
     expect(toApiRequest(policyIssueFormSchema.parse(valid())).beneficiaries).toEqual([]);
+  });
+});
+
+describe('the policy term', () => {
+  const termed = () => ({
+    ...valid(),
+    commencementDate: '2026-03-01',
+    policyTermMonths: '240',
+    premiumPayingTermMonths: '120',
+  });
+
+  it('sends the term when it is given', () => {
+    const request = toApiRequest(policyIssueFormSchema.parse(termed()));
+    expect(request.commencementDate).toBe('2026-03-01');
+    expect(request.policyTermMonths).toBe(240);
+    expect(request.premiumPayingTermMonths).toBe(120);
+  });
+
+  // Whole life, an annuity and a renewable group scheme have no term. Omitting is the
+  // honest encoding: 0 would trip policy_term_positive, and null would claim the
+  // question was asked and answered.
+  it('omits the term entirely for a product that does not term', () => {
+    const request = toApiRequest(policyIssueFormSchema.parse(valid()));
+    expect('commencementDate' in request).toBe(false);
+    expect('policyTermMonths' in request).toBe(false);
+    expect('premiumPayingTermMonths' in request).toBe(false);
+  });
+
+  it('never sends a maturity date -- the aggregate derives it', () => {
+    const request = toApiRequest(policyIssueFormSchema.parse(termed()));
+    expect('maturityDate' in request).toBe(false);
+  });
+
+  it('rejects a premium-paying term longer than the policy term', () => {
+    const result = policyIssueFormSchema.safeParse({
+      ...termed(),
+      policyTermMonths: '120',
+      premiumPayingTermMonths: '240',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a premium-paying term equal to the policy term', () => {
+    expect(
+      policyIssueFormSchema.safeParse({ ...termed(), premiumPayingTermMonths: '240' }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a term with no commencement date to run from', () => {
+    expect(
+      policyIssueFormSchema.safeParse({ ...termed(), commencementDate: '' }).success,
+    ).toBe(false);
+  });
+
+  // The reverse is legitimate: this is how whole life is recorded.
+  it('accepts a commencement date with no term', () => {
+    expect(
+      policyIssueFormSchema.safeParse({
+        ...valid(),
+        commencementDate: '2026-03-01',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a fractional or zero term', () => {
+    expect(policyIssueFormSchema.safeParse({ ...termed(), policyTermMonths: '12.5' }).success).toBe(false);
+    expect(policyIssueFormSchema.safeParse({ ...termed(), policyTermMonths: '0' }).success).toBe(false);
+  });
+});
+
+describe('maturityPreview', () => {
+  it('adds whole months', () => {
+    expect(maturityPreview('2026-03-01', '240')).toBe('2046-03-01');
+  });
+
+  // Must match java.time.LocalDate.plusMonths, which clamps to the last day of a
+  // shorter target month. A naive Date(+months) rolls 31 January into 3 March and
+  // would show a date the backend disagrees with.
+  it('clamps to the last day of a shorter month, like LocalDate.plusMonths', () => {
+    expect(maturityPreview('2026-01-31', '1')).toBe('2026-02-28');
+    expect(maturityPreview('2024-01-31', '1')).toBe('2024-02-29');
+    expect(maturityPreview('2026-08-31', '1')).toBe('2026-09-30');
+  });
+
+  it('returns null when the inputs imply no maturity', () => {
+    expect(maturityPreview('', '240')).toBeNull();
+    expect(maturityPreview('2026-03-01', '')).toBeNull();
+    expect(maturityPreview('2026-03-01', '0')).toBeNull();
+    expect(maturityPreview('not-a-date', '240')).toBeNull();
   });
 });

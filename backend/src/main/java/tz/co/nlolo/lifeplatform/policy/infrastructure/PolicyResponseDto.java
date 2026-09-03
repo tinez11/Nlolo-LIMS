@@ -12,7 +12,11 @@ import java.util.UUID;
 public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, UUID productId, UUID productVersionId,
                                  UUID agentOfRecordId, PolicyStatus status, LocalDate issueDate,
                                  MoneyDto sumAssured, MoneyDto cashValue, MoneyDto premium, String premiumFrequency,
-                                 List<BeneficiaryView> beneficiaries) {
+                                 List<BeneficiaryView> beneficiaries,
+                                 // The policy term (V6). Null together on a product that does not
+                                 // term, and on every policy issued before the migration.
+                                 LocalDate commencementDate, Integer policyTermMonths,
+                                 Integer premiumPayingTermMonths, LocalDate maturityDate) {
 
     public static PolicyResponseDto from(PolicyView view) {
         return new PolicyResponseDto(view.policyNumber(), view.policyholderPartyId(), view.productId(), view.productVersionId(),
@@ -20,6 +24,8 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
             new MoneyDto(view.sumAssuredAmount().toPlainString(), view.sumAssuredCurrency()),
             new MoneyDto(view.cashValueAmount().toPlainString(), view.cashValueCurrency()),
             new MoneyDto(view.premiumAmount().toPlainString(), view.premiumCurrency()), view.premiumFrequency(),
-            view.beneficiaries());
+            view.beneficiaries(),
+            view.commencementDate(), view.policyTermMonths(),
+            view.premiumPayingTermMonths(), view.maturityDate());
     }
 }

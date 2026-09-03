@@ -74,6 +74,22 @@ public class Policy {
     @Column(name = "premium_frequency", nullable = false)
     private String premiumFrequency;
 
+    // The policy term (V6). Null together on a product that does not term -- whole
+    // life, an annuity, an annually renewable group scheme -- and on every policy
+    // issued before the migration. maturityDate is derived in applyTerm and stored so
+    // a maturity sweep can index it; policy_maturity_matches_term keeps it honest.
+    @Column(name = "commencement_date")
+    private LocalDate commencementDate;
+
+    @Column(name = "policy_term_months")
+    private Integer policyTermMonths;
+
+    @Column(name = "premium_paying_term_months")
+    private Integer premiumPayingTermMonths;
+
+    @Column(name = "maturity_date")
+    private LocalDate maturityDate;
+
     @Column(name = "suspended_at")
     private Instant suspendedAt;
 
@@ -123,6 +139,48 @@ public class Policy {
         this.createdBy = createdBy;
     }
 
+    /**
+     * Record the contract's timeline, deriving the maturity date from it.
+     *
+     * <p>**The one place maturity is computed on this platform.** It is stored rather
+     * than derived on read because a maturity sweep needs an indexable column, and a
+     * value every caller re-derives is a value one of them eventually derives wrong --
+     * the same failure shape as the unordered-query sweep in PLAN.md §10, where
+     * "whichever row came back first" decided money.
+     *
+     * <p>The guards below mirror policy_term_positive,
+     * policy_premium_paying_term_within_term and policy_maturity_matches_term. The
+     * database is the guarantee; these exist so a violation arrives as a domain error
+     * naming the problem rather than as a constraint violation from three layers down.
+     *
+     * <p>All three arguments may be null together: whole life, an annuity and an
+     * annually renewable group scheme genuinely have no term, and that is not the same
+     * as a term nobody recorded.
+     */
+    public void applyTerm(LocalDate commencementDate, Integer policyTermMonths,
+                          Integer premiumPayingTermMonths) {
+        if (policyTermMonths != null && policyTermMonths <= 0) {
+            throw new IllegalArgumentException("Policy term must be a positive number of months");
+        }
+        if (premiumPayingTermMonths != null && premiumPayingTermMonths <= 0) {
+            throw new IllegalArgumentException("Premium-paying term must be a positive number of months");
+        }
+        if (premiumPayingTermMonths != null && policyTermMonths != null
+                && premiumPayingTermMonths > policyTermMonths) {
+            // A limited-payment policy pays for LESS time than it covers. Longer is not
+            // a product, it is a data error.
+            throw new IllegalArgumentException(
+                "Premium-paying term cannot exceed the policy term");
+        }
+
+        this.commencementDate = commencementDate;
+        this.policyTermMonths = policyTermMonths;
+        this.premiumPayingTermMonths = premiumPayingTermMonths;
+        this.maturityDate = (commencementDate != null && policyTermMonths != null)
+            ? commencementDate.plusMonths(policyTermMonths)
+            : null;
+    }
+
     public String getPolicyNumber() { return policyNumber; }
     public UUID getTenantId() { return tenantId; }
     public UUID getPolicyholderPartyId() { return policyholderPartyId; }
@@ -137,6 +195,10 @@ public class Policy {
     public BigDecimal getPremiumAmount() { return premiumAmount; }
     public String getPremiumCurrency() { return premiumCurrency; }
     public String getPremiumFrequency() { return premiumFrequency; }
+    public LocalDate getCommencementDate() { return commencementDate; }
+    public Integer getPolicyTermMonths() { return policyTermMonths; }
+    public Integer getPremiumPayingTermMonths() { return premiumPayingTermMonths; }
+    public LocalDate getMaturityDate() { return maturityDate; }
     public Instant getSuspendedAt() { return suspendedAt; }
     public String getSuspensionReason() { return suspensionReason; }
     public Instant getLapsedAt() { return lapsedAt; }

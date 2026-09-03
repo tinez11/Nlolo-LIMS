@@ -431,6 +431,24 @@ components:
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryInput' }
         reasonForManualIssue: { type: string, description: "Required — feeds audit." }
+        commencementDate:
+          description: >-
+            When risk starts. Distinct from the issue date: a policy issued today may carry risk
+            from next month. Optional, and null on a product that does not term.
+          type: [string, "null"]
+          format: date
+        policyTermMonths:
+          description: >-
+            How long cover runs. Null for a product that does not term — whole life, an annuity,
+            an annually renewable group scheme.
+          type: [integer, "null"]
+          minimum: 1
+        premiumPayingTermMonths:
+          description: >-
+            How long premiums are paid. On a limited-payment policy this is shorter than the
+            cover term; it may never exceed it.
+          type: [integer, "null"]
+          minimum: 1
       required: [underwritingCaseId, policyholderPartyId, productVersionId, sumAssured, premiumAmount, agentOfRecordId, reasonForManualIssue]
     BeneficiaryInput:
       type: object
@@ -472,6 +490,18 @@ components:
         beneficiaries:
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryInput' }
+        commencementDate: { type: [string, "null"], format: date }
+        policyTermMonths: { type: [integer, "null"] }
+        premiumPayingTermMonths: { type: [integer, "null"] }
+        maturityDate:
+          description: >-
+            Derived at issue from commencementDate plus policyTermMonths and stored, so a maturity
+            sweep can index it and a reader never has to do date arithmetic. Not accepted on the
+            issue request — the aggregate is the only place it is computed. Null on a product that
+            does not mature (whole life, annuity) and on any policy issued before the term columns
+            existed.
+          type: [string, "null"]
+          format: date
     CoverageStatusView:
       type: object
       properties:

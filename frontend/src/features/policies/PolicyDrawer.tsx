@@ -90,6 +90,12 @@ export function PolicyDrawer({
                 note="Always 0.00 until the platform credits cash value"
               />
               <Field label="Issued" value={formatDate(policy.issueDate)} />
+              {/* The drawer is a preview, so only maturity earns a row here -- it is the
+                  one term fact someone scanning a list actually asks for. Commencement
+                  and the paying term are on the full page. */}
+              {policy.maturityDate && (
+                <Field label="Matures" value={formatDate(policy.maturityDate)} />
+              )}
               <Field
                 label="Policyholder"
                 value={

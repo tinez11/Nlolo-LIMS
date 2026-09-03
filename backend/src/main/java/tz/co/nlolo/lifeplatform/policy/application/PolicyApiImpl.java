@@ -92,6 +92,11 @@ public class PolicyApiImpl implements PolicyApi {
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(), request.productVersionId(),
             snapshot.category().name(), request.agentOfRecordId(), request.sumAssuredAmount(), request.sumAssuredCurrency(),
             request.premiumAmount(), request.premiumCurrency(), request.premiumFrequency(), underwritingCaseId, issuedBy);
+        // Before activate, so an invalid term is refused before the policy is put in
+        // force rather than after. All three may be null: a product that does not term
+        // is not the same as a term nobody recorded.
+        policy.applyTerm(request.commencementDate(), request.policyTermMonths(),
+            request.premiumPayingTermMonths());
         policy.activate(LocalDate.now());
         policyRepository.save(policy);
 
@@ -575,6 +580,8 @@ public class PolicyApiImpl implements PolicyApi {
             account != null ? account.getCashValueAmount() : BigDecimal.ZERO,
             account != null ? account.getCashValueCurrency() : policy.getSumAssuredCurrency(),
             policy.getPremiumAmount(), policy.getPremiumCurrency(), policy.getPremiumFrequency(),
-            beneficiaryViews);
+            beneficiaryViews,
+            policy.getCommencementDate(), policy.getPolicyTermMonths(),
+            policy.getPremiumPayingTermMonths(), policy.getMaturityDate());
     }
 }

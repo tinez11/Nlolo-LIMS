@@ -15,10 +15,45 @@ public interface PolicyApi {
 
     record BeneficiaryInput(BeneficiaryType type, UUID partyId, String freeformDesignee, BigDecimal sharePercent, boolean revocable) {}
 
+    /**
+     * @param commencementDate when risk starts. Distinct from the issue date: a policy
+     *     issued today may carry risk from next month.
+     * @param policyTermMonths how long cover runs. Null for a product that does not
+     *     term -- whole life, an annuity, an annually renewable group scheme.
+     * @param premiumPayingTermMonths how long premiums are paid, which on a
+     *     limited-payment policy is shorter than the cover term. Never longer.
+     *
+     * <p>There is deliberately no {@code maturityDate} here. The aggregate derives it
+     * from commencement plus term in {@code Policy.applyTerm}, so there is exactly one
+     * place in the system it is computed. A caller able to supply it is a caller able
+     * to supply a wrong one, and {@code policy_maturity_matches_term} would then reject
+     * a request that looked perfectly reasonable to whoever sent it.
+     */
     record IssueRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
                          BigDecimal sumAssuredAmount, String sumAssuredCurrency,
                          BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
-                         UUID agentOfRecordId, List<BeneficiaryInput> beneficiaries, String reasonForManualIssue) {}
+                         UUID agentOfRecordId, List<BeneficiaryInput> beneficiaries, String reasonForManualIssue,
+                         LocalDate commencementDate, Integer policyTermMonths, Integer premiumPayingTermMonths) {
+
+        /**
+         * Pre-Build-2 issuance, with no term information.
+         *
+         * <p>An extra record constructor rather than a widened call at all 31
+         * construction sites. Unlike the {@code default}-interface-method trap in
+         * Build 1 §9.1, this is plain Java with no proxy in the way, so delegation is
+         * safe.
+         */
+        public IssueRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
+                             BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                             BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                             UUID agentOfRecordId, List<BeneficiaryInput> beneficiaries,
+                             String reasonForManualIssue) {
+            this(policyholderPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
+                premiumAmount, premiumCurrency, premiumFrequency, agentOfRecordId, beneficiaries,
+                reasonForManualIssue, null, null, null);
+        }
+
+    }
 
     record EndorsementInput(String endorsementType, LocalDate effectiveDate, Map<String, Object> changes) {}
 

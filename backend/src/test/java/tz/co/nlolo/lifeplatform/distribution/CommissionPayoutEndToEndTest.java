@@ -126,6 +126,7 @@ class CommissionPayoutEndToEndTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
             "db-migrations/policy/V5__beneficiary_party_index.sql",
+            "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",

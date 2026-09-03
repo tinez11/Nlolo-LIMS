@@ -102,6 +102,7 @@ class BillingApiIntegrationTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
             "db-migrations/policy/V5__beneficiary_party_index.sql",
+            "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",

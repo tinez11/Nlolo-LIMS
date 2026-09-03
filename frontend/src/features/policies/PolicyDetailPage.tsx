@@ -11,7 +11,7 @@ import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
-import { formatDate } from '@/lib/dates';
+import { formatDate, formatMonths } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -145,6 +145,30 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   note="Always 0.00 until the platform credits cash value"
                 />
                 <Field label="Issued" value={formatDate(policy.issueDate)} />
+                <Field
+                  label="Risk commences"
+                  value={formatDate(policy.commencementDate)}
+                  // Not the same date as "Issued", and the difference is the point: a
+                  // policy issued today may carry risk from next month.
+                  {...(policy.commencementDate
+                    ? {}
+                    : { note: 'Not recorded — issued before the term was captured.' })}
+                />
+                <Field
+                  label="Term"
+                  value={policy.policyTermMonths ? formatMonths(policy.policyTermMonths) : '—'}
+                  {...(policy.premiumPayingTermMonths &&
+                  policy.premiumPayingTermMonths !== policy.policyTermMonths
+                    ? { note: `Premiums paid for ${formatMonths(policy.premiumPayingTermMonths)}.` }
+                    : {})}
+                />
+                <Field
+                  label="Matures"
+                  value={formatDate(policy.maturityDate)}
+                  {...(policy.maturityDate
+                    ? {}
+                    : { note: 'This product does not mature, or no term is on record.' })}
+                />
                 <Field
                   label="Policyholder"
                   value={

@@ -73,6 +73,7 @@ class ClaimControllerValidationContractTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
             "db-migrations/policy/V5__beneficiary_party_index.sql",
+            "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql");
