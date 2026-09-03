@@ -3,6 +3,7 @@ import { useDropzone } from 'react-dropzone';
 import { Paperclip, UploadCloud } from 'lucide-react';
 import { downloadClaimEvidence } from '@/api/claims';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
+import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { formatInstant } from '@/lib/dates';
@@ -122,17 +123,14 @@ function UploadForm({ claimId }: { claimId: string }) {
 
   return (
     <div className="space-y-2 px-4 pt-3">
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-          Description (optional)
-        </span>
+      <FormField label="Description (optional)">
         <Input
           inputSize="sm"
           placeholder="Death certificate, page 1"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-      </label>
+      </FormField>
 
       <div
         {...getRootProps()}

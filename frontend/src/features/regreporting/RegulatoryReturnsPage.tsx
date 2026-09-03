@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
+import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad, isEmpty } from '@/store/createResourceSlice';
@@ -147,31 +148,21 @@ function GenerateReturnForm({ onDone }: { onDone: (returnId?: string) => void })
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
       <div className="flex items-end gap-2">
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-            Return type
-          </span>
+        {/* Errors moved under their own fields, out of the shared block that used
+            to sit below the row — that block could not be referenced by
+            aria-describedby without guessing which field it belonged to. */}
+        <FormField label="Return type" error={errors.returnType?.message}>
           <Input
-            inputSize="sm" className="w-52"
+            inputSize="sm"
+            className="w-52"
             placeholder="QUARTERLY_PRUDENTIAL"
             {...register('returnType')}
           />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Period</span>
-          <Input
-            inputSize="sm" className="w-32"
-            placeholder="2026-Q1"
-            {...register('period')}
-          />
-        </label>
+        </FormField>
+        <FormField label="Period" error={errors.period?.message}>
+          <Input inputSize="sm" className="w-32" placeholder="2026-Q1" {...register('period')} />
+        </FormField>
       </div>
-      {errors.returnType?.message && (
-        <p className="text-[11px] text-status-danger-fg">{errors.returnType.message}</p>
-      )}
-      {errors.period?.message && (
-        <p className="text-[11px] text-status-danger-fg">{errors.period.message}</p>
-      )}
 
       {generating.status === 'error' && generating.error && (
         <p role="alert" className="text-[11px] text-status-danger-fg">

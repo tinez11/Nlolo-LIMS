@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import type { ChartOfAccountView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
+import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -152,31 +153,21 @@ function CreateAccountForm({ onDone }: { onDone: () => void }) {
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
       <div className="flex items-end gap-2">
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-            Account code
-          </span>
+        {/* Each error now sits under the field it belongs to rather than in a
+            shared block below the row — which is what FormField's aria-describedby
+            wiring needs, and reads better besides. */}
+        <FormField label="Account code" error={errors.accountCode?.message}>
           <Input
-            inputSize="sm" className="w-24 font-mono"
+            inputSize="sm"
+            className="w-24 font-mono"
             placeholder="1900"
             {...register('accountCode')}
           />
-        </label>
-        <label className="block flex-1">
-          <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
-          <Input
-            inputSize="sm"
-            placeholder="Petty cash"
-            {...register('name')}
-          />
-        </label>
+        </FormField>
+        <FormField label="Name" className="flex-1" error={errors.name?.message}>
+          <Input inputSize="sm" placeholder="Petty cash" {...register('name')} />
+        </FormField>
       </div>
-      {errors.accountCode?.message && (
-        <p className="text-[11px] text-status-danger-fg">{errors.accountCode.message}</p>
-      )}
-      {errors.name?.message && (
-        <p className="text-[11px] text-status-danger-fg">{errors.name.message}</p>
-      )}
 
       {creating.status === 'error' && creating.error && (
         <p role="alert" className="text-[11px] text-status-danger-fg">
@@ -235,16 +226,9 @@ function RenameAccountForm({
       className="mt-2 space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
-        <Input
-          inputSize="sm"
-          {...register('name')}
-        />
-        {errors.name?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.name.message}</p>
-        )}
-      </label>
+      <FormField label="Name" error={errors.name?.message}>
+        <Input inputSize="sm" {...register('name')} />
+      </FormField>
 
       {renaming.status === 'error' && renaming.error && (
         <p role="alert" className="text-[11px] text-status-danger-fg">

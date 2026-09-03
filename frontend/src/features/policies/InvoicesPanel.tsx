@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import type { InvoiceView } from '@/api/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
+import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
@@ -165,17 +166,13 @@ function WaiveForm({
 
   return (
     <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Reason</span>
+      <FormField label="Reason" error={errors.reason?.message}>
         <Input
           inputSize="sm"
           placeholder="Goodwill gesture, customer hardship"
           {...register('reason')}
         />
-        {errors.reason?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.reason.message}</p>
-        )}
-      </label>
+      </FormField>
 
       {waiving.status === 'error' && waiving.error && (
         <p role="alert" className="text-[11px] text-status-danger-fg">
@@ -234,17 +231,9 @@ function PaymentRequestForm({
 
   return (
     <form className="mt-2 space-y-2 rounded-md border border-border p-2.5" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Payer reference</span>
-        <Input
-          inputSize="sm"
-          placeholder="Mobile-money source"
-          {...register('payerRef')}
-        />
-        {errors.payerRef?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.payerRef.message}</p>
-        )}
-      </label>
+      <FormField label="Payer reference" error={errors.payerRef?.message}>
+        <Input inputSize="sm" placeholder="Mobile-money source" {...register('payerRef')} />
+      </FormField>
 
       {requesting.status === 'error' && requesting.error && (
         <p role="alert" className="text-[11px] text-status-danger-fg">

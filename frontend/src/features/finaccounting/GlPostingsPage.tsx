@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { StatCards, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
+import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -185,24 +186,24 @@ export function GlPostingsPage() {
             className="flex flex-wrap items-end gap-2 border-b border-border px-3 py-2.5"
             onSubmit={applyFilters}
           >
-            <label className="block">
-              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Period</span>
+            <FormField label="Period">
               <Input
-                inputSize="sm" className="w-28"
+                inputSize="sm"
+                className="w-28"
                 placeholder="YYYY-MM"
                 value={periodInput}
                 onChange={(e) => setPeriodInput(e.target.value)}
               />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Policy number</span>
+            </FormField>
+            <FormField label="Policy number">
               <Input
-                inputSize="sm" className="w-40 font-mono"
+                inputSize="sm"
+                className="w-40 font-mono"
                 placeholder="POL-XXXXXXXX"
                 value={policyNumberInput}
                 onChange={(e) => setPolicyNumberInput(e.target.value)}
               />
-            </label>
+            </FormField>
             <Button type="submit" size="sm">
               Apply
             </Button>

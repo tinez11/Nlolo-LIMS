@@ -25,6 +25,7 @@ import {
   toApiRequest as toOriginateApiRequest,
   type OriginateLoanFormValues,
 } from './originateLoanForm';
+import { FormField } from '@/components/FormField';
 import { Input } from '@/components/ui/input';
 
 /** Only these two statuses accept a repayment -- `PolicyLoanApiImpl.recordRepayment`
@@ -223,34 +224,13 @@ function OriginateLoanForm({
       className="space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-          Loan amount (TZS)
-        </span>
-        <Input
-          inputSize="sm"
-          placeholder="500000"
-          inputMode="decimal"
-          {...register('amount')}
-        />
-        {errors.amount?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.amount.message}</p>
-        )}
-      </label>
+      <FormField label="Loan amount (TZS)" error={errors.amount?.message}>
+        <Input inputSize="sm" placeholder="500000" inputMode="decimal" {...register('amount')} />
+      </FormField>
 
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-          Payee reference
-        </span>
-        <Input
-          inputSize="sm"
-          placeholder="Mobile-money destination"
-          {...register('payeeRef')}
-        />
-        {errors.payeeRef?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.payeeRef.message}</p>
-        )}
-      </label>
+      <FormField label="Payee reference" error={errors.payeeRef?.message}>
+        <Input inputSize="sm" placeholder="Mobile-money destination" {...register('payeeRef')} />
+      </FormField>
 
       {/* Shown verbatim rather than reworded: a 409 here names the policy's actual
           available loan value, or says the policy is not in force. Both are more
@@ -316,36 +296,17 @@ function RepaymentForm({
       className="mt-2 space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-          Repayment amount (TZS)
-        </span>
-        <Input
-          inputSize="sm"
-          placeholder="200000"
-          inputMode="decimal"
-          {...register('amount')}
-        />
-        {errors.amount?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.amount.message}</p>
-        )}
-      </label>
+      <FormField label="Repayment amount (TZS)" error={errors.amount?.message}>
+        <Input inputSize="sm" placeholder="200000" inputMode="decimal" {...register('amount')} />
+      </FormField>
 
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-          Payment reference
-        </span>
+      <FormField label="Payment reference" error={errors.paymentReference?.message}>
         <Input
           inputSize="sm"
           placeholder="Receipt or transaction id"
           {...register('paymentReference')}
         />
-        {errors.paymentReference?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">
-            {errors.paymentReference.message}
-          </p>
-        )}
-      </label>
+      </FormField>
 
       {repaying.status === 'error' && repaying.error && (
         <p role="alert" className="text-[11px] text-status-danger-fg">

@@ -33,6 +33,43 @@ export default tseslint.config(
     },
   },
   {
+    /*
+      The field treatment belongs to `components/ui/input`, and nowhere else.
+
+      It has been copy-pasted back into feature files four times now -- FormField
+      (12 files), Panel (8), FilterChip (9), and finally 136 input class strings
+      in 24 variants. Each recurrence cost more than the last, because the
+      accessibility wiring those controls need (aria-invalid, aria-describedby,
+      the id a <label htmlFor> points at) is not something anybody makes 136
+      times by hand.
+
+      So this is a guard against the fifth time rather than a style preference.
+      `components/` is exempt: `ui/input` IS the treatment, and DatePicker and
+      PartyPicker draw their own trigger to match it.
+
+      Deliberately keyed on the class rather than on `<input>` as an element.
+      Five raw inputs survive in features and all five are correct -- three
+      checkboxes, which are not text fields, and two react-dropzone inputs,
+      which must be raw for `getInputProps()` to attach.
+    */
+    files: ['src/features/**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXAttribute[name.name="className"] Literal[value=/border-input/]',
+          message:
+            'Use Input, Select or Textarea from @/components/ui/input. A hand-rolled field misses the id, aria-invalid and aria-describedby that FormField supplies through context.',
+        },
+        {
+          selector: 'JSXAttribute[name.name="className"] TemplateElement[value.raw=/border-input/]',
+          message:
+            'Use Input, Select or Textarea from @/components/ui/input. A hand-rolled field misses the id, aria-invalid and aria-describedby that FormField supplies through context.',
+        },
+      ],
+    },
+  },
+  {
     files: ['scripts/**/*.mjs', '*.config.{ts,mjs}', 'e2e/**/*.ts'],
     languageOptions: { globals: globals.node },
   },

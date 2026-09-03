@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from 'react';
+import { cn } from '@/lib/cn';
 import { FieldControl } from './fieldControl';
 
 /**
@@ -28,6 +29,7 @@ import { FieldControl } from './fieldControl';
 export function FormField({
   label,
   error,
+  className,
   children,
 }: {
   label: string;
@@ -35,13 +37,16 @@ export function FormField({
   // call site passes `errors.x?.message`, which IS `string | undefined` -- a bare
   // `error?: string` would reject that assignment outright.
   error?: string | undefined;
+  /** For a field that has to participate in its parent's layout — `flex-1`, a
+   *  grid span. Not for restyling the field itself. */
+  className?: string | undefined;
   children: ReactNode;
 }) {
   const id = useId();
   const errorId = `${id}-error`;
 
   return (
-    <div className="block">
+    <div className={cn('block', className)}>
       <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-foreground">
         {label}
       </label>

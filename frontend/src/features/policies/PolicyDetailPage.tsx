@@ -27,6 +27,7 @@ import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
 import { Field } from '@/components/Field';
+import { FormField } from '@/components/FormField';
 import {
   blankSuspendPolicyForm,
   suspendPolicyFormSchema,
@@ -395,17 +396,13 @@ function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: (
       className="mx-4 mb-4 space-y-2 rounded-md border border-border p-2.5"
       onSubmit={(e) => void handleSubmit(onSubmit)(e)}
     >
-      <label className="block">
-        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Reason</span>
+      <FormField label="Reason" error={errors.reason?.message}>
         <Input
           inputSize="sm"
           placeholder="Employer group scheme in arrears"
           {...register('reason')}
         />
-        {errors.reason?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.reason.message}</p>
-        )}
-      </label>
+      </FormField>
 
       {suspending.status === 'error' && suspending.error && (
         <p role="alert" className="text-[11px] text-status-danger-fg">

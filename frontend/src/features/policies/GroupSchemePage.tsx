@@ -13,6 +13,7 @@ import { PartyPicker } from '@/components/PartyPicker';
 import { StatCards, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock, TableSkeleton } from '@/components/states';
+import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { formatDate, formatMonths } from '@/lib/dates';
@@ -509,8 +510,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
   return (
     <form className="space-y-3 px-4 pb-4 pt-3" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Person</span>
+        <FormField label="Person" error={errors.memberPartyId?.message}>
           <Controller
             control={control}
             name="memberPartyId"
@@ -522,31 +522,22 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
               />
             )}
           />
-          <FieldError message={errors.memberPartyId?.message} />
-        </label>
+        </FormField>
 
         {scheme.benefitBasis === 'SALARY_MULTIPLE' && (
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-              Annual salary
-            </span>
+          <FormField label="Annual salary" error={errors.salaryAmount?.message}>
             <Input
               inputMode="decimal"
               inputSize="sm"
               placeholder="20000000.00"
               {...register('salaryAmount')}
             />
-            <FieldError message={errors.salaryAmount?.message} />
-          </label>
+          </FormField>
         )}
 
         {scheme.benefitBasis === 'GRADED' && (
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-medium text-muted-foreground">Grade</span>
-            <Select
-              inputSize="sm"
-              {...register('gradeCode')}
-            >
+          <FormField label="Grade" error={errors.gradeCode?.message}>
+            <Select inputSize="sm" {...register('gradeCode')}>
               <option value="">Choose a grade…</option>
               {gradeCodes.map((code) => (
                 <option key={code} value={code}>
@@ -554,24 +545,15 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
                 </option>
               ))}
             </Select>
-            <FieldError message={errors.gradeCode?.message} />
-          </label>
+          </FormField>
         )}
 
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
-            Cover starts
-          </span>
-          <Input
-            type="date"
-            inputSize="sm"
-            {...register('joinedOn')}
-          />
+        <FormField label="Cover starts" error={errors.joinedOn?.message}>
+          <Input type="date" inputSize="sm" {...register('joinedOn')} />
           <p className="mt-1 text-[11px] text-subtle-foreground">
             Leave blank for today. Backdating is fine; a future date is not.
           </p>
-          <FieldError message={errors.joinedOn?.message} />
-        </label>
+        </FormField>
       </div>
 
       {preview && (
@@ -614,10 +596,5 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
       </div>
     </form>
   );
-}
-
-function FieldError({ message }: { message: string | undefined }) {
-  if (!message) return null;
-  return <p className="mt-1 text-[11px] text-status-danger-fg">{message}</p>;
 }
 
