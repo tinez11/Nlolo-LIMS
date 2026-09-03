@@ -14,7 +14,7 @@ import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { DisclosurePanel } from './DisclosurePanel';
-import { formatInstant } from '@/lib/dates';
+import { formatDate, formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectCase,
@@ -255,6 +255,17 @@ export function UnderwritingCaseDetailPage() {
             {view && (
               <dl className="px-4 pb-2">
                 <Field
+                  label="Proposal"
+                  value={
+                    view.proposalNumber ? (
+                      <span className="font-mono text-xs">{view.proposalNumber}</span>
+                    ) : (
+                      '—'
+                    )
+                  }
+                  {...(view.proposalNumber ? {} : { note: 'Opened before proposal numbers existed.' })}
+                />
+                <Field
                   label="Applicant"
                   value={
                     view.applicantPartyId ? (
@@ -265,7 +276,35 @@ export function UnderwritingCaseDetailPage() {
                       '—'
                     )
                   }
+                  // "Applicant" is who proposed; the life assured below is whose
+                  // mortality is being assessed. On most cases they are the same person,
+                  // and where they are not, that is the whole point of the distinction.
+                  {...(view.lifeAssuredPartyId && view.lifeAssuredPartyId !== view.applicantPartyId
+                    ? { note: 'Proposing on someone else’s life.' }
+                    : {})}
                 />
+                <Field
+                  label="Life assured"
+                  value={
+                    view.lifeAssuredPartyId ? (
+                      <Link to={`/staff/parties/${view.lifeAssuredPartyId}`} className="underline">
+                        <PartyName partyId={view.lifeAssuredPartyId} />
+                      </Link>
+                    ) : (
+                      '—'
+                    )
+                  }
+                />
+                {view.branch && <Field label="Branch" value={view.branch} />}
+                {view.sourceOfBusiness && (
+                  <Field label="Source of business" value={view.sourceOfBusiness} />
+                )}
+                {view.proposedCommencementDate && (
+                  <Field
+                    label="Proposed commencement"
+                    value={formatDate(view.proposedCommencementDate)}
+                  />
+                )}
                 <Field
                   label="Product"
                   value={<span className="font-mono text-xs">{view.productId ?? '—'}</span>}

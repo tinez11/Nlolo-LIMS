@@ -72,9 +72,20 @@ export function UnderwritingQueuePage() {
 
   const columns: Column<UnderwritingCaseView>[] = [
     {
-      key: 'caseId',
-      header: 'Case ID',
-      render: (c) => <span className="font-mono text-xs font-medium">{c.caseId ?? '—'}</span>,
+      key: 'proposalNumber',
+      header: 'Proposal',
+      // The identifying column was the raw caseId, which nobody can quote over the
+      // phone and which reads as noise down a queue. Cases opened before the column
+      // existed have no proposal number, so those still fall back to the id rather
+      // than showing an em dash where the row's identity should be.
+      render: (c) =>
+        c.proposalNumber ? (
+          <span className="font-mono text-xs font-medium">{c.proposalNumber}</span>
+        ) : (
+          <span className="font-mono text-xs text-muted-foreground" title="Opened before proposal numbers existed">
+            {c.caseId ?? '—'}
+          </span>
+        ),
     },
     {
       key: 'status',

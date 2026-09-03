@@ -422,6 +422,14 @@ components:
       properties:
         underwritingCaseId: { type: string, format: uuid }
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        lifeAssuredPartyId:
+          description: >-
+            Whose life is insured, when that is not the policyholder. Optional: omitting it means
+            self-insured, and the aggregate resolves it to the policyholder rather than storing a null,
+            so an issued policy always answers the question.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/PartyRef'
+          nullable: true
         productVersionId: { type: string, format: uuid }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         premiumAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
@@ -478,6 +486,14 @@ components:
       properties:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        lifeAssuredPartyId:
+          description: >-
+            Whose life is insured, as opposed to who owns the contract. Equal to policyholderPartyId on a
+            self-insured policy -- the common case, but not the only one, and a death claim is assessed
+            against this party. Null only on policies issued before the column existed.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/PartyRef'
+          nullable: true
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         agentOfRecordId: { type: [string, "null"], format: uuid }

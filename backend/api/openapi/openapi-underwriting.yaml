@@ -297,3 +297,30 @@ components:
         decisionDeclineReason: { type: [string, "null"] }
         decisionDecidedAt: { type: [string, "null"], format: date-time }
         agentOfRecordId: { type: [string, "null"], format: uuid }
+        proposalNumber:
+          description: >-
+            Human handle for the proposal, shaped like a policy number (PRO-XXXXXXXX). A case was
+            previously identifiable only by its UUID, which nobody can quote over the phone.
+            Null on cases opened before the column existed.
+          type: [string, "null"]
+        lifeAssuredPartyId:
+          description: >-
+            Whose life is insured, which is NOT always the applicant — a parent insures a child, an
+            employer its staff. Resolved to the applicant when the caller states nothing, so a
+            newly opened case always answers it. Null only on cases predating the column.
+          # `nullable: true` over an allOf-wrapped $ref, matching the handful of other
+          # nullable $ref fields on this platform (see openapi-distribution.yaml's
+          # flatAmount). NOT oneOf with a {type: "null"} branch: PLAN.md §10 item 3
+          # records that spelling making swagger-request-validator match EVERY value,
+          # silently switching validation off while the tests stay green.
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/PartyRef'
+          nullable: true
+        branch: { type: [string, "null"] }
+        sourceOfBusiness:
+          description: >-
+            Free text, deliberately not an enum. The platform does not own this vocabulary — TIRA's
+            return catalogue is an open item — and minting one here would make it the de facto
+            schema before anybody ratified it.
+          type: [string, "null"]
+        proposedCommencementDate: { type: [string, "null"], format: date }

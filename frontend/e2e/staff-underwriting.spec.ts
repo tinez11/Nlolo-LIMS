@@ -222,7 +222,7 @@ test.describe('staff underwriting', () => {
 async function openCaseForAmina(page: Page) {
   await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill('Amina');
-  await page.getByText('Amina Owner').click();
+  await page.getByRole('option', { name: 'Amina Owner' }).click();
   await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('1500000.00');

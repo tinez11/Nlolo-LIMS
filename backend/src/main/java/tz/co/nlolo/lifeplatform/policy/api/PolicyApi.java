@@ -33,7 +33,10 @@ public interface PolicyApi {
                          BigDecimal sumAssuredAmount, String sumAssuredCurrency,
                          BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
                          UUID agentOfRecordId, List<BeneficiaryInput> beneficiaries, String reasonForManualIssue,
-                         LocalDate commencementDate, Integer policyTermMonths, Integer premiumPayingTermMonths) {
+                         LocalDate commencementDate, Integer policyTermMonths, Integer premiumPayingTermMonths,
+                         /* Whose life is insured. Null means the policyholder insures themselves,
+                            which the aggregate resolves rather than storing -- see Policy.issueTo. */
+                         UUID lifeAssuredPartyId) {
 
         /**
          * Pre-Build-2 issuance, with no term information.
@@ -50,7 +53,24 @@ public interface PolicyApi {
                              String reasonForManualIssue) {
             this(policyholderPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
                 premiumAmount, premiumCurrency, premiumFrequency, agentOfRecordId, beneficiaries,
-                reasonForManualIssue, null, null, null);
+                reasonForManualIssue, null, null, null, null);
+        }
+
+        /** Pre-Build-4b issuance: a term, but no separate life assured. */
+        public IssueRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
+                             BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                             BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                             UUID agentOfRecordId, List<BeneficiaryInput> beneficiaries,
+                             String reasonForManualIssue, LocalDate commencementDate,
+                             Integer policyTermMonths, Integer premiumPayingTermMonths) {
+            this(policyholderPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
+                premiumAmount, premiumCurrency, premiumFrequency, agentOfRecordId, beneficiaries,
+                reasonForManualIssue, commencementDate, policyTermMonths, premiumPayingTermMonths, null);
+        }
+
+        /** The life assured, resolving the self-insured default against the policyholder. */
+        public UUID resolveLifeAssured() {
+            return lifeAssuredPartyId != null ? lifeAssuredPartyId : policyholderPartyId;
         }
 
     }

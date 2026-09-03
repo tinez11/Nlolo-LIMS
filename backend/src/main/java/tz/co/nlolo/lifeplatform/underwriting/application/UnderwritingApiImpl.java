@@ -59,9 +59,23 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * The self-insured overload.
+     *
+     * <p>{@code @Transactional} lives here, not on a {@code default} interface method, so
+     * the delegation below happens inside an already-open transaction. See
+     * {@link UnderwritingApi#openCase(UUID, UUID, UUID, BigDecimal, String, UUID, String)}.
+     */
     @Override
     @Transactional
     public UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, String openedBy) {
+        return openCase(applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
+            agentOfRecordId, ProposalDetails.selfInsured(), openedBy);
+    }
+
+    @Override
+    @Transactional
+    public UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, ProposalDetails proposal, String openedBy) {
         UUID tenantId = TenantContext.get();
         // Confirms the applicant party genuinely exists and belongs to this tenant --
         // PartyApi.getParty already throws PartyNotFoundException on cross-tenant access
@@ -72,9 +86,33 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // this module declares no dependency on it, and the same convention already applies to
         // productId and applicantPartyId's outbound refs. PolicyApiImpl treats the field the
         // same way on the manual-issue path.
+        ProposalDetails details = proposal != null ? proposal : ProposalDetails.selfInsured();
+        UUID lifeAssuredPartyId = details.resolveLifeAssured(applicantPartyId);
+        // Validated the same way the applicant is, and for the same reason: a case naming
+        // a life assured who does not exist in this tenant is unassessable, and
+        // PartyApi.getParty already refuses cross-tenant reads.
+        if (!lifeAssuredPartyId.equals(applicantPartyId)) {
+            partyApi.getParty(lifeAssuredPartyId);
+        }
+
         UnderwritingCase underwritingCase = new UnderwritingCase(tenantId, applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency, agentOfRecordId, openedBy);
+        underwritingCase.recordProposal(nextProposalNumber(), lifeAssuredPartyId, details);
         underwritingCaseRepository.save(underwritingCase);
         return toView(underwritingCase);
+    }
+
+    /**
+     * A human handle for a proposal, shaped like {@code policy_number}.
+     *
+     * <p>Random rather than sequential, matching how policy numbers are already minted
+     * here. A per-tenant sequence would read better (PRO-2026-000123) but leaks case
+     * volume across tenants through a shared sequence, and the actual requirement is
+     * something a person can quote over the phone — which "PRO-A3F91B2C" satisfies and a
+     * bare UUID does not. {@code ux_underwriting_case_proposal_number} is the uniqueness
+     * guarantee.
+     */
+    private static String nextProposalNumber() {
+        return "PRO-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     }
 
     @Override
@@ -340,6 +378,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             UnderwritingCaseStatus.valueOf(c.getStatus()), ReferralStatus.valueOf(c.getReferralStatus()),
             c.getDecisionOutcome() != null ? DecisionOutcome.valueOf(c.getDecisionOutcome()) : null,
             c.getDecisionLoadingPercent(), c.getDecisionDeclineReason(), c.getDecisionDecidedAt(),
-            c.getSumAssuredAmount(), c.getSumAssuredCurrency(), c.getAgentOfRecordId());
+            c.getSumAssuredAmount(), c.getSumAssuredCurrency(), c.getAgentOfRecordId(),
+            c.getProposalNumber(), c.getLifeAssuredPartyId(), c.getBranch(), c.getSourceOfBusiness(),
+            c.getProposedCommencementDate());
     }
 }

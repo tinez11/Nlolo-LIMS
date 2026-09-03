@@ -50,6 +50,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
+            "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql");
     }
 

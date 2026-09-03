@@ -41,6 +41,13 @@ public class Policy {
     @Column(name = "policyholder_party_id", nullable = false)
     private UUID policyholderPartyId;
 
+    // Who is insured, as opposed to who owns the contract (V7). On most life business
+    // these are two different people, and a death claim is assessed against this one.
+    // Always populated going forward: the service resolves a self-insured policy to the
+    // policyholder rather than storing a null every reader has to interpret.
+    @Column(name = "life_assured_party_id")
+    private UUID lifeAssuredPartyId;
+
     @Column(name = "product_id", nullable = false)
     private UUID productId;
 
@@ -195,6 +202,12 @@ public class Policy {
     public BigDecimal getPremiumAmount() { return premiumAmount; }
     public String getPremiumCurrency() { return premiumCurrency; }
     public String getPremiumFrequency() { return premiumFrequency; }
+    /** Record who is insured. Arrives already resolved; see PolicyApi.IssueRequest. */
+    public void recordLifeAssured(UUID lifeAssuredPartyId) {
+        this.lifeAssuredPartyId = lifeAssuredPartyId;
+    }
+
+    public UUID getLifeAssuredPartyId() { return lifeAssuredPartyId; }
     public LocalDate getCommencementDate() { return commencementDate; }
     public Integer getPolicyTermMonths() { return policyTermMonths; }
     public Integer getPremiumPayingTermMonths() { return premiumPayingTermMonths; }

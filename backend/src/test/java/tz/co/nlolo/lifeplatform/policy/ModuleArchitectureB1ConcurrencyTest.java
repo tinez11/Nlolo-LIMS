@@ -69,6 +69,7 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
+            "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -76,7 +77,8 @@ class ModuleArchitectureB1ConcurrencyTest {
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
             "db-migrations/policy/V5__beneficiary_party_index.sql",
-            "db-migrations/policy/V6__policy_term.sql");
+            "db-migrations/policy/V6__policy_term.sql",
+            "db-migrations/policy/V7__life_assured.sql");
     }
 
     @Autowired private PartyApi partyApi;

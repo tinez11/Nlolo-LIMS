@@ -16,7 +16,8 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
                                  // The policy term (V6). Null together on a product that does not
                                  // term, and on every policy issued before the migration.
                                  LocalDate commencementDate, Integer policyTermMonths,
-                                 Integer premiumPayingTermMonths, LocalDate maturityDate) {
+                                 Integer premiumPayingTermMonths, LocalDate maturityDate,
+                                 UUID lifeAssuredPartyId) {
 
     public static PolicyResponseDto from(PolicyView view) {
         return new PolicyResponseDto(view.policyNumber(), view.policyholderPartyId(), view.productId(), view.productVersionId(),
@@ -26,6 +27,7 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
             new MoneyDto(view.premiumAmount().toPlainString(), view.premiumCurrency()), view.premiumFrequency(),
             view.beneficiaries(),
             view.commencementDate(), view.policyTermMonths(),
-            view.premiumPayingTermMonths(), view.maturityDate());
+            view.premiumPayingTermMonths(), view.maturityDate(),
+            view.lifeAssuredPartyId());
     }
 }

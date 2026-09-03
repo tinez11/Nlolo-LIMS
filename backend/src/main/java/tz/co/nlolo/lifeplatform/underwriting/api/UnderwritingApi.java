@@ -14,7 +14,24 @@ public interface UnderwritingApi {
      * @param agentOfRecordId who sold it, carried through to automatic issuance so commission
      *                        can accrue on the normal path. Null for a direct sale.
      */
+    /**
+     * Open a case for an applicant who is insuring themselves.
+     *
+     * <p>Kept so the twelve existing test fixtures need no change. <b>Abstract, not a
+     * {@code default} method</b>: a default carries no annotation for Spring's proxy, so
+     * its delegation would run outside the implementation's {@code @Transactional} — the
+     * bug this codebase has now met twice (Build 1 §9.1, Build 3 §4).
+     */
     UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, String openedBy);
+
+    /**
+     * Open a case, recording who is actually insured and where the business came from.
+     *
+     * <p>A null {@link ProposalDetails#lifeAssuredPartyId()} means the applicant insures
+     * themselves; the implementation resolves it rather than storing a null, so the
+     * column is always answerable going forward.
+     */
+    UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, ProposalDetails proposal, String openedBy);
     UnderwritingCaseView submitAssessment(UUID caseId, AssessmentType assessmentType, String findings, BigDecimal riskScore, String assessedBy);
     UnderwritingCaseView getCase(UUID caseId);
 

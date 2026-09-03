@@ -5,12 +5,24 @@
   "registrationAllowed": false,
   "roles": {
     "realm": [
-      { "name": "UNDERWRITER" },
-      { "name": "CLAIMS_ASSESSOR" },
-      { "name": "CLAIMS_MANAGER" },
-      { "name": "FINANCE_OFFICER" },
-      { "name": "CUSTOMER_SERVICE_REP" },
-      { "name": "ADMIN" }
+      {
+        "name": "UNDERWRITER"
+      },
+      {
+        "name": "CLAIMS_ASSESSOR"
+      },
+      {
+        "name": "CLAIMS_MANAGER"
+      },
+      {
+        "name": "FINANCE_OFFICER"
+      },
+      {
+        "name": "CUSTOMER_SERVICE_REP"
+      },
+      {
+        "name": "ADMIN"
+      }
     ]
   },
   "clients": [
@@ -22,8 +34,13 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:3000/*", "http://localhost:8080/*"],
-      "webOrigins": ["http://localhost:3000"],
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:8080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000"
+      ],
       "secret": "dev-secret-staff",
       "protocolMappers": [
         {
@@ -53,8 +70,12 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:5173"],
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:5173/*"
@@ -85,9 +106,21 @@
       "email": "staff.underwriter@example.tz",
       "firstName": "Halima",
       "lastName": "Underwriter",
-      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
-      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
-      "realmRoles": ["UNDERWRITER"]
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "UNDERWRITER"
+      ]
     },
     {
       "username": "staff.assessor",
@@ -96,9 +129,21 @@
       "email": "staff.assessor@example.tz",
       "firstName": "Daudi",
       "lastName": "Assessor",
-      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
-      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
-      "realmRoles": ["CLAIMS_ASSESSOR"]
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CLAIMS_ASSESSOR"
+      ]
     },
     {
       "username": "staff.manager",
@@ -107,9 +152,21 @@
       "email": "staff.manager@example.tz",
       "firstName": "Fatuma",
       "lastName": "Manager",
-      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
-      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
-      "realmRoles": ["CLAIMS_MANAGER"]
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CLAIMS_MANAGER"
+      ]
     },
     {
       "username": "staff.finance",
@@ -118,9 +175,49 @@
       "email": "staff.finance@example.tz",
       "firstName": "Rehema",
       "lastName": "Finance",
-      "attributes": { "tenant_id": ["11111111-1111-1111-1111-111111111111"] },
-      "credentials": [{ "type": "password", "value": "devpassword", "temporary": false }],
-      "realmRoles": ["FINANCE_OFFICER"]
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "FINANCE_OFFICER"
+      ]
+    },
+    {
+      "username": "staff.admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.admin@example.tz",
+      "firstName": "Asha",
+      "lastName": "Admin",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN",
+        "FINANCE_OFFICER",
+        "UNDERWRITER",
+        "CLAIMS_ASSESSOR",
+        "CLAIMS_MANAGER",
+        "CUSTOMER_SERVICE_REP"
+      ]
     }
   ],
   "components": {

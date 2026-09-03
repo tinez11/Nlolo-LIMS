@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -30,4 +31,11 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     UnderwritingCaseStatus status, ReferralStatus referralStatus, DecisionOutcome decisionOutcome,
                                     BigDecimal decisionLoadingPercent, String decisionDeclineReason, Instant decisionDecidedAt,
                                     @JsonIgnore BigDecimal sumAssuredAmount, @JsonIgnore String sumAssuredCurrency,
-                                    UUID agentOfRecordId) {}
+                                    UUID agentOfRecordId,
+                                    // Proposal identity (V4). These ARE serialized, so
+                                    // openapi-underwriting.yaml's UnderwritingCaseView schema grew to
+                                    // match -- it declares additionalProperties: false, which is what
+                                    // caught the last set of fields added here without a spec change.
+                                    String proposalNumber, UUID lifeAssuredPartyId,
+                                    String branch, String sourceOfBusiness,
+                                    LocalDate proposedCommencementDate) {}

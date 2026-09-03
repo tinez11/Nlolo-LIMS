@@ -78,12 +78,12 @@ class PolicyNegativeAmountDefenceTest {
         // sumAssured.amount = "-5000000.00" and persist a negative death benefit that
         // claims/finaccounting consume in M4/M5. Asserts the cascade through @Valid, not just
         // the annotation on MoneyDto in isolation.
-        // The trailing three are the V6 policy term, all optional: this test is about the
-        // money floor cascading through @Valid, and a product that does not term is a real
-        // shape to validate against.
+        // The trailing four are the V6 policy term and the V7 life assured, all optional:
+        // this test is about the money floor cascading through @Valid, and a self-insured
+        // policy on a product that does not term is a real shape to validate against.
         ManualIssueRequestDto request = new ManualIssueRequestDto(UUID.randomUUID(), UUID.randomUUID(),
             UUID.randomUUID(), new MoneyDto("-5000000.00", "TZS"), new MoneyDto("15000.00", "TZS"), null, "MONTHLY", null, "negative sum assured",
-            null, null, null);
+            null, null, null, null);
         Set<ConstraintViolation<ManualIssueRequestDto>> violations = validator.validate(request);
         assertThat(violations)
             .as("the floor must cascade from MoneyDto into ManualIssueRequestDto.sumAssured")

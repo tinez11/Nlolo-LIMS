@@ -172,7 +172,10 @@ export function IssuePolicyPage() {
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-        <FormField label="Policyholder party id" error={errors.policyholderPartyId?.message}>
+        {/* Labelled by meaning, not by column name. The policyholder owns the contract;
+            the life assured below is whose death the policy pays on, and on most life
+            business those are two different people. */}
+        <FormField label="Policyholder" error={errors.policyholderPartyId?.message}>
           <Controller
             control={control}
             name="policyholderPartyId"
@@ -181,6 +184,23 @@ export function IssuePolicyPage() {
                 value={field.value || null}
                 onChange={(partyId) => field.onChange(partyId ?? '')}
                 placeholder="Search for the policyholder by name"
+              />
+            )}
+          />
+        </FormField>
+
+        <FormField
+          label="Life assured (leave blank if the policyholder insures themselves)"
+          error={errors.lifeAssuredPartyId?.message}
+        >
+          <Controller
+            control={control}
+            name="lifeAssuredPartyId"
+            render={({ field }) => (
+              <PartyPicker
+                value={field.value || null}
+                onChange={(partyId) => field.onChange(partyId ?? '')}
+                placeholder="Search for the life assured by name"
               />
             )}
           />

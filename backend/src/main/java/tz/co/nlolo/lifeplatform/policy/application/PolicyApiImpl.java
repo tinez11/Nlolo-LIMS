@@ -97,6 +97,9 @@ public class PolicyApiImpl implements PolicyApi {
         // is not the same as a term nobody recorded.
         policy.applyTerm(request.commencementDate(), request.policyTermMonths(),
             request.premiumPayingTermMonths());
+        // Self-insured resolves to the policyholder here, so the column always answers
+        // "whose life is this" rather than leaving every reader to infer it from a null.
+        policy.recordLifeAssured(request.resolveLifeAssured());
         policy.activate(LocalDate.now());
         policyRepository.save(policy);
 
@@ -582,6 +585,7 @@ public class PolicyApiImpl implements PolicyApi {
             policy.getPremiumAmount(), policy.getPremiumCurrency(), policy.getPremiumFrequency(),
             beneficiaryViews,
             policy.getCommencementDate(), policy.getPolicyTermMonths(),
-            policy.getPremiumPayingTermMonths(), policy.getMaturityDate());
+            policy.getPremiumPayingTermMonths(), policy.getMaturityDate(),
+            policy.getLifeAssuredPartyId());
     }
 }

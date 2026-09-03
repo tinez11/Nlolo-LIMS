@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { OpenCaseRequest } from '@/api/types';
 import { AMOUNT_PATTERN } from '@/lib/money';
-import { CURRENCY_PATTERN, UUID_PATTERN } from '@/lib/patterns';
+import { CURRENCY_PATTERN, ISO_DATE_PATTERN, UUID_PATTERN } from '@/lib/patterns';
 
 /** Zod schema for `POST /underwriting/cases`, mirroring `OpenCaseRequest` exactly. */
 export const openCaseFormSchema = z.object({
@@ -27,6 +27,29 @@ export const openCaseFormSchema = z.object({
     .string()
     .trim()
     .refine((v) => v === '' || UUID_PATTERN.test(v), 'Not a valid agent id'),
+
+  /**
+   * Whose life is insured, when that is not the applicant.
+   *
+   * Blank means self-insured — the common case, and the only one the model could express
+   * before this field existed. Most life business is not self-insured though: a parent
+   * insures a child, an employer its staff. Both group business and credit life are
+   * structurally impossible without the distinction.
+   */
+  lifeAssuredPartyId: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || UUID_PATTERN.test(v), 'Not a valid party id'),
+
+  branch: z.string().trim().max(100, 'Cannot exceed 100 characters'),
+
+  /** Free text: the platform does not own this vocabulary until TIRA publishes one. */
+  sourceOfBusiness: z.string().trim().max(60, 'Cannot exceed 60 characters'),
+
+  proposedCommencementDate: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || ISO_DATE_PATTERN.test(v), 'Not a valid date'),
 });
 
 export type OpenCaseFormValues = z.infer<typeof openCaseFormSchema>;
@@ -39,6 +62,10 @@ export function blankOpenCaseForm(): OpenCaseFormValues {
     sumAssuredAmount: '',
     sumAssuredCurrency: 'TZS',
     agentOfRecordId: '',
+    lifeAssuredPartyId: '',
+    branch: '',
+    sourceOfBusiness: '',
+    proposedCommencementDate: '',
   };
 }
 
@@ -51,5 +78,14 @@ export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
     // Omitted entirely when blank rather than sent as '': the field is a nullable uuid, and
     // an empty string is neither a uuid nor an absence the backend would accept.
     ...(values.agentOfRecordId ? { agentOfRecordId: values.agentOfRecordId } : {}),
+    // Same omit-when-blank rule. A blank life assured is not a null to send: it means
+    // self-insured, and the backend resolves that to the applicant rather than storing a
+    // null every later reader would have to interpret.
+    ...(values.lifeAssuredPartyId ? { lifeAssuredPartyId: values.lifeAssuredPartyId } : {}),
+    ...(values.branch ? { branch: values.branch } : {}),
+    ...(values.sourceOfBusiness ? { sourceOfBusiness: values.sourceOfBusiness } : {}),
+    ...(values.proposedCommencementDate
+      ? { proposedCommencementDate: values.proposedCommencementDate }
+      : {}),
   };
 }

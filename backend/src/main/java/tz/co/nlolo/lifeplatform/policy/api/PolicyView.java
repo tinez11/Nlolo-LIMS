@@ -17,4 +17,8 @@ public record PolicyView(String policyNumber, UUID underwritingCaseId, UUID poli
                           // a reader never has to do date arithmetic to answer "when does this
                           // mature", and a sweep can index it.
                           LocalDate commencementDate, Integer policyTermMonths,
-                          Integer premiumPayingTermMonths, LocalDate maturityDate) {}
+                          Integer premiumPayingTermMonths, LocalDate maturityDate,
+                          // Who is insured, as opposed to who owns the contract (V7). Equal to
+                          // policyholderPartyId on a self-insured policy, which is the common case
+                          // but not the only one -- and a death claim is assessed against this one.
+                          UUID lifeAssuredPartyId) {}

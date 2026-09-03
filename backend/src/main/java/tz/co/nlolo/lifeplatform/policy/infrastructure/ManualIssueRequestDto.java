@@ -36,4 +36,10 @@ public record ManualIssueRequestDto(
     // could not see.
     LocalDate commencementDate,
     @Positive Integer policyTermMonths,
-    @Positive Integer premiumPayingTermMonths) {}
+    @Positive Integer premiumPayingTermMonths,
+
+    /**
+     * Whose life is insured, when that is not the policyholder. Optional: omitting it
+     * means self-insured, and the aggregate resolves it rather than storing a null.
+     */
+    UUID lifeAssuredPartyId) {}

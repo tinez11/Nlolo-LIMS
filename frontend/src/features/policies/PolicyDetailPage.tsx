@@ -169,6 +169,28 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                     ? {}
                     : { note: 'This product does not mature, or no term is on record.' })}
                 />
+                {/* Rendered only when the two differ. On a self-insured policy — the
+                    common case — a second row repeating the same name would be noise
+                    that teaches people to skip the panel. */}
+                {policy.lifeAssuredPartyId &&
+                  policy.lifeAssuredPartyId !== policy.policyholderPartyId && (
+                    <Field
+                      label="Life assured"
+                      value={
+                        isStaff ? (
+                          <Link
+                            to={`/staff/parties/${policy.lifeAssuredPartyId}`}
+                            className="underline"
+                          >
+                            <PartyName partyId={policy.lifeAssuredPartyId} />
+                          </Link>
+                        ) : (
+                          <PartyName partyId={policy.lifeAssuredPartyId} />
+                        )
+                      }
+                      note="A death claim is assessed against this person, not the policyholder."
+                    />
+                  )}
                 <Field
                   label="Policyholder"
                   value={

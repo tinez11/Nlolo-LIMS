@@ -57,6 +57,9 @@ export const policyIssueFormSchema = z.object({
   premiumCurrency: currency(),
   premiumFrequency: z.enum(['MONTHLY', 'QUARTERLY', 'ANNUALLY']),
   agentOfRecordId: optionalUuid(),
+  // Blank means self-insured. The backend resolves that to the policyholder rather than
+  // storing a null, so an issued policy always answers "whose life is this".
+  lifeAssuredPartyId: optionalUuid(),
   reasonForManualIssue: z.string().trim().min(1, 'A reason is required -- it feeds the audit trail'),
   beneficiaries: beneficiaryListSchema,
 
@@ -148,6 +151,7 @@ export function blankPolicyIssueForm(): PolicyIssueFormInput {
     premiumCurrency: 'TZS',
     premiumFrequency: 'MONTHLY' as PremiumFrequency,
     agentOfRecordId: '',
+    lifeAssuredPartyId: '',
     reasonForManualIssue: '',
     beneficiaries: [],
     // Blank, not today's date. A commencement date is a contract term, and prefilling
@@ -173,6 +177,10 @@ export function toApiRequest(values: PolicyIssueFormValues): ManualIssueRequest 
     // value may be null (a direct/online channel with no agent) -- an empty
     // string is a different, wrong contract from an explicit null.
     agentOfRecordId: values.agentOfRecordId.trim() || null,
+    // Omitted when blank, unlike agentOfRecordId just above: that field is spec-required
+    // and must be present-but-null, while this one is genuinely optional and an absent key
+    // is what says self-insured.
+    ...(values.lifeAssuredPartyId.trim() && { lifeAssuredPartyId: values.lifeAssuredPartyId.trim() }),
     reasonForManualIssue: values.reasonForManualIssue.trim(),
     beneficiaries: toApiBeneficiaries({ beneficiaries: values.beneficiaries } as BeneficiaryFormValues),
     // Omitted when blank rather than sent as null or 0. A product that does not term

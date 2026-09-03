@@ -4,6 +4,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
+import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
@@ -99,7 +100,10 @@ export function OpenUnderwritingCasePage() {
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-        <FormField label="Applicant party id" error={errors.applicantPartyId?.message}>
+        {/* "Applicant" is who proposes; "life assured" is whose mortality is assessed.
+            Labelled by what they mean rather than by the column name, which is the
+            broader problem this console still has elsewhere. */}
+        <FormField label="Applicant" error={errors.applicantPartyId?.message}>
           <Controller
             control={control}
             name="applicantPartyId"
@@ -108,6 +112,23 @@ export function OpenUnderwritingCasePage() {
                 value={field.value || null}
                 onChange={(partyId) => field.onChange(partyId ?? '')}
                 placeholder="Search for the applicant by name"
+              />
+            )}
+          />
+        </FormField>
+
+        <FormField
+          label="Life assured (leave blank if the applicant insures themselves)"
+          error={errors.lifeAssuredPartyId?.message}
+        >
+          <Controller
+            control={control}
+            name="lifeAssuredPartyId"
+            render={({ field }) => (
+              <PartyPicker
+                value={field.value || null}
+                onChange={(partyId) => field.onChange(partyId ?? '')}
+                placeholder="Search for the life assured by name"
               />
             )}
           />
@@ -167,6 +188,49 @@ export function OpenUnderwritingCasePage() {
             accrues no commission.
           </p>
         </FormField>
+
+        {/* Where the business came from. Last and grouped: all three are optional, and the
+            risk — who, what product, how much — is what the form is actually for. */}
+        <fieldset className="border-t border-border pt-3">
+          <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+            Source
+          </legend>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Branch" error={errors.branch?.message}>
+              <input
+                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                {...register('branch')}
+              />
+            </FormField>
+
+            <FormField label="Source of business" error={errors.sourceOfBusiness?.message}>
+              <input
+                className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-sm"
+                placeholder="e.g. Bancassurance"
+                {...register('sourceOfBusiness')}
+              />
+            </FormField>
+
+            <div className="col-span-2">
+              <FormField
+                label="Proposed commencement date"
+                error={errors.proposedCommencementDate?.message}
+              >
+                <Controller
+                  control={control}
+                  name="proposedCommencementDate"
+                  render={({ field }) => (
+                    <DatePicker
+                      value={field.value || null}
+                      onChange={(iso) => field.onChange(iso ?? '')}
+                    />
+                  )}
+                />
+              </FormField>
+            </div>
+          </div>
+        </fieldset>
 
         {opening.status === 'error' && opening.error && (
           <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">

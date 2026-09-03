@@ -20,7 +20,7 @@ import { expect, type Page, test } from '@playwright/test';
 async function pickPolicyholder(page: Page, nameQuery = 'Amina') {
   await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill(nameQuery);
-  await page.getByText('Amina Owner').click();
+  await page.getByRole('option', { name: 'Amina Owner' }).click();
 }
 
 test.describe('staff issue policy', () => {

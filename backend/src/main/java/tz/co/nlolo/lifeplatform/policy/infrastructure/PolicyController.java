@@ -83,7 +83,8 @@ public class PolicyController {
             new BigDecimal(request.premiumAmount().amount()), request.premiumAmount().currencyCode(),
             request.premiumFrequency() != null && !request.premiumFrequency().isBlank() ? request.premiumFrequency() : "MONTHLY",
             request.agentOfRecordId(), beneficiaries, request.reasonForManualIssue(),
-            request.commencementDate(), request.policyTermMonths(), request.premiumPayingTermMonths());
+            request.commencementDate(), request.policyTermMonths(), request.premiumPayingTermMonths(),
+            request.lifeAssuredPartyId());
         PolicyView view = policyApi.issuePolicy(request.underwritingCaseId(), issueRequest, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyResponseDto.from(view));
     }

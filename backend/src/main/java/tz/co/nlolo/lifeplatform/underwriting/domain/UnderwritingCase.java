@@ -3,8 +3,11 @@ package tz.co.nlolo.lifeplatform.underwriting.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
 
+import tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails;
+
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -70,6 +73,25 @@ public class UnderwritingCase {
     @Column(name = "agent_of_record_id")
     private UUID agentOfRecordId;
 
+    // Proposal identity (V4). proposalNumber is the human handle a case never had --
+    // a bare UUID cannot be quoted over the phone. lifeAssuredPartyId is the
+    // consequential one: until it existed, a proposal where the policyholder insures
+    // somebody else could not be expressed at all.
+    @Column(name = "proposal_number")
+    private String proposalNumber;
+
+    @Column(name = "life_assured_party_id")
+    private UUID lifeAssuredPartyId;
+
+    @Column(name = "branch")
+    private String branch;
+
+    @Column(name = "source_of_business")
+    private String sourceOfBusiness;
+
+    @Column(name = "proposed_commencement_date")
+    private LocalDate proposedCommencementDate;
+
     protected UnderwritingCase() {}
 
     public UnderwritingCase(UUID tenantId, UUID applicantPartyId, UUID productId, UUID productVersionId,
@@ -92,6 +114,27 @@ public class UnderwritingCase {
     }
 
     public UUID getAgentOfRecordId() { return agentOfRecordId; }
+
+    /**
+     * Record the proposal's identity and who it insures.
+     *
+     * <p>{@code lifeAssuredPartyId} arrives already resolved — the service turns a null
+     * (self-insured) into the applicant before calling this, so the column is always
+     * answerable rather than carrying a null that every reader has to interpret.
+     */
+    public void recordProposal(String proposalNumber, UUID lifeAssuredPartyId, ProposalDetails details) {
+        this.proposalNumber = proposalNumber;
+        this.lifeAssuredPartyId = lifeAssuredPartyId;
+        this.branch = details.branch();
+        this.sourceOfBusiness = details.sourceOfBusiness();
+        this.proposedCommencementDate = details.proposedCommencementDate();
+    }
+
+    public String getProposalNumber() { return proposalNumber; }
+    public UUID getLifeAssuredPartyId() { return lifeAssuredPartyId; }
+    public String getBranch() { return branch; }
+    public String getSourceOfBusiness() { return sourceOfBusiness; }
+    public LocalDate getProposedCommencementDate() { return proposedCommencementDate; }
 
     public UUID getCaseId() { return caseId; }
     public UUID getTenantId() { return tenantId; }

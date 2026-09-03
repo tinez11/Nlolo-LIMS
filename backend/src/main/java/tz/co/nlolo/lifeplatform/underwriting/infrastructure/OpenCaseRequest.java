@@ -4,7 +4,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 // Mirrors api/openapi/openapi-underwriting.yaml's OpenCaseRequest: required
@@ -30,7 +32,24 @@ public record OpenCaseRequest(
      * normal path. Optional, because a self-service application is a genuine direct sale --
      * and because it was hardcoded absent until now, so every existing caller omits it.
      */
-    UUID agentOfRecordId) {
+    UUID agentOfRecordId,
+
+    /**
+     * Whose life is insured, when that is not the applicant.
+     *
+     * <p>Optional, and omitting it means self-insured — the service resolves it to the
+     * applicant rather than storing a null, so a newly opened case always answers the
+     * question. Most life business is not self-insured, and both group business and
+     * credit life are structurally impossible to express without this.
+     */
+    UUID lifeAssuredPartyId,
+
+    @Size(max = 100) String branch,
+
+    /** Free text on purpose: the platform does not own this vocabulary yet. */
+    @Size(max = 60) String sourceOfBusiness,
+
+    LocalDate proposedCommencementDate) {
 
     // Field names/constraints mirror openapi-common.yaml#/components/schemas/Money exactly.
     public record Money(

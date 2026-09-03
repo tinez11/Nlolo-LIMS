@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.MedicalDisclosureView;
+import tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseStatus;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
@@ -82,7 +83,10 @@ public class UnderwritingController {
         // real dedup registry lands with payment's idempotency work in M5.
         UnderwritingCaseView view = underwritingApi.openCase(request.applicantPartyId(), request.productId(), request.productVersionId(),
             new BigDecimal(request.sumAssured().amount()), request.sumAssured().currencyCode(),
-            request.agentOfRecordId(), jwt.getSubject());
+            request.agentOfRecordId(),
+            new ProposalDetails(request.lifeAssuredPartyId(), request.branch(),
+                request.sourceOfBusiness(), request.proposedCommencementDate()),
+            jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
