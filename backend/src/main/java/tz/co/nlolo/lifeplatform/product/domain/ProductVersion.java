@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.product.domain;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
+import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -38,6 +39,28 @@ public class ProductVersion {
     @Column(name = "max_loan_to_value_percent")
     private BigDecimal maxLoanToValuePercent;
 
+    // What this version will accept (V6). All nullable -- an unbounded dimension is a
+    // real product design, not a gap. Consumed by Build 4's issueGates, where entry age
+    // and term are hard refusals and sum assured is a soft flag; the severities live in
+    // the gate rather than here because they are properties of the kind of bound.
+    @Column(name = "min_entry_age")
+    private Integer minEntryAge;
+
+    @Column(name = "max_entry_age")
+    private Integer maxEntryAge;
+
+    @Column(name = "min_term_months")
+    private Integer minTermMonths;
+
+    @Column(name = "max_term_months")
+    private Integer maxTermMonths;
+
+    @Column(name = "min_sum_assured")
+    private BigDecimal minSumAssured;
+
+    @Column(name = "max_sum_assured")
+    private BigDecimal maxSumAssured;
+
     @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     @Column(name = "surrender_charge_schedule", columnDefinition = "jsonb")
     private String surrenderChargeScheduleJson;
@@ -72,6 +95,27 @@ public class ProductVersion {
     public boolean isActiveForNewBusiness() { return activeForNewBusiness; }
     public int getGracePeriodDays() { return gracePeriodDays; }
     public BigDecimal getMaxLoanToValuePercent() { return maxLoanToValuePercent; }
+
+    /**
+     * Record what this version will accept.
+     *
+     * <p>Ordering (each max at or above its min) is validated by
+     * {@link EligibilityBounds} itself, so a caller cannot construct an inverted pair to
+     * pass here; {@code product_version_*_sane} enforces the same in the database.
+     */
+    public void applyEligibilityBounds(EligibilityBounds bounds) {
+        this.minEntryAge = bounds.minEntryAge();
+        this.maxEntryAge = bounds.maxEntryAge();
+        this.minTermMonths = bounds.minTermMonths();
+        this.maxTermMonths = bounds.maxTermMonths();
+        this.minSumAssured = bounds.minSumAssured();
+        this.maxSumAssured = bounds.maxSumAssured();
+    }
+
+    public EligibilityBounds getEligibilityBounds() {
+        return new EligibilityBounds(minEntryAge, maxEntryAge, minTermMonths, maxTermMonths,
+            minSumAssured, maxSumAssured);
+    }
 
     /**
      * Version rollover: retires this version from new-business eligibility so a

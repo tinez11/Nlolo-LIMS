@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ProductCategory, ProductVersionSpec } from '@/api/types';
+import { AMOUNT_PATTERN } from '@/lib/money';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
 
 /**
@@ -60,6 +61,36 @@ const fundRowSchema = z.object({
   currentNav: z.coerce.number(),
 });
 
+/** An optional whole number, kept as a string so blank means "no bound", not zero. */
+const wholeNumber = (label: string, min: number, max?: number) =>
+  z
+    .string()
+    .trim()
+    .refine((v) => v === '' || /^\d+$/.test(v), `${label} must be a whole number`)
+    .refine((v) => v === '' || Number(v) >= min, `${label} must be at least ${min}`)
+    .refine((v) => v === '' || max === undefined || Number(v) <= max, `${label} cannot exceed ${max}`);
+
+/** An optional money bound, as a decimal string. */
+const optionalAmount = (label: string) =>
+  z
+    .string()
+    .trim()
+    .refine((v) => v === '' || AMOUNT_PATTERN.test(v), `${label} must be a decimal amount`)
+    .refine((v) => v === '' || Number(v) > 0, `${label} must be greater than zero`);
+
+/** Both blank, or max at or above min. Mirrors EligibilityBounds and the DB CHECKs. */
+function requireOrdered(
+  ctx: z.RefinementCtx,
+  min: string,
+  max: string,
+  path: string,
+  message: string,
+) {
+  if (min !== '' && max !== '' && Number(max) < Number(min)) {
+    ctx.addIssue({ code: 'custom', path: [path], message });
+  }
+}
+
 export function publishVersionFormSchema(category: ProductCategory) {
   return z.object({
     ifrsMeasurementModel: z.enum(['GMM', 'PAA']),
@@ -82,6 +113,20 @@ export function publishVersionFormSchema(category: ProductCategory) {
         });
       }
     }),
+    // What this version will accept. Every bound optional -- an unbounded dimension is a
+    // real product design, not an omission. Kept as strings so a blank field stays blank
+    // rather than coercing to 0, which would be a bound of zero rather than no bound.
+    //
+    // Entry age and term are HARD refusals at issue; sum assured is a SOFT flag recorded
+    // in the audit reason. The form says so, because an actuary should know which bounds
+    // will refuse business before they set one casually.
+    minEntryAge: wholeNumber('Minimum entry age', 0, 120),
+    maxEntryAge: wholeNumber('Maximum entry age', 0, 120),
+    minTermMonths: wholeNumber('Minimum term', 1),
+    maxTermMonths: wholeNumber('Maximum term', 1),
+    minSumAssured: optionalAmount('Minimum sum assured'),
+    maxSumAssured: optionalAmount('Maximum sum assured'),
+
     benefitSchedule: z.array(benefitRowSchema), // no minimum coverage required
     fundDefinitions: z.array(fundRowSchema).superRefine((rows, ctx) => {
       // ProductApiImpl.publishVersion: rejected outright for any category other
@@ -93,6 +138,13 @@ export function publishVersionFormSchema(category: ProductCategory) {
         });
       }
     }),
+  }).superRefine((values, ctx) => {
+    requireOrdered(ctx, values.minEntryAge, values.maxEntryAge, 'maxEntryAge',
+      'Maximum entry age cannot be below the minimum');
+    requireOrdered(ctx, values.minTermMonths, values.maxTermMonths, 'maxTermMonths',
+      'Maximum term cannot be below the minimum');
+    requireOrdered(ctx, values.minSumAssured, values.maxSumAssured, 'maxSumAssured',
+      'Maximum sum assured cannot be below the minimum');
   });
 }
 
@@ -112,6 +164,12 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     ratingTable: [],
     benefitSchedule: [],
     fundDefinitions: [],
+    minEntryAge: '',
+    maxEntryAge: '',
+    minTermMonths: '',
+    maxTermMonths: '',
+    minSumAssured: '',
+    maxSumAssured: '',
   };
 }
 
@@ -148,5 +206,29 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
     ),
     benefitSchedule: values.benefitSchedule,
     fundDefinitions: values.fundDefinitions,
+    // Omitted entirely when nothing is bounded, rather than sent as an object of nulls.
+    // An absent block and a block of nulls mean the same thing to the backend, but the
+    // absent one says "unbounded" without asking a reader to check six fields.
+    ...(hasAnyBound(values) && {
+      eligibility: {
+        ...(values.minEntryAge && { minEntryAge: Number(values.minEntryAge) }),
+        ...(values.maxEntryAge && { maxEntryAge: Number(values.maxEntryAge) }),
+        ...(values.minTermMonths && { minTermMonths: Number(values.minTermMonths) }),
+        ...(values.maxTermMonths && { maxTermMonths: Number(values.maxTermMonths) }),
+        ...(values.minSumAssured && { minSumAssured: Number(values.minSumAssured) }),
+        ...(values.maxSumAssured && { maxSumAssured: Number(values.maxSumAssured) }),
+      },
+    }),
   };
+}
+
+function hasAnyBound(values: PublishVersionFormValues): boolean {
+  return Boolean(
+    values.minEntryAge ||
+      values.maxEntryAge ||
+      values.minTermMonths ||
+      values.maxTermMonths ||
+      values.minSumAssured ||
+      values.maxSumAssured,
+  );
 }

@@ -176,6 +176,30 @@ components:
         productName: { type: string }
         category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
         defaultCurrency: { type: string, example: TZS }
+    EligibilityBounds:
+      description: >-
+        What this version will accept. Every bound optional -- an unbounded dimension is a real
+        product design, not a gap.
+
+        The bounds are NOT all the same kind of rule, and the gates that consume them differ.
+        Entry age is a HARD refusal: base_rate_table is keyed on (age range, sex, smoker status)
+        and a quote already 422s with PremiumNotQuotableException when no cell matches, so an
+        out-of-range age cannot be priced at all. Term is a HARD refusal too: term is
+        staff-entered configuration, and a term the product was not designed for is the wrong
+        product. Sum assured is a SOFT flag: above retention is not invalid business, it is what
+        reinsurance is for, and the breach is recorded in reasonForManualIssue rather than
+        blocked.
+
+        Sum-assured bounds carry no currency -- they are read in the product's own
+        defaultCurrency, and a bound in a currency the product does not price in means nothing.
+      type: [object, "null"]
+      properties:
+        minEntryAge: { type: [integer, "null"], minimum: 0, maximum: 120 }
+        maxEntryAge: { type: [integer, "null"], minimum: 0, maximum: 120 }
+        minTermMonths: { type: [integer, "null"], minimum: 1 }
+        maxTermMonths: { type: [integer, "null"], minimum: 1 }
+        minSumAssured: { type: [number, "null"], exclusiveMinimum: 0 }
+        maxSumAssured: { type: [number, "null"], exclusiveMinimum: 0 }
     ProductVersionSpec:
       type: object
       required: [ifrsMeasurementModel, effectiveDate, ratingTable, benefitSchedule]
@@ -183,6 +207,7 @@ components:
         ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
+        eligibility: { $ref: '#/components/schemas/EligibilityBounds' }
         ratingTable:
           description: >-
             Multipliers applied on top of the base rate. For factorType AGE, ageFrom and ageTo

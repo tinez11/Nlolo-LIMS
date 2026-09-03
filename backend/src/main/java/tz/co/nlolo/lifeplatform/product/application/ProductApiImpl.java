@@ -70,11 +70,40 @@ public class ProductApiImpl implements ProductApi {
         return products.stream().map(this::toSummaryView).collect(Collectors.toList());
     }
 
+    /**
+     * The two convenience overloads, each carrying {@code @Transactional} itself.
+     *
+     * <p>They live here rather than as {@code default} methods on the interface for the
+     * reason recorded on {@link ProductApi#publishVersion}: a {@code default} method has
+     * no annotation for the proxy to see, so its delegating call becomes a
+     * self-invocation and the whole publish runs untransacted. With the annotation here,
+     * the transaction is already open by the time the delegation happens, so the retire
+     * -then-insert sequence below is atomic for every caller regardless of which
+     * overload they use.
+     */
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule,
+                                List<FundInput> fundDefinitions, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, List.of(), EligibilityBounds.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule,
+                                List<FundInput> fundDefinitions, List<BaseRateInput> baseRates, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, EligibilityBounds.none(), publishedBy);
+    }
+
     @Override
     @Transactional
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
-                                List<BaseRateInput> baseRates, String publishedBy) {
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, String publishedBy) {
         UUID tenantId = TenantContext.get();
         ProductDefinition product = productDefinitionRepository.findById(productId)
             .filter(p -> p.getTenantId().equals(tenantId))
@@ -135,6 +164,9 @@ public class ProductApiImpl implements ProductApi {
 
         int gracePeriodDays = 30; // Deliverable 3 doesn't specify a grace-period source yet at this layer -- see Global Constraints; this is a fixed, flagged default, not read from an OpenAPI field (ProductVersionSpec has no gracePeriodDays field).
         ProductVersion version = new ProductVersion(tenantId, productId, effectiveDate, retirementDate, gracePeriodDays, null, publishedBy);
+        // What this version will accept. Never null -- callers that state nothing pass
+        // EligibilityBounds.none(), because an unbounded version is a real design.
+        version.applyEligibilityBounds(bounds != null ? bounds : EligibilityBounds.none());
         productVersionRepository.save(version);
 
         for (RatingFactorInput input : ratingTable) {

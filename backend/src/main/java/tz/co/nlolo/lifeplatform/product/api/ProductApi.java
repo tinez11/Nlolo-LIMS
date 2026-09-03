@@ -98,12 +98,25 @@ public interface ProductApi {
      * An unpriceable version is therefore a real state, surfaced where it matters
      * — at quote time — rather than made unrepresentable at the cost of blocking
      * a product line.
+     *
+     * <p><b>Abstract, not a {@code default} method, and that is load-bearing.</b> It was
+     * a {@code default} delegating to the fuller overload, which meant Spring's
+     * transaction proxy never applied: a {@code default} interface method carries no
+     * annotation, so the proxy passed the call to the target and the delegating call
+     * became a self-invocation that never re-entered the proxy. The whole publish then
+     * ran OUTSIDE the {@code @Transactional} the implementation declares — and roughly
+     * 48 of the 67 callers use this overload.
+     *
+     * <p>The consequence is a partial write, not a lost event: the method retires every
+     * currently-ACTIVE version with {@code saveAndFlush} (deliberately immediate) before
+     * inserting the new one. Two concurrent publishes for the same product both retire
+     * the active version and one then loses on {@code ux_product_version_active}; with a
+     * transaction the loser rolls back, without one its retirement is already committed
+     * and the product is left with no active version at all. Same failure family as
+     * Build 1 §9.1, where the mechanism was proven empirically.
      */
-    default void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
-                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions, String publishedBy) {
-        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
-            fundDefinitions, List.of(), publishedBy);
-    }
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions, String publishedBy);
 
     /**
      * Publish a version, optionally with the base rate table it is priced from.
@@ -118,6 +131,17 @@ public interface ProductApi {
     void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                          List<BaseRateInput> baseRates, String publishedBy);
+
+    /**
+     * Publish a version that states what it will accept.
+     *
+     * <p>The fullest form; every other overload delegates here. {@code bounds} may be
+     * {@link EligibilityBounds#none()} — an unbounded version is a real product design,
+     * not an omission.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, String publishedBy);
 
     ProductSnapshotView getActiveSnapshot(UUID productId, LocalDate asOfDate);
 

@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { publishVersionFormSchema, toApiRequest } from './publishVersionSchema';
+import {
+  blankPublishVersionForm,
+  publishVersionFormSchema,
+  toApiRequest,
+} from './publishVersionSchema';
 
 // AGE rows carry a real range as of product V5: age is resolved by range, not by matching
 // the band text, so an AGE row without one would match nobody and silently rate neutral.
 const ageRow = { factorType: 'AGE' as const, band: '18-30', multiplier: 1, ageFrom: '18', ageTo: '30' };
 const sumRow = { factorType: 'SUM_ASSURED_BAND' as const, band: '0-5000000', multiplier: 1.1 };
 
+// Built on the blank form so the fixture always carries every key a real submission has.
 const valid = () => ({
+  ...blankPublishVersionForm(),
   ifrsMeasurementModel: 'PAA' as const,
   effectiveDate: '2026-01-01',
   retirementDate: '',
@@ -154,5 +160,74 @@ describe('toApiRequest', () => {
   it('rejects an AGE row whose range ends before it begins', () => {
     const backwards = { ...ageRow, ageFrom: '40', ageTo: '30' };
     expect(termLife.safeParse({ ...valid(), ratingTable: [backwards, sumRow] }).success).toBe(false);
+  });
+});
+
+describe('eligibility bounds', () => {
+  const termLife = publishVersionFormSchema('TERM_LIFE');
+
+  const bounded = () => ({
+    ...valid(),
+    minEntryAge: '18',
+    maxEntryAge: '65',
+    minTermMonths: '60',
+    maxTermMonths: '360',
+    minSumAssured: '500000.00',
+    maxSumAssured: '300000000.00',
+  });
+
+  it('sends every bound that was set, as numbers', () => {
+    const request = toApiRequest(termLife.parse(bounded()));
+    expect(request.eligibility).toEqual({
+      minEntryAge: 18,
+      maxEntryAge: 65,
+      minTermMonths: 60,
+      maxTermMonths: 360,
+      minSumAssured: 500000,
+      maxSumAssured: 300000000,
+    });
+  });
+
+  // An unbounded version is a real product design. Omitting the block says so more
+  // plainly than an object of six nulls, and means the same thing to the backend.
+  it('omits the eligibility block entirely when nothing is bounded', () => {
+    const request = toApiRequest(termLife.parse(valid()));
+    expect('eligibility' in request).toBe(false);
+  });
+
+  it('sends only the bounds that were set', () => {
+    const request = toApiRequest(termLife.parse({ ...valid(), maxEntryAge: '65' }));
+    expect(request.eligibility).toEqual({ maxEntryAge: 65 });
+  });
+
+  // Blank must stay "no bound" rather than coercing to a bound of zero, which the
+  // backend's CHECKs would reject and which would mean something quite different.
+  it('treats a blank bound as absent, not as zero', () => {
+    const request = toApiRequest(termLife.parse({ ...valid(), minSumAssured: '' }));
+    expect('eligibility' in request).toBe(false);
+  });
+
+  it('rejects a maximum below its minimum, on each pair', () => {
+    expect(termLife.safeParse({ ...bounded(), maxEntryAge: '17' }).success).toBe(false);
+    expect(termLife.safeParse({ ...bounded(), maxTermMonths: '12' }).success).toBe(false);
+    expect(termLife.safeParse({ ...bounded(), maxSumAssured: '1000.00' }).success).toBe(false);
+  });
+
+  it('accepts a maximum equal to its minimum', () => {
+    expect(termLife.safeParse({ ...bounded(), maxEntryAge: '18' }).success).toBe(true);
+  });
+
+  it('accepts one half of a pair without the other', () => {
+    expect(termLife.safeParse({ ...valid(), maxEntryAge: '65' }).success).toBe(true);
+    expect(termLife.safeParse({ ...valid(), minEntryAge: '18' }).success).toBe(true);
+  });
+
+  it('rejects an entry age outside a human lifetime', () => {
+    expect(termLife.safeParse({ ...valid(), maxEntryAge: '150' }).success).toBe(false);
+  });
+
+  it('rejects a zero or fractional term bound', () => {
+    expect(termLife.safeParse({ ...valid(), minTermMonths: '0' }).success).toBe(false);
+    expect(termLife.safeParse({ ...valid(), minTermMonths: '12.5' }).success).toBe(false);
   });
 });

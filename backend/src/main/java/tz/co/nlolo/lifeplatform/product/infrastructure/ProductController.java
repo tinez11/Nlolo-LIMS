@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
+import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
@@ -53,6 +54,9 @@ public class ProductController {
             request.baseRates() != null
                 ? request.baseRates().stream().map(b -> new ProductApi.BaseRateInput(b.ageFrom(), b.ageTo(), b.sex(), b.smokerStatus(), b.ratePerMille())).collect(Collectors.toList())
                 : List.of(),
+            // Never null downstream: an omitted block means an unbounded version, which is
+            // a real design rather than a missing answer.
+            request.eligibility() != null ? request.eligibility().toBounds() : EligibilityBounds.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

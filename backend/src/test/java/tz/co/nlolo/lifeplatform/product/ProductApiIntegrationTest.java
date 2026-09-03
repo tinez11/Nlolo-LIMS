@@ -18,8 +18,13 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import org.springframework.transaction.annotation.Transactional;
+import tz.co.nlolo.lifeplatform.product.application.ProductApiImpl;
+
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -46,7 +51,8 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
             "db-migrations/product/V4__rating_table_unique_band.sql",
-            "db-migrations/product/V5__rating_table_age_bounds.sql");
+            "db-migrations/product/V5__rating_table_age_bounds.sql",
+            "db-migrations/product/V6__eligibility_bounds.sql");
     }
 
     @BeforeEach
@@ -742,6 +748,105 @@ class ProductApiIntegrationTest {
 
         ProductSnapshotView latestSnapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         assertEquals(newerVersion.getProductVersionId(), latestSnapshot.productVersionId(), "getActiveSnapshot must return the newer version");
+    }
+
+    @Test
+    void eligibilityBoundsRoundTripOntoTheVersion() {
+        ProductSummaryView product = productApi.createProduct("BOUNDS-01", "Bounded product",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, List.of(),
+            new EligibilityBounds(18, 65, 60, 360, new BigDecimal("500000.00"), new BigDecimal("300000000.00")),
+            "actuary@nlolo.co.tz");
+
+        ProductVersion version = productVersionRepository
+            .findByTenantIdAndProductIdOrderByEffectiveDateDesc(TenantContext.get(), product.productId())
+            .getFirst();
+        EligibilityBounds bounds = version.getEligibilityBounds();
+
+        assertEquals(18, bounds.minEntryAge());
+        assertEquals(65, bounds.maxEntryAge());
+        assertEquals(60, bounds.minTermMonths());
+        assertEquals(360, bounds.maxTermMonths());
+        assertEquals(0, new BigDecimal("500000.00").compareTo(bounds.minSumAssured()));
+        assertEquals(0, new BigDecimal("300000000.00").compareTo(bounds.maxSumAssured()));
+    }
+
+    /** An unbounded version is a real product design, not a gap. */
+    @Test
+    void aVersionPublishedWithoutBoundsHasNone() {
+        ProductSummaryView product = productApi.createProduct("BOUNDS-02", "Unbounded product",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        EligibilityBounds bounds = productVersionRepository
+            .findByTenantIdAndProductIdOrderByEffectiveDateDesc(TenantContext.get(), product.productId())
+            .getFirst().getEligibilityBounds();
+
+        assertNull(bounds.minEntryAge());
+        assertNull(bounds.maxEntryAge());
+        assertNull(bounds.maxSumAssured());
+    }
+
+    @Test
+    void invertedBoundsAreRejectedBeforeTheyCanBeStored() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new EligibilityBounds(65, 18, null, null, null, null));
+        assertThrows(IllegalArgumentException.class,
+            () -> new EligibilityBounds(null, null, 360, 60, null, null));
+        assertThrows(IllegalArgumentException.class,
+            () -> new EligibilityBounds(null, null, null, null,
+                new BigDecimal("100"), new BigDecimal("10")));
+    }
+
+    /**
+     * The convenience overload must run inside a transaction.
+     *
+     * <p>This is the regression guard for a bug found while building Build 3: the
+     * overload was a {@code default} method on {@code ProductApi}, so Spring's proxy
+     * passed it to the target and its delegating call never re-entered the proxy —
+     * running the whole publish outside the {@code @Transactional} the implementation
+     * declares. ~48 of 67 callers use this overload.
+     *
+     * <p>Publishing retires every currently-ACTIVE version with {@code saveAndFlush}
+     * before inserting the new one, so without a transaction a failure after that point
+     * leaves a product with NO active version — unsellable, uncorrected, unlogged.
+     *
+     * <p><b>This is a structural check, and deliberately so.</b> The behavioural version
+     * is not available: forcing the partial write needs a concurrent publisher losing on
+     * {@code ux_product_version_active}, and the obvious alternative — wrapping the call
+     * in an outer transaction and rolling it back — proves nothing, because Spring
+     * Data's own repository transactions would join that outer transaction and roll back
+     * whether or not {@code publishVersion} is annotated. So this asserts the two
+     * properties that make the failure impossible, which is exactly what a regression
+     * would break: no overload is a {@code default} method, and every implementation
+     * carries {@code @Transactional}.
+     */
+    @Test
+    void noPublishVersionOverloadIsADefaultMethodAndEveryImplementationIsTransactional() {
+        List<Method> declared = Arrays.stream(ProductApi.class.getMethods())
+            .filter(m -> m.getName().equals("publishVersion"))
+            .toList();
+        assertEquals(3, declared.size(), "expected three publishVersion overloads");
+        declared.forEach(m -> assertFalse(m.isDefault(),
+            "publishVersion must not be a default method: Spring's proxy cannot apply "
+                + "@Transactional to one, so its delegation runs untransacted"));
+
+        List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
+            .filter(m -> m.getName().equals("publishVersion"))
+            .toList();
+        assertEquals(3, implementations.size(), "every overload must be implemented here");
+        implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
+            "every publishVersion implementation must carry @Transactional, including the "
+                + "convenience overloads -- the retire-then-insert sequence must be atomic"));
     }
 
     @Test

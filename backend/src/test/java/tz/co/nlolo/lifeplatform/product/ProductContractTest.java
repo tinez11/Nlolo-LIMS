@@ -53,7 +53,8 @@ class ProductContractTest {
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
             "db-migrations/product/V4__rating_table_unique_band.sql",
-            "db-migrations/product/V5__rating_table_age_bounds.sql");
+            "db-migrations/product/V5__rating_table_age_bounds.sql",
+            "db-migrations/product/V6__eligibility_bounds.sql");
     }
 
     @AfterEach

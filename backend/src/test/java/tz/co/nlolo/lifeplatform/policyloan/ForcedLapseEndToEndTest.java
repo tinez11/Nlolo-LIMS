@@ -80,6 +80,7 @@ class ForcedLapseEndToEndTest {
             "db-migrations/product/V3__base_rate_structured_age.sql",
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
+            "db-migrations/product/V6__eligibility_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",

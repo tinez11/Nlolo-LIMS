@@ -25,4 +25,11 @@ public record PublishVersionRequest(
      * cascades validation into each cell; without it the constraints on
      * BaseRateRequest are never evaluated.
      */
-    @Valid List<BaseRateRequest> baseRates) {}
+    @Valid List<BaseRateRequest> baseRates,
+
+    /**
+     * What this version will accept. Optional -- an unbounded version is a real product
+     * design. See {@link tz.co.nlolo.lifeplatform.product.api.EligibilityBounds} for why
+     * entry age and term are hard refusals while sum assured is a soft flag.
+     */
+    @Valid EligibilityBoundsRequest eligibility) {}

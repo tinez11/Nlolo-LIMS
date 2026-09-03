@@ -64,6 +64,12 @@ export function PublishVersionForm({
       ratingTable: [blankRatingFactorRow(), { ...blankRatingFactorRow(), factorType: 'SUM_ASSURED_BAND' }],
       benefitSchedule: [],
       fundDefinitions: [],
+      minEntryAge: '',
+      maxEntryAge: '',
+      minTermMonths: '',
+      maxTermMonths: '',
+      minSumAssured: '',
+      maxSumAssured: '',
     },
   });
 
@@ -123,6 +129,70 @@ export function PublishVersionForm({
           )}
         />
       </FormField>
+
+      {/* Eligibility. Every bound optional -- an unbounded dimension is a real product
+          design. The caption names which bounds refuse business and which only flag it,
+          because that is the difference between a bound set casually and one thought
+          about. */}
+      <div className="rounded-md border border-border p-3">
+        <p className="text-xs font-medium text-muted-foreground">Eligibility (optional)</p>
+        <p className="mt-0.5 mb-2.5 text-[11px] text-subtle-foreground">
+          Age and term are refused at issue — an age outside the rate table cannot be
+          priced at all. A sum assured outside its bounds is flagged, not blocked, and the
+          reason is recorded: above retention is what reinsurance is for.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="Minimum entry age" error={errors.minEntryAge?.message}>
+            <input
+              inputMode="numeric"
+              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              placeholder="18"
+              {...register('minEntryAge')}
+            />
+          </FormField>
+          <FormField label="Maximum entry age" error={errors.maxEntryAge?.message}>
+            <input
+              inputMode="numeric"
+              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              placeholder="65"
+              {...register('maxEntryAge')}
+            />
+          </FormField>
+
+          <FormField label="Minimum term (months)" error={errors.minTermMonths?.message}>
+            <input
+              inputMode="numeric"
+              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              placeholder="60"
+              {...register('minTermMonths')}
+            />
+          </FormField>
+          <FormField label="Maximum term (months)" error={errors.maxTermMonths?.message}>
+            <input
+              inputMode="numeric"
+              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              placeholder="360"
+              {...register('maxTermMonths')}
+            />
+          </FormField>
+
+          <FormField label="Minimum sum assured" error={errors.minSumAssured?.message}>
+            <input
+              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              placeholder="500000.00"
+              {...register('minSumAssured')}
+            />
+          </FormField>
+          <FormField label="Maximum sum assured" error={errors.maxSumAssured?.message}>
+            <input
+              className="h-8 w-full rounded-md border border-input bg-surface px-2 text-xs"
+              placeholder="300000000.00"
+              {...register('maxSumAssured')}
+            />
+          </FormField>
+        </div>
+      </div>
 
       <div className="rounded-md border border-border p-3">
         <p className="mb-2 text-xs font-medium text-muted-foreground">
