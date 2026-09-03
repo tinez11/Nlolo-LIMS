@@ -559,11 +559,10 @@ Carried from the critique snapshot. Items 2 and 3 are **done** (2026-09-03, see
    ~98 inputs, with `FormField` nesting the error inside the `<label>`.~~ **All
    four fixed** — §14.6.
 3. ~~**The design system is a copy-paste convention.** 7 byte-identical `Panel`
-   components, 8 `FilterChip`s, 98 input class strings in 24 variants.~~
-   **Extracted** — §14.6. What remains of this item is the smaller half: 17
-   hand-rolled 11px labels still bypass `FormField`, and there is no lint rule
-   banning `border-input` outside `components/ui/`, so nothing yet stops the
-   habit recurring a fifth time.
+   components, 8 `FilterChip`s, 98 input class strings in 24 variants, 17
+   hand-rolled 11px labels bypassing `FormField`, no lint ban on
+   `border-input`.~~ **Done in full** — §14.6, including the lint rule, which
+   is what makes it stay done.
 4. **No tabs anywhere**, though §6 and `PRODUCT.md` both promise tabbed detail
    pages and `@radix-ui/react-tabs` is installed and imported nowhere. Detail
    pages are 8 co-equal panels with every heading at body size.
@@ -700,7 +699,28 @@ folds into the control's accessible name, so a rejected field announced "Sum
 assured Must be at least 0.01" as its **name** — and kept announcing it after the
 user fixed the problem, because a name is not a thing that changes.
 
-**Verified:** typecheck, lint, 662 unit tests, and the full e2e suite. Running
-e2e was not optional here — this touched every form on the platform, and §14.5
-records a component rewrite breaking 11 of 24 spec files with every unit test
-green.
+**The last 17 fields, and the rule that keeps them.** Those labels were the old
+FormField shape inlined by hand, carrying the same error-inside-the-label defect
+plus an 11px caption competing with the system's 12px. Converting them turned up
+forms rendering errors in a shared block *below the row* — which
+`aria-describedby` cannot reference without guessing whose error it is — so each
+now sits under its own field. `FormField` gained a `className` passthrough for a
+field that must join its parent's layout (`flex-1`), documented as not being for
+restyling the field.
+
+`border-input` is now **lint-banned in `src/features`**. Keyed on the class, not
+on `<input>` as an element: five raw inputs survive in features and all five are
+correct — three checkboxes, which are not text fields, and two react-dropzone
+inputs, which must be raw for `getInputProps()` to attach. The rule was probed by
+reintroducing a hand-rolled field and watching it fail; a guard nobody has seen
+fail is not yet a guard.
+
+**Verified:** typecheck, lint, 662 unit tests, and the full e2e suite — twice,
+either side of the label conversion. Running e2e was not optional here: this
+touched every form on the platform, and it caught two regressions of mine that
+typecheck, lint and every unit test missed. `FormField` moving from an implicit
+wrapping `<label>` to an explicit `htmlFor` silently un-named `DatePicker` and
+`PartyPicker`, which do not read the field context — 17 failures across 8 specs.
+And `role="alert"` on the error changed its role away from `paragraph`, which one
+spec asserted on. §14.5 already records the same shape breaking 11 of 24 spec
+files with every unit test green; this is the third time.
