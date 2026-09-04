@@ -184,15 +184,20 @@ public class PolicyController {
      * believes they are insured and is missing from the page nobody scrolled twice.
      *
      * @param status omit for every member including those who have left
+     * @param q omit for no name search. A 500-life schedule cannot be read by eye, so this
+     *     is the only way to answer "is this person covered" without paging the whole roll.
+     *     Matched against the party's display name, which lives in the party module — the
+     *     member row itself holds only an id.
      */
     @GetMapping("/group-schemes/{policyNumber}/members")
     @PreAuthorize("hasRole('REALM_STAFF')")
     public ResponseEntity<PolicyMemberResponseDto.PageResponse> listMembers(
             @PathVariable String policyNumber,
             @RequestParam(required = false) MemberStatus status,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int pageSize) {
-        Page<PolicyMemberView> result = policyApi.listMembers(policyNumber, status,
+        Page<PolicyMemberView> result = policyApi.listMembers(policyNumber, status, q,
             PageRequest.of(page, Math.min(pageSize, 200),
                 Sort.by(Sort.Direction.ASC, "joinedOn").and(Sort.by(Sort.Direction.ASC, "policyMemberId"))));
         return ResponseEntity.ok(PolicyMemberResponseDto.PageResponse.from(result));

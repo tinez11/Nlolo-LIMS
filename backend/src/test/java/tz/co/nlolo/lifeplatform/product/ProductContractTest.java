@@ -22,6 +22,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -201,6 +202,127 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * A product in the catalogue with no version in force TODAY.
+     *
+     * <p>Found in the dev tenant, not imagined: a GROUP_LIFE product whose only version was
+     * effective the following day appeared in the products list -- publishing flips the
+     * definition to ACTIVE whatever the effective date -- and opening it reported "this
+     * record does not exist, or it is not available to your role" to a staff member who had
+     * just clicked it. Both halves false. The cause was one exception answering two
+     * questions, with the version lookup running before the existence check.
+     *
+     * <p>The assertion that matters is the errorCode, because the STATUS is unchanged: a
+     * client that cannot tell this from a missing product has to hedge about the caller's
+     * role, and hedging is what produced the sentence above.
+     */
+    @Test
+    void aProductWhoseOnlyVersionStartsLaterIsNotReportedAsAMissingProduct() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProduct(tenantId, "CONTRACT-FUTURE-VER", "Future Version Product");
+        LocalDate startsTomorrow = LocalDate.now().plusDays(1);
+
+        publishVersionEffective(tenantId, productId, startsTomorrow);
+
+        // It is in the catalogue: publishing made it ACTIVE, so the console lists it and a
+        // staff member can click it. That is the whole reason the detail must not deny it.
+        mockMvc.perform(get("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')]").exists());
+
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // NOT PRODUCT_NOT_FOUND. This is the defect, pinned.
+            .andExpect(jsonPath("$.errorCode").value("NO_ACTIVE_PRODUCT_VERSION"))
+            // The remedy is a date, and it is guessable from nothing else.
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString(startsTomorrow.toString())))
+            .andExpect(jsonPath("$.traceId").exists());
+
+        // And asking as of the day it starts resolves normally -- proof the version is
+        // real and only the DATE was wrong, rather than the product being broken.
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .queryParam("effectiveDate", startsTomorrow.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.effectiveDate").value(startsTomorrow.toString()));
+    }
+
+    /**
+     * The other half, and the regression guard for the reordering: a product that genuinely
+     * does not exist must still say so. Resolving the definition before the version is what
+     * keeps these two answers distinct, and swapping them back would make this fail.
+     */
+    @Test
+    void aProductThatDoesNotExistStillSaysProductNotFound() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/products/" + UUID.randomUUID() + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("PRODUCT_NOT_FOUND"));
+    }
+
+    /**
+     * A DRAFT product -- created, never published -- which is the same absence with no next
+     * date to offer, and covers the other branch of the exception's message.
+     *
+     * <p>It is also the more common way to meet this: a product is DRAFT until a version is
+     * published, so anything reaching this id before that (a bookmark, a link from an
+     * authoring flow, a direct URL) asks for a snapshot that cannot exist yet. Saying "no
+     * such product" of a product somebody just created is the same lie in a different
+     * place.
+     */
+    @Test
+    void aDraftProductWithNoVersionsReportsNoActiveVersionAndNoNextDate() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProduct(tenantId, "CONTRACT-DRAFT-VER", "Draft Version Product");
+
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("NO_ACTIVE_PRODUCT_VERSION"))
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("no later version is scheduled")));
+    }
+
+    /** Creates a DRAFT product and returns its id. */
+    private UUID createProduct(UUID tenantId, String code, String name) throws Exception {
+        MvcResult result = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productCode\":\"" + code + "\",\"productName\":\"" + name
+                    + "\",\"category\":\"ENDOWMENT\",\"defaultCurrency\":\"TZS\"}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        return objectMapper.readValue(result.getResponse().getContentAsString(), ProductSummaryView.class)
+            .productId();
+    }
+
+    /** Publishes one version effective on the given date, which is what makes a product ACTIVE. */
+    private void publishVersionEffective(UUID tenantId, UUID productId, LocalDate effectiveDate)
+            throws Exception {
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ifrsMeasurementModel\":\"PAA\",\"effectiveDate\":\"" + effectiveDate + "\","
+                    + "\"ratingTable\":[{\"factorType\":\"AGE\",\"band\":\"30-39\",\"multiplier\":1.0,\"ageFrom\":30,\"ageTo\":39},"
+                    + "{\"factorType\":\"SUM_ASSURED_BAND\",\"band\":\"LOW\",\"multiplier\":1.0}],"
+                    + "\"benefitSchedule\":[{\"benefitType\":\"MATURITY\",\"calculationMethod\":\"SUM_ASSURED_PLUS_BONUS\"}]}"))
+            .andExpect(status().isCreated());
     }
 
     @Test

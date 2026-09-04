@@ -503,6 +503,20 @@ paths:
             deleted: a claim can arrive after somebody leaves the employer, and "were they
             covered on the date of event" needs the dates to still exist.
           schema: { type: string, enum: [ACTIVE, EXITED] }
+        - name: q
+          in: query
+          required: false
+          description: >-
+            Free-text, case-insensitive substring match against the MEMBER'S NAME. Omit for
+            no name search; combines with `status` rather than replacing it.
+
+
+            A member row carries a party id and no name -- the name belongs to the party
+            module, which guards it -- so this is resolved to matching party ids there and
+            applied as an id filter here. That is also why it matches a name and nothing
+            else: a grade code or a join date is on the row and could be filtered directly,
+            but a 500-life schedule is searched for a person.
+          schema: { type: string }
         - name: page
           in: query
           schema: { type: integer, default: 0, minimum: 0 }

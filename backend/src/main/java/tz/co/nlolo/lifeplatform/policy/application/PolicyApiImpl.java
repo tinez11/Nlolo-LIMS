@@ -733,14 +733,35 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
-    public Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, Pageable pageable) {
+    public Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, String q,
+                                               Pageable pageable) {
         UUID tenantId = TenantContext.get();
         findPolicyOrThrow(policyNumber, tenantId);
         findSchemeOrThrow(policyNumber, tenantId);
 
         String currency = findSchemeOrThrow(policyNumber, tenantId).getCurrency();
+
+        /*
+         * The name search, resolved across the module boundary: a member row carries a
+         * party id and no name, so the party module answers "which parties are called
+         * something like this" and the roll is filtered on the ids it returns.
+         *
+         * The empty result is handled HERE rather than in the query. An empty set means
+         * "no party has that name", which for this roll means no member matches -- but an
+         * empty collection in a SQL `IN` is a syntax error, and a null one would mean the
+         * opposite ("no name filter") and return the entire schedule for a search that
+         * matched nobody. Same hazard the benefit lookup below already guards.
+         */
+        Set<UUID> nameMatches = null;
+        if (q != null && !q.isBlank()) {
+            nameMatches = partyApi.partyIdsMatchingName(q);
+            if (nameMatches.isEmpty()) {
+                return Page.empty(pageable);
+            }
+        }
+
         Page<PolicyMember> members = policyMemberRepository.findMembers(
-            tenantId, policyNumber, status != null ? status.name() : null, pageable);
+            tenantId, policyNumber, status != null ? status.name() : null, nameMatches, pageable);
         if (members.isEmpty()) {
             // Short-circuit rather than pass an empty list to an IN clause, which is a
             // Postgres syntax error rather than an empty result.

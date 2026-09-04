@@ -941,6 +941,154 @@ class PolicyContractTest {
             .andExpect(jsonPath("$.sumAssured.amount").value("45000000.00"));
     }
 
+    /** A person with a KNOWN name, for the member-search tests -- the shared helper above
+     *  registers everyone as "Policy Contract Applicant", which cannot be searched for. */
+    private UUID namedPerson(UUID tenantId, String fullName, String phoneSuffix) throws Exception {
+        String response = mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"" + fullName
+                    + "\",\"dateOfBirth\":\"1988-03-15\",\"contactInfo\":{\"phoneNumber\":\"+25571234"
+                    + phoneSuffix + "\"}}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(JsonPath.read(response, "$.partyId"));
+    }
+
+    /** Issues a two-life scheme whose members have distinct, searchable names. */
+    private String schemeWithTwoNamedMembers(UUID tenantId, String productCode, String suffixBase,
+                                                UUID first, UUID second) throws Exception {
+        // Four digits: the phone is +255 plus NINE, and a short suffix is a 400 on
+        // registration rather than anything to do with schemes.
+        UUID employer = namedPerson(tenantId, "Search Employer " + suffixBase, suffixBase + "00");
+        ProductFixture product = publishProduct(tenantId, productCode, "GROUP_LIFE");
+        String scheme = mockMvc.perform(post("/group-schemes")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                     "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
+                     "openingSchedule":[{"memberPartyId":"%s"},{"memberPartyId":"%s"}],
+                     "premium":{"amount":"600000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY"}
+                    """.formatted(employer, product.productVersionId(), first, second)))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(scheme, "$.policyNumber");
+    }
+
+    /**
+     * Searching a member roll by name.
+     *
+     * <p>A 500-life schedule cannot be read by eye, so this is the only way to answer "is
+     * this person covered" without paging the whole roll. The interesting part is WHERE the
+     * name comes from: a member row holds a party id and nothing else, so the party module
+     * resolves names to ids and the roll is filtered on those.
+     *
+     * <p>Every assertion below is falsifiable. A filter that was silently dropped would
+     * still return the member the caller wanted, so each case pins the row that must be
+     * ABSENT and the total that must have shrunk.
+     */
+    @Test
+    void aMemberRollCanBeSearchedByName() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID zawadi = namedPerson(tenantId, "Zawadi Roll Fixture", "8201");
+        UUID mwangaza = namedPerson(tenantId, "Mwangaza Roll Fixture", "8202");
+        String policyNumber = schemeWithTwoNamedMembers(tenantId, "GRP-SEARCH-01", "82", zawadi, mwangaza);
+
+        // Both lives, unsearched -- the baseline the filtered results must differ from.
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(2));
+
+        // Deliberately the wrong case: a case-sensitive match would find nobody here.
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .queryParam("q", "zawadi")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].memberPartyId").value(zawadi.toString()))
+            // The total is the SEARCH's total, not the roll's. A pager reading "1-1 of 2"
+            // under one row would send the reader looking for a second page that is empty.
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+    }
+
+    /**
+     * The empty-result path, which is a syntax error waiting to happen rather than a
+     * cosmetic case: no party matches, so the id set is empty, and an empty set handed to a
+     * SQL {@code IN} is a Postgres error while a null one would mean "no filter" and return
+     * the whole schedule for a search that matched nobody.
+     */
+    @Test
+    void aMemberSearchMatchingNobodyIsAnEmptyPageNotAnErrorAndNotTheWholeRoll() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID first = namedPerson(tenantId, "Present Roll Fixture", "8301");
+        UUID second = namedPerson(tenantId, "Also Present Fixture", "8302");
+        String policyNumber = schemeWithTwoNamedMembers(tenantId, "GRP-SEARCH-02", "83", first, second);
+
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .queryParam("q", "NobodyOnThisSchemeIsCalledThis12345")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0))
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    /**
+     * The search is scoped to THIS scheme, and combines with status rather than replacing it.
+     *
+     * <p>The scoping half matters most: the name is resolved across the whole tenant, so a
+     * person of that name who is on a DIFFERENT scheme must not appear on this one's roll.
+     * Getting that wrong would put someone else's employee on an employer's schedule.
+     */
+    @Test
+    void aMemberSearchStaysOnItsOwnSchemeAndComposesWithStatus() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID onThisScheme = namedPerson(tenantId, "Insider Scope Fixture", "8401");
+        UUID alsoOnThisScheme = namedPerson(tenantId, "Second Insider Fixture", "8402");
+        UUID onAnotherScheme = namedPerson(tenantId, "Outsider Scope Fixture", "8403");
+        UUID otherSchemeCompanion = namedPerson(tenantId, "Outsider Companion Fixture", "8404");
+
+        String thisScheme = schemeWithTwoNamedMembers(tenantId, "GRP-SEARCH-03", "84",
+            onThisScheme, alsoOnThisScheme);
+        schemeWithTwoNamedMembers(tenantId, "GRP-SEARCH-04", "85",
+            onAnotherScheme, otherSchemeCompanion);
+
+        // The outsider exists, is a member of a scheme, and matches the term -- and must
+        // still be absent from this roll.
+        mockMvc.perform(get("/group-schemes/" + thisScheme + "/members")
+                .queryParam("q", "Outsider Scope")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+
+        // ANDed with status, not either-or: an ACTIVE search for a name on the roll finds
+        // it, and the same name with the other status finds nothing.
+        mockMvc.perform(get("/group-schemes/" + thisScheme + "/members")
+                .queryParam("q", "Insider Scope")
+                .queryParam("status", "ACTIVE")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].memberPartyId").value(onThisScheme.toString()));
+
+        mockMvc.perform(get("/group-schemes/" + thisScheme + "/members")
+                .queryParam("q", "Insider Scope")
+                .queryParam("status", "EXITED")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
     /**
      * An individual policy read as a scheme answers 409, not 404.
      *

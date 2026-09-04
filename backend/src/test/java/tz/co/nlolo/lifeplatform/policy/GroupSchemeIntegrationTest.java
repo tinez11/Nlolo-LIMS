@@ -267,7 +267,7 @@ class GroupSchemeIntegrationTest {
         assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("120000000.00");
 
         List<PolicyMemberView> members = policyApi
-            .listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, PageRequest.of(0, 20, Sort.by("joinedOn")))
+            .listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, null, PageRequest.of(0, 20, Sort.by("joinedOn")))
             .getContent();
         PolicyMemberView manager = members.stream()
             .filter(m -> m.underwritingStatus() == MemberUnderwritingStatus.EVIDENCE_REQUIRED)
@@ -459,7 +459,7 @@ class GroupSchemeIntegrationTest {
             new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now().minusYears(2), null, null), "staff-1");
 
         PolicyMemberView member = policyApi
-            .listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, PageRequest.of(0, 10, Sort.by("joinedOn")))
+            .listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, null, PageRequest.of(0, 10, Sort.by("joinedOn")))
             .getContent().getFirst();
         assertThat(member.coveredAmount()).isEqualByComparingTo("30000000.00");
 
@@ -480,7 +480,7 @@ class GroupSchemeIntegrationTest {
         // And the page projection resolves the same row the point lookup does, rather
         // than whichever the database happened to return first.
         PolicyMemberView today = policyApi
-            .listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, PageRequest.of(0, 10, Sort.by("joinedOn")))
+            .listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, null, PageRequest.of(0, 10, Sort.by("joinedOn")))
             .getContent().getFirst();
         assertThat(today.coveredAmount()).isEqualByComparingTo("60000000.00");
         assertThat(today.benefitEffectiveFrom()).isEqualTo(riseDate);
@@ -507,7 +507,7 @@ class GroupSchemeIntegrationTest {
                     new PolicyApi.MemberInput(person("Paid Three"), null, new BigDecimal("3000000.00"), null)),
             new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null), "staff-1");
 
-        List<PolicyMemberView> members = policyApi.listMembers(scheme.policyNumber(), MemberStatus.ACTIVE,
+        List<PolicyMemberView> members = policyApi.listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, null,
             // Total order: joinedOn alone ties for every row of a bulk schedule.
             PageRequest.of(0, 10, Sort.by("joinedOn").and(Sort.by("policyMemberId")))).getContent();
 

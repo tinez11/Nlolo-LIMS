@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.party.api.PartyType;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -154,19 +155,26 @@ public class PartyController {
      * <p>{@code partyId} is the tie-breaker, and it is what makes the order TOTAL: {@code createdAt}
      * is assigned in Java by {@code Instant.now()}, so a batch registration can genuinely collide,
      * and ties in the leading key put us straight back to an undefined order for the rows that tie.
+     *
+     * <p>{@code partyType} is repeatable -- {@code ?partyType=CORPORATE&partyType=GROUP} -- rather
+     * than a single value, because the client register is split into two working areas and the
+     * second of them is corporates AND groups together. Two separate requests could not be paged
+     * or totalled as one list, so the filter takes a set and the whole area stays one honest
+     * pager. Omitting it entirely means every type, which is what every existing caller does.
      */
     @GetMapping("/parties")
     @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
     public ResponseEntity<PageResponse<PartyView>> searchParties(
             @RequestParam(required = false) KycStatus kycStatus,
             @RequestParam(required = false) String q,
+            @RequestParam(required = false) List<PartyType> partyType,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         boolean isAgent = authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
         String effectiveCreatedBy = isAgent ? jwt.getSubject() : null;
-        Page<PartyView> result = partyApi.searchParties(kycStatus, effectiveCreatedBy, q,
+        Page<PartyView> result = partyApi.searchParties(kycStatus, effectiveCreatedBy, q, partyType,
             PageRequest.of(page, Math.min(pageSize, 100),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("partyId"))));
         return ResponseEntity.ok(PageResponse.from(result));

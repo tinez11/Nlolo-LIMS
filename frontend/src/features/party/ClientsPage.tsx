@@ -1,15 +1,16 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { DEFAULT_PAGE_SIZE } from '@/api/party';
-import { KYC_STATUSES, type KycStatus, type PartyView } from '@/api/types';
+import { DEFAULT_PAGE_SIZE, PARTY_AREAS, type PartyArea } from '@/api/party';
+import { KYC_STATUSES, type KycStatus, type PartyType, type PartyView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { partyTypeLabel } from '@/lib/partyType';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectPartyList, usePartyStore } from '@/store/partyStore';
+import { selectPartyList, usePartyStore, type PartyListKey } from '@/store/partyStore';
 import { FilterChip } from '@/components/FilterChip';
 import { Input } from '@/components/ui/input';
 
@@ -40,12 +41,55 @@ export interface ClientsPageProps {
   /** Overridden by the agents realm, where the same list means "clients I registered". */
   title?: string;
   description?: string;
+  /**
+   * Which working area this route is. Omitted means every party type, which is what the
+   * agents realm and the legacy `/staff/kyc` link both want.
+   *
+   * The staff console mounts this twice, once per area, because a natural person and an
+   * organisation are different work: an individual's KYC is an ID scan and a date of
+   * birth, a company's is a registration number and a certificate, and the two are
+   * reviewed by different people against different evidence. Splitting them is only
+   * honest as a SERVER-side filter, which is why it is a `partyType` on the request and
+   * not a filter over the rows in hand -- a client-side split would show "the individuals
+   * among the newest 20 of 775" under a heading saying Individuals, and print a total
+   * belonging to neither area.
+   */
+  area?: PartyArea;
 }
 
+/** Per-area copy, so the two mounts cannot drift into describing the same thing. */
+const AREA_COPY = {
+  individuals: {
+    title: 'Individual clients',
+    description: 'People this tenant has registered. Open one for their policies, claims, documents and KYC.',
+    noun: 'individual clients',
+    empty: 'individual clients',
+    searchLabel: 'Search by name',
+    caption: 'Individual clients',
+  },
+  organisations: {
+    title: 'Corporate & groups',
+    description: 'Companies and groups this tenant has registered. Open one for its schemes, members, policies and KYC.',
+    noun: 'corporate & group clients',
+    empty: 'companies or groups',
+    searchLabel: 'Search companies and groups by name',
+    caption: 'Corporate and group clients',
+  },
+} as const satisfies Record<PartyArea, Record<string, string>>;
+
+
 export function ClientsPage({
-  title = 'Clients',
-  description = 'Everyone this tenant has registered. Open one for their policies, claims, documents and KYC.',
+  title,
+  description,
+  area,
 }: ClientsPageProps = {}) {
+  const copy = area ? AREA_COPY[area] : undefined;
+  const resolvedTitle = title ?? copy?.title ?? 'Clients';
+  const resolvedDescription =
+    description ??
+    copy?.description ??
+    'Everyone this tenant has registered. Open one for their policies, claims, documents and KYC.';
+  const partyTypes: readonly PartyType[] | undefined = area ? PARTY_AREAS[area] : undefined;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
@@ -74,17 +118,21 @@ export function ClientsPage({
   const q = params.get('q') ?? '';
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
 
-  const list = usePartyStore(selectPartyList);
+  // The store slot is keyed by area, so switching areas cannot render one area's rows
+  // under the other's heading while the next request is in flight.
+  const listKey: PartyListKey = area ?? 'all';
+  const list = usePartyStore(selectPartyList(listKey));
   const loadList = usePartyStore((s) => s.loadList);
 
   useEffect(() => {
-    void loadList({
+    void loadList(listKey, {
       ...(kycStatus ? { kycStatus } : {}),
       ...(q ? { q } : {}),
+      ...(partyTypes ? { partyTypes } : {}),
       page,
       pageSize: DEFAULT_PAGE_SIZE,
     });
-  }, [loadList, kycStatus, q, page]);
+  }, [loadList, listKey, kycStatus, q, page, partyTypes]);
 
   function update(next: { kycStatus?: KycStatus | undefined; q?: string; page?: number }) {
     const merged = new URLSearchParams(params);
@@ -111,33 +159,54 @@ export function ClientsPage({
 
   const total = list.data?.page.totalElements ?? null;
   const busy = list.status === 'loading';
+  const areaNoun = copy?.noun ?? 'clients';
 
-  const stats: Stat[] = [
-    {
-      label: kycStatus ? `${kycStatus[0]}${kycStatus.slice(1).toLowerCase()} clients` : 'All clients',
-      value: total,
-      pending: isInitialLoad(list),
-      hint:
-        list.status === 'error' && total === null
-          ? 'could not load'
-          : kycStatus
-            ? 'matching this filter'
-            : 'in this tenant',
-    },
-  ];
+  const count: Stat = {
+    // Named for the AREA, not "clients": the total belongs to one area, and a count
+    // reading "412 clients" under a heading saying Individual clients would be read as
+    // the size of the whole register.
+    label: kycStatus ? `${kycStatus.toLowerCase()} ${areaNoun}` : areaNoun,
+    value: total,
+    pending: isInitialLoad(list),
+    hint:
+      list.status === 'error' && total === null
+        ? 'could not load'
+        : kycStatus
+          ? 'matching this filter'
+          : 'in this tenant',
+  };
 
   const columns: Column<PartyView>[] = [
     {
       key: 'displayName',
-      header: 'Name',
+      header: area === 'organisations' ? 'Company or group' : 'Name',
       render: (p) => <span className="font-medium">{p.displayName ?? '—'}</span>,
     },
-    {
-      key: 'partyType',
-      header: 'Type',
-      secondary: true,
-      render: (p) => <span className="text-muted-foreground">{p.partyType ?? '—'}</span>,
-    },
+    /*
+     * The Type column earns its place per area, rather than being present and hidden
+     * everywhere.
+     *
+     * In the individuals area every row is the same type, so a column repeating
+     * "INDIVIDUAL" 20 times says nothing -- it is dropped. In the organisations area it
+     * carries the real distinction between a company and a group, so it is promoted out
+     * of `secondary` (it was hidden below `sm`, which is where the one thing worth
+     * seeing was being hidden) and rendered as English rather than a SCREAMING_ENUM.
+     *
+     * On the unsplit register -- the agents realm, and the legacy link -- it stays as it
+     * was, because there both types are mixed in one list.
+     */
+    ...(area === 'individuals'
+      ? []
+      : [
+          {
+            key: 'partyType',
+            header: 'Type',
+            ...(area === 'organisations' ? {} : { secondary: true }),
+            render: (p: PartyView) => (
+              <span className="text-muted-foreground">{partyTypeLabel(p.partyType)}</span>
+            ),
+          } satisfies Column<PartyView>,
+        ]),
     {
       key: 'kycStatus',
       header: 'KYC status',
@@ -159,7 +228,12 @@ export function ClientsPage({
         <ErrorPanel
           error={list.error}
           onRetry={() =>
-            void loadList({ ...(kycStatus ? { kycStatus } : {}), ...(q ? { q } : {}), page })
+            void loadList(listKey, {
+              ...(kycStatus ? { kycStatus } : {}),
+              ...(q ? { q } : {}),
+              ...(partyTypes ? { partyTypes } : {}),
+              page,
+            })
           }
         />
       );
@@ -171,15 +245,32 @@ export function ClientsPage({
       // front of a tenant with hundreds of them, because a search matched nothing,
       // would be flatly untrue -- and a search is now the most likely reason to be
       // looking at an empty table.
+      //
+      // It must also name the AREA. An empty organisations register in a tenant with
+      // 700 individuals cannot say "No clients yet": the register is not empty, this
+      // area of it is, and the difference is one nav item away.
+      const emptyNoun = copy?.empty ?? 'clients';
       return (
         <EmptyState
-          title={q ? `No clients matching "${q}"` : kycStatus ? `No ${kycStatus.toLowerCase()} clients` : 'No clients yet'}
+          title={
+            q
+              ? `No ${emptyNoun} matching "${q}"`
+              : kycStatus
+                ? `No ${kycStatus.toLowerCase()} ${emptyNoun}`
+                : `No ${emptyNoun} yet`
+          }
           description={
             q
-              ? 'The search matches a client’s name, not a policy number or an id.'
+              ? area === 'organisations'
+                ? 'The search matches a registered name, not a registration number or an id.'
+                : 'The search matches a client’s name, not a policy number or an id.'
               : kycStatus === 'PENDING'
                 ? 'Nothing is currently waiting on a KYC decision.'
-                : 'Nothing in this tenant currently has that status.'
+                : kycStatus
+                  ? 'Nothing in this area currently has that status.'
+                  : area === 'organisations'
+                    ? 'No company or group has been registered in this tenant yet.'
+                    : 'Nothing in this tenant currently has that status.'
           }
           {...(q || kycStatus
             ? {
@@ -210,9 +301,23 @@ export function ClientsPage({
           rows={rows}
           rowKey={(p) => p.partyId ?? JSON.stringify(p)}
           onRowActivate={(p) => {
-            if (p.partyId) navigate(`../parties/${p.partyId}`, { relative: 'path' });
+            /*
+             * ROUTE-relative, not path-relative, and the difference is a bug that has
+             * already happened once.
+             *
+             * `relative: 'path'` counts URL SEGMENTS, so `..` here meant "/staff" only
+             * while this register lived at the one-segment `kyc`. Splitting it into
+             * `clients/individuals` made the same `..` resolve to `/staff/clients`, and
+             * `/staff/clients/parties/{id}` matches no route -- so every row click fell
+             * through to the catch-all and landed on the realm picker.
+             *
+             * Every screen is a flat child of the realm route (`App.tsx`), so
+             * route-relative `..` is the realm no matter how many segments this screen's
+             * own path happens to have. That is what the link actually means.
+             */
+            if (p.partyId) navigate(`../parties/${p.partyId}`);
           }}
-          caption="Clients"
+          caption={copy?.caption ?? 'Clients'}
         />
         {list.data && (
           <Pager
@@ -227,9 +332,11 @@ export function ClientsPage({
 
   return (
     <>
-      <PageHeader title={title} description={description} />
-
-      <StatCards stats={stats} />
+      <PageHeader
+        title={resolvedTitle}
+        description={resolvedDescription}
+        count={<CountLine {...count} />}
+      />
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">
@@ -258,8 +365,8 @@ export function ClientsPage({
               <Input
                 name="q"
                 defaultValue={q}
-                placeholder="Search by name"
-                aria-label="Search by name"
+                placeholder={area === 'organisations' ? 'Search by company or group' : 'Search by name'}
+                aria-label={copy?.searchLabel ?? 'Search by name'}
                 inputSize="sm" className="w-56 px-2.5 text-sm"
               />
             </form>

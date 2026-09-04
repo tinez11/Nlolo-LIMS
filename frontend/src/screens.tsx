@@ -1,5 +1,6 @@
 import {
   BookText,
+  Building2,
   ClipboardCheck,
   FileText,
   Package,
@@ -14,6 +15,7 @@ import {
 import type { ReactNode } from 'react';
 import { canSeeFinance, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
+import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
 import { AuditLogPage } from '@/features/audit/AuditLogPage';
 import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
 import { ClaimsPage } from '@/features/claims/ClaimsPage';
@@ -77,13 +79,20 @@ type NavGroupId =
  * A count of WORK WAITING beside a nav item, never a count of total volume.
  *
  * Each maps to `totalElements` on a real paged search filtered to the unstarted
- * state, so the number means "this many are waiting for someone". Only three
- * exist because only three are expressible: the API allows one status filter at
- * a time, and there is no analytics endpoint anywhere (PLAN.md §6 — a number with
- * nothing behind it is worse than no number). Policies get none deliberately: a
- * policy in force is not work.
+ * state, so the number means "this many are waiting for someone". There are only
+ * as many as are expressible: the API allows one status filter at a time, and
+ * there is no analytics endpoint anywhere (PLAN.md §6 — a number with nothing
+ * behind it is worse than no number). Policies get none deliberately: a policy in
+ * force is not work.
+ *
+ * KYC is counted twice because the client register is two nav items. One combined
+ * count on one of them would not describe the list it sits beside.
  */
-export type BadgeKey = 'kyc-pending' | 'underwriting-open' | 'claims-unassessed';
+export type BadgeKey =
+  | 'kyc-pending-individuals'
+  | 'kyc-pending-organisations'
+  | 'underwriting-open'
+  | 'claims-unassessed';
 
 interface NavPlacement {
   group: NavGroupId;
@@ -213,14 +222,61 @@ const STAFF_SCREENS: Screen[] = [
   // Order WITHIN a group is manifest order, so these two are declared in the
   // order the work happens: a client is identified and KYC-verified before their
   // risk is assessed.
-  // The path stays `kyc`: the badge, existing bookmarks and the e2e suite all point
-  // at it, and renaming a route to match a label is churn that buys nothing a
-  // reader can see. The badge still counts parties awaiting KYC, so the work queue
-  // survives the screen becoming a register.
+  //
+  // TWO nav items, one register component. A natural person and an organisation are
+  // different work -- an individual's KYC is an ID scan and a date of birth, a
+  // company's is a registration number and a certificate -- and until now the only
+  // thing distinguishing them on screen was a `Type` column hidden below `sm`.
+  //
+  // Two real paths rather than one path with a query parameter, because `NavLink`
+  // decides its active state from the path: `?partyType=` on a shared path would light
+  // up both items at once and the sidebar would stop answering "where am I".
+  //
+  // Each carries its OWN pending count. One combined badge on one of the two items
+  // would be a number that does not belong to the list beside it -- click it and the
+  // area shows fewer rows than the badge promised, the rest being behind the other
+  // item.
+  {
+    path: 'clients/individuals',
+    element: <ClientsPage area="individuals" />,
+    reach: {
+      group: 'clients',
+      label: 'Individuals',
+      icon: UserCheck,
+      badge: 'kyc-pending-individuals',
+    },
+  },
+  {
+    path: 'clients/organisations',
+    element: <ClientsPage area="organisations" />,
+    reach: {
+      group: 'clients',
+      // 'Corporate & groups' truncated to 'Corporate & grou...' in the 224px sidebar.
+      // Nav labels are deliberately `truncate`, but a label that ALWAYS truncates is a
+      // label chosen badly -- and this is the one item whose whole job is to be
+      // distinguishable at a glance. The page's own <h1> still says the fuller phrase,
+      // where there is room for it.
+      label: 'Corporate/Group',
+      icon: Building2,
+      badge: 'kyc-pending-organisations',
+    },
+  },
+  // The old register path, kept as a redirect rather than deleted: the badge's own
+  // links, staff bookmarks and the e2e suite all pointed at `kyc`. It lands on
+  // Individuals -- the larger area by far -- with any `kycStatus`/`q` intact, and the
+  // sidebar makes the other area visible from there.
   {
     path: 'kyc',
-    element: <ClientsPage />,
-    reach: { group: 'clients', label: 'Clients', icon: UserCheck, badge: 'kyc-pending' },
+    element: <RedirectPreservingQuery to="../clients/individuals" />,
+    reach: 'drill-in',
+  },
+  // `/staff/clients` is the obvious thing to type for a group whose items both live
+  // under it, and without this it matches no route and falls through the catch-all to
+  // the realm picker. Landing on Individuals is the same choice the retired path makes.
+  {
+    path: 'clients',
+    element: <RedirectPreservingQuery to="../clients/individuals" />,
+    reach: 'drill-in',
   },
   // A party PENDING KYC with nothing referencing it yet is invisible to staff
   // except through the KYC queue above, which is why that queue is a real list

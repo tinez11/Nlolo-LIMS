@@ -5,7 +5,7 @@ import { UNDERWRITING_CASE_STATUSES, type UnderwritingCaseStatus, type Underwrit
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { PartyName } from '@/components/PartyName';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -56,19 +56,17 @@ export function UnderwritingQueuePage() {
   const total = list.data?.page.totalElements ?? null;
   const busy = list.status === 'loading';
 
-  const stats: Stat[] = [
-    {
-      label: status ? `${status[0]}${status.slice(1).toLowerCase().replace('_', ' ')} cases` : 'All cases',
-      value: total,
-      pending: isInitialLoad(list),
-      hint:
-        list.status === 'error' && total === null
-          ? 'could not load'
-          : status
-            ? 'matching this filter'
-            : 'in this tenant',
-    },
-  ];
+  const count: Stat = {
+    label: status ? `${status.toLowerCase().replace('_', ' ')} cases` : 'cases',
+    value: total,
+    pending: isInitialLoad(list),
+    hint:
+      list.status === 'error' && total === null
+        ? 'could not load'
+        : status
+          ? 'matching this filter'
+          : 'in this tenant',
+  };
 
   const columns: Column<UnderwritingCaseView>[] = [
     {
@@ -190,9 +188,8 @@ export function UnderwritingQueuePage() {
             </Link>
           </Button>
         }
+        count={<CountLine {...count} />}
       />
-
-      <StatCards stats={stats} />
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">

@@ -5,6 +5,7 @@ import type {
   Page,
   PartyDetailView,
   PartyDocumentView,
+  PartyType,
   PartyView,
   RegisterCorporateRequest,
   RegisterIndividualRequest,
@@ -54,9 +55,36 @@ export function listPartyDocuments(partyId: string): Promise<PartyDocumentView[]
   return get<PartyDocumentView[]>(`/parties/${encodeURIComponent(partyId)}/documents`);
 }
 
+/**
+ * The two working areas of the client register, as the set of party types each one is.
+ *
+ * `INDIVIDUAL` and `CORPORATE`/`GROUP` are separated because they are separated in the
+ * work: a natural person's KYC is an ID scan and a date of birth, an organisation's is a
+ * registration number and a certificate, and the two are reviewed by different people
+ * against different evidence. The grouping lives here rather than in a screen so both
+ * areas name the same thing.
+ *
+ * `organisations` is CORPORATE **and** GROUP together on purpose. No GROUP party can be
+ * created over HTTP today (`registerGroup` has no endpoint), so it contributes no rows
+ * yet -- but naming it now means the area does not silently start omitting groups the day
+ * it can.
+ */
+export const PARTY_AREAS = {
+  individuals: ['INDIVIDUAL'],
+  organisations: ['CORPORATE', 'GROUP'],
+} as const satisfies Record<string, readonly PartyType[]>;
+
+export type PartyArea = keyof typeof PARTY_AREAS;
+
 export interface PartySearchParams {
   kycStatus?: KycStatus;
   q?: string;
+  /**
+   * Restricts the result to these party types. Serialised comma-separated, which is the
+   * form the endpoint declares -- see its `partyType` parameter for why it is a
+   * pattern-constrained string rather than an array.
+   */
+  partyTypes?: readonly PartyType[];
   page?: number;
   pageSize?: number;
 }
@@ -81,6 +109,11 @@ export async function searchParties(params: PartySearchParams = {}): Promise<Pag
     params: {
       ...(params.kycStatus ? { kycStatus: params.kycStatus } : {}),
       ...(params.q ? { q: params.q } : {}),
+      // Omitted when empty rather than sent as an empty string: absent means "every
+      // type", and `partyType=` would fail the endpoint's own pattern.
+      ...(params.partyTypes && params.partyTypes.length > 0
+        ? { partyType: params.partyTypes.join(',') }
+        : {}),
       page,
       pageSize,
     },

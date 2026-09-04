@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { JournalEntryView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { CountLine, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
@@ -75,19 +75,17 @@ export function GlPostingsPage() {
   const busy = list.status === 'loading';
   const filtered = Boolean(period || policyNumber);
 
-  const stats: Stat[] = [
-    {
-      label: filtered ? 'Matching journal entries' : 'All journal entries',
-      value: total,
-      pending: isInitialLoad(list),
-      hint:
-        list.status === 'error' && total === null
-          ? 'could not load'
-          : filtered
-            ? 'matching this filter'
-            : 'in this tenant',
-    },
-  ];
+  const count: Stat = {
+    label: filtered ? 'matching journal entries' : 'journal entries',
+    value: total,
+    pending: isInitialLoad(list),
+    hint:
+      list.status === 'error' && total === null
+        ? 'could not load'
+        : filtered
+          ? 'matching this filter'
+          : 'in this tenant',
+  };
 
   const columns: Column<JournalEntryView>[] = [
     {
@@ -176,9 +174,8 @@ export function GlPostingsPage() {
       <PageHeader
         title="GL postings"
         description="Every journal entry is derived from a domain event. Select one to preview it."
+        count={<CountLine {...count} />}
       />
-
-      <StatCards stats={stats} />
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">

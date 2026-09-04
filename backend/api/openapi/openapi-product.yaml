@@ -71,6 +71,20 @@ paths:
   /products/{productId}/active-snapshot:
     get:
       summary: Get the version active as of a given date (used for quoting and rating)
+      description: >-
+        A product in the catalogue does NOT imply a version in force today. Publishing a
+        version flips the definition to ACTIVE whatever its effective date, and a version
+        carries a retirement date -- so a product can be listed while its only version
+        starts next week, or after every version it ever had has retired. Both are normal
+        states of product authoring, not errors in the request.
+
+
+        Which is why the two 404s below carry different error codes. They were one code
+        (`PRODUCT_NOT_FOUND`) and the version lookup ran before the existence check, so
+        "its version starts tomorrow" was reported as "no such product" -- and the console,
+        which must hedge on a bare 404 because one can be a disguised denial, told a staff
+        member the record did not exist or their role forbade it, immediately after they
+        clicked it in the catalogue.
       security:
         - customersAuth: [profile]
         - agentsAuth: [agent]
@@ -82,6 +96,7 @@ paths:
           schema: { type: string, format: uuid }
         - name: effectiveDate
           in: query
+          description: Defaults to today. The date the version is resolved as of.
           schema: { type: string, format: date }
       responses:
         '200':
@@ -89,6 +104,15 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProductSnapshot' }
+        '404':
+          description: >-
+            `PRODUCT_NOT_FOUND` -- no such product. `NO_ACTIVE_PRODUCT_VERSION` -- the
+            product exists and no version of it is in force on that date; the detail names
+            the date asked about and, where one is scheduled, the date the next version
+            takes effect.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /products/{productId}/premium-quote:
     post:
       summary: Price a product for one applicant, on the version active as of a date

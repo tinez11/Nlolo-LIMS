@@ -74,6 +74,28 @@ paths:
           in: query
           description: Free-text, case-insensitive substring match against displayName.
           schema: { type: string }
+        - name: partyType
+          in: query
+          description: >
+            Comma-separated party types (`partyType=CORPORATE,GROUP`). Restricts the result
+            to those types; omit for every type. A list rather than a single value because
+            the client register is two working areas and the second of them is corporates AND
+            groups together -- as two requests that area could not be paged or totalled as
+            one list, and as a single value it would silently stop listing GROUP parties the
+            day one can be created.
+
+            Declared as a pattern-constrained STRING rather than `type: array`, which is what
+            it really is. This is the platform's first array query parameter, and the
+            contract validator every party test asserts through cannot validate one in any
+            serialization: the repeated form is rejected outright ("Multiple values found for
+            parameter but it is not an array") and the comma-separated form is then fed to a
+            JSON parser ("Unrecognized token 'CORPORATE'"). The pattern keeps real
+            spec-level validation of the allowed values, and Spring still binds the value to
+            a `List<PartyType>` natively, so nothing is lost but the array keyword.
+          schema:
+            type: string
+            pattern: '^(INDIVIDUAL|CORPORATE|GROUP)(,(INDIVIDUAL|CORPORATE|GROUP))*$'
+            example: CORPORATE,GROUP
         - name: page
           in: query
           schema: { type: integer, default: 0 }

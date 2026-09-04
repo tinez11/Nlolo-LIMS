@@ -36,6 +36,7 @@ import {
   type SuspendPolicyFormValues,
 } from './suspendPolicyForm';
 import { Panel } from '@/components/Panel';
+import { DetailLayout } from '@/components/DetailLayout';
 import { Input } from '@/components/ui/input';
 
 /**
@@ -127,162 +128,188 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         }
       />
 
-      <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
-          <Panel title="Invoices" subtitle="All invoices for this policy">
-            <InvoicesPanel policyNumber={policyNumber} />
-          </Panel>
+      {/*
+        Rebalanced rather than reordered. The rail was carrying five panels -- the
+        record, the lifecycle actions, coverage, beneficiaries and reinsurance --
+        against two in the wide column, so three quarters of this page lived in 320px
+        while two tables had 1fr to themselves.
 
-          <Panel title="Loans" subtitle="Policy loans taken against cash value">
-            <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
-          </Panel>
-        </div>
+        Nothing takes `emphasis` here, deliberately. Unlike a claim or an underwriting
+        case, this page is not opened to perform one act: most visits are somebody
+        looking up an invoice. Lifecycle still leaves the rail -- suspending a policy
+        is not a marginal note -- but it sits after the record it acts on rather than
+        being promoted above it.
 
-        <div className="space-y-5">
-          <Panel title="Policy">
-            {policy && (
-              <dl className="px-4 pb-2">
-                <Field
-                  label="Sum assured"
-                  value={formatMoney(policy.sumAssured)}
-                  emphasis
-                  // On a scheme this figure is not a term of the contract anyone
-                  // typed -- it is the total of the member schedule, restated
-                  // whenever somebody joins or leaves. Saying so stops it being
-                  // read as a fixed sum that has quietly changed.
-                  {...(policy.productCategory === 'GROUP_LIFE'
-                    ? { note: 'The total of every covered member — it moves as the schedule does.' }
-                    : {})}
-                />
-                <Field
-                  label="Premium"
-                  value={
-                    <>
-                      {formatMoney(policy.premium)}
-                      {policy.premiumFrequency && (
-                        <span className="ml-1 text-xs text-subtle-foreground">
-                          {policy.premiumFrequency.toLowerCase()}
-                        </span>
-                      )}
-                    </>
-                  }
-                />
-                <Field
-                  label="Cash value"
-                  value={formatMoney(policy.cashValue)}
-                  note="Always 0.00 until the platform credits cash value"
-                />
-                <Field label="Issued" value={formatDate(policy.issueDate)} />
-                <Field
-                  label="Risk commences"
-                  value={formatDate(policy.commencementDate)}
-                  // Not the same date as "Issued", and the difference is the point: a
-                  // policy issued today may carry risk from next month.
-                  {...(policy.commencementDate
-                    ? {}
-                    : { note: 'Not recorded — issued before the term was captured.' })}
-                />
-                <Field
-                  label="Term"
-                  value={policy.policyTermMonths ? formatMonths(policy.policyTermMonths) : '—'}
-                  {...(policy.premiumPayingTermMonths &&
-                  policy.premiumPayingTermMonths !== policy.policyTermMonths
-                    ? { note: `Premiums paid for ${formatMonths(policy.premiumPayingTermMonths)}.` }
-                    : {})}
-                />
-                <Field
-                  label="Matures"
-                  value={formatDate(policy.maturityDate)}
-                  {...(policy.maturityDate
-                    ? {}
-                    : { note: 'This product does not mature, or no term is on record.' })}
-                />
-                {/* Rendered only when the two differ. On a self-insured policy — the
-                    common case — a second row repeating the same name would be noise
-                    that teaches people to skip the panel. */}
-                {policy.lifeAssuredPartyId &&
-                  policy.lifeAssuredPartyId !== policy.policyholderPartyId && (
-                    <Field
-                      label="Life assured"
-                      value={
-                        isStaff ? (
-                          <Link
-                            to={`/staff/parties/${policy.lifeAssuredPartyId}`}
-                            className="underline"
-                          >
-                            <PartyName partyId={policy.lifeAssuredPartyId} />
-                          </Link>
-                        ) : (
-                          <PartyName partyId={policy.lifeAssuredPartyId} />
-                        )
-                      }
-                      note="A death claim is assessed against this person, not the policyholder."
-                    />
-                  )}
-                <Field
-                  label="Policyholder"
-                  value={
-                    policy.policyholderPartyId ? (
-                      isStaff ? (
-                        <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="underline">
-                          <PartyName partyId={policy.policyholderPartyId} />
-                        </Link>
-                      ) : (
-                        <PartyName partyId={policy.policyholderPartyId} />
-                      )
-                    ) : (
-                      '—'
-                    )
-                  }
-                  {...(!isStaff && policy.policyholderPartyId
-                    ? { note: 'No drill-in yet outside the staff console' }
-                    : {})}
-                />
-                <Field
-                  label="Agent of record"
-                  value={
-                    policy.agentOfRecordId ? (
-                      isStaff ? (
-                        <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="font-mono text-xs underline">
-                          {policy.agentOfRecordId}
-                        </Link>
-                      ) : (
-                        <span className="font-mono text-xs">{policy.agentOfRecordId}</span>
-                      )
-                    ) : (
-                      'Direct — no agent'
-                    )
-                  }
-                />
-              </dl>
-            )}
-          </Panel>
-
-          {/* Suspend/resume/reinstate are all hasRole('REALM_STAFF') only -- shown
-              only in the staff console, not just left to always-403 on click, the
-              same "don't render a button that can never work for this session"
-              discipline the deferred surrender action already follows above. */}
-          {isStaff && policy && <Panel title="Lifecycle">{<LifecycleActions policyNumber={policyNumber} status={policy.status} />}</Panel>}
-
-          <Panel title="Coverage" subtitle="Active benefits as of today">
-            {renderCoverage()}
-          </Panel>
-
-          <Panel title="Beneficiaries">
-            {policy && (
-              <BeneficiariesPanel policyNumber={policyNumber} beneficiaries={policy.beneficiaries ?? []} />
-            )}
-          </Panel>
-
-          {canSeeReinsurance && policy && (
-            <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
-              <CessionsPanel policyNumber={policyNumber} />
-            </Panel>
+        ORDER: the bounded panels come before the unbounded ones. Beneficiaries is a
+        handful of rows and a term of the contract; Invoices and Loans are ledgers
+        that grow for the life of the policy, and this one is already twenty rows
+        deep. Leading with a ledger buries everything after it -- put concretely, it
+        put the beneficiary editor and its party picker below the fold of a page that
+        keeps getting longer, which broke reaching them at all rather than merely
+        making it tedious.
+      */}
+      <DetailLayout record={renderRecord()}>
+        <Panel title="Beneficiaries">
+          {policy && (
+            <BeneficiariesPanel policyNumber={policyNumber} beneficiaries={policy.beneficiaries ?? []} />
           )}
-        </div>
-      </div>
+        </Panel>
+
+        <Panel title="Invoices" subtitle="All invoices for this policy">
+          <InvoicesPanel policyNumber={policyNumber} />
+        </Panel>
+
+        <Panel title="Loans" subtitle="Policy loans taken against cash value">
+          <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
+        </Panel>
+
+        {canSeeReinsurance && policy && (
+          <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
+            <CessionsPanel policyNumber={policyNumber} />
+          </Panel>
+        )}
+
+        {/* Suspend/resume/reinstate are all hasRole('REALM_STAFF') only -- shown only
+            in the staff console, not just left to always-403 on click, the same
+            "don't render a button that can never work for this session" discipline
+            the deferred surrender action already follows above. */}
+        {isStaff && policy && (
+          <Panel title="Lifecycle">
+            <LifecycleActions policyNumber={policyNumber} status={policy.status} />
+          </Panel>
+        )}
+      </DetailLayout>
     </>
   );
+
+  function renderRecord() {
+    return (
+      <>
+        <Panel title="Policy">
+          {policy && (
+            <dl className="px-4 pb-2">
+              <Field
+                label="Sum assured"
+                value={formatMoney(policy.sumAssured)}
+                emphasis
+                // On a scheme this figure is not a term of the contract anyone
+                // typed -- it is the total of the member schedule, restated
+                // whenever somebody joins or leaves. Saying so stops it being
+                // read as a fixed sum that has quietly changed.
+                {...(policy.productCategory === 'GROUP_LIFE'
+                  ? { note: 'The total of every covered member — it moves as the schedule does.' }
+                  : {})}
+              />
+              <Field
+                label="Premium"
+                value={
+                  <>
+                    {formatMoney(policy.premium)}
+                    {policy.premiumFrequency && (
+                      <span className="ml-1 text-xs text-subtle-foreground">
+                        {policy.premiumFrequency.toLowerCase()}
+                      </span>
+                    )}
+                  </>
+                }
+              />
+              <Field
+                label="Cash value"
+                value={formatMoney(policy.cashValue)}
+                note="Always 0.00 until the platform credits cash value"
+              />
+              <Field label="Issued" value={formatDate(policy.issueDate)} />
+              <Field
+                label="Risk commences"
+                value={formatDate(policy.commencementDate)}
+                // Not the same date as "Issued", and the difference is the point: a
+                // policy issued today may carry risk from next month.
+                {...(policy.commencementDate
+                  ? {}
+                  : { note: 'Not recorded — issued before the term was captured.' })}
+              />
+              <Field
+                label="Term"
+                value={policy.policyTermMonths ? formatMonths(policy.policyTermMonths) : '—'}
+                {...(policy.premiumPayingTermMonths &&
+                policy.premiumPayingTermMonths !== policy.policyTermMonths
+                  ? { note: `Premiums paid for ${formatMonths(policy.premiumPayingTermMonths)}.` }
+                  : {})}
+              />
+              <Field
+                label="Matures"
+                value={formatDate(policy.maturityDate)}
+                {...(policy.maturityDate
+                  ? {}
+                  : { note: 'This product does not mature, or no term is on record.' })}
+              />
+              {/* Rendered only when the two differ. On a self-insured policy — the
+                  common case — a second row repeating the same name would be noise
+                  that teaches people to skip the panel. */}
+              {policy.lifeAssuredPartyId &&
+                policy.lifeAssuredPartyId !== policy.policyholderPartyId && (
+                  <Field
+                    label="Life assured"
+                    value={
+                      isStaff ? (
+                        <Link
+                          to={`/staff/parties/${policy.lifeAssuredPartyId}`}
+                          className="underline"
+                        >
+                          <PartyName partyId={policy.lifeAssuredPartyId} />
+                        </Link>
+                      ) : (
+                        <PartyName partyId={policy.lifeAssuredPartyId} />
+                      )
+                    }
+                    note="A death claim is assessed against this person, not the policyholder."
+                  />
+                )}
+              <Field
+                label="Policyholder"
+                value={
+                  policy.policyholderPartyId ? (
+                    isStaff ? (
+                      <Link to={`/staff/parties/${policy.policyholderPartyId}`} className="underline">
+                        <PartyName partyId={policy.policyholderPartyId} />
+                      </Link>
+                    ) : (
+                      <PartyName partyId={policy.policyholderPartyId} />
+                    )
+                  ) : (
+                    '—'
+                  )
+                }
+                {...(!isStaff && policy.policyholderPartyId
+                  ? { note: 'No drill-in yet outside the staff console' }
+                  : {})}
+              />
+              <Field
+                label="Agent of record"
+                value={
+                  policy.agentOfRecordId ? (
+                    isStaff ? (
+                      <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="font-mono text-xs underline">
+                        {policy.agentOfRecordId}
+                      </Link>
+                    ) : (
+                      <span className="font-mono text-xs">{policy.agentOfRecordId}</span>
+                    )
+                  ) : (
+                    'Direct — no agent'
+                  )
+                }
+              />
+            </dl>
+          )}
+        </Panel>
+
+        <Panel title="Coverage" subtitle="Active benefits as of today">
+          {renderCoverage()}
+        </Panel>
+      </>
+    );
+  }
 
 
   function renderCoverage() {

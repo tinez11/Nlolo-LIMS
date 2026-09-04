@@ -159,8 +159,13 @@ public interface PolicyApi {
      *
      * @param status null for every member including those who have left. An exited member
      *     stays on the roll because a claim can arrive after somebody leaves.
+     * @param q null or blank for no name search. A member row holds a party id and no name,
+     *     so this is resolved through {@code PartyApi.partyIdsMatchingName} and applied as an
+     *     id filter — searching a 500-life roll for one person is otherwise impossible
+     *     without paging the whole schedule by eye.
      */
-    Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, Pageable pageable);
+    Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, String q,
+                                        Pageable pageable);
 
     /**
      * Add one life to an existing scheme, valuing them against the scheme's basis and

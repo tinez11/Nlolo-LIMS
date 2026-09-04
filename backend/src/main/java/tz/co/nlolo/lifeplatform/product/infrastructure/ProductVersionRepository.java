@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ProductVersionRepository extends JpaRepository<ProductVersion, UUID> {
@@ -15,6 +16,17 @@ public interface ProductVersionRepository extends JpaRepository<ProductVersion, 
     // product_id. A List (not Optional) because the invariant is enforced by publishVersion
     // itself, not assumed here; in the steady state this returns 0 or 1 rows.
     List<ProductVersion> findByTenantIdAndProductIdAndActiveForNewBusinessTrue(UUID tenantId, UUID productId);
+
+    /**
+     * The soonest version that has not started yet — the "comes into force on" half of
+     * {@code NoActiveProductVersionException}'s message.
+     *
+     * <p>Only ever read to explain an absence, never to price or to quote: resolving a
+     * future version as though it were current is precisely the mispricing
+     * {@code findActiveAsOf}'s date bounds exist to prevent.
+     */
+    Optional<ProductVersion> findFirstByTenantIdAndProductIdAndEffectiveDateAfterOrderByEffectiveDateAsc(
+        UUID tenantId, UUID productId, LocalDate asOfDate);
 
     @org.springframework.data.jpa.repository.Query(
         "SELECT v FROM ProductVersion v WHERE v.tenantId = :tenantId AND v.productId = :productId " +

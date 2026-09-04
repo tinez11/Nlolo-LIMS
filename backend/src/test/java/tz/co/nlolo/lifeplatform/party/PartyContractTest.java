@@ -771,6 +771,152 @@ class PartyContractTest {
             .andExpect(jsonPath("$.items[0].displayName").value("Baraka Combo Fixture Verified"));
     }
 
+    // --- GET /parties?partyType=... ---------------------------------------------------------
+
+    /**
+     * The register is two working areas -- individuals, and corporates/groups -- and that
+     * separation is only true if the server does the filtering. These tests are the
+     * falsifiable half of that: each asserts a type that must be ABSENT, because a filter
+     * that quietly ignored its parameter would still return the row the caller wanted and
+     * pass any assertion that only checked for presence.
+     */
+    @Test
+    void searchPartiesByPartyTypeReturnsOnlyIndividuals() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        registerIndividual(tenantId, "Neema Type Fixture", "+255712345710");
+        registerCorporate(tenantId, "Type Fixture Holdings Ltd", "TYPE-FIX-001", "+255712345720");
+
+        mockMvc.perform(get("/parties")
+                .queryParam("partyType", "INDIVIDUAL")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].displayName").value("Neema Type Fixture"))
+            .andExpect(jsonPath("$.items[0].partyType").value("INDIVIDUAL"))
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+    }
+
+    /**
+     * The repeatable form, which is the whole reason the parameter is a list: the register's
+     * second area is corporates AND groups, and as two requests it could not be paged or
+     * totalled as one list.
+     */
+    @Test
+    void searchPartiesByPartyTypeAcceptsSeveralTypesAsOneList() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        registerIndividual(tenantId, "Excluded Individual Fixture", "+255712345711");
+        registerCorporate(tenantId, "Included Corporate Fixture Ltd", "TYPE-FIX-002", "+255712345721");
+
+        mockMvc.perform(get("/parties")
+                .queryParam("partyType", "CORPORATE,GROUP")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].displayName").value("Included Corporate Fixture Ltd"))
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+    }
+
+    @Test
+    void searchPartiesByPartyTypeCombinesWithQ() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        // Same name fragment across both types, so neither filter alone would isolate one row.
+        registerIndividual(tenantId, "Mwangaza Shared Fragment", "+255712345712");
+        registerCorporate(tenantId, "Mwangaza Shared Fragment Ltd", "TYPE-FIX-003", "+255712345722");
+
+        mockMvc.perform(get("/parties")
+                .queryParam("q", "mwangaza shared")
+                .queryParam("partyType", "CORPORATE")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].partyType").value("CORPORATE"));
+    }
+
+    /**
+     * The regression guard for the whole change. Adding the type dimension routed the
+     * filtered cases through the null-safe `search` query; a caller that passes NO type must
+     * still take the original derived-query branches and see every type, exactly as before.
+     */
+    @Test
+    void searchPartiesWithoutPartyTypeStillReturnsEveryType() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        registerIndividual(tenantId, "Untyped Search Individual", "+255712345713");
+        registerCorporate(tenantId, "Untyped Search Corporate Ltd", "TYPE-FIX-004", "+255712345723");
+
+        mockMvc.perform(get("/parties")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(2));
+    }
+
+    /**
+     * The type filter must not become a way around the agents-realm scoping. Same shape as
+     * the `q` scoping test above: the new dimension carries the same force-scoping, proven
+     * rather than assumed.
+     */
+    @Test
+    void searchPartiesByPartyTypeStaysForceScopedToTheCallingAgent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String agentA = "agent-a-type-scoping-test";
+        String agentB = "agent-b-type-scoping-test";
+
+        mockMvc.perform(post("/parties/corporates")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(agentA).claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"registeredName":"Agent A Corporate Fixture Ltd","registrationNumber":"TYPE-SCOPE-A","contactInfo":{"phoneNumber":"+255712345724"}}
+                    """))
+            .andExpect(status().isCreated());
+        mockMvc.perform(post("/parties/corporates")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(agentB).claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"registeredName":"Agent B Corporate Fixture Ltd","registrationNumber":"TYPE-SCOPE-B","contactInfo":{"phoneNumber":"+255712345725"}}
+                    """))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/parties")
+                .queryParam("partyType", "CORPORATE,GROUP")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject(agentA).claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].displayName").value("Agent A Corporate Fixture Ltd"));
+    }
+
+    /** Registration helpers, so the type tests above read as the assertion they are making. */
+    private void registerIndividual(UUID tenantId, String fullName, String phone) throws Exception {
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"" + fullName
+                    + "\",\"dateOfBirth\":\"1990-05-12\",\"contactInfo\":{\"phoneNumber\":\"" + phone + "\"}}"))
+            .andExpect(status().isCreated());
+    }
+
+    private void registerCorporate(UUID tenantId, String registeredName, String registrationNumber,
+                                    String phone) throws Exception {
+        // contactInfo is @NotNull on RegisterCorporateRequest -- omitting it is a 400, not a
+        // corporate with no phone number.
+        mockMvc.perform(post("/parties/corporates")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"registeredName\":\"" + registeredName
+                    + "\",\"registrationNumber\":\"" + registrationNumber
+                    + "\",\"contactInfo\":{\"phoneNumber\":\"" + phone + "\"}}"))
+            .andExpect(status().isCreated());
+    }
+
     @Test
     void searchPartiesByQReturnsEmptyForNoMatches() throws Exception {
         UUID tenantId = UUID.randomUUID();

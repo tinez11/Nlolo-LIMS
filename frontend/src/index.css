@@ -185,4 +185,61 @@
     outline: 2px solid var(--color-ring);
     outline-offset: 2px;
   }
+
+  /*
+    The surfaces the browser draws for us, themed from the same tokens as
+    everything else. These ship as OS defaults that belong to no design system: a
+    blue selection band and a wide light-grey scrollbar are the two places a
+    careful console still looks assembled rather than built.
+
+    The scrollbar became load-bearing rather than cosmetic when the detail-page
+    record rail got its own bounded scroll -- an unstyled 15px chrome gutter inside
+    a 320px column is a quarter of the room the values need.
+
+    Achromatic, both of them: the Stamp Rule is that colour reports state, and a
+    scrollbar and a text selection report neither.
+  */
+  ::selection {
+    background-color: var(--color-border-strong);
+    color: var(--color-foreground);
+  }
+
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+
+  /* Chromium before 121 and every WebKit, which ignore the two properties above. */
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    /* Painted into the padding box so the 3px transparent border reads as inset
+       breathing room rather than a thumb that touches both walls. */
+    background-clip: padding-box;
+    background-color: var(--color-border-strong);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-muted-foreground);
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Full-strength ink, never the muted colour a field's own text might inherit. */
+  input,
+  textarea,
+  select {
+    caret-color: var(--color-foreground);
+  }
 }

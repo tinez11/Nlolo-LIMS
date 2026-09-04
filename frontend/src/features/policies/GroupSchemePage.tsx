@@ -33,6 +33,7 @@ import {
 } from './addMemberForm';
 import { previewBenefit, type SchemeBasis } from './groupBenefitPreview';
 import { Panel } from '@/components/Panel';
+import { DetailLayout } from '@/components/DetailLayout';
 import { FilterChip } from '@/components/FilterChip';
 import { Input, Select } from '@/components/ui/input';
 
@@ -56,6 +57,11 @@ export function GroupSchemePage() {
   const statusParam = params.get('status');
   const status: MemberStatus | undefined =
     statusParam === 'ACTIVE' || statusParam === 'EXITED' ? statusParam : undefined;
+  // Searching the roll by member name. A schedule can hold hundreds of lives, so
+  // "is this person covered" is not a question anyone can answer by paging -- and the
+  // filter is server-side, with its own total, because filtering one page of 500 would
+  // report the wrong count under the right-looking rows.
+  const q = params.get('q') ?? '';
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
 
   const scheme = usePolicyStore(selectScheme(policyNumber));
@@ -72,17 +78,25 @@ export function GroupSchemePage() {
     if (!policyNumber) return;
     void loadMembers(policyNumber, {
       ...(status ? { status } : {}),
+      ...(q ? { q } : {}),
       page,
       pageSize: DEFAULT_MEMBER_PAGE_SIZE,
     });
-  }, [policyNumber, loadMembers, status, page]);
+  }, [policyNumber, loadMembers, status, q, page]);
 
-  function update(next: { status?: MemberStatus | undefined; page?: number }) {
+  function update(next: { status?: MemberStatus | undefined; q?: string; page?: number }) {
     const merged = new URLSearchParams(params);
     if ('status' in next) {
       if (next.status) merged.set('status', next.status);
       else merged.delete('status');
       // A new filter invalidates the current page offset.
+      merged.delete('page');
+    }
+    if ('q' in next) {
+      if (next.q) merged.set('q', next.q);
+      else merged.delete('q');
+      // Same reason: page 3 of the previous result is an empty table for a search
+      // that actually matched.
       merged.delete('page');
     }
     if (next.page !== undefined) {
@@ -161,128 +175,154 @@ export function GroupSchemePage() {
 
       <StatCards stats={stats} />
 
-      <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
-          {addOpen && data && (
-            <Panel title="Add a member" subtitle="Values them against the scheme and tests the free cover limit">
-              <AddMemberForm scheme={data} onDone={() => setAddOpen(false)} />
-            </Panel>
-          )}
-
-          <section className="rounded-lg border border-border bg-surface">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <div>
-                <h2 className="text-sm font-semibold">Members</h2>
-                <p className="text-xs text-muted-foreground">
-                  Each row shows the benefit in force for that person today.
-                </p>
-              </div>
-              <div className="flex items-center gap-1">
-                <FilterChip
-                  label="All"
-                  active={status === undefined}
-                  onClick={() => update({ status: undefined })}
-                />
-                <FilterChip
-                  label="Active"
-                  active={status === 'ACTIVE'}
-                  onClick={() => update({ status: 'ACTIVE' })}
-                />
-                {/* An exited member is never deleted: a claim can arrive after
-                    somebody leaves the employer, so "were they covered on the date
-                    of event" has to stay answerable. */}
-                <FilterChip
-                  label="Left"
-                  active={status === 'EXITED'}
-                  onClick={() => update({ status: 'EXITED' })}
-                />
-              </div>
-            </div>
-            {renderMembers()}
-          </section>
-        </div>
-
-        <div className="space-y-5">
-          <Panel title="Scheme">
-            {data && (
-              <dl className="px-4 pb-2">
-                <Field
-                  label="Total sum insured"
-                  value={formatMoney(data.totalCovered)}
-                  emphasis
-                  note="The total of what every active member is covered for — not a figure anyone types."
-                />
-                <Field label="Benefit basis" value={describeBasis(data)} />
-                <Field
-                  label="Free cover limit"
-                  value={data.fcl ? formatMoney(data.fcl) : 'No limit'}
-                  // Absent is not zero, and the difference is the whole rule: no
-                  // limit means nobody needs evidence, a limit of zero would mean
-                  // everybody does. Said in words so the two can never be read alike.
-                  note={
-                    data.fcl
-                      ? 'Cover above this needs medical evidence.'
-                      : 'Every member is covered in full with no evidence.'
-                  }
-                />
-                <Field label="Risk commenced" value={formatDate(data.commencementDate)} />
-                <Field
-                  label="Term"
-                  value={data.policyTermMonths ? formatMonths(data.policyTermMonths) : 'Annually renewable'}
-                />
-                <Field
-                  label="Policyholder"
-                  value={
-                    data.policyholderPartyId ? (
-                      <Link to={`/staff/parties/${data.policyholderPartyId}`} className="underline">
-                        <PartyName partyId={data.policyholderPartyId} />
-                      </Link>
-                    ) : (
-                      NO_VALUE
-                    )
-                  }
-                  note="The employer owns the contract. The lives are the schedule, not this person."
-                />
-              </dl>
-            )}
+      {/* The add-member panel leads but takes no `emphasis`: this is the one screen
+          that keeps a real stat row, and a 1rem panel heading beside a 1.5rem stat
+          figure and a 1.25rem page title would be a third size above body -- the
+          Two-Peaks Rule, broken by the fix for something else. */}
+      <DetailLayout record={renderRecord()}>
+        {addOpen && data && (
+          <Panel title="Add a member" subtitle="Values them against the scheme and tests the free cover limit">
+            <AddMemberForm scheme={data} onDone={() => setAddOpen(false)} />
           </Panel>
+        )}
 
-          {data?.benefitBasis === 'GRADED' && (
-            <Panel title="Grades" subtitle="What each staff category is worth">
-              {data.grades && data.grades.length > 0 ? (
-                <dl className="px-4 pb-2">
-                  {data.grades.map((grade) => (
-                    <Field
-                      key={grade.gradeCode}
-                      label={grade.gradeCode ?? NO_VALUE}
-                      value={formatMoney(grade.benefit)}
-                    />
-                  ))}
-                </dl>
-              ) : (
-                <p className="px-4 pb-4 text-xs text-muted-foreground">
-                  This scheme is graded but carries no grade table.
-                </p>
-              )}
-            </Panel>
-          )}
-
-          <Panel title="Contract">
-            <div className="px-4 pb-4 pt-1">
+        <section className="rounded-lg border border-border bg-surface">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold">Members</h2>
               <p className="text-xs text-muted-foreground">
-                Premium, invoices, loans and lifecycle actions live on the policy record.
+                Each row shows the benefit in force for that person today.
               </p>
-              <Button asChild size="sm" variant="ghost" className="mt-2 -ml-2">
-                <Link to={`/staff/policies/${encodeURIComponent(policyNumber)}`}>
-                  Open the policy
-                </Link>
-              </Button>
             </div>
-          </Panel>
-        </div>
-      </div>
+            <div className="flex items-center gap-1">
+              <FilterChip
+                label="All"
+                active={status === undefined}
+                onClick={() => update({ status: undefined })}
+              />
+              <FilterChip
+                label="Active"
+                active={status === 'ACTIVE'}
+                onClick={() => update({ status: 'ACTIVE' })}
+              />
+              {/* An exited member is never deleted: a claim can arrive after
+                  somebody leaves the employer, so "were they covered on the date
+                  of event" has to stay answerable. */}
+              <FilterChip
+                label="Left"
+                active={status === 'EXITED'}
+                onClick={() => update({ status: 'EXITED' })}
+              />
+              {/* Searching a roll of hundreds is the only way to answer "is this
+                  person covered" without paging it by eye. Beside the status chips
+                  because the two compose -- "left, called Juma" is a real question a
+                  claim assessor asks. */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const value = new FormData(e.currentTarget).get('q');
+                  update({ q: typeof value === 'string' ? value.trim() : '' });
+                }}
+              >
+                <Input
+                  name="q"
+                  defaultValue={q}
+                  placeholder="Search by member name"
+                  aria-label="Search members by name"
+                  inputSize="sm"
+                  className="w-52 px-2.5 text-sm"
+                />
+              </form>
+            </div>
+          </div>
+          {renderMembers()}
+        </section>
+      </DetailLayout>
     </>
   );
+
+  function renderRecord() {
+    return (
+      <>
+        <Panel title="Scheme">
+          {data && (
+            <dl className="px-4 pb-2">
+              <Field
+                label="Total sum insured"
+                value={formatMoney(data.totalCovered)}
+                emphasis
+                note="The total of what every active member is covered for — not a figure anyone types."
+              />
+              <Field label="Benefit basis" value={describeBasis(data)} />
+              <Field
+                label="Free cover limit"
+                value={data.fcl ? formatMoney(data.fcl) : 'No limit'}
+                // Absent is not zero, and the difference is the whole rule: no
+                // limit means nobody needs evidence, a limit of zero would mean
+                // everybody does. Said in words so the two can never be read alike.
+                note={
+                  data.fcl
+                    ? 'Cover above this needs medical evidence.'
+                    : 'Every member is covered in full with no evidence.'
+                }
+              />
+              <Field label="Risk commenced" value={formatDate(data.commencementDate)} />
+              <Field
+                label="Term"
+                value={data.policyTermMonths ? formatMonths(data.policyTermMonths) : 'Annually renewable'}
+              />
+              <Field
+                label="Policyholder"
+                value={
+                  data.policyholderPartyId ? (
+                    <Link to={`/staff/parties/${data.policyholderPartyId}`} className="underline">
+                      <PartyName partyId={data.policyholderPartyId} />
+                    </Link>
+                  ) : (
+                    NO_VALUE
+                  )
+                }
+                note="The employer owns the contract. The lives are the schedule, not this person."
+              />
+            </dl>
+          )}
+        </Panel>
+
+        {data?.benefitBasis === 'GRADED' && (
+          <Panel title="Grades" subtitle="What each staff category is worth">
+            {data.grades && data.grades.length > 0 ? (
+              <dl className="px-4 pb-2">
+                {data.grades.map((grade) => (
+                  <Field
+                    key={grade.gradeCode}
+                    label={grade.gradeCode ?? NO_VALUE}
+                    value={formatMoney(grade.benefit)}
+                  />
+                ))}
+              </dl>
+            ) : (
+              <p className="px-4 pb-4 text-xs text-muted-foreground">
+                This scheme is graded but carries no grade table.
+              </p>
+            )}
+          </Panel>
+        )}
+
+        <Panel title="Contract">
+          <div className="px-4 pb-4 pt-1">
+            <p className="text-xs text-muted-foreground">
+              Premium, invoices, loans and lifecycle actions live on the policy record.
+            </p>
+            <Button asChild size="sm" variant="ghost" className="mt-2 -ml-2">
+              <Link to={`/staff/policies/${encodeURIComponent(policyNumber)}`}>
+                Open the policy
+              </Link>
+            </Button>
+          </div>
+        </Panel>
+      </>
+    );
+  }
 
   function renderMembers() {
     if (isInitialLoad(members)) return <TableSkeleton columns={6} />;
@@ -300,13 +340,32 @@ export function GroupSchemePage() {
     if (rows.length === 0 && members.status === 'success') {
       return (
         <EmptyState
-          title={status === 'EXITED' ? 'Nobody has left this scheme' : 'No members'}
-          description={
-            status === 'EXITED'
-              ? 'Members who leave stay on the roll here, because a claim can arrive after they go.'
-              : 'A scheme is issued with its opening schedule, so this should not be empty.'
+          // A search is now the most likely reason this table is empty, and "No members"
+          // in front of a 500-life scheme because a name did not match would be flatly
+          // untrue -- the roll is not empty, this search of it is.
+          title={
+            q
+              ? `No member matching "${q}"`
+              : status === 'EXITED'
+                ? 'Nobody has left this scheme'
+                : 'No members'
           }
-          {...(status ? { action: <Button size="sm" onClick={() => update({ status: undefined })}>Show all</Button> } : {})}
+          description={
+            q
+              ? 'The search matches a member’s name. Someone covered under a different scheme will not appear here.'
+              : status === 'EXITED'
+                ? 'Members who leave stay on the roll here, because a claim can arrive after they go.'
+                : 'A scheme is issued with its opening schedule, so this should not be empty.'
+          }
+          {...(status || q
+            ? {
+                action: (
+                  <Button size="sm" onClick={() => update({ status: undefined, q: '' })}>
+                    Show all
+                  </Button>
+                ),
+              }
+            : {})}
         />
       );
     }

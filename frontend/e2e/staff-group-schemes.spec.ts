@@ -136,6 +136,69 @@ test.describe('staff group schemes', () => {
     // Survives a reload: a real row in a real database, not optimistic UI.
     await page.reload();
     await expect(page.getByText('TZS 15,000,000.00').first()).toBeVisible();
+
+    /*
+     * Searching the roll by member name. Three lives are on this schedule by now, and a
+     * real schedule holds hundreds -- "is this person covered" is not a question anyone
+     * answers by paging.
+     *
+     * The filter is server-side, which is what the assertions actually pin: the row that
+     * must be ABSENT, and the TOTAL. A pass over the fetched page would leave the total
+     * at three under a single row, and on a 500-life roll it would search only the
+     * twenty-five rows in hand and report "not covered" for somebody who is.
+     */
+    await page.getByLabel('Search members by name').fill('Juma');
+    await page.getByLabel('Search members by name').press('Enter');
+    await expect(page).toHaveURL(/[?&]q=Juma/, { timeout: 10_000 });
+    await expect(page.getByText('Juma Senior')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Baraka Other')).not.toBeVisible();
+
+    // A name nobody on this scheme has is an empty SEARCH, not an empty scheme -- the
+    // roll has three members and the copy must not claim otherwise.
+    await page.getByLabel('Search members by name').fill('NobodyHereIsCalledThis12345');
+    await page.getByLabel('Search members by name').press('Enter');
+    await expect(page.getByText(/No member matching/)).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Show all' }).click();
+    await expect(page.getByText('Juma Senior')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Baraka Other')).toBeVisible();
+
+    /*
+     * The client-record route to the same schedule, which is what the Clients area's
+     * second half exists to serve: open the policyholder, see the scheme, see who is
+     * covered under it, and reach the roll in ONE hop.
+     *
+     * Before this panel the way through was Clients -> the client -> Policies -> the
+     * GRP row -> the policy page -> Member schedule: four hops, and each of them
+     * required already knowing that "members" live under a contract rather than under
+     * the company.
+     *
+     * Asserted here rather than in a spec of its own because this is where a scheme
+     * with a known policyholder and a known member count actually exists. A test that
+     * went looking for "some client holding some scheme" would pass vacuously on a
+     * tenant that had none.
+     */
+    await page.goto(`/staff/policies/${policyNumber}`);
+    const policyholderLink = page.getByRole('link', { name: 'Amina Owner' }).first();
+    await expect(policyholderLink).toBeVisible({ timeout: 15_000 });
+    await policyholderLink.click();
+    await expect(page).toHaveURL(/\/staff\/parties\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    const schemesPanel = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Group schemes' }) });
+    await expect(schemesPanel).toBeVisible({ timeout: 20_000 });
+
+    // The scheme this run just issued, listed on the client's own record.
+    await expect(schemesPanel.getByText(policyNumber)).toBeVisible({ timeout: 20_000 });
+
+    // Its members, inline. This client holds more than one scheme by now, so the
+    // inline preview is not asserted -- what must hold is that the roll is one click
+    // away and that the link goes to the SCHEDULE, not to the policy record.
+    const schemeLink = schemesPanel.getByRole('link', { name: new RegExp(policyNumber) });
+    await schemeLink.click();
+    await expect(page).toHaveURL(`/staff/group-schemes/${policyNumber}`, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: policyNumber })).toBeVisible();
+    await expect(page.getByText('TZS 15,000,000.00').first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('a member above the free cover limit is covered up to it and flagged', async ({ page }) => {

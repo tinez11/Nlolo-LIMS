@@ -7,6 +7,7 @@ import {
   searchParties,
   submitKyc,
   uploadKycEvidence,
+  type PartyArea,
   type PartySearchParams,
 } from '@/api/party';
 import type {
@@ -29,11 +30,30 @@ import { idle, track, type Resource } from './createResourceSlice';
 
 type Keyed<T> = Record<string, Resource<T>>;
 
+/**
+ * Which register the rows belong to. `all` is the unsplit list -- the agents realm's
+ * own book, and the retired staff path -- and is a real third table rather than a
+ * synonym for either area.
+ */
+export type PartyListKey = PartyArea | 'all';
+
 interface PartyState {
-  // Single slot, not keyed: one list (the KYC review queue for staff, or "parties
-  // I registered" for an agent) on screen at a time -- same shape as
-  // policyStore's/claimStore's own `list`.
-  list: Resource<Page<PartyView>>;
+  /*
+   * Keyed by REGISTER AREA, not a single slot.
+   *
+   * It was one slot with a constant track key, on the stated reasoning that it was
+   * "the same on-screen table either way, so only the most recently requested filter
+   * should win a race". That was true while Clients was one register and stopped being
+   * true the moment it became two: individuals and corporates/groups are two different
+   * tables, and one slot let the previous area's rows render under the new area's
+   * heading and caption for as long as the next request was in flight. Twenty rows
+   * reading "Individual" appeared under a table captioned "Corporate and group
+   * clients" -- which is precisely the confusion splitting the register exists to end.
+   *
+   * Still NOT keyed by kycStatus or q: within one area those are the same table, and
+   * the newest request should still win.
+   */
+  list: Keyed<Page<PartyView>>;
   // PartyDetailView, not PartyView: `GET /parties/{id}` returns the full record
   // while the list stays four fields, so these two are deliberately different
   // types for the same entity.
@@ -55,7 +75,7 @@ interface PartyState {
   registeringIndividual: Resource<PartyView>;
   registeringCorporate: Resource<PartyView>;
 
-  loadList: (params: PartySearchParams) => Promise<void>;
+  loadList: (area: PartyListKey, params: PartySearchParams) => Promise<void>;
   loadParty: (partyId: string) => Promise<void>;
   loadPartyDocuments: (partyId: string) => Promise<void>;
   uploadKycEvidence: (partyId: string, file: File) => Promise<void>;
@@ -69,7 +89,7 @@ interface PartyState {
 }
 
 export const usePartyStore = create<PartyState>((set, getState) => ({
-  list: idle(),
+  list: {},
   detail: {},
   documents: {},
   uploadingKycEvidence: {},
@@ -77,15 +97,15 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
   registeringIndividual: idle(),
   registeringCorporate: idle(),
 
-  // Constant key regardless of which kycStatus filter was requested -- the same
-  // on-screen table either way, so only the most recently REQUESTED filter
-  // should win a race, exactly the reasoning policyStore.loadList's own
-  // comment gives for the same shape.
-  loadList: (params) =>
+  // Keyed by area, then constant across that area's own filters: within one area a
+  // kycStatus or q change is the same table and only the newest request should win,
+  // but a switch BETWEEN areas is a different table and must not inherit the other's
+  // rows. See the `list` field's own comment.
+  loadList: (area, params) =>
     track(
-      'party.list',
-      getState().list,
-      (next) => set({ list: next }),
+      `party.list.${area}`,
+      getState().list[area] ?? idle<Page<PartyView>>(),
+      (next) => set((st) => ({ list: { ...st.list, [area]: next } })),
       () => searchParties(params),
     ),
 
@@ -164,7 +184,8 @@ export const usePartyStore = create<PartyState>((set, getState) => ({
 }));
 
 /** Selectors, so components never index a possibly-absent key by hand. */
-export const selectPartyList = (s: PartyState) => s.list;
+export const selectPartyList = (area: PartyListKey) => (s: PartyState) =>
+  s.list[area] ?? idle<Page<PartyView>>();
 export const selectParty = (partyId: string) => (s: PartyState) =>
   s.detail[partyId] ?? idle<PartyDetailView>();
 export const selectPartyDocuments = (partyId: string) => (s: PartyState) =>

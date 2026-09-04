@@ -279,6 +279,16 @@ export const DEFAULT_MEMBER_PAGE_SIZE = 25;
 export interface MemberListParams {
   /** Omit for every member including those who have left. */
   status?: MemberStatus;
+  /**
+   * Free-text, case-insensitive substring match against the MEMBER'S NAME. Omit for no
+   * search; ANDed with `status` rather than replacing it.
+   *
+   * Resolved server-side through the party module -- a member row carries a party id and
+   * no name -- so this is a real filter with a real total, not a pass over the rows in
+   * hand. That matters on the screen it serves: a 500-life schedule is exactly the case
+   * where filtering one page would answer the wrong question.
+   */
+  q?: string;
   page?: number;
   pageSize?: number;
 }
@@ -305,7 +315,12 @@ export async function listSchemeMembers(
     items?: PolicyMemberView[];
     page?: { page?: number; pageSize?: number; totalElements?: number };
   }>(`/group-schemes/${encodeURIComponent(policyNumber)}/members`, {
-    params: { ...(params.status ? { status: params.status } : {}), page, pageSize },
+    params: {
+      ...(params.status ? { status: params.status } : {}),
+      ...(params.q ? { q: params.q } : {}),
+      page,
+      pageSize,
+    },
   });
 
   return {

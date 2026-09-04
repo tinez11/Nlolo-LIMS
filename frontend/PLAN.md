@@ -140,10 +140,17 @@ generated-avatar library — insurance parties have no photos, so the fallback *
 the avatar, and a hosted generator would be an external call from an insurance app.
 
 **Drawer previews, page acts.** A table row opens a read-only slide-over with key
-facts and a "Full detail" link; the full page is tabbed and owns every mutating
-action. This keeps settlement decisions, waivers, and payouts off a surface
-dismissable by clicking the backdrop. The reference design does the same thing —
-its drawer carries a "‹ FULL PROFILE" link.
+facts and a "Full detail" link; the full page owns every mutating action. This
+keeps settlement decisions, waivers, and payouts off a surface dismissable by
+clicking the backdrop. The reference design does the same thing — its drawer
+carries a "‹ FULL PROFILE" link.
+
+The full page was specified here as **tabbed**, and it is not — see §14.8. Tabs
+would have hidden a claim's evidence behind the assessment form that cites it.
+The hierarchy that tabs were standing in for is delivered instead by
+`DetailLayout`'s pinned record rail and `Panel emphasis`, which promotes the one
+panel a page exists to act through. Recorded as a traded promise rather than an
+omission, so nobody re-adds tabs looking for a missing feature.
 
 **Stat cards are counts only.** There are no analytics endpoints; the only
 obtainable numbers are `totalElements` from the 4 paged searches. No trend
@@ -564,18 +571,21 @@ Carried from the critique snapshot. Items 2 and 3 are **done** (2026-09-03, see
    hand-rolled 11px labels bypassing `FormField`, no lint ban on
    `border-input`.~~ **Done in full** — §14.6, including the lint rule, which
    is what makes it stay done.
-4. **No tabs anywhere**, though §6 and `PRODUCT.md` both promise tabbed detail
+4. ~~**No tabs anywhere**, though §6 and `PRODUCT.md` both promise tabbed detail
    pages and `@radix-ui/react-tabs` is installed and imported nowhere. Detail
-   pages are 8 co-equal panels with every heading at body size.
-5. **The stat row is dead weight.** Every list screen passes one stat into a
+   pages are 8 co-equal panels with every heading at body size.~~ **Resolved
+   without tabs, deliberately** — §14.8. The hierarchy problem was real and is
+   fixed; tabs were the wrong instrument for it.
+5. ~~**The stat row is dead weight.** Every list screen passes one stat into a
    four-column grid: measured at 1440px, a 282px card in a 1216px row, 77% empty,
-   restating the count the pager prints below it.
+   restating the count the pager prints below it.~~ **Done** — §14.8.
 6. **Nothing built for eight-hour use** — no keyboard shortcuts, no command
    palette (§7 assumes one exists), no bulk actions, and Claims search matches
    policy number only, so an assessor cannot find a claim by claimant name.
 
-Three dead dependencies to remove: `@radix-ui/react-tabs`,
-`@radix-ui/react-tooltip`, `@radix-ui/react-avatar`.
+Two dead dependencies to remove: `@radix-ui/react-tooltip` and
+`@radix-ui/react-avatar`. `@radix-ui/react-tabs` joins them — §14.8 decided
+against tabs, so nothing will ever import it.
 
 **Not a priority, and recorded so it is not re-raised:** at 390px the console is
 unusable — the 224px sidebar takes 57% of the viewport and the 166px remainder
@@ -800,3 +810,404 @@ confirming button never carries a generic assent and that the receipt announces
 as `status` rather than `alert`), and the full e2e suite. Five spec files gained
 the second click — which is the suite proving the guard is really there, since
 every one of them failed to reach its action without it.
+
+### 14.8 Hierarchy without tabs, and the stat row that was 77% empty
+
+Two of the three remaining critique items, taken together because they were the
+same problem seen from two ends: **nothing on a screen said what mattered on it.**
+
+**The tabs promise was not kept, on purpose.** `PRODUCT.md` says "the full page
+is tabbed and owns every mutating action", and `@radix-ui/react-tabs` has sat
+installed and unimported since M12. Building it would have hidden the evidence
+behind the form that cites it: a claims assessor writes findings *from* the
+attached certificates, and tabs put those one click and one lost scroll position
+away. So the promise was traded, knowingly, for the thing it was a proxy for.
+
+What the pages have instead:
+
+- **`DetailLayout`** owns the two-column body all eight detail pages had written
+  out longhand. The 320px column is the **record rail** — identifying facts only,
+  `sticky` at the gutter, capped at `100dvh - 3rem` with its own scroll so a
+  record taller than the screen cannot pin its top and hide its last rows.
+- **`Panel emphasis`** promotes exactly one panel to the Title tier with a
+  Rule-Strong edge, and it leads its column. Achromatic — a status tint here
+  would make colour mean hierarchy, and colour on this platform means state.
+- **Acts leave the rail.** The policy page had five panels in that 320px column
+  against two in the wide one, including its suspend/resume/reinstate control.
+  *Preview is dismissable; acting is not* applies to a margin as much as to a
+  drawer: a person reads a narrow column as a summary.
+
+Where emphasis went, and where it deliberately did not:
+
+| Page | Change |
+| --- | --- |
+| `ClaimDetailPage` | Assessment / settlement / reopen take emphasis and lead. Rail = Claim + Event details. Reinsurance moved to the wide column. |
+| `PartyDetailPage` | KYC verification takes emphasis and leads — it was **last of five**, under four read-only registers. Rail = Identity, Person, Address. Documents and Also-an-agent moved out. |
+| `UnderwritingCaseDetailPage` | The assessment panel takes emphasis. Rail = Case + Decision. |
+| `PolicyDetailPage` | **No emphasis.** Most visits are somebody looking up an invoice. Lifecycle leaves the rail but goes last, not first. Rail = Policy + Coverage. |
+| `ProductDetailPage`, `AgentDetailPage` | No emphasis; the act is occasional. |
+| `GroupSchemePage` | No emphasis, and the reason is a rule: it is the one screen that keeps a stat row, so a 1rem heading beside a 1.5rem figure and a 1.25rem title would be a **third size above body**. The Two-Peaks Rule beat the fix. |
+
+**The stat row: nine screens had one number in a four-column grid.** Not a
+judgement call — `onSelect` is passed by nobody, so no stat card on this platform
+was ever interactive, and every one of the nine held a single `totalElements` the
+pager already prints as "1–20 of 143". One number is a sentence, not a card:
+`CountLine` renders it in the page header under the description ("**775**
+policies · in this tenant"), and the table now starts ~130px higher. `StatCards`
+survives for `GroupSchemePage`, the only screen with numbers to compare, and now
+sizes to its content instead of forcing four columns onto whatever it is handed.
+
+All three `Stat` states came across intact, because they are the honest part: a
+spinner only while a value is genuinely in flight, an em dash labelled
+"Not available" once the load has failed, and a hint that always says what was
+counted. Neither component is a live region — the pager below already announces
+the same total politely.
+
+**Two things the rendered result showed that the source could not.**
+
+1. `Field`'s `note` sat inside the value cell, which the label had already
+   narrowed to ~170px of the rail — so every note past four words wrapped two or
+   three times into a ragged right-aligned block, three of them stacked on the
+   policy panel. The note now takes its own full-width line (a second `<dd>`
+   after one `<dt>`, which is valid and also true: it qualifies the value, so a
+   screen reader should reach it). Most notes are now one line.
+2. Browser surfaces were still OS defaults. That stopped being cosmetic the
+   moment the rail got its own bounded scroll — an unstyled 15px chrome gutter
+   inside a 320px column is a quarter of the room the figures need. Scrollbar,
+   `::selection` and the input caret are now themed from the tokens, achromatic
+   under the Stamp Rule.
+
+**Verified:** typecheck, lint, 675 unit tests, and the full e2e suite. Rendered
+evidence at 1440px and 500px, plus scrolled captures proving the rail actually
+sticks rather than merely carrying the class. `staff-clients`'s
+"shows every panel" test passes unchanged through the reorder, which is the
+locators being name-based rather than positional — the one piece of luck in this
+change, and only because §14.5 had already forced that discipline.
+
+**Not done, and not smuggled in:** the `DEATH`-as-page-title
+SCREAMING_ENUM and the raw product UUID in the policy header are copy problems
+for `clarify`, not layout. The count line's unfiltered hint ("in this tenant")
+now sits one line under a description that often says the same thing; that
+redundancy is real, mine, and left for a copy pass rather than reworded across
+nine screens here. Item 6 — the eight-hour-use gap — is untouched.
+
+#### The picker flake from §14.5, finally pinned
+
+The reorder broke 2 of 93 e2e tests, both the same click — selecting an option in
+`PartyPicker` on the policy page's beneficiary editor — and both were the
+intermittent failure §14.5 recorded as unexplained. Making it deterministic is
+what explained it.
+
+**Two causes, stacked.**
+
+1. **The list chases its own trigger.** `Popover.Content` is portalled and
+   fixed-position, so Radix re-anchors it to the trigger on every scroll of the
+   `<main>` column. Scroll toward an option and the trigger moves, the list
+   re-anchors, and the option moves with it — Playwright reported "element is
+   visible, enabled and stable … element is outside of the viewport" 105 times in
+   a row. Fixed with `modal` on `Popover.Root`, which locks page scroll while the
+   list is open. That is the correct behaviour independent of the test: while
+   choosing from a list anchored to a field, the page underneath should not move.
+2. **The editor was under an unbounded ledger.** This was mine. The first
+   ordering put Invoices — twenty-plus rows on the seeded policy, and growing for
+   the life of the contract — above Beneficiaries, which is three rows and a term
+   of the contract. A page that leads with a panel of unbounded height buries
+   every panel after it, and the failure screenshot is the proof: the viewport
+   frozen mid-invoice-table with the picker's trigger below the fold.
+
+**Rule taken from it: bounded panels before unbounded ones.** Contract terms
+first, ledgers after. "Most visits are looking up an invoice" argued for Invoices
+leading, and it was the wrong conclusion — second place costs an invoice-reader
+one short panel of scroll, while first place cost the beneficiary editor its
+reachability.
+
+The two causes were independent: the scroll lock alone fixed one of the two
+tests, the reorder fixed the other, and both changes are worth keeping.
+
+### 14.9 Clients becomes two areas, and the company-to-members hop
+
+The register was one list of every party with a `Type` column hidden below `sm`,
+which is a poor way to say "this is a person" and "this is a company" when the two
+are different jobs done by different people against different evidence.
+
+**What the platform could and could not support**, established before designing:
+
+| Wanted | Reality |
+| --- | --- |
+| Filter the register by party type | `GET /parties` took `kycStatus`, `q`, `page`, `pageSize` only. **Added.** |
+| Individual vs Corporate/Group | `PartyType` is three values — `INDIVIDUAL`, `CORPORATE`, `GROUP` — so the split is 1 vs 2, not 1 vs 1. |
+| "ABC Company to its members" | **Two different models.** See below. |
+
+**The type filter is server-side, and that was not optional.** A client-side split
+over one page would present "the individuals among the newest 20 of 775" as the
+individual register and print a total belonging to neither area — the same class of
+lie as a pager over a fully-downloaded array. `PartyRepository.search` was already a
+null-safe JPQL query with three optional dimensions, so this is a fourth clause plus
+a param through `PartyApiImpl` and the controller. Callers that pass no type still
+take the original derived-query branches, which is what makes the change additive.
+
+It takes a **collection**, not a single value: the second area is corporates AND
+groups, and as two requests it could not be paged or totalled as one list. As a
+single value it would also have silently stopped listing GROUP parties the day one
+could be created.
+
+**Two API defects surfaced on the way, both worth keeping in view.**
+
+1. **A latent 500 in the existing search.** `(:q IS NULL OR ... LIKE LOWER(CONCAT('%', :q, '%')))`
+   reads as null-safe and was not: with a null bind, Postgres cannot infer the
+   parameter's type inside `lower('%' || ? || '%')`, defaults it to bytea, and the
+   statement dies on `function lower(bytea) does not exist`. It is a SQL
+   *preparation* failure, so the null guard never gets to short-circuit. It stayed
+   hidden because the only caller routed to this query exclusively when `q` was
+   present — the null branch of a clause written to handle null had never once
+   executed. Fixed with an explicit `CAST(:q AS string)`.
+2. **The contract validator cannot express an array query parameter.** This is the
+   platform's first one, and `swagger-request-validator` rejects the repeated form
+   ("Multiple values found for parameter but it is not an array") and then feeds the
+   comma-separated form to a JSON parser ("Unrecognized token 'CORPORATE'"). So
+   `partyType` is declared as a **pattern-constrained string** —
+   `^(INDIVIDUAL|CORPORATE|GROUP)(,(...))*$` — which keeps real spec-level validation
+   of the allowed values while Spring still binds it to a `List<PartyType>` natively.
+   Recorded because the next array parameter will hit the same wall.
+
+**The nav is two items, one component.**
+
+- `clients/individuals` and `clients/organisations` — two real paths, not one path
+  with a query parameter, because `NavLink` derives its active state from the path
+  and a shared path would light up both items at once.
+- Each carries its **own** pending badge. One combined count on one of the two would
+  be a number that does not describe the list beside it: click it and the area shows
+  fewer rows than the badge promised, the rest being behind the other item.
+- `kyc` survives as a redirect that **preserves the query string** — the badge's own
+  links and staff bookmarks are `kyc?kycStatus=PENDING`, and dropping the query would
+  silently answer a different question while looking like a broken filter.
+- The `Type` column now earns its place per area: dropped in Individuals, where every
+  row is the same type, and promoted out of `secondary` in Corporate & groups, where
+  it is the real distinction between a company and a group. Rendered as English
+  through one shared `partyTypeLabel`, so the register cannot say "Company" while the
+  record it opens says "CORPORATE".
+
+**"Group Members" is two models, and only one has data.**
+
+| | Party-side membership | Scheme schedule |
+| --- | --- | --- |
+| Endpoint | `/parties/{id}/groups/{groupId}/members` | `/group-schemes/{policyNumber}/members` |
+| Literally "a company's members" | yes | no — members belong to a contract |
+| Rows today | **none possible** | real, and e2e-tested |
+
+The party-side model is the shape the request drew and it is a dead end: `registerGroup`
+exists in `PartyApi` with **no HTTP endpoint** (its own javadoc defers the decision),
+and `addGroupMember` rejects any party that is not GROUP-type — so no GROUP party can
+be created and no membership can exist. Building that panel would have shipped a
+permanently empty list. Two gaps to close if it is ever wanted: expose `registerGroup`,
+and decide whether a CORPORATE may hold members directly. One useful finding for that
+day: `PartyController.listGroupMembers` **ignores its own `partyId` path variable** and
+queries by `groupId` alone, and `GroupMembership.groupPartyId` is a party id — so for a
+GROUP party `groupId == partyId` and members are reachable without the
+"list this party's groups" endpoint that does not exist. The path asserts a containment
+it never checks, which is also a small API defect.
+
+So the client record reaches members **through** the scheme: a `Group schemes` panel
+listing the client's `GROUP_LIFE` policies, each row linking *straight to* the schedule
+rather than to the policy record that owns it, and — where there is exactly one scheme —
+the first five lives inline with the server's own member total. That takes the route
+from four hops (Clients, client, Policies, the GRP row, policy page, Member schedule)
+to one, for somebody who already knows they want the roll.
+
+Three details that are decisions rather than defaults:
+
+- **Derived from the policies panel's own page — no extra request.** `productCategory`
+  has been on `PolicyView` since M3, so a scheme is identifiable from a list row.
+- **Shown for any client holding a scheme, not only for organisations.** Nothing
+  server-side requires a scheme's employer to be a corporate, and the dev tenant's
+  seeded schemes are in fact held by an individual — a type-only gate would have hidden
+  real cover from the record of the person who holds it. Organisations still see the
+  panel when empty, because "no schemes" and no panel are different statements.
+- **Its own store slot, keyed by party.** Reusing `policyStore.members` — keyed by
+  policy number and not by page size — would have left the scheme page briefly showing
+  five of five hundred with a pager agreeing.
+
+**One bug this introduced and fixed.** The register's row click used
+`navigate('../parties/{id}', { relative: 'path' })`, which counts URL *segments*: `..`
+meant `/staff` only while the register lived at the one-segment `kyc`. At
+`clients/individuals` the same `..` resolved to `/staff/clients`, matched no route, and
+fell through the catch-all — every row click landed on the realm picker. Every screen is
+a flat child of the realm route, so the navigate is now route-relative, which is what
+the link always meant and is independent of how many segments a screen's path has.
+
+**Deferred, and named rather than left to be rediscovered:** the party-side group model
+above. (Member-name search WAS on this list and is now built -- see §14.10.)
+
+**Verified:** 881 backend tests (5 new, each asserting a type that must be ABSENT —
+a filter silently dropped would still return the rows each area wanted and pass any
+check that only looked for what should be there); frontend typecheck, lint and 683 unit
+tests (8 new, including that the organisations area covers CORPORATE *and* GROUP and
+that the type serialises comma-separated); and the full e2e suite, with new coverage for
+the two areas being separately filtered, search in the organisations area, the redirect
+keeping its filter, and the client-record route to a real schedule.
+
+**Postscript: the store slot the split broke.** The register kept its rows in a
+SINGLE store slot with a constant track key, on the recorded reasoning that it was
+"the same on-screen table either way, so only the most recently requested filter
+should win a race". True for one register; false for two. Switching from Individuals
+to Corporate & groups rendered the PREVIOUS area's rows under the new area's heading
+and caption for as long as the next request was in flight -- twenty cells reading
+"Individual" inside a table captioned "Corporate and group clients", which is exactly
+the confusion the split exists to end.
+
+The slot is now keyed by area (`individuals` / `organisations` / `all`), and NOT by
+`kycStatus` or `q`: within one area those are the same table and the newest request
+should still win. Worth recording for how it was caught -- the spec passed run alone
+and failed in the full suite, because in isolation there was no prior area loaded to
+bleed through. A single-spec green is not evidence for a screen that shares state with
+another screen.
+
+### 14.10 Searching a member roll, across a module boundary
+
+§14.9 left this named as deferred. It is now built, and the interesting part is not the
+search box — it is that **a member row holds a party id and no name.**
+
+A group scheme's `PolicyMember` carries `memberPartyId`, `gradeCode`, `joinedOn`,
+`status` and `underwritingStatus`. The name belongs to the party module, which exists
+to guard exactly that kind of data, and the console has always resolved it per row
+through `PartyName`. So "find the member called Juma on this 500-life scheme" cannot be
+answered inside the policy module at all, and the two obvious ways to answer it are
+both wrong:
+
+- **Filter the fetched page client-side.** On a 25-row page of a 500-life roll this
+  searches 5% of the schedule and reports "not covered" for somebody who is. It is the
+  worst possible place for this particular lie: the question being asked is whether a
+  person is insured.
+- **Join across the two modules' tables.** The module boundary forbids it, and it is the
+  boundary that keeps party PII in one place.
+
+**So the party module answers the name question and the policy module filters on the
+result** — `PartyApi.partyIdsMatchingName(q)` returning a `Set<UUID>`, the same ids-only
+idiom `partyIdsRegisteredBy` already established for agents-realm scoping (and
+`PolicyApi.policyNumbersForAgentTeam` before that). `policy` already declared
+`party::api` in its `allowedDependencies` and already injects `PartyApi`, so no new
+coupling was introduced.
+
+**The empty set is the whole trap, and it is handled in the application layer.** No
+party matching the term means no member matches — but an empty collection in a SQL `IN`
+is a Postgres syntax error, and a *null* one means "no name filter" and would return the
+entire schedule for a search that matched nobody. `PolicyApiImpl.listMembers`
+short-circuits to `Page.empty(pageable)` before the query, which is the same guard the
+benefit lookup a few lines below it already needed. `partyIdsMatchingName` also refuses
+a blank term rather than resolving it to `LIKE '%%'`, because "no search" must not become
+"every party in the tenant".
+
+Two costs, accepted and written down rather than discovered later:
+
+- **The id set is bounded only by the tenant's party count.** A one-letter `q` in a large
+  tenant resolves a lot of ids into an `IN` clause. That is the price of not joining
+  across module schemas; the javadoc says so, and the UI sends a submitted term rather
+  than keystrokes.
+- **It matches a name and nothing else.** A grade code or a join date is on the member row
+  and could be filtered directly, but a schedule is searched for a *person*.
+
+**On screen** the search sits beside the existing status chips on the member panel,
+because the two compose and "left, called Juma" is a real question a claim assessor asks.
+It is URL-backed like every other filter on this console, resets the page offset, and the
+empty state says `No member matching "..."` rather than `No members` — the roll is not
+empty, this search of it is.
+
+**One thing this exposed about the test estate.** Widening `PolicyApi.listMembers` broke
+four call sites in `GroupSchemeIntegrationTest` that Maven's incremental compile never
+recompiles: a scoped `-Dtest=` run stayed green and only `clean test-compile` surfaced
+them. Same lesson as before, and the reason a signature change here always gets a clean
+build. Two further self-inflicted failures worth the record, both from writing a test
+payload from memory instead of from the spec: a three-digit phone suffix (a `+255` number
+is nine digits, so registration 400s) and `flatBenefit` where the field is
+`flatBenefitAmount` — and because unknown request keys are silently dropped
+platform-wide, the second arrived as a 409 about the benefit basis rather than as
+"unknown field".
+
+**Verified:** the full backend suite with 3 new contract tests — each pinning the row
+that must be ABSENT and the total that must have shrunk, since a filter silently dropped
+would still return the member the caller asked for; one of them puts a same-matching
+person on a DIFFERENT scheme and asserts they stay off this roll, because getting that
+wrong would put someone else's employee on an employer's schedule. Frontend typecheck,
+lint, 686 unit tests, and `staff-group-schemes` 4/4 against the real stack, including
+that a search narrows the roll, that the excluded member disappears, and that a
+no-match search reads as an empty search rather than an empty scheme.
+
+### 14.11 One exception answering two questions: the Groupkili product
+
+Reported from the running console: the GROUP_LIFE product **Groupkili** (`group08`) opened
+to `This record does not exist, or it is not available to your role.` with a Try again and
+a traceId.
+
+Both halves of that sentence were false, and it was reachable in three clicks.
+
+**The state.** Groupkili's only version is effective **2026-09-05** and retires
+2026-09-30. Today was 2026-09-04. So:
+
+- `product_definition.status = ACTIVE`, because **publishing a version flips the
+  definition to ACTIVE regardless of the version's effective date** — so `GET /products`
+  lists it and the console makes it clickable.
+- `findActiveAsOf(tenant, product, today)` bounds on `effectiveDate <= asOf` and returns
+  nothing, because the version starts tomorrow.
+
+**The defect.** `getActiveSnapshot` threw `ProductNotFoundException` for that empty
+result — the same exception, and therefore the same `PRODUCT_NOT_FOUND` code and 404, as
+a product that does not exist. And it threw it from the VERSION lookup, which ran *before*
+the definition lookup, so the "does this product exist" question was never even asked.
+
+The console then did exactly what it should with a bare 404: this platform deliberately
+returns 404 where a 403 would leak existence, so `mayBeDenied` is true for every 404 and
+the copy has to hedge — "does not exist, **or it is not available to your role**". A
+correct rule, applied to a response that had lied about what happened, produced a
+sentence that told a staff member the record was missing and hinted their permissions
+were at fault, seconds after they clicked it in the catalogue.
+
+**A future-dated version is not an error.** Publishing ahead of the effective date is what
+product authoring is *for*, and a retirement date means a product can also outlive every
+version it ever had. Two normal states, reported as a missing record.
+
+**The fix.**
+
+1. **`NoActiveProductVersionException`**, its own type, mapped to 404 with its own
+   `NO_ACTIVE_PRODUCT_VERSION` code. The status stays 404 — `premium-quote` already
+   documents 404 for this same condition, and the resource asked for (the version in
+   force on a date) genuinely is not there. What was wrong was that a client could not
+   tell the two apart, so a distinct code is the whole fix.
+2. **The definition is resolved FIRST.** Asking "is there such a product" before "is any
+   version of it in force" is what keeps the two answers different, and swapping them back
+   is what the second new test fails on.
+3. **The message is written for a person**, because it reaches the console as `detail` and
+   is rendered verbatim: it names the date asked about and, where one exists, the date the
+   next version takes effect — the actual remedy is a date and it is guessable from
+   nothing else. It names **no productId**: the caller asked about one product, by id, in
+   the path it called, and repeating it puts a UUID in front of somebody looking at the
+   product's name at the top of the same screen. The id stays on the exception for logs.
+   Dates stay ISO: unambiguous is the requirement, and the platform's day-first convention
+   exists because `03/04/2026` reads two ways while `2026-09-05` does not.
+4. **The spec now declares the 404** with both codes. It declared only a 200 — so the
+   contract said this response could not happen, and the validator every product contract
+   test runs through had never seen it.
+5. **The console renders it as a fact, not a failure**: the server's sentence in the
+   Active version panel, with no Try again, because retrying the same date does the same
+   thing. `RatingBasis` already said the honest thing for a null versionId and needed no
+   change.
+
+**Also fixed, from looking at the screen rather than the code.** The new
+`Corporate & groups` nav item truncated to `Corporate & grou...` in the 224px sidebar.
+Nav labels are deliberately `truncate`, but a label that ALWAYS truncates is a label
+chosen badly — and this is the one item whose whole job is to be distinguishable at a
+glance. It reads `Corporate/Group`; the page's own `<h1>` still carries the fuller phrase.
+
+**Verified:** `ProductContractTest` 9/9, with 3 new: a product whose only version starts
+tomorrow returns `NO_ACTIVE_PRODUCT_VERSION` and NOT `PRODUCT_NOT_FOUND`, with the next
+date in the detail, and resolves normally when asked as of that date (proof the version is
+real and only the date was wrong); a genuinely absent product still returns
+`PRODUCT_NOT_FOUND`, which is the regression guard for the reordering; and a DRAFT product
+with no versions covers the no-next-date branch. Rendered evidence on the real Groupkili
+record, before and after.
+
+**Left alone, deliberately:** the product is still ACTIVE in the catalogue while having no
+version in force. That is arguably the deeper modelling question — an "ACTIVE" product
+nobody can quote or issue against today — but changing what `status` means, or filtering
+the catalogue by it, would change what every other screen and caller sees. The read is now
+honest about it; whether the catalogue should say something too is a product decision, not
+a bug fix.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { searchClaims } from '@/api/claims';
-import { searchParties } from '@/api/party';
+import { PARTY_AREAS, searchParties } from '@/api/party';
 import { listCases } from '@/api/underwriting';
 import type { Realm } from '@/auth/realms';
 import { NAV_GROUPS, SCREENS, type BadgeKey } from '@/screens';
@@ -28,9 +28,37 @@ export interface NavBadge {
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number) => string }> = {
-  'kyc-pending': {
-    load: async () => (await searchParties({ kycStatus: 'PENDING', pageSize: 1 })).page.totalElements ?? 0,
-    title: (n) => `${plural(n, 'client', 'clients')} awaiting KYC verification`,
+  /*
+   * Two KYC counts, not one, because the register is two areas.
+   *
+   * A single "clients awaiting KYC" badge on one of the two items would be a number
+   * that does not belong to the list it sits beside: click it and the filtered area
+   * shows fewer rows than the badge promised, with the rest sitting in the other area
+   * behind a different nav item. Each area counts its own backlog, and the two are
+   * visible at the same time, so nothing is hidden by the split.
+   */
+  'kyc-pending-individuals': {
+    load: async () =>
+      (
+        await searchParties({
+          kycStatus: 'PENDING',
+          partyTypes: PARTY_AREAS.individuals,
+          pageSize: 1,
+        })
+      ).page.totalElements ?? 0,
+    title: (n) => `${plural(n, 'individual', 'individuals')} awaiting KYC verification`,
+  },
+  'kyc-pending-organisations': {
+    load: async () =>
+      (
+        await searchParties({
+          kycStatus: 'PENDING',
+          partyTypes: PARTY_AREAS.organisations,
+          pageSize: 1,
+        })
+      ).page.totalElements ?? 0,
+    title: (n) =>
+      `${plural(n, 'company or group', 'companies and groups')} awaiting KYC verification`,
   },
   'underwriting-open': {
     load: async () => (await listCases({ status: 'OPEN', pageSize: 1 })).page.totalElements ?? 0,

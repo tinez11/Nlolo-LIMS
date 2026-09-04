@@ -249,6 +249,12 @@ export type IdentityDocumentView = PartyComponents['schemas']['IdentityDocumentV
 export type PartyDocumentView = PartyComponents['schemas']['PartyDocumentView'];
 export type KycStatus = NonNullable<PartyView['kycStatus']>;
 export const KYC_STATUSES: readonly KycStatus[] = ['PENDING', 'VERIFIED', 'REJECTED'];
+/**
+ * What KIND of client a party is, and the dimension the register is split on. Three
+ * values, not two: `GROUP` is its own type, distinct from `CORPORATE`, even though no
+ * endpoint can create one yet (`registerGroup` exists in `PartyApi` with no HTTP path).
+ */
+export type PartyType = NonNullable<PartyView['partyType']>;
 export type KycEvidenceUploadResponse = PartyComponents['schemas']['KycEvidenceUploadResponse'];
 
 /**

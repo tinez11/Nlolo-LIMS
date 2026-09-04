@@ -5,7 +5,7 @@ import { LICENSE_STATUSES, type AgentView, type LicenseStatus } from '@/api/type
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -80,19 +80,17 @@ export function AgentsPage() {
 
   const total = list.data?.page.totalElements ?? null;
 
-  const stats: Stat[] = [
-    {
-      label: status ? `${status[0]}${status.slice(1).toLowerCase()} agents` : 'All agents',
-      value: total,
-      pending: isInitialLoad(list),
-      hint:
-        list.status === 'error' && total === null
-          ? 'could not load'
-          : status || q
-            ? 'matching this filter'
-            : 'in this tenant',
-    },
-  ];
+  const count: Stat = {
+    label: status ? `${status.toLowerCase()} agents` : 'agents',
+    value: total,
+    pending: isInitialLoad(list),
+    hint:
+      list.status === 'error' && total === null
+        ? 'could not load'
+        : status || q
+          ? 'matching this filter'
+          : 'in this tenant',
+  };
 
   const columns: Column<AgentView>[] = [
     {
@@ -213,9 +211,8 @@ export function AgentsPage() {
             </Link>
           </Button>
         }
+        count={<CountLine {...count} />}
       />
-
-      <StatCards stats={stats} />
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">

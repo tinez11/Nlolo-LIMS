@@ -21,6 +21,7 @@ import { useProductStore } from '@/store/productStore';
 import { CommissionPlanPanel } from './CommissionPlanPanel';
 import { CommissionStatementsPanel } from './CommissionStatementsPanel';
 import { Panel } from '@/components/Panel';
+import { DetailLayout } from '@/components/DetailLayout';
 
 /**
  * Reached from `OnboardAgentPage`'s own redirect, or by drilling in from a
@@ -77,68 +78,76 @@ export function AgentDetailPage() {
         actions={agent?.licenseStatus && <StatusBadge kind="agentLicense" value={agent.licenseStatus} />}
       />
 
-      <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
-          <Panel title="Commission plan" subtitle="Per product -- a plan hangs off a product, not this agent.">
-            <CommissionPlanPanel agentId={agentId} products={products.data ?? []} canManage={canManage} />
-          </Panel>
+      <DetailLayout record={renderRecord()}>
+        <Panel title="Commission plan" subtitle="Per product -- a plan hangs off a product, not this agent.">
+          <CommissionPlanPanel agentId={agentId} products={products.data ?? []} canManage={canManage} />
+        </Panel>
 
-          <Panel title="Commission statements">
-            <CommissionStatementsPanel agentId={agentId} canManage={canManage} />
-          </Panel>
+        <Panel title="Commission statements">
+          <CommissionStatementsPanel agentId={agentId} canManage={canManage} />
+        </Panel>
 
-          {canManage && agent && (
-            <Panel title="Lifecycle">
-              <LifecycleActions agentId={agentId} status={agent.licenseStatus} />
-            </Panel>
-          )}
-        </div>
-
-        <div className="space-y-5">
-          <Panel title="Agent">
-            {agent && (
-              <dl className="px-4 pb-2">
-                <Field
-                  label="Party"
-                  value={
-                    agent.partyId ? (
-                      <Link to={`/staff/parties/${agent.partyId}`} className="underline">
-                        <PartyName partyId={agent.partyId} />
-                      </Link>
-                    ) : (
-                      '—'
-                    )
-                  }
-                />
-                <Field label="License expiry" value={formatDate(agent.licenseExpiryDate)} />
-                <Field
-                  label="Hierarchy parent"
-                  value={
-                    agent.hierarchyParentId ? (
-                      <Link
-                        to={`../${agent.hierarchyParentId}`}
-                        relative="path"
-                        className="font-mono text-xs underline"
-                      >
-                        {agent.hierarchyParentId}
-                      </Link>
-                    ) : (
-                      'Top of hierarchy'
-                    )
-                  }
-                />
-                <Field
-                  label="Own plan override"
-                  value={agent.commissionPlanId ?? '—'}
-                  note="Null means the product's active plan applies instead"
-                />
-              </dl>
-            )}
+        {/* Last, and without `emphasis`. Suspending a licence is not what this page
+            is opened to do -- a finance officer came for the commission statements --
+            but it is not a marginal note in the rail either. */}
+        {canManage && agent && (
+          <Panel title="Lifecycle">
+            <LifecycleActions agentId={agentId} status={agent.licenseStatus} />
           </Panel>
-        </div>
-      </div>
+        )}
+      </DetailLayout>
     </>
   );
+
+  /* Declared after the return so the rail's JSX stays where it was rather than being
+     hoisted above the column it belongs beside -- function declarations hoist, the
+     same trick `renderCoverage` uses on the policy page. */
+  function renderRecord() {
+    return (
+      <>
+        <Panel title="Agent">
+          {agent && (
+            <dl className="px-4 pb-2">
+              <Field
+                label="Party"
+                value={
+                  agent.partyId ? (
+                    <Link to={`/staff/parties/${agent.partyId}`} className="underline">
+                      <PartyName partyId={agent.partyId} />
+                    </Link>
+                  ) : (
+                    '—'
+                  )
+                }
+              />
+              <Field label="License expiry" value={formatDate(agent.licenseExpiryDate)} />
+              <Field
+                label="Hierarchy parent"
+                value={
+                  agent.hierarchyParentId ? (
+                    <Link
+                      to={`../${agent.hierarchyParentId}`}
+                      relative="path"
+                      className="font-mono text-xs underline"
+                    >
+                      {agent.hierarchyParentId}
+                    </Link>
+                  ) : (
+                    'Top of hierarchy'
+                  )
+                }
+              />
+              <Field
+                label="Own plan override"
+                value={agent.commissionPlanId ?? '—'}
+                note="Null means the product's active plan applies instead"
+              />
+            </dl>
+          )}
+        </Panel>
+      </>
+    );
+  }
 }
 
 function BackLink() {

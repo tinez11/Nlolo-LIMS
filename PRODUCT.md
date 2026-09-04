@@ -77,18 +77,31 @@ premium arithmetic. No fabricated rows. That refusal is the position.
   sessions. The current build reflects this literally: a fixed `w-56` sidebar and
   responsive breakpoints in only 13 of ~199 source files. Desktop-first is
   correct; it is not an excuse for the console to break below a laptop width.
-- **Rhythm of the work.** Queue-shaped. Three nav badges count *work waiting*,
-  never total volume — parties awaiting KYC, open underwriting cases, unassessed
-  claims — because those are the only three counts the API can express honestly
-  (one status filter at a time, no analytics endpoint).
+- **Rhythm of the work.** Queue-shaped. Four nav badges count *work waiting*,
+  never total volume — individuals awaiting KYC, companies and groups awaiting
+  KYC, open underwriting cases, unassessed claims — because those are the only
+  counts the API can express honestly (one status filter at a time, no analytics
+  endpoint). KYC is counted twice because the client register is two nav items:
+  one combined count sitting beside one of them would not describe that list.
 - **The business flow the nav follows.** Clients → New business (underwriting) →
   Policies & claims → Finance → Distribution → Records → Configuration.
   Configuration sits last deliberately: authoring a product is rare actuarial
   set-up, not daily operations.
+- **Clients is two working areas, not one register.** Individuals, and corporates
+  and groups. A natural person's KYC is an ID scan and a date of birth; an
+  organisation's is a registration number and a certificate, and the two are
+  reviewed by different people against different evidence. Both are searchable by
+  name, and the split is a server-side `partyType` filter — as a client-side one
+  it would report "the individuals among the newest 20 of 775" as the individual
+  register and print a total belonging to neither area.
 - **Drawer previews, page acts.** A table row opens a read-only slide-over with
-  key facts and a link to the full page; the full page is tabbed and owns every
-  mutating action. Settlement decisions, waivers and payouts must never live on a
-  surface dismissable by clicking a backdrop.
+  key facts and a link to the full page; the full page owns every mutating
+  action. Settlement decisions, waivers and payouts must never live on a surface
+  dismissable by clicking a backdrop. The full page is **not tabbed** — that was
+  specified and then traded, because tabs hide a claim's evidence behind the
+  assessment form that cites it. What it has instead is a pinned record rail of
+  identifying facts and one emphasised acting panel leading the work column
+  (`frontend/PLAN.md` §14.8).
 - **Documents and evidence** are real parts of the job: claim evidence uploads,
   party KYC documents, commission statements, regulatory returns.
 - **`traceId` is operational furniture.** It is surfaced and copyable on errors
@@ -101,7 +114,7 @@ served by one React SPA through realm-scoped route subtrees, each mounting its
 own `AuthProvider`. Public PKCE client `lifeplatform-spa`. Tokens live in memory
 only.
 
-**Screen inventory.** ~34 routed screens across 11 feature areas: policies,
+**Screen inventory.** ~36 routed screens across 11 feature areas: policies,
 claims, underwriting, party, products, distribution, finaccounting,
 regreporting, reinsurance, audit, plus the realm picker. Declared once in
 `src/screens.tsx`; the router and sidebar are both maps over it. Every screen
@@ -110,7 +123,24 @@ must declare a `reach` — a nav placement or the literal `'drill-in'` — so
 identical.
 
 **Only entities with a real list endpoint get a nav item.** A nav item leading to
-a "paste an ID" screen reads as broken software.
+a "paste an ID" screen reads as broken software. Two nav items may point at one
+endpoint where they are genuinely two working lists — the client register's
+individuals and organisations areas — but each must be a real server-side filter
+with its own honest total, and each gets its own path so the sidebar can say
+which one you are in.
+
+**A group member belongs to a contract, not to a company.** A group scheme's
+members are its insured schedule, so a company with three schemes has three
+rolls. The client record therefore reaches members *through* the scheme —
+listing the client's schemes and linking each straight to its schedule — rather
+than pretending a company has one member list. A schedule is **searchable by
+member name**, which is the only way to answer "is this person covered" on a roll
+of hundreds — and because the name lives in the party module while the member row
+holds only an id, that search resolves names to ids across the module boundary
+rather than filtering the page in hand. There is a second, party-side
+group-membership model in the API (`/parties/{id}/groups/{groupId}/members`) that
+would give a company members directly; it is unreachable and unpopulated, and
+`frontend/PLAN.md` §14.9 records the two backend gaps that block it.
 
 **Money is always a decimal string plus a `currencyCode`, never a JSON number.**
 Backend validates `^-?\d+(\.\d{1,2})?$`. `Intl.NumberFormat` for display, the

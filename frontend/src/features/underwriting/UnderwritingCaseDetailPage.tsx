@@ -30,6 +30,7 @@ import {
 } from './submitAssessmentForm';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Panel } from '@/components/Panel';
+import { DetailLayout } from '@/components/DetailLayout';
 import { Input, Select, Textarea } from '@/components/ui/input';
 
 /**
@@ -142,246 +143,253 @@ export function UnderwritingCaseDetailPage() {
         actions={view?.status && <StatusBadge kind="underwritingCase" value={view.status} />}
       />
 
-      <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
-          {view?.status === 'DECIDED' && (
-            <Panel title="Decision">
-              <dl className="px-4 pb-2">
+      {/* The record rail carries the applicant and the life assured, and it is pinned
+          -- on a case where those two are different people, that distinction is the
+          whole reason the panel exists, and it was scrolling away exactly when the
+          declarations below were being read against it. */}
+      <DetailLayout record={renderRecord()}>
+        {view?.status === 'DECIDED' && (
+          <Panel title="Decision">
+            <dl className="px-4 pb-2">
+              <Field
+                label="Outcome"
+                value={<StatusBadge kind="underwritingDecision" value={view.decisionOutcome} />}
+              />
+              {view.decisionOutcome === 'LOADED' && (
                 <Field
-                  label="Outcome"
-                  value={<StatusBadge kind="underwritingDecision" value={view.decisionOutcome} />}
+                  label="Loading"
+                  value={
+                    view.decisionLoadingPercent != null ? `${view.decisionLoadingPercent}%` : '—'
+                  }
                 />
-                {view.decisionOutcome === 'LOADED' && (
-                  <Field
-                    label="Loading"
-                    value={
-                      view.decisionLoadingPercent != null ? `${view.decisionLoadingPercent}%` : '—'
-                    }
-                  />
-                )}
-                {view.decisionOutcome === 'DECLINED' && (
-                  <Field label="Reason" value={view.decisionDeclineReason ?? '—'} />
-                )}
-                <Field label="Decided" value={formatInstant(view.decisionDecidedAt)} />
-                {isPostponed && (
-                  <Field
-                    label="Awaiting"
-                    value="Further evidence"
-                    note="A postponed case is not finished. Submit another assessment below and it will be decided again."
-                  />
-                )}
-              </dl>
-            </Panel>
-          )}
+              )}
+              {view.decisionOutcome === 'DECLINED' && (
+                <Field label="Reason" value={view.decisionDeclineReason ?? '—'} />
+              )}
+              <Field label="Decided" value={formatInstant(view.decisionDecidedAt)} />
+              {isPostponed && (
+                <Field
+                  label="Awaiting"
+                  value="Further evidence"
+                  note="A postponed case is not finished. Submit another assessment below and it will be decided again."
+                />
+              )}
+            </dl>
+          </Panel>
+        )}
 
-          {/* Shown while the case is undecided AND when it is POSTPONED, which is a decision
-              in status only: the engine returns it asking for further medical evidence, so
-              refusing further assessments made it the one outcome that could never resolve. */}
-          {(view?.status !== 'DECIDED' || isPostponed) && roles.UNDERWRITER ? (
-            <Panel
-              title={isPostponed ? 'Submit further evidence' : 'Submit an assessment'}
-              subtitle={
-                isPostponed
-                  ? 'The case is postponed pending evidence. This re-decides it on the latest assessment of each type.'
-                  : 'This decides the case outright -- there is no separate accept/decline step.'
-              }
-            >
-              <form
-                className="space-y-4 p-4"
-                onSubmit={(e) => void handleSubmit(setPending)(e)}
-              >
-                <FormField label="Assessment type">
-                  <Select
-                    {...register('assessmentType')}
-                  >
-                    {ASSESSMENT_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </Select>
-                </FormField>
-
-                <FormField label="Findings" error={errors.findings?.message}>
-                  <Textarea
-                    className="min-h-20"
-                    placeholder="Standard risk, no adverse findings"
-                    {...register('findings')}
-                  />
-                </FormField>
-
-                <FormField label="Risk score (optional)" error={errors.riskScore?.message}>
-                  <Input
-                    className="w-32"
-                    placeholder="10"
-                    {...register('riskScore')}
-                  />
-                </FormField>
-
-                {submitting.status === 'error' && submitting.error && (
-                  <div
-                    role="alert"
-                    className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-                  >
-                    {submitting.error.detail ?? submitting.error.title}
-                    {submitting.error.traceId && (
-                      <span className="ml-2 font-mono text-[10px] opacity-80">
-                        ({submitting.error.traceId})
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {pending ? (
-                  <ConfirmAct
-                    heading={isPostponed ? 'Re-decide this case?' : 'Decide this case?'}
-                    consequence={
-                      <>
-                        Submitting a <strong>{pending.assessmentType}</strong> assessment decides
-                        the case outright. There is no separate accept, decline or rate-up step
-                        after this.
-                      </>
-                    }
-                    /*
-                      Both branches are UnderwritingApiImpl's actual behaviour:
-                      decideIfPossible runs unconditionally on every POST, and a
-                      second call against an already-decided case throws
-                      UnderwritingCaseAlreadyDecidedException -- except where the
-                      outcome was POSTPONED, which is the one status that keeps
-                      accepting evidence.
-                    */
-                    reversal={
-                      isPostponed
-                        ? 'A postponed case can be re-decided, so this can be superseded by further evidence — but each decision is published and stays on the record.'
-                        : 'The decision is final: a second assessment on a decided case is refused, and an acceptance issues a policy automatically.'
-                    }
-                    confirmLabel={isPostponed ? 'Submit and re-decide' : 'Submit and decide'}
-                    busy={submitting.status === 'loading'}
-                    onConfirm={() => void commitAssessment(pending)}
-                    onCancel={() => setPending(null)}
-                  />
-                ) : (
-                  <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
-                    {isPostponed ? 'Submit further evidence' : 'Submit assessment'}
-                  </Button>
-                )}
-              </form>
-            </Panel>
-          ) : null}
-
-          {/* Recorded by whoever took the proposal -- agents included -- not gated on the
-              UNDERWRITER role that gates assessment above. Asking the questions and deciding
-              the case are different jobs done by different people.
-
-              This is the evidence a contestability review reads. Claims computes and shows
-              `requiresContestabilityReview` on every claim; until disclosures existed there
-              was nothing behind it. */}
+        {/* Shown while the case is undecided AND when it is POSTPONED, which is a decision
+            in status only: the engine returns it asking for further medical evidence, so
+            refusing further assessments made it the one outcome that could never resolve. */}
+        {(view?.status !== 'DECIDED' || isPostponed) && roles.UNDERWRITER ? (
           <Panel
-            title="Declarations"
-            subtitle="What the applicant declared. Read back on a claim, so it records the question as it was put."
+            emphasis
+            title={isPostponed ? 'Submit further evidence' : 'Submit an assessment'}
+            subtitle={
+              isPostponed
+                ? 'The case is postponed pending evidence. This re-decides it on the latest assessment of each type.'
+                : 'This decides the case outright -- there is no separate accept/decline step.'
+            }
           >
-            <DisclosurePanel caseId={caseId} />
-          </Panel>
-        </div>
-
-        <div className="space-y-5">
-          <Panel title="Case">
-            {view && (
-              <dl className="px-4 pb-2">
-                <Field
-                  label="Proposal"
-                  value={
-                    view.proposalNumber ? (
-                      <span className="font-mono text-xs">{view.proposalNumber}</span>
-                    ) : (
-                      '—'
-                    )
-                  }
-                  {...(view.proposalNumber ? {} : { note: 'Opened before proposal numbers existed.' })}
-                />
-                <Field
-                  label="Applicant"
-                  value={
-                    view.applicantPartyId ? (
-                      <Link to={`/staff/parties/${view.applicantPartyId}`} className="underline">
-                        <PartyName partyId={view.applicantPartyId} />
-                      </Link>
-                    ) : (
-                      '—'
-                    )
-                  }
-                  // "Applicant" is who proposed; the life assured below is whose
-                  // mortality is being assessed. On most cases they are the same person,
-                  // and where they are not, that is the whole point of the distinction.
-                  {...(view.lifeAssuredPartyId && view.lifeAssuredPartyId !== view.applicantPartyId
-                    ? { note: 'Proposing on someone else’s life.' }
-                    : {})}
-                />
-                <Field
-                  label="Life assured"
-                  value={
-                    view.lifeAssuredPartyId ? (
-                      <Link to={`/staff/parties/${view.lifeAssuredPartyId}`} className="underline">
-                        <PartyName partyId={view.lifeAssuredPartyId} />
-                      </Link>
-                    ) : (
-                      '—'
-                    )
-                  }
-                />
-                {view.branch && <Field label="Branch" value={view.branch} />}
-                {view.sourceOfBusiness && (
-                  <Field label="Source of business" value={view.sourceOfBusiness} />
-                )}
-                {view.proposedCommencementDate && (
-                  <Field
-                    label="Proposed commencement"
-                    value={formatDate(view.proposedCommencementDate)}
-                  />
-                )}
-                <Field
-                  label="Product"
-                  value={<span className="font-mono text-xs">{view.productId ?? '—'}</span>}
-                  note="No product-by-id endpoint exists either"
-                />
-                <Field
-                  label="Referral"
-                  value={<StatusBadge kind="referral" value={view.referralStatus} />}
-                />
-              </dl>
-            )}
-
-            {view?.referralStatus === 'NONE' && roles.UNDERWRITER && (
-              <div className="px-4 pb-4">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={referring.status === 'loading'}
-                  onClick={() => void referCase(caseId)}
+            <form
+              className="space-y-4 p-4"
+              onSubmit={(e) => void handleSubmit(setPending)(e)}
+            >
+              <FormField label="Assessment type">
+                <Select
+                  {...register('assessmentType')}
                 >
-                  {referring.status === 'loading' ? 'Referring…' : 'Refer to senior underwriter'}
-                </Button>
-                {referring.status === 'error' && referring.error && (
-                  <p className="mt-2 text-xs text-status-danger-fg">
-                    {referring.error.detail ?? referring.error.title}
-                  </p>
-                )}
-              </div>
-            )}
-          </Panel>
+                  {ASSESSMENT_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
 
-          <div className="rounded-lg border border-dashed border-border bg-surface-muted px-4 py-3 text-xs text-muted-foreground">
-            Browsable again from the{' '}
-            <Link to=".." relative="path" className="underline">
-              Underwriting queue
-            </Link>
-            . A policy later issued from this case still never re-exposes its id, though --
-            bookmark this page if you need direct access without going through the queue.
-          </div>
-        </div>
-      </div>
+              <FormField label="Findings" error={errors.findings?.message}>
+                <Textarea
+                  className="min-h-20"
+                  placeholder="Standard risk, no adverse findings"
+                  {...register('findings')}
+                />
+              </FormField>
+
+              <FormField label="Risk score (optional)" error={errors.riskScore?.message}>
+                <Input
+                  className="w-32"
+                  placeholder="10"
+                  {...register('riskScore')}
+                />
+              </FormField>
+
+              {submitting.status === 'error' && submitting.error && (
+                <div
+                  role="alert"
+                  className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
+                >
+                  {submitting.error.detail ?? submitting.error.title}
+                  {submitting.error.traceId && (
+                    <span className="ml-2 font-mono text-[10px] opacity-80">
+                      ({submitting.error.traceId})
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {pending ? (
+                <ConfirmAct
+                  heading={isPostponed ? 'Re-decide this case?' : 'Decide this case?'}
+                  consequence={
+                    <>
+                      Submitting a <strong>{pending.assessmentType}</strong> assessment decides
+                      the case outright. There is no separate accept, decline or rate-up step
+                      after this.
+                    </>
+                  }
+                  /*
+                    Both branches are UnderwritingApiImpl's actual behaviour:
+                    decideIfPossible runs unconditionally on every POST, and a
+                    second call against an already-decided case throws
+                    UnderwritingCaseAlreadyDecidedException -- except where the
+                    outcome was POSTPONED, which is the one status that keeps
+                    accepting evidence.
+                  */
+                  reversal={
+                    isPostponed
+                      ? 'A postponed case can be re-decided, so this can be superseded by further evidence — but each decision is published and stays on the record.'
+                      : 'The decision is final: a second assessment on a decided case is refused, and an acceptance issues a policy automatically.'
+                  }
+                  confirmLabel={isPostponed ? 'Submit and re-decide' : 'Submit and decide'}
+                  busy={submitting.status === 'loading'}
+                  onConfirm={() => void commitAssessment(pending)}
+                  onCancel={() => setPending(null)}
+                />
+              ) : (
+                <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
+                  {isPostponed ? 'Submit further evidence' : 'Submit assessment'}
+                </Button>
+              )}
+            </form>
+          </Panel>
+        ) : null}
+
+        {/* Recorded by whoever took the proposal -- agents included -- not gated on the
+            UNDERWRITER role that gates assessment above. Asking the questions and deciding
+            the case are different jobs done by different people.
+
+            This is the evidence a contestability review reads. Claims computes and shows
+            `requiresContestabilityReview` on every claim; until disclosures existed there
+            was nothing behind it. */}
+        <Panel
+          title="Declarations"
+          subtitle="What the applicant declared. Read back on a claim, so it records the question as it was put."
+        >
+          <DisclosurePanel caseId={caseId} />
+        </Panel>
+      </DetailLayout>
     </>
   );
+
+  function renderRecord() {
+    return (
+      <>
+        <Panel title="Case">
+          {view && (
+            <dl className="px-4 pb-2">
+              <Field
+                label="Proposal"
+                value={
+                  view.proposalNumber ? (
+                    <span className="font-mono text-xs">{view.proposalNumber}</span>
+                  ) : (
+                    '—'
+                  )
+                }
+                {...(view.proposalNumber ? {} : { note: 'Opened before proposal numbers existed.' })}
+              />
+              <Field
+                label="Applicant"
+                value={
+                  view.applicantPartyId ? (
+                    <Link to={`/staff/parties/${view.applicantPartyId}`} className="underline">
+                      <PartyName partyId={view.applicantPartyId} />
+                    </Link>
+                  ) : (
+                    '—'
+                  )
+                }
+                // "Applicant" is who proposed; the life assured below is whose
+                // mortality is being assessed. On most cases they are the same person,
+                // and where they are not, that is the whole point of the distinction.
+                {...(view.lifeAssuredPartyId && view.lifeAssuredPartyId !== view.applicantPartyId
+                  ? { note: 'Proposing on someone else’s life.' }
+                  : {})}
+              />
+              <Field
+                label="Life assured"
+                value={
+                  view.lifeAssuredPartyId ? (
+                    <Link to={`/staff/parties/${view.lifeAssuredPartyId}`} className="underline">
+                      <PartyName partyId={view.lifeAssuredPartyId} />
+                    </Link>
+                  ) : (
+                    '—'
+                  )
+                }
+              />
+              {view.branch && <Field label="Branch" value={view.branch} />}
+              {view.sourceOfBusiness && (
+                <Field label="Source of business" value={view.sourceOfBusiness} />
+              )}
+              {view.proposedCommencementDate && (
+                <Field
+                  label="Proposed commencement"
+                  value={formatDate(view.proposedCommencementDate)}
+                />
+              )}
+              <Field
+                label="Product"
+                value={<span className="font-mono text-xs">{view.productId ?? '—'}</span>}
+                note="No product-by-id endpoint exists either"
+              />
+              <Field
+                label="Referral"
+                value={<StatusBadge kind="referral" value={view.referralStatus} />}
+              />
+            </dl>
+          )}
+
+          {view?.referralStatus === 'NONE' && roles.UNDERWRITER && (
+            <div className="px-4 pb-4">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={referring.status === 'loading'}
+                onClick={() => void referCase(caseId)}
+              >
+                {referring.status === 'loading' ? 'Referring…' : 'Refer to senior underwriter'}
+              </Button>
+              {referring.status === 'error' && referring.error && (
+                <p className="mt-2 text-xs text-status-danger-fg">
+                  {referring.error.detail ?? referring.error.title}
+                </p>
+              )}
+            </div>
+          )}
+        </Panel>
+
+        <div className="rounded-lg border border-dashed border-border bg-surface-muted px-4 py-3 text-xs text-muted-foreground">
+          Browsable again from the{' '}
+          <Link to=".." relative="path" className="underline">
+            Underwriting queue
+          </Link>
+          . A policy later issued from this case still never re-exposes its id, though --
+          bookmark this page if you need direct access without going through the queue.
+        </div>
+      </>
+    );
+  }
 }
 
 function BackLink() {
