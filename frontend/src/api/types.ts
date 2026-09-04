@@ -54,6 +54,23 @@ export type GroupSchemeGradeInput = PolicyComponents['schemas']['GroupSchemeGrad
 export type GroupMemberInput = PolicyComponents['schemas']['GroupMemberInput'];
 
 export type InvoiceView = BillingComponents['schemas']['InvoiceView'];
+/**
+ * One row of the collections queue. Its money and due date come from the invoice the case was
+ * opened against, and are null -- never zero -- when that invoice cannot be resolved.
+ */
+export type ArrearsCaseView = BillingComponents['schemas']['ArrearsCaseView'];
+/**
+ * One agent-captured premium receipt. Both timestamps are carried on purpose: the gap between
+ * capturedAtClient and capturedAtServer separates "we were slow" from "the field was offline".
+ */
+export type FieldReceiptView = BillingComponents['schemas']['FieldReceiptView'];
+export type FieldReceiptStatus = NonNullable<FieldReceiptView['status']>;
+/** Order taken from the table's own CHECK constraint, not invented. */
+export const FIELD_RECEIPT_STATUSES: readonly FieldReceiptStatus[] = [
+  'PENDING_RECONCILIATION',
+  'RECONCILIATION_OVERDUE',
+  'RECONCILED',
+];
 export type LoanView = PolicyLoanComponents['schemas']['LoanView'];
 
 export type PageMeta = CommonComponents['schemas']['PageMeta'];

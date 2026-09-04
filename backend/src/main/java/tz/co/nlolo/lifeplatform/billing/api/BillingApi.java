@@ -1,11 +1,41 @@
 package tz.co.nlolo.lifeplatform.billing.api;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 public interface BillingApi {
+
+    /**
+     * The collections queue: this tenant's arrears cases, paged, worst escalation first.
+     *
+     * <p>The only tenant-wide read this module has. Every other billing read is keyed by a
+     * policy number or an invoice id you must already know, which meant "which policies are in
+     * arrears" could not be asked at all -- dunning was visible only as a badge on one invoice
+     * row of one policy record, so collections was not an operable job.
+     *
+     * @param minDunningLevel null for every level; otherwise a FLOOR, because the real question
+     *     is "what is at this level or worse"
+     * @param resolved null for both, false for the live queue, true for settled history
+     */
+    Page<ArrearsCaseView> searchArrears(Integer minDunningLevel, Boolean resolved, Pageable pageable);
+
+    /**
+     * The reconciliation queue: this tenant's field-captured premium receipts, oldest first.
+     *
+     * <p>The read this entity never had. {@code captureFieldReceipt} was its only endpoint, so
+     * cash an agent recorded in the field could sit unmatched past its SLA, raise a
+     * medium-severity Prometheus alert, and still be invisible to everyone -- the alert names a
+     * count and no receipt.
+     *
+     * @param status null for every state; otherwise PENDING_RECONCILIATION, RECONCILED or
+     *     RECONCILIATION_OVERDUE
+     */
+    Page<FieldReceiptView> searchFieldReceipts(String status, Pageable pageable);
 
     InvoiceView getNextDueInvoice(String policyNumber);
     List<InvoiceView> listInvoices(String policyNumber, InvoiceStatus status);

@@ -9,6 +9,118 @@ info:
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
+  /field-receipts:
+    get:
+      summary: The reconciliation queue — field-captured receipts and whether they have matched
+      description: >
+        The read this entity never had. Capture (POST /agents/{agentId}/field-receipts) was its
+        only endpoint, so cash an agent recorded in the field could sit unmatched past its SLA,
+        raise the medium-severity FieldReceiptReconciliationOverdue Prometheus alert, and still
+        be invisible to every human on the platform. That alert's own description reads "one or
+        more agent-captured receipts have exceeded the OFFLINE_RECEIPT_SLA_HOURS refdata
+        parameter without a matching PaymentConfirmed" — it names a count and no receipt, so the
+        only available follow-up was a hand-written database query.
+
+
+        Finance-gated: this is unreconciled money across the tenant, not one agent's own
+        submissions. An agent-scoped read is a real and separate need, deliberately not built —
+        the field app that would call it does not exist yet.
+
+
+        Ordered capturedAtServer ASC then receiptId — oldest unmatched cash first, which is both
+        the work order and the SLA order. The tie-breaker is load-bearing: a bulk sync from one
+        agent lands many receipts in the same instant, and paging an order with ties can show one
+        receipt twice while never showing another.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Omit for every state.
+          schema: { type: string, enum: [PENDING_RECONCILIATION, RECONCILED, RECONCILIATION_OVERDUE] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/FieldReceiptView' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /arrears:
+    get:
+      summary: The collections queue — this tenant's arrears cases, worst escalation first
+      description: >
+        The only tenant-wide read in this module. Every other billing endpoint is keyed by a
+        policy number or an invoice id the caller must already know, which meant "which
+        policies are in arrears" could not be asked at all: dunning was visible only as a
+        badge on one invoice row of one policy record. A platform that escalates through five
+        dunning levels and then recommends lapse had no way to show anybody the escalations.
+
+
+        Finance-gated, unlike the per-policy invoice reads. A customer may see the invoices on
+        their own contract; a tenant-wide list of who is behind on payments is a collections
+        officer's screen.
+
+
+        Ordered dunningLevel DESC, openedAt ASC, arrearsCaseId ASC — the work order, and TOTAL.
+        The tie-breaker is not decoration: dunning level takes five values and a sweep opens
+        many cases in the same instant, so paging a query whose order has ties can show one
+        case twice and never show another. On a collections queue that is a customer nobody
+        chases.
+
+
+        A row's money comes from the invoice the case was opened against, resolved for the
+        whole page in one query. It is null, never zero, if that invoice cannot be resolved —
+        a zero here would read as "nothing owed".
+      security:
+        - staffAuth: []
+      parameters:
+        - name: minDunningLevel
+          in: query
+          description: >
+            A FLOOR, not an exact match: the question a collections officer asks is "what is at
+            level 3 or worse", and an exact filter would hide the level-5 cases from somebody
+            triaging level 3 upward. Omit for every level.
+          schema: { type: integer, minimum: 1, maximum: 5 }
+        - name: resolved
+          in: query
+          description: >
+            Omit for both, false for the live queue, true for cases already settled or waived.
+            An arrears case is resolved rather than deleted, because whether a customer was
+            chased is part of the record.
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ArrearsCaseView' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /policies/{policyNumber}/invoices:
     get:
       summary: List outstanding invoices for a policy
@@ -170,6 +282,91 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
 components:
   schemas:
+    FieldReceiptView:
+      description: >
+        One agent-captured premium receipt: cash an agent says they took in the field, and
+        whether the platform has matched it to a payment yet.
+
+
+        Both timestamps are carried, and the gap between them is the point. capturedAtClient is
+        when the agent recorded it on a phone that may have been offline for hours;
+        capturedAtServer is when it reached the platform, and the reconciliation SLA runs from
+        there. A large gap is itself worth seeing — it distinguishes "we were slow" from "the
+        field was offline".
+
+
+        clientIdempotencyKey is deliberately absent. It is the field app's dedup token, not a
+        fact about the money, and exposing it invites somebody to quote it back as a reference.
+      type: object
+      additionalProperties: false
+      properties:
+        receiptId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        agentId: { type: string, format: uuid }
+        amount:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+        capturedAtClient:
+          type: string
+          format: date-time
+          description: When the agent recorded it, which may be well before the platform saw it.
+        capturedAtServer:
+          type: string
+          format: date-time
+          description: When it reached the platform. The reconciliation SLA runs from here.
+        status:
+          type: string
+          enum: [PENDING_RECONCILIATION, RECONCILED, RECONCILIATION_OVERDUE]
+        reconciledAt:
+          type: [string, "null"]
+          format: date-time
+          description: Null until a matching PaymentConfirmed arrives.
+    ArrearsCaseView:
+      description: >
+        One row of the collections queue: a policy in arrears, how far it has escalated, and
+        what is owed.
+
+
+        lastNotifiedDunningLevel is deliberately exposed. It is the difference between "this
+        customer has been chased at this level" and "this level was reached and nobody has been
+        told" — which on this platform were the same thing for a long time, because the
+        notification sweep that publishes billing.PremiumOverdue had no caller. A gap between
+        it and dunningLevel is a real operational fact, and it belongs on the screen rather
+        than only in the database.
+      type: object
+      additionalProperties: false
+      properties:
+        arrearsCaseId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        invoiceId: { type: string, format: uuid }
+        dunningLevel:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: 1-4 chase the customer; 5 is the level at which lapse is recommended.
+        lastNotifiedDunningLevel:
+          type: integer
+          minimum: 0
+          description: >
+            0 means nothing has been announced for this case yet. Equal to dunningLevel means
+            the customer has been told about the level they are actually at.
+        openedAt: { type: string, format: date-time }
+        resolvedAt:
+          type: [string, "null"]
+          format: date-time
+          description: Null while the case is open. Set when the invoice is paid or waived.
+        amount:
+          description: >
+            From the invoice the case was opened against. Null, never zero, if that invoice
+            cannot be resolved — a zero on a collections screen reads as "nothing owed".
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+        dueDate: { type: [string, "null"], format: date }
+        invoiceStatus:
+          type: [string, "null"]
+          enum: [DUE, PARTIALLY_PAID, PAID, IN_GRACE, OVERDUE, WAIVED, null]
     InvoiceView:
       type: object
       additionalProperties: false

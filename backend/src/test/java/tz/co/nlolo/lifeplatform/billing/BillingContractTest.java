@@ -26,6 +26,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.Optional;
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,6 +48,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class BillingContractTest {
+
+    @Autowired private DataSource dataSource;
 
     private static final String SPEC_PATH = "api/openapi/openapi-billing.yaml";
 
@@ -189,6 +195,290 @@ class BillingContractTest {
     private static RequestPostProcessor customerOf(UUID tenantId, UUID partyId) {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()).claim("party_id", partyId.toString()));
+    }
+
+    // --- GET /arrears (the collections queue) ------------------------------------------------
+
+    /** Staff AND finance, matching the gate the chart of accounts and GL postings already use. */
+    private static RequestPostProcessor financeOf(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                                  new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+    }
+
+    /**
+     * Opens an arrears case directly, exactly as {@code billing.sweep_billing_state()} would.
+     *
+     * <p>Seeded rather than driven through the sweep because the sweep is SQL on a timer and is
+     * proven separately by {@code BillingSweepPsqlTest}; this class is testing the READ contract.
+     */
+    private void openArrearsCase(UUID tenantId, UUID invoiceId, String policyNumber,
+                                   int dunningLevel, int lastNotified) throws Exception {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO billing.arrears_case (tenant_id, invoice_id, policy_number, dunning_level, "
+                 + "last_notified_dunning_level) VALUES (?, ?, ?, ?, ?)")) {
+            insert.setObject(1, tenantId);
+            insert.setObject(2, invoiceId);
+            insert.setString(3, policyNumber);
+            insert.setInt(4, dunningLevel);
+            insert.setInt(5, lastNotified);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void theArrearsQueueMatchesTheSpecAndCarriesTheMoneyOwed() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-ARREARS-01");
+        UUID invoiceId = UUID.fromString(JsonPath.read(
+            mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices").with(staffOf(fixture.tenantId())))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(),
+            "$[0].invoiceId"));
+
+        openArrearsCase(fixture.tenantId(), invoiceId, fixture.policyNumber(), 3, 3);
+
+        mockMvc.perform(get("/arrears").with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].policyNumber").value(fixture.policyNumber()))
+            .andExpect(jsonPath("$.items[0].dunningLevel").value(3))
+            .andExpect(jsonPath("$.items[0].lastNotifiedDunningLevel").value(3))
+            // The money the case is about, resolved from the invoice. A queue without it is not
+            // one anybody can work -- the first question in collections is how much.
+            .andExpect(jsonPath("$.items[0].amount.amount").exists())
+            .andExpect(jsonPath("$.items[0].amount.currencyCode").value("TZS"))
+            .andExpect(jsonPath("$.items[0].dueDate").exists())
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+    }
+
+    /**
+     * {@code minDunningLevel} is a FLOOR, and this is the assertion that proves it.
+     *
+     * <p>An exact-match filter would pass a test that only looked for the level asked about;
+     * what must hold is that a WORSE case is still included (level 5 shows under a level-3
+     * filter) and a better one is excluded. Hiding the level-5 cases from somebody triaging
+     * level 3 upward is the failure mode.
+     */
+    @Test
+    void theArrearsQueueFiltersByAFloorNotAnExactLevel() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-ARREARS-02");
+        String body = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        UUID mild = UUID.fromString(JsonPath.read(body, "$[0].invoiceId"));
+        UUID severe = UUID.fromString(JsonPath.read(body, "$[1].invoiceId"));
+
+        openArrearsCase(fixture.tenantId(), mild, fixture.policyNumber(), 2, 0);
+        openArrearsCase(fixture.tenantId(), severe, fixture.policyNumber(), 5, 0);
+
+        mockMvc.perform(get("/arrears").queryParam("minDunningLevel", "3").with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // The severe one is IN -- that is the floor behaving as a floor.
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].dunningLevel").value(5))
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+
+        // And the mild one is reachable without the filter, so its absence above was the
+        // filter working rather than the row never existing.
+        mockMvc.perform(get("/arrears").with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(2))
+            // Worst first: the work order, not insertion order.
+            .andExpect(jsonPath("$.items[0].dunningLevel").value(5));
+    }
+
+    /**
+     * The queue is one tenant's work. A collections officer must never see another insurer's
+     * debtors, and this endpoint is the module's only tenant-wide read -- the one place where a
+     * missing tenant scope would be a cross-tenant disclosure rather than a 404.
+     */
+    @Test
+    void theArrearsQueueNeverShowsAnotherTenantsDebtors() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-ARREARS-03");
+        UUID invoiceId = UUID.fromString(JsonPath.read(
+            mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices").with(staffOf(fixture.tenantId())))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(),
+            "$[0].invoiceId"));
+        openArrearsCase(fixture.tenantId(), invoiceId, fixture.policyNumber(), 4, 0);
+
+        // Same request, a different tenant's token. RLS plus the query's own tenant predicate.
+        mockMvc.perform(get("/arrears").with(financeOf(UUID.randomUUID())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0))
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    /**
+     * Finance-gated, not merely staff-gated. A per-policy invoice list is something a customer
+     * may see about their own contract; a tenant-wide list of who is behind on payments is not.
+     */
+    @Test
+    void theArrearsQueueRefusesStaffWithoutTheFinanceRole() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/arrears").with(staffOf(tenantId)))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/arrears").with(agentOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    /**
+     * The read carries the notification catch-up forward, which is what makes the queue honest
+     * about its own {@code lastNotifiedDunningLevel} column: opening the collections screen is
+     * exactly when a "reached level 4, told nobody" gap should close.
+     */
+    @Test
+    void openingTheArrearsQueueClosesThePendingNotificationGap() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-ARREARS-04");
+        UUID invoiceId = UUID.fromString(JsonPath.read(
+            mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices").with(staffOf(fixture.tenantId())))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(),
+            "$[0].invoiceId"));
+
+        // Level 4 reached, nothing announced -- the state the SQL sweep leaves behind.
+        openArrearsCase(fixture.tenantId(), invoiceId, fixture.policyNumber(), 4, 0);
+
+        mockMvc.perform(get("/arrears").with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].dunningLevel").value(4))
+            // Closed by the sweep this read runs. Asserting 4 rather than 0 is the whole point:
+            // before the sweep was wired to anything, this stayed 0 forever.
+            .andExpect(jsonPath("$.items[0].lastNotifiedDunningLevel").value(4));
+    }
+
+    // --- GET /field-receipts (the reconciliation queue) ---------------------------------------
+
+    /** Captures a receipt the way the agent field app does, and returns its id. */
+    private UUID captureReceipt(UUID tenantId, String policyNumber, String amount) throws Exception {
+        String body = mockMvc.perform(post("/agents/" + UUID.randomUUID() + "/field-receipts")
+                .with(agentOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"policyNumber\":\"" + policyNumber + "\",\"amount\":{\"amount\":\"" + amount
+                    + "\",\"currencyCode\":\"TZS\"},\"clientIdempotencyKey\":\"" + UUID.randomUUID()
+                    + "\",\"capturedAt\":\"" + Instant.now().toString() + "\"}"))
+            // 202, not 201: an offline capture is ACCEPTED for reconciliation, not created as a
+            // confirmed payment. The receipt exists; whether the money does is what the queue
+            // this test is about is for.
+            .andExpect(status().isAccepted())
+            .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(JsonPath.read(body, "$.receiptId"));
+    }
+
+    /**
+     * The queue exists, matches the spec, and shows the money.
+     *
+     * <p>Until this endpoint there was no way to read a field receipt at all: capture was the
+     * entity's only endpoint, so cash an agent recorded could sit unmatched past its SLA and
+     * raise a medium-severity Prometheus alert while remaining invisible to every human.
+     */
+    @Test
+    void theReconciliationQueueMatchesTheSpecAndShowsUnmatchedCash() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-RECEIPTS-01");
+        UUID receiptId = captureReceipt(fixture.tenantId(), fixture.policyNumber(), "27500.00");
+
+        mockMvc.perform(get("/field-receipts").with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].receiptId").value(receiptId.toString()))
+            .andExpect(jsonPath("$.items[0].policyNumber").value(fixture.policyNumber()))
+            .andExpect(jsonPath("$.items[0].status").value("PENDING_RECONCILIATION"))
+            .andExpect(jsonPath("$.items[0].amount.amount").value("27500.00"))
+            .andExpect(jsonPath("$.items[0].amount.currencyCode").value("TZS"))
+            // Both timestamps: the gap between them separates "we were slow" from "the field
+            // was offline", and the SLA runs from the server one.
+            .andExpect(jsonPath("$.items[0].capturedAtClient").exists())
+            .andExpect(jsonPath("$.items[0].capturedAtServer").exists())
+            // Not yet matched to a payment, and said as a null rather than as a date.
+            .andExpect(jsonPath("$.items[0].reconciledAt").doesNotExist())
+            // The field app's dedup token is not a fact about the money and is not exposed.
+            .andExpect(jsonPath("$.items[0].clientIdempotencyKey").doesNotExist())
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+    }
+
+    /**
+     * The status filter, and the query the ALERT actually needs answered.
+     *
+     * <p>{@code FieldReceiptReconciliationOverdue} fires on a count of receipts in exactly one
+     * state. This asserts that state can be asked for, and — the falsifiable half — that a
+     * healthy receipt is excluded from it. A filter that was silently dropped would return the
+     * overdue receipt too and pass any check that only looked for what should be there.
+     */
+    @Test
+    void theReconciliationQueueCanAnswerTheOverdueAlertsOwnQuestion() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-RECEIPTS-02");
+        UUID healthy = captureReceipt(fixture.tenantId(), fixture.policyNumber(), "1000.00");
+        UUID overdue = captureReceipt(fixture.tenantId(), fixture.policyNumber(), "2000.00");
+
+        // Flipped directly, exactly as billing.sweep_billing_state() would on an SLA breach --
+        // the SQL half is proven separately by BillingSweepPsqlTest.
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE billing.field_receipt SET status = 'RECONCILIATION_OVERDUE' WHERE receipt_id = ?")) {
+            update.setObject(1, overdue);
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        }
+
+        mockMvc.perform(get("/field-receipts")
+                .queryParam("status", "RECONCILIATION_OVERDUE")
+                .with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].receiptId").value(overdue.toString()))
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+
+        // The healthy one is reachable unfiltered, so its absence above was the filter working
+        // rather than the row never existing.
+        mockMvc.perform(get("/field-receipts").with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(2));
+
+        mockMvc.perform(get("/field-receipts")
+                .queryParam("status", "PENDING_RECONCILIATION")
+                .with(financeOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].receiptId").value(healthy.toString()));
+    }
+
+    /**
+     * Unreconciled cash is one tenant's problem. This and the arrears queue are the module's
+     * only tenant-wide reads, so they are the two places a missing tenant scope would be a
+     * cross-tenant disclosure of money rather than a 404.
+     */
+    @Test
+    void theReconciliationQueueNeverShowsAnotherTenantsCash() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-RECEIPTS-03");
+        captureReceipt(fixture.tenantId(), fixture.policyNumber(), "9000.00");
+
+        mockMvc.perform(get("/field-receipts").with(financeOf(UUID.randomUUID())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0))
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    /**
+     * Finance-gated. An agent may CAPTURE a receipt (that endpoint is agents-only); a
+     * tenant-wide view of everyone's unreconciled cash is a different question with a different
+     * audience, and the agent who captured one is not entitled to the whole book.
+     */
+    @Test
+    void theReconciliationQueueRefusesAgentsAndUngatedStaff() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/field-receipts").with(agentOf(tenantId)))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/field-receipts").with(staffOf(tenantId)))
+            .andExpect(status().isForbidden());
     }
 
     // --- GET /policies/{policyNumber}/invoices -----------------------------------------------

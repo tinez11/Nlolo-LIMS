@@ -161,9 +161,17 @@ export const STATUS_MAPS = {
     PARTIAL_FAILURE: 'warning',
   },
 
-  // openapi-billing.yaml field-receipt status (+ the internal overdue state)
+  // openapi-billing.yaml field-receipt status (+ the internal overdue state).
+  //
+  // RECONCILED was missing until the reconciliation queue was built. It has been in the
+  // table's CHECK constraint since the first billing migration and became reachable when
+  // FieldReceipt.reconcile() was implemented, so a matched receipt was rendering through
+  // StatusBadge's unrecognised-literal path -- correct behaviour for a genuinely unknown
+  // literal, and the wrong answer for a known one. Nothing displayed a field receipt at all
+  // until now, which is why nobody saw it.
   fieldReceipt: {
     PENDING_RECONCILIATION: 'pending',
+    RECONCILED: 'success',
     RECONCILIATION_OVERDUE: 'danger',
   },
 

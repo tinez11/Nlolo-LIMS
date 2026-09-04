@@ -1211,3 +1211,147 @@ nobody can quote or issue against today — but changing what `status` means, or
 the catalogue by it, would change what every other screen and caller sees. The read is now
 honest about it; whether the catalogue should say something too is a product decision, not
 a bug fix.
+
+### 14.12 Billing had two work queues and no way to see either
+
+Asked to look at what `communication`, `payment` and `billing` actually implement, and then
+to act on the first three findings. The through-line of all three: **billing is
+write-mostly**. It computes, escalates, publishes events and raises Prometheus alerts, and
+almost none of it was readable. The one read that existed was per-policy invoices, on the
+policy record.
+
+#### Item 1 — the arrears sweep had zero callers
+
+`publishPendingNotifications(tenantId)` was a **public method on `BillingApiImpl` that
+nothing in the codebase called.** Not a controller, not a scheduler, not a test, not
+another module. It walked the tenant's unresolved arrears cases, escalated dunning levels,
+and published `billing.PremiumOverdue` and — at level 5 —
+`billing.PolicyLapseRecommended`, which `policy` consumes to lapse the contract.
+
+So the escalation ladder was implemented, tested in isolation, and **never ran.** A policy
+could sit unpaid indefinitely at dunning level 1.
+
+**Why it is now its own bean.** The obvious wiring — call it from the invoice read on
+`BillingApiImpl` — is exactly the trap this platform has already been bitten by:
+self-invocation on a Spring proxy skips the proxy, so `@Transactional` never starts, and
+`@TransactionalEventListener(AFTER_COMMIT)` listeners **silently never fire**. The rows
+would have escalated and the events would have vanished. `ArrearsNotificationSweep` is a
+separate `@Component` so the call crosses a proxy boundary, and its Javadoc records why it
+must stay one.
+
+Three further decisions, none of them incidental:
+
+1. **`REQUIRES_NEW`,** because this is a write hanging off a read. A failed sweep must not
+   roll back or fail the invoice list somebody is looking at — so it also runs inside a
+   `try/catch` that logs and continues. A collections side-effect is not allowed to break
+   a read.
+2. **Opportunistic, not scheduled.** `pg_cron` would have been the other answer, and the
+   platform already uses it for the commission-period close. It is wrong here: a sweep
+   needs a `TenantContext` to see any rows at all under RLS, and a background thread has
+   none — it would fail closed to zero rows, silently, forever. That failure mode is
+   already on the record in this repo. Hanging the sweep off a request means the tenant is
+   established by the caller's own token.
+3. **The N+1 went with it.** The invoice read was fetching each invoice's arrears case one
+   query at a time; it now resolves the whole page in one `findBy...InvoiceIdIn` and maps
+   dunning level by invoice id.
+
+**Proven on real data, not on a mock:** `POL-2AAC4C16` went `ACTIVE` → `LAPSED` through the
+newly-wired path, with 5 × `billing.PremiumOverdue` and 1 ×
+`billing.PolicyLapseRecommended` landing in `audit.audit_log`. Before this, that transition
+was unreachable.
+
+#### Item 2 — the collections queue
+
+`GET /arrears`, finance-gated (`REALM_STAFF` and `FINANCE_OFFICER`/`ADMIN`), plus the
+`Arrears` screen under Finance.
+
+- **`minDunningLevel` is a FLOOR, not an exact match.** The question a collections officer
+  has is "what is at this level or worse"; an exact filter hides the level-5 cases from
+  somebody triaging upward from 3.
+- **Level 5 is labelled as what it means**, not as a number. It is not "the worst level" —
+  it is the level that publishes `PolicyLapseRecommended`, so a row at 5 is a policy on its
+  way out rather than one being chased. `LAPSE_RECOMMENDATION_LEVEL` is exported so the
+  screen and the API module agree on that.
+- **`resolved` is sent when explicitly `false`,** because `false` is the live queue and
+  dropping a falsy value would silently widen it to include settled history.
+- **Sort is total:** `dunningLevel DESC, openedAt ASC, arrearsCaseId ASC`. Two cases at the
+  same level opened in the same second must not be able to swap places between page 1 and
+  page 2.
+
+#### Item 3 — field receipts, decided yes, and why
+
+The question was whether agent-captured cash needed a read surface at all. It did, and the
+evidence was already in the repo: `observability/alert-rules.yml` carries a live
+medium-severity **`FieldReceiptReconciliationOverdue`** — *"one or more agent-captured
+receipts have exceeded the `OFFLINE_RECEIPT_SLA_HOURS` refdata parameter without a matching
+`PaymentConfirmed`"* — against an entity whose **only endpoint was capture**.
+
+An alert that names a count, and nothing anywhere that can name a receipt. The only
+available follow-up was a hand-written database query. That is the whole justification.
+
+`GET /field-receipts`, finance-gated, sorted `capturedAtServer ASC, receiptId ASC` —
+oldest unmatched cash first, because age against the SLA is the reason to look.
+
+What the screen does that a generic table would not:
+
+- **It defaults to `RECONCILIATION_OVERDUE`.** Every other queue on this console opens on
+  everything. This one opens on the breach, because that is what somebody arriving here has
+  been paged about — and the count line says so (`2 overdue receipts · past the
+  reconciliation SLA`) rather than leaving a non-neutral default to be discovered. `ALL` is
+  an explicit sentinel so "show me everything" stays distinguishable from a fresh visit.
+- **Both timestamps, side by side.** `Reached us` (`capturedAtServer`) is what the SLA is
+  measured against; `Collected` (`capturedAtClient`) is the agent's own clock. The gap is
+  the diagnosis: hours apart means the field was offline, minutes apart means we were slow,
+  and those lead somewhere completely different. Showing one and hiding the other would
+  throw that away. The seeded evidence shows a 6-hour gap.
+- **`clientIdempotencyKey` is deliberately omitted** from the view. It is a de-duplication
+  mechanism, not a fact about the money.
+- **The agent is an id, shown as 8 characters with the full value on `title`.** It is a
+  distribution `AgentProfile` id, and no by-id agent-name lookup takes one — `PartyName`
+  resolves a PARTY id. Rendering the full 36-character UUID squeezed the policy number and
+  the amount onto two lines each, which the first screenshot caught.
+- **Rows go to the policy**, where the invoice the cash should have matched lives. This
+  screen finds the mismatch; the policy record explains it.
+
+**A latent bug fell out of building it.** `lib/status.ts` was missing
+`RECONCILED: 'success'` from the `fieldReceipt` bucket map. The literal has been in the
+table's CHECK constraint since the first billing migration and became reachable when
+`FieldReceipt.reconcile()` was implemented — so a matched receipt was rendering through
+`StatusBadge`'s unrecognised-literal path. Correct behaviour for a genuinely unknown
+literal, wrong answer for a known one. **Nothing on this console displayed a field receipt
+at all**, which is exactly why nobody had seen it.
+
+#### Store design, and the lesson it inherited
+
+`billingStore` has **two separate slots**, not one shared list. Arrears and field receipts
+answer two different questions, and one slot would let one queue render under the other's
+heading while the next request was in flight — the same defect the client register produced
+when Clients became two areas (§14.9), which passed alone and failed in the full suite.
+Invoices stay out of this store entirely: they are read per policy and live in
+`policyStore`, keyed by the policy number they belong to.
+
+#### Verified
+
+Backend 897 tests, `BillingContractTest` 28/28, `BillingApiIntegrationTest` 16/16.
+Frontend unit 686, full e2e 102 passed. Six new e2e across `staff-arrears.spec.ts` and
+`staff-field-receipts.spec.ts`, each pair covering the queue, the filter round-trip, and
+the finance gate arriving as an access panel for a claims assessor — the falsifiable half,
+since an ungated endpoint would render a perfectly ordinary table and nothing would look
+wrong.
+
+**One e2e trap worth recording.** Both new screens use a `StatusBadge` as the *label* of
+their filter chips, so `getByText('Pending reconciliation')` matches the chip **and every
+row it filtered to** — a strict-mode violation that only appears once the table has data.
+The chips are addressed by role instead: a chip is a button, a cell is not. This is the
+third shape of the same recurring e2e lesson, after accessible-name coupling and
+rendering-a-name-where-an-id-belongs.
+
+#### Not done, and stated as such
+
+- **`communication` is still 0 classes.** Three tables with no RLS policies and no
+  `app_role` grants, no mail dependency on the classpath, and an event catalog plus
+  AsyncAPI document that both claim it as a consumer on 23 channels. So every
+  `PremiumOverdue` this milestone made real is published to a subscriber that does not
+  exist. That is a milestone, not a follow-up, and it is not started.
+- Item 4 of the four findings — the payment reconciliation surface — was not in scope for
+  "1 to 3".

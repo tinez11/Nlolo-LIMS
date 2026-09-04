@@ -18,7 +18,7 @@ gravity:
 | `UNDERWRITER` | Working the underwriting queue: opening cases, reading declared disclosures, accepting / loading / postponing / declining risk |
 | `CLAIMS_ASSESSOR` | Assessing registered claims — findings, recommended amount, fraud indicator, contestability review |
 | `CLAIMS_MANAGER` | Settlement decisions: approve or repudiate, approved amount, payee |
-| `FINANCE_OFFICER` | GL postings, chart of accounts, treaties, regulatory returns, agent commission and payouts |
+| `FINANCE_OFFICER` | Two work queues — chasing arrears through the dunning ladder, and matching agent-collected cash to payments — plus GL postings, chart of accounts, treaties, regulatory returns, agent commission and payouts |
 | `ADMIN` | Everything a finance officer sees, plus product authoring and configuration |
 | `CUSTOMER_SERVICE_REP` | Undetermined. This role appears in **zero** `@PreAuthorize` expressions server-side, so it currently sees the ungated groups only. Recorded as an open question in `frontend/PLAN.md` §12.3, not as a designed audience. |
 
@@ -83,6 +83,12 @@ premium arithmetic. No fabricated rows. That refusal is the position.
   counts the API can express honestly (one status filter at a time, no analytics
   endpoint). KYC is counted twice because the client register is two nav items:
   one combined count sitting beside one of them would not describe that list.
+- **One screen deliberately does not open on everything.** Field receipts opens on
+  `RECONCILIATION_OVERDUE`, because a live Prometheus alert pages somebody about
+  exactly that state and arriving to an unfiltered table would bury it. Its count
+  line names the filter rather than leaving a non-neutral default to be
+  discovered. Every other queue opens wide; this is the exception and it is
+  earned by an alert, not by taste.
 - **The business flow the nav follows.** Clients → New business (underwriting) →
   Policies & claims → Finance → Distribution → Records → Configuration.
   Configuration sits last deliberately: authoring a product is rare actuarial

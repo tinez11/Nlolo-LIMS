@@ -3,10 +3,12 @@ import {
   Building2,
   ClipboardCheck,
   FileText,
+  HandCoins,
   Package,
   Receipt,
   ScrollText,
   Shield,
+  TrendingDown,
   UserCheck,
   UserPlus,
   Users,
@@ -17,6 +19,8 @@ import { canSeeFinance, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
 import { AuditLogPage } from '@/features/audit/AuditLogPage';
+import { ArrearsPage } from '@/features/billing/ArrearsPage';
+import { FieldReceiptsPage } from '@/features/billing/FieldReceiptsPage';
 import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
 import { ClaimsPage } from '@/features/claims/ClaimsPage';
 import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
@@ -303,6 +307,25 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'agents/new', element: <OnboardAgentPage />, reach: 'drill-in' },
   { path: 'agents/:agentId', element: <AgentDetailPage />, reach: 'drill-in' },
 
+  // FIRST in the finance group, because it is the only screen in it that is WORK rather
+  // than a record: GL postings, the chart of accounts and treaties are all things you look
+  // up, and this is a queue somebody has to clear. It earned a nav item the day GET /arrears
+  // existed -- before that the platform escalated policies through five dunning levels and
+  // recommended them for lapse with no screen able to show a single one of them.
+  {
+    path: 'arrears',
+    element: <ArrearsPage />,
+    reach: { group: 'finance', label: 'Arrears', icon: TrendingDown },
+  },
+  // Beside Arrears, because it is the module's other work queue and the same audience clears
+  // both. It earned its nav item the same way: there was a medium-severity Prometheus alert
+  // for overdue receipts and no endpoint that could name one, so the alert could only ever
+  // escalate to somebody querying the database by hand.
+  {
+    path: 'field-receipts',
+    element: <FieldReceiptsPage />,
+    reach: { group: 'finance', label: 'Field receipts', icon: HandCoins },
+  },
   {
     path: 'gl-postings',
     element: <GlPostingsPage />,
