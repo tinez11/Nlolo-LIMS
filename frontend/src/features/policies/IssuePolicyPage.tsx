@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,6 +10,7 @@ import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
+import { BeneficiaryRow } from './BeneficiaryRow';
 import { formatDate, todayIso } from '@/lib/dates';
 import { UUID_PATTERN } from '@/lib/patterns';
 import { hasHardFailure, issueGates, softBreaches } from '@/gates/issueGates';
@@ -369,59 +370,38 @@ export function IssuePolicyPage() {
           <div className="space-y-3">
             {fields.map((field, index) => {
               const type = beneficiaryRows[index]?.type ?? 'PARTY';
+              const rowError = errors.beneficiaries?.[index];
               return (
-                <div key={field.id} className="rounded-md border border-border p-2.5">
-                  <div className="flex items-center gap-2">
-                    <Select
-                      inputSize="sm"
-                      {...register(`beneficiaries.${index}.type`)}
-                    >
-                      <option value="PARTY">Party</option>
-                      <option value="FREEFORM">Freeform</option>
-                    </Select>
-                    {type === 'PARTY' ? (
-                      <Controller
-                        control={control}
-                        name={`beneficiaries.${index}.partyId`}
-                        render={({ field }) => (
-                          <div className="h-8 flex-1">
-                            <PartyPicker
-                              value={field.value || null}
-                              onChange={(partyId) => field.onChange(partyId ?? '')}
-                              placeholder="Search for the beneficiary by name"
-                            />
-                          </div>
-                        )}
-                      />
-                    ) : (
-                      <Input
-                        inputSize="sm" className="flex-1"
-                        placeholder={'Designee, e.g. "My Estate"'}
-                        {...register(`beneficiaries.${index}.freeformDesignee`)}
-                      />
-                    )}
-                    <div className="flex items-center gap-1">
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="0.01"
-                        inputSize="sm" className="w-20 text-right"
-                        {...register(`beneficiaries.${index}.sharePercent`)}
-                      />
-                      <span className="text-xs text-muted-foreground">%</span>
-                    </div>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label="Remove beneficiary"
-                      onClick={() => remove(index)}
-                    >
-                      <X />
-                    </Button>
-                  </div>
-                </div>
+                <BeneficiaryRow
+                  key={field.id}
+                  type={type}
+                  typeField={register(`beneficiaries.${index}.type`)}
+                  designeeField={register(`beneficiaries.${index}.freeformDesignee`)}
+                  shareField={register(`beneficiaries.${index}.sharePercent`)}
+                  revocableField={register(`beneficiaries.${index}.revocable`)}
+                  party={
+                    <Controller
+                      control={control}
+                      name={`beneficiaries.${index}.partyId`}
+                      render={({ field: partyField }) => (
+                        <PartyPicker
+                          value={partyField.value || null}
+                          onChange={(partyId) => partyField.onChange(partyId ?? '')}
+                          placeholder="Search for the beneficiary by name"
+                        />
+                      )}
+                    />
+                  }
+                  onRemove={() => remove(index)}
+                  /* Previously rendered NOTHING for a rejected row -- the panel copy
+                     of this markup showed the message and this one silently did not,
+                     which is the drift that made extracting it worth doing. */
+                  error={
+                    rowError?.partyId?.message ??
+                    rowError?.freeformDesignee?.message ??
+                    rowError?.sharePercent?.message
+                  }
+                />
               );
             })}
           </div>

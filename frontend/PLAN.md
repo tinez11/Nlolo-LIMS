@@ -1355,3 +1355,76 @@ rendering-a-name-where-an-id-belongs.
   exist. That is a milestone, not a follow-up, and it is not started.
 - Item 4 of the four findings — the payment reconciliation surface — was not in scope for
   "1 to 3".
+
+### 14.13 An 18-pixel input, and the flex rule behind it
+
+Reported from the running console: filling in a FREEFORM beneficiary requires a designee,
+and "the area to fill is so small". Measured before touching anything, because "small" is
+the kind of complaint worth turning into a number: the designee input was **18 pixels
+wide inside a 666px form**. The report was an understatement.
+
+**The cause is a rule worth keeping, because it will recur anywhere a `field`-based
+control sits in a flex row.** Every input, select and textarea on this console inherits
+`w-full` from the shared `field` base class — correct inside a `FormField`, which is where
+they all live. In a flex row it is not benign:
+
+- the `<select>` had no width class of its own, so its flex basis stayed `auto`, which
+  `w-full` resolved to **100% of the row**;
+- the designee input carried `flex-1`, i.e. `flex: 1 1 0%`, giving it a basis of **0**.
+
+A flex item shrinks in proportion to its basis, so an item with basis `0` **cannot shrink
+— and cannot claim space either**. Every pixel of overflow was therefore absorbed by the
+one control that mattered, while the select, containing the two words "Party" and
+"Freeform", kept about 450px of a 666px row. The `PartyPicker` in the other branch
+collapsed identically, to the same 18px.
+
+**Nothing caught it.** Typecheck, lint, 686 unit tests and the five beneficiaries e2e
+specs were all green, and they stayed green because Playwright clicks by role and
+placeholder, not by pixels — an 18px input is perfectly fillable by `fill()`. This is the
+same blind spot as a vacuous assertion, one layer out: the tests proved the field worked,
+and the field was unusable.
+
+**The fix, and why it is one component now.** The markup was duplicated **byte-for-byte**
+in `BeneficiariesPanel` and `IssuePolicyPage` — the fourth recurrence of the habit that
+`Panel`, `Field`, `FormField` and the input primitives each cured before it, and the two
+copies had already drifted: the issue page rendered **no per-row validation error at
+all**, so a rejected row there showed nothing beside the field that caused it. Both now
+render `BeneficiaryRow`, so the layout was fixed once and the missing error came back for
+free.
+
+The row is two lines instead of one. Naming who the beneficiary is gets its own line and
+the whole remaining width; the two small facts about the share sit beneath it. `shrink-0`
+on the fixed-width controls and `min-w-0` on the growing one are what stop the collapse
+returning — `min-width: auto` is a flex item's default and would otherwise let a long
+designee name push the share box off the row instead of truncating inside its own field.
+
+Sizes moved from `sm` to the platform's default `md`. Not a density change for its own
+sake: `PartyPicker` is `h-9` and always was, so the `sm` select sat 4px shorter than the
+field beside it, inside an `h-8` wrapper that clipped it.
+
+The four controls also gained `aria-label`s. They had none — the select, the designee and
+the share input were nameless to a screen reader, named only by a placeholder or by
+nothing. `Remove beneficiary` was left exactly as it was; an ordinal would read better for
+one row among several, but that is a change to make deliberately, alongside the
+`remove.first()` loops in the specs that would then be removing whichever row sorts first.
+
+**Verified:** designee input 18px → **432px** on the detail panel and **300px** on the
+`max-w-xl` issue form, measured the same way as the defect. Party picker 18px → 432px.
+Unit 686, and all 14 e2e across `staff-beneficiaries` and `staff-issue-policy` still pass
+unchanged — including the one that constructs the "both a party and a designee" state,
+which is what proves the accessible names and placeholders the specs address were not
+disturbed.
+
+**Found and deliberately not changed: switching type strands the value you already set.**
+Pick a party, then switch the row to Freeform, and `partyId` is still populated. The zod
+rule then correctly reports "Provide exactly one of a party or a freeform designee" — but
+the party field is no longer on screen, so the message names a field the person cannot
+see or clear, and the only way out is switching back to Party and clearing the picker.
+Clearing the other field on a type switch is a two-line fix, but it would make the state
+that `staff-beneficiaries.spec.ts:119` deliberately constructs unreachable through the UI,
+so that spec's route to the rule has to be reconsidered in the same change. Left as a
+flagged decision rather than folded into a layout fix.
+
+**Also seen, out of scope:** `POL-6BD5702F` is `Surrendered` and still offers a Surrender
+action and an editable beneficiary list. Whether a terminal policy should accept a
+beneficiary change is a product question, not a layout one.
