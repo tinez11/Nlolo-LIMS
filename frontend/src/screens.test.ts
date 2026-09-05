@@ -170,9 +170,15 @@ describe('screen manifest', () => {
     // keeps that queue one click away now that the default filter shows everyone --
     // and it is counted PER AREA, because a single combined count on one of the two
     // items would not describe the list beside it.
+    // Finance carries two counts of its own now. Arrears counts only dunning level 5 --
+    // lapse recommended -- because a level-1 case is a letter, not an emergency; and field
+    // receipts counts the SLA breach a live Prometheus alert already fires on, which until
+    // then named a number and no receipt.
     expect(badged.sort()).toEqual([
+      'Arrears',
       'Claims',
       'Corporate/Group',
+      'Field receipts',
       'Individuals',
       'Underwriting',
     ]);

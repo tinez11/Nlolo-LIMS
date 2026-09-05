@@ -41,6 +41,29 @@ export function TableSkeleton({ rows = 8, columns = 5 }: { rows?: number; column
   );
 }
 
+/**
+ * A role refusal shown BEFORE the work, not after it.
+ *
+ * Every other gated surface on this console learns it is gated from the server: it issues its
+ * read, gets a 403, and `ErrorPanel` says so. That works because those screens fetch on mount.
+ * An authoring form fetches nothing — so without this, a staff member without the role would
+ * fill the whole form and be refused only on submit, having done the work twice: once here and
+ * once in whatever they have to do to get it authorised.
+ *
+ * The headline is deliberately the SAME sentence `ErrorPanel` uses for a 403, so a refusal
+ * reads identically whether it came from the server or from the token in hand.
+ */
+export function NoAccess({ what, who }: { what: string; who: string }) {
+  return (
+    <div className="mx-6 my-8 max-w-xl rounded-md border border-border bg-surface px-4 py-5">
+      <p className="text-sm font-medium">You do not have access to this</p>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {what} is restricted to {who}. Your session does not carry that role.
+      </p>
+    </div>
+  );
+}
+
 export function EmptyState({
   title,
   description,

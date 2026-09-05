@@ -18,9 +18,9 @@ gravity:
 | `UNDERWRITER` | Working the underwriting queue: opening cases, reading declared disclosures, accepting / loading / postponing / declining risk |
 | `CLAIMS_ASSESSOR` | Assessing registered claims — findings, recommended amount, fraud indicator, contestability review |
 | `CLAIMS_MANAGER` | Settlement decisions: approve or repudiate, approved amount, payee |
-| `FINANCE_OFFICER` | Two work queues — chasing arrears through the dunning ladder, and matching agent-collected cash to payments — plus GL postings, chart of accounts, treaties, regulatory returns, agent commission and payouts |
-| `ADMIN` | Everything a finance officer sees, plus product authoring and configuration |
-| `CUSTOMER_SERVICE_REP` | Undetermined. This role appears in **zero** `@PreAuthorize` expressions server-side, so it currently sees the ungated groups only. Recorded as an open question in `frontend/PLAN.md` §12.3, not as a designed audience. |
+| `FINANCE_OFFICER` | Two work queues — chasing arrears through the dunning ladder, and matching agent-collected cash to payments — plus waiving a premium, GL postings, chart of accounts, treaties, regulatory returns, agent commission and payouts |
+| `ADMIN` | Everything a finance officer sees, plus product authoring — creating a product and publishing a priced version. **This is the only capability ADMIN holds that FINANCE_OFFICER does not**, and it was not true until the authoring endpoints were tightened: they were open to every staff member, so this row described a role that gated nothing anywhere on the platform. |
+| `CUSTOMER_SERVICE_REP` | **Undetermined, and not a designed audience.** Still zero `@PreAuthorize` expressions server-side. What that means in practice is not "can do little" but the opposite: it inherits everything gated on `REALM_STAFF` alone, so a CSR can manually issue a policy, suspend or reinstate one, verify KYC and read the audit log. Nothing resembling a service-request or case-note concept exists anywhere. Whether the role becomes real or is deleted is an open decision, recorded in `frontend/PLAN.md` §12.3. |
 
 **Secondary: tied agents**, in the `agents` realm, with their own much smaller
 console — their profile, the book of policies and claims they or their downline
@@ -77,12 +77,19 @@ premium arithmetic. No fabricated rows. That refusal is the position.
   sessions. The current build reflects this literally: a fixed `w-56` sidebar and
   responsive breakpoints in only 13 of ~199 source files. Desktop-first is
   correct; it is not an excuse for the console to break below a laptop width.
-- **Rhythm of the work.** Queue-shaped. Four nav badges count *work waiting*,
+- **Rhythm of the work.** Queue-shaped. Six nav badges count *work waiting*,
   never total volume — individuals awaiting KYC, companies and groups awaiting
-  KYC, open underwriting cases, unassessed claims — because those are the only
+  KYC, open underwriting cases, claims waiting on this viewer, arrears at the
+  lapse threshold, and field receipts past their SLA — because those are the only
   counts the API can express honestly (one status filter at a time, no analytics
   endpoint). KYC is counted twice because the client register is two nav items:
   one combined count sitting beside one of them would not describe that list.
+- **A badge counts the queue YOU work, not the screen you are looking at.** The
+  Claims item counts unassessed claims for an assessor and claims awaiting a
+  settlement decision for a manager. One nav item, two jobs behind it: a manager
+  shown the assessor's backlog is reading a number they cannot act on, and until
+  this existed the settlement queue — the whole of that role's work — had no
+  signal at all while both other operational roles had one.
 - **One screen deliberately does not open on everything.** Field receipts opens on
   `RECONCILIATION_OVERDUE`, because a live Prometheus alert pages somebody about
   exactly that state and arriving to an unfiltered table would bury it. Its count

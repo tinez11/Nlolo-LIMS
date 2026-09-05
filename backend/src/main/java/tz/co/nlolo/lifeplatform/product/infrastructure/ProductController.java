@@ -33,16 +33,36 @@ public class ProductController {
         return ResponseEntity.ok(productApi.listActiveProducts(category));
     }
 
+    /**
+     * Authoring a product. ADMIN, and this is the endpoint that finally makes that role mean
+     * something.
+     *
+     * <p>It was {@code hasRole('REALM_STAFF')}, so any staff member could create a product —
+     * while PRODUCT.md described ADMIN as "everything a finance officer sees, PLUS product
+     * authoring and configuration". That sentence was simply false: authoring was open to
+     * everyone, and ADMIN carried no capability FINANCE_OFFICER lacked, on any endpoint. The
+     * documented model is the correct one, so the code moves to it rather than the doc bending
+     * to the code.
+     *
+     * <p>ADMIN alone rather than the {@code FINANCE_OFFICER or ADMIN} pair used everywhere else:
+     * pricing a life product is rare actuarial set-up, not a finance officer's daily work, and
+     * widening it to finance would leave ADMIN decorative again.
+     *
+     * <p>Every product READ stays exactly as it was. Issuing a policy needs the catalogue, the
+     * active snapshot and a premium quote, so gating those would break underwriting for the
+     * roles that must never be blocked from it.
+     */
     @PostMapping("/products")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
     public ResponseEntity<ProductSummaryView> createProduct(@Valid @RequestBody CreateProductRequest request,
                                                               @AuthenticationPrincipal Jwt jwt) {
         ProductSummaryView view = productApi.createProduct(request.productCode(), request.productName(), request.category(), request.defaultCurrency(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
+    /** Publishing a version prices the product and puts it in force — same gate as authoring it. */
     @PostMapping("/products/{productId}/versions")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
     public ResponseEntity<Void> publishVersion(@PathVariable UUID productId, @Valid @RequestBody PublishVersionRequest request,
                                                 @AuthenticationPrincipal Jwt jwt) {
         productApi.publishVersion(productId, request.ifrsMeasurementModel(), request.effectiveDate(), request.retirementDate(),

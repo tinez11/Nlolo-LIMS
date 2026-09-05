@@ -7,6 +7,15 @@ import { useProductStore } from '@/store/productStore';
 import { ProductDetailPage } from './ProductDetailPage';
 
 /**
+ * ProductDetailPage reads the signed-in identity to decide whether to offer the publish
+ * panel -- authoring is ADMIN-only server-side. These tests are about the rating basis, so
+ * the identity is stubbed to the plainest useful shape: signed in, no roles. That also means
+ * the publish panel is absent throughout, which is correct for a non-admin and is asserted
+ * for real, against real tokens, in the e2e suite rather than against a stub here.
+ */
+vi.mock('react-oidc-context', () => ({ useAuth: () => ({ user: undefined }) }));
+
+/**
  * The PRICED branch of the rating panel cannot be reached through this console:
  * `PublishVersionForm` sends no `baseRates`, so every version publishable here is
  * unpriced, and the e2e proof against real data can only ever exercise the empty

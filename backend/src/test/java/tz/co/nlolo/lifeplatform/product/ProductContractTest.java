@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import com.jayway.jsonpath.JsonPath;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -72,7 +73,7 @@ class ProductContractTest {
     @Test
     void createProductMatchesOpenApiContract() throws Exception {
         mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -91,7 +92,7 @@ class ProductContractTest {
         // the same tenant before listing, and assert on that item's presence/fields too.
         UUID tenantId = UUID.randomUUID();
         MvcResult createResult = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -103,7 +104,7 @@ class ProductContractTest {
         UUID productId = created.productId();
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -147,7 +148,7 @@ class ProductContractTest {
         // publish a version as a customer -- must be rejected with 403.
         UUID tenantId = UUID.randomUUID();
         MvcResult createResult = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -174,7 +175,7 @@ class ProductContractTest {
     void publishVersionAndActiveSnapshotMatchOpenApiContract() throws Exception {
         UUID tenantId = UUID.randomUUID();
         MvcResult createResult = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -186,7 +187,7 @@ class ProductContractTest {
         UUID productId = created.productId();
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -300,7 +301,7 @@ class ProductContractTest {
     /** Creates a DRAFT product and returns its id. */
     private UUID createProduct(UUID tenantId, String code, String name) throws Exception {
         MvcResult result = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productCode\":\"" + code + "\",\"productName\":\"" + name
@@ -315,7 +316,7 @@ class ProductContractTest {
     private void publishVersionEffective(UUID tenantId, UUID productId, LocalDate effectiveDate)
             throws Exception {
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"ifrsMeasurementModel\":\"PAA\",\"effectiveDate\":\"" + effectiveDate + "\","
@@ -329,7 +330,7 @@ class ProductContractTest {
     void publishVersionRejectsMissingRatingCoverageWithUnprocessableEntity() throws Exception {
         UUID tenantId = UUID.randomUUID();
         MvcResult createResult = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -341,7 +342,7 @@ class ProductContractTest {
         UUID productId = created.productId();
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -351,5 +352,98 @@ class ProductContractTest {
                     """))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.errorCode").value("INVALID_PRODUCT_VERSION"));
+    }
+    // --- Authoring is ADMIN, and reading is not ------------------------------------------------
+    //
+    // These two endpoints were hasRole('REALM_STAFF') until now, so any staff member -- an
+    // underwriter, a claims assessor -- could create and price a product. PRODUCT.md described
+    // ADMIN as "everything a finance officer sees, plus product authoring and configuration",
+    // which was false in both directions: authoring was open to everyone, and ADMIN carried no
+    // capability FINANCE_OFFICER lacked anywhere on the platform.
+    //
+    // Each test below pairs the denial with the SAME call succeeding for ADMIN. A 403 test on
+    // its own would still pass if the endpoint had been broken outright.
+
+    @Test
+    void creatingAProductIsRefusedForAStaffMemberWhoIsNotAnAdmin() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"GATE-UW-01","productName":"Underwriter Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isForbidden());
+
+        // FINANCE_OFFICER is refused too, deliberately: pricing a life product is actuarial
+        // set-up, and widening this to the finance pair used elsewhere would leave ADMIN with no
+        // capability of its own again -- the exact state this change exists to end.
+        mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"GATE-FIN-01","productName":"Finance Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isForbidden());
+
+        // The same call, as ADMIN, succeeds -- so the two above are a gate and not a breakage.
+        mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"GATE-ADMIN-01","productName":"Admin Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated());
+    }
+
+    @Test
+    void publishingAVersionIsRefusedForAStaffMemberWhoIsNotAnAdmin() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String createResponse = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"GATE-PUB-01","productName":"Gate Publish","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String productId = JsonPath.read(createResponse, "$.productId");
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+                     "ratingTable":[{"ageBandStart":18,"ageBandEnd":65,"gender":"ANY","ratePerMille":"3.50"}],
+                     "benefitSchedule":[{"benefitType":"DEATH","basis":"MULTIPLE_OF_SUM_ASSURED","factor":"1.0"}]}
+                    """))
+            .andExpect(status().isForbidden());
+    }
+
+    /**
+     * The other half of the same change: every product READ stays open to staff. Issuing a
+     * policy needs the catalogue, the active snapshot and a premium quote, so a gate that also
+     * caught the reads would have blocked underwriting for the roles that must never be blocked
+     * from it. Asserted rather than assumed, because "tighten the product endpoints" is exactly
+     * the kind of instruction that takes the reads with it.
+     */
+    @Test
+    void readingTheProductCatalogueStaysOpenToAnyStaffMember() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(get("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk());
     }
 }

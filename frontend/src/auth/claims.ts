@@ -106,6 +106,21 @@ export function canSeeFinance(identity: TokenIdentity): boolean {
   return roles.FINANCE_OFFICER || roles.ADMIN;
 }
 
+/**
+ * Authoring or pricing a product. ADMIN alone, mirroring
+ * `hasRole('REALM_STAFF') and hasRole('ADMIN')` on `POST /products` and its versions.
+ *
+ * Deliberately NOT the `FINANCE_OFFICER or ADMIN` pair every other gated surface uses. Pricing
+ * a life product is rare actuarial set-up, and this is the one capability that makes ADMIN mean
+ * anything: before it, ADMIN carried nothing FINANCE_OFFICER did not, on any endpoint on the
+ * platform, while PRODUCT.md claimed it carried product authoring.
+ *
+ * Reading the catalogue is not gated here and must not be — issuing a policy needs it.
+ */
+export function canAuthorProducts(identity: TokenIdentity): boolean {
+  return staffRoles(identity).ADMIN;
+}
+
 /** A display name that degrades gracefully -- tokens vary in which claims they carry. */
 export function displayName(identity: TokenIdentity): string {
   return identity.name ?? identity.preferredUsername ?? identity.email ?? 'Signed in';

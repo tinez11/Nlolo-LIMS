@@ -1,6 +1,8 @@
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useAuth } from 'react-oidc-context';
+import { canAuthorProducts, readIdentity } from '@/auth/claims';
 import type { BaseRate, VersionRatingView } from '@/api/types';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
@@ -29,6 +31,7 @@ import { DetailLayout } from '@/components/DetailLayout';
  */
 export function ProductDetailPage() {
   const { productId = '' } = useParams();
+  const canAuthor = canAuthorProducts(readIdentity(useAuth().user?.access_token));
   const [publishOpen, setPublishOpen] = useState(false);
 
   const list = useProductStore((s) => s.list);
@@ -102,6 +105,10 @@ export function ProductDetailPage() {
           version is rare actuarial set-up, and the rating basis below is what most
           visits are actually here to read. */}
       <DetailLayout record={renderRecord()}>
+        {/* Publishing prices the product and puts it in force -- ADMIN-only server-side, so
+            the panel is absent rather than present-and-refusing for everyone else. The rating
+            basis below stays readable, which is what most visits are here for anyway. */}
+        {canAuthor && (
         <Panel title="Publish a new version">
             {publishOpen ? (
               <div className="p-4">
@@ -119,6 +126,7 @@ export function ProductDetailPage() {
               </div>
             )}
           </Panel>
+        )}
 
           <Panel
             title="Rating basis"

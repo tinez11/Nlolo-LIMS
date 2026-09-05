@@ -218,7 +218,7 @@ class PolicyCustomerScopingTest {
         UUID applicantId = UUID.fromString(JsonPath.read(applicantResponse, "$.partyId"));
 
         String productResponse = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -228,7 +228,7 @@ class PolicyCustomerScopingTest {
         String productId = JsonPath.read(productResponse, "$.productId");
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

@@ -15,7 +15,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { canSeeFinance, type readIdentity } from '@/auth/claims';
+import { canSeeFinance, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
 import { AuditLogPage } from '@/features/audit/AuditLogPage';
@@ -96,13 +96,22 @@ export type BadgeKey =
   | 'kyc-pending-individuals'
   | 'kyc-pending-organisations'
   | 'underwriting-open'
-  | 'claims-unassessed';
+  | 'claims-unassessed'
+  | 'claims-settlement-pending'
+  | 'arrears-at-lapse'
+  | 'receipts-overdue';
 
 interface NavPlacement {
   group: NavGroupId;
   label: string;
   icon: typeof FileText;
-  badge?: BadgeKey;
+  /**
+   * A count of work waiting. A FUNCTION when the queue depends on the viewer's job: the
+   * Claims item counts unassessed claims for an assessor and settlement decisions for a
+   * manager, because those are two different queues behind one nav item and a badge showing
+   * the other role's backlog is a number the reader cannot act on.
+   */
+  badge?: BadgeKey | ((roles: StaffRoles) => BadgeKey | undefined);
 }
 
 export interface Screen {
@@ -204,7 +213,15 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'claims',
     element: <ClaimsPage />,
-    reach: { group: 'policies-claims', label: 'Claims', icon: ScrollText, badge: 'claims-unassessed' },
+    reach: {
+      group: 'policies-claims',
+      label: 'Claims',
+      icon: ScrollText,
+      // A manager's whole job is the settlement decision, and it had no work signal at all
+      // while the assessor's queue had one. Manager wins when an identity carries both
+      // roles (staff.admin does): a settlement decision is the more consequential queue.
+      badge: (roles) => (roles.CLAIMS_MANAGER ? 'claims-settlement-pending' : 'claims-unassessed'),
+    },
   },
   { path: 'claims/new', element: <RegisterClaimPage />, reach: 'drill-in' },
   { path: 'claims/:claimId', element: <ClaimDetailPage />, reach: 'drill-in' },
@@ -315,7 +332,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'arrears',
     element: <ArrearsPage />,
-    reach: { group: 'finance', label: 'Arrears', icon: TrendingDown },
+    reach: { group: 'finance', label: 'Arrears', icon: TrendingDown, badge: 'arrears-at-lapse' },
   },
   // Beside Arrears, because it is the module's other work queue and the same audience clears
   // both. It earned its nav item the same way: there was a medium-severity Prometheus alert
@@ -324,7 +341,7 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'field-receipts',
     element: <FieldReceiptsPage />,
-    reach: { group: 'finance', label: 'Field receipts', icon: HandCoins },
+    reach: { group: 'finance', label: 'Field receipts', icon: HandCoins, badge: 'receipts-overdue' },
   },
   {
     path: 'gl-postings',
@@ -425,18 +442,37 @@ export const SCREENS: Record<Realm, Screen[]> = {
   regulators: [],
 };
 
+/**
+ * One nav item, with its badge already RESOLVED to a concrete key.
+ *
+ * Distinct from NavPlacement on purpose: a placement may declare its badge as a function of
+ * the viewer's roles, and nothing downstream should have to know that. By the time an item
+ * leaves navFor the question has been answered.
+ */
+export type NavItem = Omit<NavPlacement, 'badge'> & { badge?: BadgeKey; to: string };
+
 /** The sidebar for one realm: groups the identity may see, each with its screens. */
 export function navFor(
   realm: Realm,
   identity: ReturnType<typeof readIdentity>,
-): { label: string; items: (NavPlacement & { to: string })[] }[] {
+): { label: string; items: NavItem[] }[] {
   return NAV_GROUPS[realm]
     .filter((group) => group.requires?.(identity) ?? true)
     .map((group) => ({
       label: group.label,
       items: SCREENS[realm]
         .filter((screen) => screen.reach !== 'drill-in' && screen.reach.group === group.id)
-        .map((screen) => ({ ...(screen.reach as NavPlacement), to: screen.path })),
+        .map((screen) => {
+          const reach = screen.reach as NavPlacement;
+          // Resolved HERE, where the identity is already in hand, so AppShell keeps taking a
+          // plain BadgeKey and useNavBadges can fetch exactly the counts that are on screen.
+          const badge =
+            typeof reach.badge === 'function' ? reach.badge(staffRoles(identity)) : reach.badge;
+          const { badge: _declared, ...rest } = reach;
+          // The key is OMITTED rather than set to undefined: exactOptionalPropertyTypes is on,
+          // and an explicitly-undefined optional is not the same type as an absent one.
+          return { ...rest, ...(badge ? { badge } : {}), to: screen.path };
+        }),
     }))
     .filter((group) => group.items.length > 0);
 }

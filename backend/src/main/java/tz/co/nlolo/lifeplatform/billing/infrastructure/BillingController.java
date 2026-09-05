@@ -119,8 +119,22 @@ public class BillingController {
         return ResponseEntity.ok(InvoiceResponseDto.from(invoice));
     }
 
+    /**
+     * Writing off a premium. Finance-gated, which it was not until now.
+     *
+     * <p>It was {@code hasRole('REALM_STAFF')} — every staff member, whatever their job, could
+     * waive money owed. An underwriter or a claims assessor writing off a premium is not a
+     * plausible authorisation on a regulated insurer's ledger, and the endpoint publishes
+     * {@code billing.InvoiceWaived} and resolves the arrears case, so the write-off is final and
+     * silent from the console's point of view.
+     *
+     * <p>Matched to the module's other money endpoints (arrears, field receipts, payouts, the
+     * chart of accounts) rather than invented: {@code FINANCE_OFFICER or ADMIN}. Requesting a
+     * payment is deliberately NOT tightened alongside it — asking a customer to pay takes nothing
+     * away from anyone, and agents and customers can both do it already.
+     */
     @PostMapping("/invoices/{invoiceId}/waiver")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
     public ResponseEntity<Void> waiveInvoice(@PathVariable UUID invoiceId, @Valid @RequestBody WaiverRequestDto request,
                                               @AuthenticationPrincipal Jwt jwt) {
         billingApi.waiveInvoice(invoiceId, request.reason(), jwt.getSubject());

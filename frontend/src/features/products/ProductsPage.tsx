@@ -1,6 +1,8 @@
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from 'react-oidc-context';
+import { canAuthorProducts, readIdentity } from '@/auth/claims';
 import { PRODUCT_CATEGORIES, type ProductCategory, type ProductSummary } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -22,6 +24,7 @@ import { FilterChip } from '@/components/FilterChip';
  * plainly rather than letting a staff user discover it as "my product vanished".
  */
 export function ProductsPage() {
+  const canAuthor = canAuthorProducts(readIdentity(useAuth().user?.access_token));
   const [params, setParams] = useSearchParams();
   const [previewing, setPreviewing] = useState<string | null>(null);
 
@@ -127,13 +130,18 @@ export function ProductsPage() {
       <PageHeader
         title="Products"
         description="Active products in your tenant. A new product needs a published version before it shows up here."
+        /* Authoring is ADMIN-only server-side; offering the button to anyone else would
+           lead them through a whole form to a 403 at the end. The catalogue itself stays
+           readable by every staff member, which is why only the ACTION is gated here. */
         actions={
+          canAuthor ? (
           <Button asChild size="sm" variant="primary">
             <Link to="new">
               <Plus />
               New product
             </Link>
           </Button>
+          ) : undefined
         }
         count={<CountLine {...count} />}
       />

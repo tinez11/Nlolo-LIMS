@@ -130,7 +130,7 @@ class BillingContractTest {
         UUID applicantId = UUID.fromString(JsonPath.read(applicantResponse, "$.partyId"));
 
         String productResponse = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -140,7 +140,7 @@ class BillingContractTest {
         String productId = JsonPath.read(productResponse, "$.productId");
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -551,7 +551,7 @@ class BillingContractTest {
         assertThat(invoiceIds).isNotEmpty();
         for (String invoiceId : invoiceIds) {
             mockMvc.perform(post("/invoices/" + invoiceId + "/waiver")
-                    .with(staffOf(fixture.tenantId()))
+                    .with(financeOf(fixture.tenantId()))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("""
                         {"reason":"Contract test bulk waiver"}
@@ -577,7 +577,7 @@ class BillingContractTest {
         String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
 
         mockMvc.perform(post("/invoices/" + invoiceId + "/waiver")
-                .with(staffOf(fixture.tenantId()))
+                .with(financeOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"reason":"Contract test waiver reason"}
@@ -613,7 +613,7 @@ class BillingContractTest {
     @Test
     void waiveInvoiceForNonexistentInvoiceReturnsNotFoundNotServerError() throws Exception {
         mockMvc.perform(post("/invoices/" + UUID.randomUUID() + "/waiver")
-                .with(staffOf(UUID.randomUUID()))
+                .with(financeOf(UUID.randomUUID()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"reason":"Contract test waiver reason"}
@@ -636,7 +636,7 @@ class BillingContractTest {
         // response is even considered. Same reason PolicyLoanContractTest punts 400-body-shape
         // coverage to its own dedicated *ValidationContractTest classes rather than this matcher.
         mockMvc.perform(post("/invoices/" + invoiceId + "/waiver")
-                .with(staffOf(fixture.tenantId()))
+                .with(financeOf(fixture.tenantId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"reason":"short"}
@@ -924,5 +924,45 @@ class BillingContractTest {
         } finally {
             TenantContext.clear();
         }
+    }
+    /**
+     * Waiving is finance work, and until now it was not gated as such.
+     *
+     * <p>The endpoint was {@code hasRole('REALM_STAFF')}, so an underwriter or a claims assessor
+     * could write off a premium — a final, silent ledger movement that publishes
+     * {@code billing.InvoiceWaived} and resolves the invoice's arrears case. The existing 403
+     * test above only proves an AGENT is refused, which was true of every staff endpoint and
+     * therefore proved nothing about who inside the staff realm may do this.
+     *
+     * <p>Paired with the same call succeeding for finance, so this is a gate and not a breakage.
+     */
+    @Test
+    void waiveInvoiceIsRefusedForAStaffMemberWhoIsNotFinance() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-WAIVER-GATE");
+        String listResponse = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String invoiceId = JsonPath.read(listResponse, "$[0].invoiceId");
+
+        // A real staff identity with a real job, and not the right one.
+        mockMvc.perform(post("/invoices/" + invoiceId + "/waiver")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", fixture.tenantId().toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"An underwriter should not be able to write this off"}
+                    """))
+            .andExpect(status().isForbidden());
+
+        // The invoice is still waivable by somebody who may: the refusal above is about the
+        // caller, not about the invoice having been left in a state nobody can act on.
+        mockMvc.perform(post("/invoices/" + invoiceId + "/waiver")
+                .with(financeOf(fixture.tenantId()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"reason":"Finance may write it off"}
+                    """))
+            .andExpect(status().isOk());
     }
 }

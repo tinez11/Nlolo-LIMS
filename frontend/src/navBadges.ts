@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { DUNNING_LEVELS, LAPSE_RECOMMENDATION_LEVEL, searchArrears, searchFieldReceipts } from '@/api/billing';
 import { searchClaims } from '@/api/claims';
 import { PARTY_AREAS, searchParties } from '@/api/party';
 import { listCases } from '@/api/underwriting';
 import type { Realm } from '@/auth/realms';
-import { NAV_GROUPS, SCREENS, type BadgeKey } from '@/screens';
+import { navFor, type BadgeKey } from '@/screens';
+import type { readIdentity } from '@/auth/claims';
 
 /**
  * Counts of work waiting, for the sidebar.
@@ -68,27 +70,66 @@ const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number
     load: async () => (await searchClaims({ status: 'REGISTERED', pageSize: 1 })).page.totalElements ?? 0,
     title: (n) => `${plural(n, 'claim', 'claims')} registered and not yet assessed`,
   },
+  /* The manager-side counterpart. Assessment is finished on these and a settlement decision
+     -- approve or repudiate -- is the only thing standing between the claimant and their
+     money, so it is the queue with the most waiting on it and it had no counter at all. */
+  'claims-settlement-pending': {
+    load: async () =>
+      (await searchClaims({ status: 'SETTLEMENT_REQUESTED', pageSize: 1 })).page.totalElements ?? 0,
+    title: (n) => `${plural(n, 'claim', 'claims')} awaiting a settlement decision`,
+  },
+  /* Level 5 is not 'the worst level' -- it is the level that publishes PolicyLapseRecommended,
+     which policy consumes to lapse the contract. A count here is policies about to be lost. */
+  'arrears-at-lapse': {
+    load: async () =>
+      (
+        await searchArrears({
+          minDunningLevel: LAPSE_RECOMMENDATION_LEVEL,
+          resolved: false,
+          pageSize: 1,
+        })
+      ).page.totalElements ?? 0,
+    title: (n) =>
+      `${plural(n, 'case', 'cases')} at dunning level ${DUNNING_LEVELS[DUNNING_LEVELS.length - 1]} -- lapse recommended`,
+  },
+  /* The state a live Prometheus alert already fires on. The alert names a count and no
+     receipt; this at least puts the same count where somebody can click it. */
+  'receipts-overdue': {
+    load: async () =>
+      (await searchFieldReceipts({ status: 'RECONCILIATION_OVERDUE', pageSize: 1 })).page
+        .totalElements ?? 0,
+    title: (n) => `${plural(n, 'receipt', 'receipts')} past the reconciliation SLA`,
+  },
 };
 
-/** The badge keys a realm's visible nav actually declares — nothing else is fetched. */
-function declaredFor(realm: Realm): BadgeKey[] {
-  const groups = new Set(NAV_GROUPS[realm].map((g) => g.id));
+/**
+ * The badge keys actually ON SCREEN for this identity -- nothing else is fetched.
+ *
+ * Derived from `navFor`, the same function that builds the sidebar, rather than from a
+ * second walk over SCREENS. That is what keeps a finance-only count from being requested by
+ * a staff member who cannot see the Finance group: the request would 403, the catch below
+ * would swallow it, and the only trace would be a failed request on every page load.
+ */
+function declaredFor(realm: Realm, identity: ReturnType<typeof readIdentity>): BadgeKey[] {
   return [
     ...new Set(
-      SCREENS[realm]
-        .map((screen) => screen.reach)
-        .filter((reach) => reach !== 'drill-in' && groups.has(reach.group) && reach.badge)
-        .map((reach) => (reach as { badge: BadgeKey }).badge),
+      navFor(realm, identity)
+        .flatMap((group) => group.items)
+        .map((item) => item.badge)
+        .filter((badge): badge is BadgeKey => badge !== undefined),
     ),
   ];
 }
 
-export function useNavBadges(realm: Realm): Partial<Record<BadgeKey, NavBadge>> {
+export function useNavBadges(
+  realm: Realm,
+  identity: ReturnType<typeof readIdentity>,
+): Partial<Record<BadgeKey, NavBadge>> {
   const [badges, setBadges] = useState<Partial<Record<BadgeKey, NavBadge>>>({});
 
   useEffect(() => {
     let live = true;
-    const keys = declaredFor(realm);
+    const keys = declaredFor(realm, identity);
     if (keys.length === 0) return;
 
     void Promise.all(
@@ -114,7 +155,7 @@ export function useNavBadges(realm: Realm): Partial<Record<BadgeKey, NavBadge>> 
     // Loaded once per realm mount. These are ambient counts, not live state --
     // re-fetching on every navigation would add three requests to every click
     // for a number nobody is watching change.
-  }, [realm]);
+  }, [realm, identity]);
 
   return badges;
 }

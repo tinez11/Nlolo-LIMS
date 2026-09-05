@@ -156,7 +156,7 @@ class PolicyContractTest {
      */
     private ProductFixture publishProduct(UUID tenantId, String code, String category) throws Exception {
         String createResponse = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -167,7 +167,7 @@ class PolicyContractTest {
         String productId = JsonPath.read(createResponse, "$.productId");
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
