@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountStatus;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ChartOfAccountView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
 import jakarta.validation.Valid;
@@ -55,16 +56,43 @@ public class ChartOfAccountController {
     @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
     public ResponseEntity<ChartOfAccountResponseDto> createAccount(
             @Valid @RequestBody CreateAccountRequestDto request, @AuthenticationPrincipal Jwt jwt) {
-        ChartOfAccountView view = finaccountingApi.createAccount(request.accountCode(), request.name(), jwt.getSubject());
+        ChartOfAccountView view = finaccountingApi.createAccount(request.accountCode(),
+            request.parentCode(), request.name(), request.description(), request.currency(),
+            request.postingAllowed(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(ChartOfAccountResponseDto.from(view));
     }
 
     @PutMapping("/chart-of-accounts/{accountCode}")
     @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
-    public ResponseEntity<ChartOfAccountResponseDto> renameAccount(@PathVariable String accountCode,
-            @Valid @RequestBody RenameAccountRequestDto request, @AuthenticationPrincipal Jwt jwt) {
-        ChartOfAccountView view = finaccountingApi.renameAccount(accountCode, request.name(), jwt.getSubject());
+    public ResponseEntity<ChartOfAccountResponseDto> updateAccount(@PathVariable String accountCode,
+            @Valid @RequestBody UpdateAccountRequestDto request, @AuthenticationPrincipal Jwt jwt) {
+        ChartOfAccountView view = finaccountingApi.updateAccount(accountCode, request.name(),
+            request.description(), jwt.getSubject());
         return ResponseEntity.ok(ChartOfAccountResponseDto.from(view));
+    }
+
+    /**
+     * Retiring an account, and the reason {@code DELETE} below stays narrow.
+     *
+     * <p>An account that has ever been posted against can never be deleted -- its history must
+     * stay mappable to the account it was booked to. Deactivating is what takes such an account
+     * out of service: the ledger refuses every new leg naming it, and nothing already written
+     * moves.
+     */
+    @PostMapping("/chart-of-accounts/{accountCode}/deactivate")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<ChartOfAccountResponseDto> deactivateAccount(@PathVariable String accountCode,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(ChartOfAccountResponseDto.from(
+            finaccountingApi.setAccountStatus(accountCode, AccountStatus.INACTIVE, jwt.getSubject())));
+    }
+
+    @PostMapping("/chart-of-accounts/{accountCode}/activate")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<ChartOfAccountResponseDto> activateAccount(@PathVariable String accountCode,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(ChartOfAccountResponseDto.from(
+            finaccountingApi.setAccountStatus(accountCode, AccountStatus.ACTIVE, jwt.getSubject())));
     }
 
     @DeleteMapping("/chart-of-accounts/{accountCode}")

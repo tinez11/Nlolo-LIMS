@@ -480,4 +480,145 @@ class FinaccountingContractTest {
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.errorCode").value("ACCOUNT_NOT_FOUND"));
     }
+
+    // ============================================================================================
+    // The hierarchy (finaccounting/V5)
+    // ============================================================================================
+
+    private void seedChart(UUID tenantId) {
+        TenantContext.set(tenantId);
+        chartOfAccountSeeder.seedIfAbsent(tenantId, "system:test");
+        TenantContext.clear();
+    }
+
+    @Test
+    void createsAChildAccountUnderAnExistingParent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"1260","parentCode":"1200","name":"Sundry Receivables"}"""))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.parentCode").value("1200"))
+            // 1200 Receivables is level 2, so its child is level 3.
+            .andExpect(jsonPath("$.level").value(3))
+            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.currency").value("TZS"))
+            .andExpect(jsonPath("$.postingAllowed").value(true))
+            // Derived from the leading digit, never sent by the client.
+            .andExpect(jsonPath("$.accountType").value("ASSET"))
+            .andExpect(jsonPath("$.normalBalance").value("DR"));
+    }
+
+    /** The prefix rule: a child's code must begin with its parent's code minus trailing zeros.
+     *  422, not 400 -- the body is well formed, it is the domain rule that rejects it. */
+    @Test
+    void rejectsAChildWhoseCodeFallsOutsideItsParentsBlock() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"2160","parentCode":"1200","name":"Wrong block"}"""))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("FINACCOUNTING_VALIDATION_FAILED"));
+    }
+
+    @Test
+    void rejectsAChildOfAnAccountThatAlreadyCarriesPostings() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        // 1210 Premium Receivables is a real posting target, so it can never become a header.
+        seedEntry(tenantId, "billing.PremiumInvoiceGenerated", "gl-ct-parent", "2026-08",
+            "POL-GL-PARENT", "1000.00");
+
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"1211","parentCode":"1210","name":"Under a posted-to account"}"""))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.errorCode").value("ACCOUNT_IN_USE"));
+    }
+
+    /** Creating a child turns its parent into a header in the same transaction -- otherwise the
+     *  invariant "an account with children never posts" would be briefly observable as false. */
+    @Test
+    void creatingAChildMakesItsParentAHeader() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        // 1300 Investments seeds as a postable leaf.
+        mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountCode":"1310","parentCode":"1300","name":"Government Securities"}"""))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/chart-of-accounts").with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.accountCode == '1300')].postingAllowed").value(false));
+    }
+
+    @Test
+    void deactivatesAndReactivatesAnAccount() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        mockMvc.perform(post("/chart-of-accounts/{accountCode}/deactivate", "1300")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("INACTIVE"));
+
+        mockMvc.perform(post("/chart-of-accounts/{accountCode}/activate", "1300")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void deactivateReturns404ForAnUnknownAccountAndIsGatedOnFinanceOrAdmin() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        mockMvc.perform(post("/chart-of-accounts/{accountCode}/deactivate", "3700")
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("ACCOUNT_NOT_FOUND"));
+
+        mockMvc.perform(post("/chart-of-accounts/{accountCode}/deactivate", "1300")
+                .with(underwriterStaffOf(tenantId)))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void refusesToDeleteAnAccountWithChildren() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        mockMvc.perform(delete("/chart-of-accounts/{accountCode}", "1200").with(financeStaffOf(tenantId)))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("ACCOUNT_HAS_CHILDREN"));
+    }
+
+    @Test
+    void updatesNameAndDescriptionTogether() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        mockMvc.perform(put("/chart-of-accounts/{accountCode}", "1300").with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"Investments and securities","description":"Long-term holdings"}"""))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.name").value("Investments and securities"))
+            .andExpect(jsonPath("$.description").value("Long-term holdings"));
+    }
 }

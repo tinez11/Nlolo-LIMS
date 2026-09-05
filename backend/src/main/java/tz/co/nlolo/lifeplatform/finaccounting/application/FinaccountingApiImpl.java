@@ -2,7 +2,9 @@ package tz.co.nlolo.lifeplatform.finaccounting.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountHasChildrenException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountInUseException;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountStatus;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ChartOfAccountView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.DuplicateAccountCodeException;
@@ -232,7 +234,9 @@ public class FinaccountingApiImpl implements FinaccountingApi {
      */
     @Override
     @Transactional
-    public ChartOfAccountView createAccount(String accountCode, String name, String createdBy) {
+    public ChartOfAccountView createAccount(String accountCode, String parentCode, String name,
+                                             String description, String currency,
+                                             boolean postingAllowed, String createdBy) {
         UUID tenantId = TenantContext.get();
 
         if (accountCode == null || !ACCOUNT_CODE_PATTERN.matcher(accountCode).matches()) {
@@ -240,13 +244,7 @@ public class FinaccountingApiImpl implements FinaccountingApi {
                 "Account code must be 4 digits with a leading 1-5 block (1=ASSET, 2=LIABILITY, "
                     + "3=EQUITY, 4=INCOME, 5=EXPENSE), got: " + accountCode);
         }
-        if (name == null || name.isBlank()) {
-            throw new FinaccountingValidationException("An account name is required");
-        }
-        if (name.length() > MAX_ACCOUNT_NAME_LENGTH) {
-            throw new FinaccountingValidationException(
-                "Account name is " + name.length() + " characters; the maximum is " + MAX_ACCOUNT_NAME_LENGTH);
-        }
+        validateName(name);
 
         // Fast-path check, not the real backstop -- (tenant_id, account_code) is the primary key,
         // so a genuine race is caught by the saveAndFlush/catch below instead, same shape as
@@ -256,8 +254,31 @@ public class FinaccountingApiImpl implements FinaccountingApi {
                 "Account code '" + accountCode + "' already exists in this tenant");
         }
 
-        ChartOfAccount account = ChartOfAccount.root(tenantId, accountCode, name.trim(),
-            true, ChartOfAccountBlueprint.SEED_CURRENCY, createdBy);
+        String resolvedCurrency = currency == null ? ChartOfAccountBlueprint.SEED_CURRENCY : currency;
+        ChartOfAccount account;
+        if (parentCode == null) {
+            account = ChartOfAccount.root(tenantId, accountCode, name.trim(),
+                postingAllowed, resolvedCurrency, createdBy);
+            if (description != null) {
+                account.describe(description, createdBy);
+            }
+        } else {
+            ChartOfAccount parent = findAccountOrThrow(parentCode, tenantId);
+            if (parent.isPostingAllowed()
+                    && glPostingRepository.existsByTenantIdAndAccountCode(tenantId, parentCode)) {
+                // Making it a header would strand the postings it already carries under an account
+                // that, by this chart's own rule, cannot hold any.
+                throw new AccountInUseException("Account '" + parentCode + "' already carries "
+                    + "postings, so it cannot become a parent; a parent never receives postings");
+            }
+            // Done in the SAME transaction as the child's insert, so the invariant "an account with
+            // children is never postable" can never be observed broken.
+            parent.becomeHeader(createdBy);
+            chartOfAccountRepository.save(parent);
+            account = ChartOfAccount.childOf(parent, accountCode, name.trim(), postingAllowed,
+                resolvedCurrency, null, description, createdBy);
+        }
+
         try {
             chartOfAccountRepository.saveAndFlush(account);
         } catch (DataIntegrityViolationException e) {
@@ -269,17 +290,28 @@ public class FinaccountingApiImpl implements FinaccountingApi {
 
     @Override
     @Transactional
-    public ChartOfAccountView renameAccount(String accountCode, String newName, String updatedBy) {
+    public ChartOfAccountView updateAccount(String accountCode, String newName, String description,
+                                             String updatedBy) {
         UUID tenantId = TenantContext.get();
-        if (newName == null || newName.isBlank()) {
-            throw new FinaccountingValidationException("An account name is required");
-        }
-        if (newName.length() > MAX_ACCOUNT_NAME_LENGTH) {
-            throw new FinaccountingValidationException(
-                "Account name is " + newName.length() + " characters; the maximum is " + MAX_ACCOUNT_NAME_LENGTH);
-        }
+        validateName(newName);
         ChartOfAccount account = findAccountOrThrow(accountCode, tenantId);
         account.rename(newName.trim(), updatedBy);
+        account.describe(description, updatedBy);
+        chartOfAccountRepository.save(account);
+        return toView(account);
+    }
+
+    @Override
+    @Transactional
+    public ChartOfAccountView setAccountStatus(String accountCode, AccountStatus status,
+                                                String updatedBy) {
+        UUID tenantId = TenantContext.get();
+        ChartOfAccount account = findAccountOrThrow(accountCode, tenantId);
+        if (status == AccountStatus.ACTIVE) {
+            account.activate(updatedBy);
+        } else {
+            account.deactivate(updatedBy);
+        }
         chartOfAccountRepository.save(account);
         return toView(account);
     }
@@ -289,12 +321,28 @@ public class FinaccountingApiImpl implements FinaccountingApi {
     public void deleteAccount(String accountCode) {
         UUID tenantId = TenantContext.get();
         findAccountOrThrow(accountCode, tenantId);
+        // Checked before the posting check, because it is the cheaper question and because a
+        // parent is refused whether or not anything has posted to it.
+        if (chartOfAccountRepository.existsByTenantIdAndParentCode(tenantId, accountCode)) {
+            throw new AccountHasChildrenException("Account '" + accountCode + "' has child "
+                + "accounts and cannot be deleted; delete or reassign them first");
+        }
         if (glPostingRepository.existsByTenantIdAndAccountCode(tenantId, accountCode)) {
             throw new AccountInUseException("Account '" + accountCode
-                + "' has real postings against it and cannot be deleted; retiring an in-use "
-                + "account is a separate, not-yet-built concern");
+                + "' has real postings against it and cannot be deleted; deactivate it instead, "
+                + "which stops new postings while keeping its history readable");
         }
         chartOfAccountRepository.deleteByTenantIdAndAccountCode(tenantId, accountCode);
+    }
+
+    private static void validateName(String name) {
+        if (name == null || name.isBlank()) {
+            throw new FinaccountingValidationException("An account name is required");
+        }
+        if (name.length() > MAX_ACCOUNT_NAME_LENGTH) {
+            throw new FinaccountingValidationException(
+                "Account name is " + name.length() + " characters; the maximum is " + MAX_ACCOUNT_NAME_LENGTH);
+        }
     }
 
     private ChartOfAccount findAccountOrThrow(String accountCode, UUID tenantId) {
@@ -323,6 +371,9 @@ public class FinaccountingApiImpl implements FinaccountingApi {
 
     private ChartOfAccountView toView(ChartOfAccount account) {
         return new ChartOfAccountView(account.getAccountCode(), account.getName(),
-            account.getAccountType(), account.getNormalBalance());
+            account.getAccountType(), account.getNormalBalance(), account.getParentCode(),
+            account.getLevel(), account.isPostingAllowed(), account.getStatus(),
+            account.getCurrency(), account.getControlOf(), account.getDescription(),
+            account.getCreatedAt(), account.getCreatedBy());
     }
 }
