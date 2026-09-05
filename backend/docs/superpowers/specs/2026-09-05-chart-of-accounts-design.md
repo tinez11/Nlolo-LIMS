@@ -82,7 +82,7 @@ Settled before design. Do not re-litigate during planning or review.
 
 ---
 
-## 3. The seeded chart (31 accounts)
+## 3. The seeded chart (36 accounts)
 
 `post` = `posting_allowed = true`. `header` = false. `←` marks the account a current code migrates
 to; `✚` marks an account added beyond the requested structure.
@@ -186,14 +186,14 @@ violating `fk_gl_posting_account_code` — the constraint must come down for the
 3. **Remap `gl_posting.account_code`** old → new from a `VALUES` mapping table, correlated per
    tenant. This is the step that must not be got wrong; see §9 for its test.
 4. **Delete the nine legacy `chart_of_account` rows.** Nothing references them now.
-5. **Insert the 31 new accounts** for every tenant that had a chart, parents before children so
+5. **Insert the 36 new accounts** for every tenant that had a chart, parents before children so
    the self-FK holds, with `parent_code`, `level`, `posting_allowed`, `currency` and `control_of`
    all set at insert time.
 6. **Recreate `fk_gl_posting_account_code`.** Its successful creation is itself the proof that
    step 3 remapped every row to a code that now exists — a migration-time assertion, not just a
    test-time one.
 
-`ChartOfAccountSeeder` is rewritten in the same change to seed the full 31-account tree, and
+`ChartOfAccountSeeder` is rewritten in the same change to seed the full 36-account tree, and
 `PostingRule`'s nine constants move to the new codes:
 
 | Constant | Old | New |
@@ -256,7 +256,7 @@ Enforced in the domain layer, with the exception noted:
 
 All remain `hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))`.
 
-**`GET` stays flat and unpaged deliberately.** A chart is bounded reference data — 31 rows seeded,
+**`GET` stays flat and unpaged deliberately.** A chart is bounded reference data — 36 rows seeded,
 a few hundred at most for a real Finance-authored chart — and the existing `FinaccountingApi`
 javadoc already records that reasoning. The client assembling the tree from a flat array is what
 makes the Tree/Table toggle instant and keeps search and sort entirely client-side.
