@@ -95,6 +95,7 @@ public class FinaccountingApiImpl implements FinaccountingApi {
             throw new IllegalStateException("Refusing to post an unbalanced journal entry: sourceEvent="
                 + entry.getSourceEvent() + " sourceRef=" + entry.getSourceRef());
         }
+        rejectLegsTheChartRefuses(entry);
 
         journalEntryRepository.save(entry);
 
@@ -127,6 +128,44 @@ public class FinaccountingApiImpl implements FinaccountingApi {
             DomainEventEnvelope.of("finaccounting.GlPostingRecorded", entry.getTenantId(), payload));
 
         return Optional.of(entry);
+    }
+
+    /**
+     * The chart is the authority on where a posting may land, and this is the single place that
+     * asks it.
+     *
+     * <p>{@code fk_gl_posting_account_code} (finaccounting/V3) already guarantees the account
+     * EXISTS. What a foreign key cannot know is whether that account is a non-posting HEADER or a
+     * RETIRED one -- so without this check, {@code posting_allowed} and {@code status} would be
+     * decoration. Concretely: a header would silently accumulate a balance that its own children
+     * also carry, double-counting the whole block, and the trial balance would still balance --
+     * which is exactly why it has to fail loudly here instead.
+     *
+     * <p>Currency is checked in the same pass. {@link JournalEntry#addLeg} already refuses to mix
+     * currencies WITHIN an entry; this is the other half, that the entry's currency is the one its
+     * accounts are denominated in. No conversion is attempted -- FX translation is out of scope.
+     *
+     * @throws IllegalStateException naming the offending account, for the same reason the
+     *         unbalanced-entry check above throws: a listener posting to a refused account is a
+     *         bug in a posting rule, not a recoverable runtime condition
+     */
+    private void rejectLegsTheChartRefuses(JournalEntry entry) {
+        for (JournalEntry.Leg leg : entry.getLegs()) {
+            ChartOfAccount account = chartOfAccountRepository
+                .findByTenantIdAndAccountCode(entry.getTenantId(), leg.accountCode())
+                .orElseThrow(() -> new IllegalStateException("Refusing to post to unknown account "
+                    + leg.accountCode() + ": sourceEvent=" + entry.getSourceEvent()
+                    + " sourceRef=" + entry.getSourceRef()));
+            if (!account.acceptsPostings()) {
+                throw new IllegalStateException("Refusing to post to " + leg.accountCode()
+                    + ": it does not accept postings (postingAllowed=" + account.isPostingAllowed()
+                    + ", status=" + account.getStatus() + ")");
+            }
+            if (!account.getCurrency().equals(leg.currency())) {
+                throw new IllegalStateException("Refusing to post " + leg.currency() + " to "
+                    + leg.accountCode() + ", which is denominated in " + account.getCurrency());
+            }
+        }
     }
 
     /**
