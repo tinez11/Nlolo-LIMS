@@ -13,11 +13,13 @@ import java.util.Optional;
  *
  * <p><b>This is an ACCRUAL ledger, which is why premium takes two entries, not one.</b> The
  * obligation arises when an invoice is GENERATED, so {@code PremiumInvoiceGenerated} raises
- * {@code 1200 Premium Receivable} against {@code 2200 Unearned Premium}; {@code PremiumCollected}
+ * {@code 1210 Premium Receivables} against {@code 2140 Unearned Premium}; {@code PremiumCollected}
  * then settles the receivable against cash. Neither touches an income account, deliberately:
  * premium is EARNED as coverage is provided, and that earning pattern is LRC release -- C1-blocked
- * (Actuarial). M9 therefore accumulates unearned premium and recognises zero earned premium, and no
- * {@code 4xxx} account is even seeded.
+ * (Actuarial). This module therefore accumulates unearned premium and recognises zero earned
+ * premium. The {@code 4xxx} accounts now EXIST in the chart (finaccounting/V5 seeds the full
+ * five-block structure -- see {@link ChartOfAccountBlueprint}) but no rule below targets one, so
+ * they stay at zero until C1 lands.
  *
  * <p><b>{@code policy.PolicyIssued} maps to nothing, deliberately.</b> Issuing a policy moves no
  * cash and creates no immediate obligation -- the obligation attaches per invoice, which
@@ -34,13 +36,13 @@ import java.util.Optional;
  *       {@code ApplicationEventPublisher}, so no {@code LoanInterestAccrued} event exists for
  *       this class to map. Publishing one would need the per-tenant Java half to detect
  *       unposted accruals and emit them -- real work, not a line in this map.</li>
- *   <li>The natural entry is DR {@code 1400 Policy Loan Receivable} / CR a {@code 4xxx} interest
- *       income account, and this class states above that NO {@code 4xxx} account is seeded on
- *       purpose. Loan interest is arguably outside the LRC/CSM problem that blocks {@code 4xxx}
- *       for premium -- it is not insurance revenue -- but that is a FINANCE call, not one to make
- *       silently while wiring a sweep.</li>
+ *   <li>The natural entry is DR {@code 1250 Policy Loan Receivables} / CR a {@code 4xxx} interest
+ *       income account. Such an account now exists -- {@code 4300 Other Income} -- but nothing
+ *       posts to any {@code 4xxx} account, per this class's note above. Loan interest is arguably
+ *       outside the LRC/CSM problem that blocks {@code 4xxx} for premium -- it is not insurance
+ *       revenue -- but that is a FINANCE call, not one to make silently while wiring a sweep.</li>
  * </ul>
- * Consequence, plainly: {@code 1400} reflects principal disbursed and repaid, never interest
+ * Consequence, plainly: {@code 1250} reflects principal disbursed and repaid, never interest
  * earned, so interest income is understated by exactly the accrued amount. The trial balance
  * still balances, which is precisely why this needs saying out loud.
  */
@@ -51,15 +53,15 @@ public final class PostingRule {
     /** One balanced pair: which account is debited, which is credited. */
     public record AccountPair(String debitAccount, String creditAccount) {}
 
-    public static final String CASH = "1000";
-    public static final String PREMIUM_RECEIVABLE = "1200";
-    public static final String REINSURANCE_RECOVERABLE = "1300";
-    public static final String POLICY_LOAN_RECEIVABLE = "1400";
-    public static final String UNEARNED_PREMIUM = "2200";
-    public static final String REINSURANCE_PAYABLE = "2300";
-    public static final String CLAIMS_EXPENSE = "5000";
-    public static final String COMMISSION_EXPENSE = "5100";
-    public static final String REINSURANCE_CEDED_PREMIUM = "5200";
+    public static final String CASH = "1120";
+    public static final String PREMIUM_RECEIVABLE = "1210";
+    public static final String REINSURANCE_RECOVERABLE = "1240";
+    public static final String POLICY_LOAN_RECEIVABLE = "1250";
+    public static final String UNEARNED_PREMIUM = "2140";
+    public static final String REINSURANCE_PAYABLE = "2220";
+    public static final String CLAIMS_EXPENSE = "5100";
+    public static final String COMMISSION_EXPENSE = "5200";
+    public static final String REINSURANCE_CEDED_PREMIUM = "5500";
 
     private static final Map<String, AccountPair> RULES = Map.of(
         "billing.PremiumInvoiceGenerated", new AccountPair(PREMIUM_RECEIVABLE, UNEARNED_PREMIUM),
@@ -75,20 +77,6 @@ public final class PostingRule {
      * platform, and is a normal outcome rather than an error. */
     public static Optional<AccountPair> forEvent(String eventType) {
         return Optional.ofNullable(RULES.get(eventType));
-    }
-
-    /** The nine accounts M9 posts to, for seeding. Deliberately no 4xxx INCOME account. */
-    public static Map<String, String> seedAccounts() {
-        return Map.of(
-            CASH, "Cash / Mobile Money",
-            PREMIUM_RECEIVABLE, "Premium Receivable",
-            REINSURANCE_RECOVERABLE, "Reinsurance Recoverable",
-            POLICY_LOAN_RECEIVABLE, "Policy Loan Receivable",
-            UNEARNED_PREMIUM, "Unearned Premium",
-            REINSURANCE_PAYABLE, "Reinsurance Payable",
-            CLAIMS_EXPENSE, "Claims Expense",
-            COMMISSION_EXPENSE, "Commission Expense",
-            REINSURANCE_CEDED_PREMIUM, "Reinsurance Ceded Premium");
     }
 
     /** ASSET/EXPENSE accounts are normally debit-balanced; LIABILITY/EQUITY/INCOME credit. */

@@ -453,7 +453,7 @@ class FinaccountingContractTest {
     @Test
     void deleteAccountReturns409WhenARealPostingReferencesIt() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        // seedEntry posts a real DR CASH ("1000") / CR PREMIUM_RECEIVABLE ("1200") leg pair.
+        // seedEntry posts a real DR CASH ("1120") / CR PREMIUM_RECEIVABLE ("1210") leg pair.
         seedEntry(tenantId, "billing.PremiumInvoiceGenerated", "gl-ct-inuse", "2026-08", "POL-GL-INUSE", "1000.00");
 
         mockMvc.perform(delete("/chart-of-accounts/{accountCode}", PostingRule.CASH).with(financeStaffOf(tenantId)))

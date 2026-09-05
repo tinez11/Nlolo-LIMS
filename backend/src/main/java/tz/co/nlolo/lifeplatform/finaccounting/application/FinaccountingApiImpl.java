@@ -13,9 +13,9 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
@@ -217,8 +217,8 @@ public class FinaccountingApiImpl implements FinaccountingApi {
                 "Account code '" + accountCode + "' already exists in this tenant");
         }
 
-        ChartOfAccount account = new ChartOfAccount(tenantId, accountCode, name.trim(),
-            PostingRule.accountTypeFor(accountCode), PostingRule.normalBalanceFor(accountCode), createdBy);
+        ChartOfAccount account = ChartOfAccount.root(tenantId, accountCode, name.trim(),
+            true, ChartOfAccountBlueprint.SEED_CURRENCY, createdBy);
         try {
             chartOfAccountRepository.saveAndFlush(account);
         } catch (DataIntegrityViolationException e) {

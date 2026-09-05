@@ -1,7 +1,7 @@
 package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
-import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -9,13 +9,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Seeds the nine accounts M9 posts to (see {@link PostingRule#seedAccounts()}) for one tenant,
- * lazily, on first use. EVERY ACCOUNT IS A FINANCE SIGN-OFF PLACEHOLDER -- see V2 section 5 and
- * {@link PostingRule}'s class javadoc; no document on this platform specifies real account codes.
+ * Seeds the 36-account chart (see {@link ChartOfAccountBlueprint#accounts()}) for one tenant,
+ * lazily, on first use. EVERY ACCOUNT IS A FINANCE SIGN-OFF PLACEHOLDER -- see V2 section 5,
+ * finaccounting/V5 and {@link ChartOfAccountBlueprint}'s class javadoc; no document on this
+ * platform specifies real account codes.
  *
  * <p>A real deployment does not call this at all: it seeds a real, Finance-approved chart of
  * accounts per tenant during onboarding. This seeder exists so M9's own tests and any lazily
@@ -82,18 +84,21 @@ public class ChartOfAccountSeeder {
                 if (chartOfAccountRepository.existsByTenantId(tenantId)) {
                     return;
                 }
-                for (Map.Entry<String, String> account : PostingRule.seedAccounts().entrySet()) {
-                    String accountCode = account.getKey();
-                    String name = account.getValue();
+                // Parents come first in blueprint order, so the byCode lookup below always hits
+                // and fk_chart_of_account_parent holds at every step.
+                Map<String, ChartOfAccount> byCode = new HashMap<>();
+                for (ChartOfAccountBlueprint.Seed seed : ChartOfAccountBlueprint.accounts()) {
+                    ChartOfAccount account = seed.parentCode() == null
+                        ? ChartOfAccount.root(tenantId, seed.code(), seed.name(),
+                            seed.postingAllowed(), ChartOfAccountBlueprint.SEED_CURRENCY, seededBy)
+                        : ChartOfAccount.childOf(byCode.get(seed.parentCode()), seed.code(), seed.name(),
+                            seed.postingAllowed(), ChartOfAccountBlueprint.SEED_CURRENCY,
+                            seed.controlOf(), null, seededBy);
                     // saveAndFlush, not save: the id is application-assigned via an @IdClass, so a
                     // plain save() defers the write past this block and a violation would surface
                     // only at commit -- outside where the catch below could see it. The same reason
                     // PartyApiImpl.registerCorporate and ProductApiImpl.createProduct flush.
-                    chartOfAccountRepository.saveAndFlush(new ChartOfAccount(
-                        tenantId, accountCode, name,
-                        PostingRule.accountTypeFor(accountCode),
-                        PostingRule.normalBalanceFor(accountCode),
-                        seededBy));
+                    byCode.put(seed.code(), chartOfAccountRepository.saveAndFlush(account));
                 }
             });
         } catch (DataIntegrityViolationException e) {
