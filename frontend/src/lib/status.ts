@@ -47,6 +47,15 @@ export const STATUS_MAPS = {
     WAIVED: 'neutral', // resolved, but not by payment
   },
 
+  // finaccounting/api/AccountStatus.java
+  account: {
+    ACTIVE: 'active',
+    // Retired from NEW postings; every posting already booked to it stays readable.
+    // Neutral rather than danger: taking an account out of service is routine
+    // housekeeping, not a failure, and nothing about the ledger is wrong.
+    INACTIVE: 'neutral',
+  },
+
   // payment/api/PaymentStatus.java + DisbursementStatus.java (the API presents them
   // as one union discriminated by `kind`).
   payment: {

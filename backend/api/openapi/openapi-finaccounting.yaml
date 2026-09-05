@@ -384,8 +384,20 @@ components:
             2110 may not. Omit to create a block root.
         name: { type: string, maxLength: 200 }
         description: { type: string, maxLength: 2000, nullable: true }
-        currency: { type: string, minLength: 3, maxLength: 3, default: 'TZS' }
-        postingAllowed: { type: boolean, default: true }
+        # No `default:` on either of these, deliberately. openapi-typescript treats a
+        # property carrying a default as REQUIRED in the generated request type, which
+        # would force every client to send a value it is entitled to omit. The
+        # defaulting is the server's job and lives in CreateAccountRequestDto's compact
+        # constructor: currency falls back to the tenant functional currency (TZS) and
+        # postingAllowed to true.
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: "Omit to use the tenant functional currency (TZS)."
+        postingAllowed:
+          type: boolean
+          description: "Omit to default to true. Forced to false anyway once the account gains a child."
     UpdateAccountRequest:
       type: object
       required: [name]
