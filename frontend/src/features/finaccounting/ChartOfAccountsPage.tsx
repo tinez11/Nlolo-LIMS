@@ -294,24 +294,30 @@ function RowActions({ account }: { account: ChartOfAccountView }) {
 
   return (
     <>
-      <span className="flex items-center gap-1">
-        <Button size="sm" variant="ghost" onClick={() => setAction('edit')}>
-          Rename
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={settingStatus.status === 'loading'}
-          onClick={() =>
-            void setAccountStatus(account.accountCode, retiring ? 'INACTIVE' : 'ACTIVE')
-          }
-        >
-          {retiring ? 'Retire' : 'Restore'}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => setAction('delete')}>
-          Delete
-        </Button>
-      </span>
+      {/* Hidden while a form is open, same idiom as InvoicesPanel's row actions -- and
+          load-bearing here, because the rename form's submit button is also called
+          "Rename": leaving both on screen gives one row two identically-named controls,
+          which a screen reader cannot tell apart. */}
+      {action === null && (
+        <span className="flex items-center gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setAction('edit')}>
+            Rename
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={settingStatus.status === 'loading'}
+            onClick={() =>
+              void setAccountStatus(account.accountCode, retiring ? 'INACTIVE' : 'ACTIVE')
+            }
+          >
+            {retiring ? 'Retire' : 'Restore'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setAction('delete')}>
+            Delete
+          </Button>
+        </span>
+      )}
 
       {action === 'edit' && (
         <UpdateAccountForm account={account} onDone={() => setAction(null)} />

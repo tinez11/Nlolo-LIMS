@@ -2,19 +2,21 @@ import { expect, type Page, test } from '@playwright/test';
 import { expectNavItemsHidden, expectRouteDenied } from './guards';
 
 /**
- * An account's own code renders once, in a span with this exact class combo
- * (ChartOfAccountsPage's `AccountRow`) -- nowhere else on the page does that
- * combination appear, even though the bare code text does (the delete
- * confirmation's "Delete <code>..." sentence, and a 409's error message both
- * echo it). Scoping through this selector, not a bare `getByText(code)`,
- * is what keeps every row lookup below a single unambiguous match.
+ * A row of the TABLE view, found by its account code.
+ *
+ * Two earlier spellings were wrong in instructive ways. Climbing three `..` levels from
+ * a class combination broke the moment the flat list became two views with different
+ * DOM depths. Filtering rows by `hasText: code` then matched SIX rows for '1200' --
+ * itself plus its five children, each of which shows 1200 in its Parent column.
+ *
+ * The code cell is a `<th scope="row">`, so it is the row's accessible header and no
+ * other cell can be confused for it. That is proper table semantics as well as a
+ * stable hook.
  */
 function accountRow(page: Page, code: string) {
   return page
-    .locator('span.font-mono.text-xs.text-muted-foreground', { hasText: code })
-    .locator('..')
-    .locator('..')
-    .locator('..');
+    .getByRole('row')
+    .filter({ has: page.getByRole('rowheader', { name: code, exact: true }) });
 }
 
 /**
@@ -108,67 +110,78 @@ test.describe('staff finaccounting', () => {
   });
 
   test('chart of accounts lists the real seeded placeholder accounts', async ({ page }) => {
-    await page.goto('/staff/chart-of-accounts');
+    await page.goto('/staff/chart-of-accounts?view=table');
     await expect(page.getByRole('heading', { name: 'Chart of accounts' })).toBeVisible();
-    // 1200 Premium Receivable / 2200 Unearned Premium is the real accrual
-    // pair every premium invoice posts against.
-    await expect(page.getByText('1200')).toBeVisible();
+    // 1210 Premium Receivables / 2140 Unearned Premium is the real accrual pair every
+    // premium invoice posts against (PostingRule.PREMIUM_RECEIVABLE / UNEARNED_PREMIUM).
+    // Both moved in finaccounting/V5: they were 1200 and 2200, which are now the
+    // non-posting Receivables and Payables headers.
+    await expect(accountRow(page, '1210')).toBeVisible();
+    await expect(accountRow(page, '2140')).toBeVisible();
   });
 
-  test('creates an account with a derived type/balance, renames it, then deletes it', async ({
+  test('creates an account under a parent, renames it, retires it, then deletes it', async ({
     page,
   }) => {
-    // 4 digits, leading block 5 = EXPENSE (normal balance DR) -- the pattern
-    // the backend itself enforces, not a value the UI is free to interpret.
-    const code = `5${String(Date.now() % 1000).padStart(3, '0')}`;
+    // 53xx sits inside 5300 Operating Expenses' block, which finaccounting/V5's prefix
+    // rule requires of any child: a child's code must begin with its parent's code
+    // minus trailing zeros. Leading block 5 = EXPENSE, normal balance DR -- both
+    // derived server-side, never sent by the UI.
+    const code = `53${String(Date.now() % 100).padStart(2, '0')}`;
     const name = `E2E Expense ${Date.now()}`;
 
-    await page.goto('/staff/chart-of-accounts');
+    await page.goto('/staff/chart-of-accounts?view=table');
     await page.getByRole('button', { name: 'New account' }).click();
     await page.getByLabel('Account code').fill(code);
-    await page.getByLabel('Name').fill(name);
+    await page.getByLabel('Parent account').fill('5300');
+    await page.getByLabel('Name', { exact: true }).fill(name);
     await page.getByRole('button', { name: 'Create account' }).click();
 
     const row = accountRow(page, code);
     await expect(row.getByText(name)).toBeVisible({ timeout: 15_000 });
     await expect(row.getByText('EXPENSE', { exact: true })).toBeVisible();
-    await expect(row.getByText('DR', { exact: true })).toBeVisible();
 
     const renamedName = `${name} renamed`;
     await row.getByRole('button', { name: 'Rename' }).click();
-    const nameInput = row.getByLabel('Name');
-    await nameInput.fill(renamedName);
+    await row.getByLabel('Name', { exact: true }).fill(renamedName);
     await row.getByRole('button', { name: 'Rename', exact: true }).click();
-    await expect(row.getByText(renamedName)).toBeVisible({ timeout: 15_000 });
+    await expect(accountRow(page, code).getByText(renamedName)).toBeVisible({ timeout: 15_000 });
 
-    await row.getByRole('button', { name: 'Delete' }).click();
-    await row.getByRole('button', { name: 'Delete account' }).click();
+    // The BUTTON says "Retire"; the BADGE says "Inactive", because StatusBadge renders
+    // humanizeStatus() of the raw backend literal rather than a hand-written label.
+    await accountRow(page, code).getByRole('button', { name: 'Retire' }).click();
+    await expect(accountRow(page, code).getByText('Inactive')).toBeVisible({ timeout: 15_000 });
+
+    await accountRow(page, code).getByRole('button', { name: 'Delete' }).click();
+    await accountRow(page, code).getByRole('button', { name: 'Delete account' }).click();
     await expect(accountRow(page, code)).toHaveCount(0, { timeout: 15_000 });
   });
 
   test('rejects a duplicate account code with a real 409', async ({ page }) => {
-    const code = `4${String(Date.now() % 1000).padStart(3, '0')}`;
+    // 43xx sits inside 4300 Other Income's block, per the prefix rule.
+    const code = `43${String(Date.now() % 100).padStart(2, '0')}`;
     const name = `E2E Income ${Date.now()}`;
 
-    await page.goto('/staff/chart-of-accounts');
+    await page.goto('/staff/chart-of-accounts?view=table');
     await page.getByRole('button', { name: 'New account' }).click();
     await page.getByLabel('Account code').fill(code);
-    await page.getByLabel('Name').fill(name);
+    await page.getByLabel('Parent account').fill('4300');
+    await page.getByLabel('Name', { exact: true }).fill(name);
     await page.getByRole('button', { name: 'Create account' }).click();
 
-    const row = accountRow(page, code);
-    await expect(row.getByText(name)).toBeVisible({ timeout: 15_000 });
+    await expect(accountRow(page, code).getByText(name)).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'New account' }).click();
     await page.getByLabel('Account code').fill(code);
-    await page.getByLabel('Name').fill('Duplicate attempt');
+    await page.getByLabel('Parent account').fill('4300');
+    await page.getByLabel('Name', { exact: true }).fill('Duplicate attempt');
     await page.getByRole('button', { name: 'Create account' }).click();
     await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
 
     // Clean up so a re-run of this spec is not blocked by a leftover account.
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await row.getByRole('button', { name: 'Delete' }).click();
-    await row.getByRole('button', { name: 'Delete account' }).click();
+    await accountRow(page, code).getByRole('button', { name: 'Delete' }).click();
+    await accountRow(page, code).getByRole('button', { name: 'Delete account' }).click();
     await expect(accountRow(page, code)).toHaveCount(0, { timeout: 15_000 });
   });
 
@@ -178,7 +191,7 @@ test.describe('staff finaccounting', () => {
     await page.goto('/staff/chart-of-accounts');
     await page.getByRole('button', { name: 'New account' }).click();
     await page.getByLabel('Account code').fill('9000');
-    await page.getByLabel('Name').fill('Should never be created');
+    await page.getByLabel('Name', { exact: true }).fill('Should never be created');
     await page.getByRole('button', { name: 'Create account' }).click();
 
     await expect(page.getByText('Must be 4 digits starting with 1-5')).toBeVisible();
@@ -186,14 +199,86 @@ test.describe('staff finaccounting', () => {
   });
 
   test('blocks deleting an account a real GL posting already references', async ({ page }) => {
-    await page.goto('/staff/chart-of-accounts');
-    const row = accountRow(page, '1200');
-    await row.getByRole('button', { name: 'Delete' }).click();
-    await row.getByRole('button', { name: 'Delete account' }).click();
+    await page.goto('/staff/chart-of-accounts?view=table');
+    // 1210 Premium Receivables is the account every premium invoice posts against, and
+    // is the one account this tenant is guaranteed to have posted to.
+    await accountRow(page, '1210').getByRole('button', { name: 'Delete' }).click();
+    await accountRow(page, '1210').getByRole('button', { name: 'Delete account' }).click();
 
     await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
     // Still there -- the delete was rejected, not silently accepted.
+    await expect(accountRow(page, '1210')).toBeVisible();
+  });
+
+  test('blocks deleting a header account, which has children rather than postings', async ({
+    page,
+  }) => {
+    await page.goto('/staff/chart-of-accounts?view=table');
+    // 1200 Receivables is a header. Nothing posts to it -- it is refused for the other
+    // reason, and the two 409s are deliberately distinct error codes server-side.
+    await accountRow(page, '1200').getByRole('button', { name: 'Delete' }).click();
+    await accountRow(page, '1200').getByRole('button', { name: 'Delete account' }).click();
+
+    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
     await expect(accountRow(page, '1200')).toBeVisible();
+  });
+
+  test('the tree expands and collapses a branch, and the view is shareable through the URL', async ({
+    page,
+  }) => {
+    await page.goto('/staff/chart-of-accounts');
+    // The five block roots open by default; 1200 Receivables is one level down and
+    // starts collapsed, so its children are not on screen yet.
+    await expect(page.getByText('Receivables', { exact: true })).toBeVisible();
+    await expect(page.getByText('Premium Receivables')).not.toBeVisible();
+
+    await page.getByRole('button', { name: 'Expand Receivables' }).click();
+    await expect(page.getByText('Premium Receivables')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Collapse Receivables' }).click();
+    await expect(page.getByText('Premium Receivables')).not.toBeVisible();
+
+    // `exact` matters: without it "Table" also matches the "Pos-table- only" filter chip.
+    await page.getByRole('button', { name: 'Table', exact: true }).click();
+    await expect(page).toHaveURL(/view=table/);
+    // Every account is flat in the table, whatever the tree had collapsed.
+    await expect(accountRow(page, '1210')).toBeVisible();
+  });
+
+  test('searching the tree opens the branch containing a match', async ({ page }) => {
+    await page.goto('/staff/chart-of-accounts');
+    await expect(page.getByText('Premium Receivables')).not.toBeVisible();
+
+    // 1210 is two levels deep, under 1000 Assets > 1200 Receivables. A search that
+    // matched but left the branch shut would be useless.
+    await page.getByLabel('Search accounts').fill('Premium Receivables');
+    await expect(page.getByText('Premium Receivables')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('the table searches and sorts the whole chart', async ({ page }) => {
+    await page.goto('/staff/chart-of-accounts?view=table');
+    await page.getByLabel('Search accounts').fill('reinsurance');
+    await expect(page.getByRole('row').filter({ hasText: 'Reinsurance Recoverable' })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole('row').filter({ hasText: 'Petty Cash' })).toHaveCount(0);
+
+    await page.getByLabel('Search accounts').fill('');
+    await expect(page.getByRole('row').filter({ hasText: 'Petty Cash' })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Ascending by default, so one click flips to descending and 5500 leads.
+    await page.getByRole('button', { name: 'Code' }).click();
+    await expect(page.getByRole('row').nth(1)).toContainText('5500');
+  });
+
+  test('a type filter narrows the table to one block', async ({ page }) => {
+    await page.goto('/staff/chart-of-accounts?view=table');
+    await page.getByRole('button', { name: 'EQUITY' }).click();
+
+    await expect(page.getByRole('row').filter({ hasText: 'Share Capital' })).toBeVisible();
+    await expect(page.getByRole('row').filter({ hasText: 'Petty Cash' })).toHaveCount(0);
   });
 });
 

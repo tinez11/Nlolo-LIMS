@@ -77,9 +77,13 @@ export function AccountTableView({
         <tbody className="divide-y divide-border">
           {accounts.map((account) => (
             <tr key={account.accountCode} className="hover:bg-hover">
-              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+              {/* A row header, not a plain cell: the account code is what identifies the
+                  row, so a screen reader should announce it when reading any cell in it
+                  -- and it makes the code unambiguous to target, which a `td` is not
+                  once a child row shows the same code in its Parent column. */}
+              <th scope="row" className="px-3 py-2 text-left font-mono text-xs font-normal text-muted-foreground">
                 {account.accountCode}
-              </td>
+              </th>
               <td className="px-3 py-2 font-medium">{account.name}</td>
               <td className="px-3 py-2 text-xs text-muted-foreground">{account.accountType}</td>
               <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
