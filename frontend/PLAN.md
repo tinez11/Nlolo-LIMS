@@ -1428,3 +1428,141 @@ flagged decision rather than folded into a layout fix.
 **Also seen, out of scope:** `POL-6BD5702F` is `Surrendered` and still offers a Surrender
 action and an editable beneficiary list. Whether a terminal policy should accept a
 beneficiary change is a product question, not a layout one.
+
+### 14.14 Claim intake, claimant first — and the filter that could not exist
+
+Asked to make claim registration friendlier: enter the claimant, have the policy numbers
+populate, choose one, carry on. **The literal request could not be built**, and finding out
+why is most of this entry.
+
+**The only party-to-policy filter that existed was `policyholderPartyId`.** On a death
+claim — the commonest kind there is — the life assured is the deceased and the claimant is
+usually a **beneficiary**, who owns nothing. Filtering by policyholder would therefore have
+returned an **empty list for the main case**, and an empty list is not a neutral outcome: it
+reads as "this person has no policies", which is a stronger claim than the query actually
+made. The feature would have looked like it worked and been wrong exactly where it mattered.
+
+Two more facts came out of reading the backend rather than assuming it:
+
+- **`registerClaim` enforces no claimant-to-policy relationship at all.** It checks that the
+  claimant exists and that the policy is in force. Nothing more. So any chooser here is a
+  convenience, and a chooser that could ONLY offer connected policies would make the console
+  stricter than the platform — an executor, an assignee or a cessionary is a legitimate
+  claimant with no recorded link.
+- **Only ACTIVE/REINSTATED policies are accepted**, because `isPolicyInForce` is a plain
+  current-status read that accepts an `asOf` and never consults it. This got *more* reachable
+  the same day: the arrears sweep wired in §14.12 now genuinely lapses policies.
+
+#### What was built
+
+**Backend: one query parameter, no new schema.** `GET /policies?relatedPartyId=X` matches
+policies where X is the **policyholder OR the life assured OR an active named beneficiary** —
+an `EXISTS` subquery added to `PolicyRepository.search`. No DTO or response-schema change was
+needed, and that is the neat part: `policyholderPartyId`, `lifeAssuredPartyId` and
+`beneficiaries[]` are **already** on the list response, so the console derives *which capacity
+matched* on its own and the wire shape stays exactly as every existing caller has seen it
+since M3.
+
+Three things that are load-bearing rather than incidental:
+
+1. **A request carrying `relatedPartyId` MUST route through the wide JPQL query.**
+   `searchPolicies` has four derived-query branches for the common cases, and none of them can
+   express a three-way OR — so falling through to them would silently ignore the filter and
+   hand a claims desk **the whole tenant's policies**. The routing guard now includes it, and
+   the negative control below is specifically about this.
+2. **A customer's `relatedPartyId` is dropped, not rejected.** It could not widen anything (it
+   ANDs with the forced policyholder scope), but it would work as an **oracle**: "does my
+   policy name party Y as a beneficiary", answered one guessed uuid at a time. Dropping it
+   means a customer's own search still behaves exactly as before — which is why the test
+   asserts their policy is STILL PRESENT rather than asserting a 400.
+3. **The beneficiary leg matches `active = true` only**, agreeing with `toView`: a beneficiary
+   who has since been replaced is not a person to offer a claim form to.
+
+**Frontend.** Claimant moved above policy — the order the conversation actually happens in.
+The policy field became `ClaimPolicyChooser`: a flat list of cards, not a searchable popover,
+because the whole value is seeing the candidates side by side with the **capacity** and status
+that distinguish them, and a combobox hides exactly the comparison the clerk came to make.
+Each card names the capacity in words ("This client owns this contract, and is the insured
+life on this contract") plus chips, and **every** capacity rather than a "primary" one — on a
+self-insured policy the claimant is both owner and insured life, and collapsing that would
+hide which claim the policy can support.
+
+**Nothing is disabled, and that is a reversal of the first plan.** `claimGates` already makes
+"not currently in force" a **soft** gate on purpose, and its own comment gives the reason: a
+lapsed policy must route a claim to investigation, never be auto-refused, because refusing
+without proving the lapse notices were sent is how an insurer ends up in front of a regulator.
+Greying the row out would have been that refusal, made earlier and more quietly. Instead the
+card says plainly what will happen and names the remedy the backend's own comment prescribes —
+reinstate first.
+
+#### The bug the e2e found in the design
+
+The first run of the new spec failed, and the failure was right. The seeded fixture
+policyholder owns **more than 100 policies**, accumulated over months of e2e runs, and the
+server caps a page at 100 — so the policy the test wanted was simply not in the list. The
+store comment I had just written asserted that "a party with more than 100 recorded
+connections is a group-scheme shaped problem, not a claim intake one". The data falsified it
+within the hour.
+
+Worse than the truncation was its direction: the sort is `createdAt DESC`, so what falls off
+the end is the claimant's **oldest** policies — which on a life book are the ones most likely
+to be claimed against. And a client-side filter over the loaded page would have searched
+precisely the wrong hundred while looking like it searched everything.
+
+Fixed properly rather than by widening the page: the filter now goes to the **server** via the
+existing `q` parameter, the store slot is keyed by `(partyId, filter)` the same way `coverage`
+is keyed by `(policy, asOf)`, and the truncation is **disclosed** — "Showing the 100 most
+recent of 214. The oldest are not listed — filter by policy number to find one."
+
+#### Two defects only looking at the screen caught
+
+- **The capacity sentence repeated itself**: "owns this contract, and is the insured life on
+  this contract — the same person owns it and is insured under it". The appended clause
+  restated the sentence it was appended to. Removed.
+- **`FormField` has no `hint` prop.** I passed one through a **JSX spread**, which bypasses
+  TypeScript's excess-property check completely: it typechecked, rendered nothing, and lint
+  and 686 unit tests were silent. The scope caption now lives inside the chooser, which is
+  what it describes. Worth remembering as a general hazard — a spread is not checked the way
+  a literal prop is.
+
+#### Fixed in passing
+
+`GET /policies` sorted by `createdAt DESC` with **no tie-breaker** — the same unsound
+pagination as the billing queues in §14.12. Automatic issuance off a batch of underwriting
+decisions produces policies in the same instant routinely, so two rows could swap places
+between page 1 and page 2, showing one twice and hiding the other. Now `createdAt DESC,
+policyNumber ASC`.
+
+#### The five specs this broke, and why they were repointed rather than rewritten
+
+Five specs register a claim in order to test something else — evidence upload, adjudication,
+GL postings, an agent's book. All five typed the policy number into a field that no longer
+exists by default. They now go through one `fillPolicyNumberManually` helper in `guards.ts`,
+so they keep testing what they are about instead of each coupling to the chooser's markup.
+This is the recurring e2e-coupling lesson arriving a fifth time, and the helper is the
+cheapest place to absorb it.
+
+The escape hatch is also reachable **before** a claimant is chosen, which the first version
+got wrong: a clerk holding the number off a paper form should not have to identify the
+claimant just to reach a text box. Claimant-first is the default, not a precondition.
+
+**One more of my own defects, found only by running the full suite.** Six specs failed after
+the repoint, and the cause was the reset rule rather than the helper: clearing the policy on ANY
+claimant change also fired on the FIRST claimant selection, so a clerk — or a spec — who typed
+the number first and identified the claimant second had their input wiped and was thrown out of
+manual entry. The rule now distinguishes the two cases: clear only when the claimant changes
+from one person to a DIFFERENT one, never when it goes from empty to somebody. Correcting a
+claimant still clears; typing the policy first no longer loses it.
+
+**And one repoint that was simply wrong.** `staff-finaccounting.spec.ts` fills a "Policy number"
+field on the GL POSTINGS page — a posting filter with nothing to do with claim intake. A
+mechanical find-and-replace across the specs matched it by label alone and routed it through the
+claims helper, where it timed out looking for a button that does not exist on that screen.
+Reverted. The lesson is narrow and worth keeping: those call sites shared a label, not a meaning.
+
+**Verified:** backend 902 (`clean test`, BUILD SUCCESS), frontend unit 686, full e2e 105
+passed with 3 new. `PolicyContractTest` 45/45 with 5 new — one per leg, one for the replaced
+beneficiary, one for the customer oracle — each carrying a second policy that must be ABSENT,
+so none of them can pass against a filter that is silently ignored. Proven by **negative
+control**: removing `relatedPartyId` from the routing guard makes two of them fail on exactly
+the `doesNotExist()` assertion, then pass again when restored.

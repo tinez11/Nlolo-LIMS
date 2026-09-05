@@ -55,3 +55,24 @@ export async function expectRouteDenied(page: Page, path: string): Promise<void>
   await page.goto(path);
   await expect(page.getByText('You do not have access to this')).toBeVisible({ timeout: 30_000 });
 }
+
+/**
+ * Types a known policy number into the claim registration form.
+ *
+ * The policy field is a CHOOSER by default now -- it lists the policies the chosen claimant
+ * is connected to as owner, insured life or beneficiary -- so a free-text box only exists
+ * behind "Enter a policy number instead". Every spec that registers a claim in order to test
+ * something else (evidence upload, adjudication, GL postings, an agent book) goes through
+ * here rather than clicking the chooser, so those specs keep testing what they are about and
+ * do not each couple to the chooser's markup.
+ *
+ * Works before a claimant is picked as well as after, which is deliberate on the page: the
+ * new claimant-first order is the default, not a precondition.
+ */
+export async function fillPolicyNumberManually(page: Page, policyNumber: string): Promise<void> {
+  const manual = page.getByPlaceholder('POL-XXXXXXXX');
+  if (!(await manual.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: /Enter a (policy number instead|different policy number)/ }).click();
+  }
+  await manual.fill(policyNumber);
+}

@@ -100,6 +100,17 @@ premium arithmetic. No fabricated rows. That refusal is the position.
   name, and the split is a server-side `partyType` filter — as a client-side one
   it would report "the individuals among the newest 20 of 775" as the individual
   register and print a total belonging to neither area.
+- **Intake identifies the person before the contract.** Claim registration asks
+  who the claimant is, then lists the policies that claimant is connected to —
+  as owner, as the insured life, or as a named beneficiary — and says which,
+  because a claimant is very often not the policyholder: on a death claim the
+  insured life is the deceased and the claimant is usually a beneficiary. The
+  three-way relationship is the whole point; filtering by policyholder alone
+  would return nothing for the commonest claim there is. A policy number can
+  still be typed directly, and that is not a courtesy: the platform enforces no
+  claimant-to-policy relationship at all, so an executor or an assignee is a
+  legitimate claimant with no recorded link, and the console must not be
+  stricter than the platform it fronts.
 - **Drawer previews, page acts.** A table row opens a read-only slide-over with
   key facts and a link to the full page; the full page owns every mutating
   action. Settlement decisions, waivers and payouts must never live on a surface

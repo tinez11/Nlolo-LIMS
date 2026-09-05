@@ -33,6 +33,17 @@ import type {
 export interface PolicySearchParams {
   status?: PolicyStatus;
   policyholderPartyId?: string;
+  /**
+   * Policies this party is connected to in ANY recorded capacity -- as the policyholder, as
+   * the life assured, or as an active named beneficiary. A DIFFERENT question from
+   * policyholderPartyId, and the one the claims desk asks: a claimant is frequently not the
+   * owner, and on a death claim is usually a beneficiary of a policy on somebody else's life.
+   *
+   * The server does not return which leg matched, and does not need to -- policyholderPartyId,
+   * lifeAssuredPartyId and beneficiaries are all already on PolicyView, so the capacity is
+   * derivable client-side (see policyCapacities).
+   */
+  relatedPartyId?: string;
   q?: string;
   page?: number;
   pageSize?: number;
@@ -60,6 +71,7 @@ export async function searchPolicies(params: PolicySearchParams = {}): Promise<P
     params: {
       ...(params.status ? { status: params.status } : {}),
       ...(params.policyholderPartyId ? { policyholderPartyId: params.policyholderPartyId } : {}),
+      ...(params.relatedPartyId ? { relatedPartyId: params.relatedPartyId } : {}),
       ...(params.q ? { q: params.q } : {}),
       page,
       pageSize,

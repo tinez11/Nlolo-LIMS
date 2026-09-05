@@ -73,6 +73,17 @@ paths:
         - name: policyholderPartyId
           in: query
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        - name: relatedPartyId
+          in: query
+          description: >
+            Policies this party is connected to in ANY recorded capacity: as the policyholder,
+            as the life assured, or as an active named beneficiary. A different question from
+            policyholderPartyId, and the one a claims desk asks -- a claimant is frequently not
+            the owner, and on a death claim is usually a beneficiary. Ignored for customer-realm
+            callers, who are already scoped to their own policies. The capacity itself is not
+            returned as a field: policyholderPartyId, lifeAssuredPartyId and beneficiaries are
+            all already on PolicyView, so a client can say which leg matched.
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         - name: status
           in: query
           schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED] }

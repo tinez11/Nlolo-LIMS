@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { dmy } from './dates';
+import { fillPolicyNumberManually } from './guards';
 
 /**
  * Claims e2e coverage against the real stack.
@@ -111,7 +112,7 @@ test.describe('staff claims', () => {
     // Now fill a genuinely well-formed DEATH claim against the real seeded
     // policy and claimant -- passes every client rule, so this DOES reach the
     // network, and the backend's real business rule rejects it.
-    await page.getByPlaceholder('POL-XXXXXXXX').fill('POL-6BD5702F');
+    await fillPolicyNumberManually(page, 'POL-6BD5702F');
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();
@@ -132,7 +133,7 @@ test.describe('staff claims', () => {
     page,
   }) => {
     await page.goto('/staff/claims/new');
-    await page.getByPlaceholder('POL-XXXXXXXX').fill('POL-6BD5702F');
+    await fillPolicyNumberManually(page, 'POL-6BD5702F');
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();

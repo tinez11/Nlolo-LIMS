@@ -27,14 +27,38 @@ public interface PolicyRepository extends JpaRepository<Policy, String> {
      * {@code null} means "no agent filter" (staff/customer callers); a caller-supplied set (an
      * agent's resolved hierarchy team, see {@code DistributionApi.resolveAgentTeam}) restricts
      * the result to policies sold by, or attributed to, someone in that team.
+     *
+     * <p><b>{@code relatedPartyId} is a THREE-WAY match and is not the same filter as
+     * {@code policyholderPartyId}.</b> It asks "which policies is this person connected to in
+     * any capacity the platform records" -- as the owner, as the life assured, or as a named
+     * beneficiary -- and it exists because the claims desk needs exactly that question. A
+     * claimant is very often NOT the policyholder: on a death claim the life assured is the
+     * deceased and the claimant is usually a beneficiary, so filtering by
+     * {@code policyholderPartyId} would return nothing for the commonest claim there is.
+     *
+     * <p>The two filters AND together rather than merging, deliberately. A customer-realm caller
+     * is force-scoped through {@code policyholderPartyId} ({@code PolicyController.searchPolicies}),
+     * and that scoping must keep meaning exactly what it means today -- so a widening
+     * interpretation of {@code relatedPartyId} must never be able to reach past it.
+     *
+     * <p>The beneficiary leg matches only {@code active = true} rows, matching what
+     * {@code PolicyApiImpl.toView} actually returns: a beneficiary who has since been replaced
+     * is not a person to offer a claim form to.
      */
     @Query("SELECT p FROM Policy p WHERE p.tenantId = :tenantId "
         + "AND (:policyholderPartyId IS NULL OR p.policyholderPartyId = :policyholderPartyId) "
+        + "AND (:relatedPartyId IS NULL "
+        + "     OR p.policyholderPartyId = :relatedPartyId "
+        + "     OR p.lifeAssuredPartyId = :relatedPartyId "
+        + "     OR EXISTS (SELECT 1 FROM Beneficiary b WHERE b.tenantId = p.tenantId "
+        + "                AND b.policyNumber = p.policyNumber AND b.partyId = :relatedPartyId "
+        + "                AND b.active = true)) "
         + "AND (:status IS NULL OR p.status = :status) "
         + "AND (:agentOfRecordIds IS NULL OR p.agentOfRecordId IN :agentOfRecordIds) "
         + "AND (:q IS NULL OR LOWER(p.policyNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))")
     Page<Policy> search(@Param("tenantId") UUID tenantId,
                          @Param("policyholderPartyId") UUID policyholderPartyId,
+                         @Param("relatedPartyId") UUID relatedPartyId,
                          @Param("status") String status,
                          @Param("agentOfRecordIds") Collection<UUID> agentOfRecordIds,
                          @Param("q") String q,

@@ -1129,4 +1129,177 @@ class PolicyContractTest {
                     """.formatted(employer, product.productVersionId())))
             .andExpect(status().is4xxClientError());
     }
+    // --- GET /policies?relatedPartyId (the claims desk's question) --------------------------
+    //
+    // Three legs, because a claimant is connected to a policy in one of three ways and only
+    // one of them is "policyholder". The falsifiable half is in each test: a SECOND policy,
+    // belonging to somebody else, exists in the same tenant and must be ABSENT. Without that,
+    // every assertion here would pass against a filter that was silently ignored -- the exact
+    // vacuous shape this repo has been bitten by before.
+
+    /** A party who owns the contract outright. The leg that already worked, kept as the control. */
+    @Test
+    void relatedPartyIdFindsAPolicyThePartyOwns() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy mine = manualIssue(tenantId, "RELATED-OWNER-01");
+        IssuedPolicy someoneElses = manualIssue(tenantId, "RELATED-OWNER-02");
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", mine.policyholderPartyId().toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + mine.policyNumber() + "')]").exists())
+            // The whole point: the filter filters.
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + someoneElses.policyNumber() + "')]").doesNotExist());
+    }
+
+    /**
+     * A party insured under a contract somebody else owns -- a parent insuring a child, an
+     * employer insuring a key person. `policyholderPartyId` cannot find this policy at all,
+     * and a disability or critical-illness claimant is usually exactly this party.
+     */
+    @Test
+    void relatedPartyIdFindsAPolicyWhereThePartyIsOnlyTheLifeAssured() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID lifeAssured = staffRegisteredPerson(tenantId, "7731");
+        IssuedPolicy owned = manualIssueForLifeAssured(tenantId, "RELATED-LIFE-01", lifeAssured);
+        IssuedPolicy unrelated = manualIssue(tenantId, "RELATED-LIFE-02");
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", lifeAssured.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + owned.policyNumber() + "')]").exists())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + unrelated.policyNumber() + "')]").doesNotExist());
+
+        // Proof the two filters are genuinely different questions and not aliases: the same
+        // party as policyholderPartyId finds nothing, because they do not own this contract.
+        mockMvc.perform(get("/policies")
+                .queryParam("policyholderPartyId", lifeAssured.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + owned.policyNumber() + "')]").doesNotExist());
+    }
+
+    /**
+     * The death-claim case, and the reason this parameter exists. The claimant owns nothing and
+     * is not the insured life -- they are named on the policy as a beneficiary, and the life
+     * assured is the person who died.
+     */
+    @Test
+    void relatedPartyIdFindsAPolicyWhereThePartyIsOnlyABeneficiary() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy policy = manualIssue(tenantId, "RELATED-BENEF-01");
+        IssuedPolicy unrelated = manualIssue(tenantId, "RELATED-BENEF-02");
+        UUID beneficiary = staffRegisteredPerson(tenantId, "7732");
+
+        mockMvc.perform(put("/policies/" + policy.policyNumber() + "/beneficiaries")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    [{"type":"PARTY","partyId":"%s","sharePercent":"100.00","revocable":true}]
+                    """.formatted(beneficiary)))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", beneficiary.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + policy.policyNumber() + "')]").exists())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + unrelated.policyNumber() + "')]").doesNotExist());
+    }
+
+    /**
+     * A beneficiary who has since been replaced is not a person to offer a claim form to, and
+     * `PolicyApiImpl.toView` already stops returning them. The filter has to agree, or the
+     * console would offer a policy whose own beneficiary list no longer names the claimant.
+     */
+    @Test
+    void relatedPartyIdIgnoresABeneficiaryWhoHasBeenReplaced() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy policy = manualIssue(tenantId, "RELATED-BENEF-03");
+        UUID first = staffRegisteredPerson(tenantId, "7733");
+        UUID second = staffRegisteredPerson(tenantId, "7734");
+
+        replaceSoleBeneficiary(tenantId, policy.policyNumber(), first);
+        // PUT REPLACES the whole set, so this deactivates `first` rather than adding to it.
+        replaceSoleBeneficiary(tenantId, policy.policyNumber(), second);
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", second.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + policy.policyNumber() + "')]").exists());
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", first.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + policy.policyNumber() + "')]").doesNotExist());
+    }
+
+    /**
+     * A customer's own `relatedPartyId` is DROPPED rather than honoured, so it cannot be used as
+     * an oracle ("does my policy name party Y?") one guessed uuid at a time. Dropping it means
+     * the customer still sees their own policies in full -- the parameter simply does nothing --
+     * which is why this asserts the policy is STILL THERE rather than asserting a 400.
+     */
+    @Test
+    void aCustomerCannotUseRelatedPartyIdAsAnOracleAgainstTheirOwnPolicy() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy mine = manualIssue(tenantId, "RELATED-CUST-01");
+        UUID strangerNamedOnNothing = staffRegisteredPerson(tenantId, "7735");
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", strangerNamedOnNothing.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())
+                        .claim("party_id", mine.policyholderPartyId().toString()))))
+            .andExpect(status().isOk())
+            // Had the parameter been honoured, this would be absent and the empty result would
+            // itself be the answer to "is this stranger connected to my policy" -- no.
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + mine.policyNumber() + "')]").exists());
+    }
+
+    private void replaceSoleBeneficiary(UUID tenantId, String policyNumber, UUID partyId) throws Exception {
+        mockMvc.perform(put("/policies/" + policyNumber + "/beneficiaries")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    [{"type":"PARTY","partyId":"%s","sharePercent":"100.00","revocable":true}]
+                    """.formatted(partyId)))
+            .andExpect(status().isOk());
+    }
+
+    private IssuedPolicy manualIssueForLifeAssured(UUID tenantId, String productCode, UUID lifeAssuredPartyId)
+            throws Exception {
+        UUID applicantId = registerApplicant(tenantId, String.valueOf(Math.abs(productCode.hashCode() % 10000)));
+        ProductFixture product = publishProduct(tenantId, productCode, "TERM_LIFE");
+        UUID caseId = openUnderwritingCase(tenantId, applicantId, product);
+
+        String response = mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "reasonForManualIssue":"Contract test manual issuance",
+                     "lifeAssuredPartyId":"%s"}
+                    """.formatted(caseId, applicantId, product.productVersionId(), UUID.randomUUID(),
+                        lifeAssuredPartyId)))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return new IssuedPolicy(JsonPath.read(response, "$.policyNumber"), applicantId);
+    }
 }

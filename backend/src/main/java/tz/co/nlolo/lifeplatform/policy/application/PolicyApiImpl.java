@@ -260,7 +260,8 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
-    public Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Set<UUID> agentOfRecordIds, String q, Pageable pageable) {
+    public Page<PolicyView> searchPolicies(UUID policyholderPartyId, UUID relatedPartyId, PolicyStatus status,
+                                            Set<UUID> agentOfRecordIds, String q, Pageable pageable) {
         UUID tenantId = TenantContext.get();
         Page<Policy> page;
         boolean hasQ = q != null && !q.isBlank();
@@ -276,8 +277,14 @@ public class PolicyApiImpl implements PolicyApi {
         //
         // A present q ALSO routes through the wider `search` query, same reasoning: only the
         // truly-unfiltered common case stays on the fast derived-query methods.
-        if (agentOfRecordIds != null || hasQ) {
-            page = policyRepository.search(tenantId, policyholderPartyId, status != null ? status.name() : null,
+        // relatedPartyId joins agentOfRecordIds and q as a reason to route through the wider
+        // `search` query: the four derived-query branches below cannot express its three-way
+        // OR at all, so a request carrying it MUST NOT fall through to them -- doing so would
+        // silently ignore the filter and return the whole tenant's policies to a claims desk
+        // asking about one person.
+        if (agentOfRecordIds != null || hasQ || relatedPartyId != null) {
+            page = policyRepository.search(tenantId, policyholderPartyId, relatedPartyId,
+                status != null ? status.name() : null,
                 agentOfRecordIds, hasQ ? q.trim() : null, pageable);
         } else if (policyholderPartyId != null && status != null) {
             page = policyRepository.findByTenantIdAndPolicyholderPartyIdAndStatus(tenantId, policyholderPartyId, status.name(), pageable);
