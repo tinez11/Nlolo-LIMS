@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { dmy } from './dates';
+import { asAdmin } from './admin';
 
 /**
  * `POST /policies/{n}/suspend`/`resume`/`reinstate` -- all three were fully
@@ -66,10 +67,10 @@ async function issuePolicyAgainst(
 }
 
 test.describe('staff policy lifecycle', () => {
-  test('suspends and resumes a real GROUP_LIFE policy end to end', async ({ page }) => {
+  test('suspends and resumes a real GROUP_LIFE policy end to end', async ({ page, browser }) => {
     const code = `E2E-GRP-${Date.now()}`;
     const name = `E2E Group Life ${code}`;
-    await createGroupLifeProduct(page, code, name);
+    await asAdmin(browser, (adminPage) => createGroupLifeProduct(adminPage, code, name));
     await issuePolicyAgainst(page, `${name} (${code})`, 'E2E policy-lifecycle fixture');
 
     await expect(page.getByRole('heading', { level: 2, name: 'Lifecycle' })).toBeVisible();

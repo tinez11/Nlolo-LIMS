@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { dmy } from './dates';
+import { asAdmin } from './admin';
 
 /**
  * Group business, end to end against the real stack.
@@ -81,8 +82,9 @@ async function pickParty(
 test.describe('staff group schemes', () => {
   test('sets up a scheme whose total is derived from its members, then moves with a joiner', async ({
     page,
+    browser,
   }) => {
-    const productLabel = await createGroupProduct(page);
+    const productLabel = await asAdmin(browser, createGroupProduct);
 
     await page.goto('/staff/group-schemes/new');
     await expect(page.getByRole('heading', { name: 'Set up a group scheme' })).toBeVisible();
@@ -201,8 +203,8 @@ test.describe('staff group schemes', () => {
     await expect(page.getByText('TZS 15,000,000.00').first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test('a member above the free cover limit is covered up to it and flagged', async ({ page }) => {
-    const productLabel = await createGroupProduct(page);
+  test('a member above the free cover limit is covered up to it and flagged', async ({ page, browser }) => {
+    const productLabel = await asAdmin(browser, createGroupProduct);
 
     await page.goto('/staff/group-schemes/new');
     await pickParty(page, 'Search for the employer by name', 'Amina', 'Amina Owner');
@@ -238,8 +240,8 @@ test.describe('staff group schemes', () => {
     await expect(page.getByText('over the free cover limit')).toBeVisible();
   });
 
-  test('refuses a scheme with an unpriced member, before reaching the network', async ({ page }) => {
-    const productLabel = await createGroupProduct(page);
+  test('refuses a scheme with an unpriced member, before reaching the network', async ({ page, browser }) => {
+    const productLabel = await asAdmin(browser, createGroupProduct);
     let requestFired = false;
     page.on('request', (req) => {
       if (req.method() === 'POST' && req.url().endsWith('/group-schemes')) requestFired = true;

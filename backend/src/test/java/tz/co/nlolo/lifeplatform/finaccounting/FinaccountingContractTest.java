@@ -71,8 +71,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * this class is testing.
  *
  * <p><b>The chart of accounts is NOT read-only</b> (added after M9 shipped) -- its own
- * create/rename/delete endpoints are exercised directly below through real HTTP calls, unlike
- * journal entries/GL postings above.
+ * create/update/activate/deactivate/delete endpoints are exercised directly below through real
+ * HTTP calls, unlike journal entries/GL postings above. Since finaccounting/V5 the chart is also
+ * a HIERARCHY, so the tests below cover the rules that come with one: a child's code must sit
+ * inside its parent's block, creating a child turns its parent into a header, and an account with
+ * children cannot be deleted.
  */
 @Testcontainers
 @AutoConfigureMockMvc
@@ -402,7 +405,7 @@ class FinaccountingContractTest {
     // ============================================================================================
 
     @Test
-    void renameAccountReturns200AndUpdatesTheNameOnly() throws Exception {
+    void updateAccountReturns200AndLeavesTheDerivedFieldsUntouched() throws Exception {
         UUID tenantId = UUID.randomUUID();
         mockMvc.perform(post("/chart-of-accounts").with(financeStaffOf(tenantId))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -418,13 +421,13 @@ class FinaccountingContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.accountCode").value("3400"))
             .andExpect(jsonPath("$.name").value("Renamed"))
-            // Untouched by the rename -- both stay derived from the code.
+            // Untouched by the update -- both stay derived from the code, and so do
             .andExpect(jsonPath("$.accountType").value("EQUITY"))
             .andExpect(jsonPath("$.normalBalance").value("CR"));
     }
 
     @Test
-    void renameAccountReturns404ForAnUnknownAccountCode() throws Exception {
+    void updateAccountReturns404ForAnUnknownAccountCode() throws Exception {
         UUID tenantId = UUID.randomUUID();
 
         mockMvc.perform(put("/chart-of-accounts/{accountCode}", "3500").with(financeStaffOf(tenantId))

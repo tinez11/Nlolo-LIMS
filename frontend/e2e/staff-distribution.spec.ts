@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { dmy } from './dates';
+import { asAdmin } from './admin';
 
 /**
  * Distribution (agents/commissions) e2e coverage against the real backend.
@@ -149,7 +150,7 @@ test.describe('staff distribution', () => {
     // create-plan form ONLY renders in that state, so "canManage is false, no create
     // form" proves nothing on a product that already has a plan. Reading the seeded
     // fixture made the two assertions below quietly vacuous as well as red.
-    const { optionLabel } = await createRealActiveProduct(financePage);
+    const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
     await financeContext.close();
 
     // getAgent/listStatements are REALM_STAFF-broad reads -- staff.underwriter
@@ -171,7 +172,7 @@ test.describe('staff distribution', () => {
     const financePage = await financeContext.newPage();
 
     const agentId = await onboardRealAgent(financePage);
-    const { optionLabel } = await createRealActiveProduct(financePage);
+    const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
 
     await financePage.goto(`/staff/agents/${agentId}`);
     await financePage.getByLabel('Product').selectOption({ label: optionLabel });
@@ -203,7 +204,7 @@ test.describe('staff distribution', () => {
     const financePage = await financeContext.newPage();
 
     const agentId = await onboardRealAgent(financePage);
-    const { optionLabel } = await createRealActiveProduct(financePage);
+    const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
 
     await financePage.goto(`/staff/agents/${agentId}`);
     await financePage.getByLabel('Product').selectOption({ label: optionLabel });
