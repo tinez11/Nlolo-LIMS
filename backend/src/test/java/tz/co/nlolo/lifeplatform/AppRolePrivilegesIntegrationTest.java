@@ -217,6 +217,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
+            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             // M10 (Task 9) additions: regreporting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap finaccounting had entering
             // M9. regreporting/V1 has zero GRANT statements and zero RLS on either of its two

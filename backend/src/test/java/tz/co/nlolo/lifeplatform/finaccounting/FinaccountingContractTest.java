@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.SpecTypeConformance;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
@@ -81,6 +82,10 @@ class FinaccountingContractTest {
     private static final String SPEC_PATH = "api/openapi/openapi-finaccounting.yaml";
     private static final String CURRENCY = "TZS";
 
+    /** The full seeded chart -- see ChartOfAccountBlueprint. Not a literal 36, so this stops
+     *  being a number two files have to agree on by hand. */
+    private static final int EXPECTED_CHART_SIZE = ChartOfAccountBlueprint.accounts().size();
+
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
@@ -114,7 +119,8 @@ class FinaccountingContractTest {
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
-            "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql");
+            "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
+            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql");
     }
 
     @Autowired private MockMvc mockMvc;
@@ -297,7 +303,7 @@ class FinaccountingContractTest {
     // ============================================================================================
 
     @Test
-    void listChartOfAccountsReturns200WithTheNineSeededAccountsAnd403ForANonFinanceRole() throws Exception {
+    void listChartOfAccountsReturns200WithTheSeededChartAnd403ForANonFinanceRole() throws Exception {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         chartOfAccountSeeder.seedIfAbsent(tenantId, "system:test");
@@ -306,7 +312,7 @@ class FinaccountingContractTest {
         mockMvc.perform(get("/chart-of-accounts").with(financeStaffOf(tenantId)))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(jsonPath("$.length()").value(9));
+            .andExpect(jsonPath("$.length()").value(EXPECTED_CHART_SIZE));
 
         // A real chart must exist first (seeded above), so a broken @PreAuthorize would return 200
         // rather than an incidental 200-with-nothing-interesting that would pass for the wrong reason.
@@ -463,7 +469,7 @@ class FinaccountingContractTest {
 
         // Still there -- the rejected delete must not have removed it.
         mockMvc.perform(get("/chart-of-accounts").with(financeStaffOf(tenantId)))
-            .andExpect(jsonPath("$.length()").value(9));
+            .andExpect(jsonPath("$.length()").value(EXPECTED_CHART_SIZE));
     }
 
     @Test

@@ -149,6 +149,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
+            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             // M10 (Task 9) additions. regreporting/V1 enabled RLS on NEITHER of its two original
             // tables and granted app_role nothing at all; V2 is what adds both, for
             // policy_dimension/policy_movement/regulatory_return/return_line among others. Until now

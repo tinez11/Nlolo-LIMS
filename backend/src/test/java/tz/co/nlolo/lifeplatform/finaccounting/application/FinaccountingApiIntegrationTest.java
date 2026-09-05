@@ -9,6 +9,7 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.GlPostingView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountSeeder;
@@ -90,7 +91,8 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
-            "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql");
+            "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
+            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -307,7 +309,7 @@ class FinaccountingApiIntegrationTest {
     }
 
     @Test
-    void listChartOfAccountsReturnsTheNineSeededAccountsAndSeedingTwiceDoesNotDuplicate() {
+    void listChartOfAccountsReturnsTheSeededChartAndSeedingTwiceDoesNotDuplicate() {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         chartOfAccountSeeder.seedIfAbsent(tenantId, "system:test");
@@ -316,7 +318,8 @@ class FinaccountingApiIntegrationTest {
 
         TenantContext.set(tenantId);
         List<ChartOfAccountView> accounts = finaccountingApi.listChartOfAccounts();
-        assertThat(accounts).hasSize(9);
+        assertThat(accounts).hasSize(ChartOfAccountBlueprint.accounts().size());
         assertThat(accounts).extracting(ChartOfAccountView::accountCode).doesNotHaveDuplicates();
     }
+
 }
