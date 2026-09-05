@@ -5,15 +5,17 @@ import {
   getGlPosting,
   listChartOfAccounts,
   listGlPostings,
-  renameAccount,
+  setAccountStatus,
+  updateAccount,
   type GlPostingSearchParams,
 } from '@/api/finaccounting';
 import type {
+  AccountStatus,
   ChartOfAccountView,
   CreateAccountRequest,
   JournalEntryView,
   Page,
-  RenameAccountRequest,
+  UpdateAccountRequest,
 } from '@/api/types';
 import { idle, track, type Resource } from './createResourceSlice';
 
@@ -33,9 +35,12 @@ interface FinaccountingState {
   // A single slot, not keyed: creation makes a NEW account, so there is no
   // existing accountCode to key against yet -- same shape as products' `creating`.
   creating: Resource<ChartOfAccountView>;
-  // Keyed by accountCode: renaming/deleting each target an EXISTING account,
+  // Keyed by accountCode: updating/deleting each target an EXISTING account,
   // and a failed mutation on one account must not corrupt another's state.
-  renaming: Keyed<ChartOfAccountView>;
+  updating: Keyed<ChartOfAccountView>;
+  // Retiring or restoring one account. Keyed for the same reason: a 404 on one row
+  // must not blank out another row's controls.
+  settingStatus: Keyed<ChartOfAccountView>;
   deleting: Keyed<true>;
 
   loadList: (params: GlPostingSearchParams) => Promise<void>;
@@ -43,8 +48,10 @@ interface FinaccountingState {
   loadChartOfAccounts: () => Promise<void>;
   createAccount: (request: CreateAccountRequest) => Promise<void>;
   resetCreateAccount: () => void;
-  renameAccount: (accountCode: string, request: RenameAccountRequest) => Promise<void>;
-  resetRenameAccount: (accountCode: string) => void;
+  updateAccount: (accountCode: string, request: UpdateAccountRequest) => Promise<void>;
+  resetUpdateAccount: (accountCode: string) => void;
+  setAccountStatus: (accountCode: string, status: AccountStatus) => Promise<void>;
+  resetSetAccountStatus: (accountCode: string) => void;
   deleteAccount: (accountCode: string) => Promise<void>;
   resetDeleteAccount: (accountCode: string) => void;
 }
@@ -54,7 +61,8 @@ export const useFinaccountingStore = create<FinaccountingState>((set, getState) 
   detail: {},
   chartOfAccounts: idle(),
   creating: idle(),
-  renaming: {},
+  updating: {},
+  settingStatus: {},
   deleting: {},
 
   loadList: (params) =>
@@ -95,23 +103,42 @@ export const useFinaccountingStore = create<FinaccountingState>((set, getState) 
 
   resetCreateAccount: () => set({ creating: idle() }),
 
-  renameAccount: (accountCode, request) =>
+  updateAccount: (accountCode, request) =>
     track(
-      `finaccounting.renameAccount.${accountCode}`,
-      getState().renaming[accountCode] ?? idle<ChartOfAccountView>(),
-      (next) => set((s) => ({ renaming: { ...s.renaming, [accountCode]: next } })),
+      `finaccounting.updateAccount.${accountCode}`,
+      getState().updating[accountCode] ?? idle<ChartOfAccountView>(),
+      (next) => set((s) => ({ updating: { ...s.updating, [accountCode]: next } })),
       async () => {
-        const renamed = await renameAccount(accountCode, request);
+        const renamed = await updateAccount(accountCode, request);
         await getState().loadChartOfAccounts();
         return renamed;
       },
     ),
 
-  resetRenameAccount: (accountCode) =>
+  resetUpdateAccount: (accountCode) =>
     set((s) => {
-      if (!(accountCode in s.renaming)) return s;
-      const { [accountCode]: _discard, ...rest } = s.renaming;
-      return { renaming: rest };
+      if (!(accountCode in s.updating)) return s;
+      const { [accountCode]: _discard, ...rest } = s.updating;
+      return { updating: rest };
+    }),
+
+  setAccountStatus: (accountCode, status) =>
+    track(
+      `finaccounting.setAccountStatus.${accountCode}`,
+      getState().settingStatus[accountCode] ?? idle<ChartOfAccountView>(),
+      (next) => set((s) => ({ settingStatus: { ...s.settingStatus, [accountCode]: next } })),
+      async () => {
+        const updated = await setAccountStatus(accountCode, status);
+        await getState().loadChartOfAccounts();
+        return updated;
+      },
+    ),
+
+  resetSetAccountStatus: (accountCode) =>
+    set((s) => {
+      if (!(accountCode in s.settingStatus)) return s;
+      const { [accountCode]: _discard, ...rest } = s.settingStatus;
+      return { settingStatus: rest };
     }),
 
   deleteAccount: (accountCode) =>
@@ -138,7 +165,9 @@ export const useFinaccountingStore = create<FinaccountingState>((set, getState) 
 
 export const selectJournalEntryDetail = (journalEntryId: string) => (s: FinaccountingState) =>
   s.detail[journalEntryId] ?? idle<JournalEntryView>();
-export const selectRenamingAccount = (accountCode: string) => (s: FinaccountingState) =>
-  s.renaming[accountCode] ?? idle<ChartOfAccountView>();
+export const selectUpdatingAccount = (accountCode: string) => (s: FinaccountingState) =>
+  s.updating[accountCode] ?? idle<ChartOfAccountView>();
+export const selectSettingStatus = (accountCode: string) => (s: FinaccountingState) =>
+  s.settingStatus[accountCode] ?? idle<ChartOfAccountView>();
 export const selectDeletingAccount = (accountCode: string) => (s: FinaccountingState) =>
   s.deleting[accountCode] ?? idle<true>();

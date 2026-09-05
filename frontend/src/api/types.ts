@@ -207,7 +207,8 @@ export type PostingDirection = GlPostingView['direction'];
  * deliberately absent from both request shapes below.
  */
 export type CreateAccountRequest = FinaccountingComponents['schemas']['CreateAccountRequest'];
-export type RenameAccountRequest = FinaccountingComponents['schemas']['RenameAccountRequest'];
+export type UpdateAccountRequest = FinaccountingComponents['schemas']['UpdateAccountRequest'];
+export type AccountStatus = FinaccountingComponents['schemas']['AccountStatus'];
 
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the
