@@ -185,14 +185,20 @@ test.describe('staff distribution', () => {
     // A real POST -> 201 -> the store writes the response straight into the
     // same (agent, product) slot the 404 came from -- no reload needed to see
     // it flip from "no plan" to "Active plan".
-    await expect(financePage.getByText('Active plan')).toBeVisible({ timeout: 15_000 });
+    //
+    // `exact` is load-bearing, not tidiness. getByText matches a case-insensitive
+    // SUBSTRING by default, and the same panel renders the note "Null means the
+    // product's active plan applies instead" -- so the bare locator matched two
+    // elements and failed strict mode, but only in the window where both were on
+    // screen. It passed in isolation and failed in a full run.
+    await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(financePage.getByText('first year')).toBeVisible();
 
     // Reload and reselect from scratch -- proves this is a real Postgres row,
     // not the store's in-memory state surviving a soft navigation.
     await financePage.reload();
     await financePage.getByLabel('Product').selectOption({ label: optionLabel });
-    await expect(financePage.getByText('Active plan')).toBeVisible({ timeout: 15_000 });
+    await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     await financeContext.close();
   });
@@ -212,7 +218,7 @@ test.describe('staff distribution', () => {
       financePage.getByText('No plan applies to this agent for this product yet.'),
     ).toBeVisible();
     await createDefaultPlan(financePage, '0.1000');
-    await expect(financePage.getByText('Active plan')).toBeVisible({ timeout: 15_000 });
+    await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     await issueRealPolicyForAgent(financePage, optionLabel, agentId);
 
