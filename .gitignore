@@ -15,6 +15,12 @@ backend/scripts/seed-evidence.jpg
 # Git-ignored by design: the git history is the durable record, not these artifacts.
 .superpowers/
 
+# Claude Code per-machine settings. `.claude/settings.json` is shared config and
+# SHOULD be committed when one exists; `settings.local.json` is one developer's
+# machine — absolute paths into their own editor install, local worktree paths,
+# process ids, and dev credentials in permission rules. Never shared.
+.claude/settings.local.json
+
 # Frontend (M12)
 node_modules/
 frontend/**/.next/
