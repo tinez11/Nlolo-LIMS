@@ -54,6 +54,23 @@ export type GroupSchemeGradeInput = PolicyComponents['schemas']['GroupSchemeGrad
 export type GroupMemberInput = PolicyComponents['schemas']['GroupMemberInput'];
 
 export type InvoiceView = BillingComponents['schemas']['InvoiceView'];
+/**
+ * One row of the collections queue. Its money and due date come from the invoice the case was
+ * opened against, and are null -- never zero -- when that invoice cannot be resolved.
+ */
+export type ArrearsCaseView = BillingComponents['schemas']['ArrearsCaseView'];
+/**
+ * One agent-captured premium receipt. Both timestamps are carried on purpose: the gap between
+ * capturedAtClient and capturedAtServer separates "we were slow" from "the field was offline".
+ */
+export type FieldReceiptView = BillingComponents['schemas']['FieldReceiptView'];
+export type FieldReceiptStatus = NonNullable<FieldReceiptView['status']>;
+/** Order taken from the table's own CHECK constraint, not invented. */
+export const FIELD_RECEIPT_STATUSES: readonly FieldReceiptStatus[] = [
+  'PENDING_RECONCILIATION',
+  'RECONCILIATION_OVERDUE',
+  'RECONCILED',
+];
 export type LoanView = PolicyLoanComponents['schemas']['LoanView'];
 
 export type PageMeta = CommonComponents['schemas']['PageMeta'];
@@ -190,7 +207,8 @@ export type PostingDirection = GlPostingView['direction'];
  * deliberately absent from both request shapes below.
  */
 export type CreateAccountRequest = FinaccountingComponents['schemas']['CreateAccountRequest'];
-export type RenameAccountRequest = FinaccountingComponents['schemas']['RenameAccountRequest'];
+export type UpdateAccountRequest = FinaccountingComponents['schemas']['UpdateAccountRequest'];
+export type AccountStatus = FinaccountingComponents['schemas']['AccountStatus'];
 
 /**
  * `ClaimDetails` has no `discriminator` keyword in the spec (deliberately -- see the
@@ -249,6 +267,12 @@ export type IdentityDocumentView = PartyComponents['schemas']['IdentityDocumentV
 export type PartyDocumentView = PartyComponents['schemas']['PartyDocumentView'];
 export type KycStatus = NonNullable<PartyView['kycStatus']>;
 export const KYC_STATUSES: readonly KycStatus[] = ['PENDING', 'VERIFIED', 'REJECTED'];
+/**
+ * What KIND of client a party is, and the dimension the register is split on. Three
+ * values, not two: `GROUP` is its own type, distinct from `CORPORATE`, even though no
+ * endpoint can create one yet (`registerGroup` exists in `PartyApi` with no HTTP path).
+ */
+export type PartyType = NonNullable<PartyView['partyType']>;
 export type KycEvidenceUploadResponse = PartyComponents['schemas']['KycEvidenceUploadResponse'];
 
 /**

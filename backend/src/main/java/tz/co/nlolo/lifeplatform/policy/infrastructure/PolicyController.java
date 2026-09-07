@@ -120,6 +120,7 @@ public class PolicyController {
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PolicySearchResponse> searchPolicies(
             @RequestParam(required = false) UUID policyholderPartyId,
+            @RequestParam(required = false) UUID relatedPartyId,
             @RequestParam(required = false) PolicyStatus status,
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
@@ -127,6 +128,13 @@ public class PolicyController {
             @AuthenticationPrincipal Jwt jwt, Authentication authentication) {
         UUID effectivePolicyholderPartyId = isCustomer(authentication)
             ? ownPartyIdOrThrow(jwt) : policyholderPartyId;
+        // A customer's relatedPartyId is DROPPED, not honoured and not rejected. It could not
+        // widen anything -- it ANDs with the forced policyholder scope above -- but it could be
+        // used as an oracle: "does policy X of mine name party Y as a beneficiary" answered one
+        // guessed uuid at a time. A customer already sees their own policies in full, including
+        // their beneficiaries, so the parameter buys them nothing and is simply not theirs.
+        // Same fail-closed instinct as forcing the scope rather than validating it.
+        UUID effectiveRelatedPartyId = isCustomer(authentication) ? null : relatedPartyId;
         // Agents are force-scoped to their own hierarchy team, the same "override the query, don't
         // merely check-then-reject" idiom as the customer scoping above -- an agents-realm token
         // cannot broaden this by supplying its own agentOfRecordId filter (there is none to
@@ -136,8 +144,14 @@ public class PolicyController {
         // Set.of() here for a non-agent caller would make every staff/customer search return zero
         // results.
         Set<UUID> agentOfRecordIds = isAgent(authentication) ? resolveOwnAgentTeamOrThrow(jwt) : null;
-        Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, status, agentOfRecordIds, q,
-            PageRequest.of(page, Math.min(pageSize, 100), Sort.by(Sort.Direction.DESC, "createdAt")));
+        // policyNumber breaks the tie, and it is load-bearing rather than tidy: `createdAt` alone
+        // is not a total order, and two policies issued in the same instant -- which automatic
+        // issuance off a batch of underwriting decisions produces routinely -- can then swap
+        // places between page 1 and page 2, showing one twice and hiding the other entirely.
+        Page<PolicyView> result = policyApi.searchPolicies(effectivePolicyholderPartyId, effectiveRelatedPartyId,
+            status, agentOfRecordIds, q,
+            PageRequest.of(page, Math.min(pageSize, 100),
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("policyNumber"))));
         return ResponseEntity.ok(PolicySearchResponse.from(result));
     }
 
@@ -184,15 +198,20 @@ public class PolicyController {
      * believes they are insured and is missing from the page nobody scrolled twice.
      *
      * @param status omit for every member including those who have left
+     * @param q omit for no name search. A 500-life schedule cannot be read by eye, so this
+     *     is the only way to answer "is this person covered" without paging the whole roll.
+     *     Matched against the party's display name, which lives in the party module — the
+     *     member row itself holds only an id.
      */
     @GetMapping("/group-schemes/{policyNumber}/members")
     @PreAuthorize("hasRole('REALM_STAFF')")
     public ResponseEntity<PolicyMemberResponseDto.PageResponse> listMembers(
             @PathVariable String policyNumber,
             @RequestParam(required = false) MemberStatus status,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int pageSize) {
-        Page<PolicyMemberView> result = policyApi.listMembers(policyNumber, status,
+        Page<PolicyMemberView> result = policyApi.listMembers(policyNumber, status, q,
             PageRequest.of(page, Math.min(pageSize, 200),
                 Sort.by(Sort.Direction.ASC, "joinedOn").and(Sort.by(Sort.Direction.ASC, "policyMemberId"))));
         return ResponseEntity.ok(PolicyMemberResponseDto.PageResponse.from(result));

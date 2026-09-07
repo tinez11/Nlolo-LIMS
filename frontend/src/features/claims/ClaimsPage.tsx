@@ -5,7 +5,7 @@ import { CLAIM_STATUSES, type ClaimStatus, type ClaimView } from '@/api/types';
 import { DEFAULT_PAGE_SIZE } from '@/api/policies';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Input } from '@/components/ui/input';
@@ -100,19 +100,17 @@ export function ClaimsPage({
 
   // Counts only -- no trend arrows, matching PoliciesPage: no analytics endpoint
   // exists anywhere on this platform.
-  const stats: Stat[] = [
-    {
-      label: status ? `${status[0]}${status.slice(1).toLowerCase().replace(/_/g, ' ')} claims` : 'All claims',
-      value: total,
-      pending: isInitialLoad(list),
-      hint:
-        list.status === 'error' && total === null
-          ? 'could not load'
-          : status
-            ? 'matching this filter'
-            : 'in this tenant',
-    },
-  ];
+  const count: Stat = {
+    label: status ? `${status.toLowerCase().replace(/_/g, ' ')} claims` : 'claims',
+    value: total,
+    pending: isInitialLoad(list),
+    hint:
+      list.status === 'error' && total === null
+        ? 'could not load'
+        : status
+          ? 'matching this filter'
+          : 'in this tenant',
+  };
 
   const columns: Column<ClaimView>[] = [
     {
@@ -238,9 +236,8 @@ export function ClaimsPage({
             </Button>
           ) : undefined
         }
+        count={<CountLine {...count} />}
       />
-
-      <StatCards stats={stats} />
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">

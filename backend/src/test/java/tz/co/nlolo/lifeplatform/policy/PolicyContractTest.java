@@ -156,7 +156,7 @@ class PolicyContractTest {
      */
     private ProductFixture publishProduct(UUID tenantId, String code, String category) throws Exception {
         String createResponse = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -167,7 +167,7 @@ class PolicyContractTest {
         String productId = JsonPath.read(createResponse, "$.productId");
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -941,6 +941,154 @@ class PolicyContractTest {
             .andExpect(jsonPath("$.sumAssured.amount").value("45000000.00"));
     }
 
+    /** A person with a KNOWN name, for the member-search tests -- the shared helper above
+     *  registers everyone as "Policy Contract Applicant", which cannot be searched for. */
+    private UUID namedPerson(UUID tenantId, String fullName, String phoneSuffix) throws Exception {
+        String response = mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"fullName\":\"" + fullName
+                    + "\",\"dateOfBirth\":\"1988-03-15\",\"contactInfo\":{\"phoneNumber\":\"+25571234"
+                    + phoneSuffix + "\"}}"))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(JsonPath.read(response, "$.partyId"));
+    }
+
+    /** Issues a two-life scheme whose members have distinct, searchable names. */
+    private String schemeWithTwoNamedMembers(UUID tenantId, String productCode, String suffixBase,
+                                                UUID first, UUID second) throws Exception {
+        // Four digits: the phone is +255 plus NINE, and a short suffix is a 400 on
+        // registration rather than anything to do with schemes.
+        UUID employer = namedPerson(tenantId, "Search Employer " + suffixBase, suffixBase + "00");
+        ProductFixture product = publishProduct(tenantId, productCode, "GROUP_LIFE");
+        String scheme = mockMvc.perform(post("/group-schemes")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                     "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
+                     "openingSchedule":[{"memberPartyId":"%s"},{"memberPartyId":"%s"}],
+                     "premium":{"amount":"600000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY"}
+                    """.formatted(employer, product.productVersionId(), first, second)))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(scheme, "$.policyNumber");
+    }
+
+    /**
+     * Searching a member roll by name.
+     *
+     * <p>A 500-life schedule cannot be read by eye, so this is the only way to answer "is
+     * this person covered" without paging the whole roll. The interesting part is WHERE the
+     * name comes from: a member row holds a party id and nothing else, so the party module
+     * resolves names to ids and the roll is filtered on those.
+     *
+     * <p>Every assertion below is falsifiable. A filter that was silently dropped would
+     * still return the member the caller wanted, so each case pins the row that must be
+     * ABSENT and the total that must have shrunk.
+     */
+    @Test
+    void aMemberRollCanBeSearchedByName() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID zawadi = namedPerson(tenantId, "Zawadi Roll Fixture", "8201");
+        UUID mwangaza = namedPerson(tenantId, "Mwangaza Roll Fixture", "8202");
+        String policyNumber = schemeWithTwoNamedMembers(tenantId, "GRP-SEARCH-01", "82", zawadi, mwangaza);
+
+        // Both lives, unsearched -- the baseline the filtered results must differ from.
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(2));
+
+        // Deliberately the wrong case: a case-sensitive match would find nobody here.
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .queryParam("q", "zawadi")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].memberPartyId").value(zawadi.toString()))
+            // The total is the SEARCH's total, not the roll's. A pager reading "1-1 of 2"
+            // under one row would send the reader looking for a second page that is empty.
+            .andExpect(jsonPath("$.page.totalElements").value(1));
+    }
+
+    /**
+     * The empty-result path, which is a syntax error waiting to happen rather than a
+     * cosmetic case: no party matches, so the id set is empty, and an empty set handed to a
+     * SQL {@code IN} is a Postgres error while a null one would mean "no filter" and return
+     * the whole schedule for a search that matched nobody.
+     */
+    @Test
+    void aMemberSearchMatchingNobodyIsAnEmptyPageNotAnErrorAndNotTheWholeRoll() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID first = namedPerson(tenantId, "Present Roll Fixture", "8301");
+        UUID second = namedPerson(tenantId, "Also Present Fixture", "8302");
+        String policyNumber = schemeWithTwoNamedMembers(tenantId, "GRP-SEARCH-02", "83", first, second);
+
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .queryParam("q", "NobodyOnThisSchemeIsCalledThis12345")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(0))
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    /**
+     * The search is scoped to THIS scheme, and combines with status rather than replacing it.
+     *
+     * <p>The scoping half matters most: the name is resolved across the whole tenant, so a
+     * person of that name who is on a DIFFERENT scheme must not appear on this one's roll.
+     * Getting that wrong would put someone else's employee on an employer's schedule.
+     */
+    @Test
+    void aMemberSearchStaysOnItsOwnSchemeAndComposesWithStatus() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID onThisScheme = namedPerson(tenantId, "Insider Scope Fixture", "8401");
+        UUID alsoOnThisScheme = namedPerson(tenantId, "Second Insider Fixture", "8402");
+        UUID onAnotherScheme = namedPerson(tenantId, "Outsider Scope Fixture", "8403");
+        UUID otherSchemeCompanion = namedPerson(tenantId, "Outsider Companion Fixture", "8404");
+
+        String thisScheme = schemeWithTwoNamedMembers(tenantId, "GRP-SEARCH-03", "84",
+            onThisScheme, alsoOnThisScheme);
+        schemeWithTwoNamedMembers(tenantId, "GRP-SEARCH-04", "85",
+            onAnotherScheme, otherSchemeCompanion);
+
+        // The outsider exists, is a member of a scheme, and matches the term -- and must
+        // still be absent from this roll.
+        mockMvc.perform(get("/group-schemes/" + thisScheme + "/members")
+                .queryParam("q", "Outsider Scope")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+
+        // ANDed with status, not either-or: an ACTIVE search for a name on the roll finds
+        // it, and the same name with the other status finds nothing.
+        mockMvc.perform(get("/group-schemes/" + thisScheme + "/members")
+                .queryParam("q", "Insider Scope")
+                .queryParam("status", "ACTIVE")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].memberPartyId").value(onThisScheme.toString()));
+
+        mockMvc.perform(get("/group-schemes/" + thisScheme + "/members")
+                .queryParam("q", "Insider Scope")
+                .queryParam("status", "EXITED")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
     /**
      * An individual policy read as a scheme answers 409, not 404.
      *
@@ -980,5 +1128,178 @@ class PolicyContractTest {
                      "premium":{"amount":"100000.00","currencyCode":"TZS"}}
                     """.formatted(employer, product.productVersionId())))
             .andExpect(status().is4xxClientError());
+    }
+    // --- GET /policies?relatedPartyId (the claims desk's question) --------------------------
+    //
+    // Three legs, because a claimant is connected to a policy in one of three ways and only
+    // one of them is "policyholder". The falsifiable half is in each test: a SECOND policy,
+    // belonging to somebody else, exists in the same tenant and must be ABSENT. Without that,
+    // every assertion here would pass against a filter that was silently ignored -- the exact
+    // vacuous shape this repo has been bitten by before.
+
+    /** A party who owns the contract outright. The leg that already worked, kept as the control. */
+    @Test
+    void relatedPartyIdFindsAPolicyThePartyOwns() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy mine = manualIssue(tenantId, "RELATED-OWNER-01");
+        IssuedPolicy someoneElses = manualIssue(tenantId, "RELATED-OWNER-02");
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", mine.policyholderPartyId().toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + mine.policyNumber() + "')]").exists())
+            // The whole point: the filter filters.
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + someoneElses.policyNumber() + "')]").doesNotExist());
+    }
+
+    /**
+     * A party insured under a contract somebody else owns -- a parent insuring a child, an
+     * employer insuring a key person. `policyholderPartyId` cannot find this policy at all,
+     * and a disability or critical-illness claimant is usually exactly this party.
+     */
+    @Test
+    void relatedPartyIdFindsAPolicyWhereThePartyIsOnlyTheLifeAssured() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID lifeAssured = staffRegisteredPerson(tenantId, "7731");
+        IssuedPolicy owned = manualIssueForLifeAssured(tenantId, "RELATED-LIFE-01", lifeAssured);
+        IssuedPolicy unrelated = manualIssue(tenantId, "RELATED-LIFE-02");
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", lifeAssured.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + owned.policyNumber() + "')]").exists())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + unrelated.policyNumber() + "')]").doesNotExist());
+
+        // Proof the two filters are genuinely different questions and not aliases: the same
+        // party as policyholderPartyId finds nothing, because they do not own this contract.
+        mockMvc.perform(get("/policies")
+                .queryParam("policyholderPartyId", lifeAssured.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + owned.policyNumber() + "')]").doesNotExist());
+    }
+
+    /**
+     * The death-claim case, and the reason this parameter exists. The claimant owns nothing and
+     * is not the insured life -- they are named on the policy as a beneficiary, and the life
+     * assured is the person who died.
+     */
+    @Test
+    void relatedPartyIdFindsAPolicyWhereThePartyIsOnlyABeneficiary() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy policy = manualIssue(tenantId, "RELATED-BENEF-01");
+        IssuedPolicy unrelated = manualIssue(tenantId, "RELATED-BENEF-02");
+        UUID beneficiary = staffRegisteredPerson(tenantId, "7732");
+
+        mockMvc.perform(put("/policies/" + policy.policyNumber() + "/beneficiaries")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    [{"type":"PARTY","partyId":"%s","sharePercent":"100.00","revocable":true}]
+                    """.formatted(beneficiary)))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", beneficiary.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + policy.policyNumber() + "')]").exists())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + unrelated.policyNumber() + "')]").doesNotExist());
+    }
+
+    /**
+     * A beneficiary who has since been replaced is not a person to offer a claim form to, and
+     * `PolicyApiImpl.toView` already stops returning them. The filter has to agree, or the
+     * console would offer a policy whose own beneficiary list no longer names the claimant.
+     */
+    @Test
+    void relatedPartyIdIgnoresABeneficiaryWhoHasBeenReplaced() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy policy = manualIssue(tenantId, "RELATED-BENEF-03");
+        UUID first = staffRegisteredPerson(tenantId, "7733");
+        UUID second = staffRegisteredPerson(tenantId, "7734");
+
+        replaceSoleBeneficiary(tenantId, policy.policyNumber(), first);
+        // PUT REPLACES the whole set, so this deactivates `first` rather than adding to it.
+        replaceSoleBeneficiary(tenantId, policy.policyNumber(), second);
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", second.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + policy.policyNumber() + "')]").exists());
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", first.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + policy.policyNumber() + "')]").doesNotExist());
+    }
+
+    /**
+     * A customer's own `relatedPartyId` is DROPPED rather than honoured, so it cannot be used as
+     * an oracle ("does my policy name party Y?") one guessed uuid at a time. Dropping it means
+     * the customer still sees their own policies in full -- the parameter simply does nothing --
+     * which is why this asserts the policy is STILL THERE rather than asserting a 400.
+     */
+    @Test
+    void aCustomerCannotUseRelatedPartyIdAsAnOracleAgainstTheirOwnPolicy() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy mine = manualIssue(tenantId, "RELATED-CUST-01");
+        UUID strangerNamedOnNothing = staffRegisteredPerson(tenantId, "7735");
+
+        mockMvc.perform(get("/policies")
+                .queryParam("relatedPartyId", strangerNamedOnNothing.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())
+                        .claim("party_id", mine.policyholderPartyId().toString()))))
+            .andExpect(status().isOk())
+            // Had the parameter been honoured, this would be absent and the empty result would
+            // itself be the answer to "is this stranger connected to my policy" -- no.
+            .andExpect(jsonPath("$.items[?(@.policyNumber == '" + mine.policyNumber() + "')]").exists());
+    }
+
+    private void replaceSoleBeneficiary(UUID tenantId, String policyNumber, UUID partyId) throws Exception {
+        mockMvc.perform(put("/policies/" + policyNumber + "/beneficiaries")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    [{"type":"PARTY","partyId":"%s","sharePercent":"100.00","revocable":true}]
+                    """.formatted(partyId)))
+            .andExpect(status().isOk());
+    }
+
+    private IssuedPolicy manualIssueForLifeAssured(UUID tenantId, String productCode, UUID lifeAssuredPartyId)
+            throws Exception {
+        UUID applicantId = registerApplicant(tenantId, String.valueOf(Math.abs(productCode.hashCode() % 10000)));
+        ProductFixture product = publishProduct(tenantId, productCode, "TERM_LIFE");
+        UUID caseId = openUnderwritingCase(tenantId, applicantId, product);
+
+        String response = mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "reasonForManualIssue":"Contract test manual issuance",
+                     "lifeAssuredPartyId":"%s"}
+                    """.formatted(caseId, applicantId, product.productVersionId(), UUID.randomUUID(),
+                        lifeAssuredPartyId)))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return new IssuedPolicy(JsonPath.read(response, "$.policyNumber"), applicantId);
     }
 }

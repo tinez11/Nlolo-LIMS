@@ -33,6 +33,17 @@ import type {
 export interface PolicySearchParams {
   status?: PolicyStatus;
   policyholderPartyId?: string;
+  /**
+   * Policies this party is connected to in ANY recorded capacity -- as the policyholder, as
+   * the life assured, or as an active named beneficiary. A DIFFERENT question from
+   * policyholderPartyId, and the one the claims desk asks: a claimant is frequently not the
+   * owner, and on a death claim is usually a beneficiary of a policy on somebody else's life.
+   *
+   * The server does not return which leg matched, and does not need to -- policyholderPartyId,
+   * lifeAssuredPartyId and beneficiaries are all already on PolicyView, so the capacity is
+   * derivable client-side (see policyCapacities).
+   */
+  relatedPartyId?: string;
   q?: string;
   page?: number;
   pageSize?: number;
@@ -60,6 +71,7 @@ export async function searchPolicies(params: PolicySearchParams = {}): Promise<P
     params: {
       ...(params.status ? { status: params.status } : {}),
       ...(params.policyholderPartyId ? { policyholderPartyId: params.policyholderPartyId } : {}),
+      ...(params.relatedPartyId ? { relatedPartyId: params.relatedPartyId } : {}),
       ...(params.q ? { q: params.q } : {}),
       page,
       pageSize,
@@ -279,6 +291,16 @@ export const DEFAULT_MEMBER_PAGE_SIZE = 25;
 export interface MemberListParams {
   /** Omit for every member including those who have left. */
   status?: MemberStatus;
+  /**
+   * Free-text, case-insensitive substring match against the MEMBER'S NAME. Omit for no
+   * search; ANDed with `status` rather than replacing it.
+   *
+   * Resolved server-side through the party module -- a member row carries a party id and
+   * no name -- so this is a real filter with a real total, not a pass over the rows in
+   * hand. That matters on the screen it serves: a 500-life schedule is exactly the case
+   * where filtering one page would answer the wrong question.
+   */
+  q?: string;
   page?: number;
   pageSize?: number;
 }
@@ -305,7 +327,12 @@ export async function listSchemeMembers(
     items?: PolicyMemberView[];
     page?: { page?: number; pageSize?: number; totalElements?: number };
   }>(`/group-schemes/${encodeURIComponent(policyNumber)}/members`, {
-    params: { ...(params.status ? { status: params.status } : {}), page, pageSize },
+    params: {
+      ...(params.status ? { status: params.status } : {}),
+      ...(params.q ? { q: params.q } : {}),
+      page,
+      pageSize,
+    },
   });
 
   return {

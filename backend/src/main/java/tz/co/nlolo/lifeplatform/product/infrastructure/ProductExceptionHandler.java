@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.product.infrastructure;
 
 import tz.co.nlolo.lifeplatform.product.api.DuplicateProductCodeException;
 import tz.co.nlolo.lifeplatform.product.api.InvalidProductVersionException;
+import tz.co.nlolo.lifeplatform.product.api.NoActiveProductVersionException;
 import tz.co.nlolo.lifeplatform.product.api.PremiumNotQuotableException;
 import tz.co.nlolo.lifeplatform.product.api.ProductNotFoundException;
 import org.springframework.core.Ordered;
@@ -27,6 +28,23 @@ public class ProductExceptionHandler {
     @ExceptionHandler(ProductNotFoundException.class)
     public ProblemDetail handleNotFound(ProductNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "PRODUCT_NOT_FOUND");
+    }
+
+    /**
+     * 404, like a missing product, but with its OWN errorCode — which is the entire point.
+     *
+     * <p>The status has to stay 404: `premium-quote` already documents 404 for this same
+     * condition, and the resource asked for (the version in force on a date) genuinely is
+     * not there. What was wrong was that the code said {@code PRODUCT_NOT_FOUND}, so a
+     * client could not tell "no such product" from "its version starts tomorrow" and the
+     * console rendered the generic 404 copy — which on this platform deliberately hedges
+     * about whether the caller's role is at fault, because a 404 may be a disguised
+     * denial. Here it is not: the product exists and the caller can see it. A distinct
+     * code is what lets the console say the true thing instead of the safe thing.
+     */
+    @ExceptionHandler(NoActiveProductVersionException.class)
+    public ProblemDetail handleNoActiveVersion(NoActiveProductVersionException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "NO_ACTIVE_PRODUCT_VERSION");
     }
 
     @ExceptionHandler(InvalidProductVersionException.class)

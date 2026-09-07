@@ -142,7 +142,24 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
   }
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    /*
+      `modal` locks page scroll while the list is open, and that is a bug fix
+      rather than a modality preference.
+
+      The content is portalled and fixed-position, so Radix re-anchors it to the
+      trigger on every scroll of the `<main>` column it lives in. That is correct
+      behaviour and it is also a chase: scroll the page toward an option and the
+      trigger moves, the list re-anchors, and the option you were reaching for
+      moves with it. PLAN.md §14.5 recorded this as an intermittent e2e flake and
+      the cause was guessed at but never pinned; §14.8 pinned it by making it
+      deterministic -- moving the Beneficiaries panel down a long policy page put
+      the trigger far enough into the scroll that the chase happened every time.
+
+      Locking the scroll removes the chase at its source: while you are choosing
+      from a list anchored to a field, the page underneath does not move. Outside
+      clicks still dismiss.
+    */
+    <Popover.Root open={open} onOpenChange={setOpen} modal>
       <div className="relative">
         <Popover.Trigger asChild>
           <button

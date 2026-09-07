@@ -8,6 +8,7 @@ import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
 import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.billing.application.ArrearsNotificationSweep;
 import tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl;
 import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
 import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
@@ -162,6 +163,7 @@ class BillingApiIntegrationTest {
     @Autowired private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
     @Autowired private BillingScheduleRepository billingScheduleRepository;
     @Autowired private BillingApiImpl billingApiImpl;
+    @Autowired private ArrearsNotificationSweep arrearsNotificationSweep;
     @Autowired private PremiumInvoiceRepository premiumInvoiceRepository;
     @Autowired private FieldReceiptRepository fieldReceiptRepository;
     @Autowired private DataSource dataSource;
@@ -293,9 +295,70 @@ class BillingApiIntegrationTest {
         }
 
         TenantContext.set(tenantId);
-        billingApiImpl.publishPendingNotifications(tenantId);
+        arrearsNotificationSweep.publishPending(tenantId);
 
         assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.LAPSED);
+    }
+
+    /**
+     * The test the original gap needed: not "does the sweep work" but "does anything call it".
+     *
+     * <p>{@code publishPendingNotifications} was written, covered by the two tests above, and
+     * had zero production callers -- so in a deployed environment {@code dunning_level} would
+     * climb to 5 while no event was ever published and automatic lapse never fired. Every
+     * existing test invoked the bean directly, which is exactly why none of them noticed.
+     *
+     * <p>So this one goes through {@code BillingApi.listInvoices} -- a real request path, the
+     * one the console calls on every policy record -- and asserts the event came out. It never
+     * names the sweep. Unhook it from {@code listInvoices} and this fails; keep the sweep
+     * perfect and unreachable and this fails too.
+     */
+    @Test
+    void readingAPolicysInvoicesCarriesThePendingArrearsNotificationForward() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-SWEEP-WIRED-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("40000.00"), "MONTHLY");
+
+        TenantContext.set(tenantId);
+        UUID invoiceId = billingApi.listInvoices(policyNumber, null).get(0).invoiceId();
+
+        // Seeded exactly as billing.sweep_billing_state() would leave it: level 3 reached, and
+        // nothing announced yet. Level 3 rather than 5 so this proves the customer-facing
+        // PremiumOverdue path rather than the lapse path the test above already covers.
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO billing.arrears_case (tenant_id, invoice_id, policy_number, dunning_level, last_notified_dunning_level) " +
+                 "VALUES (?, ?, ?, 3, 0)")) {
+            insert.setObject(1, tenantId);
+            insert.setObject(2, invoiceId);
+            insert.setString(3, policyNumber);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        }
+
+        Instant before = Instant.now();
+
+        // The whole point: an ordinary read, with no mention of any sweep.
+        billingApi.listInvoices(policyNumber, null);
+
+        // Asserted through the audit journal rather than through the column, because
+        // last_notified_dunning_level advancing only proves bookkeeping ran -- the journal
+        // proves an event was genuinely PUBLISHED, which is the thing that was missing. It also
+        // proves the sweep's @Transactional survived: AFTER_COMMIT listeners drop everything
+        // published outside a transaction, which is what self-invoking this from listInvoices
+        // would silently have caused.
+        List<AuditLogEntry> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "billing.PremiumOverdue", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(auditRows).hasSize(1);
+        JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
+        assertThat(payload.path("policyNumber").asText()).isEqualTo(policyNumber);
+        assertThat(payload.path("dunningLevel").asInt()).isEqualTo(3);
+
+        // And a second read does not re-announce it. Without this, hanging the sweep off a
+        // frequently-called read would re-notify a customer on every page view.
+        Instant beforeSecondRead = Instant.now();
+        billingApi.listInvoices(policyNumber, null);
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "billing.PremiumOverdue", beforeSecondRead, Instant.now().plusSeconds(5))).isEmpty();
     }
 
     @Test
@@ -313,7 +376,7 @@ class BillingApiIntegrationTest {
         // (sweep_billing_state()'s own SLA-breach UPDATE) is proven separately by
         // BillingSweepPsqlTest. So the status flip to RECONCILIATION_OVERDUE is seeded directly
         // here, exactly as sweep_billing_state() itself would have performed it, isolating
-        // publishPendingNotifications as the one thing under test.
+        // ArrearsNotificationSweep as the one thing under test.
         try (Connection connection = dataSource.getConnection();
              PreparedStatement update = connection.prepareStatement(
                  "UPDATE billing.field_receipt SET status = 'RECONCILIATION_OVERDUE' WHERE receipt_id = ?")) {
@@ -323,7 +386,7 @@ class BillingApiIntegrationTest {
 
         TenantContext.set(tenantId);
         Instant before = Instant.now();
-        int published = billingApiImpl.publishPendingNotifications(tenantId);
+        int published = arrearsNotificationSweep.publishPending(tenantId);
         assertThat(published).isGreaterThanOrEqualTo(1);
 
         // Same audit-log-query falsifiability idiom as policy.PolicyApiIntegrationTest's own
@@ -336,7 +399,7 @@ class BillingApiIntegrationTest {
         assertThat(payload.path("receiptId").asText()).isEqualTo(result.receiptId().toString());
 
         // Confirms the notification is idempotent, not re-fired on every sweep.
-        assertThat(billingApiImpl.publishPendingNotifications(tenantId)).isEqualTo(0);
+        assertThat(arrearsNotificationSweep.publishPending(tenantId)).isEqualTo(0);
     }
 
     // --- M5: the money-in loop -----------------------------------------------------------------

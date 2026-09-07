@@ -16,6 +16,11 @@ import { dmy } from './dates';
  */
 
 test.describe('staff products', () => {
+  // Authoring and publishing are ADMIN-only server-side, so this suite runs as staff.admin
+  // rather than the project default (staff.underwriter). The denial from the other side --
+  // an underwriter is offered no way in -- is its own test below.
+  test.use({ storageState: 'e2e/.auth/staff-admin.json' });
+
   test('lists the real seeded Demo Term Life product', async ({ page }) => {
     await page.goto('/staff/products');
     await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible();

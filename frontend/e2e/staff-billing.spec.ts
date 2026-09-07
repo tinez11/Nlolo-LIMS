@@ -36,6 +36,10 @@ async function issueRealPolicyWithInvoices(page: Page): Promise<string> {
 }
 
 test.describe('staff billing', () => {
+  // Waiving is FINANCE_OFFICER/ADMIN now, tightened from plain staff: writing off a premium
+  // is a final ledger movement and an underwriter has no business authorising one.
+  test.use({ storageState: 'e2e/.auth/staff-finance.json' });
+
   test('waives a real invoice on a freshly issued policy', async ({ page }) => {
     await issueRealPolicyWithInvoices(page);
 

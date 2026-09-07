@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.billing.application;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.billing.api.*;
@@ -14,6 +16,8 @@ import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,9 +29,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class BillingApiImpl implements BillingApi {
+
+    private static final Logger log = LoggerFactory.getLogger(BillingApiImpl.class);
 
     // Schedule generation pre-creates invoices this far ahead of need, mirroring the platform's
     // established convention of pre-creating partitions/reservations ahead of when they're
@@ -42,16 +49,90 @@ public class BillingApiImpl implements BillingApi {
     private final FieldReceiptRepository fieldReceiptRepository;
     private final ProductApi productApi;
     private final ApplicationEventPublisher eventPublisher;
+    private final ArrearsNotificationSweep arrearsNotificationSweep;
 
     public BillingApiImpl(BillingScheduleRepository billingScheduleRepository, PremiumInvoiceRepository premiumInvoiceRepository,
                            ArrearsCaseRepository arrearsCaseRepository, FieldReceiptRepository fieldReceiptRepository,
-                           ProductApi productApi, ApplicationEventPublisher eventPublisher) {
+                           ProductApi productApi, ApplicationEventPublisher eventPublisher,
+                           ArrearsNotificationSweep arrearsNotificationSweep) {
         this.billingScheduleRepository = billingScheduleRepository;
         this.premiumInvoiceRepository = premiumInvoiceRepository;
         this.arrearsCaseRepository = arrearsCaseRepository;
         this.fieldReceiptRepository = fieldReceiptRepository;
         this.productApi = productApi;
         this.eventPublisher = eventPublisher;
+        this.arrearsNotificationSweep = arrearsNotificationSweep;
+    }
+
+    @Override
+    public Page<ArrearsCaseView> searchArrears(Integer minDunningLevel, Boolean resolved, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+
+        // The same opportunistic sweep listInvoices runs, and for a stronger reason: this IS the
+        // collections screen, so it is the one read where a stale "not yet notified" gap is the
+        // thing being looked at. Failure is swallowed for the same reason -- a catch-up must not
+        // take the queue down.
+        try {
+            arrearsNotificationSweep.publishPending(tenantId);
+        } catch (RuntimeException e) {
+            log.warn("Arrears notification sweep failed for tenant {}; the arrears queue continues", tenantId, e);
+        }
+
+        Page<ArrearsCase> cases = arrearsCaseRepository.search(tenantId, minDunningLevel, resolved, pageable);
+        if (cases.isEmpty()) {
+            return cases.map(c -> toView(c, null));
+        }
+
+        // One invoice query for the whole page. An arrears case carries an invoiceId and no
+        // money, and resolving each row's amount individually would be a query per row to draw
+        // one screen -- the same N+1 this class had in listInvoices.
+        Map<UUID, PremiumInvoice> invoicesById = premiumInvoiceRepository
+            .findByTenantIdAndInvoiceIdIn(tenantId,
+                cases.getContent().stream().map(ArrearsCase::getInvoiceId).toList())
+            .stream()
+            .collect(Collectors.toMap(PremiumInvoice::getInvoiceId, i -> i, (a, b) -> a));
+
+        return cases.map(c -> toView(c, invoicesById.get(c.getInvoiceId())));
+    }
+
+    /**
+     * A queue row. The invoice may be absent only if it were deleted, which nothing on this
+     * platform does -- a waived or paid invoice keeps its row -- so the money fields are null
+     * rather than defaulted to zero. A zero here would read as "nothing owed", which is the one
+     * thing this screen must never say by accident.
+     */
+    private ArrearsCaseView toView(ArrearsCase arrearsCase, PremiumInvoice invoice) {
+        return new ArrearsCaseView(
+            arrearsCase.getArrearsCaseId(), arrearsCase.getPolicyNumber(), arrearsCase.getInvoiceId(),
+            arrearsCase.getDunningLevel(), arrearsCase.getLastNotifiedDunningLevel(),
+            arrearsCase.getOpenedAt(), arrearsCase.getResolvedAt(),
+            invoice != null ? invoice.getAmount() : null,
+            invoice != null ? invoice.getCurrency() : null,
+            invoice != null ? invoice.getDueDate() : null,
+            invoice != null ? InvoiceStatus.valueOf(invoice.getStatus()) : null);
+    }
+
+    @Override
+    public Page<FieldReceiptView> searchFieldReceipts(String status, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+
+        // Same catch-up as the other two queues, and the one that matters most for this screen:
+        // a receipt the SQL sweep flipped to RECONCILIATION_OVERDUE has not raised its staff
+        // alert until the Java half publishes, so the reconciliation queue is exactly where a
+        // pending announcement should be flushed.
+        try {
+            arrearsNotificationSweep.publishPending(tenantId);
+        } catch (RuntimeException e) {
+            log.warn("Arrears notification sweep failed for tenant {}; the receipt queue continues", tenantId, e);
+        }
+
+        return fieldReceiptRepository.search(tenantId, status, pageable).map(BillingApiImpl::toView);
+    }
+
+    private static FieldReceiptView toView(FieldReceipt receipt) {
+        return new FieldReceiptView(receipt.getReceiptId(), receipt.getPolicyNumber(), receipt.getAgentId(),
+            receipt.getAmount(), receipt.getCurrency(), receipt.getCapturedAtClient(),
+            receipt.getCapturedAtServer(), receipt.getStatus(), receipt.getReconciledAt());
     }
 
     @Override
@@ -66,10 +147,56 @@ public class BillingApiImpl implements BillingApi {
     @Override
     public List<InvoiceView> listInvoices(String policyNumber, InvoiceStatus status) {
         UUID tenantId = TenantContext.get();
+
+        /*
+         * The opportunistic notification sweep, on the read that is this module's most
+         * travelled path (the console loads it on every policy record).
+         *
+         * It runs in the CALLER's TenantContext, which is what makes it RLS-safe -- see
+         * ArrearsNotificationSweep for why a @Scheduled cross-tenant sweep cannot work on this
+         * platform, and for how long this sat written, tested and uncalled.
+         *
+         * Hooked to a READ, not a write, deliberately: the policies that need chasing are
+         * exactly the ones nobody is transacting against, so hanging the catch-up off a
+         * payment or a waiver would never fire for a delinquent policy. The sweep is
+         * per-TENANT, so any staff member opening any policy carries the whole tenant's
+         * backlog forward.
+         *
+         * Failure is swallowed on purpose. A catch-up that cannot run must not take a
+         * billing read down with it -- somebody looking at an invoice has a job to do, and
+         * the sweep is self-healing by nature: the next read tries again. It is logged at
+         * WARN rather than silently, because a sweep failing every time is a real problem
+         * that would otherwise never surface.
+         */
+        try {
+            arrearsNotificationSweep.publishPending(tenantId);
+        } catch (RuntimeException e) {
+            log.warn("Arrears notification sweep failed for tenant {}; the invoice read continues", tenantId, e);
+        }
+
         List<PremiumInvoice> invoices = status == null
             ? premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)
             : premiumInvoiceRepository.findByPolicyNumberAndTenantIdAndStatusIn(policyNumber, tenantId, List.of(status.name()));
-        return invoices.stream().map(this::toView).toList();
+        if (invoices.isEmpty()) {
+            return List.of();
+        }
+
+        /*
+         * One arrears query for the whole list, not one per invoice.
+         *
+         * `toView` resolves each invoice's dunning level through its own repository call, so
+         * this method was a straight N+1: a policy with two hundred invoices made two hundred
+         * arrears lookups to draw one panel, and the seeded tenant has policies well past
+         * that. Same "resolve the page in one query" shape the group-scheme member roll
+         * already uses for its benefits.
+         */
+        Map<UUID, Integer> dunningByInvoice = arrearsCaseRepository
+            .findByTenantIdAndInvoiceIdInAndResolvedAtIsNull(tenantId,
+                invoices.stream().map(PremiumInvoice::getInvoiceId).toList())
+            .stream()
+            .collect(Collectors.toMap(ArrearsCase::getInvoiceId, ArrearsCase::getDunningLevel, (a, b) -> a));
+
+        return invoices.stream().map(invoice -> toView(invoice, dunningByInvoice.get(invoice.getInvoiceId()))).toList();
     }
 
     @Override
@@ -194,36 +321,6 @@ public class BillingApiImpl implements BillingApi {
         return new FieldReceiptResult(receipt.getReceiptId(), receipt.getStatus());
     }
 
-    // ---- Java-side half of the notification split described in Global Constraints: publishes
-    // domain events for ArrearsCase/FieldReceipt rows whose business state the pg_cron-driven
-    // sweep (Task 5) has already transitioned, but which haven't been notified yet. ----
-
-    @Transactional
-    public int publishPendingNotifications(UUID tenantId) {
-        int published = 0;
-        for (ArrearsCase arrearsCase : arrearsCaseRepository.findByTenantIdAndResolvedAtIsNullAndDunningLevelGreaterThanLastNotifiedDunningLevel(tenantId)) {
-            int level = arrearsCase.getDunningLevel();
-            String eventType = level >= 5 ? "billing.PolicyLapseRecommended" : "billing.PremiumOverdue";
-            eventPublisher.publishEvent(DomainEventEnvelope.of(eventType, tenantId,
-                level >= 5
-                    ? Map.of("policyNumber", arrearsCase.getPolicyNumber(), "invoiceId", arrearsCase.getInvoiceId(),
-                             "recommendedAt", Instant.now().toString())
-                    : Map.of("invoiceId", arrearsCase.getInvoiceId(), "policyNumber", arrearsCase.getPolicyNumber(), "dunningLevel", level)));
-            arrearsCase.markNotified(level);
-            arrearsCaseRepository.save(arrearsCase);
-            published++;
-        }
-        for (FieldReceipt receipt : fieldReceiptRepository.findByTenantIdAndStatusAndNotifiedOverdueAtIsNull(tenantId, "RECONCILIATION_OVERDUE")) {
-            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptReconciliationOverdue", tenantId,
-                Map.of("receiptId", receipt.getReceiptId(), "policyNumber", receipt.getPolicyNumber(),
-                       "overdueSince", receipt.getCapturedAtServer().toString())));
-            receipt.markNotifiedOverdue();
-            fieldReceiptRepository.save(receipt);
-            published++;
-        }
-        return published;
-    }
-
     // ---- PolicyEventListener entry points (package-private -- called only from this module's
     // own event listener, never from the REST layer or another module) ----
 
@@ -301,9 +398,21 @@ public class BillingApiImpl implements BillingApi {
         return from.plus(step);
     }
 
+    /** Single-invoice reads, which resolve their own dunning level -- one lookup for one row. */
     private InvoiceView toView(PremiumInvoice invoice) {
         Integer dunningLevel = arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoice.getInvoiceId(), invoice.getTenantId())
             .map(ArrearsCase::getDunningLevel).orElse(null);
+        return toView(invoice, dunningLevel);
+    }
+
+    /**
+     * List reads, which resolve every dunning level in one query and pass it in.
+     *
+     * <p>Null means no OPEN arrears case for this invoice, which is not the same as level 0 --
+     * an invoice that was never overdue and one whose arrears were resolved both land here, and
+     * neither should render a dunning badge.
+     */
+    private InvoiceView toView(PremiumInvoice invoice, Integer dunningLevel) {
         return new InvoiceView(invoice.getInvoiceId(), invoice.getPolicyNumber(), invoice.getDueDate(),
             invoice.getAmount(), invoice.getCurrency(), InvoiceStatus.valueOf(invoice.getStatus()),
             invoice.getGracePeriodEndsAt(), dunningLevel);

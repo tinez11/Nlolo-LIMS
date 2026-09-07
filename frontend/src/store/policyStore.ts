@@ -55,6 +55,16 @@ type Keyed<T> = Record<string, Resource<T>>;
 
 interface PolicyState {
   list: Resource<Page<PolicyView>>;
+  /**
+   * Policies a given party is connected to in any capacity, keyed by that PARTY id.
+   *
+   * Keyed rather than a single slot for the reason the client register learned the hard way
+   * (PLAN.md 14.9): a claims clerk who picks the wrong claimant, then corrects it, must not
+   * see the first claimant's policies rendered under the second one's name while the second
+   * request is still in flight. Choosing a policy off that list would file the claim against
+   * the wrong contract, and nothing on screen would look wrong.
+   */
+  claimantPolicies: Keyed<Page<PolicyView>>;
   detail: Keyed<PolicyView>;
   coverage: Keyed<CoverageStatusView>;
   invoices: Keyed<InvoiceView[]>;
@@ -96,6 +106,7 @@ interface PolicyState {
   addingMember: Keyed<PolicyMemberView>;
 
   loadList: (params: PolicySearchParams) => Promise<void>;
+  loadClaimantPolicies: (partyId: string, q?: string) => Promise<void>;
   loadDetail: (policyNumber: string) => Promise<void>;
   loadCoverage: (policyNumber: string, asOf?: string) => Promise<void>;
   loadInvoices: (policyNumber: string) => Promise<void>;
@@ -141,6 +152,7 @@ interface PolicyState {
 
 export const usePolicyStore = create<PolicyState>((set, getState) => ({
   list: idle(),
+  claimantPolicies: {},
   detail: {},
   coverage: {},
   invoices: {},
@@ -164,6 +176,34 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   // quickly, where network timing has no relationship to click order. The list key
   // is constant regardless of which filter was requested: it is the same on-screen
   // table either way, and only the most recently REQUESTED filter should win.
+  loadClaimantPolicies: (partyId, q) => {
+    // Keyed by (party, filter) rather than by party alone, the same reasoning `coverage` uses
+    // for (policy, asOf): two different filters are two different answers, and sharing one
+    // slot would render the results of one query under the heading of another.
+    const key = claimantPoliciesKey(partyId, q);
+    return track(
+      `policy.claimantPolicies.${key}`,
+      getState().claimantPolicies[key],
+      (next) => set((s) => ({ claimantPolicies: { ...s.claimantPolicies, [key]: next } })),
+      /*
+       * `q` goes to the SERVER, and that is the whole point of accepting it here.
+       *
+       * pageSize 100 is the server's own cap, so a claimant with more connections than that
+       * gets a truncated first page -- and because the sort is `createdAt DESC`, what falls
+       * off the end is their OLDEST policy, which on a life book is the one most likely to be
+       * claimed against. Filtering the already-loaded page client-side would therefore search
+       * exactly the wrong 100. Measured, not theorised: the seeded dev policyholder has over
+       * 100 policies and the one a test wanted was not among the newest.
+       */
+      () =>
+        searchPolicies({
+          relatedPartyId: partyId,
+          pageSize: 100,
+          ...(q && q.trim() ? { q: q.trim() } : {}),
+        }),
+    );
+  },
+
   loadList: (params) =>
     track(
       'policy.list',
@@ -463,6 +503,15 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
 /** Selectors, so components never index a possibly-absent key by hand. */
 export const selectDetail = (policyNumber: string) => (s: PolicyState) =>
   s.detail[policyNumber] ?? idle<PolicyView>();
+/**
+ * Keyed by (PARTY id, filter) -- not by a policy number, and not by the party alone. The
+ * filter is part of the key because it is sent to the server, so two filters are two
+ * different result sets rather than one narrowed locally.
+ */
+export const claimantPoliciesKey = (partyId: string, q?: string) =>
+  `${partyId}|${(q ?? '').trim().toUpperCase()}`;
+export const selectClaimantPolicies = (partyId: string, q?: string) => (s: PolicyState) =>
+  s.claimantPolicies[claimantPoliciesKey(partyId, q)] ?? idle<Page<PolicyView>>();
 /**
  * Coverage is cached per (policy, asOf) pair, not per policy — so that two dates
  * are two cache entries rather than one stale answer.

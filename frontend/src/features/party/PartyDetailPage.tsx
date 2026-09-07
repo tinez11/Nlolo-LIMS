@@ -1,15 +1,17 @@
 import { ArrowLeft, Check, FileCheck, X } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
+import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { formatDate, formatInstant } from '@/lib/dates';
+import { partyTypeLabel } from '@/lib/partyType';
 import type { ApiError } from '@/lib/apiError';
 import type {
   AgentView,
@@ -25,11 +27,13 @@ import type {
 } from '@/api/types';
 import { isInitialLoad, type Resource } from '@/store/createResourceSlice';
 import {
+  SCHEME_MEMBER_PREVIEW,
   selectClientAgentRecords,
   selectClientBeneficiaryOf,
   selectClientCases,
   selectClientClaims,
   selectClientPolicies,
+  selectClientSchemeMembers,
   useClientRecordStore,
 } from '@/store/clientRecord';
 import {
@@ -40,6 +44,7 @@ import {
   usePartyStore,
 } from '@/store/partyStore';
 import { Panel } from '@/components/Panel';
+import { DetailLayout } from '@/components/DetailLayout';
 
 const ACCEPTED_EVIDENCE_TYPES = {
   'image/jpeg': ['.jpg', '.jpeg'],
@@ -91,6 +96,7 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   const loadCases = useClientRecordStore((s) => s.loadCases);
   const loadBeneficiaryOf = useClientRecordStore((s) => s.loadBeneficiaryOf);
   const loadAgentRecords = useClientRecordStore((s) => s.loadAgentRecords);
+  const loadSchemeMembers = useClientRecordStore((s) => s.loadSchemeMembers);
 
   const isStaff = realm === 'staff';
 
@@ -120,6 +126,28 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
 
   const party = detail.data;
 
+  /*
+   * Whether this record is a company or a group rather than a person. A corporate with
+   * no scheme yet still shows the panel, empty, so a reviewer can see there is none --
+   * an absent panel and "no schemes" are different statements.
+   */
+  const isOrganisation = party?.partyType === 'CORPORATE' || party?.partyType === 'GROUP';
+
+  // Derived from the policies panel's own page. `useMemo` keeps the array identity
+  // stable so the members effect below does not re-fire on every render.
+  const schemes = useMemo(
+    () => (policies.data?.items ?? []).filter((p) => p.productCategory === 'GROUP_LIFE'),
+    [policies.data],
+  );
+  const soleSchemeNumber = schemes.length === 1 ? schemes[0]?.policyNumber : undefined;
+
+  useEffect(() => {
+    // Only for the single-scheme case: with two or more there is no one roll to
+    // preview, and fetching every roll to show five rows of each would be a request
+    // per scheme for something nobody asked to see.
+    if (partyId && soleSchemeNumber) void loadSchemeMembers(partyId, soleSchemeNumber);
+  }, [partyId, soleSchemeNumber, loadSchemeMembers]);
+
   if (isInitialLoad(detail)) {
     return <LoadingBlock label="Loading client" />;
   }
@@ -144,156 +172,217 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
 
       <PageHeader
         title={party?.displayName ?? 'Client'}
-        description={party?.partyType ? <span>{party.partyType}</span> : undefined}
+        description={party?.partyType ? <span>{partyTypeLabel(party.partyType)}</span> : undefined}
         actions={party?.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
       />
 
-      <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
+      {/*
+        KYC leads, because this page acts on KYC and only on KYC -- and it used to be
+        the LAST of five panels, under four read-only registers. A reviewer whose
+        whole task is deciding an identity had to scroll past the client's policies,
+        claims, underwriting cases and beneficiary interests to reach the one control
+        they came for.
+
+        The rail is the identity itself: who this person is, the underwriting facts a
+        premium is rated on, and where they live. Pinned, so the name and date of
+        birth stay beside the evidence being judged against them.
+      */}
+      <DetailLayout
+        record={
+          <>
+            <Panel title="Identity">
+              {party && (
+                <dl className="px-4 pb-2">
+                  <Field label="Type" value={partyTypeLabel(party.partyType)} />
+                  <Field label="Date of birth" value={formatDate(party.dateOfBirth) || '—'} />
+                  <Field label="Registration no." value={party.registrationNumber ?? '—'} />
+                  <Field label="Phone" value={party.phoneNumber ?? '—'} />
+                  <Field label="Email" value={party.email ?? '—'} />
+                  {party.identityDocument?.type && (
+                    <Field
+                      label={ID_TYPE_LABELS[party.identityDocument.type]}
+                      value={
+                        <span className="font-mono text-xs select-all">
+                          {party.identityDocument.number ?? '—'}
+                        </span>
+                      }
+                    />
+                  )}
+                  <Field label="Nationality" value={party.nationality ?? '—'} />
+                  <Field
+                    label="KYC decided"
+                    value={party.kycVerifiedAt ? formatInstant(party.kycVerifiedAt) : '—'}
+                    {...(party.kycVerifiedAt ? {} : { note: 'No decision recorded yet.' })}
+                  />
+                  <Field label="Registered" value={formatInstant(party.createdAt) || '—'} />
+                  <Field
+                    label="Registered by"
+                    value={<span className="font-mono text-xs">{party.createdBy ?? '—'}</span>}
+                    note="The account that created this record — who the client relationship belongs to."
+                  />
+                  <Field label="Client id" value={<span className="font-mono text-xs">{partyId}</span>} />
+                </dl>
+              )}
+            </Panel>
+
+            {/* Rendered only for individuals, and only when something is on record.
+                A corporate has none of this, and an empty panel of eight em dashes
+                would read as data the platform lost rather than never asked for. */}
+            {party?.partyType === 'INDIVIDUAL' && hasPersonRecord(party) && (
+              <Panel
+                title="Person"
+                subtitle="Underwriting facts. Sex, smoker status and date of birth are what a premium is rated on."
+              >
+                <dl className="px-4 pb-2">
+                  <Field label="Sex" value={party.sex ? SEX_LABELS[party.sex] : '—'} />
+                  <Field
+                    label="Smoker status"
+                    value={party.smokerStatus ? SMOKER_LABELS[party.smokerStatus] : '—'}
+                    // The distinction the column exists to preserve: UNKNOWN is a
+                    // recorded answer a product may price; absent means nobody asked.
+                    {...(party.smokerStatus ? {} : { note: 'Never asked — not the same as declined.' })}
+                  />
+                  <Field label="Occupation" value={party.occupation ?? '—'} />
+                  <Field
+                    label="Occupation class"
+                    value={party.occupationClass ?? '—'}
+                    {...(party.occupationClass
+                      ? {}
+                      : { note: 'Unclassified — a quote cannot apply an occupation loading.' })}
+                  />
+                  <Field label="Employer" value={party.employerName ?? '—'} />
+                </dl>
+              </Panel>
+            )}
+
+            {party?.partyType === 'INDIVIDUAL' && hasAddress(party) && (
+              <Panel title="Address">
+                <dl className="px-4 pb-2">
+                  <Field label="Street or plot" value={party.address?.line ?? '—'} />
+                  <Field label="Ward" value={party.address?.ward ?? '—'} />
+                  <Field label="District" value={party.address?.district ?? '—'} />
+                  <Field label="Region" value={party.address?.region ?? '—'} />
+                  <Field label="Postal code" value={party.address?.postalCode ?? '—'} />
+                </dl>
+              </Panel>
+            )}
+          </>
+        }
+      >
+        {isStaff && (
           <Panel
-            title={isStaff ? 'Policies' : 'Your Policies'}
+            emphasis
+            title="KYC verification"
+            subtitle="Upload evidence, then record a decision against it."
+          >
+            {party && <KycPanel partyId={partyId} currentStatus={party.kycStatus} />}
+          </Panel>
+        )}
+
+        <Panel
+          title={isStaff ? 'Policies' : 'Your Policies'}
+          subtitle={
+            isStaff
+              ? 'Policies this client holds.'
+              : 'Policies in your book. A policy written by another agent will not appear here.'
+          }
+        >
+          <PolicyList
+            resource={policies}
+            onRetry={() => void loadPolicies(partyId)}
+            partyId={partyId}
+          />
+        </Panel>
+
+        {/*
+          The company-to-its-members hop, which is what the client register's second
+          area exists to serve.
+
+          On this platform a member belongs to a CONTRACT, not to a company: a group
+          scheme's lives are its insured schedule, and a company with three schemes has
+          three rolls. So this panel lists the client's schemes and, where there is
+          exactly one, previews that roll inline -- the common case, and the one where
+          "show me this company's members" has a single unambiguous answer.
+
+          Each row links STRAIGHT to the schedule, not to the policy record that owns
+          it. Reaching a member list used to mean Clients -> the company -> Policies ->
+          the GRP policy -> the policy page -> Member schedule; that is four hops of
+          knowing that "members" live under a contract, and this is the shortcut for
+          somebody who already knows they want the roll.
+
+          Derived from the policies panel's own already-loaded page -- no extra request.
+          `productCategory` has been on `PolicyView` since M3, so a scheme is
+          identifiable from a list row without reading each policy back.
+        */}
+        {/*
+          Shown for an organisation ALWAYS, and for anyone who actually holds a scheme.
+          Not gated on party type alone: nothing server-side requires a scheme's employer
+          to be a corporate, and the seeded schemes in the dev tenant are in fact held by
+          an individual -- so a type-only gate would have hidden real cover from the
+          record of the person who holds it.
+        */}
+        {(isOrganisation || schemes.length > 0) && (
+          <Panel
+            title="Group schemes"
             subtitle={
-              isStaff
-                ? 'Policies this client holds.'
-                : 'Policies in your book. A policy written by another agent will not appear here.'
+              schemes.length === 1
+                ? 'The scheme this client holds, and who is covered under it.'
+                : 'Master policies this client holds. Open one for its member schedule.'
             }
           >
-            <PolicyList
+            <SchemeList
               resource={policies}
-              onRetry={() => void loadPolicies(partyId)}
+              schemes={schemes}
               partyId={partyId}
+              onRetry={() => void loadPolicies(partyId)}
             />
           </Panel>
+        )}
 
-          <Panel title="Claims" subtitle="Claims this client has made.">
-            <ClaimList resource={claims} onRetry={() => void loadClaims(partyId)} />
-          </Panel>
+        <Panel title="Claims" subtitle="Claims this client has made.">
+          <ClaimList resource={claims} onRetry={() => void loadClaims(partyId)} />
+        </Panel>
 
-          <Panel
-            title="Underwriting"
-            subtitle="Applications assessed for this client. Open one to decide it."
-          >
-            <CaseList resource={cases} onRetry={() => void loadCases(partyId)} />
-          </Panel>
+        <Panel
+          title="Underwriting"
+          subtitle="Applications assessed for this client. Open one to decide it."
+        >
+          <CaseList resource={cases} onRetry={() => void loadCases(partyId)} />
+        </Panel>
 
-          <Panel
-            title="Named as beneficiary"
-            subtitle="Policies that would pay out to this client — not policies they own."
-          >
-            <BeneficiaryOfList
-              resource={beneficiaryOf}
-              onRetry={() => void loadBeneficiaryOf(partyId)}
+        <Panel
+          title="Named as beneficiary"
+          subtitle="Policies that would pay out to this client — not policies they own."
+        >
+          <BeneficiaryOfList
+            resource={beneficiaryOf}
+            onRetry={() => void loadBeneficiaryOf(partyId)}
+          />
+        </Panel>
+
+        {/* Both moved out of the rail, which now holds only the identity itself.
+            These two are registers of things filed against the client, which is what
+            every panel in this column is -- and a filename truncated inside 320px was
+            losing the part that distinguishes one scan from another. */}
+        <Panel
+          title="Documents"
+          subtitle="Filed against this client. Claim evidence lives on the claim."
+        >
+          <DocumentList
+            resource={documents}
+            onRetry={() => void loadPartyDocuments(partyId)}
+          />
+        </Panel>
+
+        {isStaff && (
+          <Panel title="Also an agent" subtitle="Whether this client sells for us as well.">
+            <AgentRecordList
+              resource={agentRecords}
+              onRetry={() => void loadAgentRecords(partyId)}
             />
           </Panel>
-
-          {isStaff && (
-            <Panel
-              title="KYC verification"
-              subtitle="Upload evidence, then record a decision against it."
-            >
-              {party && <KycPanel partyId={partyId} currentStatus={party.kycStatus} />}
-            </Panel>
-          )}
-        </div>
-
-        <div className="space-y-5">
-          <Panel title="Identity">
-            {party && (
-              <dl className="px-4 pb-2">
-                <Field label="Type" value={party.partyType ?? '—'} />
-                <Field label="Date of birth" value={formatDate(party.dateOfBirth) || '—'} />
-                <Field label="Registration no." value={party.registrationNumber ?? '—'} />
-                <Field label="Phone" value={party.phoneNumber ?? '—'} />
-                <Field label="Email" value={party.email ?? '—'} />
-                {party.identityDocument?.type && (
-                  <Field
-                    label={ID_TYPE_LABELS[party.identityDocument.type]}
-                    value={
-                      <span className="font-mono text-xs select-all">
-                        {party.identityDocument.number ?? '—'}
-                      </span>
-                    }
-                  />
-                )}
-                <Field label="Nationality" value={party.nationality ?? '—'} />
-                <Field
-                  label="KYC decided"
-                  value={party.kycVerifiedAt ? formatInstant(party.kycVerifiedAt) : '—'}
-                  {...(party.kycVerifiedAt ? {} : { note: 'No decision recorded yet.' })}
-                />
-                <Field label="Registered" value={formatInstant(party.createdAt) || '—'} />
-                <Field
-                  label="Registered by"
-                  value={<span className="font-mono text-xs">{party.createdBy ?? '—'}</span>}
-                  note="The account that created this record — who the client relationship belongs to."
-                />
-                <Field label="Client id" value={<span className="font-mono text-xs">{partyId}</span>} />
-              </dl>
-            )}
-          </Panel>
-
-          {/* Rendered only for individuals, and only when something is on record.
-              A corporate has none of this, and an empty panel of eight em dashes
-              would read as data the platform lost rather than never asked for. */}
-          {party?.partyType === 'INDIVIDUAL' && hasPersonRecord(party) && (
-            <Panel
-              title="Person"
-              subtitle="Underwriting facts. Sex, smoker status and date of birth are what a premium is rated on."
-            >
-              <dl className="px-4 pb-2">
-                <Field label="Sex" value={party.sex ? SEX_LABELS[party.sex] : '—'} />
-                <Field
-                  label="Smoker status"
-                  value={party.smokerStatus ? SMOKER_LABELS[party.smokerStatus] : '—'}
-                  // The distinction the column exists to preserve: UNKNOWN is a
-                  // recorded answer a product may price; absent means nobody asked.
-                  {...(party.smokerStatus ? {} : { note: 'Never asked — not the same as declined.' })}
-                />
-                <Field label="Occupation" value={party.occupation ?? '—'} />
-                <Field
-                  label="Occupation class"
-                  value={party.occupationClass ?? '—'}
-                  {...(party.occupationClass
-                    ? {}
-                    : { note: 'Unclassified — a quote cannot apply an occupation loading.' })}
-                />
-                <Field label="Employer" value={party.employerName ?? '—'} />
-              </dl>
-            </Panel>
-          )}
-
-          {party?.partyType === 'INDIVIDUAL' && hasAddress(party) && (
-            <Panel title="Address">
-              <dl className="px-4 pb-2">
-                <Field label="Street or plot" value={party.address?.line ?? '—'} />
-                <Field label="Ward" value={party.address?.ward ?? '—'} />
-                <Field label="District" value={party.address?.district ?? '—'} />
-                <Field label="Region" value={party.address?.region ?? '—'} />
-                <Field label="Postal code" value={party.address?.postalCode ?? '—'} />
-              </dl>
-            </Panel>
-          )}
-
-          <Panel
-            title="Documents"
-            subtitle="Filed against this client. Claim evidence lives on the claim."
-          >
-            <DocumentList
-              resource={documents}
-              onRetry={() => void loadPartyDocuments(partyId)}
-            />
-          </Panel>
-
-          {isStaff && (
-            <Panel title="Also an agent" subtitle="Whether this client sells for us as well.">
-              <AgentRecordList
-                resource={agentRecords}
-                onRetry={() => void loadAgentRecords(partyId)}
-              />
-            </Panel>
-          )}
-        </div>
-      </div>
+        )}
+      </DetailLayout>
     </>
   );
 }
@@ -445,6 +534,122 @@ function PolicyList({
               to={`../../policies?policyholderPartyId=${encodeURIComponent(partyId)}`}
               label="View all"
             />
+          </div>
+        );
+      }}
+    </PanelState>
+  );
+}
+
+/**
+ * The client's group schemes, and -- where there is exactly one -- who is covered under
+ * it.
+ *
+ * Takes the POLICIES resource for its loading/failed/empty states, because that is the
+ * read the schemes were derived from: a failure here is a failure to load the policies,
+ * and inventing a second error state for the same request would tell the reader there
+ * were two.
+ */
+function SchemeList({
+  resource,
+  schemes,
+  partyId,
+  onRetry,
+}: {
+  resource: Resource<Page<PolicyView>>;
+  schemes: PolicyView[];
+  partyId: string;
+  onRetry: () => void;
+}) {
+  const members = useClientRecordStore(selectClientSchemeMembers(partyId));
+
+  return (
+    <PanelState resource={resource} onRetry={onRetry} empty="No group scheme on this client.">
+      {() => {
+        if (schemes.length === 0) return null;
+
+        const sole = schemes.length === 1 ? schemes[0] : undefined;
+        const soleNumber = sole?.policyNumber;
+        const total = members.data?.page.totalElements ?? null;
+        const rows = members.data?.items ?? [];
+
+        return (
+          <div className="border-t border-border pb-1">
+            {schemes.map((scheme) => (
+              <LinkRow
+                key={scheme.policyNumber}
+                // Straight to the schedule, not to the policy record that owns it.
+                to={`../../group-schemes/${encodeURIComponent(scheme.policyNumber ?? '')}`}
+                left={<span className="font-mono">{scheme.policyNumber}</span>}
+                right={
+                  <>
+                    {scheme.policyNumber === soleNumber && total !== null && (
+                      <span className="mr-2 tabular-nums">
+                        {total.toLocaleString()} {total === 1 ? 'member' : 'members'}
+                      </span>
+                    )}
+                    {scheme.status ? <StatusBadge kind="policy" value={scheme.status} /> : '—'}
+                  </>
+                }
+              />
+            ))}
+
+            {/*
+              The lives themselves, for the single-scheme case. Read-only: joining and
+              exiting a member changes what a contract covers, so it stays on the
+              schedule's own screen rather than becoming an action on somebody's
+              client record.
+            */}
+            {sole && (
+              <div className="border-t border-border">
+                <p className="px-4 pt-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+                  Group members
+                </p>
+                {members.status === 'error' && members.error && members.data === null ? (
+                  // Deliberately not an ErrorPanel: the schemes above loaded fine, and a
+                  // full error block here would read as the whole panel having failed.
+                  <p className="px-4 pt-1 pb-3 text-xs text-muted-foreground">
+                    Could not load the member schedule.
+                    {members.error.traceId && (
+                      <span className="ml-1 font-mono select-all">({members.error.traceId})</span>
+                    )}
+                  </p>
+                ) : rows.length === 0 ? (
+                  <p className="px-4 pt-1 pb-3 text-xs text-muted-foreground">
+                    {isInitialLoad(members) ? 'Loading…' : 'This scheme has no members on record.'}
+                  </p>
+                ) : (
+                  <>
+                    <ul className="px-4 pt-1 pb-1">
+                      {rows.map((m) => (
+                        <li
+                          key={m.policyMemberId}
+                          className="flex items-baseline justify-between gap-3 py-1 text-xs"
+                        >
+                          <span className="min-w-0 truncate">
+                            <PartyName partyId={m.memberPartyId ?? ''} />
+                          </span>
+                          <span className="shrink-0 text-muted-foreground">
+                            {m.gradeCode && <span className="mr-2">{m.gradeCode}</span>}
+                            {m.status ? <StatusBadge kind="member" value={m.status} /> : '—'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    {/*
+                      The true remainder from the server's own count, not
+                      `rows.length` arithmetic -- this panel asked for five, so "N more"
+                      has to come from the total the response carried.
+                    */}
+                    <MoreRow
+                      hidden={(total ?? rows.length) - Math.min(rows.length, SCHEME_MEMBER_PREVIEW)}
+                      to={`../../group-schemes/${encodeURIComponent(soleNumber ?? '')}`}
+                      label="View the schedule"
+                    />
+                  </>
+                )}
+              </div>
+            )}
           </div>
         );
       }}

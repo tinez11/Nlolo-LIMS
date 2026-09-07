@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
 import { claimGates } from '@/gates/claimGates';
+import { ClaimPolicyChooser } from './ClaimPolicyChooser';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { POLICY_NUMBER_PATTERN } from '@/lib/patterns';
 import { useClaimStore } from '@/store/claimStore';
@@ -71,7 +72,18 @@ export function RegisterClaimPage() {
   // eslint-disable-next-line react-hooks/incompatible-library
   const claimType = watch('details.claimType');
   const policyNumber = watch('policyNumber');
+  const claimantPartyId = watch('claimantPartyId');
   const dateOfEvent = watch('dateOfEvent');
+
+  /**
+   * The escape hatch, and why it is not just belt-and-braces: `ClaimsApiImpl.registerClaim`
+   * enforces NO relationship between the claimant and the policy -- only that both exist and
+   * the policy is in force. An executor, an assignee or a cessionary is a legitimate claimant
+   * with no recorded connection, so a chooser that could ONLY offer connected policies would
+   * make this console stricter than the platform it is a console for.
+   */
+  const [manualPolicyEntry, setManualPolicyEntry] = useState(false);
+  const [policyFilter, setPolicyFilter] = useState('');
 
   /**
    * What the platform can honestly say about cover -- see `claimGates`, which
@@ -134,26 +146,83 @@ export function RegisterClaimPage() {
         className="max-w-xl space-y-4 px-6 pb-8"
         onSubmit={(e) => void handleSubmit(onSubmit)(e)}
       >
-        <FormField label="Policy number" error={errors.policyNumber?.message}>
-          <Input
-            className="font-mono"
-            placeholder="POL-XXXXXXXX"
-            {...register('policyNumber')}
-          />
-        </FormField>
-
-        <FormField label="Claimant party id" error={errors.claimantPartyId?.message}>
+        {/* Claimant BEFORE policy, which is the order the conversation actually happens in:
+            somebody arrives and says who they are, not which contract number they hold. It is
+            also the only order in which the policy field can be a list rather than a guess. */}
+        <FormField label="Claimant" error={errors.claimantPartyId?.message}>
           <Controller
             control={control}
             name="claimantPartyId"
             render={({ field }) => (
               <PartyPicker
                 value={field.value || null}
-                onChange={(partyId) => field.onChange(partyId ?? '')}
+                onChange={(partyId) => {
+                  const next = partyId ?? '';
+                  /*
+                   * Clear the policy only when the claimant genuinely CHANGES from one person
+                   * to a different one -- not when it goes from empty to somebody.
+                   *
+                   * The distinction is the whole rule. A corrected claimant must not keep the
+                   * previous claimant's policy: the form would look complete and file the
+                   * claim against the wrong contract. But a clerk who typed the policy number
+                   * first, off a paper form, and only then identified the claimant has done
+                   * nothing wrong, and wiping their input -- and kicking them out of manual
+                   * entry -- is destroying work, not preventing a mistake.
+                   */
+                  if (field.value && next !== field.value) {
+                    setValue('policyNumber', '');
+                    setPolicyFilter('');
+                  }
+                  field.onChange(next);
+                }}
                 placeholder="Search for the claimant by name"
               />
             )}
           />
+        </FormField>
+
+        {/* No `hint` prop here: FormField does not have one. An earlier version passed it
+            through a JSX spread, which bypasses TypeScript's excess-property check entirely --
+            it typechecked, rendered nothing, and would have gone unnoticed but for looking at
+            the screen. The scope caption lives inside the chooser instead, which is what it
+            describes. */}
+        <FormField label="Policy" error={errors.policyNumber?.message}>
+          {manualPolicyEntry ? (
+            <div className="space-y-1.5">
+              <Input className="font-mono" placeholder="POL-XXXXXXXX" {...register('policyNumber')} />
+              {claimantPartyId && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="-ml-2"
+                  onClick={() => setManualPolicyEntry(false)}
+                >
+                  Back to this client&apos;s policies
+                </Button>
+              )}
+            </div>
+          ) : (
+            <Controller
+              control={control}
+              name="policyNumber"
+              render={({ field }) => (
+                <ClaimPolicyChooser
+                  claimantPartyId={claimantPartyId}
+                  value={field.value}
+                  onChange={field.onChange}
+                  filter={policyFilter}
+                  onFilterChange={setPolicyFilter}
+                  onEnterManually={() => {
+                    setManualPolicyEntry(true);
+                    // Cleared on the way in: carrying a chosen number into the free-text box
+                    // invites editing one digit of a real policy number into a 404.
+                    field.onChange('');
+                  }}
+                />
+              )}
+            />
+          )}
         </FormField>
 
         <FormField label="Date of event" error={errors.dateOfEvent?.message}>

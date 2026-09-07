@@ -3,8 +3,11 @@ import { ArrowLeft, Check } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from 'react-oidc-context';
 import { PRODUCT_CATEGORIES, type ProductCategory } from '@/api/types';
+import { canAuthorProducts, readIdentity } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
+import { NoAccess } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { useProductStore } from '@/store/productStore';
@@ -27,6 +30,7 @@ import { Input, Select } from '@/components/ui/input';
  */
 export function CreateProductPage() {
   const navigate = useNavigate();
+  const canAuthor = canAuthorProducts(readIdentity(useAuth().user?.access_token));
 
   const createProduct = useProductStore((s) => s.createProduct);
   const resetCreateProduct = useProductStore((s) => s.resetCreateProduct);
@@ -63,6 +67,14 @@ export function CreateProductPage() {
         </Button>
       </div>
 
+      {/* Refused BEFORE the form, not on submit. This page fetches nothing on mount, so
+          without this a staff member without ADMIN would fill in a product code, a name, a
+          category and a currency, and learn only at the end that they may not do this. */}
+      {!canAuthor && (
+        <NoAccess what="Authoring a product" who="administrators" />
+      )}
+
+      {canAuthor && (<>
       <PageHeader
         title="New product"
         description="Two steps: define the product, then publish a version -- a product with no version is invisible everywhere else in this console."
@@ -137,6 +149,7 @@ export function CreateProductPage() {
           )}
         </Step>
       </div>
+      </>)}
     </>
   );
 }

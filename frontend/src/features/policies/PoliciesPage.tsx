@@ -5,7 +5,7 @@ import { POLICY_STATUSES, type PolicyStatus, type PolicyView } from '@/api/types
 import { DEFAULT_PAGE_SIZE } from '@/api/policies';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Input } from '@/components/ui/input';
@@ -102,25 +102,23 @@ export function PoliciesPage({
   const total = list.data?.page.totalElements ?? null;
   const busy = list.status === 'loading';
 
-  // Counts only -- no trend arrows, because no analytics endpoint exists. The card
+  // Counts only -- no trend arrows, because no analytics endpoint exists. The count
   // reports the total for the CURRENT query, which is the one figure genuinely
   // available, and says so rather than implying it is a global metric.
-  const stats: Stat[] = [
-    {
-      label: status ? `${status[0]}${status.slice(1).toLowerCase()} policies` : 'All policies',
-      value: total,
-      // isInitialLoad, not `busy` alone: if the load has already FAILED with no
-      // data, spinning forever is worse than a dash -- the user is looking at an
-      // error panel that already told them the load finished, unsuccessfully.
-      pending: isInitialLoad(list),
-      hint:
-        list.status === 'error' && total === null
-          ? 'could not load'
-          : status
-            ? 'matching this filter'
-            : 'in this tenant',
-    },
-  ];
+  const count: Stat = {
+    label: status ? `${status.toLowerCase()} policies` : 'policies',
+    value: total,
+    // isInitialLoad, not `busy` alone: if the load has already FAILED with no
+    // data, spinning forever is worse than a dash -- the user is looking at an
+    // error panel that already told them the load finished, unsuccessfully.
+    pending: isInitialLoad(list),
+    hint:
+      list.status === 'error' && total === null
+        ? 'could not load'
+        : status
+          ? 'matching this filter'
+          : 'in this tenant',
+  };
 
   const columns: Column<PolicyView>[] = [
     {
@@ -252,9 +250,8 @@ export function PoliciesPage({
             </Button>
           ) : undefined
         }
+        count={<CountLine {...count} />}
       />
-
-      <StatCards stats={stats} />
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">

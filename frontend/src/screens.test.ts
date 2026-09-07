@@ -116,11 +116,26 @@ describe('screen manifest', () => {
     // parties it registered. So both realms get an entry, and the Clients group is
     // ungated -- the same "nav must not be stricter than the endpoint" rule the
     // Event journal broke when it was first filed under a finance-gated group.
+    //
+    // Staff get TWO entries, because the register is two working areas: a natural
+    // person and an organisation are reviewed by different people against different
+    // evidence. BOTH must be present -- one alone would leave a whole party type
+    // reachable only by editing a URL.
     const withoutFinance = { roles: ['REALM_STAFF'] } as unknown as Parameters<typeof navFor>[1];
-    expect(navFor('staff', withoutFinance).flatMap((g) => g.items.map((i) => i.label)))
-      .toContain('Clients');
+    const staffItems = navFor('staff', withoutFinance).flatMap((g) => g.items.map((i) => i.label));
+    expect(staffItems).toContain('Individuals');
+    expect(staffItems).toContain('Corporate/Group');
     expect(navFor('agents', superuser).flatMap((g) => g.items.map((i) => i.label)))
       .toContain('My clients');
+  });
+
+  it('keeps the retired register path reachable, and out of the nav', () => {
+    // The KYC badge's own links and staff bookmarks point at `kyc`. It survives as a
+    // redirect: still routed, so the link resolves, but declared drill-in so it does
+    // not appear in the sidebar as a third door onto the same register.
+    const legacy = SCREENS.staff.find((s) => s.path === 'kyc');
+    expect(legacy).toBeDefined();
+    expect(legacy?.reach).toBe('drill-in');
   });
 
   it('lets both realms drill into a client record', () => {
@@ -146,13 +161,26 @@ describe('screen manifest', () => {
       .filter((s) => s.reach !== 'drill-in' && s.reach.badge)
       .map((s) => (s.reach as { label: string }).label);
 
-    // Three, because only three are expressible: one status filter at a time and
-    // no analytics endpoint anywhere. Policies deliberately has none -- a policy
-    // in force is not work waiting.
+    // Only what is expressible: one status filter at a time and no analytics
+    // endpoint anywhere. Policies deliberately has none -- a policy in force is not
+    // work waiting.
     //
-    // "Clients" carries the KYC-pending count. The screen became a register rather
-    // than a queue, but the count is still work waiting, and the badge is what keeps
-    // that queue one click away now that the default filter shows everyone.
-    expect(badged.sort()).toEqual(['Claims', 'Clients', 'Underwriting']);
+    // Both client areas carry a KYC-pending count. The screen became a register
+    // rather than a queue, but the count is still work waiting, and the badge is what
+    // keeps that queue one click away now that the default filter shows everyone --
+    // and it is counted PER AREA, because a single combined count on one of the two
+    // items would not describe the list beside it.
+    // Finance carries two counts of its own now. Arrears counts only dunning level 5 --
+    // lapse recommended -- because a level-1 case is a letter, not an emergency; and field
+    // receipts counts the SLA breach a live Prometheus alert already fires on, which until
+    // then named a number and no receipt.
+    expect(badged.sort()).toEqual([
+      'Arrears',
+      'Claims',
+      'Corporate/Group',
+      'Field receipts',
+      'Individuals',
+      'Underwriting',
+    ]);
   });
 });

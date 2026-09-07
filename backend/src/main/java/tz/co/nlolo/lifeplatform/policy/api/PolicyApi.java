@@ -159,8 +159,13 @@ public interface PolicyApi {
      *
      * @param status null for every member including those who have left. An exited member
      *     stays on the roll because a claim can arrive after somebody leaves.
+     * @param q null or blank for no name search. A member row holds a party id and no name,
+     *     so this is resolved through {@code PartyApi.partyIdsMatchingName} and applied as an
+     *     id filter — searching a 500-life roll for one person is otherwise impossible
+     *     without paging the whole schedule by eye.
      */
-    Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, Pageable pageable);
+    Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, String q,
+                                        Pageable pageable);
 
     /**
      * Add one life to an existing scheme, valuing them against the scheme's basis and
@@ -195,8 +200,15 @@ public interface PolicyApi {
      * a non-empty set restricts results to policies whose {@code agentOfRecordId} is one of the
      * given ids -- an agents-realm caller's own resolved hierarchy team (see
      * {@code DistributionApi.resolveAgentTeam}), computed by the controller, not this method.
+     *
+     * <p>{@code relatedPartyId} asks a different question from {@code policyholderPartyId}:
+     * which policies is this person connected to in ANY recorded capacity -- owner, life
+     * assured, or active named beneficiary. It exists for the claims desk, where the claimant
+     * is frequently not the owner. See {@code PolicyRepository.search} for why the two filters
+     * AND rather than merge.
      */
-    Page<PolicyView> searchPolicies(UUID policyholderPartyId, PolicyStatus status, Set<UUID> agentOfRecordIds, String q, Pageable pageable);
+    Page<PolicyView> searchPolicies(UUID policyholderPartyId, UUID relatedPartyId, PolicyStatus status,
+                                     Set<UUID> agentOfRecordIds, String q, Pageable pageable);
 
     /**
      * The policy numbers an agents-realm caller's own hierarchy team (itself plus its downline,

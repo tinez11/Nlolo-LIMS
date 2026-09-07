@@ -333,10 +333,17 @@ real hierarchy: **0.75rem is the workhorse of this console**, and 0.875rem is
 reserved for the values a person actually reads a row to find.
 
 - **Display** (600, 1.5rem, tracking-tight): the stat-card figure, and nothing
-  else. One occurrence in the codebase, by design.
+  else. One occurrence in the codebase, by design — and now on **one screen**,
+  the group-scheme member register, which is the only screen left with more than
+  one number to compare. The other nine registers carried a single count in a
+  four-column card grid; that count is a Micro line in the page header instead
+  (`CountLine`), so a list screen no longer has a Display figure at all.
 - **Headline** (600, 1.25rem, tracking-tight): the page `<h1>` in `PageHeader`.
   One occurrence, because one component owns it.
-- **Title** (600, 1rem): the slide-over title and the heaviest in-panel headings.
+- **Title** (600, 1rem): the slide-over title, the emphasised panel heading, and
+  the heaviest in-panel headings. It went unused on detail pages for a long time
+  while every panel heading sat at Body — which is why an eight-panel client
+  record read as eight equal boxes. `Panel emphasis` is what claims it.
 - **Body** (400, 0.875rem): the *content* tier — table cell values, form control
   text, buttons, nav items, gate titles. Reserved for what carries the answer.
 - **Label** (500, 0.75rem): the **most-used size in the system by a wide margin**,
@@ -365,8 +372,14 @@ is never overridden. Every figure in this product is meant to be compared
 vertically against the figure above it.
 
 **The Two-Peaks Rule.** Exactly two type sizes above body exist on any screen: the
-page headline and, on list screens, the stat figure. A screen that grows a third
-display size has invented a hierarchy the system does not have.
+page headline and one second peak — the stat figure on a screen that still has a
+stat row, or the emphasised panel heading on a detail page. A screen that grows a
+third display size has invented a hierarchy the system does not have.
+
+The rule binds in both directions, and it is why `GroupSchemePage` leads with its
+add-member panel but does **not** emphasise it: that screen keeps a real stat row,
+so a 1rem heading beside a 1.5rem figure and a 1.25rem title would be three sizes
+above body. Where a fix for one thing would break this, the fix loses.
 
 **The Uppercase-Is-Structure Rule.** Uppercase marks a navigational or sectional
 group caption. It is never used for a button, a badge, a status, or emphasis.
@@ -391,7 +404,30 @@ is also the minimum comfortable pointer target, so row height and hit target are
 the same decision. Controls come in two heights — 36px for a primary control,
 32px for a compact or in-table one.
 
-**Stat row.** Two columns below `lg`, four at `lg` and above, 12px gaps.
+**Stat row.** A wrapping row of cards sized to their content — each one flexes
+between 9rem and 15rem, 12px gaps — rather than a fixed grid. It was
+`grid-cols-2 lg:grid-cols-4` regardless of how many stats it was handed, which is
+how nine screens ended up with one 282px card and three empty columns.
+
+**The detail page.** `DetailLayout` owns it: a `minmax(0,1fr)` work column and a
+320px record rail, 20px gaps, collapsing to one column below `lg`.
+
+- **The rail is the record, and it is pinned.** Identifying facts only — who,
+  what, how much, as of when. `sticky` at the 24px gutter, capped at
+  `100dvh - 3rem` with its own scroll, because a sticky element taller than the
+  viewport pins its top and puts its last rows permanently out of reach.
+- **The work column is ordered by task.** The acting panel leads where the page
+  exists to perform an act, then the registers that evidence it. Read-only tables
+  belong here rather than in the rail, which is where they were: a recoveries
+  table and a member's filename both need more than 320px.
+- **Bounded panels before unbounded ones.** After the act, a panel of a few fixed
+  rows — the terms of a contract — precedes a ledger that grows for the life of
+  the record. A page that leads with unbounded height buries everything after it,
+  and on the policy page it buried the beneficiary editor under twenty-plus
+  invoices until the editor could not be reached at all.
+- **Nothing that mutates goes in the rail.** See The Record-Rail Rule below.
+- Below `lg` the record falls after the work, with no `order` utilities, so DOM
+  order still matches visual order for keyboard and assistive tech at every width.
 
 **Responsive posture.** Desktop-first and honest about it: the console is built
 for a back-office desk and a large monitor. The only breakpoint doing real work
@@ -409,6 +445,23 @@ page body never scrolls horizontally.
 **The 24 Rule.** The page gutter is 24px, and every element that meets the page
 edge aligns to it — header, stat row, empty state, error panel. An element that
 sets its own page margin has broken the ledger's ruling.
+
+**The Record-Rail Rule.** The 320px rail holds facts and never an action. It is
+the ledger's record header — the figures you must not lose sight of while working
+the entries beside them — which is exactly why it is pinned, and exactly why a
+settlement, a suspension or a KYC decision cannot live in it. *Preview is
+dismissable; acting is not* applies to a margin as much as to a drawer: a person
+reads a 320px column as a summary, and an action they read as a summary is an
+action they take without reading. The policy page had five panels in that rail,
+including its suspend/resume/reinstate control, and only two in the wide column.
+
+**The Acting-Panel Rule.** One panel per detail page may take `emphasis`, and only
+where the page exists to perform that act — an assessment, a settlement decision, a
+KYC decision. It leads its column. A page whose act is occasional (a policy
+lifecycle change, publishing a product version) still lifts the act out of the
+rail, but takes no emphasis: promoting a rare destructive action above the record
+somebody actually came to read is a different mistake, not a fix. Emphasis is
+achromatic — Title tier and a Rule-Strong edge — because of the Stamp Rule.
 
 **The 44px Row Rule.** A table row is 44px and the activation control fills it.
 Row height and touch target are one number, so they cannot drift apart.
@@ -564,17 +617,41 @@ Three behaviours that are the component's whole point:
   buttons. The eleven bare-array endpoints get the table and no pager, because a
   pager over a fully-downloaded array lies about the network.
 
-### Stat Cards
+### Panel
 
-Two-up then four-up, 8px radius, Paper ground, hairline. Label caption, Display
-figure, Micro hint naming exactly what was counted. Interactive cards are real
-`<button>`s with `aria-pressed` and take a Rule-Strong border when selected.
+The titled section every detail page is built from. 8px radius, Paper ground,
+hairline, and a ruled header block at 16px/12px carrying an `<h2>` and an optional
+Label-type subtitle. Content brings its own padding, because a panel wraps two
+different kinds of thing — a `<dl>` of `Field` rows, and a full-bleed table whose
+rows must reach the panel's edges.
+
+`emphasis` promotes exactly one panel per page to the Title tier with a
+Rule-Strong edge. See **The Acting-Panel Rule** for when that is earned. It is
+achromatic by law: a status tint here would make colour mean hierarchy, and colour
+on this platform means state.
+
+### Counts
+
+**One number is a sentence; several are a row.**
+
+- **`CountLine`** — a register's total, inline in `PageHeader` under the
+  description, in Micro. The figure takes full-strength ink and tabular figures;
+  the hint that says what was counted stays in Subtle Ink after a middot: "**67**
+  clients · in this tenant", "**12** pending clients · matching this filter". Its
+  label is phrased to follow a number, which is why the old card caption "All
+  clients" became "clients".
+- **`StatCards`** — a wrapping row of cards, 8px radius, Paper ground, hairline:
+  Label caption, Display figure, Micro hint. Interactive cards are real
+  `<button>`s with `aria-pressed` and take a Rule-Strong border when selected. Only
+  for screens with more than one count, which today means one screen.
 
 **Counts only, and no trend arrows** — there is no analytics endpoint on this
 platform, so a card reading "↗ 12% wk/wk" would have nothing behind it. A null
 value with `pending` shows a spinner; a null value without it shows an em dash
 labelled "Not available", because a spinner that spins forever next to an error
-panel is worse than an honest dash.
+panel is worse than an honest dash. Both components carry those three states, and
+neither is a live region: the pager below the table already announces the same
+total politely, and two regions reading out one number is worse than one.
 
 ### Navigation
 
@@ -587,6 +664,18 @@ not what it means.
 
 Groups gate per-group, not per-item, and a group with no visible items renders
 nothing at all.
+
+**A badge belongs to the list beside it.** Where one group holds two items that
+are two filtered views of the same endpoint — the client register's Individuals
+and Corporate & groups — each item counts its own backlog. A single combined
+count on one of them would promise rows that are behind the other item, and the
+click would land on a shorter list than the number said.
+
+**Two items may share a component, never a path.** Active state is derived from
+the path, so two nav items differing only by a query parameter would both read as
+active and the sidebar would stop answering "where am I". Each area gets a real
+route, and its page `<h1>` names it too — the sidebar is not the only thing that
+should say which of two similar lists you are looking at.
 
 ### Slide-over (Signature)
 
@@ -715,6 +804,13 @@ parallaxes.
   platform has no endpoint for. Counts only.
 - **Don't** put a mutating action inside the slide-over. If it changes money,
   cover or a case, it belongs on a page.
+- **Don't** put a mutating action in the 320px record rail either, and don't lead
+  a work column with a panel whose height is unbounded — the ledger goes after
+  the contract terms, or it buries them.
+- **Don't** reach for a stat card to show one number. One count is a `CountLine`
+  in the page header; `StatCards` is for numbers a person compares.
+- **Don't** emphasise more than one panel on a page, and never with a status
+  tint. If two panels are both the point, neither is.
 - **Don't** give anything a resting shadow. Shadow means "floating above the
   page", and the only floating things are the slide-over and popovers.
 - **Don't** introduce a third display size on a screen. Two peaks: the page

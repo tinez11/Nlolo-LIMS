@@ -145,4 +145,11 @@ describe('STATUS_MAPS coverage', () => {
       ['DUE', 'IN_GRACE', 'OVERDUE', 'PAID', 'PARTIALLY_PAID', 'WAIVED'].sort(),
     );
   });
+
+  it('covers account status exactly as AccountStatus.java declares it', () => {
+    expect(Object.keys(STATUS_MAPS.account).sort()).toEqual(['ACTIVE', 'INACTIVE'].sort());
+    expect(bucket('account', 'ACTIVE')).toBe('active');
+    // Retiring an account is housekeeping, not a failure -- neutral, never danger.
+    expect(bucket('account', 'INACTIVE')).toBe('neutral');
+  });
 });

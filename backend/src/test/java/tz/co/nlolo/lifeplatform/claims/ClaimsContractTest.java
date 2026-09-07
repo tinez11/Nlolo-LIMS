@@ -853,4 +853,62 @@ class ClaimsContractTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items.length()").value(0));
     }
+    /**
+     * Separation of duties, asserted rather than arranged around.
+     *
+     * Every other test on this class satisfies the rule by using two different subjects, one of
+     * them commented "distinct from the assessor above -- SoD". None of them proved the rule
+     * fires. Deleting the check in `ClaimsApiImpl.decideSettlement` would have left this whole
+     * suite green: the condition was avoided, never exercised.
+     *
+     * It matters more now than it did. The check is on the PERSON, not the role, and until the
+     * ADMIN role was given a capability of its own, `staff.admin` -- the only seeded identity
+     * holding both CLAIMS_ASSESSOR and CLAIMS_MANAGER -- was never used by anything. It is the
+     * only identity that can reach this violation at all, which is exactly why nothing caught
+     * that its token could not even authenticate.
+     *
+     * The identity here carries BOTH roles, so the controller's `@PreAuthorize` passes and the
+     * refusal can only be coming from the domain rule under test.
+     */
+    @Test
+    void theSamePersonCannotAssessAClaimAndThenDecideIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-SOD-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        String oneperson = "staff-wearing-both-hats";
+        submitAssessmentDirectly(tenantId, claimId, oneperson);
+
+        mockMvc.perform(post("/claims/" + claimId + "/settlement-decision")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"),
+                        new SimpleGrantedAuthority("ROLE_CLAIMS_MANAGER"))
+                    .jwt(builder -> builder.subject(oneperson).claim("tenant_id", tenantId.toString())))
+                .header("Idempotency-Key", "ct-http-sod-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"approved":true,"approvedAmount":{"amount":"2000000.00","currencyCode":"TZS"},
+                     "payeeRef":"MPESA-0712340011"}
+                    """))
+            // 422, not 403: the caller genuinely holds CLAIMS_MANAGER. What is wrong is the
+            // combination of this person and this claim, which is a business rule and not an
+            // authorisation failure -- and the distinction is what tells a real manager holding
+            // both roles that they need a colleague rather than a permission.
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("Separation of duties")));
+
+        // The claim is still decidable by somebody else, so the refusal above is about the person
+        // and has not wedged the claim into a state nobody can move it out of.
+        mockMvc.perform(post("/claims/" + claimId + "/settlement-decision")
+                .with(managerOf(tenantId, "a-different-manager"))
+                .header("Idempotency-Key", "ct-http-sod-ok-" + UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"approved":true,"approvedAmount":{"amount":"2000000.00","currencyCode":"TZS"},
+                     "payeeRef":"MPESA-0712340012"}
+                    """))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.status").value("SETTLEMENT_REQUESTED"));
+    }
 }

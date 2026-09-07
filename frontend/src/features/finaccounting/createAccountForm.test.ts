@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createAccountFormSchema } from './createAccountForm';
+import { createAccountFormSchema, toApiRequest } from './createAccountForm';
 
-const valid = () => ({ accountCode: '1900', name: 'Petty Cash' });
+const valid = () => ({ accountCode: '1900', parentCode: '', name: 'Petty Cash', description: '' });
 
 describe('createAccountFormSchema', () => {
   it('accepts a well-formed request', () => {
@@ -46,5 +46,47 @@ describe('createAccountFormSchema', () => {
     expect(
       createAccountFormSchema.safeParse({ ...valid(), name: 'a'.repeat(200) }).success,
     ).toBe(true);
+  });
+
+  it('accepts a blank parent -- that is how a block root is created', () => {
+    expect(createAccountFormSchema.safeParse({ ...valid(), parentCode: '' }).success).toBe(true);
+  });
+
+  it('rejects a parent that is not a well-formed account code', () => {
+    expect(createAccountFormSchema.safeParse({ ...valid(), parentCode: '9000' }).success).toBe(
+      false,
+    );
+    expect(createAccountFormSchema.safeParse({ ...valid(), parentCode: '12' }).success).toBe(false);
+  });
+});
+
+describe('toApiRequest', () => {
+  /* An empty parentCode would fail the server's own ^[1-5]\d{3}$ pattern with a 400,
+     rather than creating the block root the user asked for. */
+  it('sends an omitted parent and description as absent, not as empty strings', () => {
+    const request = toApiRequest({
+      accountCode: '1260',
+      parentCode: '',
+      name: 'Sundry Receivables',
+      description: '',
+    });
+    expect(request.parentCode).toBeUndefined();
+    expect(request.description).toBeUndefined();
+  });
+
+  it('sends and trims a parent and description when given', () => {
+    expect(
+      toApiRequest({
+        accountCode: '1260',
+        parentCode: ' 1200 ',
+        name: ' Sundry Receivables ',
+        description: ' Odds and ends ',
+      }),
+    ).toEqual({
+      accountCode: '1260',
+      parentCode: '1200',
+      name: 'Sundry Receivables',
+      description: 'Odds and ends',
+    });
   });
 });

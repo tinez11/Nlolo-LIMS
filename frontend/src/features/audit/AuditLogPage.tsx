@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { AuditEntryView } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { CountLine, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
@@ -80,19 +80,17 @@ export function AuditLogPage() {
 
   const total = list.data?.page.totalElements ?? null;
 
-  const stats: Stat[] = [
-    {
-      label: module ? `${module} events` : 'Recorded events',
-      value: total,
-      pending: isInitialLoad(list),
-      hint:
-        list.status === 'error' && total === null
-          ? 'could not load'
-          : module
-            ? 'from this module'
-            : 'in this tenant',
-    },
-  ];
+  const count: Stat = {
+    label: module ? `${module} events` : 'recorded events',
+    value: total,
+    pending: isInitialLoad(list),
+    hint:
+      list.status === 'error' && total === null
+        ? 'could not load'
+        : module
+          ? 'from this module'
+          : 'in this tenant',
+  };
 
   const columns: Column<AuditEntryView>[] = [
     {
@@ -179,6 +177,7 @@ export function AuditLogPage() {
       <PageHeader
         title="Event journal"
         description="Every domain event this tenant has recorded, newest first."
+        count={<CountLine {...count} />}
       />
 
       {/* Not a disclaimer for its own sake: without it, a reader reasonably assumes
@@ -190,8 +189,6 @@ export function AuditLogPage() {
           and no stated reason recorded, so this cannot serve as a compliance audit trail.
         </p>
       </div>
-
-      <StatCards stats={stats} />
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">

@@ -47,6 +47,15 @@ export const STATUS_MAPS = {
     WAIVED: 'neutral', // resolved, but not by payment
   },
 
+  // finaccounting/api/AccountStatus.java
+  account: {
+    ACTIVE: 'active',
+    // Retired from NEW postings; every posting already booked to it stays readable.
+    // Neutral rather than danger: taking an account out of service is routine
+    // housekeeping, not a failure, and nothing about the ledger is wrong.
+    INACTIVE: 'neutral',
+  },
+
   // payment/api/PaymentStatus.java + DisbursementStatus.java (the API presents them
   // as one union discriminated by `kind`).
   payment: {
@@ -161,9 +170,17 @@ export const STATUS_MAPS = {
     PARTIAL_FAILURE: 'warning',
   },
 
-  // openapi-billing.yaml field-receipt status (+ the internal overdue state)
+  // openapi-billing.yaml field-receipt status (+ the internal overdue state).
+  //
+  // RECONCILED was missing until the reconciliation queue was built. It has been in the
+  // table's CHECK constraint since the first billing migration and became reachable when
+  // FieldReceipt.reconcile() was implemented, so a matched receipt was rendering through
+  // StatusBadge's unrecognised-literal path -- correct behaviour for a genuinely unknown
+  // literal, and the wrong answer for a known one. Nothing displayed a field receipt at all
+  // until now, which is why nobody saw it.
   fieldReceipt: {
     PENDING_RECONCILIATION: 'pending',
+    RECONCILED: 'success',
     RECONCILIATION_OVERDUE: 'danger',
   },
 

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { dmy } from './dates';
+import { fillPolicyNumberManually } from './guards';
 
 /**
  * "Browse my book of business" -- the agents-realm scoping added to
@@ -45,7 +46,7 @@ test.describe('agents my book of business', () => {
     const policyOutsideBook = await issuePolicy(null, 'E2E agent book fixture -- direct sold');
 
     await staffPage.goto('/staff/claims/new');
-    await staffPage.getByPlaceholder('POL-XXXXXXXX').fill(policyInBook);
+    await fillPolicyNumberManually(staffPage, policyInBook);
     await staffPage.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await staffPage.getByPlaceholder('Type a name to search').fill('Amina');
     await staffPage.getByText('Amina Owner').click();

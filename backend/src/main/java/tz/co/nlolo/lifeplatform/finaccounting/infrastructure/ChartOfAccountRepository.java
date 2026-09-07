@@ -14,5 +14,8 @@ public interface ChartOfAccountRepository extends JpaRepository<ChartOfAccount, 
     Optional<ChartOfAccount> findByTenantIdAndAccountCode(UUID tenantId, String accountCode);
     boolean existsByTenantId(UUID tenantId);
     boolean existsByTenantIdAndAccountCode(UUID tenantId, String accountCode);
+    /** True when the account is a parent -- which blocks deleting it, since
+     *  {@code fk_chart_of_account_parent} (finaccounting/V5) would refuse anyway. */
+    boolean existsByTenantIdAndParentCode(UUID tenantId, String parentCode);
     void deleteByTenantIdAndAccountCode(UUID tenantId, String accountCode);
 }

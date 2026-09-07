@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import tz.co.nlolo.lifeplatform.policy.api.MemberUnderwritingStatus;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,15 +27,25 @@ public interface PolicyMemberRepository extends JpaRepository<PolicyMember, UUID
     Page<PolicyMember> findByTenantIdAndPolicyNumberAndStatus(
         UUID tenantId, String policyNumber, String status, Pageable pageable);
 
-    /** As above, with a null {@code status} meaning "every member, including those who left". */
+    /**
+     * As above, with a null {@code status} meaning "every member, including those who left".
+     *
+     * <p>{@code memberPartyIds} is the name search, resolved to ids by the party module before
+     * it gets here — a member row holds no name of its own. Null means "no name filter"; the
+     * caller must never pass an EMPTY collection, because that is both a Postgres syntax error
+     * (`in ()`) and the opposite of what it looks like. See {@code PolicyApiImpl.listMembers},
+     * which short-circuits to an empty page instead.
+     */
     @Query("""
         select m from PolicyMember m
          where m.tenantId = :tenantId and m.policyNumber = :policyNumber
            and (:status is null or m.status = :status)
+           and (:memberPartyIds is null or m.memberPartyId in :memberPartyIds)
         """)
     Page<PolicyMember> findMembers(@Param("tenantId") UUID tenantId,
                                     @Param("policyNumber") String policyNumber,
                                     @Param("status") String status,
+                                    @Param("memberPartyIds") Collection<UUID> memberPartyIds,
                                     Pageable pageable);
 
     Optional<PolicyMember> findByPolicyMemberIdAndTenantId(UUID policyMemberId, UUID tenantId);

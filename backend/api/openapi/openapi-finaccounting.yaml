@@ -124,17 +124,20 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: "An account with this accountCode already exists in this tenant"
+          description: "An account with this accountCode already exists in this tenant, or the named parent already carries postings"
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
   /chart-of-accounts/{accountCode}:
     put:
-      summary: Rename a chart-of-account row
+      summary: Update a chart-of-account row
       description: >
-        A plain rename. `accountCode` is this resource's own identifier and `accountType`/
-        `normalBalance` stay derived from it -- neither is editable, only `name`.
+        Name and description. `accountCode` is this resource's own identifier, `accountType`/
+        `normalBalance` stay derived from it, and `parentCode`/`level` are equally fixed -- moving
+        an account is a distinct, deferred concern that carries real risk to historical reporting.
       security:
         - staffAuth: []
       parameters:
@@ -143,10 +146,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/RenameAccountRequest' }
+            schema: { $ref: '#/components/schemas/UpdateAccountRequest' }
       responses:
         '200':
-          description: Account renamed
+          description: Account updated
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ChartOfAccountView' }
@@ -157,8 +160,9 @@ paths:
     delete:
       summary: Delete a chart-of-account row
       description: >
-        Rejected once any real GL posting references this account -- retiring an in-use account
-        (as opposed to deleting one nothing has ever posted to) is a distinct, deferred concern.
+        Rejected once any real GL posting references this account, and rejected once it has
+        children. Retiring an account that has history is what `deactivate` below is for: deleting
+        it would orphan the postings booked to it.
       security:
         - staffAuth: []
       parameters:
@@ -170,10 +174,47 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: "At least one GL posting already references this account -- it cannot be deleted"
+          description: "At least one GL posting already references this account, or it has children -- it cannot be deleted"
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /chart-of-accounts/{accountCode}/activate:
+    post:
+      summary: Return a retired account to service
+      description: "Sets status to ACTIVE, so the account may receive new postings again."
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AccountCode'
+      responses:
+        '200':
+          description: The account, now ACTIVE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChartOfAccountView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /chart-of-accounts/{accountCode}/deactivate:
+    post:
+      summary: Retire an account from new postings, keeping its history readable
+      description: >
+        Sets status to INACTIVE. The ledger then refuses any new leg naming this account, while
+        every posting already booked to it stays resolvable. This -- not DELETE -- is how an
+        account that has been used is taken out of service.
+      security:
+        - staffAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AccountCode'
+      responses:
+        '200':
+          description: The account, now INACTIVE
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChartOfAccountView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   parameters:
     JournalEntryId:
@@ -200,6 +241,11 @@ components:
   responses:
     BadRequest:
       description: "Malformed request body -- a missing/blank name, or an accountCode that is not 4 digits with a leading 1-5 block"
+      content:
+        application/problem+json:
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    UnprocessableEntity:
+      description: "Well-formed but rejected by a domain rule -- most often an accountCode that falls outside its parent's block"
       content:
         application/problem+json:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -283,14 +329,43 @@ components:
           type: array
           description: "Always exactly two legs in M9, one DR and one CR, with equal totals."
           items: { $ref: '#/components/schemas/GlPostingView' }
+    AccountStatus:
+      type: string
+      description: >
+        INACTIVE is the RETIREMENT path and is distinct in kind from deletion: an account that has
+        ever been posted against must stay resolvable, so it is deactivated rather than deleted.
+      enum: [ACTIVE, INACTIVE]
     ChartOfAccountView:
       type: object
-      required: [accountCode, name, accountType, normalBalance]
+      required: [accountCode, name, accountType, normalBalance, level, postingAllowed, status, currency]
       properties:
         accountCode: { type: string }
         name: { type: string }
         accountType: { $ref: '#/components/schemas/AccountType' }
         normalBalance: { $ref: '#/components/schemas/PostingDirection' }
+        parentCode:
+          type: string
+          nullable: true
+          description: "Null only for the five block roots (1000/2000/3000/4000/5000)."
+        level:
+          type: integer
+          description: "Depth in the parent chain; a block root is 1. Derived server-side, never accepted from a client."
+        postingAllowed:
+          type: boolean
+          description: "False for any account with children -- a header never receives a posting, and the ledger refuses a leg that names one."
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        controlOf:
+          type: string
+          nullable: true
+          description: >
+            The subledger module owning this account's detail (BILLING, CLAIMS, DISTRIBUTION,
+            POLICYLOAN, REINSURANCE). A documented label: nothing enforces it, because the ledger
+            is event-only and no manual journal entry surface exists. Its intended consumer is a
+            subledger reconciliation report that is not yet built.
+        description: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string, nullable: true }
     CreateAccountRequest:
       type: object
       required: [accountCode, name]
@@ -299,9 +374,33 @@ components:
           type: string
           pattern: '^[1-5]\d{3}$'
           description: "4 digits, leading block 1=ASSET, 2=LIABILITY, 3=EQUITY, 4=INCOME, 5=EXPENSE -- accountType/normalBalance are derived from it server-side, never accepted here."
+        parentCode:
+          type: string
+          pattern: '^[1-5]\d{3}$'
+          nullable: true
+          description: >
+            Must already exist in this tenant, and accountCode must begin with its significant
+            prefix -- the parent's code with trailing zeros stripped, so 1210 may hang off 1200 but
+            2110 may not. Omit to create a block root.
         name: { type: string, maxLength: 200 }
-    RenameAccountRequest:
+        description: { type: string, maxLength: 2000, nullable: true }
+        # No `default:` on either of these, deliberately. openapi-typescript treats a
+        # property carrying a default as REQUIRED in the generated request type, which
+        # would force every client to send a value it is entitled to omit. The
+        # defaulting is the server's job and lives in CreateAccountRequestDto's compact
+        # constructor: currency falls back to the tenant functional currency (TZS) and
+        # postingAllowed to true.
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: "Omit to use the tenant functional currency (TZS)."
+        postingAllowed:
+          type: boolean
+          description: "Omit to default to true. Forced to false anyway once the account gains a child."
+    UpdateAccountRequest:
       type: object
       required: [name]
       properties:
         name: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 2000, nullable: true }

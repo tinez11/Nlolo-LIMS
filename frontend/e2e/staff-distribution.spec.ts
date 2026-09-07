@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { dmy } from './dates';
+import { asAdmin } from './admin';
 
 /**
  * Distribution (agents/commissions) e2e coverage against the real backend.
@@ -149,7 +150,7 @@ test.describe('staff distribution', () => {
     // create-plan form ONLY renders in that state, so "canManage is false, no create
     // form" proves nothing on a product that already has a plan. Reading the seeded
     // fixture made the two assertions below quietly vacuous as well as red.
-    const { optionLabel } = await createRealActiveProduct(financePage);
+    const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
     await financeContext.close();
 
     // getAgent/listStatements are REALM_STAFF-broad reads -- staff.underwriter
@@ -171,7 +172,7 @@ test.describe('staff distribution', () => {
     const financePage = await financeContext.newPage();
 
     const agentId = await onboardRealAgent(financePage);
-    const { optionLabel } = await createRealActiveProduct(financePage);
+    const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
 
     await financePage.goto(`/staff/agents/${agentId}`);
     await financePage.getByLabel('Product').selectOption({ label: optionLabel });
@@ -184,14 +185,20 @@ test.describe('staff distribution', () => {
     // A real POST -> 201 -> the store writes the response straight into the
     // same (agent, product) slot the 404 came from -- no reload needed to see
     // it flip from "no plan" to "Active plan".
-    await expect(financePage.getByText('Active plan')).toBeVisible({ timeout: 15_000 });
+    //
+    // `exact` is load-bearing, not tidiness. getByText matches a case-insensitive
+    // SUBSTRING by default, and the same panel renders the note "Null means the
+    // product's active plan applies instead" -- so the bare locator matched two
+    // elements and failed strict mode, but only in the window where both were on
+    // screen. It passed in isolation and failed in a full run.
+    await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(financePage.getByText('first year')).toBeVisible();
 
     // Reload and reselect from scratch -- proves this is a real Postgres row,
     // not the store's in-memory state surviving a soft navigation.
     await financePage.reload();
     await financePage.getByLabel('Product').selectOption({ label: optionLabel });
-    await expect(financePage.getByText('Active plan')).toBeVisible({ timeout: 15_000 });
+    await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     await financeContext.close();
   });
@@ -203,7 +210,7 @@ test.describe('staff distribution', () => {
     const financePage = await financeContext.newPage();
 
     const agentId = await onboardRealAgent(financePage);
-    const { optionLabel } = await createRealActiveProduct(financePage);
+    const { optionLabel } = await asAdmin(browser, createRealActiveProduct);
 
     await financePage.goto(`/staff/agents/${agentId}`);
     await financePage.getByLabel('Product').selectOption({ label: optionLabel });
@@ -211,7 +218,7 @@ test.describe('staff distribution', () => {
       financePage.getByText('No plan applies to this agent for this product yet.'),
     ).toBeVisible();
     await createDefaultPlan(financePage, '0.1000');
-    await expect(financePage.getByText('Active plan')).toBeVisible({ timeout: 15_000 });
+    await expect(financePage.getByText('Active plan', { exact: true })).toBeVisible({ timeout: 15_000 });
 
     await issueRealPolicyForAgent(financePage, optionLabel, agentId);
 

@@ -1,7 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useAuth } from 'react-oidc-context';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { InvoiceView } from '@/api/types';
+import { canSeeFinance, readIdentity } from '@/auth/claims';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { ConfirmAct } from '@/components/ConfirmAct';
@@ -32,9 +34,12 @@ import {
 import { Input } from '@/components/ui/input';
 
 /**
- * `POST /invoices/{invoiceId}/waiver` (staff only) and `.../payment-request`
- * (staff/customer/agent) live on each invoice row -- unlike the read-only
- * table this replaced, an invoice is now something staff can act on.
+ * `POST /invoices/{invoiceId}/waiver` (**finance staff only** -- FINANCE_OFFICER
+ * or ADMIN, tightened from plain staff, because writing off a premium is a final
+ * ledger movement and an underwriter has no business authorising one) and
+ * `.../payment-request` (staff/customer/agent) live on each invoice row --
+ * unlike the read-only table this replaced, an invoice is now something staff
+ * can act on.
  *
  * `PremiumInvoice.waive()` has genuinely no status guard at all (confirmed by
  * reading the domain method): it unconditionally sets WAIVED regardless of
@@ -75,6 +80,8 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
 
 function InvoiceRow({ policyNumber, invoice }: { policyNumber: string; invoice: InvoiceView }) {
   const [action, setAction] = useState<'waive' | 'payment' | null>(null);
+  // Mirrors the endpoint exactly: REALM_STAFF and (FINANCE_OFFICER or ADMIN).
+  const canWaive = canSeeFinance(readIdentity(useAuth().user?.access_token));
   const invoiceId = invoice.invoiceId ?? '';
 
   return (
@@ -106,10 +113,20 @@ function InvoiceRow({ policyNumber, invoice }: { policyNumber: string; invoice: 
           querying by accessible name. */}
       {invoiceId && action === null && (
         <div className="mt-1.5 flex items-center gap-1.5">
-          <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction('waive')}>
-            Waive
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setAction('payment')}>
+          {/* Waiving is finance-gated server-side, so this only avoids offering a button that
+              can now do nothing but 403. Requesting payment stays open to everyone, because it
+              takes nothing away from anyone -- agents and customers can both do it. */}
+          {canWaive && (
+            <Button size="sm" variant="ghost" className="-ml-2" onClick={() => setAction('waive')}>
+              Waive
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className={canWaive ? undefined : '-ml-2'}
+            onClick={() => setAction('payment')}
+          >
             Request payment
           </Button>
         </div>

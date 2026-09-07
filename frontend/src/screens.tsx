@@ -1,20 +1,26 @@
 import {
   BookText,
+  Building2,
   ClipboardCheck,
   FileText,
+  HandCoins,
   Package,
   Receipt,
   ScrollText,
   Shield,
+  TrendingDown,
   UserCheck,
   UserPlus,
   Users,
   Wallet,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { canSeeFinance, type readIdentity } from '@/auth/claims';
+import { canSeeFinance, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
+import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
 import { AuditLogPage } from '@/features/audit/AuditLogPage';
+import { ArrearsPage } from '@/features/billing/ArrearsPage';
+import { FieldReceiptsPage } from '@/features/billing/FieldReceiptsPage';
 import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
 import { ClaimsPage } from '@/features/claims/ClaimsPage';
 import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
@@ -77,19 +83,35 @@ type NavGroupId =
  * A count of WORK WAITING beside a nav item, never a count of total volume.
  *
  * Each maps to `totalElements` on a real paged search filtered to the unstarted
- * state, so the number means "this many are waiting for someone". Only three
- * exist because only three are expressible: the API allows one status filter at
- * a time, and there is no analytics endpoint anywhere (PLAN.md §6 — a number with
- * nothing behind it is worse than no number). Policies get none deliberately: a
- * policy in force is not work.
+ * state, so the number means "this many are waiting for someone". There are only
+ * as many as are expressible: the API allows one status filter at a time, and
+ * there is no analytics endpoint anywhere (PLAN.md §6 — a number with nothing
+ * behind it is worse than no number). Policies get none deliberately: a policy in
+ * force is not work.
+ *
+ * KYC is counted twice because the client register is two nav items. One combined
+ * count on one of them would not describe the list it sits beside.
  */
-export type BadgeKey = 'kyc-pending' | 'underwriting-open' | 'claims-unassessed';
+export type BadgeKey =
+  | 'kyc-pending-individuals'
+  | 'kyc-pending-organisations'
+  | 'underwriting-open'
+  | 'claims-unassessed'
+  | 'claims-settlement-pending'
+  | 'arrears-at-lapse'
+  | 'receipts-overdue';
 
 interface NavPlacement {
   group: NavGroupId;
   label: string;
   icon: typeof FileText;
-  badge?: BadgeKey;
+  /**
+   * A count of work waiting. A FUNCTION when the queue depends on the viewer's job: the
+   * Claims item counts unassessed claims for an assessor and settlement decisions for a
+   * manager, because those are two different queues behind one nav item and a badge showing
+   * the other role's backlog is a number the reader cannot act on.
+   */
+  badge?: BadgeKey | ((roles: StaffRoles) => BadgeKey | undefined);
 }
 
 export interface Screen {
@@ -191,7 +213,15 @@ const STAFF_SCREENS: Screen[] = [
   {
     path: 'claims',
     element: <ClaimsPage />,
-    reach: { group: 'policies-claims', label: 'Claims', icon: ScrollText, badge: 'claims-unassessed' },
+    reach: {
+      group: 'policies-claims',
+      label: 'Claims',
+      icon: ScrollText,
+      // A manager's whole job is the settlement decision, and it had no work signal at all
+      // while the assessor's queue had one. Manager wins when an identity carries both
+      // roles (staff.admin does): a settlement decision is the more consequential queue.
+      badge: (roles) => (roles.CLAIMS_MANAGER ? 'claims-settlement-pending' : 'claims-unassessed'),
+    },
   },
   { path: 'claims/new', element: <RegisterClaimPage />, reach: 'drill-in' },
   { path: 'claims/:claimId', element: <ClaimDetailPage />, reach: 'drill-in' },
@@ -213,14 +243,61 @@ const STAFF_SCREENS: Screen[] = [
   // Order WITHIN a group is manifest order, so these two are declared in the
   // order the work happens: a client is identified and KYC-verified before their
   // risk is assessed.
-  // The path stays `kyc`: the badge, existing bookmarks and the e2e suite all point
-  // at it, and renaming a route to match a label is churn that buys nothing a
-  // reader can see. The badge still counts parties awaiting KYC, so the work queue
-  // survives the screen becoming a register.
+  //
+  // TWO nav items, one register component. A natural person and an organisation are
+  // different work -- an individual's KYC is an ID scan and a date of birth, a
+  // company's is a registration number and a certificate -- and until now the only
+  // thing distinguishing them on screen was a `Type` column hidden below `sm`.
+  //
+  // Two real paths rather than one path with a query parameter, because `NavLink`
+  // decides its active state from the path: `?partyType=` on a shared path would light
+  // up both items at once and the sidebar would stop answering "where am I".
+  //
+  // Each carries its OWN pending count. One combined badge on one of the two items
+  // would be a number that does not belong to the list beside it -- click it and the
+  // area shows fewer rows than the badge promised, the rest being behind the other
+  // item.
+  {
+    path: 'clients/individuals',
+    element: <ClientsPage area="individuals" />,
+    reach: {
+      group: 'clients',
+      label: 'Individuals',
+      icon: UserCheck,
+      badge: 'kyc-pending-individuals',
+    },
+  },
+  {
+    path: 'clients/organisations',
+    element: <ClientsPage area="organisations" />,
+    reach: {
+      group: 'clients',
+      // 'Corporate & groups' truncated to 'Corporate & grou...' in the 224px sidebar.
+      // Nav labels are deliberately `truncate`, but a label that ALWAYS truncates is a
+      // label chosen badly -- and this is the one item whose whole job is to be
+      // distinguishable at a glance. The page's own <h1> still says the fuller phrase,
+      // where there is room for it.
+      label: 'Corporate/Group',
+      icon: Building2,
+      badge: 'kyc-pending-organisations',
+    },
+  },
+  // The old register path, kept as a redirect rather than deleted: the badge's own
+  // links, staff bookmarks and the e2e suite all pointed at `kyc`. It lands on
+  // Individuals -- the larger area by far -- with any `kycStatus`/`q` intact, and the
+  // sidebar makes the other area visible from there.
   {
     path: 'kyc',
-    element: <ClientsPage />,
-    reach: { group: 'clients', label: 'Clients', icon: UserCheck, badge: 'kyc-pending' },
+    element: <RedirectPreservingQuery to="../clients/individuals" />,
+    reach: 'drill-in',
+  },
+  // `/staff/clients` is the obvious thing to type for a group whose items both live
+  // under it, and without this it matches no route and falls through the catch-all to
+  // the realm picker. Landing on Individuals is the same choice the retired path makes.
+  {
+    path: 'clients',
+    element: <RedirectPreservingQuery to="../clients/individuals" />,
+    reach: 'drill-in',
   },
   // A party PENDING KYC with nothing referencing it yet is invisible to staff
   // except through the KYC queue above, which is why that queue is a real list
@@ -247,6 +324,25 @@ const STAFF_SCREENS: Screen[] = [
   { path: 'agents/new', element: <OnboardAgentPage />, reach: 'drill-in' },
   { path: 'agents/:agentId', element: <AgentDetailPage />, reach: 'drill-in' },
 
+  // FIRST in the finance group, because it is the only screen in it that is WORK rather
+  // than a record: GL postings, the chart of accounts and treaties are all things you look
+  // up, and this is a queue somebody has to clear. It earned a nav item the day GET /arrears
+  // existed -- before that the platform escalated policies through five dunning levels and
+  // recommended them for lapse with no screen able to show a single one of them.
+  {
+    path: 'arrears',
+    element: <ArrearsPage />,
+    reach: { group: 'finance', label: 'Arrears', icon: TrendingDown, badge: 'arrears-at-lapse' },
+  },
+  // Beside Arrears, because it is the module's other work queue and the same audience clears
+  // both. It earned its nav item the same way: there was a medium-severity Prometheus alert
+  // for overdue receipts and no endpoint that could name one, so the alert could only ever
+  // escalate to somebody querying the database by hand.
+  {
+    path: 'field-receipts',
+    element: <FieldReceiptsPage />,
+    reach: { group: 'finance', label: 'Field receipts', icon: HandCoins, badge: 'receipts-overdue' },
+  },
   {
     path: 'gl-postings',
     element: <GlPostingsPage />,
@@ -346,18 +442,37 @@ export const SCREENS: Record<Realm, Screen[]> = {
   regulators: [],
 };
 
+/**
+ * One nav item, with its badge already RESOLVED to a concrete key.
+ *
+ * Distinct from NavPlacement on purpose: a placement may declare its badge as a function of
+ * the viewer's roles, and nothing downstream should have to know that. By the time an item
+ * leaves navFor the question has been answered.
+ */
+export type NavItem = Omit<NavPlacement, 'badge'> & { badge?: BadgeKey; to: string };
+
 /** The sidebar for one realm: groups the identity may see, each with its screens. */
 export function navFor(
   realm: Realm,
   identity: ReturnType<typeof readIdentity>,
-): { label: string; items: (NavPlacement & { to: string })[] }[] {
+): { label: string; items: NavItem[] }[] {
   return NAV_GROUPS[realm]
     .filter((group) => group.requires?.(identity) ?? true)
     .map((group) => ({
       label: group.label,
       items: SCREENS[realm]
         .filter((screen) => screen.reach !== 'drill-in' && screen.reach.group === group.id)
-        .map((screen) => ({ ...(screen.reach as NavPlacement), to: screen.path })),
+        .map((screen) => {
+          const reach = screen.reach as NavPlacement;
+          // Resolved HERE, where the identity is already in hand, so AppShell keeps taking a
+          // plain BadgeKey and useNavBadges can fetch exactly the counts that are on screen.
+          const badge =
+            typeof reach.badge === 'function' ? reach.badge(staffRoles(identity)) : reach.badge;
+          const { badge: _declared, ...rest } = reach;
+          // The key is OMITTED rather than set to undefined: exactOptionalPropertyTypes is on,
+          // and an explicitly-undefined optional is not the same type as an absent one.
+          return { ...rest, ...(badge ? { badge } : {}), to: screen.path };
+        }),
     }))
     .filter((group) => group.items.length > 0);
 }

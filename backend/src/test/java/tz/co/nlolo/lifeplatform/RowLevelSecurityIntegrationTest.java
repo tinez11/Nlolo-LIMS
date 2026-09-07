@@ -149,6 +149,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
+            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
             // M10 (Task 9) additions. regreporting/V1 enabled RLS on NEITHER of its two original
             // tables and granted app_role nothing at all; V2 is what adds both, for
             // policy_dimension/policy_movement/regulatory_return/return_line among others. Until now
@@ -354,14 +355,14 @@ class RowLevelSecurityIntegrationTest {
         UUID caseIdA = openCaseForCurrentTenant("RLS-POLICY-A", "3");
         underwritingApi.submitAssessment(caseIdA, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
         UnderwritingCaseView decidedA = underwritingApi.getCase(caseIdA);
-        String policyNumberA = policyApi.searchPolicies(decidedA.applicantPartyId(), null, null, null, PageRequest.of(0, 10))
+        String policyNumberA = policyApi.searchPolicies(decidedA.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10))
             .getContent().get(0).policyNumber();
 
         TenantContext.set(tenantB);
         UUID caseIdB = openCaseForCurrentTenant("RLS-POLICY-B", "4");
         underwritingApi.submitAssessment(caseIdB, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
         UnderwritingCaseView decidedB = underwritingApi.getCase(caseIdB);
-        assertThat(policyApi.searchPolicies(decidedB.applicantPartyId(), null, null, null, PageRequest.of(0, 10)).getContent()).hasSize(1);
+        assertThat(policyApi.searchPolicies(decidedB.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10)).getContent()).hasSize(1);
 
         try (Connection superuserConnection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -407,7 +408,7 @@ class RowLevelSecurityIntegrationTest {
         UUID caseIdA = openCaseForCurrentTenant("RLS-LOAN-A", "5");
         underwritingApi.submitAssessment(caseIdA, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
         UnderwritingCaseView decidedA = underwritingApi.getCase(caseIdA);
-        String policyNumberA = policyApi.searchPolicies(decidedA.applicantPartyId(), null, null, null, PageRequest.of(0, 10))
+        String policyNumberA = policyApi.searchPolicies(decidedA.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10))
             .getContent().get(0).policyNumber();
         bumpCashValue(policyNumberA, "1000000");
         String loanIdA = policyLoanApi.originateLoan(policyNumberA, new java.math.BigDecimal("100000"), "TZS", "MPESA-0700000001", "test-agent").loanId().toString();
@@ -416,7 +417,7 @@ class RowLevelSecurityIntegrationTest {
         UUID caseIdB = openCaseForCurrentTenant("RLS-LOAN-B", "6");
         underwritingApi.submitAssessment(caseIdB, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
         UnderwritingCaseView decidedB = underwritingApi.getCase(caseIdB);
-        String policyNumberB = policyApi.searchPolicies(decidedB.applicantPartyId(), null, null, null, PageRequest.of(0, 10))
+        String policyNumberB = policyApi.searchPolicies(decidedB.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10))
             .getContent().get(0).policyNumber();
         bumpCashValue(policyNumberB, "2000000");
         policyLoanApi.originateLoan(policyNumberB, new java.math.BigDecimal("200000"), "TZS", "MPESA-0700000002", "test-agent");

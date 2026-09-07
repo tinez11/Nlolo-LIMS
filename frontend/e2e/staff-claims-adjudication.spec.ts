@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { dmy } from './dates';
+import { fillPolicyNumberManually } from './guards';
 
 /**
  * Claims adjudication e2e coverage against the real backend.
@@ -46,7 +47,7 @@ async function issueRealPolicy(page: Page): Promise<string> {
 
 async function registerRealDeathClaim(page: Page, policyNumber: string): Promise<string> {
   await page.goto('/staff/claims/new');
-  await page.getByLabel('Policy number').fill(policyNumber);
+  await fillPolicyNumberManually(page, policyNumber);
   await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill('Amina');
   await page.getByText('Amina Owner').click();

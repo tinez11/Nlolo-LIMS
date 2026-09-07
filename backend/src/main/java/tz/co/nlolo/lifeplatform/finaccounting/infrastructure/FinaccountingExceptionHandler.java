@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.finaccounting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountHasChildrenException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountInUseException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.DuplicateAccountCodeException;
@@ -55,6 +56,14 @@ public class FinaccountingExceptionHandler {
     @ExceptionHandler(AccountInUseException.class)
     public ProblemDetail handleAccountInUse(AccountInUseException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "ACCOUNT_IN_USE");
+    }
+
+    /** Distinct from ACCOUNT_IN_USE: that one means postings exist, this one means children do.
+     *  Both are 409, but a caller resolves them differently -- deactivate versus deal with the
+     *  children first. */
+    @ExceptionHandler(AccountHasChildrenException.class)
+    public ProblemDetail handleAccountHasChildren(AccountHasChildrenException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "ACCOUNT_HAS_CHILDREN");
     }
 
     /** {@code traceId} is REQUIRED by openapi-common.yaml's ProblemDetails schema -- an M6 contract

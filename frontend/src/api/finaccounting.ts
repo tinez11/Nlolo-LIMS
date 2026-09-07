@@ -1,11 +1,12 @@
 import { del, get, post, put } from '@/lib/http';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './policies';
 import type {
+  AccountStatus,
   ChartOfAccountView,
   CreateAccountRequest,
   JournalEntryView,
   Page,
-  RenameAccountRequest,
+  UpdateAccountRequest,
 } from './types';
 
 /**
@@ -77,19 +78,40 @@ export function createAccount(request: CreateAccountRequest): Promise<ChartOfAcc
 }
 
 /** `PUT /chart-of-accounts/{accountCode}` -- staff FINANCE_OFFICER/ADMIN only.
- *  A plain rename; accountCode/accountType/normalBalance are not editable. */
-export function renameAccount(
+ *  Name and description. accountCode/accountType/normalBalance are not editable, and
+ *  neither are parentCode/level: moving an account is a separate, unbuilt concern. */
+export function updateAccount(
   accountCode: string,
-  request: RenameAccountRequest,
+  request: UpdateAccountRequest,
 ): Promise<ChartOfAccountView> {
   return put<ChartOfAccountView>(`/chart-of-accounts/${encodeURIComponent(accountCode)}`, request);
 }
 
 /**
+ * `POST /chart-of-accounts/{accountCode}/{activate|deactivate}` -- staff
+ * FINANCE_OFFICER/ADMIN only.
+ *
+ * Deactivating is the retirement path for an account that has history: the ledger
+ * refuses every new posting leg naming it, while each posting already booked to it
+ * stays resolvable. Deleting cannot do that, which is why it stays restricted to
+ * accounts nothing has ever posted to.
+ */
+export function setAccountStatus(
+  accountCode: string,
+  status: AccountStatus,
+): Promise<ChartOfAccountView> {
+  const action = status === 'ACTIVE' ? 'activate' : 'deactivate';
+  return post<ChartOfAccountView>(
+    `/chart-of-accounts/${encodeURIComponent(accountCode)}/${action}`,
+    {},
+  );
+}
+
+/**
  * `DELETE /chart-of-accounts/{accountCode}` -- staff FINANCE_OFFICER/ADMIN
  * only. Rejected with a real 409 once any GL posting references the account
- * -- retiring an in-use account is a distinct, deferred concern this endpoint
- * does not attempt.
+ * (`ACCOUNT_IN_USE`) or once it has children (`ACCOUNT_HAS_CHILDREN`).
+ * Retiring an account that has history is what `setAccountStatus` above is for.
  */
 export function deleteAccount(accountCode: string): Promise<void> {
   return del<void>(`/chart-of-accounts/${encodeURIComponent(accountCode)}`);

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import com.jayway.jsonpath.JsonPath;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -22,6 +23,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -71,7 +73,7 @@ class ProductContractTest {
     @Test
     void createProductMatchesOpenApiContract() throws Exception {
         mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -90,7 +92,7 @@ class ProductContractTest {
         // the same tenant before listing, and assert on that item's presence/fields too.
         UUID tenantId = UUID.randomUUID();
         MvcResult createResult = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -102,7 +104,7 @@ class ProductContractTest {
         UUID productId = created.productId();
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -146,7 +148,7 @@ class ProductContractTest {
         // publish a version as a customer -- must be rejected with 403.
         UUID tenantId = UUID.randomUUID();
         MvcResult createResult = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -173,7 +175,7 @@ class ProductContractTest {
     void publishVersionAndActiveSnapshotMatchOpenApiContract() throws Exception {
         UUID tenantId = UUID.randomUUID();
         MvcResult createResult = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -185,7 +187,7 @@ class ProductContractTest {
         UUID productId = created.productId();
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -203,11 +205,132 @@ class ProductContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
+    /**
+     * A product in the catalogue with no version in force TODAY.
+     *
+     * <p>Found in the dev tenant, not imagined: a GROUP_LIFE product whose only version was
+     * effective the following day appeared in the products list -- publishing flips the
+     * definition to ACTIVE whatever the effective date -- and opening it reported "this
+     * record does not exist, or it is not available to your role" to a staff member who had
+     * just clicked it. Both halves false. The cause was one exception answering two
+     * questions, with the version lookup running before the existence check.
+     *
+     * <p>The assertion that matters is the errorCode, because the STATUS is unchanged: a
+     * client that cannot tell this from a missing product has to hedge about the caller's
+     * role, and hedging is what produced the sentence above.
+     */
+    @Test
+    void aProductWhoseOnlyVersionStartsLaterIsNotReportedAsAMissingProduct() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProduct(tenantId, "CONTRACT-FUTURE-VER", "Future Version Product");
+        LocalDate startsTomorrow = LocalDate.now().plusDays(1);
+
+        publishVersionEffective(tenantId, productId, startsTomorrow);
+
+        // It is in the catalogue: publishing made it ACTIVE, so the console lists it and a
+        // staff member can click it. That is the whole reason the detail must not deny it.
+        mockMvc.perform(get("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.productId == '" + productId + "')]").exists());
+
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // NOT PRODUCT_NOT_FOUND. This is the defect, pinned.
+            .andExpect(jsonPath("$.errorCode").value("NO_ACTIVE_PRODUCT_VERSION"))
+            // The remedy is a date, and it is guessable from nothing else.
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString(startsTomorrow.toString())))
+            .andExpect(jsonPath("$.traceId").exists());
+
+        // And asking as of the day it starts resolves normally -- proof the version is
+        // real and only the DATE was wrong, rather than the product being broken.
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .queryParam("effectiveDate", startsTomorrow.toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.effectiveDate").value(startsTomorrow.toString()));
+    }
+
+    /**
+     * The other half, and the regression guard for the reordering: a product that genuinely
+     * does not exist must still say so. Resolving the definition before the version is what
+     * keeps these two answers distinct, and swapping them back would make this fail.
+     */
+    @Test
+    void aProductThatDoesNotExistStillSaysProductNotFound() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(get("/products/" + UUID.randomUUID() + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("PRODUCT_NOT_FOUND"));
+    }
+
+    /**
+     * A DRAFT product -- created, never published -- which is the same absence with no next
+     * date to offer, and covers the other branch of the exception's message.
+     *
+     * <p>It is also the more common way to meet this: a product is DRAFT until a version is
+     * published, so anything reaching this id before that (a bookmark, a link from an
+     * authoring flow, a direct URL) asks for a snapshot that cannot exist yet. Saying "no
+     * such product" of a product somebody just created is the same lie in a different
+     * place.
+     */
+    @Test
+    void aDraftProductWithNoVersionsReportsNoActiveVersionAndNoNextDate() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProduct(tenantId, "CONTRACT-DRAFT-VER", "Draft Version Product");
+
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("NO_ACTIVE_PRODUCT_VERSION"))
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("no later version is scheduled")));
+    }
+
+    /** Creates a DRAFT product and returns its id. */
+    private UUID createProduct(UUID tenantId, String code, String name) throws Exception {
+        MvcResult result = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productCode\":\"" + code + "\",\"productName\":\"" + name
+                    + "\",\"category\":\"ENDOWMENT\",\"defaultCurrency\":\"TZS\"}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        return objectMapper.readValue(result.getResponse().getContentAsString(), ProductSummaryView.class)
+            .productId();
+    }
+
+    /** Publishes one version effective on the given date, which is what makes a product ACTIVE. */
+    private void publishVersionEffective(UUID tenantId, UUID productId, LocalDate effectiveDate)
+            throws Exception {
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ifrsMeasurementModel\":\"PAA\",\"effectiveDate\":\"" + effectiveDate + "\","
+                    + "\"ratingTable\":[{\"factorType\":\"AGE\",\"band\":\"30-39\",\"multiplier\":1.0,\"ageFrom\":30,\"ageTo\":39},"
+                    + "{\"factorType\":\"SUM_ASSURED_BAND\",\"band\":\"LOW\",\"multiplier\":1.0}],"
+                    + "\"benefitSchedule\":[{\"benefitType\":\"MATURITY\",\"calculationMethod\":\"SUM_ASSURED_PLUS_BONUS\"}]}"))
+            .andExpect(status().isCreated());
+    }
+
     @Test
     void publishVersionRejectsMissingRatingCoverageWithUnprocessableEntity() throws Exception {
         UUID tenantId = UUID.randomUUID();
         MvcResult createResult = mockMvc.perform(post("/products")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -219,7 +342,7 @@ class ProductContractTest {
         UUID productId = created.productId();
 
         mockMvc.perform(post("/products/" + productId + "/versions")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -229,5 +352,98 @@ class ProductContractTest {
                     """))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.errorCode").value("INVALID_PRODUCT_VERSION"));
+    }
+    // --- Authoring is ADMIN, and reading is not ------------------------------------------------
+    //
+    // These two endpoints were hasRole('REALM_STAFF') until now, so any staff member -- an
+    // underwriter, a claims assessor -- could create and price a product. PRODUCT.md described
+    // ADMIN as "everything a finance officer sees, plus product authoring and configuration",
+    // which was false in both directions: authoring was open to everyone, and ADMIN carried no
+    // capability FINANCE_OFFICER lacked anywhere on the platform.
+    //
+    // Each test below pairs the denial with the SAME call succeeding for ADMIN. A 403 test on
+    // its own would still pass if the endpoint had been broken outright.
+
+    @Test
+    void creatingAProductIsRefusedForAStaffMemberWhoIsNotAnAdmin() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"GATE-UW-01","productName":"Underwriter Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isForbidden());
+
+        // FINANCE_OFFICER is refused too, deliberately: pricing a life product is actuarial
+        // set-up, and widening this to the finance pair used elsewhere would leave ADMIN with no
+        // capability of its own again -- the exact state this change exists to end.
+        mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"GATE-FIN-01","productName":"Finance Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isForbidden());
+
+        // The same call, as ADMIN, succeeds -- so the two above are a gate and not a breakage.
+        mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"GATE-ADMIN-01","productName":"Admin Authored","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated());
+    }
+
+    @Test
+    void publishingAVersionIsRefusedForAStaffMemberWhoIsNotAnAdmin() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String createResponse = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"GATE-PUB-01","productName":"Gate Publish","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String productId = JsonPath.read(createResponse, "$.productId");
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+                     "ratingTable":[{"ageBandStart":18,"ageBandEnd":65,"gender":"ANY","ratePerMille":"3.50"}],
+                     "benefitSchedule":[{"benefitType":"DEATH","basis":"MULTIPLE_OF_SUM_ASSURED","factor":"1.0"}]}
+                    """))
+            .andExpect(status().isForbidden());
+    }
+
+    /**
+     * The other half of the same change: every product READ stays open to staff. Issuing a
+     * policy needs the catalogue, the active snapshot and a premium quote, so a gate that also
+     * caught the reads would have blocked underwriting for the roles that must never be blocked
+     * from it. Asserted rather than assumed, because "tighten the product endpoints" is exactly
+     * the kind of instruction that takes the reads with it.
+     */
+    @Test
+    void readingTheProductCatalogueStaysOpenToAnyStaffMember() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(get("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk());
     }
 }

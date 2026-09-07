@@ -9,8 +9,11 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.GlPostingView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
+import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountSeeder;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.GlPostingRepository;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.JournalEntryRepository;
@@ -41,6 +44,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -90,7 +94,8 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
-            "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql");
+            "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
+            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -104,6 +109,7 @@ class FinaccountingApiIntegrationTest {
     @Autowired private JournalEntryRepository journalEntryRepository;
     @Autowired private GlPostingRepository glPostingRepository;
     @Autowired private ChartOfAccountSeeder chartOfAccountSeeder;
+    @Autowired private ChartOfAccountRepository chartOfAccountRepository;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -307,7 +313,7 @@ class FinaccountingApiIntegrationTest {
     }
 
     @Test
-    void listChartOfAccountsReturnsTheNineSeededAccountsAndSeedingTwiceDoesNotDuplicate() {
+    void listChartOfAccountsReturnsTheSeededChartAndSeedingTwiceDoesNotDuplicate() {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         chartOfAccountSeeder.seedIfAbsent(tenantId, "system:test");
@@ -316,7 +322,82 @@ class FinaccountingApiIntegrationTest {
 
         TenantContext.set(tenantId);
         List<ChartOfAccountView> accounts = finaccountingApi.listChartOfAccounts();
-        assertThat(accounts).hasSize(9);
+        assertThat(accounts).hasSize(ChartOfAccountBlueprint.accounts().size());
         assertThat(accounts).extracting(ChartOfAccountView::accountCode).doesNotHaveDuplicates();
+    }
+
+    // ============================================================================================
+    // The chart decides where a posting may land.
+    //
+    // fk_gl_posting_account_code already guarantees the account EXISTS; it cannot know whether the
+    // account is a non-posting header or a retired one. Without the guard these four tests cover,
+    // posting_allowed and status would be decoration.
+    // ============================================================================================
+
+    /** One balanced DR/CR pair for 100.00, with a source_ref unique per call so postEntry's
+     *  idempotency early-return can never mask the assertion under test. */
+    private static JournalEntry balancedEntryAgainst(UUID tenantId, String debitCode,
+                                                      String creditCode, String currency) {
+        JournalEntry entry = new JournalEntry(tenantId, "test.PostingGuard",
+            UUID.randomUUID().toString(), "2026-08", null, "system:test");
+        entry.addLeg(debitCode, PostingDirection.DR, new BigDecimal("100.00"), currency);
+        entry.addLeg(creditCode, PostingDirection.CR, new BigDecimal("100.00"), currency);
+        return entry;
+    }
+
+    @Test
+    void refusesALegTargetingAHeaderAccount() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        // 1000 Assets has children, so it is a header and never posts.
+        JournalEntry entry = balancedEntryAgainst(tenantId, "1000", PostingRule.CASH, "TZS");
+        assertThatThrownBy(() -> finaccountingApiImpl.postEntry(entry))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("1000")
+            .hasMessageContaining("does not accept postings");
+    }
+
+    @Test
+    void refusesALegTargetingAnInactiveAccount() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        ChartOfAccount investments = chartOfAccountRepository
+            .findByTenantIdAndAccountCode(tenantId, "1300").orElseThrow();
+        investments.deactivate("system:test");
+        chartOfAccountRepository.saveAndFlush(investments);
+
+        TenantContext.set(tenantId);
+        JournalEntry entry = balancedEntryAgainst(tenantId, "1300", PostingRule.CASH, "TZS");
+        assertThatThrownBy(() -> finaccountingApiImpl.postEntry(entry))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("1300")
+            .hasMessageContaining("does not accept postings");
+    }
+
+    @Test
+    void refusesALegWhoseCurrencyDisagreesWithItsAccount() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        // Both legs are USD, so the entry is internally consistent and balanced -- it is the
+        // ACCOUNT, seeded in TZS, that disagrees.
+        JournalEntry entry = balancedEntryAgainst(
+            tenantId, PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM, "USD");
+        assertThatThrownBy(() -> finaccountingApiImpl.postEntry(entry))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("USD")
+            .hasMessageContaining("TZS");
+    }
+
+    @Test
+    void stillPostsABalancedEntryBetweenTwoPostableAccounts() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+
+        JournalEntry entry = balancedEntryAgainst(
+            tenantId, PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM, "TZS");
+        assertThat(finaccountingApiImpl.postEntry(entry)).isPresent();
     }
 }

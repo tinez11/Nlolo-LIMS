@@ -23,7 +23,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const config = REALM_CONFIG[realm];
 
   const groups = navFor(realm, identity);
-  const badges = useNavBadges(realm);
+  const badges = useNavBadges(realm, identity);
 
   return (
     <div className="flex h-full">

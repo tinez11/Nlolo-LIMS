@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { TREATY_STATUSES, type TreatyStatus, type TreatyView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
-import { StatCards, type Stat } from '@/components/StatCards';
+import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -47,14 +47,12 @@ export function TreatiesPage() {
   }
 
   const total = list.data?.length ?? null;
-  const stats: Stat[] = [
-    {
-      label: status ? `${status.toLowerCase()} treaties` : 'All treaties',
-      value: total,
-      pending: isInitialLoad(list),
-      hint: list.status === 'error' && total === null ? 'could not load' : 'in your tenant',
-    },
-  ];
+  const count: Stat = {
+    label: status ? `${status.toLowerCase()} treaties` : 'treaties',
+    value: total,
+    pending: isInitialLoad(list),
+    hint: list.status === 'error' && total === null ? 'could not load' : 'in your tenant',
+  };
 
   const columns: Column<TreatyView>[] = [
     {
@@ -138,9 +136,8 @@ export function TreatiesPage() {
             </Link>
           </Button>
         }
+        count={<CountLine {...count} />}
       />
-
-      <StatCards stats={stats} />
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">

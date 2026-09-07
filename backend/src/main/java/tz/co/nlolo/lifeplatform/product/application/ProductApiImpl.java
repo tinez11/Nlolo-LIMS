@@ -197,10 +197,31 @@ public class ProductApiImpl implements ProductApi {
     public ProductSnapshotView getActiveSnapshot(UUID productId, LocalDate asOfDate) {
         UUID tenantId = TenantContext.get();
         LocalDate effectiveAsOf = asOfDate != null ? asOfDate : LocalDate.now();
+
+        /*
+         * The definition is resolved FIRST, and the order is the fix rather than a tidy-up.
+         *
+         * Both lookups used to throw ProductNotFoundException, and the version lookup ran
+         * first -- so a product that exists but has no version in force today was reported
+         * as a product that does not exist. On the console that became "this record does not
+         * exist, or it is not available to your role", shown to a staff member who had just
+         * clicked the product in the catalogue: the record plainly existed, and their role
+         * had nothing to do with it. A GROUP_LIFE product whose only version was effective
+         * the next day hit exactly this.
+         *
+         * Asking "is there such a product" before "is any version of it in force" is what
+         * lets the two answers stay different.
+         */
+        ProductDefinition definition = productDefinitionRepository.findById(productId)
+            .orElseThrow(() -> new ProductNotFoundException(productId));
         ProductVersion version = productVersionRepository.findActiveAsOf(tenantId, productId, effectiveAsOf).stream()
             .findFirst()
-            .orElseThrow(() -> new ProductNotFoundException(productId));
-        ProductDefinition definition = productDefinitionRepository.findById(productId).orElseThrow(() -> new ProductNotFoundException(productId));
+            .orElseThrow(() -> new NoActiveProductVersionException(productId, effectiveAsOf,
+                productVersionRepository
+                    .findFirstByTenantIdAndProductIdAndEffectiveDateAfterOrderByEffectiveDateAsc(
+                        tenantId, productId, effectiveAsOf)
+                    .map(ProductVersion::getEffectiveDate)
+                    .orElse(null)));
         return new ProductSnapshotView(productId, version.getProductVersionId(), version.getEffectiveDate(),
             IfrsMeasurementModel.valueOf(definition.getIfrsMeasurementModel()),
             version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),

@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -162,16 +163,23 @@ public class PartyApiImpl implements PartyApi {
     }
 
     @Override
-    public Page<PartyView> searchParties(KycStatus kycStatus, String createdBy, String q, Pageable pageable) {
+    public Page<PartyView> searchParties(KycStatus kycStatus, String createdBy, String q,
+                                            Collection<PartyType> partyTypes, Pageable pageable) {
         UUID tenantId = TenantContext.get();
+        // An empty collection is normalised to null -- "no types given" and "no type filter"
+        // are the same request, and `IN ()` is not valid SQL.
+        Collection<PartyType> types = (partyTypes == null || partyTypes.isEmpty()) ? null : partyTypes;
         // The three no-q branches stay on the original derived-query methods (unchanged
-        // shape) for the common (no-text-search) case -- only a present `q` routes
-        // through the new three-way `search` query, same reasoning
+        // shape) for the common (no-text-search, no-type) case -- a present `q` OR a present
+        // type filter routes through the null-safe `search` query, same reasoning
         // PolicyApiImpl.searchPolicies/ClaimsApiImpl.searchClaims already use for their
-        // own optional extra filter dimension.
+        // own optional extra filter dimension. Keeping the derived branches for the
+        // no-type case is what makes this change additive: a caller that passes no types
+        // executes exactly the query it executed before.
         Page<Party> page;
-        if (q != null && !q.isBlank()) {
-            page = partyRepository.search(tenantId, kycStatus, createdBy, q.trim(), pageable);
+        if ((q != null && !q.isBlank()) || types != null) {
+            page = partyRepository.search(tenantId, kycStatus, createdBy,
+                (q != null && !q.isBlank()) ? q.trim() : null, types, pageable);
         } else if (kycStatus != null && createdBy != null) {
             page = partyRepository.findByTenantIdAndKycStatusAndCreatedBy(tenantId, kycStatus, createdBy, pageable);
         } else if (kycStatus != null) {
@@ -247,6 +255,17 @@ public class PartyApiImpl implements PartyApi {
     @Override
     public Set<UUID> partyIdsRegisteredBy(String createdBy) {
         return partyRepository.findPartyIdsByTenantIdAndCreatedBy(TenantContext.get(), createdBy);
+    }
+
+    @Override
+    public Set<UUID> partyIdsMatchingName(String q) {
+        // A blank term is "no search", and it must not become "every party in the tenant"
+        // by way of a LIKE '%%' -- the caller reads an empty set as "match nothing", so
+        // answering a blank q with every id would invert the meaning of the filter.
+        if (q == null || q.isBlank()) {
+            return Set.of();
+        }
+        return partyRepository.findPartyIdsByTenantIdAndDisplayNameLike(TenantContext.get(), q.trim());
     }
 
     @Override

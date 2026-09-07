@@ -15,6 +15,18 @@ backend/scripts/seed-evidence.jpg
 # Git-ignored by design: the git history is the durable record, not these artifacts.
 .superpowers/
 
+# Claude Code per-machine settings. `.claude/settings.json` is shared config and
+# SHOULD be committed when one exists; `settings.local.json` is one developer's
+# machine — absolute paths into their own editor install, local worktree paths,
+# process ids, and dev credentials in permission rules. Never shared.
+.claude/settings.local.json
+
+# A locally-created symlink mirror of .agents/skills, pointing at an ABSOLUTE path in
+# whoever ran the installer's checkout. The canonical copy is committed under
+# .agents/skills/ -- which is the path skills-lock.json records -- so this is
+# regenerable and would only break for anyone else.
+.claude/skills/
+
 # Frontend (M12)
 node_modules/
 frontend/**/.next/

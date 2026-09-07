@@ -2,13 +2,14 @@ import { create } from 'zustand';
 import { listCases } from '@/api/underwriting';
 import { searchClaims } from '@/api/claims';
 import { beneficiaryOf } from '@/api/policies';
-import { searchPolicies } from '@/api/policies';
+import { listSchemeMembers, searchPolicies } from '@/api/policies';
 import { listAgents } from '@/api/distribution';
 import type {
   AgentView,
   BeneficiaryOfView,
   ClaimView,
   Page,
+  PolicyMemberView,
   PolicyView,
   UnderwritingCaseView,
 } from '@/api/types';
@@ -46,18 +47,35 @@ type Keyed<T> = Record<string, Resource<T>>;
 /** One page is the whole panel: a client with more than this many is a scroll, not a pager. */
 const PANEL_PAGE_SIZE = 50;
 
+/**
+ * How many lives the group-schemes panel previews inline before deferring to the
+ * schedule itself. Enough to prove the schedule is populated and to recognise a name;
+ * a 500-life roll is not a thing to read on somebody else's record page.
+ */
+export const SCHEME_MEMBER_PREVIEW = 5;
+
 interface ClientRecordState {
   policies: Keyed<Page<PolicyView>>;
   claims: Keyed<Page<ClaimView>>;
   cases: Keyed<Page<UnderwritingCaseView>>;
   beneficiaryOf: Keyed<BeneficiaryOfView[]>;
   agentRecords: Keyed<Page<AgentView>>;
+  /**
+   * The opening lives of this client's ONE group scheme, keyed by party id.
+   *
+   * Its own slot rather than reusing `policyStore.members`, which the scheme page owns:
+   * that slot is keyed by policy number and NOT by the requested page size, so a
+   * five-row preview written into it would leave the scheme page briefly showing five
+   * of five hundred with a pager agreeing.
+   */
+  schemeMembers: Keyed<Page<PolicyMemberView>>;
 
   loadPolicies: (partyId: string) => Promise<void>;
   loadClaims: (partyId: string) => Promise<void>;
   loadCases: (partyId: string) => Promise<void>;
   loadBeneficiaryOf: (partyId: string) => Promise<void>;
   loadAgentRecords: (partyId: string) => Promise<void>;
+  loadSchemeMembers: (partyId: string, policyNumber: string) => Promise<void>;
 }
 
 export const useClientRecordStore = create<ClientRecordState>((set, getState) => ({
@@ -66,6 +84,7 @@ export const useClientRecordStore = create<ClientRecordState>((set, getState) =>
   cases: {},
   beneficiaryOf: {},
   agentRecords: {},
+  schemeMembers: {},
 
   loadPolicies: (partyId) =>
     track(
@@ -106,6 +125,20 @@ export const useClientRecordStore = create<ClientRecordState>((set, getState) =>
       (next) => set((s) => ({ agentRecords: { ...s.agentRecords, [partyId]: next } })),
       () => listAgents({ partyId, pageSize: PANEL_PAGE_SIZE }),
     ),
+
+  /*
+   * Keyed by PARTY, not by policy, because that is the question being asked: "who is
+   * covered under this client's scheme". Only ever called for a client with exactly one
+   * group scheme -- with two, there is no single roll to preview and the panel lists the
+   * schemes instead.
+   */
+  loadSchemeMembers: (partyId, policyNumber) =>
+    track(
+      `client.schemeMembers.${partyId}`,
+      getState().schemeMembers[partyId] ?? idle<Page<PolicyMemberView>>(),
+      (next) => set((s) => ({ schemeMembers: { ...s.schemeMembers, [partyId]: next } })),
+      () => listSchemeMembers(policyNumber, { pageSize: SCHEME_MEMBER_PREVIEW }),
+    ),
 }));
 
 export const selectClientPolicies = (partyId: string) => (s: ClientRecordState) =>
@@ -118,3 +151,5 @@ export const selectClientBeneficiaryOf = (partyId: string) => (s: ClientRecordSt
   s.beneficiaryOf[partyId] ?? idle<BeneficiaryOfView[]>();
 export const selectClientAgentRecords = (partyId: string) => (s: ClientRecordState) =>
   s.agentRecords[partyId] ?? idle<Page<AgentView>>();
+export const selectClientSchemeMembers = (partyId: string) => (s: ClientRecordState) =>
+  s.schemeMembers[partyId] ?? idle<Page<PolicyMemberView>>();

@@ -20,6 +20,7 @@ import { ClaimReopenPanel } from './ClaimReopenPanel';
 import { ClaimSettlementPanel } from './ClaimSettlementPanel';
 import { EvidencePanel } from './EvidencePanel';
 import { Panel } from '@/components/Panel';
+import { DetailLayout } from '@/components/DetailLayout';
 
 /**
  * The "acts" half of drawer-previews-page-acts.
@@ -93,70 +94,94 @@ export function ClaimDetailPage() {
       />
 
       {claim && (
-        <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-5">
-            <Panel title="Event details">
-              <dl className="px-4 pb-2">
-                <Field label="Date of event" value={formatDate(claim.dateOfEvent)} />
-                <ClaimDetailsFields details={claim.details} />
-              </dl>
+        /*
+          Ordered by what the person who opened this page came to do, which is the one
+          thing the previous layout did not express: an assessor arriving from the
+          queue scrolled past Event details and Evidence to reach the form that is
+          their entire job, and every panel heading was the same 14px, so nothing on
+          screen said which box was the point.
+
+          The record rail is now facts only, and pinned -- the claimant's name and the
+          contestability flag stay on screen for the whole time the findings are being
+          written. "Cannot tell whose death she is assessing without a second tab" was
+          a real review finding, and a sticky column is the fix for it rather than
+          another link.
+        */
+        <DetailLayout
+          record={
+            <>
+              <Panel title="Claim">
+                <dl className="px-4 pb-2">
+                  {claim.approvedAmount && (
+                    <Field label="Approved amount" value={formatMoney(claim.approvedAmount)} emphasis />
+                  )}
+                  <Field
+                    label="Claimant"
+                    value={
+                      <Link to={`/staff/parties/${claim.claimantPartyId}`} className="underline">
+                        <PartyName partyId={claim.claimantPartyId} />
+                      </Link>
+                    }
+                  />
+                  <Field
+                    label="Contestability"
+                    value={claim.requiresContestabilityReview ? 'Requires review' : 'Clear'}
+                    note="Re-derived on every read, not a stored column"
+                  />
+                </dl>
+              </Panel>
+
+              <Panel title="Event details">
+                <dl className="px-4 pb-2">
+                  <Field label="Date of event" value={formatDate(claim.dateOfEvent)} />
+                  <ClaimDetailsFields details={claim.details} />
+                </dl>
+              </Panel>
+            </>
+          }
+        >
+          {/* Status-gated, so in practice one of the three renders at a time --
+              REGISTERED/UNDER_ASSESSMENT for the first two, REJECTED/SETTLED for the
+              last. Where an assessor-and-manager sees two, the subtitles say which is
+              which; both genuinely are the point of the page. */}
+          {canAssess && (
+            <Panel
+              emphasis
+              title="Submit an assessment"
+              subtitle="Claims may carry more than one before a decision is made."
+            >
+              <ClaimAssessmentPanel claimId={claimId} />
             </Panel>
+          )}
 
-            <Panel title="Evidence" subtitle="Photos, certificates, and reports attached to this claim">
-              <EvidencePanel claimId={claimId} canAttach={claim.status !== 'SETTLED'} />
+          {canDecide && (
+            <Panel
+              emphasis
+              title="Decide settlement"
+              subtitle="Approve or reject -- distinct from assessing."
+            >
+              <ClaimSettlementPanel claimId={claimId} />
             </Panel>
+          )}
 
-            {canAssess && (
-              <Panel
-                title="Submit an assessment"
-                subtitle="Claims may carry more than one before a decision is made."
-              >
-                <ClaimAssessmentPanel claimId={claimId} />
-              </Panel>
-            )}
-
-            {canDecide && (
-              <Panel title="Decide settlement" subtitle="Approve or reject -- distinct from assessing.">
-                <ClaimSettlementPanel claimId={claimId} />
-              </Panel>
-            )}
-
-            {canReopen && (
-              <Panel title="Reopen">
-                <ClaimReopenPanel claimId={claimId} wasSettled={claim.status === 'SETTLED'} />
-              </Panel>
-            )}
-          </div>
-
-          <div className="space-y-5">
-            <Panel title="Claim">
-              <dl className="px-4 pb-2">
-                {claim.approvedAmount && (
-                  <Field label="Approved amount" value={formatMoney(claim.approvedAmount)} emphasis />
-                )}
-                <Field
-                  label="Claimant"
-                  value={
-                    <Link to={`/staff/parties/${claim.claimantPartyId}`} className="underline">
-                      <PartyName partyId={claim.claimantPartyId} />
-                    </Link>
-                  }
-                />
-                <Field
-                  label="Contestability"
-                  value={claim.requiresContestabilityReview ? 'Requires review' : 'Clear'}
-                  note="Re-derived on every read, not a stored column"
-                />
-              </dl>
+          {canReopen && (
+            <Panel emphasis title="Reopen">
+              <ClaimReopenPanel claimId={claimId} wasSettled={claim.status === 'SETTLED'} />
             </Panel>
+          )}
 
-            {canSeeReinsurance && (
-              <Panel title="Reinsurance" subtitle="Recoveries this claim's own settlement produced">
-                <RecoveriesPanel claimId={claimId} />
-              </Panel>
-            )}
-          </div>
-        </div>
+          <Panel title="Evidence" subtitle="Photos, certificates, and reports attached to this claim">
+            <EvidencePanel claimId={claimId} canAttach={claim.status !== 'SETTLED'} />
+          </Panel>
+
+          {/* Moved out of the 320px rail: a recoveries table needs the width, and
+              nothing in it is a fact about the claim itself. */}
+          {canSeeReinsurance && (
+            <Panel title="Reinsurance" subtitle="Recoveries this claim's own settlement produced">
+              <RecoveriesPanel claimId={claimId} />
+            </Panel>
+          )}
+        </DetailLayout>
       )}
     </>
   );

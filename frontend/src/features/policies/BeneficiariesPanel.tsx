@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Plus, X } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import type { BeneficiaryInput } from '@/api/types';
@@ -8,6 +8,7 @@ import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { usePolicyStore, selectSavingBeneficiaries } from '@/store/policyStore';
+import { BeneficiaryRow } from './BeneficiaryRow';
 import {
   beneficiariesFormSchema,
   blankBeneficiaryRow,
@@ -16,7 +17,6 @@ import {
   type BeneficiaryFormValues,
 } from './beneficiaryForm';
 import { Field } from '@/components/Field';
-import { Input, Select } from '@/components/ui/input';
 
 /**
  * The one mutating form in this slice, deliberately placed on the full detail page
@@ -180,74 +180,33 @@ function EditForm({
           const type = rows[index]?.type ?? 'PARTY';
           const rowError = errors.beneficiaries?.[index];
           return (
-            <div key={field.id} className="rounded-md border border-border p-2.5">
-              <div className="flex items-center gap-2">
-                <Select
-                  inputSize="sm"
-                  {...register(`beneficiaries.${index}.type`)}
-                >
-                  <option value="PARTY">Party</option>
-                  <option value="FREEFORM">Freeform</option>
-                </Select>
-
-                {type === 'PARTY' ? (
-                  <Controller
-                    control={control}
-                    name={`beneficiaries.${index}.partyId`}
-                    render={({ field }) => (
-                      <div className="h-8 flex-1">
-                        <PartyPicker
-                          value={field.value || null}
-                          onChange={(partyId) => field.onChange(partyId ?? '')}
-                          placeholder="Search for the beneficiary by name"
-                        />
-                      </div>
-                    )}
-                  />
-                ) : (
-                  <Input
-                    inputSize="sm" className="flex-1"
-                    placeholder={'Designee, e.g. "My Estate"'}
-                    {...register(`beneficiaries.${index}.freeformDesignee`)}
-                  />
-                )}
-
-                <div className="flex items-center gap-1">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.01"
-                    inputSize="sm" className="w-20 text-right"
-                    {...register(`beneficiaries.${index}.sharePercent`)}
-                  />
-                  <span className="text-xs text-muted-foreground">%</span>
-                </div>
-
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Remove beneficiary"
-                  onClick={() => remove(index)}
-                >
-                  <X />
-                </Button>
-              </div>
-
-              <label className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <input type="checkbox" {...register(`beneficiaries.${index}.revocable`)} />
-                Revocable
-              </label>
-
-              {(rowError?.partyId ?? rowError?.freeformDesignee ?? rowError?.sharePercent) && (
-                <p className="mt-1 text-[11px] text-status-danger-fg">
-                  {rowError?.partyId?.message ??
-                    rowError?.freeformDesignee?.message ??
-                    rowError?.sharePercent?.message}
-                </p>
-              )}
-            </div>
+            <BeneficiaryRow
+              key={field.id}
+              type={type}
+              typeField={register(`beneficiaries.${index}.type`)}
+              designeeField={register(`beneficiaries.${index}.freeformDesignee`)}
+              shareField={register(`beneficiaries.${index}.sharePercent`)}
+              revocableField={register(`beneficiaries.${index}.revocable`)}
+              party={
+                <Controller
+                  control={control}
+                  name={`beneficiaries.${index}.partyId`}
+                  render={({ field: partyField }) => (
+                    <PartyPicker
+                      value={partyField.value || null}
+                      onChange={(partyId) => partyField.onChange(partyId ?? '')}
+                      placeholder="Search for the beneficiary by name"
+                    />
+                  )}
+                />
+              }
+              onRemove={() => remove(index)}
+              error={
+                rowError?.partyId?.message ??
+                rowError?.freeformDesignee?.message ??
+                rowError?.sharePercent?.message
+              }
+            />
           );
         })}
       </div>

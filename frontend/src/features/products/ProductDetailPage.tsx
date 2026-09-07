@@ -1,6 +1,8 @@
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useAuth } from 'react-oidc-context';
+import { canAuthorProducts, readIdentity } from '@/auth/claims';
 import type { BaseRate, VersionRatingView } from '@/api/types';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
@@ -16,6 +18,7 @@ import {
 } from '@/store/productStore';
 import { PublishVersionForm } from './PublishVersionForm';
 import { Panel } from '@/components/Panel';
+import { DetailLayout } from '@/components/DetailLayout';
 
 /**
  * The "acts" half of drawer-previews-page-acts. Unlike Policies/Claims there is
@@ -28,6 +31,7 @@ import { Panel } from '@/components/Panel';
  */
 export function ProductDetailPage() {
   const { productId = '' } = useParams();
+  const canAuthor = canAuthorProducts(readIdentity(useAuth().user?.access_token));
   const [publishOpen, setPublishOpen] = useState(false);
 
   const list = useProductStore((s) => s.list);
@@ -97,9 +101,15 @@ export function ProductDetailPage() {
         actions={product.status && <StatusBadge kind="product" value={product.status} />}
       />
 
-      <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
-          <Panel title="Publish a new version">
+      {/* No `emphasis` on the publish panel despite it leading: authoring a product
+          version is rare actuarial set-up, and the rating basis below is what most
+          visits are actually here to read. */}
+      <DetailLayout record={renderRecord()}>
+        {/* Publishing prices the product and puts it in force -- ADMIN-only server-side, so
+            the panel is absent rather than present-and-refusing for everyone else. The rating
+            basis below stays readable, which is what most visits are here for anyway. */}
+        {canAuthor && (
+        <Panel title="Publish a new version">
             {publishOpen ? (
               <div className="p-4">
                 <PublishVersionForm
@@ -116,6 +126,7 @@ export function ProductDetailPage() {
               </div>
             )}
           </Panel>
+        )}
 
           <Panel
             title="Rating basis"
@@ -127,53 +138,85 @@ export function ProductDetailPage() {
               onRetry={() => versionId && void loadRating(productId, versionId)}
             />
           </Panel>
-        </div>
-
-        <div className="space-y-5">
-          <Panel title="Product">
-            <dl className="px-4 pb-2">
-              <Field label="Category" value={product.category?.replace(/_/g, ' ') ?? '—'} />
-              <Field label="Default currency" value={product.defaultCurrency ?? '—'} />
-            </dl>
-          </Panel>
-
-          <Panel title="Active version" subtitle="As of today">
-            {isInitialLoad(snapshot) && (
-              <p className="px-4 pb-4 text-xs text-muted-foreground">Loading…</p>
-            )}
-            {snapshot.status === 'error' && snapshot.error && snapshot.data === null && (
-              <ErrorPanel error={snapshot.error} onRetry={() => void loadSnapshot(productId)} />
-            )}
-            {snapshot.data && (
-              <dl className="px-4 pb-2">
-                <Field label="IFRS model" value={snapshot.data.ifrsMeasurementModel ?? '—'} />
-                <Field label="Effective" value={snapshot.data.effectiveDate ?? '—'} />
-                <Field
-                  label="Grace period"
-                  value={`${snapshot.data.gracePeriodDays ?? '—'} days`}
-                />
-                <Field
-                  label="Base rate cells"
-                  value={
-                    rating.data
-                      ? String((rating.data.baseRates ?? []).length)
-                      : rating.status === 'error'
-                        ? '—'
-                        : 'Loading…'
-                  }
-                  // Only when it is actually zero. Carrying the warning on a
-                  // priced version would train readers to ignore it.
-                  {...(rating.data && (rating.data.baseRates ?? []).length === 0
-                    ? { note: 'No cells means unpriced — no premium can be quoted.' }
-                    : {})}
-                />
-              </dl>
-            )}
-          </Panel>
-        </div>
-      </div>
+      </DetailLayout>
     </>
   );
+
+  function renderRecord() {
+    // Unreachable -- the guard above already returned the not-found state. It is here
+    // because narrowing does not survive into a hoisted function, which the compiler
+    // must assume could be called at any time.
+    if (!product) return null;
+
+    return (
+      <>
+        <Panel title="Product">
+          <dl className="px-4 pb-2">
+            <Field label="Category" value={product.category?.replace(/_/g, ' ') ?? '—'} />
+            <Field label="Default currency" value={product.defaultCurrency ?? '—'} />
+          </dl>
+        </Panel>
+
+        <Panel title="Active version" subtitle="As of today">
+          {isInitialLoad(snapshot) && (
+            <p className="px-4 pb-4 text-xs text-muted-foreground">Loading…</p>
+          )}
+          {/*
+            "No version in force today" is a FACT about the product, not a failure to
+            load it, and it gets said rather than reported.
+
+            The endpoint answers this with a 404, and a bare 404 on this platform has to
+            hedge about whether the caller's role is at fault -- one can be a disguised
+            denial. That hedge was catastrophic here: a product whose only version was
+            effective the next day told a staff member "this record does not exist, or it
+            is not available to your role", straight after they clicked it in the
+            catalogue. Both halves false, and the second sent them to ask about
+            permissions.
+
+            `NO_ACTIVE_PRODUCT_VERSION` is the server saying it is not a denial and not an
+            absence, so this branch renders the server's own sentence -- which names the
+            date asked about and when the next version starts -- with no Try again, because
+            retrying the same date will do the same thing.
+          */}
+          {snapshot.status === 'error' &&
+            snapshot.error &&
+            snapshot.data === null &&
+            (snapshot.error.errorCode === 'NO_ACTIVE_PRODUCT_VERSION' ? (
+              <p className="px-4 pt-1 pb-4 text-xs text-muted-foreground">
+                {snapshot.error.detail ?? 'No version of this product is in force today.'}
+              </p>
+            ) : (
+              <ErrorPanel error={snapshot.error} onRetry={() => void loadSnapshot(productId)} />
+            ))}
+          {snapshot.data && (
+            <dl className="px-4 pb-2">
+              <Field label="IFRS model" value={snapshot.data.ifrsMeasurementModel ?? '—'} />
+              <Field label="Effective" value={snapshot.data.effectiveDate ?? '—'} />
+              <Field
+                label="Grace period"
+                value={`${snapshot.data.gracePeriodDays ?? '—'} days`}
+              />
+              <Field
+                label="Base rate cells"
+                value={
+                  rating.data
+                    ? String((rating.data.baseRates ?? []).length)
+                    : rating.status === 'error'
+                      ? '—'
+                      : 'Loading…'
+                }
+                // Only when it is actually zero. Carrying the warning on a
+                // priced version would train readers to ignore it.
+                {...(rating.data && (rating.data.baseRates ?? []).length === 0
+                  ? { note: 'No cells means unpriced — no premium can be quoted.' }
+                  : {})}
+              />
+            </dl>
+          )}
+        </Panel>
+      </>
+    );
+  }
 }
 
 /**

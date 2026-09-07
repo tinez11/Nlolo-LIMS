@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { dmy } from './dates';
+import { fillPolicyNumberManually } from './guards';
 
 /**
  * `POST /claims/{claimId}/evidence` + `GET .../evidence` + `GET .../evidence/{ref}`
@@ -42,7 +43,7 @@ test.describe('staff claim evidence', () => {
     const policyNumber = page.url().split('/').pop() as string;
 
     await page.goto('/staff/claims/new');
-    await page.getByLabel('Policy number').fill(policyNumber);
+    await fillPolicyNumberManually(page, policyNumber);
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();

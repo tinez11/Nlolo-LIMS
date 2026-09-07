@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { cn } from '@/lib/cn';
 
 /**
  * A titled section on a detail page.
@@ -16,21 +17,43 @@ import type { ReactNode } from 'react';
  *
  * The heading is an `<h2>` on every page, which is correct as long as the page
  * title stays the only `<h1>`: panels are siblings under it, never nested.
+ *
+ * `emphasis` marks THE panel this page was opened to use -- an assessment to
+ * submit, a settlement to decide, a KYC decision to record. It buys the Title
+ * tier (1rem/600, DESIGN.md's "heaviest in-panel headings", which until now
+ * nothing on a detail page claimed) and a Rule-Strong edge, and it is what makes
+ * the acting panel readable as the point of the page rather than the fourth of
+ * eight identical boxes.
+ *
+ * Two deliberate limits on it:
+ *
+ * - **Achromatic only.** No status tint, ever. The Stamp Rule is that colour
+ *   reports state and does nothing else -- it never marks hierarchy and never
+ *   highlights an action -- so promotion is carried by size, weight and the border
+ *   doing extra work.
+ * - **One per page, and only where the page exists to perform that act.** With a
+ *   stat row already on screen (`GroupSchemePage`) this would be a third size
+ *   above body and break the Two-Peaks Rule, so those pages lead with the act and
+ *   take no emphasis. Emphasising every panel promotes none of them.
  */
 export function Panel({
   title,
   subtitle,
+  emphasis = false,
   children,
 }: {
   title: string;
   subtitle?: string;
+  emphasis?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-surface">
+    <section
+      className={cn('rounded-lg border bg-surface', emphasis ? 'border-border-strong' : 'border-border')}
+    >
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+        <h2 className={cn('font-semibold', emphasis ? 'text-base' : 'text-sm')}>{title}</h2>
+        {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
       </div>
       {children}
     </section>

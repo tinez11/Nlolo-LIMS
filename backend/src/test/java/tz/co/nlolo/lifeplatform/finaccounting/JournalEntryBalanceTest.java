@@ -29,8 +29,8 @@ class JournalEntryBalanceTest {
     @Test
     void aMatchedDebitAndCreditBalances() {
         JournalEntry entry = newEntry();
-        entry.addLeg("1000", PostingDirection.DR, new BigDecimal("15000.00"), "TZS");
-        entry.addLeg("1200", PostingDirection.CR, new BigDecimal("15000.00"), "TZS");
+        entry.addLeg("1120", PostingDirection.DR, new BigDecimal("15000.00"), "TZS");
+        entry.addLeg("1210", PostingDirection.CR, new BigDecimal("15000.00"), "TZS");
         assertThat(entry.isBalanced()).isTrue();
         assertThat(entry.getLegs()).hasSize(2);
     }
@@ -38,16 +38,16 @@ class JournalEntryBalanceTest {
     @Test
     void mismatchedAmountsDoNotBalance() {
         JournalEntry entry = newEntry();
-        entry.addLeg("1000", PostingDirection.DR, new BigDecimal("15000.00"), "TZS");
-        entry.addLeg("1200", PostingDirection.CR, new BigDecimal("14999.99"), "TZS");
+        entry.addLeg("1120", PostingDirection.DR, new BigDecimal("15000.00"), "TZS");
+        entry.addLeg("1210", PostingDirection.CR, new BigDecimal("14999.99"), "TZS");
         assertThat(entry.isBalanced()).isFalse();
     }
 
     @Test
     void twoLegsOnTheSameSideDoNotBalance() {
         JournalEntry entry = newEntry();
-        entry.addLeg("1000", PostingDirection.DR, new BigDecimal("100.00"), "TZS");
-        entry.addLeg("1200", PostingDirection.DR, new BigDecimal("100.00"), "TZS");
+        entry.addLeg("1120", PostingDirection.DR, new BigDecimal("100.00"), "TZS");
+        entry.addLeg("1210", PostingDirection.DR, new BigDecimal("100.00"), "TZS");
         assertThat(entry.isBalanced()).isFalse();
     }
 
@@ -56,9 +56,9 @@ class JournalEntryBalanceTest {
     @Test
     void aMixedCurrencyEntryIsRejected() {
         JournalEntry entry = newEntry();
-        entry.addLeg("1000", PostingDirection.DR, new BigDecimal("100.00"), "TZS");
+        entry.addLeg("1120", PostingDirection.DR, new BigDecimal("100.00"), "TZS");
         assertThrows(IllegalArgumentException.class,
-            () -> entry.addLeg("1200", PostingDirection.CR, new BigDecimal("100.00"), "USD"));
+            () -> entry.addLeg("1210", PostingDirection.CR, new BigDecimal("100.00"), "USD"));
     }
 
     /** amount is a positive magnitude; direction carries the sign (V2's
@@ -67,8 +67,8 @@ class JournalEntryBalanceTest {
     void aNonPositiveLegIsRejected() {
         JournalEntry entry = newEntry();
         assertThrows(IllegalArgumentException.class,
-            () -> entry.addLeg("1000", PostingDirection.DR, new BigDecimal("-1.00"), "TZS"));
+            () -> entry.addLeg("1120", PostingDirection.DR, new BigDecimal("-1.00"), "TZS"));
         assertThrows(IllegalArgumentException.class,
-            () -> entry.addLeg("1000", PostingDirection.DR, BigDecimal.ZERO, "TZS"));
+            () -> entry.addLeg("1120", PostingDirection.DR, BigDecimal.ZERO, "TZS"));
     }
 }

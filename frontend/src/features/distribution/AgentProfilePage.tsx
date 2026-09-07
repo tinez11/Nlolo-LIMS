@@ -10,6 +10,7 @@ import { useProductStore } from '@/store/productStore';
 import { CommissionPlanPanel } from './CommissionPlanPanel';
 import { CommissionStatementsPanel } from './CommissionStatementsPanel';
 import { Panel } from '@/components/Panel';
+import { DetailLayout } from '@/components/DetailLayout';
 
 /**
  * The agent realm's landing page: `GET /agents/me` resolves the caller's own
@@ -57,18 +58,8 @@ export function AgentProfilePage() {
         actions={agent.licenseStatus && <StatusBadge kind="agentLicense" value={agent.licenseStatus} />}
       />
 
-      <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
-          <Panel title="Commission plan" subtitle="Per product -- a plan hangs off a product, not you.">
-            <CommissionPlanPanel agentId={agent.agentId ?? ''} products={products.data ?? []} canManage={false} />
-          </Panel>
-
-          <Panel title="Commission statements">
-            <CommissionStatementsPanel agentId={agent.agentId ?? ''} canManage={false} />
-          </Panel>
-        </div>
-
-        <div className="space-y-5">
+      <DetailLayout
+        record={
           <Panel title="License">
             <dl className="px-4 pb-2">
               <Field label="Agent id" value={<span className="font-mono text-xs">{agent.agentId}</span>} />
@@ -89,8 +80,16 @@ export function AgentProfilePage() {
               />
             </dl>
           </Panel>
-        </div>
-      </div>
+        }
+      >
+        <Panel title="Commission plan" subtitle="Per product -- a plan hangs off a product, not you.">
+          <CommissionPlanPanel agentId={agent.agentId ?? ''} products={products.data ?? []} canManage={false} />
+        </Panel>
+
+        <Panel title="Commission statements">
+          <CommissionStatementsPanel agentId={agent.agentId ?? ''} canManage={false} />
+        </Panel>
+      </DetailLayout>
     </>
   );
 }
