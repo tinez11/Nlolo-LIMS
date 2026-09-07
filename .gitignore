@@ -21,6 +21,12 @@ backend/scripts/seed-evidence.jpg
 # process ids, and dev credentials in permission rules. Never shared.
 .claude/settings.local.json
 
+# A locally-created symlink mirror of .agents/skills, pointing at an ABSOLUTE path in
+# whoever ran the installer's checkout. The canonical copy is committed under
+# .agents/skills/ -- which is the path skills-lock.json records -- so this is
+# regenerable and would only break for anyone else.
+.claude/skills/
+
 # Frontend (M12)
 node_modules/
 frontend/**/.next/
