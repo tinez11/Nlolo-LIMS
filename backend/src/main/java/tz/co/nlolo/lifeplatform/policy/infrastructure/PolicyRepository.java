@@ -14,6 +14,18 @@ import java.util.UUID;
 
 public interface PolicyRepository extends JpaRepository<Policy, String> {
     Optional<Policy> findByPolicyNumberAndTenantId(String policyNumber, UUID tenantId);
+
+    /**
+     * The policy issued from a given underwriting case, if any.
+     *
+     * <p>There was no finder on this column at all, which is why nothing could answer "has this
+     * case already been issued?" -- the question whose absence let one application become two
+     * contracts. {@code ux_policy_underwriting_case} guarantees at most one row comes back.
+     *
+     * <p>Tenant-scoped rather than leaning on row-level security alone, matching every other
+     * finder here: this one gates whether a contract may be issued.
+     */
+    Optional<Policy> findByTenantIdAndUnderwritingCaseId(UUID tenantId, UUID underwritingCaseId);
     Page<Policy> findByTenantIdAndPolicyholderPartyId(UUID tenantId, UUID policyholderPartyId, Pageable pageable);
     Page<Policy> findByTenantIdAndStatus(UUID tenantId, String status, Pageable pageable);
     Page<Policy> findByTenantId(UUID tenantId, Pageable pageable);

@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.policy.infrastructure;
 import tz.co.nlolo.lifeplatform.policy.api.BeneficiaryValidationException;
 import tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException;
 import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyAlreadyIssuedForCaseException;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyNotFoundException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -32,6 +33,15 @@ public class PolicyExceptionHandler {
     @ExceptionHandler(InvalidPolicyStateException.class)
     public ProblemDetail handleInvalidState(InvalidPolicyStateException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "INVALID_POLICY_STATE");
+    }
+
+    /**
+     * 409 rather than 422: the request is not malformed and nothing about it needs correcting.
+     * The work is already done, and the message carries the policy number that proves it.
+     */
+    @ExceptionHandler(PolicyAlreadyIssuedForCaseException.class)
+    public ProblemDetail handleAlreadyIssuedForCase(PolicyAlreadyIssuedForCaseException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "POLICY_ALREADY_ISSUED_FOR_CASE");
     }
 
     @ExceptionHandler(BeneficiaryValidationException.class)

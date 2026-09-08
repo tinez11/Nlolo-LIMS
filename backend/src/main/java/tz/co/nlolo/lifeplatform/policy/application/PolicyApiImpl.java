@@ -90,6 +90,21 @@ public class PolicyApiImpl implements PolicyApi {
     @Transactional
     public PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy) {
         UUID tenantId = TenantContext.get();
+
+        // Before anything is written, and before the party and product lookups, so a retry of
+        // an issuance that already succeeded is answered by the fact rather than by whichever
+        // validation happens to fail first.
+        //
+        // ux_policy_underwriting_case is the real guarantee -- a constraint cannot be raced --
+        // but it surfaces as a 500 carrying a Postgres string, and the operator who trips this
+        // needs the number of the policy that already exists so they can go and look at it.
+        if (underwritingCaseId != null) {
+            policyRepository.findByTenantIdAndUnderwritingCaseId(tenantId, underwritingCaseId)
+                .ifPresent(existing -> {
+                    throw new PolicyAlreadyIssuedForCaseException(underwritingCaseId, existing.getPolicyNumber());
+                });
+        }
+
         partyApi.getParty(request.policyholderPartyId()); // existence check -- PartyNotFoundException propagates as-is
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
 
