@@ -52,6 +52,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/underwriting/V5__explicit_decision.sql",
+            "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql");
     }
 
@@ -86,6 +87,141 @@ class UnderwritingApiIntegrationTest {
             null, "actuary");
         var snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         return underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(), sumAssured, "TZS", null, "agent1").caseId();
+    }
+
+    // ---- What the proposal states about the contract (V6) --------------------------------
+    //
+    // Term, premium-paying term, payment frequency and beneficiary nominations lived only on
+    // POST /policies/manual-issue, which made it the only screen on this platform that could
+    // produce a complete policy: one issued on the normal path carried no term, no maturity
+    // date, and nobody nominated, because nobody had ever asked.
+
+    /** A product whose version declares real term bounds, for the eligibility tests below. */
+    private record BoundedProduct(UUID productId, UUID productVersionId, UUID applicantPartyId) {}
+
+    private BoundedProduct openBoundedProduct(Integer minTermMonths, Integer maxTermMonths) {
+        var applicant = partyApi.registerIndividual("Term Test Applicant", LocalDate.of(1990, 1, 1),
+            "+2557123" + String.format("%05d", Math.abs(UUID.randomUUID().hashCode() % 100000)), null, "test");
+        var product = productApi.createProduct("UW-TERM-" + UUID.randomUUID().toString().substring(0, 8),
+            "UW Term Bounds Product", ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, null,
+            new EligibilityBounds(null, null, minTermMonths, maxTermMonths, null, null),
+            "actuary");
+        var snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        return new BoundedProduct(product.productId(), snapshot.productVersionId(), applicant.partyId());
+    }
+
+    private UnderwritingCaseView openWithProposal(BoundedProduct p, ProposalDetails proposal) {
+        return underwritingApi.openCase(p.applicantPartyId(), p.productId(), p.productVersionId(),
+            new BigDecimal("1000000"), "TZS", null, proposal, "agent1");
+    }
+
+    @Test
+    void aProposalRecordsTheContractTheApplicantAskedFor() {
+        BoundedProduct p = openBoundedProduct(12, 240);
+
+        UnderwritingCaseView view = openWithProposal(p, new ProposalDetails(
+            null, "Dar HQ", "AGENCY", LocalDate.now(), 120, 60, "QUARTERLY", List.of()));
+
+        assertEquals(120, view.requestedTermMonths());
+        assertEquals(60, view.premiumPayingTermMonths());
+        assertEquals("QUARTERLY", view.premiumFrequency());
+    }
+
+    /**
+     * The check that had nowhere to run.
+     *
+     * <p>These bounds have existed on the product version since Build 3 and were enforced in
+     * exactly one place: {@code issueGates} on the console's manual issue form. The case
+     * carried no term, so on the normal path a risk was assessed, decided and issued without
+     * the product's own term rules ever being consulted.
+     */
+    @Test
+    void aTermBelowTheProductsMinimumIsRefused() {
+        BoundedProduct p = openBoundedProduct(12, 240);
+
+        UnderwritingValidationException thrown = assertThrows(UnderwritingValidationException.class, () ->
+            openWithProposal(p, new ProposalDetails(null, null, null, null, 6, null, null, List.of())));
+        assertTrue(thrown.getMessage().contains("below this product's minimum"), thrown.getMessage());
+    }
+
+    @Test
+    void aTermAboveTheProductsMaximumIsRefused() {
+        BoundedProduct p = openBoundedProduct(12, 240);
+
+        assertThrows(UnderwritingValidationException.class, () ->
+            openWithProposal(p, new ProposalDetails(null, null, null, null, 360, null, null, List.of())));
+    }
+
+    /**
+     * A null term is not a violation. Whole life, an annuity and an annually renewable group
+     * scheme all genuinely have none, and the bounds are optional on the product too.
+     */
+    @Test
+    void aProposalWithNoTermIsAcceptedEvenAgainstABoundedProduct() {
+        BoundedProduct p = openBoundedProduct(12, 240);
+
+        UnderwritingCaseView view = openWithProposal(p,
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()));
+
+        assertNull(view.requestedTermMonths());
+        assertEquals(UnderwritingCaseStatus.OPEN, view.status());
+    }
+
+    @Test
+    void beneficiaryNominationsAreRecordedOnTheProposalAndReadBack() {
+        BoundedProduct p = openBoundedProduct(null, null);
+        var child = partyApi.registerIndividual("Nominated Child", LocalDate.of(2015, 5, 5), "+255712399001", null, "test");
+
+        UnderwritingCaseView opened = openWithProposal(p, new ProposalDetails(
+            null, null, null, null, 120, null, "MONTHLY",
+            List.of(new BeneficiaryNomination(NominationType.PARTY, child.partyId(), null, new BigDecimal("60"), true),
+                    new BeneficiaryNomination(NominationType.FREEFORM, null, "The estate", new BigDecimal("40"), false))));
+
+        assertEquals(2, opened.beneficiaries().size());
+        // Read back through getCase, not just the openCase response: this is the read the
+        // issuance listener uses, and a nomination it cannot see is a policy issued to nobody.
+        UnderwritingCaseView reread = underwritingApi.getCase(opened.caseId());
+        assertEquals(2, reread.beneficiaries().size());
+        assertEquals(child.partyId(), reread.beneficiaries().get(0).partyId());
+        assertEquals("The estate", reread.beneficiaries().get(1).freeformDesignee());
+        assertFalse(reread.beneficiaries().get(1).revocable());
+    }
+
+    @Test
+    void nominationsThatDoNotTotalOneHundredAreRefused() {
+        BoundedProduct p = openBoundedProduct(null, null);
+
+        UnderwritingValidationException thrown = assertThrows(UnderwritingValidationException.class, () ->
+            openWithProposal(p, new ProposalDetails(null, null, null, null, null, null, null,
+                List.of(new BeneficiaryNomination(NominationType.FREEFORM, null, "Half only", new BigDecimal("50"), true)))));
+        assertTrue(thrown.getMessage().contains("must total 100"), thrown.getMessage());
+    }
+
+    @Test
+    void aNominationCannotBeBothAPartyAndAFreeformDesignee() {
+        BoundedProduct p = openBoundedProduct(null, null);
+        var child = partyApi.registerIndividual("Ambiguous Nominee", LocalDate.of(2015, 5, 5), "+255712399002", null, "test");
+
+        assertThrows(UnderwritingValidationException.class, () ->
+            openWithProposal(p, new ProposalDetails(null, null, null, null, null, null, null,
+                List.of(new BeneficiaryNomination(NominationType.PARTY, child.partyId(), "Also written down",
+                    new BigDecimal("100"), true)))));
+    }
+
+    /** No nomination at all is routine, not incomplete -- it can still be designated later. */
+    @Test
+    void aProposalWithNoNominationsIsAccepted() {
+        BoundedProduct p = openBoundedProduct(null, null);
+
+        UnderwritingCaseView view = openWithProposal(p,
+            new ProposalDetails(null, null, null, null, 120, null, "MONTHLY", List.of()));
+
+        assertTrue(view.beneficiaries().isEmpty());
     }
 
     @Test

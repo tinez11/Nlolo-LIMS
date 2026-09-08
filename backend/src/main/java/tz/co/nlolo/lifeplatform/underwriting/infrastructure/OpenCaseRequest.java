@@ -4,9 +4,14 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
+import tz.co.nlolo.lifeplatform.underwriting.api.NominationType;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 // Mirrors api/openapi/openapi-underwriting.yaml's OpenCaseRequest: required
@@ -49,10 +54,57 @@ public record OpenCaseRequest(
     /** Free text on purpose: the platform does not own this vocabulary yet. */
     @Size(max = 60) String sourceOfBusiness,
 
-    LocalDate proposedCommencementDate) {
+    LocalDate proposedCommencementDate,
+
+    /**
+     * What the applicant asks for about the CONTRACT, as distinct from the risk above.
+     *
+     * <p>All optional. A product that does not term genuinely has none; a premium-paying term
+     * shorter than the cover term is a limited-payment policy and equal-or-absent is ordinary;
+     * a proposal arriving with the nomination blank is routine.
+     *
+     * <p>{@code requestedTermMonths} is checked against the product version's eligibility
+     * bounds in the service, not here — Bean Validation cannot see the product.
+     */
+    @Positive Integer requestedTermMonths,
+    @Positive Integer premiumPayingTermMonths,
+
+    /**
+     * Not an enum on this record, unlike {@code AssessmentType} above, because the value is
+     * carried to {@code policy.policy.premium_frequency} as a string and its authority is that
+     * column's CHECK. Minting a second enum here would create two places to add a frequency.
+     */
+    @Pattern(regexp = "MONTHLY|QUARTERLY|ANNUALLY") String premiumFrequency,
+
+    List<@Valid BeneficiaryNominationDto> beneficiaries) {
 
     // Field names/constraints mirror openapi-common.yaml#/components/schemas/Money exactly.
     public record Money(
         @NotBlank @Pattern(regexp = "^-?\\d+(\\.\\d{1,2})?$") String amount,
         @NotBlank @Pattern(regexp = "^[A-Z]{3}$") String currencyCode) {}
+
+    /**
+     * One nomination on the wire.
+     *
+     * <p>{@code partyId} and {@code freeformDesignee} carry no annotations: exactly one must be
+     * set and which one depends on {@code type}, a pairing Bean Validation cannot express on a
+     * single field. The service enforces it, mirroring
+     * {@code chk_proposal_beneficiary_exactly_one_designation}.
+     */
+    public record BeneficiaryNominationDto(
+        @NotNull NominationType type,
+        UUID partyId,
+        @Size(max = 255) String freeformDesignee,
+        @NotNull BigDecimal sharePercent,
+        Boolean revocable) {
+
+        /** Absent means revocable, which is the ordinary nomination and the column's default. */
+        public boolean resolveRevocable() {
+            return revocable == null || revocable;
+        }
+
+        public BeneficiaryNomination toApiNomination() {
+            return new BeneficiaryNomination(type, partyId, freeformDesignee, sharePercent, resolveRevocable());
+        }
+    }
 }

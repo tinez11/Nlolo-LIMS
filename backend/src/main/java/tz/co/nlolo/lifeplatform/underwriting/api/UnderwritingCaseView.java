@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -55,4 +56,17 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     BigDecimal recommendationLoadingPercent,
                                     String recommendationReason,
                                     String decisionDecidedBy,
-                                    boolean decisionOverrodeRecommendation) {}
+                                    boolean decisionOverrodeRecommendation,
+                                    // What the applicant asked for about the contract (V6).
+                                    // Serialized: the console prefills the manual issue form
+                                    // from them, and the case detail shows what was proposed.
+                                    Integer requestedTermMonths,
+                                    Integer premiumPayingTermMonths,
+                                    String premiumFrequency,
+                                    // @JsonIgnore for the same reason sumAssuredAmount above is:
+                                    // the issuance listener reads it in-process, and the response
+                                    // schema declares additionalProperties:false. The console
+                                    // reads nominations from the case detail endpoint instead,
+                                    // where they can be a first-class list rather than a field
+                                    // smuggled onto every case summary in a page of twenty.
+                                    @JsonIgnore List<BeneficiaryNomination> beneficiaries) {}

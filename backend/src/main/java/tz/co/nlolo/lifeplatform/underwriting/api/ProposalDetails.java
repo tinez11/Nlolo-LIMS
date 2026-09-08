@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.underwriting.api;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -21,12 +22,45 @@ import java.util.UUID;
  * vocabulary — TIRA's return catalogue is still an open item — and minting one here would
  * make it the de facto schema, which is how the endorsement `changes` payload and the M7
  * commission semantics became voids nobody could later ratify.
+ *
+ * <p>{@code requestedTermMonths}, {@code premiumPayingTermMonths}, {@code premiumFrequency} and
+ * {@code beneficiaries} are what the applicant asks for about the CONTRACT, as distinct from
+ * the risk. They lived only on {@code POST /policies/manual-issue} until now, which made manual
+ * issue the only screen on this platform that could produce a complete policy — one issued on
+ * the normal path carried no term, no maturity date, and nobody nominated.
+ *
+ * <p>All optional, and each for its own reason. A product that does not term genuinely has no
+ * term. A premium-paying term shorter than the cover term is a limited-payment policy; equal or
+ * absent is the ordinary case. A proposal arriving with the nomination blank is routine, and
+ * beneficiaries can still be designated after issuance.
  */
 public record ProposalDetails(
     UUID lifeAssuredPartyId,
     String branch,
     String sourceOfBusiness,
-    LocalDate proposedCommencementDate) {
+    LocalDate proposedCommencementDate,
+    Integer requestedTermMonths,
+    Integer premiumPayingTermMonths,
+    String premiumFrequency,
+    List<BeneficiaryNomination> beneficiaries) {
+
+    /** Never null, so callers and the persistence path both stop guarding for it. */
+    public ProposalDetails {
+        beneficiaries = beneficiaries == null ? List.of() : List.copyOf(beneficiaries);
+    }
+
+    /**
+     * The pre-capture shape, kept so the existing construction sites need no change.
+     *
+     * <p>An extra constructor rather than a widened call at every site, for the same reason
+     * {@code PolicyApi.IssueRequest} carries two: this is plain Java with no proxy in the way,
+     * so delegation is safe here in a way a {@code default} interface method would not be.
+     */
+    public ProposalDetails(UUID lifeAssuredPartyId, String branch, String sourceOfBusiness,
+                            LocalDate proposedCommencementDate) {
+        this(lifeAssuredPartyId, branch, sourceOfBusiness, proposedCommencementDate,
+            null, null, null, List.of());
+    }
 
     /** No proposal detail recorded: the applicant insures themselves. */
     public static ProposalDetails selfInsured() {

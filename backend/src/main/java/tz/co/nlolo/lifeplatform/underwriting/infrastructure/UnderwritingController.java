@@ -85,7 +85,11 @@ public class UnderwritingController {
             new BigDecimal(request.sumAssured().amount()), request.sumAssured().currencyCode(),
             request.agentOfRecordId(),
             new ProposalDetails(request.lifeAssuredPartyId(), request.branch(),
-                request.sourceOfBusiness(), request.proposedCommencementDate()),
+                request.sourceOfBusiness(), request.proposedCommencementDate(),
+                request.requestedTermMonths(), request.premiumPayingTermMonths(),
+                request.premiumFrequency(),
+                request.beneficiaries() == null ? List.of()
+                    : request.beneficiaries().stream().map(OpenCaseRequest.BeneficiaryNominationDto::toApiNomination).toList()),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }

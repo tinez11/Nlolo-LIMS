@@ -4,12 +4,14 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FactorType;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.domain.*;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.MedicalDisclosureRepository;
+import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalBeneficiaryRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.RiskAssessmentRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.UnderwritingCaseRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -41,13 +43,16 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final RulesEnginePort rulesEnginePort;
     private final ApplicationEventPublisher eventPublisher;
     private final MedicalDisclosureRepository medicalDisclosureRepository;
+    private final ProposalBeneficiaryRepository proposalBeneficiaryRepository;
     /** Serialises the disclosure Q&A set into its JSONB column -- see recordDisclosures. */
     private final ObjectMapper objectMapper;
 
     public UnderwritingApiImpl(UnderwritingCaseRepository underwritingCaseRepository, RiskAssessmentRepository riskAssessmentRepository,
                                 PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi, RulesEnginePort rulesEnginePort,
                                 ApplicationEventPublisher eventPublisher,
-                                MedicalDisclosureRepository medicalDisclosureRepository, ObjectMapper objectMapper) {
+                                MedicalDisclosureRepository medicalDisclosureRepository, ObjectMapper objectMapper,
+                                ProposalBeneficiaryRepository proposalBeneficiaryRepository) {
+        this.proposalBeneficiaryRepository = proposalBeneficiaryRepository;
         this.underwritingCaseRepository = underwritingCaseRepository;
         this.riskAssessmentRepository = riskAssessmentRepository;
         this.partyApi = partyApi;
@@ -95,10 +100,98 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             partyApi.getParty(lifeAssuredPartyId);
         }
 
+        rejectTermOutsideProductBounds(productVersionId, details.requestedTermMonths());
+        rejectMalformedNominations(details.beneficiaries());
+
         UnderwritingCase underwritingCase = new UnderwritingCase(tenantId, applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency, agentOfRecordId, openedBy);
         underwritingCase.recordProposal(nextProposalNumber(), lifeAssuredPartyId, details);
         underwritingCaseRepository.save(underwritingCase);
-        return toView(underwritingCase);
+
+        for (BeneficiaryNomination nomination : details.beneficiaries()) {
+            proposalBeneficiaryRepository.save(new ProposalBeneficiary(tenantId, underwritingCase.getCaseId(),
+                nomination.type().name(), nomination.partyId(), nomination.freeformDesignee(),
+                nomination.sharePercent(), nomination.revocable()));
+        }
+        // With nominations: the caller just supplied them, and handing back a view that says
+        // the case has none would be actively misleading.
+        return toViewWithNominations(underwritingCase);
+    }
+
+    /**
+     * A proposal may not ask for a term the product does not sell.
+     *
+     * <p>These bounds have existed on {@code ProductVersion} since Build 3 and were enforced in
+     * exactly one place: {@code issueGates} on the console's manual issue form, against a term
+     * typed there. The case carried no term, so on the normal path a risk was assessed, decided
+     * and issued without the product's own term rules ever being consulted — the check sat
+     * downstream of the decision, on a screen the automatic path never visits.
+     *
+     * <p>Checked at openCase rather than at decide, because this is where the proposal is
+     * recorded and where the applicant can still be told. The case locks
+     * {@code productVersionId}, so the bounds cannot move underneath it afterwards.
+     *
+     * <p>A null term is not a violation. A whole life policy, an annuity and an annually
+     * renewable group scheme all genuinely have none.
+     */
+    private void rejectTermOutsideProductBounds(UUID productVersionId, Integer requestedTermMonths) {
+        if (requestedTermMonths == null) return;
+
+        EligibilityBounds bounds = productApi.getSnapshotByVersionId(productVersionId).eligibility();
+        if (bounds == null) return;
+
+        if (bounds.minTermMonths() != null && requestedTermMonths < bounds.minTermMonths()) {
+            throw new UnderwritingValidationException("A term of " + requestedTermMonths
+                + " months is below this product's minimum of " + bounds.minTermMonths());
+        }
+        if (bounds.maxTermMonths() != null && requestedTermMonths > bounds.maxTermMonths()) {
+            throw new UnderwritingValidationException("A term of " + requestedTermMonths
+                + " months is above this product's maximum of " + bounds.maxTermMonths());
+        }
+    }
+
+    /**
+     * The rules the column checks cannot reach.
+     *
+     * <p>Mirrors {@code PolicyApiImpl.validateAndBuildBeneficiaries}, so a nomination that would
+     * be refused as a policy beneficiary is refused as a proposal one — otherwise a proposal
+     * could record a designation that quietly fails to become anything at issuance, in a
+     * listener that swallows its exceptions to a log line.
+     *
+     * <p>An EMPTY list is valid and means nobody was nominated, which is routine. A non-empty
+     * one must total exactly 100.
+     */
+    private void rejectMalformedNominations(List<BeneficiaryNomination> nominations) {
+        if (nominations.isEmpty()) return;
+
+        BigDecimal total = BigDecimal.ZERO;
+        for (BeneficiaryNomination nomination : nominations) {
+            if (nomination.type() == null) {
+                throw new UnderwritingValidationException("Each beneficiary nomination needs a type");
+            }
+            boolean hasParty = nomination.partyId() != null;
+            boolean hasFreeform = nomination.freeformDesignee() != null && !nomination.freeformDesignee().isBlank();
+            if (nomination.type() == NominationType.PARTY && (!hasParty || hasFreeform)) {
+                throw new UnderwritingValidationException(
+                    "A PARTY nomination needs a partyId and no freeform designee");
+            }
+            if (nomination.type() == NominationType.FREEFORM && (!hasFreeform || hasParty)) {
+                throw new UnderwritingValidationException(
+                    "A FREEFORM nomination needs a designee and no partyId");
+            }
+            // Validated like the applicant and the life assured, and for the same reason: a
+            // nomination naming somebody who does not exist in this tenant cannot be paid.
+            if (hasParty) {
+                partyApi.getParty(nomination.partyId());
+            }
+            if (nomination.sharePercent() == null) {
+                throw new UnderwritingValidationException("Each beneficiary nomination needs a share");
+            }
+            total = total.add(nomination.sharePercent());
+        }
+        if (total.compareTo(new BigDecimal("100")) != 0) {
+            throw new UnderwritingValidationException(
+                "Beneficiary shares must total 100, not " + total.stripTrailingZeros().toPlainString());
+        }
     }
 
     /**
@@ -375,9 +468,14 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         return "LOW";
     }
 
+    /**
+     * The single-case read, and the one the issuance listener uses — so this is the read that
+     * must carry the beneficiary nominations, or an automatically issued policy goes in force
+     * with nobody named on it.
+     */
     @Override
     public UnderwritingCaseView getCase(UUID caseId) {
-        return toView(findOrThrow(caseId, TenantContext.get()));
+        return toViewWithNominations(findOrThrow(caseId, TenantContext.get()));
     }
 
     @Override
@@ -434,6 +532,39 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             c.getProposedCommencementDate(),
             c.getRecommendationOutcome() != null ? DecisionOutcome.valueOf(c.getRecommendationOutcome()) : null,
             c.getRecommendationLoadingPercent(), c.getRecommendationReason(),
-            c.getDecisionDecidedBy(), c.isDecisionOverrodeRecommendation());
+            c.getDecisionDecidedBy(), c.isDecisionOverrodeRecommendation(),
+            c.getRequestedTermMonths(), c.getPremiumPayingTermMonths(), c.getPremiumFrequency(),
+            List.of());
+    }
+
+    /**
+     * A view carrying the case's beneficiary nominations, for the single-case reads.
+     *
+     * <p>Deliberately NOT folded into {@link #toView}. That one builds every row of
+     * {@code listCases}, and fetching nominations there would be a query per case — twenty
+     * extra round trips to populate a field the queue does not display. So a list view carries
+     * an EMPTY nomination list, which is a real hazard worth stating plainly: empty means "not
+     * loaded here", not "nobody was nominated. Only the reads below promise them, and the
+     * issuance listener uses {@link #getCase}, which does.
+     */
+    private UnderwritingCaseView toViewWithNominations(UnderwritingCase c) {
+        List<BeneficiaryNomination> nominations = proposalBeneficiaryRepository
+            .findByTenantIdAndCaseIdOrderByCreatedAtAsc(c.getTenantId(), c.getCaseId())
+            .stream()
+            .map(b -> new BeneficiaryNomination(NominationType.valueOf(b.getBeneficiaryType()),
+                b.getPartyId(), b.getFreeformDesignee(), b.getSharePercent(), b.isRevocable()))
+            .toList();
+
+        UnderwritingCaseView base = toView(c);
+        return new UnderwritingCaseView(base.caseId(), base.applicantPartyId(), base.productId(),
+            base.productVersionId(), base.status(), base.referralStatus(), base.decisionOutcome(),
+            base.decisionLoadingPercent(), base.decisionDeclineReason(), base.decisionDecidedAt(),
+            base.sumAssuredAmount(), base.sumAssuredCurrency(), base.agentOfRecordId(),
+            base.proposalNumber(), base.lifeAssuredPartyId(), base.branch(), base.sourceOfBusiness(),
+            base.proposedCommencementDate(), base.recommendationOutcome(),
+            base.recommendationLoadingPercent(), base.recommendationReason(),
+            base.decisionDecidedBy(), base.decisionOverrodeRecommendation(),
+            base.requestedTermMonths(), base.premiumPayingTermMonths(), base.premiumFrequency(),
+            nominations);
     }
 }

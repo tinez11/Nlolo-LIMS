@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.policy.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.policy.api.BeneficiaryType;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
@@ -64,6 +65,41 @@ public class UnderwritingDecisionEventListener {
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
 
+    /**
+     * How many premium instalments a year, for turning an annual premium into one.
+     *
+     * <p>Mirrors {@code policy.policy}'s own CHECK, which admits exactly MONTHLY, QUARTERLY and
+     * ANNUALLY. An unrecognised value falls back to monthly rather than throwing: this runs in
+     * an AFTER_COMMIT listener that swallows its exceptions to a log line, so throwing here
+     * would silently issue no policy at all — a far worse outcome than an instalment computed
+     * on the commonest frequency. The CHECK refuses the write anyway if the value is genuinely
+     * bad, which surfaces it loudly instead.
+     */
+    private static int instalmentsPerYear(String premiumFrequency) {
+        return switch (premiumFrequency) {
+            case "QUARTERLY" -> 4;
+            case "ANNUALLY" -> 1;
+            default -> 12;
+        };
+    }
+
+    /**
+     * The proposal's nominations, in the shape {@code policy} names beneficiaries.
+     *
+     * <p>A mapping and not an interpretation: {@code underwriting.api.BeneficiaryNomination} and
+     * {@code policy.api.BeneficiaryInput} are field-for-field identical, and exist separately
+     * only because underwriting must not depend on policy — policy already depends on
+     * underwriting, and the cycle would be immediate. This listener is on the policy side, so
+     * it is the one place that may see both.
+     */
+    private static List<PolicyApi.BeneficiaryInput> nominationsAsBeneficiaries(UnderwritingCaseView decidedCase) {
+        return decidedCase.beneficiaries().stream()
+            .map(n -> new PolicyApi.BeneficiaryInput(
+                BeneficiaryType.valueOf(n.type().name()),
+                n.partyId(), n.freeformDesignee(), n.sharePercent(), n.revocable()))
+            .toList();
+    }
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"underwriting.UnderwritingDecisionMade".equals(envelope.eventType())) {
@@ -109,7 +145,18 @@ public class UnderwritingDecisionEventListener {
                 BigDecimal annualPremium = decidedCase.sumAssuredAmount()
                     .multiply(baseRatePerMille).divide(BigDecimal.valueOf(1000), 6, RoundingMode.HALF_UP)
                     .multiply(loadingMultiplier);
-                BigDecimal monthlyPremium = annualPremium.divide(BigDecimal.valueOf(12), 2, RoundingMode.HALF_UP);
+
+                // The instalment follows the frequency the applicant asked for.
+                //
+                // This used to divide by 12 unconditionally and hardcode "MONTHLY" below, which
+                // was harmless only because nothing captured a frequency. Now that a proposal
+                // can say QUARTERLY, dividing by twelve anyway would bill a quarterly payer a
+                // monthly figure -- a defect introduced by capturing the field rather than by
+                // ignoring it.
+                String premiumFrequency = decidedCase.premiumFrequency() != null
+                    ? decidedCase.premiumFrequency() : "MONTHLY";
+                BigDecimal instalmentPremium = annualPremium.divide(
+                    BigDecimal.valueOf(instalmentsPerYear(premiumFrequency)), 2, RoundingMode.HALF_UP);
                 // agentOfRecordId now comes from the case (underwriting V2). It used to be
                 // hardcoded null here, with the note that no such field existed on the
                 // aggregate -- which was true and was a money bug: distribution's
@@ -138,16 +185,20 @@ public class UnderwritingDecisionEventListener {
                 // And no commencement date reached the policy, so it had no term and no
                 // maturity date either -- Policy.applyTerm derives maturity from commencement.
                 //
-                // policyTermMonths and premiumPayingTermMonths stay null: nothing on a case
-                // records a requested term yet. That is a capture gap, not a discard, and
-                // closing it means asking for the term when the proposal is taken.
+                // The term and the nominations come from the proposal now (underwriting V6).
+                // This comment used to read "nothing on a case records a requested term yet",
+                // which was true and meant a policy issued on the NORMAL path had no term, no
+                // maturity date -- Policy.applyTerm derives it from commencement plus term --
+                // and nobody nominated, while the staff exception path collected all three.
+                // That is very likely why staff reached for manual issue.
                 PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
                     decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
                     decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
-                    monthlyPremium, decidedCase.sumAssuredCurrency(), "MONTHLY",
-                    decidedCase.agentOfRecordId(), List.of(),
+                    instalmentPremium, decidedCase.sumAssuredCurrency(), premiumFrequency,
+                    decidedCase.agentOfRecordId(), nominationsAsBeneficiaries(decidedCase),
                     "Automatic issuance on underwriting decision " + outcome,
-                    decidedCase.proposedCommencementDate(), null, null,
+                    decidedCase.proposedCommencementDate(),
+                    decidedCase.requestedTermMonths(), decidedCase.premiumPayingTermMonths(),
                     decidedCase.lifeAssuredPartyId());
                 policyApi.issuePolicy(caseId, request, "system:underwriting-decision-listener");
             });

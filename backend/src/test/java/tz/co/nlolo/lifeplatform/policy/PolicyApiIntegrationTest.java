@@ -16,7 +16,10 @@ import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.product.domain.ProductVersion;
 import tz.co.nlolo.lifeplatform.product.infrastructure.ProductVersionRepository;
 import tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType;
+import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
+import tz.co.nlolo.lifeplatform.underwriting.api.NominationType;
+import tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -74,6 +77,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/underwriting/V5__explicit_decision.sql",
+            "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -250,6 +254,102 @@ class PolicyApiIntegrationTest {
             fixture.productVersionId(), new BigDecimal("1000000"), "TZS", null, "agent1");
 
         assertThat(opened.agentOfRecordId()).isNull();
+    }
+
+    /** Opens a case carrying proposal terms, assesses it, accepts it, and waits for issuance. */
+    private PolicyView issueFromProposal(UUID tenantId, Fixture fixture, ProposalDetails proposal)
+            throws InterruptedException {
+        UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("1000000"), "TZS", null, proposal, "agent1");
+        underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard", new BigDecimal("10"), "uw");
+        underwritingApi.decide(opened.caseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw", false);
+
+        List<PolicyView> found = List.of();
+        for (int attempt = 0; attempt < 50; attempt++) {
+            TenantContext.set(tenantId);
+            found = policyApi.searchPolicies(fixture.applicantId(), null, null, null, null, PageRequest.of(0, 10)).getContent();
+            if (!found.isEmpty()) break;
+            Thread.sleep(100);
+        }
+        assertThat(found).hasSize(1);
+        return found.get(0);
+    }
+
+    /**
+     * The proposal's term reaches the policy, and with it a maturity date.
+     *
+     * <p>Before the case captured a term, an automatically issued policy had none -- and
+     * therefore no maturity date either, since {@code Policy.applyTerm} derives maturity from
+     * commencement plus term. Only the staff manual-issue path produced a complete contract,
+     * which is very likely why staff reached for it.
+     */
+    @Test
+    void anAutomaticallyIssuedPolicyCarriesTheProposalsTerm() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-PROP-TERM");
+        LocalDate commencement = LocalDate.now().minusDays(1);
+
+        PolicyView issued = issueFromProposal(tenantId, fixture, new ProposalDetails(
+            null, null, null, commencement, 120, 60, "MONTHLY", List.of()));
+
+        assertThat(issued.commencementDate()).isEqualTo(commencement);
+        assertThat(issued.policyTermMonths()).isEqualTo(120);
+        assertThat(issued.premiumPayingTermMonths()).isEqualTo(60);
+        assertThat(issued.maturityDate())
+            .as("maturity is derived from commencement plus term, so a term is what makes it exist")
+            .isEqualTo(commencement.plusMonths(120));
+    }
+
+    /**
+     * The regression this whole change could most easily have introduced.
+     *
+     * <p>The listener divided the annual premium by 12 unconditionally and hardcoded MONTHLY,
+     * which was harmless only while nothing captured a frequency. Capturing one without
+     * changing the arithmetic would bill a quarterly payer a monthly figure.
+     */
+    @Test
+    void aQuarterlyProposalIsIssuedWithAQuarterlyInstalment() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        Fixture monthlyFixture = buildFixture(tenantId, "POLICY-PROP-FREQ-M");
+        PolicyView monthly = issueFromProposal(tenantId, monthlyFixture,
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()));
+
+        UUID quarterlyTenant = UUID.randomUUID();
+        Fixture quarterlyFixture = buildFixture(quarterlyTenant, "POLICY-PROP-FREQ-Q");
+        PolicyView quarterly = issueFromProposal(quarterlyTenant, quarterlyFixture,
+            new ProposalDetails(null, null, null, null, null, null, "QUARTERLY", List.of()));
+
+        assertThat(quarterly.premiumFrequency()).isEqualTo("QUARTERLY");
+        assertThat(quarterly.premiumAmount())
+            .as("a quarterly payer must not be billed the monthly figure")
+            .isNotEqualByComparingTo(monthly.premiumAmount());
+
+        // Roughly three monthly instalments, and only roughly -- deliberately not asserted as
+        // exactly 3x. Both are the same annual premium rounded to the cent at different
+        // divisors, so 3 x round(annual/12) is 1250.01 while round(annual/4) is 1250.00. The
+        // penny is real: instalments do not sum to the annual premium, which is ordinary
+        // premium arithmetic rather than a defect, and pinning the test to exact equality
+        // would have made the correct implementation look wrong.
+        assertThat(quarterly.premiumAmount().subtract(monthly.premiumAmount().multiply(new BigDecimal("3"))))
+            .as("a quarterly instalment is three monthly ones, give or take the rounding")
+            .isBetween(new BigDecimal("-0.05"), new BigDecimal("0.05"));
+    }
+
+    /** A nomination taken on the proposal becomes a beneficiary on the issued policy. */
+    @Test
+    void anAutomaticallyIssuedPolicyCarriesTheProposalsBeneficiaries() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-PROP-BENE");
+
+        PolicyView issued = issueFromProposal(tenantId, fixture, new ProposalDetails(
+            null, null, null, null, null, null, null,
+            List.of(new BeneficiaryNomination(NominationType.FREEFORM, null, "The estate", new BigDecimal("100"), true))));
+
+        TenantContext.set(tenantId);
+        List<BeneficiaryView> beneficiaries = policyApi.getPolicy(issued.policyNumber()).beneficiaries();
+        assertThat(beneficiaries).hasSize(1);
+        assertThat(beneficiaries.get(0).freeformDesignee()).isEqualTo("The estate");
     }
 
     @Test

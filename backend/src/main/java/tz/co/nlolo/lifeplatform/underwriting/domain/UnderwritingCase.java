@@ -92,6 +92,20 @@ public class UnderwritingCase {
     @Column(name = "proposed_commencement_date")
     private LocalDate proposedCommencementDate;
 
+    // What the applicant asked for about the CONTRACT (V6), as distinct from the risk above.
+    // All optional: a product that does not term has no term, and a proposal with the
+    // nomination blank is routine. Until these existed, only the manual issue form collected
+    // them -- so a policy issued on the normal path had no term, no maturity date, and nobody
+    // nominated, because nobody had ever asked.
+    @Column(name = "requested_term_months")
+    private Integer requestedTermMonths;
+
+    @Column(name = "premium_paying_term_months")
+    private Integer premiumPayingTermMonths;
+
+    @Column(name = "premium_frequency")
+    private String premiumFrequency;
+
     // The engine's advice (V5), kept apart from the decision columns above. Recomputed on every
     // assessment, and authoritative for nothing -- it exists so an underwriter deciding a case
     // is not starting from a blank page, and so a decision that departs from it is visible as a
@@ -151,7 +165,14 @@ public class UnderwritingCase {
         this.branch = details.branch();
         this.sourceOfBusiness = details.sourceOfBusiness();
         this.proposedCommencementDate = details.proposedCommencementDate();
+        this.requestedTermMonths = details.requestedTermMonths();
+        this.premiumPayingTermMonths = details.premiumPayingTermMonths();
+        this.premiumFrequency = details.premiumFrequency();
     }
+
+    public Integer getRequestedTermMonths() { return requestedTermMonths; }
+    public Integer getPremiumPayingTermMonths() { return premiumPayingTermMonths; }
+    public String getPremiumFrequency() { return premiumFrequency; }
 
     public String getProposalNumber() { return proposalNumber; }
     public UUID getLifeAssuredPartyId() { return lifeAssuredPartyId; }

@@ -350,12 +350,77 @@ components:
             cover from the first of next month.
           type: [string, "null"]
           format: date
+        # What the applicant asks for about the CONTRACT, as distinct from the risk above.
+        # These lived only on POST /policies/manual-issue until now, which made manual issue
+        # the only screen able to produce a complete policy: one issued on the normal path had
+        # no term, no maturity date (it is derived from commencement plus term) and nobody
+        # nominated, because nobody had ever asked.
+        requestedTermMonths:
+          description: >-
+            How long cover should run. Validated against the product version's eligibility
+            bounds — those bounds existed since Build 3 and were enforced in exactly one place,
+            the console's manual issue form, so the normal path accepted a term the product may
+            not sell. Omit for a product that does not term.
+          type: [integer, "null"]
+          minimum: 1
+        premiumPayingTermMonths:
+          description: >-
+            How long premiums are paid. Shorter than the cover term on a limited-payment
+            policy, never longer.
+          type: [integer, "null"]
+          minimum: 1
+        premiumFrequency:
+          description: >-
+            How often the applicant intends to pay. The automatic issuance path divides the
+            annual premium by this rather than always by twelve.
+          type: [string, "null"]
+          enum: [MONTHLY, QUARTERLY, ANNUALLY, null]
+        beneficiaries:
+          description: >-
+            Nominations as taken on the proposal form. Optional — a proposal arriving with the
+            nomination blank is routine, and beneficiaries can still be designated after
+            issuance via PUT /policies/{policyNumber}/beneficiaries. If any are given, shares
+            must total exactly 100, the same rule the policy side applies.
+          type: array
+          items: { $ref: '#/components/schemas/BeneficiaryNomination' }
         # medicalDisclosure is deliberately NOT a field here. It was once declared on this
         # request and never existed in OpenCaseRequest.java, so a client sending one got a 201
         # and had it silently discarded. Disclosures are now real, but as their own resource --
         # POST /underwriting/cases/{caseId}/disclosures -- because a proposal form is answered
         # in a sitting and can be re-taken when new evidence arrives, which a field on the
         # create request cannot express.
+    BeneficiaryNomination:
+      type: object
+      # Field-for-field identical to policy's BeneficiaryInput, deliberately. The two say the
+      # same thing at two points in time -- before and after a policy exists -- and keeping
+      # them identical is what lets the issuance listener MAP one to the other rather than
+      # interpret it. They are separate types because the underwriting module does not depend
+      # on policy and must not: policy already depends on underwriting.
+      required: [type, sharePercent]
+      properties:
+        type:
+          description: PARTY for somebody on the party register, FREEFORM for a name written on the form.
+          type: string
+          enum: [PARTY, FREEFORM]
+        partyId:
+          description: Required for a PARTY nomination, and forbidden on a FREEFORM one.
+          type: [string, "null"]
+          format: uuid
+        freeformDesignee:
+          description: Required for a FREEFORM nomination, and forbidden on a PARTY one.
+          type: [string, "null"]
+          maxLength: 255
+        sharePercent:
+          description: This nomination's share. Shares across a proposal must total exactly 100.
+          type: number
+          minimum: 0
+          maximum: 100
+        revocable:
+          description: >-
+            Whether the policyholder may change this nomination later. An irrevocable
+            nomination is a real instrument and cannot be revised without the beneficiary's
+            consent. Defaults to true.
+          type: boolean
     SubmitAssessmentRequest:
       type: object
       required: [assessmentType, findings]
@@ -454,3 +519,23 @@ components:
             later assessment recomputes the recommendation and must not rewrite the fact that
             somebody once disagreed with it.
           type: boolean
+        requestedTermMonths:
+          description: >-
+            The term the applicant asked for, validated at openCase against the product
+            version's eligibility bounds. Those bounds were previously only ever checked by the
+            console's manual issue form, so the normal path accepted a term the product may not
+            sell. Null for a product that does not term — whole life, an annuity, an annually
+            renewable group scheme — and on every case opened before the field existed.
+          type: [integer, "null"]
+        premiumPayingTermMonths:
+          description: >-
+            How long premiums are paid, which on a limited-payment policy is shorter than the
+            cover term and never longer.
+          type: [integer, "null"]
+        premiumFrequency:
+          description: >-
+            How often the applicant intends to pay. Drives the instalment the automatic
+            issuance path computes — it divided the annual premium by twelve unconditionally
+            until this was captured.
+          type: [string, "null"]
+          enum: [MONTHLY, QUARTERLY, ANNUALLY, null]

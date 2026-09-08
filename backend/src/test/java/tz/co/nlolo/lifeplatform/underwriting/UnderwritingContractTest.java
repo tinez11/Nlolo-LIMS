@@ -58,6 +58,7 @@ class UnderwritingContractTest {
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/underwriting/V5__explicit_decision.sql",
+            "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
@@ -231,6 +232,58 @@ class UnderwritingContractTest {
             .andExpect(jsonPath("$.status").value("DECIDED"))
             .andExpect(jsonPath("$.decisionOverrodeRecommendation").value(true))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * The proposal's contract terms and nominations round-trip over real HTTP.
+     *
+     * <p>Worth a contract test of its own rather than trusting the integration tests, because
+     * the gap this closes was exactly a wire-layer one: the columns, the service and the
+     * issuance listener were all done while {@code OpenCaseRequest} and the controller still
+     * used the four-argument {@code ProposalDetails}, so the API silently accepted none of it.
+     * Everything below the HTTP boundary would have passed.
+     */
+    @Test
+    void openCaseCarriesTheProposalsTermsAndNominationsOverTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+
+        mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "requestedTermMonths":120,"premiumPayingTermMonths":60,"premiumFrequency":"QUARTERLY",
+                     "beneficiaries":[{"type":"FREEFORM","freeformDesignee":"The estate","sharePercent":100}]}
+                    """.formatted(applicantId, product.productId(), product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.requestedTermMonths").value(120))
+            .andExpect(jsonPath("$.premiumPayingTermMonths").value(60))
+            .andExpect(jsonPath("$.premiumFrequency").value("QUARTERLY"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /** A malformed nomination is refused at the boundary, not stored and discovered later. */
+    @Test
+    void nominationsThatDoNotTotalOneHundredAreRefusedOverTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+
+        mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "beneficiaries":[{"type":"FREEFORM","freeformDesignee":"Half only","sharePercent":50}]}
+                    """.formatted(applicantId, product.productId(), product.productVersionId())))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("UNDERWRITING_VALIDATION_FAILED"));
     }
 
     @Test
