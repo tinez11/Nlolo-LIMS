@@ -11,6 +11,10 @@
         "name": "UNDERWRITER"
       },
       {
+        "name": "SENIOR_UNDERWRITER",
+        "description": "May decide an underwriting case against the rules engine's recommendation. Strictly additive to UNDERWRITER, never a replacement -- POST /underwriting/cases/{caseId}/decision is gated on UNDERWRITER, and this role only lifts the restriction on departing from the recommendation. A senior without UNDERWRITER cannot reach the endpoint at all."
+      },
+      {
         "name": "CLAIMS_ASSESSOR"
       },
       {
@@ -122,6 +126,30 @@
       ],
       "realmRoles": [
         "UNDERWRITER"
+      ]
+    },
+    {
+      "username": "staff.senior",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff.senior@example.tz",
+      "firstName": "Josephat",
+      "lastName": "Senior",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-1111-1111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "devpassword",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "UNDERWRITER",
+        "SENIOR_UNDERWRITER"
       ]
     },
     {

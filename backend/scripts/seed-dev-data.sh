@@ -235,11 +235,28 @@ echo "caseId=$CASE_ID"
 
 ASSESSMENT_JSON=$(api "$STAFF_UNDERWRITER_TOKEN" POST "/underwriting/cases/$CASE_ID/assessments" \
   '{"assessmentType":"MEDICAL","findings":"Standard risk, no adverse findings","riskScore":10}')
-DECISION_OUTCOME=$(jsonval "$ASSESSMENT_JSON" decisionOutcome)
+RECOMMENDATION=$(jsonval "$ASSESSMENT_JSON" recommendationOutcome)
+echo "recommendationOutcome=$RECOMMENDATION"
+if [ "$RECOMMENDATION" != "ACCEPT" ]; then
+  echo "FATAL: expected a recommendation of ACCEPT, got '$RECOMMENDATION' -- rating table / risk score assumptions are wrong. Full response:" >&2
+  echo "$ASSESSMENT_JSON" >&2
+  exit 1
+fi
+
+# The decision is now a separate, explicit human act. Submitting an assessment records evidence
+# and the engine's recommendation and settles nothing -- it used to decide the case outright and
+# issue a policy off a placeholder rules engine with no person involved.
+#
+# staff.underwriter, not staff.senior: this decision AGREES with the recommendation, and a junior
+# underwriter may record that. Seeding it as a senior would quietly stop exercising the ordinary
+# path, which is the one almost every real decision takes.
+DECISION_JSON=$(api "$STAFF_UNDERWRITER_TOKEN" POST "/underwriting/cases/$CASE_ID/decision" \
+  '{"outcome":"ACCEPT","reason":"Seed data: standard risk, in line with the recommendation"}')
+DECISION_OUTCOME=$(jsonval "$DECISION_JSON" decisionOutcome)
 echo "decisionOutcome=$DECISION_OUTCOME"
 if [ "$DECISION_OUTCOME" != "ACCEPT" ]; then
-  echo "FATAL: expected ACCEPT, got '$DECISION_OUTCOME' -- rating table / risk score assumptions are wrong. Full response:" >&2
-  echo "$ASSESSMENT_JSON" >&2
+  echo "FATAL: expected ACCEPT, got '$DECISION_OUTCOME'. Full response:" >&2
+  echo "$DECISION_JSON" >&2
   exit 1
 fi
 
