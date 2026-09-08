@@ -123,12 +123,32 @@ public class UnderwritingDecisionEventListener {
                 //
                 // beneficiaries stay empty: designation genuinely happens post-issuance via
                 // PUT .../beneficiaries, and an underwriting case carries none.
+                // The case has carried lifeAssuredPartyId and proposedCommencementDate since
+                // underwriting V4, and this call used the pre-Build-2 ELEVEN-argument
+                // constructor, which fills the last four with nulls. Two consequences, both
+                // silent:
+                //
+                // Every automatically issued policy recorded the POLICYHOLDER as the life
+                // assured -- wrong for exactly the business lifeAssuredPartyId was added for.
+                // ProposalDetails' own javadoc says group business and credit life "are
+                // structurally impossible to express without this", and a parent insuring a
+                // child is the everyday case. IssueRequest.resolveLifeAssured() then resolved
+                // the null to the policyholder, so the column looked answered and was wrong.
+                //
+                // And no commencement date reached the policy, so it had no term and no
+                // maturity date either -- Policy.applyTerm derives maturity from commencement.
+                //
+                // policyTermMonths and premiumPayingTermMonths stay null: nothing on a case
+                // records a requested term yet. That is a capture gap, not a discard, and
+                // closing it means asking for the term when the proposal is taken.
                 PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
                     decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
                     decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
                     monthlyPremium, decidedCase.sumAssuredCurrency(), "MONTHLY",
                     decidedCase.agentOfRecordId(), List.of(),
-                    "Automatic issuance on underwriting decision " + outcome);
+                    "Automatic issuance on underwriting decision " + outcome,
+                    decidedCase.proposedCommencementDate(), null, null,
+                    decidedCase.lifeAssuredPartyId());
                 policyApi.issuePolicy(caseId, request, "system:underwriting-decision-listener");
             });
         } catch (Exception e) {
