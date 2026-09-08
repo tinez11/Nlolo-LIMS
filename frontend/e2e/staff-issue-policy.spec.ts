@@ -135,19 +135,23 @@ test.describe('staff issue policy', () => {
     // (real backend behavior, not a rendering bug), so the "Sum assured" field and
     // the "Coverage" panel's death row both show it.
     await expect(page.getByText('TZS 2,000,000.00').first()).toBeVisible();
-    // Proves the picker actually put the SELECTED party's id in the payload --
-    // not just that the UI looked right after submission.
+    // Proves a real party id round-tripped AND that it resolves to the right person.
     //
-    // The policyholder renders as a NAME now, not a raw uuid, so asserting the
-    // uuid is visible as text no longer works. Asserting the name alone would be
-    // a weaker test than the one it replaces: it would pass on any party called
-    // "Amina Owner" and stop checking which id round-tripped. The link's href
-    // carries the id the server actually stored, so this checks both halves at
-    // once -- the right id came back, AND it resolves to the right person.
-    await expect(page.getByRole('link', { name: 'Amina Owner' })).toHaveAttribute(
-      'href',
-      '/staff/parties/d9937444-3873-4336-9cb7-addb486f3e1b',
-    );
+    // The literal `d9937444-3873-4336-9cb7-addb486f3e1b` used to be asserted here, described
+    // as "the seeded policyholder". It was, once. Party ids are minted per seed run, so it
+    // went stale the moment the volumes were reset -- Amina is a different uuid now -- and
+    // the test failed for a reason that had nothing to do with issuance. Exactly the same
+    // trap as the hard-coded `AGENT_SENIOR_ID` in agents-my-book, and the same fix: read the
+    // identity the platform reports rather than one written down months ago.
+    //
+    // Still stronger than asserting the name alone, which would pass on any party called
+    // "Amina Owner" and stop checking that an id round-tripped at all: this pins the link to
+    // a real party route, then follows it and confirms whose record it is.
+    const policyholderLink = page.getByRole('link', { name: 'Amina Owner' });
+    await expect(policyholderLink).toHaveAttribute('href', /^\/staff\/parties\/[0-9a-f-]{36}$/);
+    await policyholderLink.click();
+    await expect(page.getByRole('heading', { name: 'Amina Owner' })).toBeVisible({ timeout: 15_000 });
+    await page.goBack();
 
     // Reload from scratch -- proves this is a real Postgres row, not the
     // store's in-memory state surviving a soft navigation.

@@ -57,12 +57,33 @@ export async function decide(page: Page, outcomeLabel: string, reason: string): 
  *
  * A risk score of 80 puts `SimpleRulesEngine` past its decline threshold, so DECLINED AGREES
  * with the recommendation and no senior underwriter is needed to record it.
+ *
+ * ## Why it runs in its own context
+ *
+ * Assessing and deciding are both `hasRole('UNDERWRITER')`, and most specs that issue a
+ * policy are not underwriters — billing and finaccounting run as a finance officer, claims
+ * adjudication as an assessor. Driving the fixture on the calling page made every one of
+ * them hang: the decision panel does not render without the role, so the test waited out its
+ * timeout on a control that was never going to appear.
+ *
+ * Same shape and same reasoning as `asAdmin` in ./admin: the fixture belongs to whoever is
+ * allowed to create it, and the assertions stay with the identity under test. The browser
+ * comes off the calling page rather than being threaded through every helper signature.
  */
 export async function caseAwaitingManualIssue(page: Page, sumAssured = '1500000.00'): Promise<string> {
-  const caseId = await openCaseForAmina(page, sumAssured);
-  await assess(page, 'E2E fixture: adverse findings', '80');
-  await decide(page, 'Decline', 'E2E fixture: declined, to be overturned by manual issue');
-  return caseId;
+  const browser = page.context().browser();
+  if (!browser) throw new Error('caseAwaitingManualIssue needs a browser-backed context');
+
+  const underwriterContext = await browser.newContext({ storageState: 'e2e/.auth/staff.json' });
+  try {
+    const uwPage = await underwriterContext.newPage();
+    const caseId = await openCaseForAmina(uwPage, sumAssured);
+    await assess(uwPage, 'E2E fixture: adverse findings', '80');
+    await decide(uwPage, 'Decline', 'E2E fixture: declined, to be overturned by manual issue');
+    return caseId;
+  } finally {
+    await underwriterContext.close();
+  }
 }
 
 /**
