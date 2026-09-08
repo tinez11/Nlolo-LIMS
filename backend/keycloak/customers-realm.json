@@ -1,5 +1,7 @@
 {
   "realm": "customers",
+  "displayName": "Customer access",
+  "loginTheme": "lifeplatform",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,

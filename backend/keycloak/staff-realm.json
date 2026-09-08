@@ -1,5 +1,7 @@
 {
   "realm": "staff",
+  "displayName": "Staff console",
+  "loginTheme": "lifeplatform",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,

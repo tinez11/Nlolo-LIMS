@@ -1,5 +1,7 @@
 {
   "realm": "regulators",
+  "displayName": "Regulator access",
+  "loginTheme": "lifeplatform",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,

@@ -1,5 +1,7 @@
 {
   "realm": "agents",
+  "displayName": "Agent portal",
+  "loginTheme": "lifeplatform",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
@@ -49,7 +51,7 @@
     {
       "clientId": "lifeplatform-spa",
       "name": "Life Platform SPA (browser, PKCE)",
-      "description": "Public client for the browser SPA at frontend/. A browser cannot hold a secret, so this is publicClient with PKCE S256 required; lifeplatform-app stays confidential for backend/service use. Added alongside the agents-realm frontend work -- staff-realm.json already had this client, agents-realm.json never did, which is why an unauthenticated frontend login against this realm failed with Keycloak's own \"Client not found\" until this was added.",
+      "description": "Public client for the browser SPA at frontend/. A browser cannot hold a secret, so this is publicClient with PKCE S256 required; lifeplatform-app stays confidential for backend/service use.",
       "enabled": true,
       "publicClient": true,
       "protocol": "openid-connect",

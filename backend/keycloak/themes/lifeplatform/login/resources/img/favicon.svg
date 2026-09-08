@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 1 40 40" role="img" aria-label="Nlolo">
+  <!--
+    The Nlolo mark: a bold geometric N whose right ascender stops short and
+    becomes a leaf. Authored as geometry rather than traced from a bitmap, so it
+    stays crisp from a 16px browser tab up to the lockup on the sign-in page.
+
+    The leaf is one compound path with `fill-rule="evenodd"`, so its fold is a
+    hole that lets whatever is behind it show through. That is what keeps the
+    mark correct on a light tab strip, on a dark one, and on the deep-green
+    brand panel, without three variants of the file.
+
+    The two hex values are the sRGB equivalents of the brand green and a
+    lightened sibling for dark browser chrome. Hex rather than oklch because a
+    favicon is decoded by the browser's image pipeline rather than by the page,
+    and hex is the value every one of those decoders agrees on.
+  -->
+  <style>
+    .mark { fill: #2f9e34; stroke: #2f9e34; }
+    @media (prefers-color-scheme: dark) {
+      .mark { fill: #7ede73; stroke: #7ede73; }
+    }
+  </style>
+  <path class="mark" d="M10 35V12l22 23V20" fill="none" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path class="mark" stroke="none" fill-rule="evenodd"
+        d="M32 19c.5-8 4-13.5 9.5-16 1 6.5-2 13.5-9.5 16Zm1.5-1.8c1-4.7 3.3-8.8 6.3-12-3.4 2.6-5.6 6.8-6.3 12Z"/>
+</svg>

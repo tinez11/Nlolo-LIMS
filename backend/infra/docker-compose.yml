@@ -92,6 +92,17 @@ services:
       - "8081:8080"
     volumes:
       - ../keycloak:/opt/keycloak/data/import:ro
+      # The Life Platform login theme. Mounted at its own leaf path rather than
+      # over /opt/keycloak/themes, so the built-in themes -- which ship inside
+      # the keycloak-themes jar, not in that directory -- cannot be shadowed by
+      # accident. A folder theme needs no `kc.sh build`: it is read at runtime,
+      # and start-dev disables theme and template caching, so an edit here is
+      # live on the next page load.
+      #
+      # `../keycloak/themes` also sits inside the import directory mounted
+      # above. That is harmless: --import-realm reads *.json from the top level
+      # of that directory and ignores subdirectories.
+      - ../keycloak/themes/lifeplatform:/opt/keycloak/themes/lifeplatform:ro
     depends_on:
       postgres:
         condition: service_healthy
