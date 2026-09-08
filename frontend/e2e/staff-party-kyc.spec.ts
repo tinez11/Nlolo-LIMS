@@ -18,8 +18,6 @@ import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting'
  * change of state (not just a static value) proves the mechanism actually
  * works end to end.
  */
-const REAL_PARTY_ID = 'd9937444-3873-4336-9cb7-addb486f3e1b';
-
 const MINIMAL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==',
   'base64',
@@ -51,10 +49,19 @@ test.describe('staff party KYC verification', () => {
     // before, every mount refetched, so there was always a brief frame rendering the
     // raw uuid fallback, and the by-name click won that race. The cache removed the
     // frame and turned a latent flake into a deterministic failure.
-    const policyholderLink = page.locator(`a[href="/staff/parties/${REAL_PARTY_ID}"]`);
+    // Matched by party ROUTE rather than by a written-down uuid. `REAL_PARTY_ID` was the
+    // literal d9937444-3873-4336-9cb7-addb486f3e1b, and party ids are minted per seed run --
+    // Amina is a different uuid now, so this failed for a reason with nothing to do with KYC.
+    // The third instance of that trap on this branch, after the hard-coded AGENT_SENIOR_ID and
+    // the same literal in staff-issue-policy.
+    //
+    // The by-href match still matters and is kept: clicking by name alone was already found to
+    // race PartyName's cache, and the comment above explains why.
+    const policyholderLink = page.locator('a[href^="/staff/parties/"]').first();
     await expect(policyholderLink).toBeVisible();
+    const partyHref = await policyholderLink.getAttribute('href');
     await policyholderLink.click();
-    await expect(page).toHaveURL(`/staff/parties/${REAL_PARTY_ID}`);
+    await expect(page).toHaveURL(partyHref as string);
     await expect(page.getByRole('heading', { level: 2, name: 'KYC verification' })).toBeVisible();
 
     await rejectThenVerify(page);
