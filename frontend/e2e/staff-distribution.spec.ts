@@ -109,6 +109,11 @@ test.describe('staff distribution', () => {
     page,
     browser,
   }) => {
+    // Defensively, for the same reason as the payout test below: this one went from roughly
+    // 30s to 38.4s when manual issue started requiring a real underwriting case, and it has
+    // already failed once under load at that margin. It is close enough to the budget that
+    // the next slow afternoon would fail it for no reason worth reading.
+    test.slow();
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const financePage = await financeContext.newPage();
     const agentId = await onboardRealAgent(financePage);
@@ -229,6 +234,11 @@ test.describe('staff distribution', () => {
   test('accrues a real commission statement from a real policy, and requesting payout on it genuinely 409s while OPEN', async ({
     browser,
   }) => {
+    // Ran at 51.4s against a 60s budget before manual issue required a real underwriting
+    // case. Opening, assessing and deciding one adds three more round trips against the real
+    // backend, which pushed this over. The work is genuine and the assertions are unchanged;
+    // only the budget was wrong. Same reason agents-my-book carries this.
+    test.slow();
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const financePage = await financeContext.newPage();
 
