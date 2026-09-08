@@ -71,6 +71,45 @@ test.describe('staff underwriting queue', () => {
     await expect(page.getByText(proposalNumber)).toBeVisible();
   });
 
+  /**
+   * The product a case is for, by name, on all three surfaces that show it.
+   *
+   * Every one of them printed the raw `productId`: the queue rendered a whole column of
+   * uuids, and the drawer and the detail rail each printed one under the label "Product" --
+   * the rail with a note admitting no lookup existed. Nothing on the platform could turn a
+   * product id into a name: the active-snapshot endpoint takes an id and returns pricing,
+   * and the catalogue carries names while being keyed by nothing. `GET /products/{id}` is
+   * what closed it, so this asserts through the real endpoint, not a stub.
+   *
+   * The case is opened against the seeded "Demo Term Life", so that is the name that must
+   * appear -- and no uuid may appear anywhere in the Product column.
+   */
+  test('a case shows which product it is for by name, not by uuid', async ({ page }) => {
+    const { proposalNumber } = await openRealCase(page);
+
+    await page.goto('/staff/underwriting');
+    const row = page.getByRole('row').filter({ hasText: proposalNumber });
+    await expect(row.getByText('Demo Term Life')).toBeVisible();
+    await expect(row.getByText(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/)).toHaveCount(0);
+
+    await page.getByText(proposalNumber).click();
+    const drawer = page.getByRole('dialog', { name: 'Underwriting case' });
+    await expect(drawer.getByText(/Demo Term Life/)).toBeVisible();
+
+    await drawer.getByRole('link', { name: /full detail/i }).click();
+    await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/);
+
+    // Scoped to the rail's own Product row: unscoped, "Demo Term Life" matches every
+    // other row of the queue still mounted behind the transition.
+    const productField = page
+      .locator('dt')
+      .filter({ hasText: /^Product$/ })
+      .locator('xpath=following-sibling::dd[1]');
+    await expect(productField).toContainText('Demo Term Life');
+    await expect(productField).toContainText('DEMO-TERM-01');
+    await expect(page.getByText(/No product-by-id endpoint/)).toHaveCount(0);
+  });
+
   test('the status filter is shareable through the URL', async ({ page }) => {
     await openRealCase(page);
 

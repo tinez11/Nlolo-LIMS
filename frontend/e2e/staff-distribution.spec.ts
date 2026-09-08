@@ -55,14 +55,14 @@ async function createRealActiveProduct(page: Page): Promise<{ productId: string;
 
   const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
   await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
-  await ratingSection.locator('input[placeholder="Band, e.g. 18-30"]').fill('18-30');
+  await ratingSection.getByLabel('Rating factor 1 band').fill('18-30');
   // AGE is rated by range now: the band text is a label, these two are what the platform
   // resolves against. Publishing without them is a real 422.
   await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
   await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
   await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
   await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
-  await ratingSection.locator('input[placeholder="Band, e.g. 18-30"]').nth(1).fill('1-99999999');
+  await ratingSection.getByLabel('Rating factor 2 band').fill('1-99999999');
   await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
   await page.getByRole('button', { name: 'Publish version' }).click();
   await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
@@ -127,8 +127,27 @@ test.describe('staff distribution', () => {
     await page.getByRole('button', { name: 'Issue policy' }).click();
     await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
 
-    const agentLink = page.getByRole('link', { name: agentId });
-    await expect(agentLink).toBeVisible();
+    /*
+     * The link is named by the AGENT, not by its uuid.
+     *
+     * This assertion used to read `getByRole('link', { name: agentId })`, which passed
+     * because the field printed the raw `agentOfRecordId` -- the defect, asserted as the
+     * contract. `AgentName` resolves it in two hops (agent -> partyId -> party), since an
+     * agent has no name of its own in the distribution module; this agent was onboarded
+     * against Amina Owner above, so that is the name that must appear.
+     *
+     * The click still pins the identity: only the right agent's page is at that url.
+     */
+    // Scoped to the field, because this policy's policyholder IS the party the agent was
+    // onboarded against -- so once both resolve to a name, "Amina Owner" is two links on
+    // the page and only the `dt` tells them apart.
+    const agentField = page
+      .locator('dt')
+      .filter({ hasText: 'Agent of record' })
+      .locator('xpath=following-sibling::dd[1]');
+    const agentLink = agentField.getByRole('link');
+    await expect(agentLink).toContainText('Amina Owner');
+    await expect(page.getByRole('link', { name: agentId })).toHaveCount(0);
     await agentLink.click();
     await expect(page).toHaveURL(new RegExp(`/staff/agents/${agentId}$`));
   });

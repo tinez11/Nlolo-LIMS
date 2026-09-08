@@ -5,6 +5,7 @@ import { UNDERWRITING_CASE_STATUSES, type UnderwritingCaseStatus, type Underwrit
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { PartyName } from '@/components/PartyName';
+import { ProductName } from '@/components/ProductName';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
@@ -105,7 +106,18 @@ export function UnderwritingQueuePage() {
       key: 'productId',
       header: 'Product',
       secondary: true,
-      render: (c) => <span className="font-mono text-xs text-muted-foreground">{c.productId ?? '—'}</span>,
+      // The same argument as the Applicant column above, for the same reason: a
+      // term life case and a unit-linked case are not assessed alike, and a uuid
+      // does not say which this is. `ProductName` caches per id, and a queue is
+      // typically twenty rows over three products, so it costs three requests.
+      // No code beside the name -- the name alone is what this column is scanned
+      // for, and the column is `secondary`.
+      render: (c) =>
+        c.productId ? (
+          <ProductName productId={c.productId} withCode={false} className="text-muted-foreground" />
+        ) : (
+          '—'
+        ),
     },
     {
       key: 'decisionOutcome',

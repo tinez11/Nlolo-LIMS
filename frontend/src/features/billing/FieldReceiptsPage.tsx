@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DEFAULT_PAGE_SIZE } from '@/api/billing';
 import { FIELD_RECEIPT_STATUSES, type FieldReceiptStatus, type FieldReceiptView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
+import { AgentName } from '@/components/AgentName';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -144,24 +145,18 @@ export function FieldReceiptsPage() {
       header: 'Agent',
       secondary: true,
       /*
-       * An id rather than a name, and deliberately so: `PartyName` resolves a PARTY id, while
-       * this is a distribution AgentProfile id, and no by-id agent-name lookup exists that
-       * takes one -- the agents register is the way to a name.
+       * The name, now that there is a way to it. This column showed the first eight
+       * characters of the uuid with the rest on the title, on the reasoning that `PartyName`
+       * takes a PARTY id while this is a distribution AgentProfile id and nothing resolved
+       * one -- true when it was written. `AgentName` makes the two hops (agent -> partyId ->
+       * party) and caches each, so a register of twenty receipts from four agents costs
+       * eight requests, not eighty.
        *
-       * Shown as the first eight characters with the whole value on the title, the same idiom
-       * the client record's underwriting list uses for a case id. A full UUID here is 36
-       * characters of unreadable text that squeezed the policy number and the amount into two
-       * lines each; eight is enough to tell two agents apart in a list, and the rest is one
-       * hover away for anyone who needs to paste it.
+       * No licence number beside it: this column is scanned, not read, and the amount and
+       * policy number next to it are what the row is for.
        */
       render: (r) =>
-        r.agentId ? (
-          <span className="font-mono text-xs" title={r.agentId}>
-            {r.agentId.slice(0, 8)}
-          </span>
-        ) : (
-          '—'
-        ),
+        r.agentId ? <AgentName agentId={r.agentId} withLicense={false} /> : '—',
     },
   ];
 

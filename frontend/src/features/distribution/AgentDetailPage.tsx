@@ -5,6 +5,7 @@ import { useAuth } from 'react-oidc-context';
 import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
+import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -72,9 +73,23 @@ export function AgentDetailPage() {
         <BackLink />
       </div>
 
+      {/*
+        The licence number stays the title -- an agent IS a licence here, the register is
+        keyed by it and `GET /agents?q=` matches on it. What the byline said was the agent's
+        own uuid and nothing else, so arriving from a policy's "Agent of record" told you
+        which licence you were looking at but never WHO. The name goes beside the id, which
+        stays because this is the record that owns it: an id on its own page is identity,
+        not an unresolved reference. `PartyName` here, not `AgentName` -- the profile is
+        already loaded, so its partyId costs no second request.
+      */}
       <PageHeader
         title={agent?.licenseNumber ?? 'Agent'}
-        description={<span className="font-mono text-xs">{agentId}</span>}
+        description={
+          <span className="flex flex-wrap items-baseline gap-x-2">
+            {agent?.partyId && <PartyName partyId={agent.partyId} />}
+            <span className="font-mono text-xs select-all">{agentId}</span>
+          </span>
+        }
         actions={agent?.licenseStatus && <StatusBadge kind="agentLicense" value={agent.licenseStatus} />}
       />
 
@@ -125,12 +140,11 @@ export function AgentDetailPage() {
                 label="Hierarchy parent"
                 value={
                   agent.hierarchyParentId ? (
-                    <Link
-                      to={`../${agent.hierarchyParentId}`}
-                      relative="path"
-                      className="font-mono text-xs underline"
-                    >
-                      {agent.hierarchyParentId}
+                    // A reference to ANOTHER agent, so it resolves like one. The id above
+                    // is this record's own; this one belonged to somebody else and read as
+                    // a second uuid with no way to tell whose upline it was.
+                    <Link to={`../${agent.hierarchyParentId}`} relative="path" className="underline">
+                      <AgentName agentId={agent.hierarchyParentId} />
                     </Link>
                   ) : (
                     'Top of hierarchy'

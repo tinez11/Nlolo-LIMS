@@ -8,19 +8,45 @@ import { fillPolicyNumberManually } from './guards';
  * verified through the real HTTP surface this frontend actually calls, as a
  * real login (`agent.senior`, seeded by `backend/scripts/seed-dev-data.sh`).
  *
- * `AGENT_SENIOR_ID` is `agent.senior`'s real, seeded `agentId` -- confirmed
- * directly against the dev Postgres (`license_number = 'LIC-SENIOR-001'`),
- * not guessed. Two real policies are issued as staff: one naming
- * `agent.senior` as agentOfRecord, one sold direct (no agent at all) -- the
- * object-level check (single GET) is the primary proof here, since it does
- * not depend on how large agent.senior's book has grown across other runs
- * of this same suite; the list-page check is a lighter, best-effort
- * companion on top of it.
+ * `agent.senior`'s `agentId` is READ OFF ITS OWN PROFILE rather than hard-coded.
+ *
+ * It was the literal `83ac3bd4-a900-4a61-a9a4-90cf64a5da90`, "confirmed directly against
+ * the dev Postgres, not guessed" -- true when written, and wrong the moment the volumes
+ * were reset, because the seeder mints a fresh uuid. The spec then issued its "in book"
+ * policy naming an agent that does not exist (manual issue never validates the id, and
+ * `policy.policy` carries no FK at all), so the policy belonged to nobody, `agent.senior`
+ * was correctly refused it, and the failure surfaced as a missing sum assured -- a real
+ * 403 wearing the costume of a display bug.
+ *
+ * `GET /agents/me` is the resolution the platform itself provides for this, and the
+ * profile page renders it. Two real policies are then issued as staff: one naming
+ * `agent.senior` as agentOfRecord, one sold direct (no agent at all) -- the object-level
+ * check (single GET) is the primary proof here, since it does not depend on how large
+ * agent.senior's book has grown across other runs of this same suite; the list-page check
+ * is a lighter, best-effort companion on top of it.
  */
-const AGENT_SENIOR_ID = '83ac3bd4-a900-4a61-a9a4-90cf64a5da90';
+async function ownAgentId(page: import('@playwright/test').Page): Promise<string> {
+  await page.goto('/agents');
+  const agentId = (
+    await page
+      .locator('dt')
+      .filter({ hasText: 'Agent id' })
+      .locator('xpath=following-sibling::dd[1]')
+      .textContent()
+  )?.trim();
+  expect(agentId, 'the agent console must be able to tell us its own agent id').toMatch(
+    /^[0-9a-f-]{36}$/,
+  );
+  return agentId as string;
+}
 
 test.describe('agents my book of business', () => {
   test('sees its own book, not an unrelated policy or claim', async ({ page, browser }) => {
+    // Two real issuances, a real claim registration and two consoles, and now one more
+    // navigation to resolve the agent id honestly. It fits in 60s only when nothing
+    // retries; it used to finish early because it failed at the first assertion.
+    test.slow();
+    const AGENT_SENIOR_ID = await ownAgentId(page);
     const staffContext = await browser.newContext({ storageState: 'e2e/.auth/staff.json' });
     const staffPage = await staffContext.newPage();
 

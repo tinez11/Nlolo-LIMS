@@ -7,7 +7,9 @@ import { useAuth } from 'react-oidc-context';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { PageHeader } from '@/components/PageHeader';
+import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
+import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -97,9 +99,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       <PageHeader
         title={policyNumber}
         description={
-          policy?.productId ? (
-            <span className="font-mono text-xs">product {policy.productId}</span>
-          ) : undefined
+          policy?.productId ? <ProductName productId={policy.productId} /> : undefined
         }
         actions={
           <>
@@ -289,11 +289,11 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 value={
                   policy.agentOfRecordId ? (
                     isStaff ? (
-                      <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="font-mono text-xs underline">
-                        {policy.agentOfRecordId}
+                      <Link to={`/staff/agents/${policy.agentOfRecordId}`} className="underline">
+                        <AgentName agentId={policy.agentOfRecordId} />
                       </Link>
                     ) : (
-                      <span className="font-mono text-xs">{policy.agentOfRecordId}</span>
+                      <AgentName agentId={policy.agentOfRecordId} />
                     )
                   ) : (
                     'Direct — no agent'

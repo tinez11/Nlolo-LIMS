@@ -9,6 +9,7 @@ import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
+import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -350,8 +351,7 @@ export function UnderwritingCaseDetailPage() {
               )}
               <Field
                 label="Product"
-                value={<span className="font-mono text-xs">{view.productId ?? '—'}</span>}
-                note="No product-by-id endpoint exists either"
+                value={view.productId ? <ProductName productId={view.productId} /> : '—'}
               />
               <Field
                 label="Referral"

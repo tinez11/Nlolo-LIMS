@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
+import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -64,7 +65,10 @@ export function UnderwritingCaseDrawer({
                   uwCase.applicantPartyId ? <PartyName partyId={uwCase.applicantPartyId} /> : '—'
                 }
               />
-              <Field label="Product" value={<span className="font-mono text-xs">{uwCase.productId}</span>} />
+              <Field
+                label="Product"
+                value={uwCase.productId ? <ProductName productId={uwCase.productId} /> : '—'}
+              />
               <Field
                 label="Decision"
                 value={uwCase.decisionOutcome ?? 'Not yet decided'}

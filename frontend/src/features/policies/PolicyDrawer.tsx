@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -110,7 +111,9 @@ export function PolicyDrawer({
                 label="Agent of record"
                 value={
                   policy.agentOfRecordId ? (
-                    <span className="font-mono text-xs">{policy.agentOfRecordId}</span>
+                    // No licence number: the drawer is a preview and the name is
+                    // the whole answer someone scanning a list wants.
+                    <AgentName agentId={policy.agentOfRecordId} withLicense={false} />
                   ) : (
                     'Direct — no agent'
                   )
