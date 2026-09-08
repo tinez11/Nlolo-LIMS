@@ -8,6 +8,11 @@ info:
     internally — there is deliberately no public "issue policy" endpoint for the
     common path. A staff-only manual-issue endpoint exists solely for exception
     handling (e.g. re-issuing after a manual review overturns an automated block).
+    That endpoint now requires a REAL underwriting case and refuses one that already
+    has a policy, answering 409 with the existing policy number: one case issues
+    exactly one contract, enforced by ux_policy_underwriting_case. Both paths reach
+    the same issuePolicy, and until that guard existed either could duplicate the
+    other — which the automatic path's own retry advice actively invited.
     Surrender/maturity are asynchronous (Camunda-orchestrated loan-netting choreography,
     Deliverable 2 Rev 2 §3.4 / Deliverable 3 Rev 2 §12) — both return 202 with a
     pollable process status, never a synchronous final result.

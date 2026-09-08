@@ -15,10 +15,21 @@ import { useFieldControl } from './fieldControl';
  * lie or a client-side filter over a page of results pretending to be one. So this loads
  * the decided cases and lists them, which is what the API actually offers.
  *
- * That is workable because the set is small by construction: a case leaves this list the
- * moment it is issued, since a case with a policy is refused by the server. What remains
- * is decided-but-not-issued — the backlog this screen exists to clear. If that list ever
- * grows past a page, the fix is a search parameter on the endpoint, not a cleverer client.
+ * ## This list includes cases that already have a policy
+ *
+ * It filters on `status=DECIDED` and nothing else, because nothing else is available: a case
+ * does not know whether it produced a policy. `UnderwritingCaseStatus` is
+ * `OPEN | IN_REVIEW | DECIDED` with no value meaning "issued", and there is no back-reference
+ * from the case to the policy — answering it would need a cross-module query from underwriting
+ * into policy, which the module boundaries do not allow and which is not this change's job.
+ *
+ * So choosing an already-issued case is possible, and the server answers 409 naming the policy
+ * that exists. That is a legible outcome rather than a silent one, and it is the same guard
+ * that stops the duplicate this whole change is about. Giving the case a policy back-reference
+ * so the list can exclude them is the next piece of work, not this one.
+ *
+ * The list stays navigable meanwhile because the decided set is small in practice. If it grows
+ * past a page, the fix is a filter on the endpoint, not a cleverer client.
  *
  * ## What a row shows
  *
@@ -85,11 +96,22 @@ export function UnderwritingCasePicker({
       </Select>
 
       {cases.length === 0 && (
-        // Not an error. It is the ordinary state of a platform with nothing waiting to be
-        // issued by hand, and saying so beats an empty dropdown the user has to interpret.
+        // Not an error. It is the ordinary state of a platform with nothing decided yet, and
+        // saying so beats an empty dropdown the user has to interpret.
         <p className="text-[11px] text-muted-foreground">
-          No decided cases are waiting to be issued. A case appears here once an underwriter
-          has decided it, and leaves once its policy exists.
+          No decided cases. A case appears here once an underwriter has decided it.
+        </p>
+      )}
+
+      {/*
+        Said once, plainly, rather than discovered as a 409. The list cannot exclude
+        already-issued cases -- a case carries no reference to the policy it produced -- so
+        the honest thing is to warn that some of these may be spent.
+      */}
+      {cases.length > 0 && (
+        <p className="text-[11px] text-subtle-foreground">
+          Some of these may already have a policy. Issuing against one is refused, and the
+          refusal names the policy that exists.
         </p>
       )}
 

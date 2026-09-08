@@ -442,6 +442,48 @@ Three consequences, in ascending order of seriousness:
 
 Note also that `underwriting.underwriting_case.proposal_number` already carries a **per-tenant partial unique index** (`db-migrations/underwriting/V4__proposal_identity.sql`). The natural key that section 4 identifies as the industry mechanism already exists on this platform — on the underwriting side only, with nothing carrying it across to the policy.
 
+### 6.1b What Stage 1 changed, and what it deliberately left
+
+Stage 1 (branch `underwriting-decision-step`) took Option B and part of the diagnosis above.
+
+**Changed.** Assessing and deciding are separate acts: `submitAssessment` records evidence and
+a non-binding `recommendationOutcome`, and `UnderwritingApi.decide` is the sole producer of
+`UnderwritingDecisionMade`. A decision requires evidence, a reason, and a loading matching its
+outcome; departing from the recommendation requires `SENIOR_UNDERWRITER`. Decisions now record
+their author. The automatic issuance path stopped discarding the life assured and the proposed
+commencement date the case already held — until this, every automatically issued policy named
+the policyholder as the life assured, which is wrong for precisely the credit-life and
+third-party business the field exists for. And one case can now issue exactly one policy,
+enforced by a partial unique index plus a service check that names the existing policy number;
+the console stopped fabricating the case id that had made that check unenforceable.
+
+**Deliberately left, in rough order of consequence.**
+
+- **Offer, acceptance and first premium.** A policy still goes in force the moment a decision
+  is accepted, before the customer has agreed a premium or paid anything. `PolicyStatus.PROPOSED`
+  exists and is still unreachable — `issuePolicy` calls `activate` in the same transaction. This
+  remains the largest divergence from the flow in §1, and it means we carry risk, bill, pay
+  commission, cede to the reinsurer and report new business for someone who may never pay.
+- **The capture gap.** Nothing records the requested policy term, premium-paying term, payment
+  frequency or beneficiary nominations at proposal, though all four sit on a real proposal form.
+  So the automatic path still issues without them, and the manual path remains the only way to
+  produce a complete policy — which is part of why staff reached for it.
+- **Bypass types on manual issue** (`MIGRATION`, `GUARANTEED_ISSUE`, `CONVERSION`,
+  `REINSTATEMENT`). §3 shows the industry types the bypass on the contract rather than omitting
+  the record; ours is still free text in `reasonForManualIssue`.
+- **The case-to-policy back-reference.** A case cannot say whether it produced a policy —
+  `UnderwritingCaseStatus` has no value meaning issued. The console's case picker therefore
+  lists already-issued cases and relies on the 409 to refuse them, which is legible but not
+  the same as not offering them.
+- **`NOT_TAKEN_UP`.** Around 15% of decided cases per the SOA data, and we model a
+  decided-but-never-paid application as nothing at all.
+- **s.119 free-look dates.** Neither the proposal-signing date nor the delivery date is
+  captured, so the statutory window is uncomputable; and a free-look cancellation would run
+  through surrender logic and refund a surrender value where the Act requires the full premium.
+- **Re-opening a declined case.** Still impossible. Only `POSTPONED` can be reworked.
+- **KYC** is not required to open a case or issue a policy anywhere in the backend; only the
+  console's party picker filters to verified people.
+
 ### 6.2 What the industry pattern implies
 
 Nothing in the research suggests the platform is wrong to have a back-office direct-issuance capability. ACORD models exactly that, several times over: `Block Conversion` (63) for migrations, `Conversion - No underwriting done` (9), `Guaranteed Issue` (3), `Field Issue` (4), `Reinstatement` and `Reissue` application types. **A manual-issue path is normal and necessary.**

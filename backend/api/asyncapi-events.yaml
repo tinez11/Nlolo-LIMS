@@ -60,8 +60,14 @@ channels:
       message: { $ref: '#/components/messages/UnderwritingCaseOpened' }
   underwriting.UnderwritingDecisionMade:
     description: >
-      Producer: underwriting. Consumers: policy (auto-issuance trigger on ACCEPT/LOADED
-      — the common issuance path, per Deliverable 4's framing note), communication, audit.
+      Producer: underwriting, from `UnderwritingApi.decide` and nowhere else. Consumers: policy
+      (auto-issuance trigger on ACCEPT/LOADED — the common issuance path, per Deliverable 4's
+      framing note), communication, audit.
+      PRODUCER CORRECTION: this was published from `submitAssessment`, which ran the rules engine
+      and took its verdict as the decision — so an assessment issued a policy, and a placeholder
+      algorithm was the sole author of every decision on the platform. Submitting an assessment
+      now records evidence and a non-binding recommendation and publishes nothing; a person calls
+      `decide` and that is what fires this event. The payload gained `decidedBy` accordingly.
       CORRECTION (M10 final review, I5): this previously also listed regreporting as a consumer;
       that was never true and no such listener exists (same verification as
       underwriting.UnderwritingCaseOpened above). An ACCEPT/LOADED decision reaches regreporting
@@ -502,7 +508,11 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { caseId: {type: string, format: uuid}, outcome: {type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED]}, loadingPercent: {type: number, nullable: true}, decidedAt: {type: string, format: date-time} }
+          # decidedBy is new: until the decision became an explicit human act there was nobody
+          # to name. The engine decided every case, and decision_decided_by did not exist.
+          # Nullable on nothing -- every event published from here carries an author, because
+          # decide(...) cannot be reached without one.
+          properties: { caseId: {type: string, format: uuid}, outcome: {type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED]}, loadingPercent: {type: number, nullable: true}, decidedAt: {type: string, format: date-time}, decidedBy: {type: string} }
 
     PolicyIssuedPayload:
       description: >
