@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { issueRealPolicy } from './policies';
 import { dmy } from './dates';
 import { asAdmin } from './admin';
 
@@ -262,13 +263,19 @@ test.describe('staff group schemes', () => {
   });
 
   test('an individual policy offers no member schedule', async ({ page }) => {
-    // Straight to the seeded individual policy rather than clicking the list:
-    // a policy number on /staff/policies is a row-activation BUTTON that opens
-    // the drawer, not a link, so there is nothing there matching /^POL-/ to
-    // click. The cross-link is rendered only for a GROUP_LIFE contract, so its
-    // absence on this page is the assertion.
-    await page.goto('/staff/policies/POL-6BD5702F');
-    await expect(page.getByRole('heading', { name: 'POL-6BD5702F' })).toBeVisible();
+    // Straight to an individual policy rather than clicking the list: a policy number on
+    // /staff/policies is a row-activation BUTTON that opens the drawer, not a link, so there
+    // is nothing there matching /^POL-/ to click. The cross-link is rendered only for a
+    // GROUP_LIFE contract, so its absence on this page is the assertion.
+    //
+    // Issued here rather than the literal POL-6BD5702F, which was "the seeded individual
+    // policy" until the volumes were last reset. Policy numbers are minted POL-<random>, so
+    // that one can never exist again and this test was failing on a missing fixture rather
+    // than on anything to do with member schedules.
+    test.slow();
+    const policyNumber = await issueRealPolicy(page, 'E2E group-schemes individual-policy fixture');
+    await page.goto(`/staff/policies/${policyNumber}`);
+    await expect(page.getByRole('heading', { name: policyNumber })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Member schedule' })).toHaveCount(0);
   });
 });

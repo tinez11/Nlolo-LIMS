@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { issueRealPolicy } from './policies';
 import { expectStaffShellReady } from './guards';
 
 /**
@@ -60,7 +61,13 @@ test.describe('waiving a premium is finance-only', () => {
   test('an underwriter is offered no Waive action, but can still request payment', async ({
     page,
   }) => {
-    await page.goto('/staff/policies/POL-6BD5702F');
+    // Its own policy, issued here. The literal POL-6BD5702F was 'the seeded policy' until
+    // the volumes were last reset -- policy numbers are minted POL-<random>, so it can never
+    // exist again and both tests in this block were failing for a reason unrelated to who
+    // may waive a premium.
+    test.slow();
+    const policyNumber = await issueRealPolicy(page, 'E2E role-gates fixture');
+    await page.goto(`/staff/policies/${policyNumber}`);
     await expect(page.getByRole('heading', { name: 'Invoices' })).toBeVisible({ timeout: 30_000 });
 
     // Request payment stays open to everyone -- asking a customer to pay takes nothing away
@@ -77,7 +84,13 @@ test.describe('waiving a premium is offered to finance', () => {
   test.use({ storageState: 'e2e/.auth/staff-finance.json' });
 
   test('a finance officer still has the Waive action', async ({ page }) => {
-    await page.goto('/staff/policies/POL-6BD5702F');
+    // Its own policy, issued here. The literal POL-6BD5702F was 'the seeded policy' until
+    // the volumes were last reset -- policy numbers are minted POL-<random>, so it can never
+    // exist again and both tests in this block were failing for a reason unrelated to who
+    // may waive a premium.
+    test.slow();
+    const policyNumber = await issueRealPolicy(page, 'E2E role-gates fixture');
+    await page.goto(`/staff/policies/${policyNumber}`);
     await expect(page.getByRole('heading', { name: 'Invoices' })).toBeVisible({ timeout: 30_000 });
 
     await expect(page.getByRole('button', { name: 'Waive', exact: true }).first()).toBeVisible({

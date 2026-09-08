@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { issueRealPolicy } from './policies';
 
 /**
  * The first mutation's e2e coverage: real Keycloak session, real PUT against the
@@ -6,15 +7,17 @@ import { expect, test, type Page } from '@playwright/test';
  * a save and re-reading the persisted result, not just trusting the in-memory
  * store update.
  *
- * SELF-CONTAINED AND IDEMPOTENT ON PURPOSE. This runs against the shared seeded
- * policy POL-6BD5702F, which other specs and manual testers also use. Every test
- * here clears whatever beneficiaries already exist (form-local, no request sent)
- * before setting up its own known state, and the suite ends with the policy back
- * at zero beneficiaries -- the seeded baseline -- so a repeated run, another spec,
- * or a person testing by hand afterward all see the same starting point.
+ * SELF-CONTAINED BECAUSE IT OWNS ITS POLICY. Each test issues its own and mutates it
+ * freely.
+ *
+ * It used to run against the shared seeded policy `POL-6BD5702F`, and carried a careful note
+ * about clearing beneficiaries afterward so "another spec, or a person testing by hand" would
+ * find the same starting point. That discipline was right for a shared record and is now
+ * unnecessary -- and the constant itself had become a lie: policy numbers are minted
+ * `POL-<random>` per issuance, so that one stopped existing when the volumes were last reset
+ * and can never be recreated. It returns zero rows. All five tests in this file were failing
+ * for a reason with nothing to do with beneficiaries, and no re-run would ever have fixed it.
  */
-
-const POLICY_PATH = '/staff/policies/POL-6BD5702F';
 
 async function openEdit(page: Page) {
   await page.getByRole('button', { name: 'Edit beneficiaries' }).click();
@@ -75,7 +78,15 @@ function beneficiariesPanel(page: Page) {
 
 test.describe('staff beneficiaries edit', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(POLICY_PATH);
+    // Its own freshly issued policy, not the shared seeded one. See the note above
+    // POLICY_PATH's removal: the literal POL-6BD5702F stopped existing when the volumes were
+    // last reset and can never be recreated, so all five tests here were failing for a reason
+    // unrelated to beneficiaries. Owning the policy is also strictly better for this file in
+    // particular, which clears and rewrites the designation -- it no longer has to promise to
+    // put a shared record back the way it found it.
+    test.slow();
+    const policyNumber = await issueRealPolicy(page, 'E2E beneficiaries fixture');
+    await page.goto(`/staff/policies/${policyNumber}`);
     await expect(page.getByRole('heading', { name: 'Beneficiaries' })).toBeVisible();
   });
 

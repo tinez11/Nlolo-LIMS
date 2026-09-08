@@ -1,28 +1,71 @@
 import { expect, test, type Page } from '@playwright/test';
+import { issueRealPolicy } from './policies';
 import { dmy } from './dates';
 import { fillPolicyNumberManually } from './guards';
 
 /**
  * Claims e2e coverage against the real stack.
  *
- * Two things this suite deliberately does NOT try to prove, because they are
- * genuinely unreachable in this environment, verified before writing a line of
- * UI code rather than discovered by a failing test:
+ * This file used to open by explaining that a SUCCESSFUL claim registration was unreachable
+ * here: `ClaimsApiImpl.registerClaim` requires the policy to be in force, and "the only
+ * seeded policy, POL-6BD5702F" was SURRENDERED. It called that a data limitation rather than
+ * an architectural one, and it was right on both counts -- the limitation has simply gone.
+ * A spec can issue its own ACTIVE policy, so registration succeeds and these tests own the
+ * claims they assert on.
  *
- *  - A successful claim registration. `ClaimsApiImpl.registerClaim` requires the
- *    policy to be "in force" (ACTIVE or REINSTATED), and the only seeded policy,
- *    POL-6BD5702F, is SURRENDERED -- confirmed with a real curl POST before any
- *    code was written (`"Policy POL-6BD5702F was not in force on 2026-08-01"`,
- *    422). This is a DATA limitation, not an architectural one (unlike loan
- *    origination, which is unconditionally blocked platform-wide): a genuinely
- *    ACTIVE policy would succeed. So the registration test below proves the real
- *    422 is surfaced correctly instead, which needs no mocking at all -- the
- *    network call genuinely fires and the backend genuinely rejects it.
- *  - Assessment, settlement decision, or reopen. Not built in this slice at all
- *    (deliberately out of scope), so there is nothing to test yet.
+ * That matters beyond tidiness. Every fixture here was pinned to ids minted per seed run --
+ * POL-6BD5702F and a literal CLAIM_ID -- so when the volumes were last reset they stopped
+ * existing and could never be recreated. Three tests failed for reasons unrelated to claims,
+ * and one passed for the wrong reason: it asserted an error banner did not resurface, and the
+ * banner it was clearing was a 404 rather than the 422 it claimed to be about.
+ *
+ * Still deliberately out of scope: assessment, settlement decision and reopen are covered in
+ * staff-claims-adjudication.spec.ts, not here.
  */
 
-const CLAIM_ID = '0dca2710-f8c2-4c10-8f15-c2c801b8ea67'; // the one seeded DEATH claim
+/**
+ * A freshly issued policy with a real DEATH claim registered against it.
+ *
+ * Registration SUCCEEDS here, which this file's header long said was unreachable: the only
+ * seeded policy was SURRENDERED, so `registerClaim`'s in-force rule refused every attempt.
+ * That was a data limitation and it is gone -- a spec can issue its own ACTIVE policy now,
+ * so the success path is reachable and these tests no longer have to hunt for a claim
+ * somebody else left behind.
+ */
+async function policyWithRealClaim(page: Page): Promise<string> {
+  const policyNumber = await issueRealPolicy(page, 'E2E claims-list fixture');
+
+  await page.goto('/staff/claims/new');
+  await fillPolicyNumberManually(page, policyNumber);
+  await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
+  await page.getByPlaceholder('Type a name to search').fill('Amina');
+  await page.getByText('Amina Owner').click();
+  await page.getByLabel('Date of event').fill(dmy('2026-08-01'));
+  await page.getByLabel('Cause of death').fill('Natural causes');
+  await page.getByLabel('Place of death').fill('Dar es Salaam');
+  await page.getByLabel('Date of death').fill(dmy('2026-08-01'));
+  await page.getByLabel('Attending physician').fill('Dr. E2E Claims Fixture');
+  await page.getByRole('button', { name: 'Register claim' }).click();
+  await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+  return policyNumber;
+}
+
+/**
+ * A policy that is NOT in force, for the real 422 from `registerClaim`.
+ *
+ * Discovered through the status filter rather than written down. The literal POL-6BD5702F was
+ * "the one seeded (SURRENDERED) policy" until the volumes were last reset; policy numbers are
+ * minted POL-<random>, so it can never exist again -- and a test asserting a 422 would have
+ * passed anyway on the 404 a missing policy produces, which is the worse kind of green.
+ */
+async function findNotInForcePolicy(page: Page): Promise<string> {
+  await page.goto('/staff/policies?status=SURRENDERED');
+  const firstRow = page.getByRole('row').filter({ hasText: 'Surrendered' }).first();
+  await expect(firstRow).toBeVisible({ timeout: 20_000 });
+  const policyNumber = await firstRow.getByRole('button').first().textContent();
+  return (policyNumber as string).trim();
+}
 
 async function firstClaimRow(page: Page) {
   const table = page.getByRole('table', { name: 'Claims' });
@@ -57,30 +100,34 @@ test.describe('staff claims', () => {
   test('opens a row preview showing real DEATH-claim details, then navigates to full detail', async ({
     page,
   }) => {
+    // Its own claim, on its own policy. This searched for POL-6BD5702F and asserted the
+    // seeder's exact wording ("Dr. Juma"), which pinned it to a policy and a claim that no
+    // longer exist -- and could not be recreated, since both ids are minted per run.
+    test.slow();
+    const policyNumber = await policyWithRealClaim(page);
+
     await page.goto('/staff/claims');
-    // Search for the seeded claim specifically, by its own policy number --
-    // "first row" stopped reliably meaning "the seeded claim" once the list
-    // defaults to newest-created-first and other specs' fixtures create newer
-    // claims ahead of it.
-    await page.getByPlaceholder('Search by policy number').fill('POL-6BD5702F');
-    await expect(page).toHaveURL(/q=POL-6BD5702F/, { timeout: 5000 });
+    // Searched by policy number rather than taking the first row: the list is
+    // newest-created-first and other specs' fixtures create newer claims ahead of this one.
+    await page.getByPlaceholder('Search by policy number').fill(policyNumber);
+    await expect(page).toHaveURL(new RegExp(`q=${policyNumber}`), { timeout: 5000 });
     const row = await firstClaimRow(page);
     expect(row).not.toBeNull();
     await row!.click();
 
     const drawer = page.getByRole('dialog', { name: 'DEATH' });
     await expect(drawer).toBeVisible();
-    // Real seeded data, not a placeholder -- the exact fields the seeder wrote.
+    // The exact fields policyWithRealClaim wrote, read back off a real Postgres row.
     await expect(drawer).toContainText('Natural causes');
     await expect(drawer).toContainText('Dar es Salaam');
-    await expect(drawer).toContainText('Dr. Juma');
+    await expect(drawer).toContainText('Dr. E2E Claims Fixture');
 
     // No mutating action lives in the drawer -- this slice never built one, but
     // the invariant is worth asserting the same way PolicyDrawer's is.
     await expect(drawer.getByRole('button', { name: /approve|reject|settle|reopen/i })).toHaveCount(0);
 
     await drawer.getByRole('link', { name: /full detail/i }).click();
-    await expect(page).toHaveURL(new RegExp(`/staff/claims/${CLAIM_ID}`));
+    await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/);
     await expect(page.getByRole('heading', { name: 'DEATH' })).toBeVisible();
     await expect(page.getByText('Natural causes')).toBeVisible();
   });
@@ -93,9 +140,11 @@ test.describe('staff claims', () => {
     await expect(page.getByText('No claims yet')).not.toBeVisible();
   });
 
-  test('registering against the one seeded (SURRENDERED) policy genuinely 422s, client validation intact', async ({
+  test('registering against a policy that is not in force genuinely 422s, client validation intact', async ({
     page,
   }) => {
+    const notInForce = await findNotInForcePolicy(page);
+
     await page.goto('/staff/claims/new');
     await expect(page.getByRole('heading', { name: 'Register a claim' })).toBeVisible();
 
@@ -112,7 +161,7 @@ test.describe('staff claims', () => {
     // Now fill a genuinely well-formed DEATH claim against the real seeded
     // policy and claimant -- passes every client rule, so this DOES reach the
     // network, and the backend's real business rule rejects it.
-    await fillPolicyNumberManually(page, 'POL-6BD5702F');
+    await fillPolicyNumberManually(page, notInForce);
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();
@@ -132,8 +181,13 @@ test.describe('staff claims', () => {
   test('does not resurface a stale registration error on a fresh visit to the page', async ({
     page,
   }) => {
+    // A genuinely not-in-force policy, so the error this test proves does not resurface is a
+    // real 422. It used to name POL-6BD5702F, which no longer exists -- so the alert it was
+    // clearing was a 404, and the test passed for the wrong reason.
+    const notInForce = await findNotInForcePolicy(page);
+
     await page.goto('/staff/claims/new');
-    await fillPolicyNumberManually(page, 'POL-6BD5702F');
+    await fillPolicyNumberManually(page, notInForce);
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();
@@ -163,10 +217,15 @@ test.describe('staff claims', () => {
   });
 
   test('the search bar finds a real claim by its policy number', async ({ page }) => {
+    test.slow();
+    const policyNumber = await policyWithRealClaim(page);
+
     await page.goto('/staff/claims');
     await expect(page.getByRole('heading', { name: 'Claims' })).toBeVisible();
-    await page.getByPlaceholder('Search by policy number').fill('POL-6BD5702F');
-    await expect(page).toHaveURL(/q=POL-6BD5702F/, { timeout: 5000 });
-    await expect(page.getByText('DEATH')).toBeVisible();
+    await page.getByPlaceholder('Search by policy number').fill(policyNumber);
+    await expect(page).toHaveURL(new RegExp(`q=${policyNumber}`), { timeout: 5000 });
+    // Stronger than the old `getByText('DEATH')`, which would have passed on any claim in an
+    // unfiltered list: the row found must be the one on THIS policy.
+    await expect(page.getByRole('row').filter({ hasText: policyNumber })).toBeVisible();
   });
 });

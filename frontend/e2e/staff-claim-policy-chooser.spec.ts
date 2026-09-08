@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { expectStaffShellReady } from './guards';
+import { issueRealPolicy } from './policies';
 
 /**
  * Claim intake, claimant first.
@@ -18,8 +19,6 @@ import { expectStaffShellReady } from './guards';
  */
 
 const SEEDED_POLICYHOLDER = 'Amina Owner';
-/** Amina Owner's own policy in the seeded dev tenant -- she is its policyholder. */
-const HER_POLICY = 'POL-6BD5702F';
 /** The seeded counterpart identity, used to prove a change of claimant resets the choice. */
 const OTHER_CLAIMANT = 'Baraka Other';
 
@@ -41,6 +40,13 @@ test.describe('staff claim intake -- policy chooser', () => {
   test('the policy field waits for a claimant, then lists that claimant\'s policies', async ({
     page,
   }) => {
+    // Amina's own policy, issued here rather than the literal POL-6BD5702F. That number was
+    // hers until the volumes were last reset; policy numbers are minted POL-<random>, so it
+    // can never exist again and both tests in this file were failing on a missing fixture
+    // rather than on anything to do with the chooser.
+    test.slow();
+    const herPolicy = await issueRealPolicy(page, 'E2E policy-chooser fixture');
+
     await openRegisterClaim(page);
 
     // Before a claimant there is nothing honest to list, and the field says so rather than
@@ -57,17 +63,17 @@ test.describe('staff claim intake -- policy chooser', () => {
     // truncation notice and the server-side filter exist for. Filtering here is therefore
     // testing the real path for this data, not working around the assertion.
     await expect(page.getByText(/Showing the \d+ most recent of \d+/)).toBeVisible();
-    await page.getByLabel('Filter policies').fill(HER_POLICY);
+    await page.getByLabel('Filter policies').fill(herPolicy);
 
-    const herPolicy = page.getByRole('radio').filter({ hasText: HER_POLICY });
-    await expect(herPolicy).toBeVisible({ timeout: 20_000 });
+    const herPolicyRow = page.getByRole('radio').filter({ hasText: herPolicy });
+    await expect(herPolicyRow).toBeVisible({ timeout: 20_000 });
     // The capacity is the reason the list is worth showing at all -- a bare policy number
     // would not tell a clerk which claim they are about to register, or on whose life.
-    await expect(herPolicy).toContainText('Owner');
-    await expect(herPolicy).toContainText('owns this contract');
+    await expect(herPolicyRow).toContainText('Owner');
+    await expect(herPolicyRow).toContainText('owns this contract');
 
-    await herPolicy.click();
-    await expect(herPolicy).toHaveAttribute('aria-checked', 'true');
+    await herPolicyRow.click();
+    await expect(herPolicyRow).toHaveAttribute('aria-checked', 'true');
   });
 
   /**
@@ -111,13 +117,16 @@ test.describe('staff claim intake -- policy chooser', () => {
   test('a policy number can still be typed directly, before any claimant is chosen', async ({
     page,
   }) => {
+    test.slow();
+    const herPolicy = await issueRealPolicy(page, 'E2E manual policy-number fixture');
+
     await openRegisterClaim(page);
 
     await page.getByRole('button', { name: 'Enter a policy number instead' }).click();
     const manual = page.getByPlaceholder('POL-XXXXXXXX');
     await expect(manual).toBeVisible();
-    await manual.fill(HER_POLICY);
-    await expect(manual).toHaveValue(HER_POLICY);
+    await manual.fill(herPolicy);
+    await expect(manual).toHaveValue(herPolicy);
 
     // The coverage gates read the typed policy, which proves the value reached the form and
     // not just the input -- they render only once a real policy has been resolved.
