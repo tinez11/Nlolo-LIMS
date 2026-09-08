@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { UnderwritingCasePicker } from '@/components/UnderwritingCasePicker';
+import { listCaseBeneficiaries } from '@/api/underwriting';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
@@ -206,9 +207,9 @@ export function IssuePolicyPage() {
                 onChange={(caseId, decidedCase) => {
                   field.onChange(caseId ?? '');
                   if (!decidedCase) return;
-                  // Only what the case actually carries. It holds no premium, no term and no
-                  // beneficiaries, so those stay for the operator to supply -- prefilling a
-                  // guess would be worse than leaving them blank.
+                  // Everything the proposal actually states. It still holds no premium -- the
+                  // insurer works that out rather than the applicant stating it -- so that one
+                  // stays for the operator.
                   if (decidedCase.applicantPartyId) {
                     setValue('policyholderPartyId', decidedCase.applicantPartyId);
                   }
@@ -219,6 +220,46 @@ export function IssuePolicyPage() {
                   if (decidedCase.productId) setValue('productId', decidedCase.productId);
                   if (decidedCase.proposedCommencementDate) {
                     setValue('commencementDate', decidedCase.proposedCommencementDate);
+                  }
+                  if (decidedCase.requestedTermMonths != null) {
+                    setValue('policyTermMonths', String(decidedCase.requestedTermMonths));
+                  }
+                  if (decidedCase.premiumPayingTermMonths != null) {
+                    setValue('premiumPayingTermMonths', String(decidedCase.premiumPayingTermMonths));
+                  }
+                  if (decidedCase.premiumFrequency) {
+                    setValue('premiumFrequency', decidedCase.premiumFrequency);
+                  }
+
+                  /*
+                    The nominations, and this one is not a convenience.
+
+                    This form SENDS its own beneficiary list, so a manual issuance against a
+                    case that named beneficiaries would otherwise drop them silently -- by the
+                    exact path that exists to honour a proposal when the automatic one could
+                    not. They come from their own sub-resource rather than off the case,
+                    because a case list carries none: see listCaseBeneficiaries.
+
+                    A failure here is swallowed deliberately. The rows stay empty and the
+                    operator can type them, which is strictly better than refusing to let them
+                    issue at all because a secondary read failed.
+                  */
+                  if (caseId) {
+                    void listCaseBeneficiaries(caseId)
+                      .then((nominations) => {
+                        if (nominations.length === 0) return;
+                        setValue(
+                          'beneficiaries',
+                          nominations.map((n) => ({
+                            type: n.type ?? 'FREEFORM',
+                            partyId: n.partyId ?? '',
+                            freeformDesignee: n.freeformDesignee ?? '',
+                            sharePercent: n.sharePercent ?? 0,
+                            revocable: n.revocable ?? true,
+                          })),
+                        );
+                      })
+                      .catch(() => {});
                   }
                 }}
               />

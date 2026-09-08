@@ -2,6 +2,26 @@ import { z } from 'zod';
 import type { OpenCaseRequest } from '@/api/types';
 import { AMOUNT_PATTERN } from '@/lib/money';
 import { CURRENCY_PATTERN, ISO_DATE_PATTERN, UUID_PATTERN } from '@/lib/patterns';
+// Imported across features on purpose. A proposal's nominations and a policy's beneficiaries
+// have to mean exactly the same thing -- the issuance listener MAPS one to the other rather
+// than interpreting it -- and one schema is the only way to guarantee they cannot drift.
+import { beneficiaryListSchema, type BeneficiaryFormValues } from '@/features/policies/beneficiaryForm';
+
+/**
+ * An optional whole number of months, kept as a string so an empty field stays empty.
+ *
+ * Deliberately a local copy of `policyIssueForm`'s identical helper rather than an import:
+ * that one is private to its module, and five lines of validator is a smaller cost than
+ * making the underwriting form depend on the policy issuance form's internals. The
+ * beneficiary schema above is imported precisely because the opposite is true of it — there
+ * the shared meaning IS the requirement.
+ */
+const months = (label: string) =>
+  z
+    .string()
+    .trim()
+    .refine((v) => v === '' || /^\d+$/.test(v), `${label} must be a whole number of months`)
+    .refine((v) => v === '' || Number(v) >= 1, `${label} must be at least 1 month`);
 
 /** Zod schema for `POST /underwriting/cases`, mirroring `OpenCaseRequest` exactly. */
 export const openCaseFormSchema = z.object({
@@ -50,11 +70,58 @@ export const openCaseFormSchema = z.object({
     .string()
     .trim()
     .refine((v) => v === '' || ISO_DATE_PATTERN.test(v), 'Not a valid date'),
+
+  /**
+   * What the applicant asks for about the CONTRACT, as distinct from the risk above.
+   *
+   * These lived only on the manual issue form until now, which made it the only screen able
+   * to produce a complete policy: one issued on the normal path had no term, no maturity date
+   * (it is derived from commencement plus term) and nobody nominated, because nobody had ever
+   * asked. That is very likely why staff reached for manual issue.
+   *
+   * Kept as strings and coerced on submit, the same as every other numeric in this console:
+   * `z.coerce.number()` turns '' into 0, and a term of zero is a different statement from
+   * "this product does not term".
+   */
+  requestedTermMonths: months('Term'),
+  premiumPayingTermMonths: months('Premium-paying term'),
+
+  /** '' means the applicant did not say, which the backend stores as null. */
+  premiumFrequency: z.enum(['', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']),
+
+  /**
+   * Nominations as taken on the proposal form.
+   *
+   * Reuses the policy side's own list schema rather than a second one. The two lists have to
+   * mean exactly the same thing for the issuance listener's mapping to stay a mapping rather
+   * than an interpretation, and one schema is the only way to guarantee that.
+   */
+  beneficiaries: beneficiaryListSchema,
+}).superRefine((values, ctx) => {
+  // Mirrors chk_proposal_paying_term_within_term, and policy's own
+  // policy_premium_paying_term_within_term behind it: premiums may be paid for a shorter time
+  // than cover runs (a limited-payment policy), never for longer.
+  const term = values.requestedTermMonths;
+  const payingTerm = values.premiumPayingTermMonths;
+  if (term !== '' && payingTerm !== '' && Number(payingTerm) > Number(term)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['premiumPayingTermMonths'],
+      message: 'Premiums cannot be paid for longer than cover runs',
+    });
+  }
 });
 
-export type OpenCaseFormValues = z.infer<typeof openCaseFormSchema>;
+/**
+ * Input/Output split, same reason as the policy issue form's: this schema now embeds
+ * `beneficiaryListSchema`, which coerces `sharePercent` with `z.coerce.number()`. `useForm`
+ * must be instantiated with both so react-hook-form routes the coerced Output type to
+ * onSubmit while the raw Input type governs what register()/watch() see.
+ */
+export type OpenCaseFormValues = z.output<typeof openCaseFormSchema>;
+export type OpenCaseFormInput = z.input<typeof openCaseFormSchema>;
 
-export function blankOpenCaseForm(): OpenCaseFormValues {
+export function blankOpenCaseForm(): OpenCaseFormInput {
   return {
     applicantPartyId: '',
     productId: '',
@@ -66,6 +133,12 @@ export function blankOpenCaseForm(): OpenCaseFormValues {
     branch: '',
     sourceOfBusiness: '',
     proposedCommencementDate: '',
+    requestedTermMonths: '',
+    premiumPayingTermMonths: '',
+    // Blank, not MONTHLY. A default here would have the form assert a payment frequency the
+    // applicant never stated, and it is the value the issued policy is billed on.
+    premiumFrequency: '',
+    beneficiaries: [],
   };
 }
 
@@ -87,5 +160,46 @@ export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
     ...(values.proposedCommencementDate
       ? { proposedCommencementDate: values.proposedCommencementDate }
       : {}),
+    // Same omit-when-blank rule as everything above. A blank term is not zero months and not
+    // a null to send: it means this product does not term, or the applicant did not say.
+    ...(values.requestedTermMonths ? { requestedTermMonths: Number(values.requestedTermMonths) } : {}),
+    ...(values.premiumPayingTermMonths
+      ? { premiumPayingTermMonths: Number(values.premiumPayingTermMonths) }
+      : {}),
+    ...(values.premiumFrequency ? { premiumFrequency: values.premiumFrequency } : {}),
+    // Omitted entirely when nobody was nominated, rather than sent as []. Both mean the same
+    // thing to the backend, but an absent key says "not stated on this proposal" where an
+    // empty array reads as "stated, and it is nobody".
+    ...(values.beneficiaries.length > 0
+      ? { beneficiaries: toApiNominations({ beneficiaries: values.beneficiaries }) }
+      : {}),
   };
+}
+
+/**
+ * The proposal's nominations in the shape `POST /underwriting/cases` expects.
+ *
+ * Identical in output to the policy side's `toApiBeneficiaries` — the two wire schemas are
+ * field-for-field the same, which is what lets the issuance listener map rather than
+ * interpret. Written out here rather than reused because the two return types are generated
+ * from different specs and only coincide structurally; sharing the function would tie the
+ * underwriting request shape to the policy one at the type level, which is precisely the
+ * dependency the backend modules refuse.
+ */
+function toApiNominations(values: BeneficiaryFormValues): NonNullable<OpenCaseRequest['beneficiaries']> {
+  return values.beneficiaries.map((row) =>
+    row.type === 'PARTY'
+      ? {
+          type: 'PARTY' as const,
+          partyId: row.partyId.trim(),
+          sharePercent: row.sharePercent,
+          revocable: row.revocable,
+        }
+      : {
+          type: 'FREEFORM' as const,
+          freeformDesignee: row.freeformDesignee.trim(),
+          sharePercent: row.sharePercent,
+          revocable: row.revocable,
+        },
+  );
 }

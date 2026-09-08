@@ -162,6 +162,38 @@ paths:
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /underwriting/cases/{caseId}/beneficiaries:
+    get:
+      summary: The beneficiary nominations taken on this proposal
+      description: >-
+        Its own sub-resource rather than a field on UnderwritingCaseView, matching how
+        disclosures are exposed on this module. `GET /underwriting/cases` returns twenty case
+        views at a time, and carrying nominations on each would be twenty queries for
+        something the queue never shows — so a list view carries none, and an empty array
+        there would read as "nobody nominated" when it means "not loaded". A separate
+        resource cannot be misread that way.
+
+
+        The console reads this before manual-issuing against a case. That form sends its own
+        beneficiary list, so without prefilling from here a proposal's nominations would be
+        silently dropped by the very path meant to honour them.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK. An empty array means nobody was nominated on this proposal.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BeneficiaryNomination' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /underwriting/cases/{caseId}/referral:
     post:
       summary: Refer a borderline case to a senior underwriter

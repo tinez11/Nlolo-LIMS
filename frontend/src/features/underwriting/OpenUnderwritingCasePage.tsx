@@ -1,6 +1,6 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Plus } from 'lucide-react';
 import { useEffect } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
@@ -8,10 +8,20 @@ import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { PREMIUM_FREQUENCIES } from '@/api/types';
+import { humanizeStatus } from '@/lib/status';
+import { BeneficiaryRow } from '@/features/policies/BeneficiaryRow';
+import { blankBeneficiaryRow } from '@/features/policies/beneficiaryForm';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import { useUnderwritingStore } from '@/store/underwritingStore';
-import { blankOpenCaseForm, openCaseFormSchema, toApiRequest, type OpenCaseFormValues } from './openCaseForm';
+import {
+  blankOpenCaseForm,
+  openCaseFormSchema,
+  toApiRequest,
+  type OpenCaseFormInput,
+  type OpenCaseFormValues,
+} from './openCaseForm';
 import { Input, Select } from '@/components/ui/input';
 
 /**
@@ -51,13 +61,28 @@ export function OpenUnderwritingCasePage() {
     setValue,
     control,
     formState: { errors },
-  } = useForm<OpenCaseFormValues>({
+  } = useForm<OpenCaseFormInput, unknown, OpenCaseFormValues>({
     resolver: zodResolver(openCaseFormSchema),
     defaultValues: blankOpenCaseForm(),
   });
+  const {
+    fields: beneficiaryFields,
+    append: appendBeneficiary,
+    remove: removeBeneficiary,
+  } = useFieldArray({ control, name: 'beneficiaries' });
 
   // eslint-disable-next-line react-hooks/incompatible-library -- see IssuePolicyPage
   const productId = watch('productId');
+  const beneficiaryRows = watch('beneficiaries');
+
+  // Derived from the live rows, not stored: this console's lint bans synchronous setState in
+  // an effect, and a second copy of the total could only ever disagree with the rows.
+  const beneficiaryTotal = beneficiaryRows.reduce((sum, r) => {
+    const value = Number(r.sharePercent);
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+  const beneficiaryTotalOk =
+    Math.abs(beneficiaryTotal - 100) <= 0.005 || beneficiaryRows.length === 0;
   const snapshot = useProductStore(selectProductSnapshot(productId));
 
   useEffect(() => {
@@ -226,6 +251,111 @@ export function OpenUnderwritingCasePage() {
                 />
               </FormField>
             </div>
+          </div>
+        </fieldset>
+
+        {/*
+          What the applicant asks for about the CONTRACT, as distinct from the risk above.
+
+          These only ever existed on the manual issue form, which made it the only screen able
+          to produce a complete policy: one issued on the normal path had no term, no maturity
+          date -- it is derived from commencement plus term -- and nobody nominated, because
+          nobody had ever asked. That is very likely why staff reached for manual issue.
+
+          All optional. A product that does not term genuinely has none, and a proposal taken
+          with the nomination blank is routine rather than incomplete.
+        */}
+        <fieldset className="space-y-4">
+          <legend className="text-sm font-medium">What the applicant is asking for</legend>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Term (months)" error={errors.requestedTermMonths?.message}>
+              <Input placeholder="120" {...register('requestedTermMonths')} />
+            </FormField>
+
+            <FormField
+              label="Premium-paying term (months)"
+              error={errors.premiumPayingTermMonths?.message}
+            >
+              <Input placeholder="Same as the term" {...register('premiumPayingTermMonths')} />
+            </FormField>
+
+            <FormField label="Premium frequency" error={errors.premiumFrequency?.message}>
+              <Select {...register('premiumFrequency')}>
+                {/* Blank first and selected by default: a frequency the applicant did not
+                    state is not monthly, and it is what the issued policy is billed on. */}
+                <option value="">Not stated</option>
+                {PREMIUM_FREQUENCIES.map((f) => (
+                  <option key={f} value={f}>
+                    {humanizeStatus(f)}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
+
+          {/*
+            The same rows the issue form uses, from the same component and the same schema.
+            Not a second nomination editor: the two lists have to mean exactly the same thing
+            for the issuance listener to MAP one to the other rather than interpret it.
+          */}
+          <div className="rounded-md border border-border p-3">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
+              Beneficiary nominations (optional)
+            </p>
+            <div className="space-y-3">
+              {beneficiaryFields.map((field, index) => {
+                const type = beneficiaryRows[index]?.type ?? 'PARTY';
+                const rowError = errors.beneficiaries?.[index];
+                return (
+                  <BeneficiaryRow
+                    key={field.id}
+                    type={type}
+                    typeField={register(`beneficiaries.${index}.type`)}
+                    designeeField={register(`beneficiaries.${index}.freeformDesignee`)}
+                    shareField={register(`beneficiaries.${index}.sharePercent`)}
+                    revocableField={register(`beneficiaries.${index}.revocable`)}
+                    party={
+                      <Controller
+                        control={control}
+                        name={`beneficiaries.${index}.partyId`}
+                        render={({ field: partyField }) => (
+                          <PartyPicker
+                            value={partyField.value || null}
+                            onChange={(partyId) => partyField.onChange(partyId ?? '')}
+                            placeholder="Search for the beneficiary by name"
+                          />
+                        )}
+                      />
+                    }
+                    onRemove={() => removeBeneficiary(index)}
+                    error={
+                      rowError?.partyId?.message ??
+                      rowError?.freeformDesignee?.message ??
+                      rowError?.sharePercent?.message
+                    }
+                  />
+                );
+              })}
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="-ml-2 mt-2"
+              onClick={() => appendBeneficiary(blankBeneficiaryRow())}
+            >
+              <Plus />
+              Add beneficiary
+            </Button>
+            <p
+              className={`mt-2 text-xs ${
+                beneficiaryTotalOk ? 'text-muted-foreground' : 'text-status-danger-fg'
+              }`}
+            >
+              Total: {beneficiaryTotal}%{' '}
+              {!beneficiaryTotalOk && '— must sum to 100% (or be empty)'}
+            </p>
           </div>
         </fieldset>
 

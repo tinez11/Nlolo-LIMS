@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
 import tz.co.nlolo.lifeplatform.underwriting.api.MedicalDisclosureView;
 import tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -133,6 +134,28 @@ public class UnderwritingController {
             new UnderwritingApi.DecisionInput(request.outcome(), request.loadingPercent(), request.reason()),
             jwt.getSubject(), senior);
         return ResponseEntity.ok(view);
+    }
+
+    /**
+     * The beneficiary nominations taken on a proposal.
+     *
+     * <p>Its own sub-resource rather than a field on {@code UnderwritingCaseView}, matching how
+     * disclosures are already exposed on this module. The case view is what
+     * {@code GET /underwriting/cases} returns twenty of, and fetching nominations for each row
+     * would be twenty queries for something the queue never displays — so a list view carries
+     * none, and an empty array there would read as "nobody nominated" when it means "not
+     * loaded". A separate resource cannot be misread that way.
+     *
+     * <p>The console needs this before manual-issuing against a case: that form sends its own
+     * beneficiary list, so without prefilling from here a proposal's nominations would be
+     * silently dropped by the very path meant to honour them.
+     *
+     * <p>Same gate as {@link #getCase}: a caller who may read the case may read who it names.
+     */
+    @GetMapping("/cases/{caseId}/beneficiaries")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<BeneficiaryNomination>> listCaseBeneficiaries(@PathVariable UUID caseId) {
+        return ResponseEntity.ok(underwritingApi.getCase(caseId).beneficiaries());
     }
 
     @PostMapping("/cases/{caseId}/referral")

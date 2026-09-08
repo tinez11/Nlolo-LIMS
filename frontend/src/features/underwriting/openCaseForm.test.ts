@@ -155,3 +155,69 @@ describe('proposal identity', () => {
     ).toBe(false);
   });
 });
+
+describe('what the applicant asks for about the contract', () => {
+  it('accepts a proposal that states none of it', () => {
+    // A product that does not term, and a proposal taken with the nomination blank. Both are
+    // routine rather than incomplete, which is why all four fields are optional.
+    const request = toApiRequest(openCaseFormSchema.parse(valid()));
+    expect('requestedTermMonths' in request).toBe(false);
+    expect('premiumFrequency' in request).toBe(false);
+    expect('beneficiaries' in request).toBe(false);
+  });
+
+  it('sends the term and frequency it was given', () => {
+    const request = toApiRequest(
+      openCaseFormSchema.parse({
+        ...valid(),
+        requestedTermMonths: '120',
+        premiumPayingTermMonths: '60',
+        premiumFrequency: 'QUARTERLY',
+      }),
+    );
+    expect(request.requestedTermMonths).toBe(120);
+    expect(request.premiumPayingTermMonths).toBe(60);
+    expect(request.premiumFrequency).toBe('QUARTERLY');
+  });
+
+  it('refuses premiums paid for longer than cover runs', () => {
+    // Mirrors chk_proposal_paying_term_within_term, and policy's own constraint behind it: a
+    // limited-payment policy pays for a SHORTER time than it covers, never longer.
+    const result = openCaseFormSchema.safeParse({
+      ...valid(),
+      requestedTermMonths: '60',
+      premiumPayingTermMonths: '120',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('refuses a term that is not a whole number of months', () => {
+    expect(
+      openCaseFormSchema.safeParse({ ...valid(), requestedTermMonths: '12.5' }).success,
+    ).toBe(false);
+  });
+
+  it('sends nominations in the shape the endpoint expects', () => {
+    const request = toApiRequest(
+      openCaseFormSchema.parse({
+        ...valid(),
+        beneficiaries: [
+          { type: 'FREEFORM', partyId: '', freeformDesignee: 'The estate', sharePercent: 100, revocable: true },
+        ],
+      }),
+    );
+    expect(request.beneficiaries).toEqual([
+      { type: 'FREEFORM', freeformDesignee: 'The estate', sharePercent: 100, revocable: true },
+    ]);
+  });
+
+  it('refuses nominations that do not sum to 100, the same rule the policy side applies', () => {
+    const result = openCaseFormSchema.safeParse({
+      ...valid(),
+      beneficiaries: [
+        { type: 'FREEFORM', partyId: '', freeformDesignee: 'Half only', sharePercent: 50, revocable: true },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+});

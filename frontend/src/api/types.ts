@@ -374,5 +374,6 @@ export type OpenCaseRequest = UnderwritingComponents['schemas']['OpenCaseRequest
 export type SubmitAssessmentRequest = UnderwritingComponents['schemas']['SubmitAssessmentRequest'];
 export type AssessmentType = NonNullable<SubmitAssessmentRequest['assessmentType']>;
 export type DecideRequest = UnderwritingComponents['schemas']['DecideRequest'];
+export type BeneficiaryNomination = UnderwritingComponents['schemas']['BeneficiaryNomination'];
 
 export const ASSESSMENT_TYPES: readonly AssessmentType[] = ['MEDICAL', 'FINANCIAL', 'OCCUPATIONAL'];

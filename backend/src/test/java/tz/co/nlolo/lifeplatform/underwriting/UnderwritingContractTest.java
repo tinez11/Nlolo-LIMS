@@ -266,6 +266,41 @@ class UnderwritingContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
+    /**
+     * The nominations sub-resource, which the console reads before a manual issuance.
+     *
+     * <p>Without it that form sends its own (empty) beneficiary list and the proposal's
+     * nominations are silently dropped — by the very path meant to honour them.
+     */
+    @Test
+    void nominationsAreReadableAsTheirOwnSubResource() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+
+        String caseResponse = mockMvc.perform(post("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "beneficiaries":[{"type":"FREEFORM","freeformDesignee":"The estate","sharePercent":100,"revocable":false}]}
+                    """.formatted(applicantId, product.productId(), product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String caseId = JsonPath.read(caseResponse, "$.caseId");
+
+        mockMvc.perform(get("/underwriting/cases/" + caseId + "/beneficiaries")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].type").value("FREEFORM"))
+            .andExpect(jsonPath("$[0].freeformDesignee").value("The estate"))
+            .andExpect(jsonPath("$[0].revocable").value(false))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
     /** A malformed nomination is refused at the boundary, not stored and discovered later. */
     @Test
     void nominationsThatDoNotTotalOneHundredAreRefusedOverTheWire() throws Exception {

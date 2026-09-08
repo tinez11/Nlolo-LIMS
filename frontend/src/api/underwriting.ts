@@ -1,5 +1,6 @@
 import { get, post } from '@/lib/http';
 import type {
+  BeneficiaryNomination,
   DecideRequest,
   MedicalDisclosureView,
   OpenCaseRequest,
@@ -129,6 +130,24 @@ export function decide(caseId: string, request: DecideRequest): Promise<Underwri
   return post<UnderwritingCaseView>(
     `/underwriting/cases/${encodeURIComponent(caseId)}/decision`,
     request,
+  );
+}
+
+/**
+ * `GET /underwriting/cases/{caseId}/beneficiaries` -- the nominations taken on the proposal.
+ *
+ * Its own sub-resource rather than a field on the case view, matching how disclosures work on
+ * this module: a case list returns twenty rows, and carrying nominations on each would be
+ * twenty queries for something the queue never shows — while an empty array on a list row
+ * would read as "nobody nominated" when it means "not loaded".
+ *
+ * Read before manual-issuing against a case. That form sends its own beneficiary list, so
+ * without this the proposal's nominations are silently dropped by the path meant to honour
+ * them.
+ */
+export function listCaseBeneficiaries(caseId: string): Promise<BeneficiaryNomination[]> {
+  return get<BeneficiaryNomination[]>(
+    `/underwriting/cases/${encodeURIComponent(caseId)}/beneficiaries`,
   );
 }
 
