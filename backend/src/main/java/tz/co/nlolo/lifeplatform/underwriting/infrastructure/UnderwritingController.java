@@ -105,6 +105,32 @@ public class UnderwritingController {
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
+    /**
+     * The underwriting decision -- the only thing that settles a case and therefore the only
+     * thing that puts a policy in force.
+     *
+     * <p>{@code UNDERWRITER} to decide at all. Departing from the engine's recommendation
+     * additionally requires {@code SENIOR_UNDERWRITER}, and that half is enforced in the
+     * service rather than here: whether a decision IS an override depends on the case's
+     * current recommendation, which no {@code @PreAuthorize} expression can see. The role is
+     * read off the token and passed down, so the underwriting module keeps no Spring Security
+     * dependency of its own.
+     */
+    @PostMapping("/cases/{caseId}/decision")
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<UnderwritingCaseView> decide(@PathVariable UUID caseId,
+                                                        @Valid @RequestBody DecideRequest request,
+                                                        @AuthenticationPrincipal Jwt jwt,
+                                                        Authentication authentication) {
+        boolean senior = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .anyMatch("ROLE_SENIOR_UNDERWRITER"::equals);
+        UnderwritingCaseView view = underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(request.outcome(), request.loadingPercent(), request.reason()),
+            jwt.getSubject(), senior);
+        return ResponseEntity.ok(view);
+    }
+
     @PostMapping("/cases/{caseId}/referral")
     @PreAuthorize("hasRole('UNDERWRITER')")
     public ResponseEntity<Void> referCase(@PathVariable UUID caseId) {

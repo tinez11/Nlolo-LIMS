@@ -22,6 +22,7 @@ import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
@@ -56,6 +57,7 @@ class UnderwritingContractTest {
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/underwriting/V4__proposal_identity.sql",
+            "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
@@ -174,6 +176,60 @@ class UnderwritingContractTest {
                     {"assessmentType":"MEDICAL","findings":"Routine","riskScore":10}
                     """))
             .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * The decision endpoint, and the senior gate on an override, over real HTTP.
+     *
+     * <p>The 403 half is the point. A junior may record the decision the engine recommended and
+     * may not record any other, and that distinction is invisible to {@code @PreAuthorize} —
+     * it depends on the recommendation currently sitting on the case, so only the service can
+     * make it. A role annotation alone would let either decision through.
+     */
+    @Test
+    void decisionMatchesOpenApiContractAndAnOverrideNeedsASenior() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+        String caseResponse = openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId());
+        String caseId = JsonPath.read(caseResponse, "$.caseId");
+
+        // A low risk score, so the engine recommends ACCEPT.
+        mockMvc.perform(post("/underwriting/cases/" + caseId + "/assessments")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_UNDERWRITER"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"assessmentType":"MEDICAL","findings":"Routine","riskScore":10}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.recommendationOutcome").value("ACCEPT"))
+            .andExpect(jsonPath("$.status").value("IN_REVIEW"));
+
+        // DECLINED departs from that recommendation, and this caller is not senior.
+        mockMvc.perform(post("/underwriting/cases/" + caseId + "/decision")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_UNDERWRITER"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"outcome":"DECLINED","reason":"Adverse history disclosed off-system"}
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.errorCode").value("SENIOR_UNDERWRITER_APPROVAL_REQUIRED"));
+
+        // The same decision, from a senior, is accepted.
+        mockMvc.perform(post("/underwriting/cases/" + caseId + "/decision")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_UNDERWRITER"),
+                        new SimpleGrantedAuthority("ROLE_SENIOR_UNDERWRITER"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"outcome":"DECLINED","reason":"Adverse history disclosed off-system"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("DECIDED"))
+            .andExpect(jsonPath("$.decisionOverrodeRecommendation").value(true))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 

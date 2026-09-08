@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
+import tz.co.nlolo.lifeplatform.underwriting.api.SeniorUnderwriterApprovalRequiredException;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseAlreadyDecidedException;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseNotFoundException;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingValidationException;
@@ -35,6 +36,19 @@ public class UnderwritingExceptionHandler {
     public ProblemDetail handleAlreadyDecided(UnderwritingCaseAlreadyDecidedException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problem.setProperty("errorCode", "UNDERWRITING_CASE_ALREADY_DECIDED");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
+    /**
+     * 403, not 422: the request is well formed and the decision may be perfectly correct --
+     * this caller is simply not senior enough to make it. A 422 would read as "fix your input",
+     * and the fix is to fetch a senior underwriter.
+     */
+    @ExceptionHandler(SeniorUnderwriterApprovalRequiredException.class)
+    public ProblemDetail handleSeniorApprovalRequired(SeniorUnderwriterApprovalRequiredException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problem.setProperty("errorCode", "SENIOR_UNDERWRITER_APPROVAL_REQUIRED");
         problem.setProperty("traceId", UUID.randomUUID().toString());
         return problem;
     }

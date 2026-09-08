@@ -116,6 +116,52 @@ paths:
               schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /underwriting/cases/{caseId}/decision:
+    post:
+      summary: Record the underwriting decision (UNDERWRITER; SENIOR_UNDERWRITER to override)
+      description: >-
+        The human decision. The ONLY producer of `UnderwritingDecisionMade`, and therefore the
+        only thing that puts a policy in force — submitting an assessment records evidence and
+        the rules engine's recommendation, and settles nothing.
+
+
+        A decision whose outcome differs from the case's recorded `recommendationOutcome` is an
+        override and requires SENIOR_UNDERWRITER on top of UNDERWRITER. Agreeing with the
+        recommendation needs only UNDERWRITER. This cannot be a static role gate: whether a
+        given decision IS an override depends on the recommendation currently on the case.
+
+
+        Requires at least one assessment. A decision with no evidence behind it is not
+        underwriting, and nothing structural prevented one before this endpoint existed.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideRequest' }
+      responses:
+        '200':
+          description: Decision recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '403':
+          description: >-
+            `SENIOR_UNDERWRITER_APPROVAL_REQUIRED` — the decision departs from the
+            recommendation and the caller is not a senior underwriter. Also the ordinary
+            Forbidden for a caller without UNDERWRITER at all.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /underwriting/cases/{caseId}/referral:
     post:
       summary: Refer a borderline case to a senior underwriter
@@ -317,6 +363,24 @@ components:
         assessmentType: { type: string, enum: [MEDICAL, FINANCIAL, OCCUPATIONAL] }
         findings: { type: string }
         riskScore: { type: [number, "null"] }
+    DecideRequest:
+      type: object
+      required: [outcome, reason]
+      properties:
+        outcome: { type: string, enum: [ACCEPT, LOADED, DECLINED, POSTPONED] }
+        loadingPercent:
+          description: >-
+            Required for LOADED and forbidden for every other outcome, mirroring the
+            `chk_loading_only_when_loaded` CHECK. Enforced in the service rather than by
+            schema, because the pairing is conditional on `outcome`.
+          type: [number, "null"]
+        reason:
+          description: >-
+            The underwriter's own words. Required: a decision nobody explained is one nobody
+            can review, and on a DECLINED or POSTPONED case it is what the applicant is
+            eventually told.
+          type: string
+          maxLength: 500
     UnderwritingCaseView:
       type: object
       # The decision is intentionally flattened to decisionOutcome/decisionLoadingPercent/
@@ -361,3 +425,32 @@ components:
             schema before anybody ratified it.
           type: [string, "null"]
         proposedCommencementDate: { type: [string, "null"], format: date }
+        recommendationOutcome:
+          description: >-
+            What the rules engine suggests on the evidence gathered so far. ADVICE, not the
+            decision — it is recomputed from scratch every time an assessment arrives, and it
+            binds nothing. Null until the first assessment, and on every case decided before
+            the recommendation existed.
+
+
+            Until this split, the engine's verdict WAS the decision: submitting one assessment
+            ran it, wrote straight into the decision fields, and an acceptance issued a real
+            policy. Its own source calls its thresholds "illustrative, not actuarially
+            validated".
+          type: [string, "null"]
+          enum: [ACCEPT, LOADED, DECLINED, POSTPONED, null]
+        recommendationLoadingPercent: { type: [number, "null"] }
+        recommendationReason: { type: [string, "null"] }
+        decisionDecidedBy:
+          description: >-
+            The staff subject who made the decision. Null on a case decided before decisions had
+            authors — which is every case decided by the engine alone, and is why the column
+            carries no backfill.
+          type: [string, "null"]
+        decisionOverrodeRecommendation:
+          description: >-
+            Whether the decision departed from `recommendationOutcome`. Only a SENIOR_UNDERWRITER
+            may make such a decision. Stored at decision time rather than derived, because a
+            later assessment recomputes the recommendation and must not rewrite the fact that
+            somebody once disagreed with it.
+          type: boolean

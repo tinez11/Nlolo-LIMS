@@ -85,6 +85,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/underwriting/V4__proposal_identity.sql",
+            "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata
@@ -354,6 +355,7 @@ class RowLevelSecurityIntegrationTest {
         TenantContext.set(tenantA);
         UUID caseIdA = openCaseForCurrentTenant("RLS-POLICY-A", "3");
         underwritingApi.submitAssessment(caseIdA, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
+        acceptCase(caseIdA);
         UnderwritingCaseView decidedA = underwritingApi.getCase(caseIdA);
         String policyNumberA = policyApi.searchPolicies(decidedA.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10))
             .getContent().get(0).policyNumber();
@@ -361,6 +363,7 @@ class RowLevelSecurityIntegrationTest {
         TenantContext.set(tenantB);
         UUID caseIdB = openCaseForCurrentTenant("RLS-POLICY-B", "4");
         underwritingApi.submitAssessment(caseIdB, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
+        acceptCase(caseIdB);
         UnderwritingCaseView decidedB = underwritingApi.getCase(caseIdB);
         assertThat(policyApi.searchPolicies(decidedB.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10)).getContent()).hasSize(1);
 
@@ -407,6 +410,7 @@ class RowLevelSecurityIntegrationTest {
         TenantContext.set(tenantA);
         UUID caseIdA = openCaseForCurrentTenant("RLS-LOAN-A", "5");
         underwritingApi.submitAssessment(caseIdA, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
+        acceptCase(caseIdA);
         UnderwritingCaseView decidedA = underwritingApi.getCase(caseIdA);
         String policyNumberA = policyApi.searchPolicies(decidedA.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10))
             .getContent().get(0).policyNumber();
@@ -416,6 +420,7 @@ class RowLevelSecurityIntegrationTest {
         TenantContext.set(tenantB);
         UUID caseIdB = openCaseForCurrentTenant("RLS-LOAN-B", "6");
         underwritingApi.submitAssessment(caseIdB, tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType.MEDICAL, "ok", new java.math.BigDecimal("10"), "underwriter1");
+        acceptCase(caseIdB);
         UnderwritingCaseView decidedB = underwritingApi.getCase(caseIdB);
         String policyNumberB = policyApi.searchPolicies(decidedB.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10))
             .getContent().get(0).policyNumber();
@@ -1087,6 +1092,21 @@ class RowLevelSecurityIntegrationTest {
      * own issuePolicyWithCashValue helper does, or originateLoan would reject every amount with
      * InsufficientLoanValueException regardless of RLS, defeating the point of this test.
      */
+    /**
+     * Accept the case, which is what issues the policy these tests then check RLS against.
+     *
+     * <p>Submitting an assessment used to do this on its own. It no longer decides anything --
+     * it records evidence and the engine's recommendation -- so the fixture has to say what a
+     * person decided. In line with the recommendation for these low-risk scores, so no senior
+     * underwriter is involved.
+     */
+    private void acceptCase(UUID caseId) {
+        underwritingApi.decide(caseId,
+            new tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi.DecisionInput(
+                tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null, "Fixture: standard acceptance"),
+            "underwriter1", false);
+    }
+
     private void bumpCashValue(String policyNumber, String cashValue) throws Exception {
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

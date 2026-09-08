@@ -51,6 +51,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/underwriting/V4__proposal_identity.sql",
+            "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql");
     }
 
@@ -95,26 +96,148 @@ class UnderwritingApiIntegrationTest {
         assertNull(view.decisionOutcome());
     }
 
+    /**
+     * An assessment is evidence. It is not a decision.
+     *
+     * <p>This test used to be {@code submitAssessmentWithLowRiskScoreAcceptsTheCase} and
+     * asserted exactly the defect: submitting one assessment ran the placeholder rules engine
+     * and wrote its verdict straight into the decision columns, which published
+     * UnderwritingDecisionMade, which issued a real policy. No person was involved anywhere in
+     * that chain, and {@code SimpleRulesEngine}'s own comment says its thresholds are
+     * "illustrative, not actuarially validated".
+     */
     @Test
-    void submitAssessmentWithLowRiskScoreAcceptsTheCase() {
+    void submitAssessmentWithLowRiskScoreRecommendsAcceptanceWithoutDeciding() {
         UUID caseId = openTestCase(new BigDecimal("1000000"));
         UnderwritingCaseView view = underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
-        assertEquals(UnderwritingCaseStatus.DECIDED, view.status());
-        assertEquals(DecisionOutcome.ACCEPT, view.decisionOutcome());
+        assertEquals(UnderwritingCaseStatus.IN_REVIEW, view.status());
+        assertNull(view.decisionOutcome(), "no person has decided yet");
+        assertEquals(DecisionOutcome.ACCEPT, view.recommendationOutcome());
     }
 
     @Test
-    void submitAssessmentWithHighRiskScoreDeclinesTheCase() {
+    void submitAssessmentWithHighRiskScoreRecommendsDeclining() {
         UUID caseId = openTestCase(new BigDecimal("1000000"));
         UnderwritingCaseView view = underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Serious findings", new BigDecimal("80"), "underwriter1");
-        assertEquals(DecisionOutcome.DECLINED, view.decisionOutcome());
+        assertEquals(DecisionOutcome.DECLINED, view.recommendationOutcome());
+        assertNull(view.decisionOutcome());
     }
 
     @Test
-    void submitAssessmentWithVeryHighRiskScorePostponesTheCase() {
+    void submitAssessmentWithVeryHighRiskScoreRecommendsPostponement() {
         UUID caseId = openTestCase(new BigDecimal("1000000"));
         UnderwritingCaseView view = underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Inconclusive test result", new BigDecimal("95"), "underwriter1");
-        assertEquals(DecisionOutcome.POSTPONED, view.decisionOutcome());
+        assertEquals(DecisionOutcome.POSTPONED, view.recommendationOutcome());
+        assertNull(view.decisionOutcome());
+    }
+
+    /**
+     * Fresh evidence supersedes the advice given on the last lot.
+     *
+     * <p>The engine reads every assessment on the case each time, so a second, worse finding
+     * moves the recommendation. This is only safe because the recommendation is advice: the
+     * old code wrote this straight into the decision columns, and the guard against
+     * overwriting a real decision is what forced POSTPONED to be carved out as an exception.
+     */
+    @Test
+    void furtherEvidenceRecomputesTheRecommendation() {
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        UnderwritingCaseView view = underwritingApi.submitAssessment(caseId, AssessmentType.FINANCIAL, "Income unverifiable", new BigDecimal("80"), "underwriter1");
+
+        assertEquals(DecisionOutcome.DECLINED, view.recommendationOutcome());
+        assertEquals(UnderwritingCaseStatus.IN_REVIEW, view.status(),
+            "a case gathering evidence stays in review however much arrives");
+    }
+
+    private UUID assessedCase() {
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        return caseId;
+    }
+
+    @Test
+    void anUnderwriterDecidesInLineWithTheRecommendation() {
+        UUID caseId = assessedCase();
+
+        UnderwritingCaseView decided = underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Agrees with the engine"),
+            "underwriter1", false);
+
+        assertEquals(UnderwritingCaseStatus.DECIDED, decided.status());
+        assertEquals(DecisionOutcome.ACCEPT, decided.decisionOutcome());
+        assertEquals("underwriter1", decided.decisionDecidedBy());
+        assertFalse(decided.decisionOverrodeRecommendation());
+    }
+
+    @Test
+    void departingFromTheRecommendationNeedsASeniorUnderwriter() {
+        UUID caseId = assessedCase();
+
+        assertThrows(SeniorUnderwriterApprovalRequiredException.class, () ->
+            underwritingApi.decide(caseId,
+                new UnderwritingApi.DecisionInput(DecisionOutcome.DECLINED, null, "Adverse family history disclosed off-system"),
+                "underwriter1", false));
+
+        assertEquals(UnderwritingCaseStatus.IN_REVIEW, underwritingApi.getCase(caseId).status(),
+            "a refused override must leave the case exactly as it was");
+    }
+
+    @Test
+    void aSeniorUnderwriterMayDepartFromTheRecommendation() {
+        UUID caseId = assessedCase();
+
+        UnderwritingCaseView decided = underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.DECLINED, null, "Adverse family history disclosed off-system"),
+            "senior1", true);
+
+        assertEquals(DecisionOutcome.DECLINED, decided.decisionOutcome());
+        assertTrue(decided.decisionOverrodeRecommendation());
+        assertEquals("senior1", decided.decisionDecidedBy());
+    }
+
+    @Test
+    void aDecidedCaseCannotBeDecidedTwice() {
+        UUID caseId = assessedCase();
+        underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Agreed"), "underwriter1", false);
+
+        assertThrows(UnderwritingCaseAlreadyDecidedException.class, () ->
+            underwritingApi.decide(caseId,
+                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Again"), "underwriter1", false));
+    }
+
+    @Test
+    void decidingWithNoEvidenceIsRefused() {
+        UUID caseId = openTestCase(new BigDecimal("1000000"));
+
+        assertThrows(UnderwritingValidationException.class, () ->
+            underwritingApi.decide(caseId,
+                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Nothing assessed"), "underwriter1", false));
+    }
+
+    @Test
+    void aDecisionMustCarryAReason() {
+        UUID caseId = assessedCase();
+
+        assertThrows(UnderwritingValidationException.class, () ->
+            underwritingApi.decide(caseId,
+                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "   "), "underwriter1", false));
+    }
+
+    /** Mirrors chk_loading_only_when_loaded, so the caller gets a sentence and not a 500. */
+    @Test
+    void aLoadedDecisionMustCarryALoadingAndOthersMustNot() {
+        UUID caseId = assessedCase();
+
+        assertThrows(UnderwritingValidationException.class, () ->
+            underwritingApi.decide(caseId,
+                new UnderwritingApi.DecisionInput(DecisionOutcome.LOADED, null, "No figure given"), "senior1", true));
+
+        assertThrows(UnderwritingValidationException.class, () ->
+            underwritingApi.decide(caseId,
+                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, new BigDecimal("25"), "Loading on a clean accept"),
+                "senior1", true));
     }
 
     @Test
@@ -126,17 +249,24 @@ class UnderwritingApiIntegrationTest {
         assertEquals(UnderwritingCaseStatus.OPEN, view.status()); // Referral doesn't force a decision -- U1's point.
     }
 
+    /**
+     * The window runs from the DECISION, so these two decide the case rather than merely
+     * assessing it. That is not a test detail: contestability is measured from the date the
+     * insurer accepted the risk, and an assessment is not an acceptance.
+     */
     @Test
     void checkContestabilityIsTrueImmediatelyAfterDecision() {
-        UUID caseId = openTestCase(new BigDecimal("1000000"));
-        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal", new BigDecimal("10"), "underwriter1");
+        UUID caseId = assessedCase();
+        underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
         assertTrue(underwritingApi.checkContestability(caseId, LocalDate.now()));
     }
 
     @Test
     void checkContestabilityIsFalseAfterTheWindowElapses() {
-        UUID caseId = openTestCase(new BigDecimal("1000000"));
-        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal", new BigDecimal("10"), "underwriter1");
+        UUID caseId = assessedCase();
+        underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
         // TZ_CONTESTABILITY_MONTHS seed value is 24 (placeholder, see refdata migration comment).
         assertFalse(underwritingApi.checkContestability(caseId, LocalDate.now().plusMonths(25)));
     }
@@ -174,7 +304,7 @@ class UnderwritingApiIntegrationTest {
         return product.productId();
     }
 
-    private DecisionOutcome decideForApplicantBornIn(int birthYear, String phone) {
+    private DecisionOutcome recommendationForApplicantBornIn(int birthYear, String phone) {
         var applicant = partyApi.registerIndividual("Age Rated Applicant " + birthYear,
             LocalDate.of(birthYear, 1, 1), phone, null, "test");
         UUID productId = publishAgeRatedProduct();
@@ -182,18 +312,23 @@ class UnderwritingApiIntegrationTest {
         UUID caseId = underwritingApi.openCase(applicant.partyId(), productId, snapshot.productVersionId(),
             new BigDecimal("1000000"), "TZS", null, "agent1").caseId();
         // Same low risk score in both cases: age is the only thing that differs.
+        //
+        // Reads the RECOMMENDATION, not the decision. These tests are about whether age
+        // reaches the rating at all; they were written when an assessment decided the case, so
+        // the engine's verdict was only ever readable through decisionOutcome(). What they
+        // assert is unchanged.
         return underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings",
-            new BigDecimal("10"), "underwriter1").decisionOutcome();
+            new BigDecimal("10"), "underwriter1").recommendationOutcome();
     }
 
     @Test
-    void aYoungApplicantAndAnOldOneWithIdenticalRiskScoresNowDecideDifferently() {
+    void aYoungApplicantAndAnOldOneWithIdenticalRiskScoresRateDifferently() {
         // The whole point. These two calls differ ONLY in the applicant's date of birth, and
-        // before this change they produced the same outcome -- which is what "age was never
+        // before age was rated they produced the same outcome -- which is what "age was never
         // rated" meant in practice.
-        assertEquals(DecisionOutcome.ACCEPT, decideForApplicantBornIn(2000, "+255712345001"),
-            "an applicant in the 18-39 band rates at 1.0 and should be accepted");
-        assertEquals(DecisionOutcome.DECLINED, decideForApplicantBornIn(1950, "+255712345002"),
+        assertEquals(DecisionOutcome.ACCEPT, recommendationForApplicantBornIn(2000, "+255712345001"),
+            "an applicant in the 18-39 band rates at 1.0 and should be recommended for acceptance");
+        assertEquals(DecisionOutcome.DECLINED, recommendationForApplicantBornIn(1950, "+255712345002"),
             "an applicant in the 60-99 band rates at 3.0, past the decline threshold");
     }
 
@@ -202,7 +337,7 @@ class UnderwritingApiIntegrationTest {
         // 40-59 is a real gap in this product's bands. Neutral rather than an error: no
         // product on this platform records a minimum or maximum entry age, so there is
         // nothing to say whether the gap is a mistake or deliberate.
-        assertEquals(DecisionOutcome.ACCEPT, decideForApplicantBornIn(1976, "+255712345003"),
+        assertEquals(DecisionOutcome.ACCEPT, recommendationForApplicantBornIn(1976, "+255712345003"),
             "an uncovered age contributes 1.0, exactly as an unmatched band always has");
     }
 
@@ -218,7 +353,7 @@ class UnderwritingApiIntegrationTest {
             new BigDecimal("1000000"), "TZS", null, "agent1").caseId();
 
         assertEquals(DecisionOutcome.ACCEPT, underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL,
-            "Normal findings", new BigDecimal("10"), "underwriter1").decisionOutcome());
+            "Normal findings", new BigDecimal("10"), "underwriter1").recommendationOutcome());
     }
 
     @Test
@@ -229,7 +364,9 @@ class UnderwritingApiIntegrationTest {
         // history. It must now reject the second submission and leave the original
         // decision untouched.
         UUID caseId = openTestCase(new BigDecimal("1000000"));
-        UnderwritingCaseView firstDecision = underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        UnderwritingCaseView firstDecision = underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
         assertEquals(UnderwritingCaseStatus.DECIDED, firstDecision.status());
         assertEquals(DecisionOutcome.ACCEPT, firstDecision.decisionOutcome());
         // Re-read through getCase (a DB round-trip) rather than comparing against
@@ -260,16 +397,27 @@ class UnderwritingApiIntegrationTest {
     void aPostponedCaseAcceptsFurtherEvidenceAndCanBeResolved() {
         UUID caseId = openTestCase(new BigDecimal("1000000"));
 
-        UnderwritingCaseView postponed = underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL,
+        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL,
             "Inconclusive -- awaiting specialist report", new BigDecimal("95"), "underwriter1");
+        UnderwritingCaseView postponed = underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.POSTPONED, null, "Awaiting a specialist report"),
+            "underwriter1", false);
         assertEquals(DecisionOutcome.POSTPONED, postponed.decisionOutcome());
+        assertEquals(UnderwritingCaseStatus.DECIDED, postponed.status());
 
-        // The specialist report arrives and is benign. This is the call that used to throw.
+        // The specialist report arrives and is benign. This is the call that used to throw --
+        // and it must still be accepted now that POSTPONED is a real recorded decision rather
+        // than something the engine produced on its own.
         UnderwritingCaseView resolved = underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL,
             "Specialist report clear", new BigDecimal("10"), "underwriter2");
 
-        assertEquals(DecisionOutcome.ACCEPT, resolved.decisionOutcome(),
+        assertEquals(DecisionOutcome.ACCEPT, resolved.recommendationOutcome(),
             "the newer medical assessment supersedes the postponing one");
+
+        UnderwritingCaseView accepted = underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Specialist report resolves it"),
+            "underwriter2", false);
+        assertEquals(DecisionOutcome.ACCEPT, accepted.decisionOutcome());
     }
 
     /**
@@ -284,7 +432,7 @@ class UnderwritingApiIntegrationTest {
         underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Inconclusive", new BigDecimal("95"), "underwriter1");
         underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Clear", new BigDecimal("10"), "underwriter2");
 
-        assertEquals(DecisionOutcome.ACCEPT, underwritingApi.getCase(caseId).decisionOutcome(),
+        assertEquals(DecisionOutcome.ACCEPT, underwritingApi.getCase(caseId).recommendationOutcome(),
             "max-across-all-assessments would have kept this at 95 and postponed it again");
     }
 
@@ -299,7 +447,7 @@ class UnderwritingApiIntegrationTest {
         underwritingApi.submitAssessment(caseId, AssessmentType.OCCUPATIONAL, "Hazardous occupation", new BigDecimal("95"), "underwriter1");
         underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Clear", new BigDecimal("10"), "underwriter2");
 
-        assertEquals(DecisionOutcome.POSTPONED, underwritingApi.getCase(caseId).decisionOutcome(),
+        assertEquals(DecisionOutcome.POSTPONED, underwritingApi.getCase(caseId).recommendationOutcome(),
             "the occupational finding still stands -- a medical assessment does not answer it");
     }
 
@@ -309,6 +457,10 @@ class UnderwritingApiIntegrationTest {
         // which is not modeled.
         UUID caseId = openTestCase(new BigDecimal("1000000"));
         underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Serious findings", new BigDecimal("80"), "underwriter1");
+        // In line with the recommendation, so no senior is needed to record it.
+        underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.DECLINED, null, "Risk outside appetite"),
+            "underwriter1", false);
         assertEquals(DecisionOutcome.DECLINED, underwritingApi.getCase(caseId).decisionOutcome());
 
         assertThrows(UnderwritingCaseAlreadyDecidedException.class, () ->
@@ -369,8 +521,9 @@ class UnderwritingApiIntegrationTest {
         // Deliberate. A non-disclosure usually surfaces when a claim is made, long after the
         // case closed; refusing late entries would push that evidence off the platform, which
         // is exactly where it is today.
-        UUID caseId = openTestCase(new BigDecimal("1000000"));
-        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        UUID caseId = assessedCase();
+        underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
         assertEquals(DecisionOutcome.ACCEPT, underwritingApi.getCase(caseId).decisionOutcome());
 
         underwritingApi.recordDisclosures(caseId, twoAnswers(), "claims.assessor");

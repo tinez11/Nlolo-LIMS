@@ -120,25 +120,15 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     public UnderwritingCaseView submitAssessment(UUID caseId, AssessmentType assessmentType, String findings, BigDecimal riskScore, String assessedBy) {
         UUID tenantId = TenantContext.get();
         UnderwritingCase underwritingCase = findOrThrow(caseId, tenantId);
-        // Guard against silently overwriting an already-decided case (final review
-        // finding 3): without this, a second submitAssessment call recomputes and
-        // overwrites decision_outcome/decision_decline_reason/decision_decided_at in
-        // place with zero record of what the original decision was. A case that
-        // genuinely needs re-assessment after a real decision (new medical evidence
-        // following a DECLINE) must go through an explicit re-open step, not yet
-        // modeled, rather than have this method quietly recompute over it.
+        // A decided case is closed to further evidence: reworking one means reversing a
+        // decision somebody made and, on an acceptance, a policy that is already in force.
+        // Re-opening is a deliberate act and is not modelled yet.
         //
-        // POSTPONED IS THE EXCEPTION, and always should have been. It is the one outcome
-        // that means "not decided yet -- come back with more evidence", and treating it as
-        // final made it the only outcome that could never be resolved: the engine returns
-        // POSTPONED for a risk score >= 90 asking for further medical evidence, the case
-        // locked, and no amount of further evidence could ever be submitted against it. A
-        // postponed case is work in progress wearing a terminal status.
-        //
-        // Overwriting the decision columns is safe here specifically because the history
-        // survives elsewhere: every assessment is its own RiskAssessment row, and the
-        // superseded POSTPONED was published as UnderwritingDecisionMade and is durably
-        // recorded in the audit journal. Nothing is lost that was not already written down.
+        // POSTPONED IS THE EXCEPTION, and always should have been. It is the one outcome that
+        // means "not decided yet -- come back with more evidence", and treating it as final
+        // made it the only outcome that could never be resolved: the case locked, and no
+        // amount of further evidence could be submitted against it. A postponed case is work
+        // in progress wearing a terminal status.
         if (isDecided(underwritingCase) && !DecisionOutcome.POSTPONED.name().equals(underwritingCase.getDecisionOutcome())) {
             throw new UnderwritingCaseAlreadyDecidedException(caseId);
         }
@@ -147,24 +137,75 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         RiskAssessment assessment = new RiskAssessment(tenantId, caseId, assessmentType.name(), assessedBy, findings, riskScore);
         riskAssessmentRepository.save(assessment);
 
-        decideIfPossible(underwritingCase);
+        // ADVICE ONLY. UnderwritingDecisionMade is published by decide(...) and nowhere else.
+        //
+        // This line used to be decideIfPossible(...), and the event was published from right
+        // here -- so submitting an assessment ran a placeholder engine, wrote its verdict into
+        // the decision columns, and put a real policy in force, with no person involved at any
+        // point. An assessment is evidence; it must never issue a contract.
+        recommendFromEvidence(underwritingCase);
+        underwritingCaseRepository.save(underwritingCase);
+        return toView(underwritingCase);
+    }
+
+    @Override
+    @Transactional
+    public UnderwritingCaseView decide(UUID caseId, DecisionInput decision, String decidedBy,
+                                        boolean callerIsSeniorUnderwriter) {
+        UUID tenantId = TenantContext.get();
+        UnderwritingCase underwritingCase = findOrThrow(caseId, tenantId);
+
+        if (isDecided(underwritingCase) && !DecisionOutcome.POSTPONED.name().equals(underwritingCase.getDecisionOutcome())) {
+            throw new UnderwritingCaseAlreadyDecidedException(caseId);
+        }
+        if (decision.reason() == null || decision.reason().isBlank()) {
+            throw new UnderwritingValidationException("A decision must carry a reason");
+        }
+        // Evidence first. Nothing structural stopped a case being decided the instant it was
+        // opened, and "accepted, nothing assessed" is not a decision anyone can defend later.
+        if (riskAssessmentRepository.countByTenantIdAndCaseId(tenantId, caseId) == 0) {
+            throw new UnderwritingValidationException(
+                "Case " + caseId + " has no assessment -- there is nothing to decide on");
+        }
+        boolean loaded = decision.outcome() == DecisionOutcome.LOADED;
+        if (loaded && decision.loadingPercent() == null) {
+            throw new UnderwritingValidationException("A LOADED decision must carry a loading percent");
+        }
+        if (!loaded && decision.loadingPercent() != null) {
+            throw new UnderwritingValidationException(
+                "A loading percent is only meaningful on a LOADED decision, not " + decision.outcome());
+        }
+
+        // An ABSENT recommendation is not a disagreement. A pre-V5 case has none, and a case
+        // decided POSTPONED and then re-assessed may be decided again before the engine has
+        // spoken. Neither should demand a senior.
+        String recommended = underwritingCase.getRecommendationOutcome();
+        boolean overrode = recommended != null && !recommended.equals(decision.outcome().name());
+        if (overrode && !callerIsSeniorUnderwriter) {
+            throw new SeniorUnderwriterApprovalRequiredException(caseId, recommended, decision.outcome().name());
+        }
+
+        // decision_decline_reason is the column's name and DECLINED/POSTPONED are what it was
+        // built for -- what the applicant is eventually told. On an ACCEPT or a LOADED the
+        // reason is internal justification, and putting it in a field named "decline reason"
+        // is how it ends up on a customer's letter.
+        String declineReason = decision.outcome() == DecisionOutcome.DECLINED
+            || decision.outcome() == DecisionOutcome.POSTPONED ? decision.reason() : null;
+        underwritingCase.recordDecision(decision.outcome().name(), decision.loadingPercent(),
+            declineReason, decidedBy, overrode);
         underwritingCaseRepository.save(underwritingCase);
 
-        // M3 addition: the ONLY producer of underwriting.UnderwritingDecisionMade anywhere in
-        // the codebase -- policy.application.UnderwritingDecisionEventListener is this event's
-        // sole consumer and has nothing to react to without this call (see plan Global
-        // Constraints -- underwriting published zero domain events before this task).
-        if (isDecided(underwritingCase)) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("caseId", caseId);
-            payload.put("outcome", underwritingCase.getDecisionOutcome());
-            // loadingPercent is genuinely nullable (only set when outcome=LOADED per the
-            // chk_loading_only_when_loaded DB CHECK) -- Map.of(...) would throw NPE here for
-            // every other outcome, hence the mutable map (Global Constraints).
-            payload.put("loadingPercent", underwritingCase.getDecisionLoadingPercent());
-            payload.put("decidedAt", underwritingCase.getDecisionDecidedAt().toString());
-            eventPublisher.publishEvent(DomainEventEnvelope.of("underwriting.UnderwritingDecisionMade", tenantId, payload));
-        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("caseId", caseId);
+        payload.put("outcome", underwritingCase.getDecisionOutcome());
+        // loadingPercent is genuinely nullable (only set when outcome=LOADED per the
+        // chk_loading_only_when_loaded DB CHECK) -- Map.of(...) would throw NPE here for
+        // every other outcome, hence the mutable map.
+        payload.put("loadingPercent", underwritingCase.getDecisionLoadingPercent());
+        payload.put("decidedAt", underwritingCase.getDecisionDecidedAt().toString());
+        payload.put("decidedBy", decidedBy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("underwriting.UnderwritingDecisionMade", tenantId, payload));
+
         return toView(underwritingCase);
     }
 
@@ -267,7 +308,16 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             .toList();
     }
 
-    private void decideIfPossible(UnderwritingCase underwritingCase) {
+    /**
+     * Runs the rules engine over every assessment on the case and records its opinion.
+     *
+     * <p>Was {@code decideIfPossible}, which despite the name had no condition and always
+     * decided. So the FIRST assessment settled the case whatever type it was: a case needing
+     * medical AND financial AND occupational review was decided by whichever arrived first,
+     * and a clean medical alone put a policy in force before anybody looked at the applicant's
+     * occupation. It now recomputes advice each time evidence arrives, and a person decides.
+     */
+    private void recommendFromEvidence(UnderwritingCase underwritingCase) {
         String sumAssuredBand = resolveSumAssuredBand(underwritingCase.getSumAssuredAmount());
 
         BigDecimal ageMultiplier = resolveAgeMultiplier(underwritingCase);
@@ -276,9 +326,10 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         List<BigDecimal> riskScores = latestScorePerAssessmentType(underwritingCase.getCaseId());
 
         RiskProfile profile = new RiskProfile(ageMultiplier, sumAssuredMultiplier, riskScores);
-        UnderwritingDecision decision = rulesEnginePort.evaluate(profile);
+        UnderwritingDecision recommendation = rulesEnginePort.evaluate(profile);
 
-        underwritingCase.recordDecision(decision.outcome().name(), decision.loadingPercent(), decision.reason());
+        underwritingCase.recordRecommendation(
+            recommendation.outcome().name(), recommendation.loadingPercent(), recommendation.reason());
     }
 
     /**
@@ -380,6 +431,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             c.getDecisionLoadingPercent(), c.getDecisionDeclineReason(), c.getDecisionDecidedAt(),
             c.getSumAssuredAmount(), c.getSumAssuredCurrency(), c.getAgentOfRecordId(),
             c.getProposalNumber(), c.getLifeAssuredPartyId(), c.getBranch(), c.getSourceOfBusiness(),
-            c.getProposedCommencementDate());
+            c.getProposedCommencementDate(),
+            c.getRecommendationOutcome() != null ? DecisionOutcome.valueOf(c.getRecommendationOutcome()) : null,
+            c.getRecommendationLoadingPercent(), c.getRecommendationReason(),
+            c.getDecisionDecidedBy(), c.isDecisionOverrodeRecommendation());
     }
 }

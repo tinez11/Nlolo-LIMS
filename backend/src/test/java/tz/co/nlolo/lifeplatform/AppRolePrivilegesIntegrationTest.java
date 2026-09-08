@@ -7,6 +7,7 @@ import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policyloan.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType;
+import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import org.junit.jupiter.api.AfterEach;
@@ -131,6 +132,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/underwriting/V4__proposal_identity.sql",
+            "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyloan.PolicyLoanApiImpl.originateLoan reads
@@ -346,8 +348,17 @@ class AppRolePrivilegesIntegrationTest {
             new java.math.BigDecimal("1000000"), "TZS", null, "agent1");
         assertThat(opened.caseId()).isNotNull();
 
-        UnderwritingCaseView decided = underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings", new java.math.BigDecimal("10"), "underwriter1");
+        // Both writes, because they touch different columns: the assessment inserts a
+        // risk_assessment row and fills recommendation_*, the decision fills decision_* --
+        // including decision_decided_by and decision_overrode_recommendation, which V5 added
+        // and which app_role must be able to write like any other column on the table.
+        UnderwritingCaseView assessed = underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings", new java.math.BigDecimal("10"), "underwriter1");
+        assertThat(assessed.recommendationOutcome()).isNotNull();
+
+        UnderwritingCaseView decided = underwritingApi.decide(opened.caseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
         assertThat(decided.decisionOutcome()).isNotNull();
+        assertThat(decided.decisionDecidedBy()).isEqualTo("underwriter1");
 
         UnderwritingCaseView fetched = underwritingApi.getCase(opened.caseId());
         assertThat(fetched.caseId()).isEqualTo(opened.caseId());

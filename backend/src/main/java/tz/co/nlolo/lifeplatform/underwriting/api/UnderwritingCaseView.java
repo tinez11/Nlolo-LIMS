@@ -38,4 +38,21 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     // caught the last set of fields added here without a spec change.
                                     String proposalNumber, UUID lifeAssuredPartyId,
                                     String branch, String sourceOfBusiness,
-                                    LocalDate proposedCommencementDate) {}
+                                    LocalDate proposedCommencementDate,
+                                    // The rules engine's advice (V5), and who acted on it.
+                                    // Serialized, and openapi-underwriting.yaml's schema grew to
+                                    // match for the same additionalProperties:false reason as the
+                                    // proposal block above.
+                                    //
+                                    // The console renders the recommendation beside the decision
+                                    // form so an underwriter is not starting from a blank page,
+                                    // and needs decisionOverrodeRecommendation to mark a decision
+                                    // that departed from it -- which only a senior underwriter may
+                                    // make. recommendationAt is deliberately NOT exposed: nothing
+                                    // reads it, and the case's own timeline already carries when
+                                    // each assessment arrived.
+                                    DecisionOutcome recommendationOutcome,
+                                    BigDecimal recommendationLoadingPercent,
+                                    String recommendationReason,
+                                    String decisionDecidedBy,
+                                    boolean decisionOverrodeRecommendation) {}

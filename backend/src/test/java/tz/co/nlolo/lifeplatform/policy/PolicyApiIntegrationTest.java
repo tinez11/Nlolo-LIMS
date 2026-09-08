@@ -16,6 +16,7 @@ import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.product.domain.ProductVersion;
 import tz.co.nlolo.lifeplatform.product.infrastructure.ProductVersionRepository;
 import tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType;
+import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -72,6 +73,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
             "db-migrations/underwriting/V4__proposal_identity.sql",
+            "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -165,15 +167,21 @@ class PolicyApiIntegrationTest {
 
     @Test
     void endToEndAutoIssuanceFiresFromARealUnderwritingDecision() throws InterruptedException {
-        // Proves the real producer -> consumer path: underwritingApi.submitAssessment publishes
+        // Proves the real producer -> consumer path: underwritingApi.decide publishes
         // underwriting.UnderwritingDecisionMade for real, and
         // policy.application.UnderwritingDecisionEventListener consumes it and issues a policy
         // -- not a fabricated event injected directly into the publisher.
+        //
+        // The producer is decide, NOT submitAssessment. It was submitAssessment, which is
+        // precisely the defect: a placeholder rules engine settled the case and put a real
+        // contract in force with no person involved anywhere in the chain.
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-AUTO-01");
         UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
             new BigDecimal("1000000"), "TZS", null, "agent1");
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+        underwritingApi.decide(opened.caseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
 
         // awaitility is not a declared Maven dependency (Global Constraints: no new
         // dependencies) -- a short bounded retry loop proves the same thing: the
@@ -214,6 +222,8 @@ class PolicyApiIntegrationTest {
             fixture.productVersionId(), new BigDecimal("1000000"), "TZS", agentOfRecordId, "agent1");
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings",
             new BigDecimal("10"), "underwriter1");
+        underwritingApi.decide(opened.caseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
 
         List<PolicyView> found = List.of();
         for (int attempt = 0; attempt < 50; attempt++) {

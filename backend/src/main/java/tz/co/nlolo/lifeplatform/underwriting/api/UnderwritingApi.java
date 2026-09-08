@@ -32,7 +32,57 @@ public interface UnderwritingApi {
      * column is always answerable going forward.
      */
     UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, ProposalDetails proposal, String openedBy);
+    /**
+     * Record a piece of evidence against the case and recompute the engine's recommendation.
+     *
+     * <p><b>This does not decide the case.</b> It used to: it ran the rules engine and wrote
+     * the verdict into the decision fields, which published {@code UnderwritingDecisionMade},
+     * which issued a real policy. The engine is {@code SimpleRulesEngine}, whose own source
+     * calls its thresholds "illustrative, not actuarially validated", and there was no
+     * override, so a placeholder algorithm was the sole author of every underwriting decision
+     * on the platform. Worse, it had no condition despite being named {@code decideIfPossible}
+     * — the first assessment settled the case whatever type it was, so a clean medical put a
+     * policy in force before anyone assessed the applicant's finances or occupation.
+     *
+     * <p>Use {@link #decide} to settle a case.
+     *
+     * @throws UnderwritingCaseAlreadyDecidedException if the case is decided and not POSTPONED
+     */
     UnderwritingCaseView submitAssessment(UUID caseId, AssessmentType assessmentType, String findings, BigDecimal riskScore, String assessedBy);
+
+    /**
+     * What a person decided.
+     *
+     * @param loadingPercent required for {@code LOADED} and forbidden otherwise, mirroring the
+     *     {@code chk_loading_only_when_loaded} CHECK.
+     * @param reason the underwriter's own words. Required, because a decision nobody explained
+     *     is one nobody can review — and on a DECLINED or POSTPONED case it is what the
+     *     applicant is eventually told.
+     */
+    record DecisionInput(DecisionOutcome outcome, BigDecimal loadingPercent, String reason) {}
+
+    /**
+     * Record a human underwriting decision, and publish {@code UnderwritingDecisionMade}.
+     *
+     * <p>The only thing that settles a case, and therefore the only thing that puts a policy in
+     * force. Requires at least one assessment: a decision with no evidence behind it is not
+     * underwriting.
+     *
+     * <p>{@code callerIsSeniorUnderwriter} is passed in rather than read here, because the
+     * caller's identity belongs to the web layer and this module holds no Spring Security
+     * dependency. The controller supplies it from the token's realm roles. It cannot be a
+     * {@code @PreAuthorize} expression either way: whether a decision IS an override depends
+     * on the case's current recommendation, which no static role expression can see.
+     *
+     * @throws UnderwritingCaseNotFoundException if no such case exists in this tenant
+     * @throws UnderwritingCaseAlreadyDecidedException if the case is already decided
+     * @throws UnderwritingValidationException if there is no evidence, the reason is blank, or
+     *     the loading does not match the outcome
+     * @throws SeniorUnderwriterApprovalRequiredException if the outcome departs from the
+     *     recommendation and the caller is not a senior underwriter
+     */
+    UnderwritingCaseView decide(UUID caseId, DecisionInput decision, String decidedBy,
+                                 boolean callerIsSeniorUnderwriter);
     UnderwritingCaseView getCase(UUID caseId);
 
     /**

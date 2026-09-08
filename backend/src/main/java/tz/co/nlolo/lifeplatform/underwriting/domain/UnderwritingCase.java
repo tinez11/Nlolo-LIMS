@@ -92,6 +92,29 @@ public class UnderwritingCase {
     @Column(name = "proposed_commencement_date")
     private LocalDate proposedCommencementDate;
 
+    // The engine's advice (V5), kept apart from the decision columns above. Recomputed on every
+    // assessment, and authoritative for nothing -- it exists so an underwriter deciding a case
+    // is not starting from a blank page, and so a decision that departs from it is visible as a
+    // departure rather than as an unexplained outcome.
+    @Column(name = "recommendation_outcome")
+    private String recommendationOutcome;
+
+    @Column(name = "recommendation_loading_percent")
+    private BigDecimal recommendationLoadingPercent;
+
+    @Column(name = "recommendation_reason")
+    private String recommendationReason;
+
+    @Column(name = "recommendation_at")
+    private Instant recommendationAt;
+
+    /** NULL for a pre-V5 case: those were decided by the engine, and no person authored them. */
+    @Column(name = "decision_decided_by")
+    private String decisionDecidedBy;
+
+    @Column(name = "decision_overrode_recommendation")
+    private boolean decisionOverrodeRecommendation;
+
     protected UnderwritingCase() {}
 
     public UnderwritingCase(UUID tenantId, UUID applicantPartyId, UUID productId, UUID productVersionId,
@@ -150,13 +173,48 @@ public class UnderwritingCase {
     public BigDecimal getSumAssuredAmount() { return sumAssuredAmount; }
     public String getSumAssuredCurrency() { return sumAssuredCurrency; }
 
-    public void recordDecision(String outcome, BigDecimal loadingPercent, String declineReason) {
+    /**
+     * The rules engine's opinion. Advisory: it never moves the case to DECIDED, and it is
+     * recomputed from scratch every time fresh evidence arrives.
+     *
+     * <p>Separate from {@link #recordDecision} because they were the same thing until now, and
+     * that was the defect. {@code SimpleRulesEngine} -- whose own comment calls its thresholds
+     * "illustrative, not actuarially validated" -- wrote directly into the decision columns,
+     * and an ACCEPT there published UnderwritingDecisionMade and issued a real policy with no
+     * person anywhere in the chain.
+     */
+    public void recordRecommendation(String outcome, BigDecimal loadingPercent, String reason) {
+        this.recommendationOutcome = outcome;
+        this.recommendationLoadingPercent = loadingPercent;
+        this.recommendationReason = reason;
+        this.recommendationAt = Instant.now();
+    }
+
+    /**
+     * A person's decision. The only thing that moves a case to DECIDED, and the only thing
+     * downstream issuance reacts to.
+     *
+     * @param overrodeRecommendation whether this departed from {@link #getRecommendationOutcome()}.
+     *     Stored rather than derived, because the recommendation is recomputed by any later
+     *     assessment and the fact that a human once disagreed must not be rewritten by it.
+     */
+    public void recordDecision(String outcome, BigDecimal loadingPercent, String declineReason,
+                                String decidedBy, boolean overrodeRecommendation) {
         this.decisionOutcome = outcome;
         this.decisionLoadingPercent = loadingPercent;
         this.decisionDeclineReason = declineReason;
         this.decisionDecidedAt = Instant.now();
+        this.decisionDecidedBy = decidedBy;
+        this.decisionOverrodeRecommendation = overrodeRecommendation;
         this.status = "DECIDED";
     }
+
+    public String getRecommendationOutcome() { return recommendationOutcome; }
+    public BigDecimal getRecommendationLoadingPercent() { return recommendationLoadingPercent; }
+    public String getRecommendationReason() { return recommendationReason; }
+    public Instant getRecommendationAt() { return recommendationAt; }
+    public String getDecisionDecidedBy() { return decisionDecidedBy; }
+    public boolean isDecisionOverrodeRecommendation() { return decisionOverrodeRecommendation; }
 
     public void markInReview() {
         this.status = "IN_REVIEW";
