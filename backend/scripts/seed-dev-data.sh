@@ -65,6 +65,18 @@ STAFF_FINANCE_TOKEN=$(token_for staff staff.finance "$STAFF_SECRET")
 # assumed staff.finance could do this.
 AGENT_SENIOR_TOKEN=$(token_for agents agent.senior "$AGENTS_SECRET")
 
+# Product AUTHORING is ADMIN-only and staff.finance cannot do it. ProductController gates both
+# createProduct and publishVersion on `hasRole('REALM_STAFF') and hasRole('ADMIN')`, and
+# FINANCE_OFFICER is not ADMIN -- so Step 1 below needs its own token.
+#
+# This script authored products as staff.finance until a fresh bootstrap finally exercised it and
+# Step 1 died on a real 403. It had passed once, long ago, BEFORE those endpoints were tightened
+# from "any staff member" to ADMIN; after that, the "Already seeded" guard at the top meant nobody
+# ever ran Step 1 against the tightened gate again. The e2e suite hit the same wall and fixed it
+# separately ("mint product fixtures as admin, since only admin may author one") -- this script was
+# missed, because nothing re-runs it.
+STAFF_ADMIN_TOKEN=$(token_for staff staff.admin "$STAFF_SECRET")
+
 # Not idempotent on purpose: re-running would create a second set of parties and policies, and
 # silently doubling seed data is worse than refusing. Detect and refuse.
 # Uses the same " *: *"-tolerant matching as jsonval() above, rather than an exact-substring grep
@@ -78,17 +90,22 @@ if api "$STAFF_FINANCE_TOKEN" GET "/products" | grep -q '"productName" *: *"Demo
   exit 1
 fi
 
-echo "=== Step 1: Product + version (staff.finance) ==="
-PRODUCT_JSON=$(api "$STAFF_FINANCE_TOKEN" POST "/products" \
+echo "=== Step 1: Product + version (staff.admin -- authoring is ADMIN-only) ==="
+PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
   '{"productCode":"DEMO-TERM-01","productName":"Demo Term Life","category":"TERM_LIFE","defaultCurrency":"TZS"}')
 PRODUCT_ID=$(jsonval "$PRODUCT_JSON" productId)
 echo "productId=$PRODUCT_ID"
 
+# ageFrom/ageTo on the AGE factor are REQUIRED, and must be ABSENT on every other factor type
+# (openapi-product.yaml's ratingTable description, enforced by product/V5__rating_table_age_bounds).
+# Age used to be resolved by exact string equality on `band`, which underwriting could never
+# produce -- so age was not rated at all. This payload omitted them and a fresh bootstrap died on
+# a real 422: "AGE rating factor '30-39' needs an age range". `band` stays as the human label.
 VERSION_RESP=$(curl -sfi -X POST "$API/products/$PRODUCT_ID/versions" \
-  -H "Authorization: Bearer $STAFF_FINANCE_TOKEN" -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{
     "ifrsMeasurementModel":"PAA","effectiveDate":"2020-01-01",
-    "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+    "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]
   }')
 echo "$VERSION_RESP" | head -1
@@ -117,7 +134,7 @@ JUNIOR_AGENT_PARTY_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" 
 JUNIOR_AGENT_PARTY_ID=$(jsonval "$JUNIOR_AGENT_PARTY_JSON" partyId)
 echo "juniorAgentPartyId=$JUNIOR_AGENT_PARTY_ID"
 
-echo "=== Step 2b: KYC-verify the two agent parties (staff.finance) ==="
+echo "=== Step 2b: KYC-verify the agent parties and the demo owner (staff.finance) ==="
 # Discovered empirically (a real 422), not in the brief: DistributionApiImpl.onboardAgent
 # requires the party's KYC status to already be VERIFIED ("Party ... has KYC status PENDING;
 # an agent must be VERIFIED to onboard") -- every freshly-registered party starts PENDING, so
@@ -126,7 +143,20 @@ api "$STAFF_FINANCE_TOKEN" POST "/parties/$SENIOR_AGENT_PARTY_ID/kyc" \
   '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-senior"}' >/dev/null
 api "$STAFF_FINANCE_TOKEN" POST "/parties/$JUNIOR_AGENT_PARTY_ID/kyc" \
   '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-junior"}' >/dev/null
-echo "both agent parties KYC-VERIFIED"
+
+# Amina Owner too, and for the same class of reason. Several e2e specs onboard her as a
+# fresh agent or name her as a policyholder through the picker labelled "Search for a
+# VERIFIED party by name" -- staff-distribution, staff-policy-lifecycle and
+# staff-group-schemes all do. She was left PENDING here, so on a database that had only ever
+# been seeded once and then accumulated state, she happened to be verified by some earlier
+# manual action; on a genuinely fresh seed she is not, and four distribution specs time out
+# waiting for a name a VERIFIED-only picker can never show.
+#
+# Baraka Other is deliberately NOT verified, so the KYC review queue and the two nav badges
+# that count it still have something in them to demonstrate.
+api "$STAFF_FINANCE_TOKEN" POST "/parties/$OWNER_PARTY_ID/kyc" \
+  '{"status":"VERIFIED","evidenceDocumentRef":"seed:kyc-evidence-owner"}' >/dev/null
+echo "both agent parties and the demo owner KYC-VERIFIED (Baraka Other stays PENDING on purpose)"
 
 echo "=== Step 3: Agents (staff.finance, FINANCE_OFFICER-gated) ==="
 SENIOR_AGENT_JSON=$(api "$STAFF_FINANCE_TOKEN" POST "/agents" \
