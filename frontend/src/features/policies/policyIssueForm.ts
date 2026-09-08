@@ -8,17 +8,27 @@ import { beneficiaryListSchema, toApiBeneficiaries, type BeneficiaryFormValues }
  * Zod schema for manual policy issuance, mirroring `ManualIssueRequestDto` and
  * `policy.infrastructure.MoneyDto` exactly.
  *
- * The one field this form does NOT expose: `underwritingCaseId`. It is
- * structurally required by the DTO, but `PolicyApiImpl.issuePolicy` never
- * validates it -- no existence check, nothing -- it is stored purely as an
- * audit-trail reference (confirmed by reading the method: the only real checks
- * are that `policyholderPartyId` resolves to a real party and `productVersionId`
- * resolves to a real snapshot). There is also no underwriting-case list/search
- * endpoint anywhere on this platform for a staff user to find a real one to
- * reference. Asking for a UUID nobody can obtain would be pure friction with no
- * realistic path to a correct value, so `toApiRequest` synthesizes one --
- * "manual issue" is explicitly the staff override path that bypasses the normal
- * underwriting pipeline in the first place.
+ * `underwritingCaseId` is a real, required field, and the form makes the user
+ * choose one.
+ *
+ * It used to be synthesized here with `crypto.randomUUID()`. The reasoning was
+ * sound when written -- `issuePolicy` never validated the id, and no
+ * underwriting-case search endpoint existed for staff to find a real one, so
+ * demanding a UUID nobody could obtain was pure friction. Both halves have since
+ * stopped being true:
+ *
+ * - `issuePolicy` now refuses a case that already has a policy. That check is
+ *   what stops one application becoming two contracts, and a fabricated id
+ *   defeats it completely: random ids never collide, so every manual issue looked
+ *   like a first issuance.
+ * - The staff console has an underwriting queue over a real case search, so a
+ *   genuine case id is two clicks away.
+ *
+ * The fabricated id also broke contestability, quietly. `underwriting_case_id`
+ * exists so claims can call `checkContestability` against the originating case;
+ * a random uuid resolves to nothing, and because it is not NULL it never trips
+ * the fail-closed branch the migration tells consumers to rely on. The lookup
+ * returned a confident wrong answer.
  */
 
 const amount = () =>
@@ -44,6 +54,15 @@ const months = (label: string) =>
     .refine((v) => v === '' || Number(v) >= 1, `${label} must be at least 1 month`);
 
 export const policyIssueFormSchema = z.object({
+  /**
+   * The decided underwriting case this policy is issued from. See the module doc
+   * for why this is chosen rather than invented.
+   */
+  underwritingCaseId: z
+    .string()
+    .trim()
+    .min(1, 'Choose the underwriting case this policy is issued from')
+    .regex(UUID_PATTERN, 'Not a valid underwriting case id'),
   policyholderPartyId: z
     .string()
     .trim()
@@ -142,6 +161,7 @@ export function maturityPreview(commencementDate: string, policyTermMonths: stri
 
 export function blankPolicyIssueForm(): PolicyIssueFormInput {
   return {
+    underwritingCaseId: '',
     policyholderPartyId: '',
     productId: '',
     productVersionId: '',
@@ -166,8 +186,7 @@ export function blankPolicyIssueForm(): PolicyIssueFormInput {
 /** Convert validated form values into exactly what `POST /policies/manual-issue` expects. */
 export function toApiRequest(values: PolicyIssueFormValues): ManualIssueRequest {
   return {
-    // See the module doc above: never validated server-side, synthesized here.
-    underwritingCaseId: crypto.randomUUID(),
+    underwritingCaseId: values.underwritingCaseId.trim(),
     policyholderPartyId: values.policyholderPartyId.trim(),
     productVersionId: values.productVersionId,
     sumAssured: { amount: values.sumAssuredAmount, currencyCode: values.sumAssuredCurrency },

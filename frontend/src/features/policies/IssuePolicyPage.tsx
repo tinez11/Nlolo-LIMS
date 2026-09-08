@@ -7,6 +7,7 @@ import { PREMIUM_FREQUENCIES } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
+import { UnderwritingCasePicker } from '@/components/UnderwritingCasePicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { GatePanel } from '@/components/GatePanel';
@@ -31,12 +32,17 @@ import {
 import { Input, Select } from '@/components/ui/input';
 
 /**
- * `POST /policies/manual-issue` -- the staff exception path. Unlike every other
- * mutation in this console, it declares NO `Idempotency-Key` at all (confirmed
- * against both the controller and the spec): a second identical submission
- * genuinely creates a second policy. The submit button disabling while in
- * flight is therefore not a UX nicety here, it is the ONLY guard against a
- * double-click producing two policies -- there is no server-side backstop.
+ * `POST /policies/manual-issue` -- the staff exception path.
+ *
+ * It declares no `Idempotency-Key`, unlike every other mutation in this console, so the
+ * submit button disabling while in flight still matters. But it is no longer the only
+ * guard: `issuePolicy` now refuses a case that already has a policy and answers with the
+ * existing policy number, so a double-click, a retry, or a second operator finishing the
+ * same job gets a 409 rather than a second contract.
+ *
+ * That backstop only works because this form names a REAL underwriting case. It used to
+ * synthesize one per submission, which made every issuance look like a first issuance --
+ * see `policyIssueForm.ts` for the full account.
  */
 export function IssuePolicyPage() {
   const navigate = useNavigate();
@@ -174,6 +180,52 @@ export function IssuePolicyPage() {
       />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+        {/*
+          First, because everything below is a review of what it says.
+
+          This field used to not exist: `toApiRequest` invented a `crypto.randomUUID()` for
+          every submission, so each manually issued policy pointed at a case that was never
+          opened. That defeated the server's one-policy-per-case check outright -- random ids
+          never collide -- and left claims contestability resolving to nothing on exactly the
+          policies a human had touched.
+
+          Selecting a case prefills the fields it knows, which stay editable. That is the
+          difference between this screen being a review step and being a second, parallel
+          data-entry form that happens to disagree with the case.
+        */}
+        <FormField
+          label="Underwriting case this policy is issued from"
+          error={errors.underwritingCaseId?.message}
+        >
+          <Controller
+            control={control}
+            name="underwritingCaseId"
+            render={({ field }) => (
+              <UnderwritingCasePicker
+                value={field.value || null}
+                onChange={(caseId, decidedCase) => {
+                  field.onChange(caseId ?? '');
+                  if (!decidedCase) return;
+                  // Only what the case actually carries. It holds no premium, no term and no
+                  // beneficiaries, so those stay for the operator to supply -- prefilling a
+                  // guess would be worse than leaving them blank.
+                  if (decidedCase.applicantPartyId) {
+                    setValue('policyholderPartyId', decidedCase.applicantPartyId);
+                  }
+                  if (decidedCase.lifeAssuredPartyId
+                      && decidedCase.lifeAssuredPartyId !== decidedCase.applicantPartyId) {
+                    setValue('lifeAssuredPartyId', decidedCase.lifeAssuredPartyId);
+                  }
+                  if (decidedCase.productId) setValue('productId', decidedCase.productId);
+                  if (decidedCase.proposedCommencementDate) {
+                    setValue('commencementDate', decidedCase.proposedCommencementDate);
+                  }
+                }}
+              />
+            )}
+          />
+        </FormField>
+
         {/* Labelled by meaning, not by column name. The policyholder owns the contract;
             the life assured below is whose death the policy pays on, and on most life
             business those are two different people. */}

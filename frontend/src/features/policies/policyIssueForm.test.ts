@@ -11,6 +11,7 @@ import {
 // would be testing a shape the form never produces.
 const valid = () => ({
   ...blankPolicyIssueForm(),
+  underwritingCaseId: '55555555-5555-4555-8555-555555555555',
   policyholderPartyId: '11111111-1111-4111-8111-111111111111',
   productId: '22222222-2222-4222-8222-222222222222',
   productVersionId: '33333333-3333-4333-8333-333333333333',
@@ -110,6 +111,37 @@ describe('policyIssueFormSchema', () => {
   });
 });
 
+describe('the underwriting case a manual issue is made against', () => {
+  it('refuses a submission that names no case, rather than inventing one', () => {
+    const result = policyIssueFormSchema.safeParse({ ...valid(), underwritingCaseId: '' });
+    expect(result.success).toBe(false);
+    const messages = result.success
+      ? []
+      : result.error.issues.filter((i) => i.path[0] === 'underwritingCaseId').map((i) => i.message);
+    expect(messages).toContain('Choose the underwriting case this policy is issued from');
+  });
+
+  it('refuses something that is not a case id', () => {
+    const result = policyIssueFormSchema.safeParse({ ...valid(), underwritingCaseId: 'not-a-uuid' });
+    expect(result.success).toBe(false);
+  });
+
+  /**
+   * The regression guard. `toApiRequest` used to return `crypto.randomUUID()` here, so every
+   * manual issue pointed at a case that did not exist -- which defeated the server's
+   * duplicate check (random ids never collide) and made contestability resolve to nothing
+   * while looking like a real answer.
+   */
+  it('sends the case it was given, unchanged, and never a fresh one', () => {
+    const caseId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const parsed = policyIssueFormSchema.parse({ ...valid(), underwritingCaseId: caseId });
+
+    expect(toApiRequest(parsed).underwritingCaseId).toBe(caseId);
+    // Twice, because a synthesized id differs between calls and a fixed one does not.
+    expect(toApiRequest(parsed).underwritingCaseId).toBe(toApiRequest(parsed).underwritingCaseId);
+  });
+});
+
 describe('toApiRequest', () => {
   it('sends agentOfRecordId as null, never an empty string, when left blank', () => {
     const parsed = policyIssueFormSchema.parse(valid());
@@ -134,12 +166,11 @@ describe('toApiRequest', () => {
     expect(api.premiumAmount).toEqual({ amount: '800.00', currencyCode: 'TZS' });
   });
 
-  it('mints a fresh underwritingCaseId every call', () => {
-    const parsed = policyIssueFormSchema.parse(valid());
-    const first = toApiRequest(parsed).underwritingCaseId;
-    const second = toApiRequest(parsed).underwritingCaseId;
-    expect(first).not.toBe(second);
-  });
+  // `mints a fresh underwritingCaseId every call` was here, asserting that every manual
+  // issue invented its own case id. That was the defect stated as the contract: a fabricated
+  // id points at no case, so the server's one-policy-per-case check could never fire, and
+  // claims contestability resolved to nothing while looking like a real answer. The
+  // replacement lives above, in "the underwriting case a manual issue is made against".
 
   it('produces an empty beneficiaries array from an empty form', () => {
     expect(toApiRequest(policyIssueFormSchema.parse(valid())).beneficiaries).toEqual([]);
