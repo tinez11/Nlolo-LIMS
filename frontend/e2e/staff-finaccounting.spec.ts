@@ -139,7 +139,10 @@ test.describe('staff finaccounting', () => {
 
     const row = accountRow(page, code);
     await expect(row.getByText(name)).toBeVisible({ timeout: 15_000 });
-    await expect(row.getByText('EXPENSE', { exact: true })).toBeVisible();
+    // "Expense", not the wire's "EXPENSE": the Type column renders the block in the
+    // words a finance officer uses, and falls back to the raw literal only for a
+    // type this build has never heard of.
+    await expect(row.getByText('Expense', { exact: true })).toBeVisible();
 
     const renamedName = `${name} renamed`;
     await row.getByRole('button', { name: 'Rename' }).click();
@@ -275,7 +278,9 @@ test.describe('staff finaccounting', () => {
 
   test('a type filter narrows the table to one block', async ({ page }) => {
     await page.goto('/staff/chart-of-accounts?view=table');
-    await page.getByRole('button', { name: 'EQUITY' }).click();
+    // The chips name the block they narrow to, so they read plural -- and "Equity",
+    // which has no plural, is the one that stayed as it was.
+    await page.getByRole('button', { name: 'Equity', exact: true }).click();
 
     await expect(page.getByRole('row').filter({ hasText: 'Share Capital' })).toBeVisible();
     await expect(page.getByRole('row').filter({ hasText: 'Petty Cash' })).toHaveCount(0);

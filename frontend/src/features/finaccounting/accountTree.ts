@@ -24,6 +24,44 @@ export interface AccountFilters {
 export type SortKey = 'accountCode' | 'name' | 'accountType' | 'parentCode' | 'level' | 'status';
 
 /**
+ * The five blocks in the words a finance officer uses for them.
+ *
+ * `ASSET` is what the wire says and `Asset` is what a person reads; the console
+ * rendered the wire spelling in a Type column, in five filter chips and on every
+ * tree row. Two spellings because the two jobs differ: a column labels one row, a
+ * filter chip names the whole block it narrows to.
+ */
+const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
+  ASSET: 'Asset',
+  LIABILITY: 'Liability',
+  EQUITY: 'Equity',
+  INCOME: 'Income',
+  EXPENSE: 'Expense',
+};
+
+const ACCOUNT_TYPE_PLURAL: Record<AccountType, string> = {
+  ASSET: 'Assets',
+  LIABILITY: 'Liabilities',
+  EQUITY: 'Equity',
+  INCOME: 'Income',
+  EXPENSE: 'Expenses',
+};
+
+/**
+ * Both fall back to the raw literal rather than to a blank or a guess. A type this
+ * build has never heard of is a newly-added backend enum, and the same ethic
+ * `StatusBadge` applies to an unrecognised status applies here: show what the server
+ * said instead of dressing it up as something else.
+ */
+export function accountTypeLabel(type: string): string {
+  return ACCOUNT_TYPE_LABEL[type as AccountType] ?? type;
+}
+
+export function accountTypePlural(type: string): string {
+  return ACCOUNT_TYPE_PLURAL[type as AccountType] ?? type;
+}
+
+/**
  * A flat array in, roots out.
  *
  * Two defensive cases, both deliberate. An account whose `parentCode` names a row the
