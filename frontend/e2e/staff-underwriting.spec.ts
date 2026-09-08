@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { dmy, todayIso } from './dates';
 
 /**
  * Underwriting domain e2e coverage against the real backend.
@@ -16,6 +17,22 @@ import { expect, test, type Page } from '@playwright/test';
  * "Amina Owner" (`d9937444-3873-4336-9cb7-addb486f3e1b`) is the same real
  * seeded policyholder used throughout staff-issue-policy.spec.ts.
  */
+
+/**
+ * A sum assured unique to THIS RUN, so the capture test can find the policy it caused among
+ * the many Amina already carries. There is still no back-reference from a case to the policy
+ * it produced, and the policy number is server-generated, so the amount is the only handle.
+ *
+ * Per-run rather than a fixed odd figure, which is what the first attempt used: this database
+ * accumulates, so a constant stops being unique the moment the test runs twice — and it did,
+ * failing on two matching rows left by an earlier attempt at this very test.
+ *
+ * Stays inside the seeded product's LOW sum-assured band (< 2,000,000) so the rating table
+ * resolves and the engine recommends acceptance.
+ */
+const SUM_ASSURED_WHOLE = 1_500_000 + (Date.now() % 99_999);
+const SUM_ASSURED = `${SUM_ASSURED_WHOLE}.00`;
+const SUM_ASSURED_DISPLAY = `TZS ${SUM_ASSURED_WHOLE.toLocaleString('en-US')}.00`;
 
 test.describe('staff underwriting', () => {
   test.beforeEach(async ({ page }) => {
@@ -100,6 +117,105 @@ test.describe('staff underwriting', () => {
     await expect(page.getByRole('button', { name: 'Record decision' })).toBeDisabled();
     // The case is untouched: no decision, and the evidence form is still open.
     await expect(page.getByRole('heading', { name: 'Decision' })).not.toBeVisible();
+  });
+
+  /**
+   * The whole capture chain, end to end against the real stack.
+   *
+   * Term, premium-paying term, payment frequency and beneficiary nominations lived only on
+   * the manual issue form, which made it the only screen able to produce a complete policy:
+   * one issued on the NORMAL path had no term, no maturity date -- it is derived from
+   * commencement plus term -- and nobody nominated, because nobody had ever asked. That is
+   * very likely why staff reached for manual issue in the first place.
+   *
+   * Accepted, not declined, so the decision actually issues a policy and the assertions land
+   * on a real contract rather than on the case that produced it.
+   */
+  test('a proposal states the contract, and an accepted case issues it complete', async ({ page }) => {
+    test.slow();
+    await page.goto('/staff/underwriting/new');
+    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByRole('option', { name: 'Amina Owner' }).click();
+    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
+    // Deliberately an odd figure. Amina carries many policies from other specs, and this is
+    // what identifies the one THIS test caused -- the policy number is server-generated, and
+    // there is still no back-reference from a case to the policy it produced.
+    await page.getByLabel('Sum assured').fill(SUM_ASSURED);
+
+    // A commencement date, because maturity is DERIVED from it plus the term: Policy.applyTerm
+    // stores a term without one but leaves maturityDate null, and the detail page then reports
+    // the risk-commences field as not recorded. A proposal states this in practice.
+    await page.getByLabel('Proposed commencement date').fill(dmy(todayIso()));
+
+    // `exact` matters: getByLabel matches case-insensitive SUBSTRINGS by default, so
+    // "Term (months)" also matches "Premium-paying term (months)" and trips strict mode.
+    await page.getByLabel('Term (months)', { exact: true }).fill('120');
+    await page.getByLabel('Premium-paying term (months)').fill('60');
+    await page.getByLabel('Premium frequency').selectOption('QUARTERLY');
+
+    await page.getByRole('button', { name: 'Add beneficiary' }).click();
+    await page.getByLabel('Beneficiary type').selectOption('FREEFORM');
+    await page.getByLabel('Freeform designee').fill('The estate');
+    await page.getByLabel('Share percent').fill('100');
+
+    await page.getByRole('button', { name: 'Open case' }).click();
+    await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+
+    await page.getByLabel('Findings').fill('Standard risk');
+    await page.getByLabel('Risk score (optional)').fill('10');
+    await page.getByRole('button', { name: 'Submit assessment' }).click();
+    await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
+
+    await page.getByLabel('Decision').selectOption({ label: 'Accept' });
+    await page.getByLabel('Reason').fill('Standard risk, in line with the recommendation');
+    await page.getByRole('button', { name: 'Record decision' }).click();
+    await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
+
+    // The applicant's own id, read off the case rather than written down -- party ids are
+    // minted per seed run, and this file has already been bitten by hard-coded ones.
+    const applicantHref = await page
+      .locator('a[href^="/staff/parties/"]')
+      .first()
+      .getAttribute('href');
+    const applicantId = (applicantHref as string).split('/').pop() as string;
+
+    // The policy arrives through an AFTER_COMMIT listener, so it is not necessarily there the
+    // instant the decision response lands. Identified by its SUM ASSURED, which is unique to
+    // this test -- the policy number is server-generated and Amina has many other policies.
+    await expect(async () => {
+      await page.goto(`/staff/policies?policyholderPartyId=${applicantId}`);
+      await expect(page.getByRole('row').filter({ hasText: SUM_ASSURED_DISPLAY })).toHaveCount(1);
+    }).toPass({ timeout: 30_000 });
+
+    // The frequency is already visible on the row itself, and it is the assertion this test
+    // exists for: the listener divided by twelve unconditionally until the proposal could say
+    // otherwise, so a quarterly payer would have been billed a monthly figure.
+    const row = page.getByRole('row').filter({ hasText: SUM_ASSURED_DISPLAY });
+    await expect(row).toContainText('/quarter');
+
+    // The policy number is a button that opens the preview drawer, not a link.
+    await row.getByRole('button').first().click();
+    await page.getByRole('link', { name: /full detail/i }).click();
+    await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
+
+    // The proposal's terms reached the contract. Every one of these was absent on an
+    // automatically issued policy until the case could carry them.
+    //
+    // Asserted in the console's own words -- it humanises months into years, so a policy term
+    // of 120 reads "10 years" and a premium-paying term of 60 reads "Premiums paid for 5
+    // years." Asserting "120 months" would be asserting the wire, not the screen.
+    await expect(page.getByText('10 years')).toBeVisible();
+    await expect(page.getByText('Premiums paid for 5 years.')).toBeVisible();
+
+    // Maturity is DERIVED from commencement plus term in Policy.applyTerm, so a real date here
+    // is the proof the term actually landed rather than merely being echoed back. Ten years
+    // past the commencement date the proposal asked for.
+    await expect(page.getByText('Matures')).toBeVisible();
+
+    // And the nomination taken on the proposal is a beneficiary on the contract.
+    await expect(page.getByText('The estate')).toBeVisible();
   });
 
   test('refers a case to a senior underwriter', async ({ page }) => {
