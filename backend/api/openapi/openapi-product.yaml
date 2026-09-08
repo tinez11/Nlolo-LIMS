@@ -44,6 +44,74 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProductSummary' }
+  /products/drafts:
+    get:
+      summary: List DRAFT products — created but never published (staff/actuarial only)
+      description: >-
+        Authoring is two phases: create the definition, then publish a version. Only the
+        second flips DRAFT to ACTIVE, and `GET /products` returns ACTIVE only — so a product
+        whose second phase was abandoned appeared in no list while `ux_product_code` kept
+        holding its code. The code was burned and the product could be neither seen nor
+        finished. This is the list that makes it reachable, so the publish form can be
+        reopened against it.
+
+
+        A separate path rather than a `status` parameter on `GET /products`, because that
+        endpoint answers to customersAuth and agentsAuth: an unlaunched product is not
+        something a policyholder or a tied agent gets to enumerate. This one is staff-only
+        and, in the implementation, ADMIN-only — the same role that may create a product.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProductSummary' }
+  /products/{productId}:
+    get:
+      summary: One product by id — its code, name, category and status
+      description: >-
+        The lookup that turns a product id into a product NAME. Nothing did:
+        `/products/{productId}/active-snapshot` takes an id but its view carries pricing and
+        eligibility, never the code or the name, and `GET /products` carries both but is
+        keyed by nothing. So a caller holding an id had to fetch the whole catalogue and
+        scan it, and got nothing at all for a product that is DRAFT or has been retired out
+        of the catalogue.
+
+
+        Every console screen referencing a product it had not itself chosen from a list
+        therefore printed the raw uuid: the underwriting queue rendered a column of them,
+        and the case detail rail printed one under the label "Product".
+
+
+        Any status, deliberately — a retired product is the case that needs this most, since
+        it is gone from the catalogue while the policies and cases referencing it are still
+        on screen. Same security as `GET /products`, and NOT the staff-only gate on
+        `/products/drafts`: what that one protects is ENUMERATION of unlaunched products,
+        and resolving a single id the caller already holds enumerates nothing.
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductSummary' }
+        '404':
+          description: "`PRODUCT_NOT_FOUND` -- no such product in this tenant"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /products/{productId}/versions:
     post:
       summary: Publish a new product version (staff/actuarial only)

@@ -87,6 +87,91 @@ class ProductApiIntegrationTest {
         assertTrue(active.stream().noneMatch(p -> p.productCode().equals("TERM-02")));
     }
 
+    /**
+     * The other half of the rule above, and the reason it needed one.
+     *
+     * <p>Excluding a DRAFT from the catalogue is right. Excluding it from EVERYTHING was not:
+     * {@code listActiveProducts} was the only listing on the platform, so a product whose
+     * second authoring phase was abandoned appeared nowhere at all, while
+     * {@code ux_product_code} went on holding its code. Reported from the console as "a
+     * product with code Education02 already exists but is not on the list" — the code was
+     * burned and the product could be neither seen nor finished.
+     */
+    @Test
+    void draftProductIsReachableThroughTheDraftListing() {
+        ProductSummaryView draft = productApi.createProduct(
+            "TERM-DRAFT-01", "Abandoned Term Life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        List<ProductSummaryView> drafts = productApi.listDraftProducts();
+        assertTrue(drafts.stream().anyMatch(p ->
+            p.productCode().equals("TERM-DRAFT-01")
+                && p.productId().equals(draft.productId())
+                && p.status() == ProductStatus.DRAFT),
+            "a created-but-unpublished product must be reachable somewhere");
+    }
+
+    /** Publishing is what finishes the job, so the draft list must let go of it. */
+    @Test
+    void publishingRemovesAProductFromTheDraftListing() {
+        ProductSummaryView product = productApi.createProduct(
+            "TERM-DRAFT-02", "Finished Term Life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertTrue(productApi.listDraftProducts().stream().anyMatch(p -> p.productCode().equals("TERM-DRAFT-02")));
+
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        assertTrue(productApi.listDraftProducts().stream().noneMatch(p -> p.productCode().equals("TERM-DRAFT-02")),
+            "a published product is no longer an unfinished authoring task");
+        assertTrue(productApi.listActiveProducts(null).stream().anyMatch(p -> p.productCode().equals("TERM-DRAFT-02")));
+    }
+
+    /**
+     * A product id resolves to a NAME.
+     *
+     * <p>Nothing on the platform did this. {@code getActiveSnapshot} takes an id and returns
+     * pricing; the catalogue carries names but is keyed by nothing. So every screen holding
+     * an id it had not itself picked from a list printed the raw uuid — the underwriting
+     * queue rendered a whole column of them.
+     */
+    @Test
+    void productIsResolvableByIdToItsCodeAndName() {
+        ProductSummaryView created = productApi.createProduct(
+            "TERM-BYID-01", "Resolvable Term Life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        ProductSummaryView found = productApi.getProduct(created.productId());
+
+        assertEquals("TERM-BYID-01", found.productCode());
+        assertEquals("Resolvable Term Life", found.productName());
+        assertEquals(ProductCategory.TERM_LIFE, found.category());
+        assertEquals(created.productId(), found.productId());
+    }
+
+    /**
+     * Any status, and a DRAFT is the cheap proof of it.
+     *
+     * <p>The reason is a RETIRED product, which cannot be created directly here: it is gone
+     * from the catalogue while the policies and cases referencing it are still on screen, so
+     * an ACTIVE-only lookup would print a uuid on exactly the records whose history someone
+     * is reading. A DRAFT exercises the same code path -- neither status is in the catalogue.
+     */
+    @Test
+    void productOutsideTheCatalogueIsStillResolvableById() {
+        ProductSummaryView draft = productApi.createProduct(
+            "TERM-BYID-02", "Unlaunched Term Life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertTrue(productApi.listActiveProducts(null).stream()
+            .noneMatch(p -> p.productId().equals(draft.productId())), "a DRAFT is not in the catalogue");
+
+        assertEquals("Unlaunched Term Life", productApi.getProduct(draft.productId()).productName());
+    }
+
+    @Test
+    void unknownProductIdIsNotFoundRatherThanNull() {
+        assertThrows(ProductNotFoundException.class, () -> productApi.getProduct(UUID.randomUUID()));
+    }
+
     @Test
     void publishVersionActivatesProductAndAppearsInListing() {
         ProductSummaryView product = productApi.createProduct("TERM-03", "Published Term Life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");

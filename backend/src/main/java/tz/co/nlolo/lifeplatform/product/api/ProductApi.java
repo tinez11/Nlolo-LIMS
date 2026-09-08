@@ -86,6 +86,48 @@ public interface ProductApi {
     List<ProductSummaryView> listActiveProducts(ProductCategory categoryFilter);
 
     /**
+     * Every DRAFT product for the tenant — a product created but never published.
+     *
+     * <p>Publishing a version is what flips DRAFT to ACTIVE, and {@link #listActiveProducts}
+     * returns ACTIVE only, so before this existed a DRAFT was unreachable through the entire
+     * API: absent from the catalogue, and {@link #getActiveSnapshot} throws for it too. It
+     * still held its product code against {@code ux_product_code}, so abandoning the second
+     * phase of authoring burned that code permanently and left nothing anybody could see,
+     * finish or remove. Reported from the console as "already exists but is not on the list".
+     *
+     * <p>Deliberately NOT a {@code status} parameter on {@code listActiveProducts}: that
+     * endpoint is open to {@code REALM_CUSTOMERS} and {@code REALM_AGENTS}, and a parameter
+     * that widens what an open endpoint returns is one refactor away from letting a
+     * policyholder enumerate products the insurer has not launched. A separate method carries
+     * a separate {@code @PreAuthorize}, and the controller gates this one on ADMIN — the same
+     * role that may author a product in the first place.
+     */
+    List<ProductSummaryView> listDraftProducts();
+
+    /**
+     * One product by its id — its code, name, category and status.
+     *
+     * <p>There was no way to turn a {@code productId} into a product NAME. {@link
+     * #getActiveSnapshot} takes an id but returns pricing and eligibility, never the code or
+     * the name; {@link #listActiveProducts} carries both but is keyed by nothing, so a caller
+     * holding an id had to fetch the whole catalogue and scan it — and got nothing at all for
+     * a product that is DRAFT or has been retired out of the catalogue.
+     *
+     * <p>So every screen that referenced a product it had not itself chosen from a list
+     * printed the raw uuid: the underwriting queue rendered a column of them, and the case
+     * detail rail printed one under the label "Product" with a note admitting no lookup
+     * existed. An underwriter deciding a case could not see which product it was for.
+     *
+     * <p>Gated exactly like {@link #listActiveProducts} in the controller, and NOT like
+     * {@link #listDraftProducts}: the reason drafts are ADMIN-only is that a list lets a
+     * policyholder ENUMERATE products the insurer has not launched. Resolving one id that the
+     * caller already holds — off their own policy, their own case — enumerates nothing.
+     *
+     * @throws ProductNotFoundException if no such product exists for this tenant
+     */
+    ProductSummaryView getProduct(UUID productId);
+
+    /**
      * Publish a version with no base rate table. Such a version is valid and
      * sellable but **cannot be priced**: a premium quote against it fails with a
      * clear error rather than guessing.

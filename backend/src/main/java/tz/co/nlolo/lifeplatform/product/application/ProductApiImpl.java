@@ -71,6 +71,30 @@ public class ProductApiImpl implements ProductApi {
     }
 
     /**
+     * No category filter, on purpose: a draft is an unfinished authoring task rather than a
+     * catalogue entry, and there are only ever a handful. Filtering a to-do list by product
+     * category answers a question nobody has.
+     */
+    @Override
+    public List<ProductSummaryView> listDraftProducts() {
+        return productDefinitionRepository.findByTenantIdAndStatus(TenantContext.get(), "DRAFT")
+            .stream().map(this::toSummaryView).collect(Collectors.toList());
+    }
+
+    /**
+     * Any status, deliberately. A retired product is exactly the case that needs this: it is
+     * gone from the catalogue while the policies and the underwriting cases that reference it
+     * are still on screen, so filtering by ACTIVE here would print a uuid on precisely the
+     * records whose history someone is trying to read.
+     */
+    @Override
+    public ProductSummaryView getProduct(UUID productId) {
+        return productDefinitionRepository.findByTenantIdAndProductId(TenantContext.get(), productId)
+            .map(this::toSummaryView)
+            .orElseThrow(() -> new ProductNotFoundException(productId));
+    }
+
+    /**
      * The two convenience overloads, each carrying {@code @Transactional} itself.
      *
      * <p>They live here rather than as {@code default} methods on the interface for the

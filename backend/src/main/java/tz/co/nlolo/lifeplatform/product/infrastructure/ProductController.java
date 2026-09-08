@@ -34,6 +34,27 @@ public class ProductController {
     }
 
     /**
+     * The products created but never published.
+     *
+     * <p>Authoring is two phases — create the definition, then publish a version — and only
+     * the second makes a product ACTIVE and therefore visible through {@code GET /products}.
+     * Abandoning it left a DRAFT that no endpoint on this platform would return, while
+     * {@code ux_product_code} kept holding its code: the code was burned, and the product
+     * could be neither seen, finished nor removed. This is the list that makes it reachable
+     * again, so the publish form can be reopened against it.
+     *
+     * <p>ADMIN, matching {@link #createProduct} and {@link #publishVersion}. It is deliberately
+     * a separate path rather than a {@code status} parameter on the catalogue endpoint above:
+     * that one answers to {@code REALM_CUSTOMERS} and {@code REALM_AGENTS}, and an unlaunched
+     * product is not something a policyholder or a tied agent gets to enumerate.
+     */
+    @GetMapping("/products/drafts")
+    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    public ResponseEntity<List<ProductSummaryView>> listDraftProducts() {
+        return ResponseEntity.ok(productApi.listDraftProducts());
+    }
+
+    /**
      * Authoring a product. ADMIN, and this is the endpoint that finally makes that role mean
      * something.
      *
@@ -79,6 +100,27 @@ public class ProductController {
             request.eligibility() != null ? request.eligibility().toBounds() : EligibilityBounds.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    /**
+     * One product by id, so a screen holding an id can show a NAME.
+     *
+     * <p>Nothing could. {@code /products} is the catalogue and is keyed by nothing;
+     * {@code /active-snapshot} below takes an id but its view carries no code and no name.
+     * So the underwriting queue rendered a column of uuids, and the case detail rail printed
+     * one with a note saying no lookup existed — on the screen where an underwriter decides
+     * whether to accept the risk.
+     *
+     * <p>Same gate as the catalogue, NOT the ADMIN gate on {@code /products/drafts}: what
+     * drafts protects is enumeration of unlaunched products, and resolving a single id the
+     * caller already holds enumerates nothing. It is declared BEFORE the {@code {productId}}
+     * paths that follow only for readability — Spring matches the literal {@code /drafts}
+     * segment above ahead of this variable regardless of declaration order.
+     */
+    @GetMapping("/products/{productId}")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<ProductSummaryView> getProduct(@PathVariable UUID productId) {
+        return ResponseEntity.ok(productApi.getProduct(productId));
     }
 
     @GetMapping("/products/{productId}/active-snapshot")

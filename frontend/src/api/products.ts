@@ -14,14 +14,51 @@ import type {
  *
  * `GET /products` only ever returns products with `status: ACTIVE`
  * (`ProductApiImpl.listActiveProducts` filters on it server-side, confirmed by
- * reading the method) -- a newly created product starts `DRAFT` and is
- * genuinely invisible everywhere in this app until a version is published.
- * There is also no `GET /products/{id}` at all: the list, the active-snapshot
- * lookup and one version's rating basis are the only three reads that exist.
+ * reading the method) -- a newly created product starts `DRAFT`, and until
+ * `GET /products/drafts` existed it was invisible everywhere in this app until a
+ * version was published. `GET /products/{id}` now closes the last gap: before it,
+ * no read on this platform turned a product id into a product name.
  */
 
 export function listProducts(category?: ProductCategory): Promise<ProductSummary[]> {
   return get<ProductSummary[]>('/products', category ? { params: { category } } : undefined);
+}
+
+/**
+ * `GET /products/drafts` -- products created but never published.
+ *
+ * Authoring is two phases and only the second makes a product ACTIVE, so
+ * abandoning it left a DRAFT that appeared in no list while the database went on
+ * holding its product code: the code was burned and the product could be neither
+ * seen nor finished. Reported from this console as "a product with code
+ * Education02 already exists but is not on the list".
+ *
+ * **ADMIN-only**, and a separate endpoint rather than a `status` parameter on the
+ * catalogue: that one answers to the customers and agents realms, and an
+ * unlaunched product is not something a policyholder or a tied agent enumerates.
+ * Callers must gate on `canAuthorProducts` or expect a 403.
+ *
+ * No category parameter: a draft is an unfinished task, not a catalogue entry.
+ */
+export function listDraftProducts(): Promise<ProductSummary[]> {
+  return get<ProductSummary[]>('/products/drafts');
+}
+
+/**
+ * `GET /products/{productId}` -- one product, by the id a record already carries.
+ *
+ * The lookup that turns a product id into a product NAME. Until it existed, a
+ * screen holding an id could reach the snapshot (pricing and eligibility, no name)
+ * or the whole catalogue (names, keyed by nothing) -- and the catalogue holds
+ * ACTIVE only, so a retired product resolved to nothing at all while the policies
+ * and cases referencing it were still on screen.
+ *
+ * Any status, and open to every realm, exactly like the catalogue: what the
+ * ADMIN gate on `/products/drafts` protects is enumerating unlaunched products,
+ * which resolving one id the caller already holds does not do.
+ */
+export function getProduct(productId: string): Promise<ProductSummary> {
+  return get<ProductSummary>(`/products/${encodeURIComponent(productId)}`);
 }
 
 /**

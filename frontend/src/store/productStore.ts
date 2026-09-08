@@ -3,6 +3,7 @@ import {
   createProduct,
   getActiveSnapshot,
   getVersionRating,
+  listDraftProducts,
   listProducts,
   publishVersion,
 } from '@/api/products';
@@ -24,6 +25,12 @@ type Keyed<T> = Record<string, Resource<T>>;
 
 interface ProductState {
   list: Resource<ProductSummary[]>;
+  // Products created but never published. Kept apart from `list` rather than
+  // folded into it: the catalogue and the unfinished-authoring queue are two
+  // different questions, only an ADMIN may ask the second, and every existing
+  // reader of `list` (policy issuance, group schemes, the product picker) wants
+  // products it can actually sell.
+  drafts: Resource<ProductSummary[]>;
   snapshots: Keyed<ProductSnapshot>;
   // Keyed by versionId, NOT productId: the rating basis belongs to a version,
   // and keying it by product would silently serve one version's rate table for
@@ -37,6 +44,7 @@ interface ProductState {
   publishing: Keyed<true>;
 
   loadList: (category?: ProductCategory) => Promise<void>;
+  loadDrafts: () => Promise<void>;
   loadSnapshot: (productId: string) => Promise<void>;
   loadRating: (productId: string, versionId: string) => Promise<void>;
   createProduct: (request: CreateProductRequest) => Promise<void>;
@@ -47,6 +55,7 @@ interface ProductState {
 
 export const useProductStore = create<ProductState>((set, getState) => ({
   list: idle(),
+  drafts: idle(),
   snapshots: {},
   ratings: {},
   creating: idle(),
@@ -58,6 +67,14 @@ export const useProductStore = create<ProductState>((set, getState) => ({
       getState().list,
       (next) => set({ list: next }),
       () => listProducts(category),
+    ),
+
+  loadDrafts: () =>
+    track(
+      'product.drafts',
+      getState().drafts,
+      (next) => set({ drafts: next }),
+      listDraftProducts,
     ),
 
   loadSnapshot: (productId) =>
@@ -97,10 +114,20 @@ export const useProductStore = create<ProductState>((set, getState) => ({
       // annotation is required to stop TypeScript widening the literal to boolean.
       async (): Promise<true> => {
         await publishVersion(productId, spec);
-        // publishVersion flips the product to ACTIVE, which changes what the
-        // list and the snapshot both show -- refresh both so the UI reflects it
-        // without a manual reload.
-        await Promise.all([getState().loadList(), getState().loadSnapshot(productId)]);
+        // publishVersion flips the product DRAFT -> ACTIVE, which changes all
+        // three of these -- it joins the catalogue, it gains a snapshot, and it
+        // stops being an unfinished authoring task. Refresh them together so the
+        // UI reflects it without a manual reload.
+        //
+        // `drafts` is only refreshed if it has actually been loaded: a
+        // non-ADMIN publishing a version (possible in principle -- the gate is
+        // server-side) would otherwise fire a request that can only 403, and
+        // park that 403 in the store where the products page would render it.
+        await Promise.all([
+          getState().loadList(),
+          getState().loadSnapshot(productId),
+          ...(getState().drafts.status === 'idle' ? [] : [getState().loadDrafts()]),
+        ]);
         return true;
       },
     ),
