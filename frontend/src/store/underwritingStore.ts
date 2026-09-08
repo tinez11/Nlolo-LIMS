@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import {
+  decide,
   getCase,
   listCases,
   listDisclosures,
@@ -10,6 +11,7 @@ import {
 } from '@/api/underwriting';
 import type { UnderwritingListParams } from '@/api/underwriting';
 import type {
+  DecideRequest,
   MedicalDisclosureView,
   OpenCaseRequest,
   Page,
@@ -36,6 +38,10 @@ interface UnderwritingState {
   // Keyed by caseId: submitting an assessment targets an EXISTING case, and a
   // failed submission on one case must not corrupt another's state.
   submittingAssessment: Keyed<UnderwritingCaseView>;
+  // Keyed by caseId, and kept apart from submittingAssessment: an assessment and a
+  // decision are two different acts on the same case now, and a rejected decision must
+  // not clear the evidence panel or vice versa.
+  deciding: Keyed<UnderwritingCaseView>;
   referring: Keyed<true>;
   // Read and write kept in separate slots, keyed by caseId: a failed recording must not
   // discard the disclosures already on screen, which are the evidence a reader came for.
@@ -48,6 +54,8 @@ interface UnderwritingState {
   loadCase: (caseId: string) => Promise<void>;
   submitAssessment: (caseId: string, request: SubmitAssessmentRequest) => Promise<void>;
   resetSubmitAssessment: (caseId: string) => void;
+  decide: (caseId: string, request: DecideRequest) => Promise<void>;
+  resetDecide: (caseId: string) => void;
   referCase: (caseId: string) => Promise<void>;
   loadDisclosures: (caseId: string) => Promise<void>;
   recordDisclosures: (caseId: string, request: RecordDisclosuresRequest) => Promise<void>;
@@ -60,6 +68,7 @@ export const useUnderwritingStore = create<UnderwritingState>((set, getState) =>
   opening: idle(),
   cases: {},
   submittingAssessment: {},
+  deciding: {},
   referring: {},
   disclosures: {},
   recordingDisclosures: {},
@@ -110,6 +119,33 @@ export const useUnderwritingStore = create<UnderwritingState>((set, getState) =>
       if (!(caseId in s.submittingAssessment)) return s;
       const { [caseId]: _discard, ...rest } = s.submittingAssessment;
       return { submittingAssessment: rest };
+    }),
+
+  decide: (caseId, request) =>
+    track(
+      `underwriting.decide.${caseId}`,
+      getState().deciding[caseId] ?? idle<UnderwritingCaseView>(),
+      (next) => set((s) => ({ deciding: { ...s.deciding, [caseId]: next } })),
+      async () => {
+        const view = await decide(caseId, request);
+        // The response IS the decided case, so write it straight into the detail slot
+        // rather than firing a GET for data already in hand -- the same shape
+        // submitAssessment uses above.
+        //
+        // The policy this may have just triggered is NOT reflected here. Issuance happens
+        // in an AFTER_COMMIT listener on the backend, so it is not necessarily done by the
+        // time this response lands, and inventing a policy number the console has not been
+        // given would be worse than showing none.
+        set((s) => ({ cases: { ...s.cases, [caseId]: success(view) } }));
+        return view;
+      },
+    ),
+
+  resetDecide: (caseId) =>
+    set((s) => {
+      if (!(caseId in s.deciding)) return s;
+      const { [caseId]: _discard, ...rest } = s.deciding;
+      return { deciding: rest };
     }),
 
   loadDisclosures: (caseId) =>
@@ -170,6 +206,8 @@ export const selectCase = (caseId: string) => (s: UnderwritingState) =>
   s.cases[caseId] ?? idle<UnderwritingCaseView>();
 export const selectSubmittingAssessment = (caseId: string) => (s: UnderwritingState) =>
   s.submittingAssessment[caseId] ?? idle<UnderwritingCaseView>();
+export const selectDeciding = (caseId: string) => (s: UnderwritingState) =>
+  s.deciding[caseId] ?? idle<UnderwritingCaseView>();
 export const selectReferring = (caseId: string) => (s: UnderwritingState) =>
   s.referring[caseId] ?? idle<true>();
 export const selectDisclosures = (caseId: string) => (s: UnderwritingState) =>

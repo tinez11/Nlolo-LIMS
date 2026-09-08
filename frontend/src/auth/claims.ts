@@ -13,6 +13,12 @@
 
 export interface StaffRoles {
   UNDERWRITER: boolean;
+  /**
+   * Additive to UNDERWRITER, never a replacement. It lifts exactly one restriction:
+   * deciding an underwriting case against the rules engine's recommendation. Reaching the
+   * decision endpoint at all still requires UNDERWRITER.
+   */
+  SENIOR_UNDERWRITER: boolean;
   CLAIMS_ASSESSOR: boolean;
   CLAIMS_MANAGER: boolean;
   FINANCE_OFFICER: boolean;
@@ -89,6 +95,7 @@ export function staffRoles(identity: TokenIdentity): StaffRoles {
   const has = (role: keyof StaffRoles) => identity.roles.includes(role);
   return {
     UNDERWRITER: has('UNDERWRITER'),
+    SENIOR_UNDERWRITER: has('SENIOR_UNDERWRITER'),
     CLAIMS_ASSESSOR: has('CLAIMS_ASSESSOR'),
     CLAIMS_MANAGER: has('CLAIMS_MANAGER'),
     FINANCE_OFFICER: has('FINANCE_OFFICER'),

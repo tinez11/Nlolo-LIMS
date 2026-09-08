@@ -1,5 +1,6 @@
 import { get, post } from '@/lib/http';
 import type {
+  DecideRequest,
   MedicalDisclosureView,
   OpenCaseRequest,
   Page,
@@ -83,11 +84,19 @@ export function getCase(caseId: string): Promise<UnderwritingCaseView> {
 
 /**
  * `POST /underwriting/cases/{caseId}/assessments` -- requires the `UNDERWRITER`
- * role specifically (not just staff). `decideIfPossible` runs unconditionally
- * after EVERY submission, not once "enough" evidence exists -- so this call
- * decides the case outright and 409s on any second call once decided
- * (`UnderwritingCaseAlreadyDecidedException`). There is no separate "decide"
- * action to model: submitting one assessment IS the decision.
+ * role specifically (not just staff).
+ *
+ * Records EVIDENCE and recomputes the rules engine's `recommendationOutcome`. It settles
+ * nothing: the case stays `IN_REVIEW`, no event is published, and no policy is issued.
+ * Use {@link decide} for that.
+ *
+ * This used to decide the case outright -- the engine ran after every submission and its
+ * verdict went straight into the decision fields, so the FIRST assessment settled a case
+ * whatever type it was, and a clean medical issued a contract before anyone had looked at
+ * the applicant's finances or occupation.
+ *
+ * Still 409s on a case that is already decided, because a decided case is closed to further
+ * evidence -- except a POSTPONED one, which means "come back with more" and stays open.
  */
 export function submitAssessment(
   caseId: string,
@@ -95,6 +104,30 @@ export function submitAssessment(
 ): Promise<UnderwritingCaseView> {
   return post<UnderwritingCaseView>(
     `/underwriting/cases/${encodeURIComponent(caseId)}/assessments`,
+    request,
+  );
+}
+
+/**
+ * `POST /underwriting/cases/{caseId}/decision` -- the human underwriting decision.
+ *
+ * The ONLY thing that settles a case, and therefore the only thing that puts a policy in
+ * force. Submitting an assessment records evidence and recomputes the engine's
+ * recommendation; it decides nothing. It used to do both, which meant a placeholder rules
+ * engine issued real contracts with nobody signing them off.
+ *
+ * A decision whose `outcome` differs from the case's `recommendationOutcome` is an override
+ * and answers **403 `SENIOR_UNDERWRITER_APPROVAL_REQUIRED`** unless the caller holds
+ * `SENIOR_UNDERWRITER`. Callers should gate on that, but must still handle the 403: whether
+ * a decision counts as an override depends on the recommendation on the case at the moment
+ * the server reads it, which can have moved since the form rendered.
+ *
+ * 422 for a case with no assessment, a blank reason, or a loading that does not match the
+ * outcome. 409 for a case already decided.
+ */
+export function decide(caseId: string, request: DecideRequest): Promise<UnderwritingCaseView> {
+  return post<UnderwritingCaseView>(
+    `/underwriting/cases/${encodeURIComponent(caseId)}/decision`,
     request,
   );
 }

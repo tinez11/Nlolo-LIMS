@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
 import { Link, useParams } from 'react-router-dom';
 import { ASSESSMENT_TYPES } from '@/api/types';
+import type { DecideRequest } from '@/api/types';
 import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
 import { Field } from '@/components/Field';
@@ -19,6 +20,7 @@ import { formatDate, formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectCase,
+  selectDeciding,
   selectReferring,
   selectSubmittingAssessment,
   useUnderwritingStore,
@@ -29,7 +31,7 @@ import {
   toApiRequest,
   type SubmitAssessmentFormValues,
 } from './submitAssessmentForm';
-import { ConfirmAct } from '@/components/ConfirmAct';
+import { DecisionPanel } from './DecisionPanel';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { Input, Select, Textarea } from '@/components/ui/input';
@@ -42,10 +44,19 @@ import { Input, Select, Textarea } from '@/components/ui/input';
  * re-surfaces `underwritingCaseId` (confirmed against the real wire DTO and
  * the OpenAPI spec, not just the internal same-named domain type).
  *
- * `decideIfPossible` runs unconditionally on every `POST /assessments`, not
- * once "enough" evidence exists -- so submitting ONE assessment IS the
- * decision, and a second call 409s (`UnderwritingCaseAlreadyDecidedException`).
- * There is no separate accept/decline/rate-up action to build a form for.
+ * Two panels, because assessing and deciding are two acts. `POST /assessments` records
+ * EVIDENCE and refreshes the rules engine's recommendation; `POST /decision` is what settles
+ * the case and, on an acceptance, issues the policy.
+ *
+ * They were one act until recently, and this page said so: submitting one assessment ran the
+ * engine, wrote its verdict into the decision fields and put a contract in force, and the
+ * confirmation dialog told the user "there is no separate accept, decline or rate-up step".
+ * That was accurate and it was the defect -- a placeholder algorithm was the sole author of
+ * every underwriting decision on the platform, with no override and no way back from a
+ * mistyped risk score.
+ *
+ * A second assessment on a DECIDED case still 409s
+ * (`UnderwritingCaseAlreadyDecidedException`): a decided case is closed to further evidence.
  *
  * ONE EXCEPTION: a POSTPONED case accepts further assessments. It is the outcome that means
  * "not decided yet -- come back with more evidence", and treating it as final made it the only
@@ -53,13 +64,17 @@ import { Input, Select, Textarea } from '@/components/ui/input';
  * postponed case, and the engine weighs the LATEST assessment per type rather than the worst
  * one ever recorded -- otherwise a case postponed at 95 would re-postpone forever.
  *
- * Assessment/referral are gated on the current user's OWN token roles
+ * Assessment/decision/referral are gated on the current user's OWN token roles
  * (`staffRoles`), same convenience-only decode `ClaimDetailPage` already uses
  * for its own action panels -- the backend's `@PreAuthorize('UNDERWRITER')`
  * remains the real authority, this only avoids showing a staff user (e.g.
  * finance, customer-service) a live form that would 403. A non-decided case
  * viewed by a non-underwriter renders neither panel; that is correct, not a
  * missing feature.
+ *
+ * SENIOR_UNDERWRITER is a second, narrower gate INSIDE the decision panel rather than on it:
+ * a junior may record the decision the engine recommended and may not record any other. That
+ * distinction cannot be made here, because it depends on the outcome being chosen.
  */
 export function UnderwritingCaseDetailPage() {
   const { caseId = '' } = useParams();
@@ -71,6 +86,9 @@ export function UnderwritingCaseDetailPage() {
   const loadCase = useUnderwritingStore((s) => s.loadCase);
   const submitAssessment = useUnderwritingStore((s) => s.submitAssessment);
   const resetSubmitAssessment = useUnderwritingStore((s) => s.resetSubmitAssessment);
+  const decide = useUnderwritingStore((s) => s.decide);
+  const resetDecide = useUnderwritingStore((s) => s.resetDecide);
+  const deciding = useUnderwritingStore(selectDeciding(caseId));
   const submitting = useUnderwritingStore(selectSubmittingAssessment(caseId));
   const referCase = useUnderwritingStore((s) => s.referCase);
   const resetReferCase = useUnderwritingStore((s) => s.resetReferCase);
@@ -89,6 +107,7 @@ export function UnderwritingCaseDetailPage() {
   useEffect(() => {
     if (!caseId) return;
     resetSubmitAssessment(caseId);
+    resetDecide(caseId);
     resetReferCase(caseId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
@@ -96,20 +115,22 @@ export function UnderwritingCaseDetailPage() {
   const {
     register,
     handleSubmit,
+    reset: resetAssessmentForm,
     formState: { errors },
   } = useForm<SubmitAssessmentFormValues>({
     resolver: zodResolver(submitAssessmentFormSchema),
     defaultValues: blankSubmitAssessmentForm(),
   });
 
-  // Validated first, confirmed second -- see ClaimSettlementPanel.
-  const [pending, setPending] = useState<SubmitAssessmentFormValues | null>(null);
-
   async function commitAssessment(values: SubmitAssessmentFormValues) {
     await submitAssessment(caseId, toApiRequest(values));
     if (useUnderwritingStore.getState().submittingAssessment[caseId]?.status === 'success') {
-      setPending(null);
+      resetAssessmentForm(blankSubmitAssessmentForm());
     }
+  }
+
+  async function commitDecision(request: DecideRequest) {
+    await decide(caseId, request);
   }
 
   const view = detail.data;
@@ -179,22 +200,36 @@ export function UnderwritingCaseDetailPage() {
           </Panel>
         )}
 
+        {/*
+          The decision, below the evidence panel and above the disclosures, in the order the
+          work happens: assess, then decide.
+
+          Same visibility rule as the assessment form -- an undecided case, or a POSTPONED
+          one, which is a decision in status only. A POSTPONED case can be decided again once
+          the evidence it asked for arrives.
+        */}
+        {view && (view.status !== 'DECIDED' || isPostponed) && (
+          <DecisionPanel
+            view={view}
+            deciding={deciding}
+            canDecide={roles.UNDERWRITER}
+            isSenior={roles.SENIOR_UNDERWRITER}
+            onDecide={(request) => void commitDecision(request)}
+          />
+        )}
+
         {/* Shown while the case is undecided AND when it is POSTPONED, which is a decision
-            in status only: the engine returns it asking for further medical evidence, so
-            refusing further assessments made it the one outcome that could never resolve. */}
+            in status only: it means "come back with more evidence", so refusing further
+            assessments made it the one outcome that could never resolve. */}
         {(view?.status !== 'DECIDED' || isPostponed) && roles.UNDERWRITER ? (
           <Panel
             emphasis
             title={isPostponed ? 'Submit further evidence' : 'Submit an assessment'}
-            subtitle={
-              isPostponed
-                ? 'The case is postponed pending evidence. This re-decides it on the latest assessment of each type.'
-                : 'This decides the case outright -- there is no separate accept/decline step.'
-            }
+            subtitle="Evidence for the decision. This records the finding and refreshes the engine's recommendation; it does not decide the case."
           >
             <form
               className="space-y-4 p-4"
-              onSubmit={(e) => void handleSubmit(setPending)(e)}
+              onSubmit={(e) => void handleSubmit(commitAssessment)(e)}
             >
               <FormField label="Assessment type">
                 <Select
@@ -238,39 +273,23 @@ export function UnderwritingCaseDetailPage() {
                 </div>
               )}
 
-              {pending ? (
-                <ConfirmAct
-                  heading={isPostponed ? 'Re-decide this case?' : 'Decide this case?'}
-                  consequence={
-                    <>
-                      Submitting a <strong>{pending.assessmentType}</strong> assessment decides
-                      the case outright. There is no separate accept, decline or rate-up step
-                      after this.
-                    </>
-                  }
-                  /*
-                    Both branches are UnderwritingApiImpl's actual behaviour:
-                    decideIfPossible runs unconditionally on every POST, and a
-                    second call against an already-decided case throws
-                    UnderwritingCaseAlreadyDecidedException -- except where the
-                    outcome was POSTPONED, which is the one status that keeps
-                    accepting evidence.
-                  */
-                  reversal={
-                    isPostponed
-                      ? 'A postponed case can be re-decided, so this can be superseded by further evidence — but each decision is published and stays on the record.'
-                      : 'The decision is final: a second assessment on a decided case is refused, and an acceptance issues a policy automatically.'
-                  }
-                  confirmLabel={isPostponed ? 'Submit and re-decide' : 'Submit and decide'}
-                  busy={submitting.status === 'loading'}
-                  onConfirm={() => void commitAssessment(pending)}
-                  onCancel={() => setPending(null)}
-                />
-              ) : (
-                <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
-                  {isPostponed ? 'Submit further evidence' : 'Submit assessment'}
-                </Button>
-              )}
+              {/*
+                No confirmation step any more, and the removal is the point.
+
+                This used to raise a ConfirmAct reading "Submitting a MEDICAL assessment
+                decides the case outright ... The decision is final: a second assessment on a
+                decided case is refused, and an acceptance issues a policy automatically."
+                Every word of that was true, and it described the defect: an assessment ran a
+                placeholder rules engine, settled the case and put a contract in force.
+
+                Recording evidence is now an ordinary, reversible act -- submit another and
+                the recommendation recomputes -- so demanding confirmation for it would be
+                ceremony. The confirmation belongs on the decision, which is where the
+                consequence now lives.
+              */}
+              <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
+                {isPostponed ? 'Submit further evidence' : 'Submit assessment'}
+              </Button>
             </form>
           </Panel>
         ) : null}
