@@ -40,29 +40,66 @@ test.describe('staff underwriting', () => {
     await expect(page.getByText(/No matches for/)).toBeVisible({ timeout: 5000 });
   });
 
-  test('opens a case, decides it by submitting one assessment, and the decision survives a reload', async ({
+  /**
+   * Assessing and deciding are two acts, and this is the test that says so.
+   *
+   * It used to read "decides it by submitting one assessment", with the comment
+   * "decideIfPossible runs unconditionally on this one call -- submitting a single assessment
+   * IS the decision". Both were accurate and both described the defect: a placeholder rules
+   * engine settled every case on the platform and issued the policy, with nobody signing it.
+   */
+  test('an assessment recommends, an underwriter decides, and the decision survives a reload', async ({
     page,
   }) => {
     await openCaseForAmina(page);
     await expect(page.getByRole('heading', { name: 'Underwriting case' })).toBeVisible();
     await expect(page.getByText('None', { exact: true })).toBeVisible(); // referral status
 
-    // decideIfPossible runs unconditionally on this one call -- submitting a
-    // single assessment IS the decision, whatever it resolves to.
     await page.getByLabel('Findings').fill('E2E test assessment, standard risk');
     await page.getByLabel('Risk score (optional)').fill('10');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
-    await page.getByRole('button', { name: 'Submit and decide' }).click();
+
+    // Advice, and nothing more: no decision, and the case is still open for evidence.
+    await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Decision' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Submit assessment' })).toBeVisible();
+
+    // ACCEPT agrees with the recommendation, so the default staff.underwriter identity --
+    // which holds UNDERWRITER and not SENIOR_UNDERWRITER -- is allowed to record it.
+    await page.getByLabel('Decision').selectOption({ label: 'Accept' });
+    await page.getByLabel('Reason').fill('Standard risk, in line with the recommendation');
+    await page.getByRole('button', { name: 'Record decision' }).click();
 
     await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
-    // The assessment form is gone -- there is no way to submit a second one
-    // through this UI once a case is decided.
+    // Both forms are gone -- a decided case takes no further evidence and no second decision.
     await expect(page.getByRole('button', { name: 'Submit assessment' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Record decision' })).not.toBeVisible();
 
     // Reload from scratch -- proves this is a real Postgres row, not the
     // store's in-memory state surviving a soft navigation.
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible();
+  });
+
+  /**
+   * The senior gate, against the real backend.
+   *
+   * `staff.underwriter` holds UNDERWRITER only. A decision that departs from the engine's
+   * recommendation is refused to them -- by the form, and by the server behind it.
+   */
+  test('a junior underwriter cannot decide against the recommendation', async ({ page }) => {
+    await openCaseForAmina(page);
+    await page.getByLabel('Findings').fill('Standard risk');
+    await page.getByLabel('Risk score (optional)').fill('10');
+    await page.getByRole('button', { name: 'Submit assessment' }).click();
+    await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
+
+    await page.getByLabel('Decision').selectOption({ label: 'Decline' });
+
+    await expect(page.getByText(/a senior underwriter has to record it/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Record decision' })).toBeDisabled();
+    // The case is untouched: no decision, and the evidence form is still open.
+    await expect(page.getByRole('heading', { name: 'Decision' })).not.toBeVisible();
   });
 
   test('refers a case to a senior underwriter', async ({ page }) => {
@@ -111,14 +148,18 @@ test.describe('staff underwriting', () => {
     await page2.goto(caseUrl);
     await expect(page2.getByRole('button', { name: 'Submit assessment' })).toBeVisible();
 
+    // The race is on the DECISION now, not the assessment. Two assessments on one case are
+    // ordinary -- evidence accumulates -- so the 409 moved to where the conflict actually is:
+    // two people settling the same case.
     await page.getByLabel('Findings').fill('Tab A decides first');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
-    await page.getByRole('button', { name: 'Submit and decide' }).click();
+    await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
+    await page.getByLabel('Reason').fill('Tab A settles it');
+    await page.getByRole('button', { name: 'Record decision' }).click();
     await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
 
     await page2.getByLabel('Findings').fill('Tab B arrives too late');
     await page2.getByRole('button', { name: 'Submit assessment' }).click();
-    await page2.getByRole('button', { name: 'Submit and decide' }).click();
     await expect(page2.getByRole('alert')).toBeVisible({ timeout: 15_000 });
 
     // `submittingAssessment` is keyed by case id and outlives this form's own
@@ -138,10 +179,14 @@ test.describe('staff underwriting', () => {
     await openCaseForAmina(page);
 
     await page.getByLabel('Findings').fill('Inconclusive -- awaiting specialist report');
-    // >= 90 is SimpleRulesEngine's POSTPONE threshold.
+    // >= 90 is SimpleRulesEngine's POSTPONE threshold, so POSTPONED agrees with the
+    // recommendation and a junior underwriter may record it.
     await page.getByLabel('Risk score (optional)').fill('95');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
-    await page.getByRole('button', { name: 'Submit and decide' }).click();
+    await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
+    await page.getByLabel('Decision').selectOption({ label: 'Postpone — more evidence needed' });
+    await page.getByLabel('Reason').fill('Awaiting the specialist report');
+    await page.getByRole('button', { name: 'Record decision' }).click();
 
     await expect(page.getByText('Postponed', { exact: true })).toBeVisible({ timeout: 15_000 });
     // The form survives, and says what it is now for.
@@ -158,10 +203,15 @@ test.describe('staff underwriting', () => {
     await page.getByLabel('Findings').fill('Specialist report clear');
     await page.getByLabel('Risk score (optional)').fill('10');
     await page.getByRole('button', { name: 'Submit further evidence' }).click();
-    await page.getByRole('button', { name: 'Submit and re-decide' }).click();
 
-    // Resolved for real -- and the engine weighed the LATEST assessment per type, not the
-    // worst one ever recorded, or the 95 above would postpone it forever.
+    // The recommendation moved on the new evidence -- and it weighed the LATEST assessment
+    // per type, not the worst ever recorded, or the 95 above would recommend postponing
+    // forever. Then a person acts on it.
+    await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
+    await page.getByLabel('Decision').selectOption({ label: 'Accept' });
+    await page.getByLabel('Reason').fill('Specialist report resolves it');
+    await page.getByRole('button', { name: 'Record decision' }).click();
+
     await expect(page.getByText('Accept', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Submit further evidence' })).not.toBeVisible();
   });

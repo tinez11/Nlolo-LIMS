@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 
 /**
  * Billing e2e coverage against the real backend: waiving an invoice and
@@ -21,11 +22,12 @@ import { expect, type Page, test } from '@playwright/test';
  */
 
 async function issueRealPolicyWithInvoices(page: Page): Promise<string> {
+  // Manual issue names a real, unissued case now. The policyholder and product come from it
+  // by prefill, so this no longer picks them by hand -- the sum assured still does, because
+  // the case view @JsonIgnores it and the console genuinely cannot see it.
+  const caseId = await caseAwaitingManualIssue(page);
   await page.goto('/staff/policies/new');
-  await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
-  await page.getByPlaceholder('Type a name to search').fill('Amina');
-  await page.getByText('Amina Owner').click();
-  await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+  await selectUnderwritingCase(page, caseId);
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('2000000.00');
   await page.getByLabel('Premium', { exact: true }).fill('800.00');

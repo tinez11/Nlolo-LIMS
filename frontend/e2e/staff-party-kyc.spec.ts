@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 
 /**
  * `GET /parties/{partyId}` has always existed; `POST .../kyc-evidence` (upload)
@@ -28,11 +29,12 @@ test.describe('staff party KYC verification', () => {
   test('reaches the party by drilling in from a policy, then drives a real reject-then-verify round trip', async ({
     page,
   }) => {
+    // Manual issue names a real, unissued case now. The policyholder and product
+    // come from it by prefill, so this no longer picks them by hand. The sum assured
+    // still does: the case view @JsonIgnores it, so the console cannot read it.
+    const caseId = await caseAwaitingManualIssue(page);
     await page.goto('/staff/policies/new');
-    await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
-    await page.getByPlaceholder('Type a name to search').fill('Amina');
-    await page.getByText('Amina Owner').click();
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+    await selectUnderwritingCase(page, caseId);
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('2000000.00');
     await page.getByLabel('Premium', { exact: true }).fill('800.00');

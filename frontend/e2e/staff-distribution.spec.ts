@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 import { dmy } from './dates';
 import { asAdmin } from './admin';
 
@@ -86,10 +87,12 @@ async function issueRealPolicyForAgent(
   productOptionLabel: string,
   agentId: string,
 ): Promise<string> {
+  // Manual issue names a real, unissued case now. The product is still chosen by hand after
+  // the prefill: these tests issue against a product they published themselves, not the
+  // seeded one the case was opened against.
+  const caseId = await caseAwaitingManualIssue(page);
   await page.goto('/staff/policies/new');
-  await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
-  await page.getByPlaceholder('Type a name to search').fill('Amina');
-  await page.getByText('Amina Owner').click();
+  await selectUnderwritingCase(page, caseId);
   await page.getByLabel('Product').selectOption({ label: productOptionLabel });
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('2000000.00');
@@ -114,11 +117,12 @@ test.describe('staff distribution', () => {
 
     // Issuing a policy is REALM_STAFF-broad, not finance-gated -- the default
     // staff.underwriter identity is enough here.
+    // Manual issue names a real, unissued case now. The policyholder and product
+    // come from it by prefill, so this no longer picks them by hand. The sum assured
+    // still does: the case view @JsonIgnores it, so the console cannot read it.
+    const caseId = await caseAwaitingManualIssue(page);
     await page.goto('/staff/policies/new');
-    await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
-  await page.getByPlaceholder('Type a name to search').fill('Amina');
-  await page.getByText('Amina Owner').click();
-    await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+    await selectUnderwritingCase(page, caseId);
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('2000000.00');
     await page.getByLabel('Premium', { exact: true }).fill('800.00');

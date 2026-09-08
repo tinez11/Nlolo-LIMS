@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 import { dmy } from './dates';
 import { fillPolicyNumberManually } from './guards';
 
@@ -51,11 +52,12 @@ test.describe('agents my book of business', () => {
     const staffPage = await staffContext.newPage();
 
     async function issuePolicy(agentOfRecordId: string | null, reason: string): Promise<string> {
+      // Manual issue names a real, unissued case now, and the policyholder and product come
+      // from it by prefill. Each call needs its OWN case: one case issues one policy, which
+      // is the whole point of the constraint, and this helper is called twice in this file.
+      const caseId = await caseAwaitingManualIssue(staffPage);
       await staffPage.goto('/staff/policies/new');
-      await staffPage.getByRole('button', { name: 'Search for the policyholder by name' }).click();
-      await staffPage.getByPlaceholder('Type a name to search').fill('Amina');
-      await staffPage.getByText('Amina Owner').click();
-      await staffPage.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+      await selectUnderwritingCase(staffPage, caseId);
       await expect(staffPage.getByText('Resolving product version…')).not.toBeVisible();
       await staffPage.getByLabel('Sum assured').fill('1000000.00');
       await staffPage.getByLabel('Premium', { exact: true }).fill('500.00');

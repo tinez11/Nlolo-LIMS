@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 import { dmy } from './dates';
 import { asAdmin } from './admin';
 
@@ -52,10 +53,12 @@ async function issuePolicyAgainst(
   productLabel: string,
   reason: string,
 ): Promise<string> {
+  // Manual issue names a real, unissued case now. This one still selects the product by
+  // hand after the prefill, because these tests issue against a product they published
+  // themselves rather than the case's seeded one.
+  const caseId = await caseAwaitingManualIssue(page);
   await page.goto('/staff/policies/new');
-  await page.getByRole('button', { name: 'Search for the policyholder by name' }).click();
-  await page.getByPlaceholder('Type a name to search').fill('Amina');
-  await page.getByText('Amina Owner').click();
+  await selectUnderwritingCase(page, caseId);
   await page.getByLabel('Product').selectOption({ label: productLabel });
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('2000000.00');
