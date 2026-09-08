@@ -10,13 +10,33 @@ import { selectPublishing, useProductStore } from '@/store/productStore';
 import {
   blankBenefitRow,
   blankFundRow,
+  blankBaseRateBand,
   blankRatingFactorRow,
+  doubleCountedFactorMessage,
+  isBaseRateRowPriced,
+  BASE_RATE_COLUMNS,
   publishVersionFormSchema,
   toApiRequest,
   type PublishVersionFormInput,
   type PublishVersionFormValues,
 } from './publishVersionSchema';
 import { Input, Select } from '@/components/ui/input';
+import { humanizeStatus } from '@/lib/status';
+
+/**
+ * An example shaped like the factor it belongs to.
+ *
+ * Every row shared one placeholder, "Band, e.g. 18-30" -- an AGE example offered on a
+ * SUM_ASSURED_BAND row, which is the row where the band text is not a label at all but the
+ * value the rules engine matches on. Suggesting an age range there invites a band that
+ * resolves against nothing.
+ */
+const BAND_PLACEHOLDER: Record<(typeof RATING_FACTOR_TYPES)[number], string> = {
+  AGE: 'Label, optional',
+  SUM_ASSURED_BAND: 'e.g. 0-5000000',
+  OCCUPATION_CLASS: 'e.g. CLASS_2',
+  SMOKER_STATUS: 'e.g. NON_SMOKER',
+};
 
 /**
  * Publishing a version is the ONLY way a product ever becomes visible through
@@ -63,6 +83,7 @@ export function PublishVersionForm({
       effectiveDate: '',
       retirementDate: '',
       ratingTable: [blankRatingFactorRow(), { ...blankRatingFactorRow(), factorType: 'SUM_ASSURED_BAND' }],
+      baseRates: [],
       benefitSchedule: [],
       fundDefinitions: [],
       minEntryAge: '',
@@ -79,6 +100,12 @@ export function PublishVersionForm({
   // per row inside the render loop, which is both fewer re-renders and the form the React
   // Compiler can reason about.
   const ratingRows = useWatch({ control, name: 'ratingTable' });
+  const baseRates = useFieldArray({ control, name: 'baseRates' });
+  // Priced or not decides which factors are legal, so the rating table above has to react
+  // to what is typed in the base rate panel below. `baseRates.fields` will not do it --
+  // useFieldArray re-renders on append/remove, not on keystrokes.
+  const baseRateRows = useWatch({ control, name: 'baseRates' });
+  const priced = (baseRateRows ?? []).some(isBaseRateRowPriced);
   const benefitSchedule = useFieldArray({ control, name: 'benefitSchedule' });
   const fundDefinitions = useFieldArray({ control, name: 'fundDefinitions' });
 
@@ -195,69 +222,182 @@ export function PublishVersionForm({
       </div>
 
       <div className="rounded-md border border-border p-3">
+        {/*
+          Which factors are required flips with the base rate panel below, so this line
+          cannot state one rule. Unpriced, age is rated by multiplier and AGE is required;
+          priced, the rate table keys on age itself and an AGE multiplier is refused -- so
+          the old unconditional wording named the one factor that would now be rejected.
+        */}
         <p className="mb-2 text-xs font-medium text-muted-foreground">
-          Rating table -- must cover at least AGE and SUM_ASSURED_BAND
+          {priced
+            ? 'Rating table -- must cover at least SUM_ASSURED_BAND'
+            : 'Rating table -- must cover at least AGE and SUM_ASSURED_BAND'}
         </p>
-        <div className="space-y-2">
-          {ratingTable.fields.map((field, index) => (
-            <div key={field.id} className="flex items-center gap-2">
-              <Select
-                inputSize="sm"
-                {...register(`ratingTable.${index}.factorType`)}
-              >
-                {RATING_FACTOR_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </Select>
-              <Input
-                inputSize="sm" className="flex-1"
-                placeholder="Band, e.g. 18-30"
-                {...register(`ratingTable.${index}.band`)}
-              />
-              {/* AGE is rated by RANGE, not by matching the band text. The band stays as
-                  the label an actuary reads on the product screen; these two are what the
-                  platform actually resolves against, so they show only where they mean
-                  something and the backend refuses them anywhere else. */}
-              {ratingRows?.[index]?.factorType === 'AGE' && (
-                <>
+        {priced && (
+          <p className="-mt-1 mb-2 text-[11px] text-subtle-foreground">
+            Age and smoker status are keys of the base rate table, so they are not rated by
+            multiplier here.
+          </p>
+        )}
+        {/*
+          The row WRAPS rather than scrolling or crushing.
+
+          Band was originally the only `flex: 1 1 0%` item, so it absorbed the whole space
+          deficit as the panel narrowed -- measured at 296px of band at a 1440 viewport and
+          18px at 1100, or at any width once a reader zooms. Giving every control a floor
+          fixed the crushing but bought a horizontal scrollbar inside a form row, which is
+          worse: a control you have to scroll to reach is a control you do not know is there.
+
+          The header is behind a CONTAINER query, not a viewport one, because what matters is
+          how wide this panel is -- `DetailLayout` takes 320px of it for the record rail at
+          `lg` and gives it back below that, so panel width and window width are different
+          questions. It shows only while the row is genuinely one line; once the row wraps, a
+          column header above it would be labelling the wrong things.
+        */}
+        <div className="@container">
+          <div className="mb-1 hidden items-center gap-2 px-1 text-[11px] text-subtle-foreground @min-[37.5rem]:flex">
+            <span className="w-44 shrink-0">Factor</span>
+            <span className="min-w-32 flex-1">Band</span>
+            <span className="w-16 shrink-0 text-right">From</span>
+            <span className="w-16 shrink-0 text-right">To</span>
+            <span className="w-24 shrink-0 text-right">Multiplier</span>
+            {/* Matches the remove button's 32px footprint, so the columns stay aligned. */}
+            <span className="w-8 shrink-0" aria-hidden />
+          </div>
+
+          <div className="space-y-2">
+          {ratingTable.fields.map((field, index) => {
+            const rowType = ratingRows?.[index]?.factorType;
+            const rowErrors = errors.ratingTable?.[index];
+            // The refinements put their messages on the row's own fields. Nothing rendered
+            // them before, so a blank age bound refused the submit in silence -- the form
+            // simply did not respond, with no field marked and no reason given anywhere.
+            // A factor the rate table already keys on has to go, and saying so takes
+            // precedence over every field-level complaint about it: those tell the user to
+            // FILL IN the ages ("an AGE factor needs a from and to age") when the only
+            // correct action is to delete the row. It is computed here rather than read
+            // from `errors` because zod stops before the object-level refinement that
+            // raises it as soon as any field on the row has failed -- which, on exactly
+            // this row, is always.
+            const doubleCounted = priced && (rowType === 'AGE' || rowType === 'SMOKER_STATUS');
+            const rowMessage = doubleCounted
+              ? doubleCountedFactorMessage(rowType)
+              : (rowErrors?.band?.message ??
+                rowErrors?.ageFrom?.message ??
+                rowErrors?.ageTo?.message ??
+                rowErrors?.multiplier?.message);
+
+            return (
+              <div key={field.id}>
+                {/* Wraps onto a second line when the panel is narrow. Nothing is allowed to
+                    crush and nothing scrolls: the floors below (`min-w-32` on band,
+                    `shrink-0` on the numerics) mean the row runs out of space rather than
+                    squeezing, and `flex-wrap` is what it does when it runs out. Below its
+                    600px content width -- where it does wrap -- the row is bordered, so
+                    the multiplier and the remove button reading as a second, half-empty
+                    factor is instead one visible block, exactly as in the base rate panel
+                    below. Above it the border goes and the shared header takes over. */}
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 @min-[37.5rem]:rounded-none @min-[37.5rem]:border-0 @min-[37.5rem]:p-0">
+                  <Select
+                    inputSize="sm"
+                    className="w-44 shrink-0"
+                    aria-label={`Rating factor ${index + 1} type`}
+                    aria-invalid={doubleCounted ? true : undefined}
+                    {...register(`ratingTable.${index}.factorType`)}
+                  >
+                    {RATING_FACTOR_TYPES.map((t) => (
+                      // Humanised, like every other enum on this console. These read as
+                      // raw SUM_ASSURED_BAND wire literals before.
+                      <option key={t} value={t}>
+                        {humanizeStatus(t)}
+                      </option>
+                    ))}
+                  </Select>
+                  <Input
+                    inputSize="sm" className="min-w-32 flex-1"
+                    placeholder={BAND_PLACEHOLDER[rowType ?? 'AGE']}
+                    aria-label={`Rating factor ${index + 1} band`}
+                    aria-invalid={!doubleCounted && rowErrors?.band ? true : undefined}
+                    {...register(`ratingTable.${index}.band`)}
+                  />
+                  {/* AGE is rated by RANGE, not by matching the band text. The band stays as
+                      the label an actuary reads on the product screen; these two are what the
+                      platform actually resolves against, so they show only where they mean
+                      something and the backend refuses them anywhere else. The columns are
+                      held open on other rows so the grid does not shift as the type changes. */}
+                  {rowType === 'AGE' ? (
+                    <>
+                      <Input
+                        type="number"
+                        min={0}
+                        inputSize="sm" className="w-16 shrink-0 text-right"
+                        placeholder="from"
+                        aria-label={`Rating factor ${index + 1} from age`}
+                        aria-invalid={!doubleCounted && rowErrors?.ageFrom ? true : undefined}
+                        {...register(`ratingTable.${index}.ageFrom`)}
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        inputSize="sm" className="w-16 shrink-0 text-right"
+                        placeholder="to"
+                        aria-label={`Rating factor ${index + 1} to age`}
+                        aria-invalid={!doubleCounted && rowErrors?.ageTo ? true : undefined}
+                        {...register(`ratingTable.${index}.ageTo`)}
+                      />
+                    </>
+                  ) : (
+                    /* ...and only while there is a grid to hold open. Once the row wraps,
+                       these are two stray dashes, one ending the first line and one
+                       starting the second. */
+                    <>
+                      <span className="hidden w-16 shrink-0 text-right text-xs text-subtle-foreground @min-[37.5rem]:inline">
+                        —
+                      </span>
+                      <span className="hidden w-16 shrink-0 text-right text-xs text-subtle-foreground @min-[37.5rem]:inline">
+                        —
+                      </span>
+                    </>
+                  )}
                   <Input
                     type="number"
                     min={0}
-                    inputSize="sm" className="w-16 text-right"
-                    placeholder="from"
-                    aria-label={`Rating factor ${index + 1} from age`}
-                    {...register(`ratingTable.${index}.ageFrom`)}
+                    step="0.01"
+                    inputSize="sm" className="w-24 shrink-0 text-right"
+                    placeholder="1.0"
+                    aria-label={`Rating factor ${index + 1} multiplier`}
+                    aria-invalid={!doubleCounted && rowErrors?.multiplier ? true : undefined}
+                    {...register(`ratingTable.${index}.multiplier`)}
                   />
-                  <Input
-                    type="number"
-                    min={0}
-                    inputSize="sm" className="w-16 text-right"
-                    placeholder="to"
-                    aria-label={`Rating factor ${index + 1} to age`}
-                    {...register(`ratingTable.${index}.ageTo`)}
-                  />
-                </>
-              )}
-              <Input
-                type="number"
-                step="0.01"
-                inputSize="sm" className="w-24 text-right"
-                placeholder="1.0"
-                {...register(`ratingTable.${index}.multiplier`)}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label="Remove rating factor"
-                onClick={() => ratingTable.remove(index)}
-              >
-                <X />
-              </Button>
-            </div>
-          ))}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="shrink-0"
+                    aria-label="Remove rating factor"
+                    onClick={() => ratingTable.remove(index)}
+                  >
+                    <X />
+                  </Button>
+                </div>
+
+                {rowMessage && (
+                  <p role="alert" className="mt-1 px-1 text-[11px] text-status-danger-fg">
+                    {rowMessage}
+                  </p>
+                )}
+                {/* An AGE row needs no band typed -- it is derived from the bounds on submit
+                    so the label and the range cannot disagree. Said once, on the row that
+                    would otherwise look unfinished. */}
+                {!rowMessage && rowType === 'AGE' && !ratingRows?.[index]?.band && (
+                  <p className="mt-1 px-1 text-[11px] text-subtle-foreground">
+                    Band is optional for age — it is labelled from the range.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+          </div>
         </div>
         <Button
           type="button"
@@ -272,6 +412,152 @@ export function PublishVersionForm({
         {errors.ratingTable?.root?.message && (
           <p className="mt-1 text-[11px] text-status-danger-fg">{errors.ratingTable.root.message}</p>
         )}
+      </div>
+
+      {/*
+        The base rate table -- the thing that makes a version quotable at all.
+
+        This form sent no `baseRates` whatsoever before, so every product published
+        through this console was permanently unquotable: `POST /products/{id}/quote-premium`
+        refuses a version with no rate table, and there is NO endpoint to add rates
+        after publishing, so the only remedy was publishing another version that
+        also could not be priced. The product screen said so honestly -- "this
+        version is unpriced ... a rate table has to be supplied at publish time" --
+        describing a dead end.
+      */}
+      <div className="rounded-md border border-border p-3">
+        <p className="text-xs font-medium text-muted-foreground">Base rates (optional)</p>
+        <p className="mt-0.5 mb-2.5 text-[11px] text-subtle-foreground">
+          The annual rate per 1,000 of sum assured, by age band, sex and smoker status. A
+          version published without them is valid and sellable but{' '}
+          <strong className="font-medium text-foreground">can never be quoted</strong>, and
+          rates cannot be added afterwards. Leave a rate blank to not price that
+          combination.
+        </p>
+
+        {/*
+          41rem is this row's measured content width: 64 + 64 + 112 + 3x112 + 32 with six
+          8px gaps = 656px. The header appears only at or above it, because a header over a
+          row that has already wrapped labels the wrong boxes -- which is what 37.5rem, a
+          figure carried over from the narrower rating table above, would have done.
+        */}
+        <div className="@container">
+          <div className="mb-1 hidden items-center gap-2 px-1 text-[11px] text-subtle-foreground @min-[41rem]:flex">
+            <span className="w-16 shrink-0 text-right">From</span>
+            <span className="w-16 shrink-0 text-right">To</span>
+            <span className="w-28 shrink-0">Sex</span>
+            {BASE_RATE_COLUMNS.map((c) => (
+              <span key={c.key} className="w-28 shrink-0 text-right">
+                {c.label}
+              </span>
+            ))}
+            <span className="w-8 shrink-0" aria-hidden />
+          </div>
+
+          <div className="space-y-2">
+            {baseRates.fields.map((field, index) => {
+              const rowErrors = errors.baseRates?.[index];
+              const rowMessage =
+                rowErrors?.ageFrom?.message ??
+                rowErrors?.ageTo?.message ??
+                BASE_RATE_COLUMNS.map((c) => rowErrors?.[c.key]?.message).find(Boolean);
+
+              return (
+                <div key={field.id}>
+                  {/*
+                    Seven controls need 656px and the wizard's form column is 468px, so
+                    this row wraps -- measured, not assumed. Wrapping is the right
+                    behaviour (a scrollbar inside a form row is worse), but the wrapped
+                    remainder read as a separate, broken row, so below the breakpoint each
+                    band gets a border and becomes one visible block. Above it the border
+                    goes and the rows sit under the shared header instead.
+                  */}
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 @min-[41rem]:rounded-none @min-[41rem]:border-0 @min-[41rem]:p-0">
+                    <Input
+                      type="number"
+                      min={0}
+                      inputSize="sm" className="w-16 shrink-0 text-right"
+                      placeholder="from"
+                      aria-label={`Base rate ${index + 1} from age`}
+                      aria-invalid={rowErrors?.ageFrom ? true : undefined}
+                      {...register(`baseRates.${index}.ageFrom`)}
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      inputSize="sm" className="w-16 shrink-0 text-right"
+                      placeholder="to"
+                      aria-label={`Base rate ${index + 1} to age`}
+                      aria-invalid={rowErrors?.ageTo ? true : undefined}
+                      {...register(`baseRates.${index}.ageTo`)}
+                    />
+                    <Select
+                      inputSize="sm"
+                      className="w-28 shrink-0"
+                      aria-label={`Base rate ${index + 1} sex`}
+                      {...register(`baseRates.${index}.sex`)}
+                    >
+                      <option value="FEMALE">Female</option>
+                      <option value="MALE">Male</option>
+                    </Select>
+                    {BASE_RATE_COLUMNS.map((c) => (
+                      <Input
+                        key={c.key}
+                        type="number"
+                        min={0}
+                        step="0.0001"
+                        // w-28, not w-24: the placeholder below is the only label this box
+                        // has once the row wraps, and "Non-smoker" was being cut mid-word
+                        // at 96px.
+                        inputSize="sm" className="w-28 shrink-0 text-right"
+                        // The column header is hidden below the breakpoint, where this row
+                        // wraps -- and three boxes all placeheld "—" on a second line name
+                        // nothing at all. Each box says which rate it is instead, which
+                        // repeats the header when there is one and carries the row when
+                        // there is not. It goes away the moment a rate is typed.
+                        placeholder={c.label}
+                        aria-label={`Base rate ${index + 1} ${c.label.toLowerCase()} rate`}
+                        aria-invalid={rowErrors?.[c.key] ? true : undefined}
+                        {...register(`baseRates.${index}.${c.key}`)}
+                      />
+                    ))}
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="shrink-0"
+                      aria-label="Remove base rate band"
+                      onClick={() => baseRates.remove(index)}
+                    >
+                      <X />
+                    </Button>
+                  </div>
+
+                  {rowMessage && (
+                    <p role="alert" className="mt-1 px-1 text-[11px] text-status-danger-fg">
+                      {rowMessage}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="-ml-2 mt-2"
+          // Both sexes at once: a rate table is written per age band, and adding one
+          // row per sex invites a table priced for women and not men -- which the
+          // exact quote lookup turns into a 422 for every male applicant rather than
+          // anything visible here.
+          onClick={() => blankBaseRateBand().forEach((row) => baseRates.append(row))}
+        >
+          <Plus />
+          Add age band
+        </Button>
       </div>
 
       <div className="rounded-md border border-border p-3">

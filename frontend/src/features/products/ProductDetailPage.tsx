@@ -1,5 +1,5 @@
 import { ArrowLeft } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { canAuthorProducts, readIdentity } from '@/auth/claims';
@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { humanizeStatus } from '@/lib/status';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectProductSnapshot,
@@ -36,6 +37,8 @@ export function ProductDetailPage() {
 
   const list = useProductStore((s) => s.list);
   const loadList = useProductStore((s) => s.loadList);
+  const drafts = useProductStore((s) => s.drafts);
+  const loadDrafts = useProductStore((s) => s.loadDrafts);
   const snapshot = useProductStore(selectProductSnapshot(productId));
   const loadSnapshot = useProductStore((s) => s.loadSnapshot);
 
@@ -49,6 +52,23 @@ export function ProductDetailPage() {
     if (list.data === null) void loadList();
   }, [list.data, loadList]);
 
+  /*
+    The DRAFT list too, and only for an ADMIN.
+
+    A product is in `list` only once ACTIVE, so this page could not render a
+    product whose publish step was abandoned -- which is the one product where
+    this page is the whole point, because the publish form lives on it. Without
+    this it showed the not-found state, so a draft could be neither seen nor
+    finished anywhere on the platform.
+
+    Gated on `canAuthor` because `GET /products/drafts` is ADMIN-only: a
+    non-admin would collect a 403 in the store for a list they cannot use, and a
+    non-admin has nothing to do on a draft anyway -- publishing is ADMIN too.
+  */
+  useEffect(() => {
+    if (canAuthor && drafts.data === null) void loadDrafts();
+  }, [canAuthor, drafts.data, loadDrafts]);
+
   useEffect(() => {
     if (productId) void loadSnapshot(productId);
   }, [productId, loadSnapshot]);
@@ -57,9 +77,16 @@ export function ProductDetailPage() {
     if (productId && versionId) void loadRating(productId, versionId);
   }, [productId, versionId, loadRating]);
 
-  const product = (list.data ?? []).find((p) => p.productId === productId);
+  // The catalogue first, then the drafts: an ACTIVE product is the common case,
+  // and a product cannot be in both.
+  const product =
+    (list.data ?? []).find((p) => p.productId === productId) ??
+    (drafts.data ?? []).find((p) => p.productId === productId);
 
-  if (isInitialLoad(list)) {
+  // Both lists have to settle before "not found" can be true, or a direct link to
+  // a draft would flash the not-found state while the drafts request was still in
+  // flight and then correct itself.
+  if (isInitialLoad(list) || (canAuthor && isInitialLoad(drafts))) {
     return <LoadingBlock label="Loading product" />;
   }
 
@@ -225,7 +252,31 @@ export function ProductDetailPage() {
  * and no fixed decimal count is imposed, because padding 2.5 to "2.500" would
  * assert a precision the actuary did not give.
  */
-const RATE = new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 });
+/**
+ * Rates render at a FIXED four decimals, and that is the whole point.
+ *
+ * This was `maximumFractionDigits: 6` with no minimum, so every cell printed
+ * however many decimals it happened to need: 0.62, 1.488, 0.837, 2.0088, 2.1,
+ * 5.04. The decimal points did not line up in any two adjacent rows, which
+ * makes a rate table impossible to read down -- and reading it down is the only
+ * reason it is a table. The Tabular Rule exists for exactly this column.
+ *
+ * Four, not two and not six, because four is the column's real precision:
+ * `product.base_rate_table.rate_per_mille` is `numeric(10,4)`. Trailing zeros
+ * are therefore true rather than decorative -- 0.6200 says the stored value has
+ * four decimals and two of them are zero, where 0.62 leaves a reader guessing
+ * whether the rest was rounded away.
+ */
+const RATE = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
+});
+
+/** Multipliers carry their own precision; three decimals separates 1.075 from 1.08. */
+const MULTIPLIER = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 3,
+  maximumFractionDigits: 3,
+});
 
 const BASE_RATE_COLUMNS: Column<BaseRate>[] = [
   {
@@ -233,19 +284,22 @@ const BASE_RATE_COLUMNS: Column<BaseRate>[] = [
     header: 'Age',
     // ageTo is INCLUSIVE (see BaseRate in openapi-product.yaml). Rendered as a
     // closed interval so nobody reads "18-25" as excluding 25.
-    render: (r) => <span className="tabular-nums">{`${r.ageFrom}–${r.ageTo}`}</span>,
+    render: (r) => `${r.ageFrom}–${r.ageTo}`,
   },
-  { key: 'sex', header: 'Sex', render: (r) => r.sex },
+  // Both of these were humanised differently -- `sex` was printed raw, so the
+  // table read "FEMALE" beside "non smoker" in adjacent columns. One humaniser
+  // for both, and it is the one the rest of the console already uses.
+  { key: 'sex', header: 'Sex', render: (r) => humanizeStatus(r.sex) },
   {
     key: 'smokerStatus',
     header: 'Smoker',
-    render: (r) => r.smokerStatus.replace(/_/g, ' ').toLowerCase(),
+    render: (r) => humanizeStatus(r.smokerStatus),
   },
   {
     key: 'ratePerMille',
     header: 'Rate / 1,000',
     align: 'right',
-    render: (r) => <span className="tabular-nums">{RATE.format(r.ratePerMille)}</span>,
+    render: (r) => RATE.format(r.ratePerMille),
   },
 ];
 
@@ -273,7 +327,10 @@ function RatingBasis({
   }
 
   if (isInitialLoad(rating)) {
-    return <p className="px-4 pb-4 pt-3 text-xs text-muted-foreground">Loading…</p>;
+    // Was a bare <p>Loading…</p>, which a screen reader never announced -- there
+    // was no live region, so the panel simply went quiet and then had content.
+    // `LoadingBlock` is the console's shared surface and carries role="status".
+    return <LoadingBlock label="Loading rating basis" />;
   }
 
   if (rating.status === 'error' && rating.error && rating.data === null) {
@@ -286,24 +343,57 @@ function RatingBasis({
   const factors = rating.data.ratingFactors ?? [];
   const benefits = rating.data.benefitSchedule ?? [];
 
+  /*
+    Bounded sections first, the unbounded grid last.
+
+    The rate table is five bands wide by sex by smoker status -- twenty rows on
+    this product and it grows with every band an actuary adds. It used to lead
+    this panel, which pushed the multipliers and the benefit schedule (eight
+    lines between them) so far below the fold that a reader scrolling for them
+    passed twenty rows of rate cells first. That is DetailLayout's own rule --
+    bounded panels before unbounded ones -- applied inside a panel.
+  */
   return (
-    <div className="space-y-4 pb-4">
+    <div className="pb-4">
+      <FactorSection
+        title="Rating multipliers"
+        empty="No multipliers on this version."
+        rows={factors.map((f) => ({
+          key: `${f.factorType}-${f.band}`,
+          label: factorLabel(f),
+          note: [f.band, factorAgeRange(f)].filter(Boolean).join(' · ') || null,
+          value: f.multiplier == null ? '—' : `× ${MULTIPLIER.format(f.multiplier)}`,
+        }))}
+      />
+
+      <FactorSection
+        title="Benefit schedule"
+        empty="No benefits on this version."
+        rows={benefits.map((b) => ({
+          key: `${b.benefitType}-${b.calculationMethod}`,
+          label: b.benefitType ? humanizeStatus(b.benefitType) : '—',
+          note: null,
+          value: b.calculationMethod ? humanizeStatus(b.calculationMethod) : '—',
+        }))}
+      />
+
       <section>
-        <h3 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Base rates
-        </h3>
+        <SectionHeading>Base rates</SectionHeading>
         {baseRates.length === 0 ? (
           // NOT an empty table. Every version published before M13 has no rate
           // table at all, which is a different fact from "the table is empty" --
           // it means no premium can be quoted for this product, and a bare
           // "No rows" would leave a reader to guess that.
-          <p className="mt-1 px-4 text-xs text-muted-foreground">
+          //
+          // `max-w-prose` because this is the one paragraph of real prose in the
+          // panel, and at the panel's full width it set a ~140-character measure.
+          <p className="max-w-prose px-4 text-xs text-muted-foreground">
             This version is <strong className="font-medium text-foreground">unpriced</strong>. It was
             published without a base rate table, so nothing on this platform can quote a premium for
             it. A rate table has to be supplied at publish time, and this version had none.
           </p>
         ) : (
-          <div className="mt-1 border-t border-border">
+          <div className="border-t border-border">
             <DataTable
               columns={BASE_RATE_COLUMNS}
               rows={baseRates}
@@ -313,27 +403,24 @@ function RatingBasis({
           </div>
         )}
       </section>
-
-      <FactorList
-        title="Rating multipliers"
-        empty="No multipliers on this version."
-        rows={factors.map((f) => ({
-          key: `${f.factorType}-${f.band}`,
-          label: factorLabel(f),
-          value: f.multiplier === undefined ? '—' : `× ${RATE.format(f.multiplier)}`,
-        }))}
-      />
-
-      <FactorList
-        title="Benefit schedule"
-        empty="No benefits on this version."
-        rows={benefits.map((b) => ({
-          key: `${b.benefitType}-${b.calculationMethod}`,
-          label: (b.benefitType ?? '—').replace(/_/g, ' ').toLowerCase(),
-          value: b.calculationMethod ?? '—',
-        }))}
-      />
     </div>
+  );
+}
+
+/**
+ * The Eyebrow tier, to spec: 11px, weight 500, +0.03em, Subtle Ink.
+ *
+ * These were 12px/600 in Muted Ink, which put them a half-step under the panel's
+ * own title and directly above a table header row set in the same grey -- so
+ * "BASE RATES" and "Age / Sex / Smoker" competed instead of nesting. `pt-5 pb-2`
+ * rather than the old `pt-3 mt-1`: more room above a heading than below it, so
+ * the heading groups with what follows it rather than floating between sections.
+ */
+function SectionHeading({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="px-4 pt-5 pb-2 text-[11px] font-medium tracking-[0.03em] text-subtle-foreground uppercase">
+      {children}
+    </h3>
   );
 }
 
@@ -343,37 +430,88 @@ function RatingBasis({
  * exactly how age went unrated here. Publishing now requires them, so show them: a screen
  * that renders only the band cannot tell a reader whether the range behind it is right,
  * or even present.
+ *
+ * Two bugs lived in the previous version of this, both visible on screen:
+ *
+ * 1. It guarded on `=== undefined`, but `openapi-product.yaml` declares these as
+ *    `type: [integer, "null"]`. The wire sends null, the guard missed it, and the
+ *    console printed "(ages null–null)" -- which CSS `capitalize` then dressed up as
+ *    "(Ages Null–Null)", so it read like a deliberate label rather than absent data.
+ *    An absent value is an em dash on this platform, never a literal.
+ * 2. It appended the age range to EVERY factor type. A sum-assured band was rendered
+ *    with an age range beside it, which is not a fact about that row -- the bounds
+ *    only mean anything on an AGE factor.
  */
-function factorLabel(factor: RatingFactorRow): string {
-  const base = `${(factor.factorType ?? '—').replace(/_/g, ' ').toLowerCase()} · ${factor.band ?? '—'}`;
-  return factor.ageFrom === undefined || factor.ageTo === undefined
-    ? base
-    : `${base} (ages ${factor.ageFrom}–${factor.ageTo})`;
+function factorAgeRange(factor: RatingFactorRow): string | null {
+  if (factor.factorType !== 'AGE') return null;
+  // `!= null` on purpose: catches both null and undefined, which is the whole fix.
+  if (factor.ageFrom == null || factor.ageTo == null) {
+    // An AGE factor with no bounds is the state that let age go unrated before V5.
+    // Saying so is more useful than saying nothing.
+    return 'no age bounds';
+  }
+  return `ages ${factor.ageFrom}–${factor.ageTo}`;
 }
 
-function FactorList({
+function factorLabel(factor: RatingFactorRow): string {
+  return factor.factorType ? humanizeStatus(factor.factorType) : '—';
+}
+
+/**
+ * A `<dl>` of label/value pairs, not a `<ul>` of two spans.
+ *
+ * Three things were wrong with the list this replaces, and all three showed:
+ *
+ * 1. `justify-between` across the full work column put "Age · 18-30" at the left
+ *    edge and "× 1" a thousand pixels away at the right, with nothing between
+ *    them. Nobody can carry a value that far. The pairs are capped at 28rem now,
+ *    so a label and its multiplier stay in one glance -- the same reason
+ *    DetailLayout's Field rows live in a 320px rail.
+ * 2. The LABEL was full-strength ink and the VALUE was muted, which is the
+ *    emphasis backwards: the multiplier is the answer somebody opened this panel
+ *    to read. Value takes the content tier, label takes Muted Ink.
+ * 3. The value was `font-mono`. A multiplier is a figure, not a machine
+ *    identifier, and the global tabular figures already make the column align --
+ *    mono here was costume. Mono on this platform is for trace ids.
+ *
+ * `capitalize` is also gone: it Title-Cased every word, so `SUM_ASSURED_BAND`
+ * arrived as "Sum Assured Band" in a console that writes sentence case
+ * everywhere else. `humanizeStatus` gives "Sum assured band".
+ */
+function FactorSection({
   title,
   empty,
   rows,
 }: {
   title: string;
   empty: string;
-  rows: { key: string; label: string; value: string }[];
+  rows: { key: string; label: string; note: string | null; value: string }[];
 }) {
   return (
-    <section className="px-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+    <section>
+      <SectionHeading>{title}</SectionHeading>
       {rows.length === 0 ? (
-        <p className="mt-1 text-xs text-muted-foreground">{empty}</p>
+        <p className="px-4 text-xs text-muted-foreground">{empty}</p>
       ) : (
-        <ul className="mt-1.5 space-y-1">
+        <dl className="max-w-md px-4">
           {rows.map((row) => (
-            <li key={row.key} className="flex items-baseline justify-between gap-3 text-xs">
-              <span className="capitalize">{row.label}</span>
-              <span className="shrink-0 font-mono tabular-nums text-muted-foreground">{row.value}</span>
-            </li>
+            <div
+              key={row.key}
+              className="flex items-baseline justify-between gap-4 border-b border-border py-2 last:border-0"
+            >
+              <dt className="min-w-0 text-xs text-muted-foreground">
+                {row.label}
+                {row.note && (
+                  // The band the actuary typed, and the age bounds where they
+                  // apply. Secondary to the factor type, so it sits under it
+                  // rather than competing on the same line.
+                  <span className="block text-[11px] text-subtle-foreground">{row.note}</span>
+                )}
+              </dt>
+              <dd className="shrink-0 text-sm">{row.value}</dd>
+            </div>
           ))}
-        </ul>
+        </dl>
       )}
     </section>
   );

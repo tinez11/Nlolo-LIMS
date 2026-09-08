@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  blankBaseRateBand,
   blankPublishVersionForm,
   publishVersionFormSchema,
   toApiRequest,
@@ -50,10 +51,198 @@ describe('publishVersionFormSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects a rating row with a blank band', () => {
+  /**
+   * Band used to be required on every row. It is required everywhere EXCEPT age now, and the
+   * distinction is the point rather than a relaxation.
+   *
+   * On a SUM_ASSURED_BAND or OCCUPATION_CLASS row the band text IS what the platform matches,
+   * so a blank one rates nothing. On an AGE row it is a pure label -- openapi-product.yaml:
+   * "remains as the human-readable label but is not matched against", because age resolves on
+   * ageFrom/ageTo. Requiring it there made an actuary type the same range twice with nothing
+   * keeping the two in step, and the seeded data already showed them disagreeing.
+   */
+  it('rejects a blank band on a row whose band is what gets matched', () => {
     expect(
-      termLife.safeParse({ ...valid(), ratingTable: [{ ...ageRow, band: '' }, sumRow] }).success,
+      termLife.safeParse({ ...valid(), ratingTable: [ageRow, { ...sumRow, band: '' }] }).success,
     ).toBe(false);
+    expect(
+      termLife.safeParse({
+        ...valid(),
+        ratingTable: [ageRow, sumRow, { factorType: 'SMOKER_STATUS' as const, band: '', multiplier: 0.9 }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a blank band on an AGE row, and labels it from the range on the wire', () => {
+    const result = termLife.safeParse({
+      ...valid(),
+      ratingTable: [{ ...ageRow, band: '' }, sumRow],
+    });
+    expect(result.success).toBe(true);
+
+    // Derived, not sent blank: the backend still receives a band on every row, and it cannot
+    // contradict the bounds because nobody typed it.
+    const wire = toApiRequest(result.data!);
+    expect(wire.ratingTable![0]).toMatchObject({ factorType: 'AGE', band: '18-30', ageFrom: 18, ageTo: 30 });
+  });
+
+  it('keeps a band the actuary did type on an AGE row', () => {
+    const result = termLife.safeParse({
+      ...valid(),
+      ratingTable: [{ ...ageRow, band: 'Young lives' }, sumRow],
+    });
+    expect(result.success).toBe(true);
+    expect(toApiRequest(result.data!).ratingTable![0]).toMatchObject({ band: 'Young lives' });
+  });
+
+  /**
+   * Base rates, and the priced/unpriced fork.
+   *
+   * This form sent no `baseRates` at all before, so every product published through
+   * the console was permanently unquotable -- `quote-premium` refuses a version with
+   * no rate table, and no endpoint adds rates after publishing. The client schema was
+   * part of why: it demanded an AGE rating factor unconditionally, which is exactly
+   * what `ProductApiImpl.publishVersion` REFUSES once base rates are present, because
+   * age is a key of the rate table and a multiplier would count it twice.
+   */
+  describe('base rates', () => {
+    type BandRow = {
+      ageFrom: string;
+      ageTo: string;
+      sex: 'FEMALE' | 'MALE';
+      nonSmoker: string;
+      smoker: string;
+      unknown: string;
+    };
+
+    // A priced female 18-30 band, overridable per test.
+    const band = (over: Partial<BandRow> = {}): BandRow => ({
+      ageFrom: '18',
+      ageTo: '30',
+      sex: 'FEMALE',
+      nonSmoker: '0.62',
+      smoker: '1.488',
+      unknown: '',
+      ...over,
+    });
+
+    it('expands one form row into one wire cell per priced smoker status, and drops blanks', () => {
+      const result = termLife.safeParse({
+        ...valid(),
+        // Priced, so AGE must NOT be a multiplier -- only SUM_ASSURED_BAND.
+        ratingTable: [sumRow],
+        baseRates: [band(), band({ sex: 'MALE', nonSmoker: '0.837', smoker: '2.0088', unknown: '1.2' })],
+      });
+      expect(result.success).toBe(true);
+
+      const wire = toApiRequest(result.data!).baseRates!;
+      // 2 priced on the female row + 3 on the male row. The blank female UNKNOWN is
+      // dropped rather than sent as 0, which the database CHECK would refuse anyway.
+      expect(wire).toHaveLength(5);
+      expect(wire).toEqual(
+        expect.arrayContaining([
+          { ageFrom: 18, ageTo: 30, sex: 'FEMALE', smokerStatus: 'NON_SMOKER', ratePerMille: 0.62 },
+          { ageFrom: 18, ageTo: 30, sex: 'FEMALE', smokerStatus: 'SMOKER', ratePerMille: 1.488 },
+          { ageFrom: 18, ageTo: 30, sex: 'MALE', smokerStatus: 'UNKNOWN', ratePerMille: 1.2 },
+        ]),
+      );
+      expect(wire.some((c) => c.sex === 'FEMALE' && c.smokerStatus === 'UNKNOWN')).toBe(false);
+    });
+
+    it('omits baseRates entirely when nothing is priced, rather than sending an empty array', () => {
+      const result = termLife.safeParse({ ...valid(), baseRates: blankBaseRateBand() });
+      expect(result.success).toBe(true);
+      expect(toApiRequest(result.data!)).not.toHaveProperty('baseRates');
+    });
+
+    it('refuses an AGE or SMOKER_STATUS multiplier once base rates are supplied', () => {
+      // The backend calls this "the single most likely defect in this design": both
+      // dimensions are keys of the rate table, so a multiplier applies them twice.
+      for (const factorType of ['AGE', 'SMOKER_STATUS'] as const) {
+        const result = termLife.safeParse({
+          ...valid(),
+          ratingTable: [sumRow, { factorType, band: 'X', multiplier: 1.1 }],
+          baseRates: [band()],
+        });
+        expect(result.success).toBe(false);
+      }
+    });
+
+    it('requires only SUM_ASSURED_BAND when priced -- AGE is the rate table key', () => {
+      // Exactly the table that the OLD schema rejected and the server accepts.
+      const result = termLife.safeParse({ ...valid(), ratingTable: [sumRow], baseRates: [band()] });
+      expect(result.success).toBe(true);
+    });
+
+    it('still requires AGE and SUM_ASSURED_BAND when the version is unpriced', () => {
+      expect(termLife.safeParse({ ...valid(), ratingTable: [sumRow], baseRates: [] }).success).toBe(false);
+      expect(termLife.safeParse({ ...valid(), ratingTable: [ageRow, sumRow], baseRates: [] }).success).toBe(true);
+    });
+
+    it('refuses a rate of zero or less, which the database CHECK also refuses', () => {
+      for (const rate of ['0', '-1']) {
+        const result = termLife.safeParse({
+          ...valid(),
+          ratingTable: [sumRow],
+          baseRates: [band({ nonSmoker: rate })],
+        });
+        expect(result.success).toBe(false);
+      }
+    });
+
+    it('refuses a band that ends before it begins, and one with no rate at all', () => {
+      expect(
+        termLife.safeParse({
+          ...valid(),
+          ratingTable: [sumRow],
+          baseRates: [band({ ageFrom: '30', ageTo: '18' })],
+        }).success,
+      ).toBe(false);
+
+      expect(
+        termLife.safeParse({
+          ...valid(),
+          ratingTable: [sumRow],
+          baseRates: [band({ nonSmoker: '', smoker: '', unknown: '' })],
+        }).success,
+      ).toBe(false);
+    });
+
+    /**
+     * Mirrors `rejectOverlappingAgeBands`, and its reason: an age falling in two
+     * bands "would price differently depending on row order".
+     */
+    it('refuses overlapping bands for the same sex and smoker status', () => {
+      const result = termLife.safeParse({
+        ...valid(),
+        ratingTable: [sumRow],
+        baseRates: [band({ ageFrom: '18', ageTo: '30' }), band({ ageFrom: '25', ageTo: '40' })],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('allows the same band twice when the two rows price different smoker statuses', () => {
+      // Splitting one band across two lines is legitimate: no age resolves to two
+      // rates, because no (sex, smokerStatus) is priced twice.
+      const result = termLife.safeParse({
+        ...valid(),
+        ratingTable: [sumRow],
+        baseRates: [
+          band({ nonSmoker: '0.62', smoker: '', unknown: '' }),
+          band({ nonSmoker: '', smoker: '1.488', unknown: '' }),
+        ],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('allows the same band for both sexes -- which is what "add age band" produces', () => {
+      const result = termLife.safeParse({
+        ...valid(),
+        ratingTable: [sumRow],
+        baseRates: [band(), band({ sex: 'MALE' })],
+      });
+      expect(result.success).toBe(true);
+    });
   });
 
   it('accepts an empty benefit schedule -- no minimum coverage required', () => {

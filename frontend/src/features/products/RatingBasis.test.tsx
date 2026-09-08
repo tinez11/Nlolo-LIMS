@@ -20,9 +20,27 @@ vi.mock('react-oidc-context', () => ({ useAuth: () => ({ user: undefined }) }));
  * `PublishVersionForm` sends no `baseRates`, so every version publishable here is
  * unpriced, and the e2e proof against real data can only ever exercise the empty
  * case. Until an actuary supplies a rate table (M13's outstanding blocker) this is
- * the only coverage the priced rendering has -- so it asserts the two things a
- * wrong rendering would get wrong: that `ageTo` reads as INCLUSIVE, and that a
- * rate is shown exactly as sent rather than padded to a fixed precision.
+ * the only coverage the priced rendering has.
+ *
+ * ## Rates are padded to four decimals now, reversing an earlier decision here
+ *
+ * This file used to assert the opposite -- "shown as sent", on the reasoning that
+ * `2.5000` claims precision the actuary did not give. That reasoning was tested
+ * against a two-row fixture, where nothing is out of line because there is
+ * nothing to line up with.
+ *
+ * Rendered against a real twenty-cell grid it fails badly. The column came out
+ * `0.62 / 1.488 / 0.837 / 2.0088 / 0.95 / 2.28 / 1.2825`: one, two, three and
+ * four decimals alternating, so no two adjacent decimal points aligned and the
+ * table could not be read down a column -- which is the only reason a rate table
+ * is a table at all. CSS cannot align on a decimal point; padding is the only
+ * fix available.
+ *
+ * And the precision objection does not hold against the schema:
+ * `product.base_rate_table.rate_per_mille` is `numeric(10,4)`. The stored value
+ * IS four decimals, so `2.5000` reports the column's real precision rather than
+ * inventing any -- whereas `2.5` leaves a reader unable to tell whether the
+ * remaining digits were zero or rounded away.
  */
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
@@ -73,7 +91,7 @@ describe('rating basis', () => {
     useProductStore.setState({ ratings: {} });
   });
 
-  it('renders a real rate table, with an inclusive upper age and an unpadded rate', () => {
+  it('renders a real rate table, with an inclusive upper age and rates padded to the column precision', () => {
     renderPage({
       productId: PRODUCT_ID,
       productVersionId: VERSION_ID,
@@ -90,12 +108,27 @@ describe('rating basis', () => {
     // A closed interval: 18-25 covers a 25-year-old, per BaseRate in the spec.
     expect(screen.getByText('18–25')).toBeInTheDocument();
     expect(screen.getByText('26–35')).toBeInTheDocument();
-    // Shown as sent. "2.500" would assert precision the actuary did not give.
-    expect(screen.getByText('2.5')).toBeInTheDocument();
-    expect(screen.getByText('4.125')).toBeInTheDocument();
+    // Four decimals, always, so the decimal points line up down the column. The
+    // two fixtures deliberately differ in supplied precision (2.5 and 4.125) --
+    // if either rendered unpadded the column would go ragged again.
+    expect(screen.getByText('2.5000')).toBeInTheDocument();
+    expect(screen.getByText('4.1250')).toBeInTheDocument();
+    expect(screen.queryByText('2.5')).not.toBeInTheDocument();
 
-    expect(screen.getByText('× 1.1')).toBeInTheDocument();
-    expect(screen.getByText('SUM_ASSURED')).toBeInTheDocument();
+    // Multipliers get three, for the same reason at their own precision.
+    expect(screen.getByText('× 1.100')).toBeInTheDocument();
+
+    // Humanised, not raw. This asserted `SUM_ASSURED` before, which is the wire
+    // literal -- a calculation method is shown to a person here, and every other
+    // enum on this platform goes through the same humaniser.
+    expect(screen.getByText('Sum assured')).toBeInTheDocument();
+    expect(screen.queryByText('SUM_ASSURED')).not.toBeInTheDocument();
+
+    // Sex was printed raw while the column beside it was lowercased, so the table
+    // read "FEMALE" next to "non smoker". One humaniser for both.
+    expect(screen.getByText('Male')).toBeInTheDocument();
+    expect(screen.getByText('Non smoker')).toBeInTheDocument();
+    expect(screen.queryByText('MALE')).not.toBeInTheDocument();
 
     // The unpriced warning must NOT appear next to a real rate table.
     expect(screen.queryByText(/unpriced/)).not.toBeInTheDocument();
@@ -112,14 +145,61 @@ describe('rating basis', () => {
       baseRates: [],
       ratingFactors: [
         { factorType: 'AGE', band: '18-30', multiplier: 1, ageFrom: 18, ageTo: 30 },
-        { factorType: 'SUM_ASSURED_BAND', band: 'LOW', multiplier: 1.1 },
+        // null, NOT omitted. openapi-product.yaml declares these as
+        // `type: [integer, "null"]`, so null is what the wire actually sends for a
+        // factor with no bounds -- see the regression test below for why that
+        // distinction cost a visible bug.
+        { factorType: 'SUM_ASSURED_BAND', band: 'LOW', multiplier: 1.1, ageFrom: null, ageTo: null },
       ],
       benefitSchedule: [],
     });
 
-    expect(screen.getByText('age · 18-30 (ages 18–30)')).toBeInTheDocument();
+    // Factor type is the label; the band and the bounds are a note beneath it,
+    // rather than all three crushed into one string.
+    expect(screen.getByText('Age')).toBeInTheDocument();
+    expect(screen.getByText('18-30 · ages 18–30')).toBeInTheDocument();
+
     // Only AGE rows carry bounds; nothing invented for the ones that do not.
-    expect(screen.getByText('sum assured band · LOW')).toBeInTheDocument();
+    expect(screen.getByText('Sum assured band')).toBeInTheDocument();
+    expect(screen.getByText('LOW')).toBeInTheDocument();
+    expect(screen.queryByText(/ages/i)).not.toBeNull();
+    expect(screen.queryByText(/LOW · ages/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The regression this file could not catch before.
+   *
+   * The guard read `factor.ageFrom === undefined`, and every fixture here OMITTED
+   * the field, which makes it undefined -- so the tests passed. The wire sends
+   * `null` (`type: [integer, "null"]`), which that guard does not catch, so the
+   * live console rendered "(ages null–null)" and CSS `capitalize` dressed it up as
+   * "(Ages Null–Null)" -- indistinguishable from a deliberate label.
+   *
+   * Both shapes are asserted here, because a fixture that only tests the one the
+   * wire does not send is how this got shipped.
+   */
+  it('never prints a null age bound, whether the field is null or absent', () => {
+    renderPage({
+      productId: PRODUCT_ID,
+      productVersionId: VERSION_ID,
+      effectiveDate: '2026-01-01',
+      baseRates: [],
+      ratingFactors: [
+        { factorType: 'AGE', band: 'ALL', multiplier: 1, ageFrom: null, ageTo: null },
+        { factorType: 'OCCUPATION_CLASS', band: 'CLASS_2', multiplier: 1.25 },
+      ],
+      benefitSchedule: [],
+    });
+
+    expect(screen.queryByText(/null/i)).not.toBeInTheDocument();
+
+    // An AGE factor with no bounds is the state that let age go unrated before
+    // product V5, so it is named rather than silently omitted.
+    expect(screen.getByText('ALL · no age bounds')).toBeInTheDocument();
+
+    // A non-AGE factor gets no age note at all, bounds absent or not.
+    expect(screen.getByText('Occupation class')).toBeInTheDocument();
+    expect(screen.getByText('CLASS_2')).toBeInTheDocument();
   });
 
   it('says a version with no rate table is unpriced, rather than showing an empty table', () => {

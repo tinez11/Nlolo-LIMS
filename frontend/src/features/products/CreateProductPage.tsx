@@ -119,11 +119,35 @@ export function CreateProductPage() {
                   role="alert"
                   className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
                 >
-                  {creating.error.detail ?? creating.error.title}
+                  <p>{creating.error.detail ?? creating.error.title}</p>
+
+                  {/*
+                    A duplicate code is very often a code taken by a product nobody can see.
+                    `GET /products` returns ACTIVE products only, and a product is ACTIVE only
+                    once a version is published -- so abandoning this wizard's second phase
+                    leaves a DRAFT that holds the code and appears in no list. Reported from
+                    the console as "already exists ... but is not on the list", which is
+                    exactly right and was impossible to work out from the message alone.
+                  */}
+                  {creating.error.kind === 'conflict' && (
+                    <p className="mt-1.5 opacity-90">
+                      If it is not in the products list, it is an unpublished draft: the list
+                      shows only products with a published version. Use a different code, or
+                      ask an administrator to publish or remove the draft.
+                    </p>
+                  )}
+
+                  {/*
+                    Labelled `trace`, and on its own line. It was an unlabelled uuid in bare
+                    parentheses immediately after "...already exists for this tenant", which
+                    reads as the tenant's id -- and was read that way. `select-all` matches the
+                    console's other trace ids: it is the thread back to the backend logs, so
+                    it exists to be copied.
+                  */}
                   {creating.error.traceId && (
-                    <span className="ml-2 font-mono text-[10px] opacity-80">
-                      ({creating.error.traceId})
-                    </span>
+                    <p className="mt-1.5 font-mono text-[10px] opacity-80 select-all">
+                      trace {creating.error.traceId}
+                    </p>
                   )}
                 </div>
               )}
