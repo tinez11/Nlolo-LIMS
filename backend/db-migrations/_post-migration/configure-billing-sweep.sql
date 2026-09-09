@@ -44,6 +44,22 @@ BEGIN
        AND NOT EXISTS (
            SELECT 1 FROM billing.arrears_case ac
             WHERE ac.invoice_id = pi.invoice_id AND ac.resolved_at IS NULL
+       )
+       -- In-force policies only. A PROPOSED policy is an offer awaiting its first premium, and
+       -- that first invoice is precisely what the customer pays to accept. Opening an arrears
+       -- case against somebody who has not accepted yet fills a queue people work daily with
+       -- names that do not belong in it -- and dunning a prospect for not having bought
+       -- something is a customer-facing error, not just a noisy queue. An unpaid offer is closed
+       -- by policy.sweep_expired_offers() instead, which is the right instrument for it.
+       --
+       -- Scoped here rather than at the lapse step because PolicyLapseRecommended is already
+       -- guarded (its listener acts only on ACTIVE or SUSPENDED), so nothing was ever wrongly
+       -- lapsed. This is about the collections queue.
+       AND EXISTS (
+           SELECT 1 FROM policy.policy p
+            WHERE p.policy_number = pi.policy_number
+              AND p.tenant_id = pi.tenant_id
+              AND p.status IN ('ACTIVE', 'REINSTATED', 'SUSPENDED')
        );
 
     -- 4. Escalate dunning level on every open ArrearsCase per the refdata-configured thresholds.

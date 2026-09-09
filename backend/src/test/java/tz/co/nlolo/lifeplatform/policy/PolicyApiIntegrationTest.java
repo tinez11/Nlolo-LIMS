@@ -40,6 +40,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -97,6 +102,8 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
+            // The offer-validity window the expiry sweep reads.
+            "db-migrations/refdata/V5__seed_offer_validity.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -573,6 +580,80 @@ class PolicyApiIntegrationTest {
         assertThat(policyApi.getPolicy(policyNumber).status())
             .as("a refused settlement must leave the offer exactly as it was")
             .isEqualTo(PolicyStatus.PROPOSED);
+    }
+
+    /**
+     * The sweep closes an offer past the window and leaves a younger one alone.
+     *
+     * <p>The function lives in {@code _post-migration}, which {@code scripts/migrate.sh}
+     * deliberately does not apply, so it is loaded here from the same file operations runs. A copy
+     * inlined in this test would keep passing while the real file rotted -- which is exactly how
+     * the billing sweep shipped a broken {@code CALL} for three milestones.
+     */
+    @Test
+    void theSweepClosesAnOfferPastTheWindowAndLeavesAYoungerOneAlone() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String stale = issueDirectly(tenantId, buildFixture(tenantId, "POLICY-SWEEP-OLD"), List.of());
+        String fresh = issueDirectly(tenantId, buildFixture(tenantId, "POLICY-SWEEP-NEW"), List.of());
+
+        String sweepSql = Files.readString(
+            Path.of("db-migrations/_post-migration/configure-offer-expiry-sweep.sql"));
+        // Everything above the cron.schedule line is the function itself, which is what is under
+        // test; scheduling needs the pg_cron extension, which this container does not load.
+        String functionOnly = sweepSql.substring(0, sweepSql.indexOf("-- Daily at 02:00"));
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute(functionOnly);
+            // 31 days against a seeded 30-day window. Ageing the row is the only way to test a
+            // deadline without waiting for it.
+            statement.execute("UPDATE policy.policy SET created_at = now() - INTERVAL '31 days' "
+                + "WHERE policy_number = '" + stale + "'");
+            statement.execute("SELECT policy.sweep_expired_offers()");
+        }
+
+        TenantContext.set(tenantId);
+        assertThat(policyApi.getPolicy(stale).status()).isEqualTo(PolicyStatus.NOT_TAKEN_UP);
+        assertThat(policyApi.getPolicy(fresh).status())
+            .as("a fresh offer is still open; the window is a deadline, not a suggestion")
+            .isEqualTo(PolicyStatus.PROPOSED);
+    }
+
+    /**
+     * The sweep does not touch cover.
+     *
+     * <p>It sets the status with a raw UPDATE, so it never passes through
+     * {@link tz.co.nlolo.lifeplatform.policy.domain.Policy#markNotTakenUp()} and does not inherit
+     * that guard. Its {@code WHERE status = 'PROPOSED'} is the guard, and this is what proves it:
+     * an old ACTIVE policy is exactly what a missing predicate would silently terminate.
+     */
+    @Test
+    void theSweepLeavesAnOldInForcePolicyAlone() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-SWEEP-INFORCE");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(policyNumber);
+
+        String sweepSql = Files.readString(
+            Path.of("db-migrations/_post-migration/configure-offer-expiry-sweep.sql"));
+        String functionOnly = sweepSql.substring(0, sweepSql.indexOf("-- Daily at 02:00"));
+
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute(functionOnly);
+            statement.execute("UPDATE policy.policy SET created_at = now() - INTERVAL '400 days' "
+                + "WHERE policy_number = '" + policyNumber + "'");
+            statement.execute("SELECT policy.sweep_expired_offers()");
+        }
+
+        TenantContext.set(tenantId);
+        assertThat(policyApi.getPolicy(policyNumber).status())
+            .as("a policy on risk for over a year is not an expired offer")
+            .isEqualTo(PolicyStatus.ACTIVE);
+        assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
     }
 
     @Test

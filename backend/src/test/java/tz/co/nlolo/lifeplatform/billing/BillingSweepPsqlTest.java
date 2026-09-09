@@ -49,7 +49,19 @@ class BillingSweepPsqlTest {
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
-            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql");
+            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            // The policy schema is new to this list, and not incidental: the arrears step of the
+            // sweep now joins policy.policy to skip offers nobody has accepted, so the function
+            // will not even parse without these. The test inserts its own policy rows below.
+            "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql",
+            "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/policy/V5__beneficiary_party_index.sql",
+            "db-migrations/policy/V6__policy_term.sql",
+            "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
+            "db-migrations/policy/V11__not_taken_up_status.sql");
 
         String fullFile = Files.readString(Path.of("db-migrations/_post-migration/configure-billing-sweep.sql"));
         String functionOnly = fullFile.substring(0, fullFile.indexOf("-- Every 15 minutes"));
@@ -105,6 +117,75 @@ class BillingSweepPsqlTest {
         }
     }
 
+    /**
+     * Nobody is chased for not having bought something.
+     *
+     * <p>An unpaid offer's first invoice goes overdue exactly like any other, so before the
+     * arrears step was scoped to in-force policies this raised a dunning case against a customer
+     * who had merely not accepted yet -- and then escalated it every few days. Around 15% of
+     * accepted proposals are never taken up, so this was not a rare corner: it was a standing
+     * share of the collections queue that people work daily.
+     *
+     * <p>The invoice must still go OVERDUE. The offer is genuinely unpaid and billing's own state
+     * machine is not what changed here; what changed is that nothing dunned for it.
+     * policy.sweep_expired_offers() is what closes the offer itself.
+     */
+    @Test
+    void noArrearsCaseIsOpenedAgainstAnOfferNobodyHasAccepted() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID scheduleId = UUID.randomUUID();
+        UUID offerInvoiceId = UUID.randomUUID();
+
+        try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            insertPolicy(connection, tenantId, "BILLING-SWEEP-OFFER", "PROPOSED");
+
+            try (PreparedStatement insertSchedule = connection.prepareStatement(
+                    "INSERT INTO billing.billing_schedule (billing_schedule_id, tenant_id, policy_number, premium_frequency, premium_amount) " +
+                    "VALUES (?, ?, 'BILLING-SWEEP-OFFER', 'MONTHLY', 15000.00)")) {
+                insertSchedule.setObject(1, scheduleId);
+                insertSchedule.setObject(2, tenantId);
+                assertThat(insertSchedule.executeUpdate()).isEqualTo(1);
+            }
+            // Same shape as the overdue invoice in the test below: grace ended yesterday, so this
+            // would open a dunning case if the policy's status were not consulted.
+            try (PreparedStatement insertInvoice = connection.prepareStatement(
+                    "INSERT INTO billing.premium_invoice (invoice_id, tenant_id, billing_schedule_id, policy_number, due_date, amount, " +
+                    "grace_period_ends_at, status) VALUES (?, ?, ?, 'BILLING-SWEEP-OFFER', ?, 15000.00, ?, 'DUE')")) {
+                insertInvoice.setObject(1, offerInvoiceId);
+                insertInvoice.setObject(2, tenantId);
+                insertInvoice.setObject(3, scheduleId);
+                insertInvoice.setObject(4, LocalDate.now().minusDays(20));
+                insertInvoice.setObject(5, LocalDate.now().minusDays(1));
+                assertThat(insertInvoice.executeUpdate()).isEqualTo(1);
+            }
+
+            try (Statement sweep = connection.createStatement()) {
+                sweep.execute("SELECT billing.sweep_billing_state()");
+            }
+
+            try (PreparedStatement invoiceCheck = connection.prepareStatement(
+                    "SELECT status FROM billing.premium_invoice WHERE invoice_id = ?")) {
+                invoiceCheck.setObject(1, offerInvoiceId);
+                try (ResultSet rs = invoiceCheck.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getString(1))
+                        .as("the invoice is genuinely unpaid and still goes OVERDUE -- only the dunning stops")
+                        .isEqualTo("OVERDUE");
+                }
+            }
+            try (PreparedStatement arrearsCheck = connection.prepareStatement(
+                    "SELECT count(*) FROM billing.arrears_case WHERE invoice_id = ?")) {
+                arrearsCheck.setObject(1, offerInvoiceId);
+                try (ResultSet rs = arrearsCheck.executeQuery()) {
+                    assertThat(rs.next()).isTrue();
+                    assertThat(rs.getInt(1))
+                        .as("an offer nobody accepted must not reach the collections queue")
+                        .isZero();
+                }
+            }
+        }
+    }
+
     @Test
     void sweepBillingStateTransitionsOverdueInvoicesAndEscalatesDunning() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -113,6 +194,13 @@ class BillingSweepPsqlTest {
         UUID deepArrearsInvoiceId = UUID.randomUUID();
 
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            // The arrears step now only opens a case against a policy that is actually in force,
+            // so both invoiced policies need a real ACTIVE row. Without these the sweep would
+            // still run and this test would fail on the arrears assertions -- which is the point:
+            // the dependency is genuine, not decoration.
+            insertPolicy(connection, tenantId, "BILLING-SWEEP-01", "ACTIVE");
+            insertPolicy(connection, tenantId, "BILLING-SWEEP-02", "ACTIVE");
+
             try (PreparedStatement insertSchedule = connection.prepareStatement(
                     "INSERT INTO billing.billing_schedule (billing_schedule_id, tenant_id, policy_number, premium_frequency, premium_amount) " +
                     "VALUES (?, ?, 'BILLING-SWEEP-01', 'MONTHLY', 15000.00)")) {
@@ -326,6 +414,31 @@ class BillingSweepPsqlTest {
                     // The whole point: still RECONCILED, never escalated to RECONCILIATION_OVERDUE.
                     assertThat(rs.getString(1)).isEqualTo("RECONCILED");
                 }
+            }
+        }
+    }
+
+    /**
+     * A minimal policy row, because the arrears step of the sweep now checks one.
+     *
+     * <p>Raw JDBC rather than PolicyApi: this class deliberately has no Spring context (it is a
+     * psql-level test of the SQL function itself), and the columns below are exactly the NOT NULL
+     * set from policy/V1 plus the status under test.
+     */
+    private static void insertPolicy(Connection connection, UUID tenantId, String policyNumber, String status)
+            throws Exception {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO policy.policy (policy_number, tenant_id, policyholder_party_id, product_id, " +
+                "product_version_id, status, sum_assured_amount, premium_amount, premium_frequency) " +
+                "VALUES (?, ?, ?, ?, ?, ?, 1000000.00, 15000.00, 'MONTHLY')")) {
+            insert.setString(1, policyNumber);
+            insert.setObject(2, tenantId);
+            insert.setObject(3, UUID.randomUUID());
+            insert.setObject(4, UUID.randomUUID());
+            insert.setObject(5, UUID.randomUUID());
+            insert.setString(6, status);
+            if (insert.executeUpdate() != 1) {
+                throw new IllegalStateException("policy seed for " + policyNumber + " did not land");
             }
         }
     }
