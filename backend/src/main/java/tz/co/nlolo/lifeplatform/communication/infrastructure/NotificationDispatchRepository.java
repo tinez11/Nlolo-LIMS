@@ -12,13 +12,21 @@ import java.util.UUID;
 public interface NotificationDispatchRepository extends JpaRepository<NotificationDispatch, UUID> {
 
     /**
-     * The reminder queue, oldest first.
+     * The reminder queue, oldest first, across every tenant.
      *
-     * <p>Deliberately not tenant-scoped: this is read by a scheduled drain with no request and no
-     * ambient tenant, over rows a cross-tenant sweep produced. Every row carries its own
-     * tenant_id and the dispatcher sets the context from it before doing anything.
+     * <p>Goes through {@code communication.pending_reminders()} rather than a derived query, and
+     * the reason is RLS. The drain runs on a schedule with no request and no ambient tenant, over
+     * rows a cross-tenant pg_cron sweep produced — so an ordinary query correctly returns nothing
+     * (communication/V7 makes the policy fail closed rather than raise). The function is
+     * SECURITY DEFINER and returns ONLY ids: no message text, no recipient, no phone number. The
+     * dispatcher sets the tenant context from each pair and reads everything else under RLS, so
+     * the cross-tenant surface is two uuids per queued reminder.
+     *
+     * @return rows of {@code [dispatch_id, tenant_id]}.
      */
-    List<NotificationDispatch> findByStatusOrderByCreatedAtAsc(String status);
+    @Query(value = "SELECT dispatch_id, tenant_id FROM communication.pending_reminders()",
+        nativeQuery = true)
+    List<Object[]> findPendingAcrossTenants();
 
     /**
      * Take a queued reminder, if it is still there to take.

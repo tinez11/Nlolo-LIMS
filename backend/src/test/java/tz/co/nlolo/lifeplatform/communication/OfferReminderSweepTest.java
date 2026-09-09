@@ -67,13 +67,14 @@ class OfferReminderSweepTest {
 
     static WireMockServer smsGateway;
 
+    private static final String APP_ROLE_PASSWORD = "offer_reminder_e2e_password";
     private static final UUID SEEDED_TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.datasource.username", () -> "app_role");
+        registry.add("spring.datasource.password", () -> APP_ROLE_PASSWORD);
         registry.add("communication.sms-gateway-url", () -> smsGateway.baseUrl());
     }
 
@@ -109,7 +110,22 @@ class OfferReminderSweepTest {
             "db-migrations/communication/V3__seed_offer_templates.sql",
             "db-migrations/communication/V4__dispatch_reason_and_policy.sql",
             "db-migrations/communication/V5__dispatch_claimed_status.sql",
+            "db-migrations/communication/V6__grants_and_rls.sql",
+            "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
+
+        // Runs as app_role, NOSUPERUSER NOBYPASSRLS -- and that is the point of this class rather
+        // than a detail. Connecting as the owning superuser, as every other communication test
+        // does, silently bypasses RLS and every grant: the missing grants in communication/V1
+        // survived a green suite that way and only appeared on a dev restart, and the drain's
+        // cross-tenant read would pass here while returning nothing in production. This test now
+        // exercises the credential the application actually runs as.
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("ALTER ROLE app_role LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '"
+                + APP_ROLE_PASSWORD + "'");
+        }
 
         String sweepSql = Files.readString(
             Path.of("db-migrations/_post-migration/configure-offer-reminder-sweep.sql"));
@@ -254,7 +270,7 @@ class OfferReminderSweepTest {
         runSweep();
         UUID dispatchId = remindersFor(policyNumber).get(0).getDispatchId();
 
-        dispatcher.dispatch(dispatchId);
+        dispatcher.dispatch(dispatchId, SEEDED_TENANT);
 
         assertThat(remindersFor(policyNumber)).singleElement()
             .satisfies(d -> assertThat(d.getStatus()).isEqualTo("SENT"));
@@ -274,6 +290,41 @@ class OfferReminderSweepTest {
     }
 
     /**
+     * The drain itself, as app_role, under RLS — the path that was broken in production while
+     * every test passed.
+     *
+     * <p>Two separate faults hid behind the other tests in this class, both because they call
+     * {@code dispatch(id, tenant)} directly and never go through the scheduled drain:
+     *
+     * <ol>
+     *   <li>{@code communication/V1} granted app_role nothing, so the drain's query raised
+     *       "permission denied for schema communication" on every pass.</li>
+     *   <li>Once granted, the RLS predicate cast an empty string to uuid and raised — because the
+     *       drain is the platform's first query that legitimately runs with NO tenant set, and
+     *       {@code current_setting(..., true)} returns '' rather than NULL on a RESET GUC.</li>
+     * </ol>
+     *
+     * <p>Both appeared only on a dev restart. This test is what would have caught them: it drives
+     * the real scheduled method, over a queue produced for a tenant it has not set, as the
+     * credential the application actually runs as.
+     */
+    @Test
+    void theScheduledDrainFindsAndSendsAcrossTenantsWithNoTenantSet() throws Exception {
+        String policyNumber = offerClosingIn(3, "REMIND-DRAIN");
+        runSweep();
+        assertThat(remindersFor(policyNumber)).singleElement()
+            .satisfies(d -> assertThat(d.getStatus()).isEqualTo("PENDING"));
+
+        // No ambient tenant, exactly as the scheduler runs it. An RLS-scoped query would find
+        // nothing here and the reminder would sit PENDING forever.
+        TenantContext.clear();
+        dispatcher.drainPendingReminders();
+
+        assertThat(remindersFor(policyNumber)).singleElement()
+            .satisfies(d -> assertThat(d.getStatus()).isEqualTo("SENT"));
+    }
+
+    /**
      * The claim, which is what stops two application instances sending the same reminder twice.
      * A read-then-send would let both pass the PENDING check.
      */
@@ -283,7 +334,7 @@ class OfferReminderSweepTest {
         runSweep();
         UUID dispatchId = remindersFor(policyNumber).get(0).getDispatchId();
 
-        dispatcher.dispatch(dispatchId);
+        dispatcher.dispatch(dispatchId, SEEDED_TENANT);
         assertThat(remindersFor(policyNumber).get(0).getStatus())
             .as("the first pass must leave the row resolved, or nothing can stop a second send")
             .isEqualTo("SENT");
@@ -293,7 +344,7 @@ class OfferReminderSweepTest {
         // that has nothing to do with claiming.
         int sendsBefore = smsGateway.getAllServeEvents().size();
 
-        dispatcher.dispatch(dispatchId);
+        dispatcher.dispatch(dispatchId, SEEDED_TENANT);
 
         assertThat(smsGateway.getAllServeEvents().size())
             .as("a second dispatcher must find nothing to claim and send nothing")

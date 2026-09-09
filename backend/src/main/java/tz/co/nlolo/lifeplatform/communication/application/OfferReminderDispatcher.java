@@ -84,13 +84,17 @@ public class OfferReminderDispatcher {
      */
     @Scheduled(fixedDelayString = "${communication.reminder-drain-interval-ms:300000}")
     public void drainPendingReminders() {
-        for (NotificationDispatch queued : dispatchRepository.findByStatusOrderByCreatedAtAsc("PENDING")) {
+        // Ids and tenants only -- see findPendingAcrossTenants. The tenant is set from the row
+        // before anything else is read, so every subsequent query runs under normal RLS.
+        for (Object[] queued : dispatchRepository.findPendingAcrossTenants()) {
+            UUID dispatchId = (UUID) queued[0];
+            UUID tenantId = (UUID) queued[1];
             try {
-                dispatch(queued.getDispatchId());
+                dispatch(dispatchId, tenantId);
             } catch (Exception e) {
                 // One bad row must not stop the queue. A customer whose party record has since
                 // been deleted should not cost every other customer their reminder.
-                log.error("Failed to dispatch reminder {}", queued.getDispatchId(), e);
+                log.error("Failed to dispatch reminder {}", dispatchId, e);
             }
         }
     }
@@ -103,28 +107,32 @@ public class OfferReminderDispatcher {
      * an operator-triggered resend would call exactly this. Safe to call on any id — an
      * already-claimed row returns without sending.
      */
-    public void dispatch(UUID dispatchId) {
-        // The claim, in its own committed transaction. Two instances reading the same PENDING row
-        // both reach here; exactly one updates a row and the other gets zero back and stops.
-        Integer claimed = transactionTemplate.execute(status -> dispatchRepository.claimForSending(dispatchId));
-        if (claimed == null || claimed == 0) {
-            return;
-        }
-        transactionTemplate.executeWithoutResult(status -> {
-            NotificationDispatch dispatch = dispatchRepository.findById(dispatchId).orElseThrow();
-            UUID previousTenant = TenantContext.getOrNull();
-            TenantContext.set(dispatch.getTenantId());
-            try {
+    public void dispatch(UUID dispatchId, UUID tenantId) {
+        // The tenant is set FIRST and around everything, including the claim. Every query below
+        // runs under RLS against exactly this tenant's rows -- so a dispatch id from one tenant
+        // cannot be used to claim or read another's, even though the id arrived from a
+        // cross-tenant lookup.
+        UUID previousTenant = TenantContext.getOrNull();
+        TenantContext.set(tenantId);
+        try {
+            // The claim, in its own committed transaction. Two instances reading the same PENDING
+            // row both reach here; exactly one updates a row and the other gets zero back.
+            Integer claimed = transactionTemplate.execute(status -> dispatchRepository.claimForSending(dispatchId));
+            if (claimed == null || claimed == 0) {
+                return;
+            }
+            transactionTemplate.executeWithoutResult(status -> {
+                NotificationDispatch dispatch = dispatchRepository.findById(dispatchId).orElseThrow();
                 sendOne(dispatch);
                 dispatchRepository.save(dispatch);
-            } finally {
-                if (previousTenant != null) {
-                    TenantContext.set(previousTenant);
-                } else {
-                    TenantContext.clear();
-                }
+            });
+        } finally {
+            if (previousTenant != null) {
+                TenantContext.set(previousTenant);
+            } else {
+                TenantContext.clear();
             }
-        });
+        }
     }
 
     private void sendOne(NotificationDispatch dispatch) {

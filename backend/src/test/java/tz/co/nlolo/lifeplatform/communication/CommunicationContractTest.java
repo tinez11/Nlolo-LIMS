@@ -83,6 +83,8 @@ class CommunicationContractTest {
             "db-migrations/communication/V3__seed_offer_templates.sql",
             "db-migrations/communication/V4__dispatch_reason_and_policy.sql",
             "db-migrations/communication/V5__dispatch_claimed_status.sql",
+            "db-migrations/communication/V6__grants_and_rls.sql",
+            "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
