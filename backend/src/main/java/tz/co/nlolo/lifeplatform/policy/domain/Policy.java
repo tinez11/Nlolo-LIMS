@@ -247,12 +247,33 @@ public class Policy {
     public Instant getLapsedAt() { return lapsedAt; }
     public UUID getUnderwritingCaseId() { return underwritingCaseId; }
 
-    public void activate(LocalDate issueDate) {
+    /**
+     * When the contract record was issued — the date on the document, not the date risk starts.
+     *
+     * <p>Split out of {@link #activate()} because the two stopped coinciding when cover began
+     * waiting for the first premium. Every policy has an issue date from the moment it exists,
+     * including one that is still an unpaid offer and one that is never taken up: the surrender
+     * charge banding, distribution's months-since-issue clawback test and reinsurance's treaty
+     * selection all read it, and none of them can wait for a payment that may never arrive.
+     */
+    public void recordIssuedOn(LocalDate issueDate) {
+        this.issueDate = issueDate;
+    }
+
+    /**
+     * Put the contract on risk.
+     *
+     * <p>Takes no date on purpose. It used to stamp the issue date as a side effect, which was
+     * harmless only while activation and issuance were the same instant. They are not any more —
+     * activation now follows the first premium — and leaving it would have quietly rewritten the
+     * issue date to the payment date, moving every policy's surrender-charge band and clawback
+     * window along with it.
+     */
+    public void activate() {
         if (!"PROPOSED".equals(status)) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " cannot be issued from status " + status);
         }
         this.status = "ACTIVE";
-        this.issueDate = issueDate;
     }
 
     /**

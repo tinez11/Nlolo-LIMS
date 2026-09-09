@@ -36,7 +36,12 @@ public interface PolicyApi {
                          LocalDate commencementDate, Integer policyTermMonths, Integer premiumPayingTermMonths,
                          /* Whose life is insured. Null means the policyholder insures themselves,
                             which the aggregate resolves rather than storing -- see Policy.issueTo. */
-                         UUID lifeAssuredPartyId) {
+                         UUID lifeAssuredPartyId,
+                         /* Why this policy is being issued by hand. Null is the normal path: the
+                            policy is an offer, and it stays PROPOSED until its first premium
+                            clears. A non-null basis whose startsCoverImmediately() is true puts it
+                            in force at once -- see IssuanceBasis for why only three of the five do. */
+                         IssuanceBasis issuanceBasis) {
 
         /**
          * Pre-Build-2 issuance, with no term information.
@@ -65,7 +70,29 @@ public interface PolicyApi {
                              Integer policyTermMonths, Integer premiumPayingTermMonths) {
             this(policyholderPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
                 premiumAmount, premiumCurrency, premiumFrequency, agentOfRecordId, beneficiaries,
-                reasonForManualIssue, commencementDate, policyTermMonths, premiumPayingTermMonths, null);
+                reasonForManualIssue, commencementDate, policyTermMonths, premiumPayingTermMonths, null, null);
+        }
+
+        /**
+         * Issuance with no issuance basis: the normal path, which now produces an offer rather
+         * than cover.
+         *
+         * <p>Kept as its own constructor rather than widened at all 31 construction sites, on the
+         * same reasoning as the two above. Null here is not "unknown" -- it is the positive
+         * statement that this is ordinary new business going through the front door, and so must
+         * wait for the money like any other.
+         */
+        public IssueRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
+                             BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                             BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                             UUID agentOfRecordId, List<BeneficiaryInput> beneficiaries,
+                             String reasonForManualIssue, LocalDate commencementDate,
+                             Integer policyTermMonths, Integer premiumPayingTermMonths,
+                             UUID lifeAssuredPartyId) {
+            this(policyholderPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
+                premiumAmount, premiumCurrency, premiumFrequency, agentOfRecordId, beneficiaries,
+                reasonForManualIssue, commencementDate, policyTermMonths, premiumPayingTermMonths,
+                lifeAssuredPartyId, null);
         }
 
         /** The life assured, resolving the self-insured default against the policyholder. */

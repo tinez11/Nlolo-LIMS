@@ -128,7 +128,21 @@ public class PolicyApiImpl implements PolicyApi {
         // Self-insured resolves to the policyholder here, so the column always answers
         // "whose life is this" rather than leaving every reader to infer it from a null.
         policy.recordLifeAssured(request.resolveLifeAssured());
-        policy.activate(LocalDate.now());
+        // Always, and before the conditional activation below: an offer has an issue date too.
+        // See Policy.recordIssuedOn for the readers that would otherwise get a null.
+        policy.recordIssuedOn(LocalDate.now());
+
+        // An accepted decision produces an OFFER, not cover. The policy exists so the customer
+        // has something to pay against -- billing raises its first invoice off PolicyIssued --
+        // and the first cleared premium activates it.
+        //
+        // A manual issuance whose basis already carries cover skips the wait. See IssuanceBasis:
+        // the three that do are the three where the contract is in force somewhere else already.
+        boolean startsCoverNow = request.issuanceBasis() != null
+            && request.issuanceBasis().startsCoverImmediately();
+        if (startsCoverNow) {
+            policy.activate();
+        }
         policyRepository.save(policy);
 
         policyAccountRepository.save(new PolicyAccount(policyNumber, tenantId, BigDecimal.ZERO, request.sumAssuredCurrency()));
@@ -153,7 +167,43 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("agentOfRecordId", request.agentOfRecordId()); // nullable -- see Global Constraints
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
+        // Both events together for an immediate-cover issuance, so every downstream consumer
+        // behaves exactly as it did before this change.
+        if (startsCoverNow) {
+            publishPolicyActivated(policyNumber, tenantId, policy);
+        }
+
         return toView(policy);
+    }
+
+    /**
+     * "On risk, premium received." The event commission, cession and the regulatory return key
+     * off — as distinct from {@code PolicyIssued}, which now only means the contract record
+     * exists.
+     *
+     * <p>The keys are not a fresh design. They are the union of what distribution's, reinsurance's
+     * and regreporting's {@code handlePolicyIssued} actually read, checked against each handler
+     * rather than assumed from the producer: {@code policyNumber}, {@code productId}, {@code
+     * issueDate}, {@code premium}, {@code sumAssured} and {@code agentOfRecordId}. {@code
+     * issueDate} in particular is read by all three — it dates the treaty selection, the
+     * surrender-charge band and the clawback window — and is the issue date of the contract, not
+     * the activation date, which is why both appear here as separate keys.
+     */
+    private void publishPolicyActivated(String policyNumber, UUID tenantId, Policy policy) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("policyNumber", policyNumber);
+        payload.put("policyholderPartyId", policy.getPolicyholderPartyId());
+        payload.put("productId", policy.getProductId());
+        payload.put("productVersionId", policy.getProductVersionId());
+        payload.put("sumAssured", Map.of("amount", policy.getSumAssuredAmount().toPlainString(),
+                                          "currencyCode", policy.getSumAssuredCurrency()));
+        payload.put("premium", Map.of("amount", policy.getPremiumAmount().toPlainString(),
+                                       "currencyCode", policy.getPremiumCurrency()));
+        payload.put("premiumFrequency", policy.getPremiumFrequency());
+        payload.put("issueDate", policy.getIssueDate().toString());
+        payload.put("agentOfRecordId", policy.getAgentOfRecordId()); // nullable -- a direct sale
+        payload.put("activatedAt", LocalDate.now().toString());
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload));
     }
 
     @Override
@@ -674,7 +724,11 @@ public class PolicyApiImpl implements PolicyApi {
         policy.applyTerm(commencement, request.policyTermMonths(), null);
         // Deliberately no recordLifeAssured: migration V8. An employer is not a life
         // assured, and the lives are the schedule below.
-        policy.activate(today);
+        policy.recordIssuedOn(today);
+        // Group schemes stay outside offer-and-acceptance. A scheme is one contract over many
+        // lives with its own billing arrangement negotiated with the employer, not a single
+        // proposal awaiting a first premium, so it goes on risk at issuance as it always has.
+        policy.activate();
         policyRepository.save(policy);
 
         policyAccountRepository.save(new PolicyAccount(policyNumber, tenantId, BigDecimal.ZERO, request.currency()));

@@ -439,18 +439,62 @@ class PolicyApiIntegrationTest {
     }
 
     @Test
+    void anIssuedPolicyIsAnOfferUntilItsFirstPremium() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-OFFER-01");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+
+        PolicyView view = policyApi.getPolicy(policyNumber);
+        assertThat(view.status()).isEqualTo(PolicyStatus.PROPOSED);
+        assertThat(policyApi.isPolicyInForce(policyNumber, LocalDate.now()))
+            .as("an offer nobody has paid for is not cover")
+            .isFalse();
+    }
+
+    @Test
+    void aMigrationIsInForceImmediatelyBecauseItAlreadyWas() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-OFFER-MIG");
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "Brought in from the legacy book",
+            null, null, null, null, IssuanceBasis.MIGRATION);
+
+        PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(), request, "test-agent");
+        assertThat(issued.status()).isEqualTo(PolicyStatus.ACTIVE);
+        assertTrue(policyApi.isPolicyInForce(issued.policyNumber(), LocalDate.now()));
+    }
+
+    @Test
+    void anUnderwritingOverrideStillWaitsForTheMoney() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-OFFER-OVR");
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "Senior underwriter overturned the automated decline",
+            null, null, null, null, IssuanceBasis.UNDERWRITING_OVERRIDE);
+
+        PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(), request, "test-agent");
+        assertThat(issued.status())
+            .as("overturning a block changes who may be covered, not whether they pay")
+            .isEqualTo(PolicyStatus.PROPOSED);
+    }
+
+    @Test
     void anOfferThatExpiresIsNotTakenUpRatherThanLapsed() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-NTU-01");
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
 
-        // Nothing issues into PROPOSED yet -- that arrives with the accepted-decision change in
-        // the next task -- so the offer state is set on the row directly. What is under test here
-        // is the transition and the status widening the CHECK constraint had to allow, not how a
-        // policy comes to be PROPOSED.
+        // Issuance now lands in PROPOSED on its own, so this is a real offer rather than a
+        // reflectively-staged one.
         TenantContext.set(tenantId);
         Policy policy = policyRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).orElseThrow();
-        ReflectionTestUtils.setField(policy, "status", "PROPOSED");
+        assertEquals("PROPOSED", ReflectionTestUtils.getField(policy, "status"));
         policy.markNotTakenUp();
         policyRepository.save(policy);
 
@@ -464,9 +508,16 @@ class PolicyApiIntegrationTest {
     void onlyAProposedPolicyCanBecomeNotTakenUp() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-NTU-02");
-        String policyNumber = issueDirectly(tenantId, fixture, List.of());
-
         TenantContext.set(tenantId);
+        // MIGRATION is the shortest honest route to a genuinely ACTIVE policy now that the
+        // ordinary path stops at PROPOSED. Setting the status by reflection would test the guard
+        // against a state the aggregate never actually reaches.
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "Brought in from the legacy book",
+            null, null, null, null, IssuanceBasis.MIGRATION), "test-staff").policyNumber();
+
         Policy active = policyRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).orElseThrow();
         // An ACTIVE policy is on risk. Expiring it as an unpaid offer would silently drop cover.
         assertThrows(InvalidPolicyStateException.class, active::markNotTakenUp);
