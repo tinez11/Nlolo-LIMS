@@ -9,9 +9,11 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.Endorsement;
+import tz.co.nlolo.lifeplatform.policy.domain.Policy;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyAccount;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.EndorsementRepository;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.PolicyAccountRepository;
+import tz.co.nlolo.lifeplatform.policy.infrastructure.PolicyRepository;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.product.domain.ProductVersion;
 import tz.co.nlolo.lifeplatform.product.infrastructure.ProductVersionRepository;
@@ -92,10 +94,13 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
+            "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
+    @Autowired private PolicyRepository policyRepository;
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private UnderwritingApi underwritingApi;
@@ -431,6 +436,41 @@ class PolicyApiIntegrationTest {
         policyApi.reinstatePolicy(policyNumber, "test-staff");
         assertEquals(PolicyStatus.REINSTATED, policyApi.getPolicy(policyNumber).status());
         assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+    }
+
+    @Test
+    void anOfferThatExpiresIsNotTakenUpRatherThanLapsed() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-NTU-01");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+
+        // Nothing issues into PROPOSED yet -- that arrives with the accepted-decision change in
+        // the next task -- so the offer state is set on the row directly. What is under test here
+        // is the transition and the status widening the CHECK constraint had to allow, not how a
+        // policy comes to be PROPOSED.
+        TenantContext.set(tenantId);
+        Policy policy = policyRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).orElseThrow();
+        ReflectionTestUtils.setField(policy, "status", "PROPOSED");
+        policy.markNotTakenUp();
+        policyRepository.save(policy);
+
+        // Reads back through the API, so this also proves policy_status_check accepts the new
+        // value: without V11 the save above would fail on the constraint, not on the enum.
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.NOT_TAKEN_UP);
+        assertFalse(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+    }
+
+    @Test
+    void onlyAProposedPolicyCanBecomeNotTakenUp() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-NTU-02");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+
+        TenantContext.set(tenantId);
+        Policy active = policyRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).orElseThrow();
+        // An ACTIVE policy is on risk. Expiring it as an unpaid offer would silently drop cover.
+        assertThrows(InvalidPolicyStateException.class, active::markNotTakenUp);
+        assertEquals(PolicyStatus.ACTIVE, policyApi.getPolicy(policyNumber).status());
     }
 
     @Test

@@ -80,6 +80,8 @@ class PolicyCustomerScopingTest {
             "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
+            "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             // Needed since PolicyController.resolveOwnAgentTeamOrThrow (agents-realm "browse my
             // book of business" scoping) queries distribution.agent_profile for ANY agents-realm

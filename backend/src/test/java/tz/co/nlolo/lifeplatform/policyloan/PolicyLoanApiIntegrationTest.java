@@ -75,6 +75,8 @@ class PolicyLoanApiIntegrationTest {
             "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
+            "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",

@@ -109,6 +109,8 @@ class BillingApiIntegrationTest {
             "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
+            "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",

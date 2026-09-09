@@ -106,6 +106,8 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
+            "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",

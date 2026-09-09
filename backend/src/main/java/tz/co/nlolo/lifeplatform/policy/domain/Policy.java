@@ -255,6 +255,27 @@ public class Policy {
         this.issueDate = issueDate;
     }
 
+    /**
+     * The offer expired unpaid.
+     *
+     * <p>Terminal, and deliberately not LAPSED: lapsing is what happens to an in-force policy
+     * whose premiums stop, and a contract that was never on risk does not belong in the lapse
+     * figures.
+     *
+     * <p>Guarded on PROPOSED because expiring anything else would silently drop live cover. Note
+     * that {@code policy.sweep_expired_offers()} sets this status with a raw UPDATE and so does
+     * not pass through here — its {@code WHERE status = 'PROPOSED'} enforces the same rule at the
+     * same moment, but the two are one invariant written twice, and a condition added here must
+     * be added there.
+     */
+    public void markNotTakenUp() {
+        if (!"PROPOSED".equals(status)) {
+            throw new InvalidPolicyStateException(
+                "Policy " + policyNumber + " is " + status + ", not an outstanding offer");
+        }
+        this.status = "NOT_TAKEN_UP";
+    }
+
     public void suspend(String reason) {
         if (!"ACTIVE".equals(status)) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE to be SUSPENDED (current: " + status + ")");
