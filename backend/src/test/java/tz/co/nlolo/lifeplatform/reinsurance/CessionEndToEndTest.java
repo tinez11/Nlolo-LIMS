@@ -187,12 +187,27 @@ class CessionEndToEndTest {
         return new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());
     }
 
-    private String issuePolicy(UUID tenantId, Fixture fixture, BigDecimal sumAssured, BigDecimal premium) {
+    /**
+     * An offer: issued, but with no premium yet collected, so the platform carries no risk and
+     * has nothing to cede.
+     *
+     * <p>Split out of {@link #issuePolicy} when cession moved from {@code PolicyIssued} to
+     * {@code PolicyActivated}.
+     */
+    private String issueOffer(UUID tenantId, Fixture fixture, BigDecimal sumAssured, BigDecimal premium) {
         TenantContext.set(tenantId);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
             fixture.productVersionId(), sumAssured, CURRENCY, premium, CURRENCY, "MONTHLY", null, List.of(),
             "Cession E2E test");
         return policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+    }
+
+    private String issuePolicy(UUID tenantId, Fixture fixture, BigDecimal sumAssured, BigDecimal premium) {
+        String policyNumber = issueOffer(tenantId, fixture, sumAssured, premium);
+        // Cover starts with the first premium, and only cover is cedable.
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(policyNumber);
+        return policyNumber;
     }
 
     private TreatyView createTreaty(UUID tenantId, TreatyType type, BigDecimal retention, BigDecimal cessionPercent) {
@@ -218,6 +233,34 @@ class CessionEndToEndTest {
         assertThat(cession.getCededAmount()).isEqualByComparingTo("600000.00");
         assertThat(cession.getCededPremiumAmount()).isEqualByComparingTo("30000.00");
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).hasSize(1);
+    }
+
+    /**
+     * The other half of every cession test in this class: an offer is not risk, so there is
+     * nothing to cede.
+     *
+     * <p>A live QUOTA_SHARE treaty is deliberately in place, so the emptiness below is caused by
+     * the policy being unpaid and nothing else. Before cession moved to {@code PolicyActivated}
+     * this would have ceded 30% of a contract the platform was not on risk for -- and paid the
+     * reinsurer a premium for the privilege.
+     */
+    @Test
+    void nothingIsCededForAnOfferNobodyHasPaidFor() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CESSION-E2E-OFFER");
+        createTreaty(tenantId, TreatyType.QUOTA_SHARE, new BigDecimal("0.00"), new BigDecimal("30.00"));
+        eventRecorder.clear();
+
+        String policyNumber = issueOffer(tenantId, fixture, new BigDecimal("2000000"), new BigDecimal("100000.00"));
+
+        TenantContext.set(tenantId);
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber))
+            .as("an offer is not risk the platform carries, so there is nothing to cede")
+            .isEmpty();
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber))
+            .as("reinsurance should not have heard of a policy that is only an offer")
+            .isEmpty();
+        assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).isEmpty();
     }
 
     @Test
@@ -285,7 +328,7 @@ class CessionEndToEndTest {
     }
 
     /**
-     * A real at-least-once redelivery of {@code policy.PolicyIssued} -- the same envelope
+     * A real at-least-once redelivery of {@code policy.PolicyActivated} -- the same envelope
      * republished through {@code ApplicationEventPublisher} inside a {@code TransactionTemplate}
      * (not a second call through {@code PolicyApi}, which cannot legally re-issue the same policy
      * number) -- must still leave exactly one cession row, backstopped by {@code ux_cession_once}
@@ -304,7 +347,7 @@ class CessionEndToEndTest {
         assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber)).hasSize(1);
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded")).hasSize(1);
 
-        // policy.PolicyIssued, field-for-field from PolicyApiImpl's published shape -- only the
+        // policy.PolicyActivated, field-for-field from PolicyApiImpl's published shape -- only the
         // fields PolicyEventListener actually reads.
         Map<String, Object> payload = Map.of(
             "policyNumber", policyNumber,
@@ -312,7 +355,7 @@ class CessionEndToEndTest {
             "issueDate", LocalDate.now().toString(),
             "sumAssured", Map.of("amount", "2000000", "currencyCode", CURRENCY),
             "premium", Map.of("amount", "100000.00", "currencyCode", CURRENCY));
-        var envelope = DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload);
+        var envelope = DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload);
         TenantContext.set(tenantId);
         transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
 

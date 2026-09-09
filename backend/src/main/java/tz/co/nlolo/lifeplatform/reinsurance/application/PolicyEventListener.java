@@ -26,7 +26,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
- * Consumes {@code policy.PolicyIssued} and cedes risk to the applicable treaty.
+ * Consumes {@code policy.PolicyActivated} and cedes risk to the applicable treaty.
  *
  * <p>{@code policy} is not in this module's {@code allowedDependencies}, so everything here comes
  * from the event payload plus this module's own {@code policy_projection}. Mechanics copied from
@@ -80,7 +80,10 @@ public class PolicyEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
-            case "policy.PolicyIssued" -> withTenant(envelope, this::handlePolicyIssued);
+            // PolicyActivated, not PolicyIssued. PolicyIssued now means "the contract record
+            // exists" -- an offer awaiting its first premium. Ceding a proposal would put risk
+            // the platform is not carrying onto a treaty, and pay reinsurance premium for it.
+            case "policy.PolicyActivated" -> withTenant(envelope, this::handlePolicyActivated);
             default -> { /* not reinsurance-relevant */ }
         }
     }
@@ -104,7 +107,7 @@ public class PolicyEventListener {
         }
     }
 
-    private void handlePolicyIssued(Map<String, Object> payload) {
+    private void handlePolicyActivated(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
         String policyNumber = (String) payload.get("policyNumber");
         UUID productId = (UUID) payload.get("productId");

@@ -47,7 +47,7 @@ import java.util.function.Consumer;
  * <p><b>The {@code UNKNOWN} sentinel.</b> {@code PolicyLapsed}/{@code Reinstated}/{@code Matured}/
  * {@code Surrendered} carry only a {@code policyNumber} and a timestamp -- never {@code productId}
  * or {@code sumAssured} (verified against asyncapi-events.yaml) -- so every movement they cause
- * needs {@code policy_dimension}, a row written only by {@code PolicyIssued}. When that lookup
+ * needs {@code policy_dimension}, a row written only by {@code PolicyActivated}. When that lookup
  * misses, the movement is attributed to {@link ProjectionSupport#UNKNOWN_PRODUCT} with the sum
  * assured recorded as zero (the real figure is genuinely unknown) rather than dropped entirely -- a
  * visibly-unattributed figure is strictly better than one that silently vanished from a return.
@@ -84,7 +84,15 @@ public class PolicyEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
-            case "policy.PolicyIssued" -> withTenant(envelope, this::handlePolicyIssued);
+            // PolicyActivated, not PolicyIssued. PolicyIssued now means "the contract record
+            // exists" -- an offer awaiting its first premium. Counting a proposal as new
+            // business would report contracts to the regulator that the platform is not on risk
+            // for, and around 15% of them are never taken up.
+            //
+            // policy_dimension is still written here, deliberately: it is what later LAPSED and
+            // SURRENDERED movements look up, and a policy that never activated produces no such
+            // movements to look anything up for.
+            case "policy.PolicyActivated" -> withTenant(envelope, this::handlePolicyActivated);
             case "policy.PolicyLapsed" -> withTenant(envelope, this::handlePolicyLapsed);
             case "policy.PolicyMatured" -> withTenant(envelope, this::handlePolicyMatured);
             case "policy.PolicySurrendered" -> withTenant(envelope, this::handlePolicySurrendered);
@@ -117,7 +125,7 @@ public class PolicyEventListener {
         }
     }
 
-    private void handlePolicyIssued(Map<String, Object> payload) {
+    private void handlePolicyActivated(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
         String policyNumber = (String) payload.get("policyNumber");
         UUID productId = (UUID) payload.get("productId");
@@ -127,7 +135,7 @@ public class PolicyEventListener {
         String sumAssuredCurrency = (String) sumAssured.get("currencyCode");
         String issueDate = (String) payload.get("issueDate");
 
-        // PolicyIssued is the only event in the lifecycle that carries productId and sumAssured --
+        // PolicyActivated is the only event in the lifecycle that carries productId and sumAssured --
         // the dimension row every later lifecycle event's movement depends on.
         if (policyDimensionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).isEmpty()) {
             policyDimensionRepository.save(new PolicyDimension(tenantId, policyNumber, productId,

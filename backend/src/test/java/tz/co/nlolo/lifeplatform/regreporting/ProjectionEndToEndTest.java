@@ -230,6 +230,21 @@ class ProjectionEndToEndTest {
     /** ANNUALLY, deliberately -- billing's 12-month look-ahead schedule produces exactly one
      * invoice for this frequency (PremiumPostingEndToEndTest's own class javadoc). */
     private String issueAnnualPolicy(Fixture fixture, BigDecimal sumAssured, BigDecimal premium) {
+        String policyNumber = issueAnnualOffer(fixture, sumAssured, premium);
+        // New business is counted when the platform goes on risk, which is when the first
+        // premium clears -- not when the offer was made.
+        TenantContext.set(SEEDED_TENANT);
+        policyApi.activateOnFirstPremium(policyNumber);
+        return policyNumber;
+    }
+
+    /**
+     * An offer: issued, but unpaid, so nothing to report to the regulator yet.
+     *
+     * <p>Split out of {@link #issueAnnualPolicy} when the new-business count moved from
+     * {@code PolicyIssued} to {@code PolicyActivated}.
+     */
+    private String issueAnnualOffer(Fixture fixture, BigDecimal sumAssured, BigDecimal premium) {
         TenantContext.set(SEEDED_TENANT);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
             fixture.productVersionId(), sumAssured, CURRENCY, premium, CURRENCY, "ANNUALLY", null, List.of(),
@@ -254,6 +269,25 @@ class ProjectionEndToEndTest {
         LocalDate date = Instant.now().atZone(ZoneOffset.UTC).toLocalDate();
         int quarter = (date.getMonthValue() - 1) / 3 + 1;
         return date.getYear() + "-Q" + quarter;
+    }
+
+    /**
+     * The other half of the new-business count: an unpaid offer is not new business.
+     *
+     * <p>Around 15% of accepted proposals are never taken up, so counting them at issuance would
+     * report contracts to the regulator that the platform is not on risk for, then need a
+     * correction when the offer expires. Neither the dimension nor the movement should exist yet.
+     */
+    @Test
+    void anOfferNobodyHasPaidForIsNotCountedAsNewBusiness() {
+        Fixture fixture = buildFixture("PROJECTION-E2E-OFFER");
+
+        String policyNumber = issueAnnualOffer(fixture, new BigDecimal("500000"), new BigDecimal("30000.00"));
+
+        TenantContext.set(SEEDED_TENANT);
+        assertThat(policyDimensionRepository.findByTenantIdAndPolicyNumber(SEEDED_TENANT, policyNumber))
+            .as("a policy that is only an offer has no place in the regulatory dimension yet")
+            .isEmpty();
     }
 
     @Test

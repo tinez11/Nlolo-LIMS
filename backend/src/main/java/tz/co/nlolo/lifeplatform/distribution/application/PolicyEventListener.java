@@ -35,7 +35,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Task 6: consumes {@code policy.PolicyIssued} (accrue) and {@code policy.PolicyLapsed} (claw
+ * Task 6: consumes {@code policy.PolicyActivated} (accrue) and {@code policy.PolicyLapsed} (claw
  * back within a window) -- the two events that turn Task 4's pure {@link CommissionCalculator}
  * into real {@code commission_accrual}/{@code commission_statement} rows. {@code policy} is not
  * in distribution's {@code allowedDependencies}, so everything here is built from event payloads
@@ -56,7 +56,7 @@ import java.util.function.Function;
  * transaction, not two.</b> Claims needs phase separation because its second phase calls a
  * FOREIGN module ({@code PolicyApi}) that can fail AFTER a financial fact (a settled claim, money
  * moved) is already durable, and that fact must never be rolled back by the foreign call's
- * precondition. Nothing here calls out to another module: {@code handlePolicyIssued} and {@code
+ * precondition. Nothing here calls out to another module: {@code handlePolicyActivated} and {@code
  * handlePolicyLapsed} each only ever read/write this module's OWN tables ({@code
  * policy_projection}, {@code commission_accrual}, {@code commission_statement}) plus one read-only
  * call to {@code ReferenceDataApi.getValue} (a refdata lookup, not a mutation). So each handler is
@@ -114,7 +114,11 @@ public class PolicyEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
-            case "policy.PolicyIssued" -> withTenant(envelope, this::handlePolicyIssued);
+            // PolicyActivated, not PolicyIssued. PolicyIssued now means "the contract record
+            // exists" -- an offer awaiting its first premium. Accruing commission against a
+            // proposal would mean paying agents for people who may never pay, then clawing it
+            // back off them when the offer expires.
+            case "policy.PolicyActivated" -> withTenant(envelope, this::handlePolicyActivated);
             case "policy.PolicyLapsed" -> withTenant(envelope, this::handlePolicyLapsed);
             default -> { /* not distribution-relevant */ }
         }
@@ -150,7 +154,7 @@ public class PolicyEventListener {
      * nothing, so publishes nothing -- consistent with every other idempotent listener on this
      * platform).
      */
-    private void handlePolicyIssued(Map<String, Object> payload) {
+    private void handlePolicyActivated(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
         String policyNumber = (String) payload.get("policyNumber");
         UUID productId = (UUID) payload.get("productId");
@@ -159,7 +163,7 @@ public class PolicyEventListener {
         Map<String, Object> premium = (Map<String, Object>) payload.get("premium");
         BigDecimal premiumAmount = new BigDecimal((String) premium.get("amount"));
         String premiumCurrency = (String) premium.get("currencyCode");
-        // Nullable by design -- policy.PolicyIssued's payload is a LinkedHashMap precisely so this
+        // Nullable by design -- policy.PolicyActivated's payload is a LinkedHashMap precisely so this
         // key can be absent/null without Map.of's NPE-on-null-value trap. A null here means the
         // policy was sold direct.
         UUID agentOfRecordId = (UUID) payload.get("agentOfRecordId");
@@ -168,7 +172,7 @@ public class PolicyEventListener {
             policyProjectionRepository.save(new PolicyProjection(tenantId, policyNumber, agentOfRecordId,
                 productId, premiumAmount, premiumCurrency, issueDate));
         }
-        // A redelivered PolicyIssued for a policy number already projected has nothing further to
+        // A redelivered PolicyActivated for a policy number already projected has nothing further to
         // update at issuance time (premium/issueDate/agent never change after issuance), so no
         // "else" branch is needed here -- unlike the accrual rows below, which DO need an explicit
         // idempotency guard because they are event-sourced line items, not a single upserted row.
@@ -214,7 +218,7 @@ public class PolicyEventListener {
             // row -- safe because ux_commission_accrual_once is keyed on (agent, tier_type,
             // source_ref), and each agent/tier combination here is distinct.
             distributionApiImpl.persistAccrual(tenantId, accrual.agentId(), policyNumber, accrual.tierType(),
-                    accrual.amount(), accrual.currency(), period, policyNumber, null, "system:policy.PolicyIssued")
+                    accrual.amount(), accrual.currency(), period, policyNumber, null, "system:policy.PolicyActivated")
                 .ifPresent(saved -> publishCommissionAccrued(tenantId, saved));
         }
     }

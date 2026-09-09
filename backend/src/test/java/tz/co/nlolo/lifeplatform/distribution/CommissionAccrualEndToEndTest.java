@@ -198,7 +198,14 @@ class CommissionAccrualEndToEndTest {
             party.partyId(), "LIC-" + tag, LocalDate.now().plusYears(1), parentId), "staff-1").agentId();
     }
 
-    private String issuePolicy(UUID tenantId, Hierarchy hierarchy, UUID agentOfRecordId, BigDecimal premium, String tag) {
+    /**
+     * An offer: issued, but with no premium yet collected, so no cover and no commission.
+     *
+     * <p>Split out of {@link #issuePolicy} when commission moved from {@code PolicyIssued} to
+     * {@code PolicyActivated}. Every test here but the "not before cover" one wants a policy
+     * genuinely on risk, so they go through {@code issuePolicy}, which pays.
+     */
+    private String issueOffer(UUID tenantId, Hierarchy hierarchy, UUID agentOfRecordId, BigDecimal premium, String tag) {
         TenantContext.set(tenantId);
         PartyView policyholder = partyApi.registerIndividual("Distribution E2E Policyholder " + tag,
             LocalDate.of(1980, 6, 1), "+25572" + String.format("%07d", Math.abs(tag.hashCode() % 10000000)), null, "test-agent");
@@ -206,6 +213,44 @@ class CommissionAccrualEndToEndTest {
             hierarchy.productVersionId(), new BigDecimal("2000000"), CURRENCY, premium, CURRENCY, "MONTHLY",
             agentOfRecordId, List.of(), "Distribution E2E test");
         return policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+    }
+
+    private String issuePolicy(UUID tenantId, Hierarchy hierarchy, UUID agentOfRecordId, BigDecimal premium, String tag) {
+        String policyNumber = issueOffer(tenantId, hierarchy, agentOfRecordId, premium, tag);
+        // The first premium is what starts cover, and cover is what earns commission. Without
+        // this the policy stays an offer and every assertion below correctly finds nothing.
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(policyNumber);
+        return policyNumber;
+    }
+
+    /**
+     * The other half of every accrual test in this class: nothing is earned before the customer
+     * pays.
+     *
+     * <p>Asserts the absence at both levels -- no projection row, so distribution has not even
+     * learned of the policy, and no accrual, so no agent is owed anything. Before commission
+     * moved to {@code PolicyActivated} this test would have found a full first-year accrual
+     * against a contract the platform was not on risk for, which would then have had to be
+     * clawed back off the agent when the offer expired unpaid.
+     */
+    @Test
+    void noCommissionAccruesOnAnOfferNobodyHasPaidFor() {
+        UUID tenantId = UUID.randomUUID();
+        Hierarchy hierarchy = buildHierarchy(tenantId, "OFFER");
+
+        String policyNumber = issueOffer(tenantId, hierarchy, hierarchy.sellerId(),
+            new BigDecimal("100000.00"), "OFFER-01");
+
+        TenantContext.set(tenantId);
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber))
+            .as("distribution should not have heard of a policy that is only an offer")
+            .isEmpty();
+        assertThat(commissionAccrualRepository
+                .findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(
+                    tenantId, policyNumber, TierType.FIRST_YEAR))
+            .as("an agent has earned nothing until the customer has paid something")
+            .isEmpty();
     }
 
     @Test
@@ -277,6 +322,11 @@ class CommissionAccrualEndToEndTest {
             hierarchy.productVersionId(), new BigDecimal("2000000"), CURRENCY, premium, CURRENCY, "MONTHLY",
             hierarchy.sellerId(), List.of(), "Distribution E2E test");
         String policyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        // Issued inline rather than through issuePolicy(...) because this test needs the request
+        // in scope to rebuild the payload below -- so the first premium has to be collected here
+        // too, or there is no accrual to redeliver against.
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(policyNumber);
 
         TenantContext.set(tenantId);
         List<CommissionAccrual> before = commissionAccrualRepository
@@ -286,8 +336,8 @@ class CommissionAccrualEndToEndTest {
             .findByStatementIdAndTenantId(before.get(0).getStatementId(), tenantId).orElseThrow();
         BigDecimal totalBefore = statementBefore.getTotalAmount();
 
-        // A real at-least-once redelivery of the SAME policy.PolicyIssued envelope, built
-        // field-for-field from PolicyApiImpl.issuePolicy's published payload shape (not an
+        // A real at-least-once redelivery of the SAME policy.PolicyActivated envelope, built
+        // field-for-field from PolicyApiImpl.publishPolicyActivated's payload shape (not an
         // invented shape) -- same policyNumber, same agentOfRecordId, same premium.
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("policyNumber", policyNumber);
@@ -299,7 +349,7 @@ class CommissionAccrualEndToEndTest {
         payload.put("premium", Map.of("amount", premium.toPlainString(), "currencyCode", CURRENCY));
         payload.put("premiumFrequency", "MONTHLY");
         payload.put("agentOfRecordId", hierarchy.sellerId());
-        var envelope = DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload);
+        var envelope = DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload);
         TenantContext.set(tenantId);
         transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
 
