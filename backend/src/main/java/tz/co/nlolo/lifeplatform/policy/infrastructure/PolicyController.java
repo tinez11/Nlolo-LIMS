@@ -84,7 +84,11 @@ public class PolicyController {
             request.premiumFrequency() != null && !request.premiumFrequency().isBlank() ? request.premiumFrequency() : "MONTHLY",
             request.agentOfRecordId(), beneficiaries, request.reasonForManualIssue(),
             request.commencementDate(), request.policyTermMonths(), request.premiumPayingTermMonths(),
-            request.lifeAssuredPartyId());
+            request.lifeAssuredPartyId(),
+            // The one caller that passes a non-null basis. Everything else reaching issuePolicy
+            // -- the underwriting-decision listener, group schemes -- is ordinary new business
+            // and waits for its first premium.
+            request.issuanceBasis());
         PolicyView view = policyApi.issuePolicy(request.underwritingCaseId(), issueRequest, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyResponseDto.from(view));
     }

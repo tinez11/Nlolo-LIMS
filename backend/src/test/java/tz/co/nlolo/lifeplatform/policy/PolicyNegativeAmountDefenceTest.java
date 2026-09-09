@@ -83,7 +83,9 @@ class PolicyNegativeAmountDefenceTest {
         // policy on a product that does not term is a real shape to validate against.
         ManualIssueRequestDto request = new ManualIssueRequestDto(UUID.randomUUID(), UUID.randomUUID(),
             UUID.randomUUID(), new MoneyDto("-5000000.00", "TZS"), new MoneyDto("15000.00", "TZS"), null, "MONTHLY", null, "negative sum assured",
-            null, null, null, null);
+            // A valid issuanceBasis on purpose: this test is about the money floor cascading
+            // through @Valid, and a null here would add a second violation that could mask it.
+            null, null, null, null, tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis.UNDERWRITING_OVERRIDE);
         Set<ConstraintViolation<ManualIssueRequestDto>> violations = validator.validate(request);
         assertThat(violations)
             .as("the floor must cascade from MoneyDto into ManualIssueRequestDto.sumAssured")

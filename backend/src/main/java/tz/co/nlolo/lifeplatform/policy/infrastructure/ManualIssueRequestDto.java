@@ -42,4 +42,21 @@ public record ManualIssueRequestDto(
      * Whose life is insured, when that is not the policyholder. Optional: omitting it
      * means self-insured, and the aggregate resolves it rather than storing a null.
      */
-    UUID lifeAssuredPartyId) {}
+    UUID lifeAssuredPartyId,
+
+    /**
+     * Why this is being issued by hand, and — through
+     * {@link tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis#startsCoverImmediately()} —
+     * whether cover starts now or waits for the first premium like any other new business.
+     *
+     * <p>Required, which is the point. Manual issue is the exception path, and an exception path
+     * with no recorded reason is how a bypass becomes the normal route: this endpoint was already
+     * the one that could duplicate a policy and skip the underwriter, and now it is also the only
+     * one that can put a contract on risk before anybody has paid for it. An auditor asking "on
+     * what basis did cover start before the premium?" gets a field to group by rather than a
+     * paragraph of free text to read.
+     *
+     * <p>{@code reasonForManualIssue} stays alongside it and stays required too: the enum is what
+     * a report groups by, the sentence is what a person reads.
+     */
+    @NotNull tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis issuanceBasis) {}

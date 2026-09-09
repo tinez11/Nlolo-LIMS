@@ -201,7 +201,7 @@ class BillingCustomerPaymentTest {
                     .jwt(builder -> builder.claim("tenant_id", TENANT.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                    {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"premiumFrequency":"MONTHLY",
                      "agentOfRecordId":"%s","reasonForManualIssue":"Customer payment test issuance"}

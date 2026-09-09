@@ -35,6 +35,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PolicyView' }
+        # A missing or unrecognised issuanceBasis lands here. Undeclared until that field became
+        # required, which made 400 reachable on this path for the first time; strict contract
+        # validation flagged the omission the moment a test asserted it.
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /policies/{policyNumber}:
@@ -634,7 +638,17 @@ components:
             cover term; it may never exceed it.
           type: [integer, "null"]
           minimum: 1
-      required: [underwritingCaseId, policyholderPartyId, productVersionId, sumAssured, premiumAmount, agentOfRecordId, reasonForManualIssue]
+        issuanceBasis:
+          description: >-
+            Why this policy is being issued by hand, and whether cover starts immediately.
+            MIGRATION, CONVERSION and REINSTATEMENT start cover at once — the contract is
+            already in force elsewhere, or the money has already arrived. UNDERWRITING_OVERRIDE
+            and GUARANTEED_ISSUE are new business and wait for the first premium like any other:
+            overturning an automated block changes who may be covered, and guaranteed acceptance
+            waives evidence of insurability, but neither waives the premium.
+          type: string
+          enum: [MIGRATION, CONVERSION, REINSTATEMENT, UNDERWRITING_OVERRIDE, GUARANTEED_ISSUE]
+      required: [underwritingCaseId, policyholderPartyId, productVersionId, sumAssured, premiumAmount, agentOfRecordId, reasonForManualIssue, issuanceBasis]
     BeneficiaryInput:
       type: object
       properties:

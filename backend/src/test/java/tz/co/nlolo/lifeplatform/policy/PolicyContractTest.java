@@ -223,6 +223,78 @@ class PolicyContractTest {
         return issued;
     }
 
+    @Test
+    void manualIssueIsRefusedWithoutAnIssuanceBasis() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerApplicant(tenantId, "9101");
+        ProductFixture product = publishProduct(tenantId, "POLICY-CONTRACT-BASIS-00", "TERM_LIFE");
+        UUID caseId = openUnderwritingCase(tenantId, applicantId, product);
+
+        // The whole point of the field. Manual issue is the exception path, and it is now also
+        // the only way to put a contract on risk before anyone has paid for it -- so "why" is not
+        // optional. reasonForManualIssue is still supplied here: free text is not a substitute
+        // for a value a report can group by, and this proves the endpoint agrees.
+        mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
+                     "reasonForManualIssue":"No basis given"}
+                    """.formatted(caseId, applicantId, product.productVersionId())))
+            // No openApi().isValid(...) here, unlike every other call in this class: the request
+            // is deliberately spec-invalid, so the validator would fail it on the way IN and the
+            // 400 would never be reached. The status is the assertion. Making the field required
+            // also made 400 reachable on this path for the first time, which is why the spec now
+            // declares it -- strict validation caught that omission from this very test.
+            .andExpect(status().isBadRequest());
+    }
+
+    /**
+     * The basis is not decoration: its value decides whether cover starts.
+     *
+     * <p>Each call uses a fresh underwriting case deliberately. One case issues one policy, so
+     * reusing it would 409 on the second and this test would pass for the wrong reason.
+     */
+    @Test
+    void aMigrationIsActiveImmediatelyAndAnOverrideWaitsForTheMoney() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerApplicant(tenantId, "9102");
+        ProductFixture product = publishProduct(tenantId, "POLICY-CONTRACT-BASIS-01", "TERM_LIFE");
+
+        mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"issuanceBasis":"MIGRATION","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
+                     "reasonForManualIssue":"Brought in from the legacy book"}
+                    """.formatted(openUnderwritingCase(tenantId, applicantId, product), applicantId,
+                        product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("ACTIVE"));
+
+        mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
+                     "reasonForManualIssue":"Senior underwriter overturned the automated decline"}
+                    """.formatted(openUnderwritingCase(tenantId, applicantId, product), applicantId,
+                        product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("PROPOSED"));
+    }
+
     private IssuedPolicy manualIssueOffer(UUID tenantId, String productCode, String category) throws Exception {
         UUID applicantId = registerApplicant(tenantId, String.valueOf(Math.abs(productCode.hashCode() % 10000)));
         ProductFixture product = publishProduct(tenantId, productCode, category);
@@ -233,7 +305,7 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                    {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
                      "reasonForManualIssue":"Contract test manual issuance"}
@@ -323,7 +395,7 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                    {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
                      "reasonForManualIssue":"Should be rejected before reaching the service layer"}
@@ -351,7 +423,7 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                    {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
                      "reasonForManualIssue":"Contract test -- nonexistent policyholder"}
@@ -1330,7 +1402,7 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                    {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
                      "reasonForManualIssue":"Contract test manual issuance",
