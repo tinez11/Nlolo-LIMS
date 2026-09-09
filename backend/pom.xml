@@ -76,6 +76,20 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
+    <!--
+      The only dependency communication adds, and the only way to speak SMTP: JavaMailSender
+      lives here, and nothing else on the classpath can send an email. Mailpit has been in
+      infra/docker-compose.yml since M4 labelled "for communication-module testing (EMAIL
+      channel)", so the channel was provisioned long before anything could use it.
+
+      Deliberately NOT accompanied by a templating library (placeholder substitution is a
+      fifteen-line pure function, see TemplateRenderer) or an SMS vendor SDK (the aggregator is
+      plain JSON over RestClient, which the payment module already proves is enough).
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-mail</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-jpa</artifactId>

@@ -1,6 +1,12 @@
 spring:
   application:
     name: lifeplatform
+  mail:
+    # Mailpit, which infra/docker-compose.yml has carried since M4 explicitly "for
+    # communication-module testing (EMAIL channel)" -- provisioned long before anything
+    # could send. A real deployment points these at its own relay.
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
   # Migrations are applied by scripts/migrate.sh as a separate pipeline/dev step,
   # per-module and per-module schema-history table -- not by Spring Boot on boot.
   # See this plan's Architecture note and Task 8/9.
@@ -91,6 +97,21 @@ mobile-money:
   # accepting unsigned ones.
   callback-hmac-secret: ${MOBILE_MONEY_CALLBACK_HMAC_SECRET:dev-only-placeholder-secret}
   callback-replay-window-seconds: ${MOBILE_MONEY_CALLBACK_REPLAY_WINDOW_SECONDS:300}
+
+communication:
+  # The SMS aggregator. Defaults to the mock-sms-gateway container (infra/docker-compose.yml),
+  # the same arrangement mobile-money uses above and for the same reason: SMS is the channel
+  # most customers here are actually reachable on, and there is no aggregator sandbox to point
+  # a dev stack at.
+  sms-gateway-url: ${SMS_GATEWAY_URL:http://localhost:8083}
+  # Internal protocol timing, not a business parameter -- same distinction mobile-money draws.
+  # Short on purpose: this runs inside an AFTER_COMMIT listener, so a slow gateway holds a
+  # thread that has already committed a policy.
+  connect-timeout-ms: ${SMS_CONNECT_TIMEOUT_MS:3000}
+  read-timeout-ms: ${SMS_READ_TIMEOUT_MS:10000}
+  # The From on every outbound email. A real deployment sets it to a domain it controls.
+  from-address: ${NOTIFICATION_FROM_ADDRESS:no-reply@nlolo.co.tz}
+
 
 server:
   tomcat:

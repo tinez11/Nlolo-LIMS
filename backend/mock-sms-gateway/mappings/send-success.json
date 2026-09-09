@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPath": "/send",
+    "bodyPatterns": [{ "matchesJsonPath": "$.to" }]
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "status": "ACCEPTED",
+      "messageId": "SMS-{{randomValue length=12 type='ALPHANUMERIC'}}"
+    },
+    "transformers": ["response-template"]
+  }
+}

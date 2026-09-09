@@ -118,6 +118,17 @@ services:
       - ../mock-mobile-money:/home/wiremock:ro
     command: ["--global-response-templating"]
 
+  mock-sms-gateway:
+    # Simulates a Tanzanian SMS aggregator so communication's ACL can be exercised without live
+    # credentials. Same image and the same reasoning as mock-mobile-money above: SMS is the
+    # channel most customers here are actually reachable on, and there is no sandbox to point at.
+    image: wiremock/wiremock:3.5.4
+    ports:
+      - "8083:8080"
+    volumes:
+      - ../mock-sms-gateway:/home/wiremock:ro
+    command: ["--global-response-templating"]
+
   mailpit:
     # Local email capture for communication-module testing (EMAIL channel) -- not a
     # production dependency, dev/test convenience only.
