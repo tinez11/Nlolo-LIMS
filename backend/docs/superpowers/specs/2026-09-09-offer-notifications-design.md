@@ -121,6 +121,47 @@ whereas a silent retry loop is not.
 - **A reminder after the offer already closed.** The sweep must re-read status at send time, not
   trust the row it selected.
 
+## The console surface
+
+Seeded templates with no screen behind them would mean a typo in a customer's SMS needs a
+migration to fix, and no way for anyone to answer "was this customer actually told?" — which is
+the first question the desk will ask when somebody rings up saying their policy lapsed without
+warning. A notification system nobody can see is one nobody can trust.
+
+**A `Communications` nav group in the staff console, with two screens.**
+
+**Message templates** (`configuration`-grade, but grouped here for discoverability). Lists every
+template by key, channel and language, shows the body, and allows the body text to be edited.
+
+Deliberately *not* create or delete. A template key with no listener behind it is dead text, and
+a listener whose key has been deleted fails every send — so the set of keys is defined by the
+code that sends them, and the console edits wording rather than inventing slots. Edits are
+audited like any other write on this platform, because changing what a customer is told is a
+business act.
+
+**Messages sent** — the outbox. Every `notification_dispatch` row: who, which template, which
+channel, when, and its status. A `FAILED` row shows the reason it failed, which is the whole
+point of recording failures rather than retrying silently.
+
+**And a `Messages` panel on the policy detail page**, which is the one that earns its place
+operationally. Looking at an offer, the question is not "what did we send today" but "has *this*
+customer been told about *this* policy, and did it arrive?" Answering that from a global outbox
+means knowing the party id and filtering by hand.
+
+### What this adds to the backend
+
+`openapi-communication.yaml`, and a controller with three reads and one write:
+
+- `GET /notifications/templates` — staff.
+- `PUT /notifications/templates/{templateKey}` — the body text only, admin-gated, audited.
+- `GET /notifications/dispatches` — filterable by party, policy, status.
+- The per-policy panel reads the same dispatches endpoint filtered by policy.
+
+`notification_dispatch` currently has no `policy_number` column, so filtering by policy is not
+possible today. It gains one, nullable: not every notification is about a policy, and the ones
+that are should say so rather than forcing the reader to infer it from the template key and the
+timestamp.
+
 ## Testing
 
 - Testcontainers integration tests per listener, asserting a real `notification_dispatch` row

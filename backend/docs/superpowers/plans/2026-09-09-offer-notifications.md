@@ -57,6 +57,11 @@
 **Docs**
 - `api/asyncapi-events.yaml`, `docs/05-event-catalog.md` (modify).
 
+**Console**
+- `api/openapi/openapi-communication.yaml`, `communication/infrastructure/NotificationController.java` (create) — the read surface.
+- `db-migrations/communication/V3__dispatch_policy_number.sql` (create) — what a message was about.
+- `frontend/src/screens.tsx` (modify), `frontend/src/features/communications/*` (create) — the Communications section.
+
 ---
 
 ## Task 1: The sender port and its two adapters
@@ -469,10 +474,137 @@ git commit -m "feat(communication): remind a customer a week before their offer 
 
 ---
 
-## Task 7: The written record, and end to end
+## Task 7: The read surface — templates and the outbox over HTTP
 
 **Files:**
-- Modify: `api/asyncapi-events.yaml`, `docs/05-event-catalog.md`
+- Create: `api/openapi/openapi-communication.yaml`, `communication/infrastructure/NotificationController.java`, `communication/api/{NotificationTemplateView,NotificationDispatchView}.java`
+- Create: `db-migrations/communication/V3__dispatch_policy_number.sql`
+- Modify: `communication/api/NotificationApi.java`, `communication/application/NotificationApiImpl.java`
+- Test: `src/test/java/tz/co/nlolo/lifeplatform/communication/CommunicationContractTest.java`
+
+**Interfaces:**
+- Produces: `GET /notifications/templates`, `PUT /notifications/templates/{templateKey}`, `GET /notifications/dispatches?partyId=&policyNumber=&status=`.
+
+- [ ] **Step 1: Add `policy_number` to the dispatch**
+
+```sql
+-- db-migrations/communication/V3__dispatch_policy_number.sql
+-- What this message was about.
+--
+-- Nullable on purpose: not every notification concerns a policy, and the ones that do should say
+-- so in a column rather than leave a reader inferring it from the template key and a timestamp.
+-- The policy detail page's Messages panel is the reason this exists -- "has THIS customer been
+-- told about THIS policy" is the question the desk actually asks, and answering it from a global
+-- outbox means knowing a party id and filtering by hand.
+ALTER TABLE communication.notification_dispatch ADD COLUMN policy_number VARCHAR(20);
+CREATE INDEX idx_notification_dispatch_policy ON communication.notification_dispatch (tenant_id, policy_number);
+```
+
+`NotificationApi.notify` gains a nullable `policyNumber` argument, and the three listeners pass
+the one from their payload.
+
+- [ ] **Step 2: Write the contract tests first**
+
+Strict OpenAPI validation, the same discipline `PolicyContractTest` uses — an undeclared response
+field is a hard failure.
+
+```java
+@Test
+void listTemplatesMatchesTheOpenApiContract() { ... 200, isValid(SPEC_PATH) ... }
+
+@Test
+void editingATemplateBodyChangesWhatIsSentNext() {
+    // The point of the screen: a typo in a customer's SMS must be fixable without a migration.
+    // Asserts the NEXT send uses the new wording, not just that the row changed.
+}
+
+@Test
+void aNonAdminCannotEditATemplate() { ... 403 ... }
+
+@Test
+void theTemplateKeySetIsNotEditable() {
+    // No POST and no DELETE are declared. A key with no listener is dead text; a listener whose
+    // key was deleted fails every send. The code that sends defines the set.
+}
+
+@Test
+void dispatchesCanBeFilteredToOnePolicy() { ... }
+```
+
+- [ ] **Step 3: Write the spec, the views and the controller**
+
+`PUT` accepts `{ "bodyTemplate": "..." }` and nothing else — channel, language and key are
+identity, not content. Reject a body whose placeholders are not a subset of the ones the original
+declared: renaming `{{premium}}` to `{{amount}}` would render a hole into a customer's message,
+and `TemplateRenderer` throwing at send time is far too late.
+
+- [ ] **Step 4: Run and commit**
+
+Run: `cd backend && ./mvnw test -Dtest='CommunicationContractTest'`
+
+```bash
+git commit -m "feat(communication): read the outbox, and fix a typo without a migration"
+```
+
+---
+
+## Task 8: The Communications section in the console
+
+**Files:**
+- Modify: `frontend/src/screens.tsx`, `frontend/src/api/types.ts`
+- Create: `frontend/src/features/communications/{TemplatesPage,MessagesPage,MessagesPanel}.tsx`, `store/communicationsSlice.ts`
+- Modify: `frontend/src/features/policies/PolicyDetailPage.tsx`
+- Test: `frontend/src/features/communications/*.test.tsx`
+
+- [ ] **Step 1: Regenerate the API types**
+
+Run: `cd frontend && npm run generate:api`
+
+- [ ] **Step 2: Add the nav group**
+
+In `screens.tsx`'s staff group list, after `records`:
+
+```tsx
+    // Its own group rather than two items scattered into Configuration and Records. What the
+    // platform says to customers is one operational area -- the wording and the evidence it was
+    // sent are read together, usually by the same person answering the same complaint.
+    { id: 'communications', label: 'Communications' },
+```
+
+Two screens: `notifications/templates` ("Message templates", icon `MessageSquare`) and
+`notifications/messages` ("Messages sent", icon `Send`).
+
+- [ ] **Step 3: Build the templates page**
+
+A table of key/channel/language, and an edit form for the body. Show the placeholders the
+template declares, so somebody editing knows which tokens are real — an editor who does not know
+`{{expiryDate}}` exists will delete it.
+
+- [ ] **Step 4: Build the outbox page**
+
+Party, template, channel, status, time. `FAILED` rows show the reason. Status filter, and the
+same URL round-tripping the other list pages use.
+
+- [ ] **Step 5: The per-policy panel**
+
+A `Messages` panel on `PolicyDetailPage`, reading dispatches filtered to that policy number.
+Empty state says "Nothing sent about this policy yet" — an honest empty state, not a blank box
+that reads as a loading failure.
+
+- [ ] **Step 6: Run and commit**
+
+Run: `cd frontend && npm run typecheck && npm run lint && npm test`
+
+```bash
+git commit -m "feat(console): a Communications section, and what the customer was told"
+```
+
+---
+
+## Task 9: The written record, and end to end
+
+**Files:**
+- Modify: `api/asyncapi-events.yaml`, `docs/05-event-catalog.md`, `docs/04-api-contracts.md`
 - Modify: `frontend/e2e/` — one spec
 
 - [ ] **Step 1: Apply and restart**
