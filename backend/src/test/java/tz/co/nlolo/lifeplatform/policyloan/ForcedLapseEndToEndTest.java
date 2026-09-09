@@ -155,6 +155,8 @@ class ForcedLapseEndToEndTest {
             snapshot.productVersionId(), cashValue, "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY", null,
             List.of(), "Forced lapse test issuance");
         String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(policyNumber);
 
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement statement = connection.prepareStatement(

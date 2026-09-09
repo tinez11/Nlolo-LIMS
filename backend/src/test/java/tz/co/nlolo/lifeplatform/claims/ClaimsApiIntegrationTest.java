@@ -143,7 +143,10 @@ class ClaimsApiIntegrationTest {
         TenantContext.set(tenantId);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
             new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims IT test");
-        return policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
     }
 
     private ClaimsApi.RegisterClaimRequest deathRequest(String policyNumber, UUID claimantId, LocalDate dateOfEvent) {

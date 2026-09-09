@@ -120,6 +120,8 @@ class PolicyContractTest {
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(), snapshot.productVersionId(),
             new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY", null, List.of(), "Contract test issuance");
         String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(policyNumber);
         TenantContext.clear();
         return policyNumber;
     }
@@ -206,7 +208,22 @@ class PolicyContractTest {
         return manualIssue(tenantId, productCode, "TERM_LIFE");
     }
 
+    /**
+     * A manually issued policy, in force.
+     *
+     * <p>Manual issue itself produces an OFFER, like every other issuance path -- see
+     * {@link #manualIssueOffer} for that. Almost every contract test here goes on to suspend,
+     * lapse, endorse or claim, all of which need cover, so this is the one that pays.
+     */
     private IssuedPolicy manualIssue(UUID tenantId, String productCode, String category) throws Exception {
+        IssuedPolicy issued = manualIssueOffer(tenantId, productCode, category);
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(issued.policyNumber());
+        TenantContext.clear();
+        return issued;
+    }
+
+    private IssuedPolicy manualIssueOffer(UUID tenantId, String productCode, String category) throws Exception {
         UUID applicantId = registerApplicant(tenantId, String.valueOf(Math.abs(productCode.hashCode() % 10000)));
         ProductFixture product = publishProduct(tenantId, productCode, category);
         UUID caseId = openUnderwritingCase(tenantId, applicantId, product);
@@ -591,7 +608,7 @@ class PolicyContractTest {
     }
 
     @Test
-    void inForceMatchesOpenApiContractAndReturnsTrueForANewlyIssuedPolicy() throws Exception {
+    void inForceMatchesOpenApiContractAndReturnsTrueForAPolicyWhosePremiumHasCleared() throws Exception {
         UUID tenantId = UUID.randomUUID();
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-12");
 
@@ -601,6 +618,24 @@ class PolicyContractTest {
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.inForce").value(true));
+    }
+
+    /**
+     * Renamed from "...ForANewlyIssuedPolicy" and given this counterpart, because newly issued is
+     * exactly what no longer implies in force. Without this pair the endpoint could return true
+     * unconditionally and the test above would not notice.
+     */
+    @Test
+    void inForceReturnsFalseForAnOfferWhosePremiumHasNotCleared() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssueOffer(tenantId, "POLICY-CONTRACT-12-OFFER", "TERM_LIFE");
+
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/in-force")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.inForce").value(false));
     }
 
     // --- suspend/resume/reinstate: PolicyApi.suspendPolicy/resumeSuspendedPolicy/reinstatePolicy

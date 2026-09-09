@@ -267,7 +267,10 @@ class ClaimAndCommissionPostingEndToEndTest {
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
             new BigDecimal("2000000"), CURRENCY, new BigDecimal("40000.00"), CURRENCY, "MONTHLY", null, List.of(),
             "Claim/Commission posting E2E test");
-        return policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
     }
 
     /** Registers, assesses, and returns a fresh DEATH claim id, ready to approve -- mirrors
@@ -312,9 +315,11 @@ class ClaimAndCommissionPostingEndToEndTest {
 
         PartyView policyholder = partyApi.registerIndividual("Claim/Commission Posting Policyholder " + tag,
             LocalDate.of(1980, 6, 1), "+25574" + String.format("%07d", Math.abs(tag.hashCode() % 10000000)), null, "test-agent");
-        policyApi.issuePolicy(null, new PolicyApi.IssueRequest(policyholder.partyId(), product.productId(),
-            productVersionId, new BigDecimal("2000000"), CURRENCY, premium, CURRENCY, "MONTHLY",
-            agentId, List.of(), "Claim/Commission posting E2E test"), "test-staff");
+        String policyNumber = policyApi.issuePolicy(null, new PolicyApi.IssueRequest(policyholder.partyId(),
+            product.productId(), productVersionId, new BigDecimal("2000000"), CURRENCY, premium, CURRENCY,
+            "MONTHLY", agentId, List.of(), "Claim/Commission posting E2E test"), "test-staff").policyNumber();
+        // Commission is only posted once there is cover to earn it on.
+        policyApi.activateOnFirstPremium(policyNumber);
 
         TenantContext.set(tenantId);
         List<CommissionStatement> statements = commissionStatementRepository

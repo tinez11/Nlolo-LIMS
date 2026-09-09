@@ -206,7 +206,10 @@ class ClaimSettlementEndToEndTest {
         TenantContext.set(tenantId);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
             new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims E2E test");
-        return policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
     }
 
     /** Registers, assesses, and returns a fresh DEATH claim id, ready to approve. */

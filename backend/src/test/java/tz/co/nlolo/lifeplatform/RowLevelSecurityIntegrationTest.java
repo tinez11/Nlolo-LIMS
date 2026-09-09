@@ -417,6 +417,8 @@ class RowLevelSecurityIntegrationTest {
         UnderwritingCaseView decidedA = underwritingApi.getCase(caseIdA);
         String policyNumberA = policyApi.searchPolicies(decidedA.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10))
             .getContent().get(0).policyNumber();
+        // Auto-issuance produces an offer; a loan needs cover.
+        policyApi.activateOnFirstPremium(policyNumberA);
         bumpCashValue(policyNumberA, "1000000");
         String loanIdA = policyLoanApi.originateLoan(policyNumberA, new java.math.BigDecimal("100000"), "TZS", "MPESA-0700000001", "test-agent").loanId().toString();
 
@@ -427,6 +429,7 @@ class RowLevelSecurityIntegrationTest {
         UnderwritingCaseView decidedB = underwritingApi.getCase(caseIdB);
         String policyNumberB = policyApi.searchPolicies(decidedB.applicantPartyId(), null, null, null, null, PageRequest.of(0, 10))
             .getContent().get(0).policyNumber();
+        policyApi.activateOnFirstPremium(policyNumberB);
         bumpCashValue(policyNumberB, "2000000");
         policyLoanApi.originateLoan(policyNumberB, new java.math.BigDecimal("200000"), "TZS", "MPESA-0700000002", "test-agent");
 

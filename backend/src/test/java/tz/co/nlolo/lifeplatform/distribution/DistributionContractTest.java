@@ -252,9 +252,12 @@ class DistributionContractTest {
         PartyView policyholder = partyApi.registerIndividual("Distribution Contract Holder " + tag,
             LocalDate.of(1980, 6, 1), "+25577" + String.format("%07d", Math.abs((tag + tenantId).hashCode() % 10000000)),
             null, "test-agent");
-        policyApi.issuePolicy(null, new PolicyApi.IssueRequest(policyholder.partyId(), productId, productVersionId,
-            new BigDecimal("2000000"), CURRENCY, new BigDecimal("100000.00"), CURRENCY, "MONTHLY",
-            agentId, List.of(), "Distribution contract test"), "test-staff");
+        String policyNumber = policyApi.issuePolicy(null, new PolicyApi.IssueRequest(policyholder.partyId(),
+            productId, productVersionId, new BigDecimal("2000000"), CURRENCY, new BigDecimal("100000.00"),
+            CURRENCY, "MONTHLY", agentId, List.of(), "Distribution contract test"), "test-staff").policyNumber();
+        // No commission statement exists until cover starts, so the lookup below finds nothing
+        // without this.
+        policyApi.activateOnFirstPremium(policyNumber);
         UUID statementId = commissionStatementRepository
             .findByTenantIdAndAgentIdOrderByPeriodDesc(tenantId, agentId).get(0).getStatementId();
         TenantContext.clear();

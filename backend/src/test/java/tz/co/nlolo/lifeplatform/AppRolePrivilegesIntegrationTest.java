@@ -393,6 +393,10 @@ class AppRolePrivilegesIntegrationTest {
             new java.math.BigDecimal("1000000"), "TZS", new java.math.BigDecimal("50000.00"), "TZS", "MONTHLY", null, java.util.List.of(), "App role smoke test");
         PolicyView issued = policyApi.issuePolicy(opened.caseId(), request, "test-staff");
         assertThat(issued.policyNumber()).isNotNull();
+        // The point of this test is that app_role can write and read policy.policy through the
+        // application's own DataSource, so it follows the policy all the way to in force --
+        // which now takes a collected premium as well as an issuance.
+        policyApi.activateOnFirstPremium(issued.policyNumber());
 
         PolicyView fetched = policyApi.getPolicy(issued.policyNumber());
         assertThat(fetched.status()).isEqualTo(PolicyStatus.ACTIVE);
@@ -420,6 +424,8 @@ class AppRolePrivilegesIntegrationTest {
             new PolicyApi.IssueRequest(policyholder.partyId(), product.productId(), snapshot.productVersionId(),
                 new java.math.BigDecimal("1000000"), "TZS", new java.math.BigDecimal("50000.00"), "TZS", "MONTHLY", null, java.util.List.of(), "App role loan smoke test"),
             "test-staff");
+        // A loan can only be taken against a policy in force.
+        policyApi.activateOnFirstPremium(issued.policyNumber());
 
         // policy.policy_account.cash_value_amount starts at ZERO at issuance (PolicyApiImpl
         // has no premium-accrual path yet) -- bumped directly here, exactly as

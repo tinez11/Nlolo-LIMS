@@ -166,7 +166,10 @@ class ClawbackIntegrationTest {
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(policyholder.partyId(), fixture.productId(),
             fixture.productVersionId(), new BigDecimal("2000000"), CURRENCY, premium, CURRENCY, "MONTHLY",
             fixture.sellerId(), List.of(), "Clawback IT test");
-        return policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
     }
 
     private CommissionAccrual originalFirstYearAccrual(UUID tenantId, String policyNumber) {

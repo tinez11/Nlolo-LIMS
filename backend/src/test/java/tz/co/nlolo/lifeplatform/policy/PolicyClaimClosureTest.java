@@ -120,7 +120,10 @@ class PolicyClaimClosureTest {
         TenantContext.set(tenantId);
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
             new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY", null, List.of(), "Claim closure test");
-        return policyApi.issuePolicy(underwritingCaseId, request, "test-staff").policyNumber();
+        String issuedPolicyNumber = policyApi.issuePolicy(underwritingCaseId, request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
     }
 
     @Test

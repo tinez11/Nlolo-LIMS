@@ -231,9 +231,12 @@ class CommissionPayoutEndToEndTest {
 
         PartyView policyholder = partyApi.registerIndividual("Distribution Payout Policyholder " + tag,
             LocalDate.of(1980, 6, 1), "+25574" + String.format("%07d", Math.abs(tag.hashCode() % 10000000)), null, "test-agent");
-        policyApi.issuePolicy(null, new PolicyApi.IssueRequest(policyholder.partyId(), product.productId(),
-            productVersionId, new BigDecimal("2000000"), CURRENCY, premium, CURRENCY, "MONTHLY",
-            agentId, List.of(), "Distribution payout E2E test"), "test-staff");
+        String policyNumber = policyApi.issuePolicy(null, new PolicyApi.IssueRequest(policyholder.partyId(),
+            product.productId(), productVersionId, new BigDecimal("2000000"), CURRENCY, premium, CURRENCY,
+            "MONTHLY", agentId, List.of(), "Distribution payout E2E test"), "test-staff").policyNumber();
+        // Commission accrues on cover, not on an offer, so there is no statement to pay out
+        // until the first premium has been collected.
+        policyApi.activateOnFirstPremium(policyNumber);
 
         TenantContext.set(tenantId);
         List<CommissionStatement> statements = commissionStatementRepository

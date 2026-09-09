@@ -145,15 +145,19 @@ class PolicyApiIntegrationTest {
     }
 
     @Test
-    void issuePolicyActivatesImmediatelyAndPublishesPolicyIssued() throws Exception {
+    void issuePolicyCreatesTheContractRecordAndPublishesPolicyIssued() throws Exception {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-ISSUE-01");
         Instant before = Instant.now();
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
         PolicyView view = policyApi.getPolicy(policyNumber);
-        assertEquals(PolicyStatus.ACTIVE, view.status());
+        // Renamed and corrected rather than activated. This test's subject IS issuance, and
+        // issuance no longer starts cover -- PolicyIssued now means only that the contract
+        // record exists. Adding a premium here to keep the old ACTIVE expectation would have
+        // been testing a different thing under the old name.
+        assertEquals(PolicyStatus.PROPOSED, view.status());
         assertEquals(fixture.applicantId(), view.policyholderPartyId());
-        assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+        assertFalse(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
 
         // Falsifiable proof that policy.PolicyIssued was genuinely published (not just that the
         // policy row exists): DomainEventAuditListener persists every published
@@ -207,7 +211,18 @@ class PolicyApiIntegrationTest {
             Thread.sleep(100);
         }
         assertThat(found).hasSize(1);
-        assertThat(found.get(0).status()).isEqualTo(PolicyStatus.ACTIVE);
+        // PROPOSED, not ACTIVE. This test's subject is the decision -> issuance chain, and what
+        // that chain now produces is an offer: the underwriter has accepted the risk, the
+        // customer has not yet paid for it. Corrected rather than paid off, for the same reason
+        // issuePolicyCreatesTheContractRecordAndPublishesPolicyIssued was -- collecting a premium
+        // here would keep the old assertion alive while quietly testing something else.
+        assertThat(found.get(0).status()).isEqualTo(PolicyStatus.PROPOSED);
+
+        // And the offer becomes cover when the money arrives, which is the half that would
+        // otherwise go unproven end to end.
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(found.get(0).policyNumber());
+        assertThat(policyApi.getPolicy(found.get(0).policyNumber()).status()).isEqualTo(PolicyStatus.ACTIVE);
     }
 
     /**
@@ -413,6 +428,8 @@ class PolicyApiIntegrationTest {
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
 
         TenantContext.set(tenantId);
+        // Suspension puts in-force cover on hold; there is nothing to hold on an unpaid offer.
+        policyApi.activateOnFirstPremium(policyNumber);
         policyApi.suspendPolicy(policyNumber, "SACCO group non-payment", "test-staff");
         assertEquals(PolicyStatus.SUSPENDED, policyApi.getPolicy(policyNumber).status());
         assertFalse(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
@@ -428,6 +445,9 @@ class PolicyApiIntegrationTest {
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
 
         TenantContext.set(tenantId);
+        // Only an in-force policy can lapse. An unpaid offer expires NOT_TAKEN_UP instead --
+        // see anOfferThatExpiresIsNotTakenUpRatherThanLapsed.
+        policyApi.activateOnFirstPremium(policyNumber);
         policyApi.lapsePolicy(policyNumber, "test-staff");
         assertEquals(PolicyStatus.LAPSED, policyApi.getPolicy(policyNumber).status());
 
@@ -601,6 +621,9 @@ class PolicyApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "POLICY-ENDORSE-01");
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
         TenantContext.set(tenantId);
+        // The "not in force" this test is about is LAPSED, reached from cover -- so the policy
+        // has to get into force first.
+        policyApi.activateOnFirstPremium(policyNumber);
         policyApi.lapsePolicy(policyNumber, "test-staff");
 
         assertThrows(InvalidPolicyStateException.class, () -> policyApi.applyEndorsement(policyNumber,
@@ -613,6 +636,8 @@ class PolicyApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "POLICY-ENDORSE-02");
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
         TenantContext.set(tenantId);
+        // "On an in-force policy" is this test's own name; that now takes a premium.
+        policyApi.activateOnFirstPremium(policyNumber);
         Instant before = Instant.now();
 
         PolicyView view = policyApi.applyEndorsement(policyNumber,
@@ -786,6 +811,8 @@ class PolicyApiIntegrationTest {
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
 
         TenantContext.set(tenantId);
+        // Suspension puts in-force cover on hold; there is nothing to hold on an unpaid offer.
+        policyApi.activateOnFirstPremium(policyNumber);
         policyApi.suspendPolicy(policyNumber, "investigation", "test-staff");
         Instant before = Instant.now();
         policyApi.resumeSuspendedPolicy(policyNumber, "test-staff");

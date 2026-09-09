@@ -143,6 +143,8 @@ class ModuleArchitectureB1EndToEndRaceTest {
     }
 
     @Autowired private MockMvc mockMvc;
+    /** Only to collect the first premium in the fixture below -- a loan needs cover, not an offer. */
+    @Autowired private tz.co.nlolo.lifeplatform.policy.api.PolicyApi policyApi;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -322,6 +324,13 @@ class ModuleArchitectureB1EndToEndRaceTest {
                     """.formatted(caseId, applicantId, productVersionId, CASH_VALUE.toPlainString(), UUID.randomUUID())))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String policyNumber = JsonPath.read(policyResponse, "$.policyNumber");
+
+        // Manual issue produces an OFFER, and a loan needs a policy in force. Through the real
+        // API rather than a status UPDATE beside the cash-value bump below, so the aggregate's
+        // own PROPOSED guard is exercised instead of stepped around.
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(policyNumber);
+        TenantContext.clear();
 
         try (Connection connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement statement = connection.prepareStatement(

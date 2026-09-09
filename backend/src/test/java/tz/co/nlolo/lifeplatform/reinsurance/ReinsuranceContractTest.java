@@ -212,6 +212,8 @@ class ReinsuranceContractTest {
             fixture.productVersionId(), new BigDecimal("2000000"), CURRENCY, new BigDecimal("100000.00"), CURRENCY,
             "MONTHLY", null, List.of(), "Reinsurance contract test");
         String policyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(policyNumber);
         TenantContext.clear();
         return policyNumber;
     }

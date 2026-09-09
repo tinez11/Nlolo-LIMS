@@ -218,7 +218,10 @@ class PremiumPostingEndToEndTest {
         PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
             fixture.productVersionId(), sumAssured, CURRENCY, premium, CURRENCY, "ANNUALLY", null, List.of(),
             "Premium posting E2E test");
-        return policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
     }
 
     @Test

@@ -189,6 +189,8 @@ class ClaimsContractTest {
             fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS",
             "MONTHLY", null, List.of(), "Claims contract test");
         String policyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(policyNumber);
         TenantContext.clear();
         return policyNumber;
     }
