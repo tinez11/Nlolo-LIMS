@@ -4,9 +4,11 @@ import {
   ClipboardCheck,
   FileText,
   HandCoins,
+  MessageSquare,
   Package,
   Receipt,
   ScrollText,
+  Send,
   Shield,
   TrendingDown,
   UserCheck,
@@ -19,6 +21,8 @@ import { canSeeFinance, staffRoles, type StaffRoles, type readIdentity } from '@
 import type { Realm } from '@/auth/realms';
 import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
 import { AuditLogPage } from '@/features/audit/AuditLogPage';
+import { MessagesPage } from '@/features/communications/MessagesPage';
+import { TemplatesPage } from '@/features/communications/TemplatesPage';
 import { ArrearsPage } from '@/features/billing/ArrearsPage';
 import { FieldReceiptsPage } from '@/features/billing/FieldReceiptsPage';
 import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
@@ -76,6 +80,7 @@ type NavGroupId =
   | 'finance'
   | 'distribution'
   | 'records'
+  | 'communications'
   | 'configuration'
   | 'my-business';
 
@@ -171,6 +176,10 @@ export const NAV_GROUPS: Record<Realm, NavGroup[]> = {
     // columns a compliance register needs exist nowhere on this platform, so a
     // group called Compliance would promise what the data cannot deliver.
     { id: 'records', label: 'Records' },
+    // Its own group rather than two items scattered into Records and Configuration. What the
+    // platform says to customers is one operational area: the wording and the evidence it was
+    // sent get read together, usually by the same person answering the same complaint.
+    { id: 'communications', label: 'Communications' },
     { id: 'configuration', label: 'Configuration' },
   ],
   agents: [{ id: 'my-business', label: 'My business' }],
@@ -230,6 +239,21 @@ const STAFF_SCREENS: Screen[] = [
     path: 'audit-log',
     element: <AuditLogPage />,
     reach: { group: 'records', label: 'Event journal', icon: ScrollText },
+  },
+
+  // Ungated beyond REALM_STAFF, matching both endpoints. Reading what the platform says to
+  // customers, and whether it arrived, is not privileged work -- it is what somebody does while
+  // a customer is on the phone. Only the EDIT is ADMIN, and the templates page says so rather
+  // than hiding itself.
+  {
+    path: 'notifications/messages',
+    element: <MessagesPage />,
+    reach: { group: 'communications', label: 'Messages sent', icon: Send },
+  },
+  {
+    path: 'notifications/templates',
+    element: <TemplatesPage />,
+    reach: { group: 'communications', label: 'Message templates', icon: MessageSquare },
   },
 
   {

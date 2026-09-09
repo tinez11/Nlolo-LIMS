@@ -14,6 +14,7 @@ import type { components as AuditComponents } from '@/types/api/audit';
 import type { components as BillingComponents } from '@/types/api/billing';
 import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
+import type { components as CommunicationComponents } from '@/types/api/communication';
 import type { components as PartyComponents } from '@/types/api/party';
 import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as DistributionComponents } from '@/types/api/distribution';
@@ -159,6 +160,17 @@ export const LICENSE_STATUSES: readonly LicenseStatus[] = ['ACTIVE', 'EXPIRED', 
  * a who-did-what trail, and anything rendering it must say so.
  */
 export type AuditEntryView = AuditComponents['schemas']['AuditEntryView'];
+
+/** What this platform says to customers, and the record of having said it. */
+export type NotificationTemplateView = CommunicationComponents['schemas']['NotificationTemplateView'];
+export type NotificationDispatchView = CommunicationComponents['schemas']['NotificationDispatchView'];
+export type NotificationStatus = NonNullable<NotificationDispatchView['status']>;
+
+/**
+ * The four the outbox can show. PENDING and CLAIMED are a queued reminder mid-flight; SENT means
+ * accepted by the transport, never delivered or read.
+ */
+export const NOTIFICATION_STATUSES: readonly NotificationStatus[] = ['PENDING', 'CLAIMED', 'SENT', 'FAILED'];
 export type OnboardAgentRequest = DistributionComponents['schemas']['OnboardAgentRequest'];
 
 export type CommissionPlanView = DistributionComponents['schemas']['CommissionPlanView'];

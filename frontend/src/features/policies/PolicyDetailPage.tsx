@@ -24,6 +24,7 @@ import {
   selectSuspending,
   usePolicyStore,
 } from '@/store/policyStore';
+import { MessagesPanel } from '@/features/communications/MessagesPanel';
 import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
@@ -180,6 +181,13 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           {policy && (
             <BeneficiariesPanel policyNumber={policyNumber} beneficiaries={policy.beneficiaries ?? []} />
           )}
+        </Panel>
+
+        {/* Directly under the cover panels, because it answers their follow-up question. An
+            offer that is "not yet on cover" immediately raises "does the customer know?", and
+            the honest answer is a SENT row with a timestamp or a FAILED row with a reason. */}
+        <Panel title="Messages" subtitle="What this customer has been told about this policy">
+          <MessagesPanel policyNumber={policyNumber} />
         </Panel>
 
         <Panel title="Invoices" subtitle="All invoices for this policy">

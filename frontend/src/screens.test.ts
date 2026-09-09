@@ -98,6 +98,12 @@ describe('screen manifest', () => {
       'Finance',
       'Distribution',
       'Records',
+      // After Records and before Configuration: what the platform SAYS to customers is a record
+      // of something that happened, not set-up. Its templates are configuration in a strict
+      // sense, but they are read alongside the evidence a message was sent -- usually by the
+      // same person answering the same complaint -- so splitting the two apart would serve the
+      // taxonomy rather than the job.
+      'Communications',
       'Configuration',
     ]);
   });
