@@ -176,6 +176,22 @@ public class PolicyApiImpl implements PolicyApi {
         return toView(policy);
     }
 
+    @Override
+    @Transactional
+    public void activateOnFirstPremium(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // Silent, not an exception. Billing re-delivering a PremiumCollected, an ordinary second
+        // month, and a MIGRATION policy that was never an offer all land here legitimately, and
+        // none of them is a fault worth failing the caller's transaction over.
+        if (!PolicyStatus.PROPOSED.name().equals(policy.getStatus())) {
+            return;
+        }
+        policy.activate();
+        policyRepository.save(policy);
+        publishPolicyActivated(policyNumber, tenantId, policy);
+    }
+
     /**
      * "On risk, premium received." The event commission, cession and the regulatory return key
      * off — as distinct from {@code PolicyIssued}, which now only means the contract record

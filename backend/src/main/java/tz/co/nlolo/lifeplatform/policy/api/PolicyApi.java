@@ -287,6 +287,17 @@ public interface PolicyApi {
     boolean isLapsable(String policyNumber);
     void reinstatePolicy(String policyNumber, String reinstatedBy);
 
+    /**
+     * Start cover, because the first premium has cleared.
+     *
+     * <p>Idempotent and silent on anything that is not an outstanding offer: a second
+     * {@code billing.PremiumCollected} is the ordinary second month, and a policy that reached
+     * ACTIVE through a MIGRATION issuance never had an offer to accept. Re-publishing
+     * {@code policy.PolicyActivated} would double-accrue commission and double-cede the risk, so
+     * the guard is not a nicety.
+     */
+    void activateOnFirstPremium(String policyNumber);
+
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
     void markMatured(String policyNumber, String maturedBy);
 

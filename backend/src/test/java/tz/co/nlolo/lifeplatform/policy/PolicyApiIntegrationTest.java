@@ -485,6 +485,77 @@ class PolicyApiIntegrationTest {
     }
 
     @Test
+    void theFirstPremiumStartsTheCover() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-ACT-01");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.PROPOSED);
+
+        policyApi.activateOnFirstPremium(policyNumber);
+
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.ACTIVE);
+        assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+    }
+
+    /**
+     * Idempotent on purpose. A second PremiumCollected is the ordinary second month, and
+     * re-firing PolicyActivated would double-accrue the agent's commission and double-cede the
+     * risk.
+     */
+    @Test
+    void aSecondPremiumDoesNotReactivateOrRepublish() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-ACT-02");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        Instant before = Instant.now();
+        policyApi.activateOnFirstPremium(policyNumber);
+
+        // Scoped to this tenant and this window rather than a findAll() count, so a concurrent
+        // test class activating its own policy cannot make this pass or fail spuriously.
+        assertThat(activationsFor(tenantId, before)).hasSize(1);
+
+        policyApi.activateOnFirstPremium(policyNumber);
+
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.ACTIVE);
+        assertThat(activationsFor(tenantId, before))
+            .as("the second premium is the ordinary second month, not a second activation")
+            .hasSize(1);
+    }
+
+    private List<AuditLogEntry> activationsFor(UUID tenantId, Instant since) {
+        return auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicyActivated", since.minusSeconds(5), Instant.now().plusSeconds(5));
+    }
+
+    /**
+     * An offer is not cover, and the clearest proof is that nobody can claim on it.
+     *
+     * <p>{@code Policy.terminateForSettledClaim} and {@code markMatured} have always refused any
+     * status but ACTIVE, REINSTATED, LAPSED or SUSPENDED -- "PROPOSED above all", in their own
+     * words -- but no policy could reach PROPOSED before this change, so the guard had never once
+     * been exercised against a real one. This asserts the actual settlement entry points rather
+     * than the isInForce read they sit behind: settling a claim against a contract nobody has
+     * paid for is the single most consequential thing offer-and-acceptance could get wrong.
+     */
+    @Test
+    void aClaimCannotBeSettledAgainstAnOfferNobodyHasPaidFor() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-OFFER-CLAIM");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.PROPOSED);
+
+        assertThrows(InvalidPolicyStateException.class,
+            () -> policyApi.terminateForSettledClaim(policyNumber, UUID.randomUUID(), "test-claims"));
+        assertThrows(InvalidPolicyStateException.class,
+            () -> policyApi.markMatured(policyNumber, "test-claims"));
+
+        assertFalse(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+        assertThat(policyApi.getPolicy(policyNumber).status())
+            .as("a refused settlement must leave the offer exactly as it was")
+            .isEqualTo(PolicyStatus.PROPOSED);
+    }
+
+    @Test
     void anOfferThatExpiresIsNotTakenUpRatherThanLapsed() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-NTU-01");
