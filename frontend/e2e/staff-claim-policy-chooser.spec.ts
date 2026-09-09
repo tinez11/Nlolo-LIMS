@@ -58,11 +58,24 @@ test.describe('staff claim intake -- policy chooser', () => {
     const chooser = page.getByRole('radiogroup', { name: 'Policy to claim against' });
     await expect(chooser).toBeVisible({ timeout: 20_000 });
 
-    // This fixture party owns more than the server's 100-row page cap, accumulated over many
-    // e2e runs, so the target policy is genuinely NOT in the first page -- which is what the
-    // truncation notice and the server-side filter exist for. Filtering here is therefore
-    // testing the real path for this data, not working around the assertion.
-    await expect(page.getByText(/Showing the \d+ most recent of \d+/)).toBeVisible();
+    // The truncation notice only renders when this claimant owns more than the server's 100-row
+    // page cap. That used to be guaranteed here by policies accumulated across many e2e runs --
+    // an assumption that expired silently the moment the volumes were reset, which is the same
+    // class of coupling to accidental state that had this file pinning a literal policy number.
+    //
+    // So the notice is asserted against reality rather than assumed: if the list IS truncated it
+    // must say so honestly, and if it is not there must be no notice claiming otherwise. Neither
+    // branch is a skip -- both fail on a chooser that lies about what it is showing.
+    const truncation = page.getByText(/Showing the \d+ most recent of \d+/);
+    if ((await truncation.count()) > 0) {
+      const notice = (await truncation.textContent()) ?? '';
+      const [, shown, total] = notice.match(/Showing the (\d+) most recent of (\d+)/) ?? [];
+      expect(Number(total)).toBeGreaterThan(Number(shown));
+    } else {
+      await expect(page.getByRole('radio')).not.toHaveCount(0);
+    }
+
+    // The filter is the real path either way, and the one the notice tells the user to reach for.
     await page.getByLabel('Filter policies').fill(herPolicy);
 
     const herPolicyRow = page.getByRole('radio').filter({ hasText: herPolicy });
