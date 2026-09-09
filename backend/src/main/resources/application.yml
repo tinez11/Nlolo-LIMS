@@ -99,11 +99,28 @@ mobile-money:
   callback-replay-window-seconds: ${MOBILE_MONEY_CALLBACK_REPLAY_WINDOW_SECONDS:300}
 
 communication:
-  # The SMS aggregator. Defaults to the mock-sms-gateway container (infra/docker-compose.yml),
-  # the same arrangement mobile-money uses above and for the same reason: SMS is the channel
-  # most customers here are actually reachable on, and there is no aggregator sandbox to point
-  # a dev stack at.
-  sms-gateway-url: ${SMS_GATEWAY_URL:http://localhost:8083}
+  # The SMS aggregator: NextSMS (messaging-service.co.tz) in production. DEFAULTS TO THE LOCAL
+  # MOCK (infra/docker-compose.yml's mock-sms-gateway), which is load-bearing rather than a
+  # convenience -- a misconfigured environment reaches a WireMock container, not a real person's
+  # phone. Same arrangement mobile-money uses above.
+  sms-gateway-url: ${SMS_GATEWAY_BASE_URL:${SMS_GATEWAY_URL:http://localhost:8083}}
+  sms-gateway:
+    # The registered sender ID. NextSMS carries it as a body field, not a header, and rejects a
+    # message without one.
+    sender-name: ${SMS_GATEWAY_SENDER_NAME:AMC}
+    # Basic <base64>, supplied whole. Empty by default and NEVER defaulted to a real value: the
+    # credentials live in backend/.env, which is gitignored.
+    authorization: ${SMS_GATEWAY_AUTHORIZATION:}
+    # OFF. Nothing reaches a real handset until this is explicitly true. With it false the
+    # adapter records a FAILED dispatch saying so, rather than reporting a success nobody
+    # received -- an outbox that claims a customer was contacted when nothing was sent is worse
+    # than one that admits it.
+    live: ${SMS_GATEWAY_LIVE:false}
+    # Comma-separated MSISDNs (no plus). When set, a live gateway delivers to these and refuses
+    # everything else. The dev database is full of real-looking numbers on seeded parties, and
+    # one live run against it would text strangers; this makes that impossible rather than
+    # unlikely. Empty in production, where every customer is a legitimate recipient.
+    allowed-recipients: ${SMS_GATEWAY_ALLOWED_RECIPIENTS:}
   # Internal protocol timing, not a business parameter -- same distinction mobile-money draws.
   # Short on purpose: this runs inside an AFTER_COMMIT listener, so a slow gateway holds a
   # thread that has already committed a policy.

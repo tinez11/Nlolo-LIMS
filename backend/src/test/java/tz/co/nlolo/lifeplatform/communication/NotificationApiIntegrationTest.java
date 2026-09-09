@@ -33,6 +33,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static tz.co.nlolo.lifeplatform.communication.NextSmsStubs.NEXTSMS_ACCEPTED;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -46,7 +47,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Mailpit proves actual delivery in the e2e.
  */
 @Testcontainers
-@SpringBootTest(classes = Application.class)
+// Live against the LOCAL WireMock below, never the real aggregator: sending defaults off,
+// so without this the adapter would refuse and every SENT assertion here would fail.
+@SpringBootTest(classes = Application.class, properties = "communication.sms-gateway.live=true")
 class NotificationApiIntegrationTest {
 
     @Container
@@ -96,8 +99,8 @@ class NotificationApiIntegrationTest {
     @BeforeEach
     void acceptEverySms() {
         smsGateway.resetAll();
-        smsGateway.stubFor(post(urlPathEqualTo("/send"))
-            .willReturn(okJson("{\"status\":\"ACCEPTED\",\"messageId\":\"SMS-TEST\"}")));
+        smsGateway.stubFor(post(urlPathEqualTo("/api/sms/v1/text/single"))
+            .willReturn(okJson(NEXTSMS_ACCEPTED)));
         TenantContext.set(SEEDED_TENANT);
     }
 
@@ -164,7 +167,7 @@ class NotificationApiIntegrationTest {
             .hasSize(1);
         // Belt and braces on the thing that actually reaches a customer: one HTTP call, not two.
         smsGateway.verify(1, com.github.tomakehurst.wiremock.client.WireMock
-            .postRequestedFor(urlPathEqualTo("/send")));
+            .postRequestedFor(urlPathEqualTo("/api/sms/v1/text/single")));
     }
 
     @Test
@@ -215,7 +218,7 @@ class NotificationApiIntegrationTest {
         assertThat(rows.get(0).getFailureReason()).contains("premium").contains("expiryDate");
         // Nothing left the platform. A message with a visible {{hole}} is worse than none.
         smsGateway.verify(0, com.github.tomakehurst.wiremock.client.WireMock
-            .postRequestedFor(urlPathEqualTo("/send")));
+            .postRequestedFor(urlPathEqualTo("/api/sms/v1/text/single")));
     }
 
     @Test

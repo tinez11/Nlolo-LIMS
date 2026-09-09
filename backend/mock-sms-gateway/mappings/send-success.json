@@ -1,15 +1,26 @@
 {
   "request": {
     "method": "POST",
-    "urlPath": "/send",
-    "bodyPatterns": [{ "matchesJsonPath": "$.to" }]
+    "urlPath": "/api/sms/v1/text/single",
+    "bodyPatterns": [{ "matchesJsonPath": "$.to" }, { "matchesJsonPath": "$.from" }]
   },
   "response": {
     "status": 200,
     "headers": { "Content-Type": "application/json" },
     "jsonBody": {
-      "status": "ACCEPTED",
-      "messageId": "SMS-{{randomValue length=12 type='ALPHANUMERIC'}}"
+      "messages": [
+        {
+          "to": "{{jsonPath request.body '$.to'}}",
+          "status": {
+            "groupId": 1,
+            "groupName": "PENDING",
+            "id": 7,
+            "name": "PENDING_ENROUTE",
+            "description": "Message sent to next instance"
+          },
+          "smsCount": 1
+        }
+      ]
     },
     "transformers": ["response-template"]
   }

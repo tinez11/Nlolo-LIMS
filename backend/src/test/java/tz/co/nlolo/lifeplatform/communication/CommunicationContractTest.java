@@ -36,6 +36,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static tz.co.nlolo.lifeplatform.communication.NextSmsStubs.NEXTSMS_ACCEPTED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -51,7 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 @AutoConfigureMockMvc
 @SpringBootTest(classes = Application.class, webEnvironment = SpringBootTest.WebEnvironment.MOCK,
-    properties = "communication.reminder-drain-interval-ms=3600000")
+    properties = { "communication.reminder-drain-interval-ms=3600000", "communication.sms-gateway.live=true" })
 class CommunicationContractTest {
 
     private static final String SPEC_PATH = "api/openapi/openapi-communication.yaml";
@@ -97,8 +98,8 @@ class CommunicationContractTest {
     @BeforeEach
     void acceptEverySms() {
         smsGateway.resetAll();
-        smsGateway.stubFor(post(urlPathEqualTo("/send"))
-            .willReturn(okJson("{\"status\":\"ACCEPTED\",\"messageId\":\"SMS-CONTRACT\"}")));
+        smsGateway.stubFor(post(urlPathEqualTo("/api/sms/v1/text/single"))
+            .willReturn(okJson(NEXTSMS_ACCEPTED)));
     }
 
     @AfterEach

@@ -44,6 +44,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static tz.co.nlolo.lifeplatform.communication.NextSmsStubs.NEXTSMS_ACCEPTED;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -58,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThat;
     // The drain is driven explicitly below. Left on its own schedule it would race every
     // assertion here, and a test that sometimes finds a row already sent proves nothing either
     // way.
-    properties = "communication.reminder-drain-interval-ms=3600000")
+    properties = { "communication.reminder-drain-interval-ms=3600000", "communication.sms-gateway.live=true" })
 class OfferReminderSweepTest {
 
     @Container
@@ -136,8 +137,8 @@ class OfferReminderSweepTest {
     @BeforeEach
     void acceptEverySms() {
         smsGateway.resetAll();
-        smsGateway.stubFor(post(urlPathEqualTo("/send"))
-            .willReturn(okJson("{\"status\":\"ACCEPTED\",\"messageId\":\"SMS-REMIND\"}")));
+        smsGateway.stubFor(post(urlPathEqualTo("/api/sms/v1/text/single"))
+            .willReturn(okJson(NEXTSMS_ACCEPTED)));
     }
 
     @AfterEach

@@ -39,6 +39,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static tz.co.nlolo.lifeplatform.communication.NextSmsStubs.NEXTSMS_ACCEPTED;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -51,7 +52,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * exactly the drift the platform's own event catalogue has been corrected for twice.
  */
 @Testcontainers
-@SpringBootTest(classes = Application.class)
+// Live against the LOCAL WireMock below, never the real aggregator: sending defaults off,
+// so without this the adapter would refuse and every SENT assertion here would fail.
+@SpringBootTest(classes = Application.class, properties = "communication.sms-gateway.live=true")
 class OfferNotificationEndToEndTest {
 
     @Container
@@ -116,8 +119,8 @@ class OfferNotificationEndToEndTest {
     @BeforeEach
     void acceptEverySms() {
         smsGateway.resetAll();
-        smsGateway.stubFor(post(urlPathEqualTo("/send"))
-            .willReturn(okJson("{\"status\":\"ACCEPTED\",\"messageId\":\"SMS-E2E\"}")));
+        smsGateway.stubFor(post(urlPathEqualTo("/api/sms/v1/text/single"))
+            .willReturn(okJson(NEXTSMS_ACCEPTED)));
     }
 
     @AfterEach
