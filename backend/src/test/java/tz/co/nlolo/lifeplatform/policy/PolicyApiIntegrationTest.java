@@ -656,6 +656,72 @@ class PolicyApiIntegrationTest {
         assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
     }
 
+    /**
+     * Closing an offer has to be audible.
+     *
+     * <p>Until this event existed an expired offer changed state in total silence: the pg_cron
+     * sweep sets NOT_TAKEN_UP with a raw UPDATE, and SQL cannot publish a Spring event. Fine
+     * while nothing consumed it; not fine once a customer needs telling they are not insured.
+     */
+    @Test
+    void expiringAnOfferPublishesPolicyNotTakenUp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-EXPIRE-01");
+        Instant before = Instant.now();
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+
+        TenantContext.set(tenantId);
+        policyApi.expireOffer(policyNumber);
+
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.NOT_TAKEN_UP);
+        List<AuditLogEntry> published = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicyNotTakenUp", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(published).hasSize(1);
+        JsonNode payload = objectMapper.readTree(published.get(0).getPayload());
+        assertThat(payload.path("policyNumber").asText()).isEqualTo(policyNumber);
+        // The consumer that needs this most -- communication -- may not depend on policy, so an
+        // event naming only the policy would leave it with nobody to tell.
+        assertThat(payload.path("policyholderPartyId").asText()).isEqualTo(fixture.applicantId().toString());
+    }
+
+    @Test
+    void expiringSomethingThatIsAlreadyInForceIsSilentAndPublishesNothing() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-EXPIRE-02");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(policyNumber);
+        Instant before = Instant.now();
+
+        // The race this guard exists for: the customer paid between the sweep selecting their
+        // policy and this call reaching it. Not a fault -- the customer won, which is the outcome
+        // everybody wanted -- so it must neither throw nor tell them their offer expired.
+        policyApi.expireOffer(policyNumber);
+
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.ACTIVE);
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicyNotTakenUp", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .as("a policy somebody paid for must never be told it expired")
+            .isEmpty();
+    }
+
+    @Test
+    void expiringAnAlreadyExpiredOfferPublishesNoSecondEvent() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-EXPIRE-03");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        TenantContext.set(tenantId);
+        policyApi.expireOffer(policyNumber);
+        Instant afterFirst = Instant.now();
+
+        policyApi.expireOffer(policyNumber);
+
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicyNotTakenUp", afterFirst, Instant.now().plusSeconds(5)))
+            .as("re-running the sweep must not tell the customer twice")
+            .isEmpty();
+    }
+
     @Test
     void anOfferThatExpiresIsNotTakenUpRatherThanLapsed() {
         UUID tenantId = UUID.randomUUID();

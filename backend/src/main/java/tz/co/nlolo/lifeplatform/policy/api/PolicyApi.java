@@ -298,6 +298,21 @@ public interface PolicyApi {
      */
     void activateOnFirstPremium(String policyNumber);
 
+    /**
+     * Close an offer nobody took up, and say so out loud.
+     *
+     * <p>Idempotent and silent on anything that is not an outstanding offer, for the same reasons
+     * {@link #activateOnFirstPremium} is.
+     *
+     * <p>This exists alongside {@code policy.sweep_expired_offers()} rather than instead of it.
+     * The sweep is what enforces the deadline across every tenant on a schedule, and it sets the
+     * status with a raw UPDATE — SQL cannot publish a Spring event, so for as long as it was the
+     * only path an expired offer changed state in total silence. That was tolerable while nothing
+     * consumed it. It stopped being tolerable when a customer needed telling they are not
+     * insured, which is the one message in the offer lifecycle somebody will act on.
+     */
+    void expireOffer(String policyNumber);
+
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
     void markMatured(String policyNumber, String maturedBy);
 

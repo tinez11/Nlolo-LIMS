@@ -12,6 +12,15 @@
 -- whose premiums stop; a contract that was never on risk does not belong in the lapse figures,
 -- where it would overstate persistency problems.
 --
+-- THIS SWEEP PUBLISHES NOTHING, and that is now a limitation rather than a detail. SQL cannot
+-- raise a Spring event, so an offer closed by this function changes state in silence -- no
+-- policy.PolicyNotTakenUp, and therefore no message to the customer telling them they are not
+-- insured. PolicyApi.expireOffer is the application-side path that does both, and the reminder
+-- sweep in communication is what calls it for offers already past the window.
+--
+-- Both paths must agree. If markNotTakenUp() or expireOffer() ever gains a condition, the WHERE
+-- clause below has to gain it too.
+--
 -- SECURITY DEFINER and cross-tenant, matching billing.sweep_billing_state(): a business-state
 -- sweep runs over every tenant and cannot rely on a request-scoped TenantContext. It executes
 -- with the privileges of the role that owns it (the migration-applying role, which owns every

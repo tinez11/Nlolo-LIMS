@@ -192,6 +192,32 @@ public class PolicyApiImpl implements PolicyApi {
         publishPolicyActivated(policyNumber, tenantId, policy);
     }
 
+    @Override
+    @Transactional
+    public void expireOffer(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // Silent on anything that is not an outstanding offer. A policy that was paid for
+        // between the sweep selecting it and this call reaching it lands here legitimately, and
+        // racing the customer's own payment is not a fault to fail a caller over -- it is the
+        // customer winning, which is the outcome everybody wanted.
+        if (!PolicyStatus.PROPOSED.name().equals(policy.getStatus())) {
+            return;
+        }
+        policy.markNotTakenUp();
+        policyRepository.save(policy);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("policyNumber", policyNumber);
+        // Carried because the consumer that needs it most cannot look it up: communication may
+        // not depend on policy, so an event that named only the policy would leave it with
+        // nobody to tell.
+        payload.put("policyholderPartyId", policy.getPolicyholderPartyId());
+        payload.put("productId", policy.getProductId());
+        payload.put("expiredAt", LocalDate.now().toString());
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyNotTakenUp", tenantId, payload));
+    }
+
     /**
      * "On risk, premium received." The event commission, cession and the regulatory return key
      * off — as distinct from {@code PolicyIssued}, which now only means the contract record
