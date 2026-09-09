@@ -94,6 +94,25 @@ channels:
       happens.
     publish:
       message: { $ref: '#/components/messages/PolicyIssued' }
+  policy.PolicyNotTakenUp:
+    description: >-
+      Producer: policy. Consumers: communication, audit.
+
+      An offer closed unpaid. Published by {@code PolicyApi.expireOffer}, NOT by
+      {@code policy.sweep_expired_offers()} -- the sweep sets the status with a raw UPDATE and SQL
+      cannot raise a Spring event, so for as long as it was the only path an expired offer changed
+      state in total silence. Tolerable while nothing consumed it; not once a customer needed
+      telling they are not insured.
+
+      Carries policyholderPartyId because the consumer that needs it most cannot look it up:
+      communication may not depend on policy, so an event naming only the contract would arrive
+      with nobody to tell.
+
+      Deliberately NOT consumed by distribution or reinsurance: an offer that expired was never on
+      risk, so there is no commission to claw back and no cession to unwind. Nothing was ever
+      accrued or ceded against it, because both moved to PolicyActivated.
+    publish:
+      message: { $ref: '#/components/messages/PolicyNotTakenUp' }
   policy.PolicyActivated:
     description: >-
       Producer: policy. Consumers: distribution, reinsurance, regreporting, communication, audit.
@@ -434,6 +453,7 @@ components:
     UnderwritingDecisionMade: { messageId: UnderwritingDecisionMade, name: UnderwritingDecisionMade, payload: { $ref: '#/components/schemas/UnderwritingDecisionMadePayload' } }
     PolicyIssued: { messageId: PolicyIssued, name: PolicyIssued, payload: { $ref: '#/components/schemas/PolicyIssuedPayload' } }
     PolicyActivated: { messageId: PolicyActivated, name: PolicyActivated, payload: { $ref: '#/components/schemas/PolicyActivatedPayload' } }
+    PolicyNotTakenUp: { messageId: PolicyNotTakenUp, name: PolicyNotTakenUp, payload: { $ref: '#/components/schemas/PolicyNotTakenUpPayload' } }
     PolicyEndorsed: { messageId: PolicyEndorsed, name: PolicyEndorsed, payload: { $ref: '#/components/schemas/PolicyEndorsedPayload' } }
     PolicyLapsed: { messageId: PolicyLapsed, name: PolicyLapsed, payload: { $ref: '#/components/schemas/PolicyLapsedPayload' } }
     PolicyReinstated: { messageId: PolicyReinstated, name: PolicyReinstated, payload: { $ref: '#/components/schemas/PolicyReinstatedPayload' } }
@@ -551,10 +571,20 @@ components:
         `premiumFrequency` (billing.application.PolicyEventListener has consumed both since M4) --
         this schema declared neither, the same under-declaration class M5/M6 each corrected once
         already. Purely additive (both fields already existed on the wire); no schemaVersion bump.
+
+
+        `status` is new with offer notifications, and it is genuinely new on the wire rather than
+        another under-declaration. It exists because a consumer has to distinguish an OFFER from
+        an issuance that is already in force: a MIGRATION/CONVERSION/REINSTATEMENT basis publishes
+        PolicyIssued and PolicyActivated together, and telling that customer to "pay by DATE to
+        start your cover" would be false -- they are insured now. communication may not depend on
+        policy, so it cannot look the status up; carrying it is the only way it can tell the two
+        apart. PROPOSED for ordinary new business, ACTIVE otherwise, and always present so no
+        consumer has to treat an absent key as a third case.
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, issueDate: {type: string, format: date}, premium: {type: object}, premiumFrequency: {type: string}, agentOfRecordId: {type: string, format: uuid, nullable: true} }
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, issueDate: {type: string, format: date}, premium: {type: object}, premiumFrequency: {type: string}, agentOfRecordId: {type: string, format: uuid, nullable: true}, status: {type: string, enum: [PROPOSED, ACTIVE]} }
     PolicyActivatedPayload:
       description: >
         The union of what distribution's, reinsurance's and regreporting's handlers actually read,
@@ -568,6 +598,15 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, premium: {type: object}, premiumFrequency: {type: string}, issueDate: {type: string, format: date}, agentOfRecordId: {type: string, format: uuid, nullable: true}, activatedAt: {type: string, format: date} }
+    PolicyNotTakenUpPayload:
+      description: >
+        policyholderPartyId is load-bearing rather than convenient: communication is the consumer
+        this event exists for, it may not depend on policy, and an event naming only the contract
+        would reach it with nobody to tell.
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, expiredAt: {type: string, format: date} }
     PolicyEndorsedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

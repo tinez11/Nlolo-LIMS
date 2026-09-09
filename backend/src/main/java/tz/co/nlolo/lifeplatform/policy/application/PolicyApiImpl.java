@@ -165,6 +165,11 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("premium", Map.of("amount", request.premiumAmount().toPlainString(), "currencyCode", request.premiumCurrency()));
         payload.put("premiumFrequency", request.premiumFrequency());
         payload.put("agentOfRecordId", request.agentOfRecordId()); // nullable -- see Global Constraints
+        // PROPOSED for ordinary new business, ACTIVE for an issuance basis that already carries
+        // cover. Carried because a consumer cannot ask: communication must tell an offer's
+        // customer to pay by a date, and must NOT tell that to somebody whose migrated policy is
+        // already in force -- and it may not depend on policy to find out which it is looking at.
+        payload.put("status", policy.getStatus());
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
         // Both events together for an immediate-cover issuance, so every downstream consumer
@@ -808,6 +813,10 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("premium", Map.of("amount", request.premiumAmount().toPlainString(), "currencyCode", request.premiumCurrency()));
         payload.put("premiumFrequency", request.premiumFrequency());
         payload.put("agentOfRecordId", request.agentOfRecordId());
+        // Always ACTIVE here: a scheme goes on risk at issuance, outside offer-and-acceptance.
+        // Declared explicitly rather than omitted, so a consumer branching on this key never has
+        // to treat "absent" as a third case meaning something.
+        payload.put("status", policy.getStatus());
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupSchemeIssued", tenantId, Map.of(
