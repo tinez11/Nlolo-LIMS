@@ -47,7 +47,12 @@ test.describe('staff communications', () => {
     await expect(table.or(empty)).toBeVisible({ timeout: 20_000 });
 
     // The status filter round-trips through the URL, like every other list here.
-    await page.getByText('FAILED', { exact: true }).click();
+    //
+    // By ROLE, not by text. "FAILED" is both a filter chip and a status badge, so a text match is
+    // unique only while the outbox happens to be empty — which it was when this was written, and
+    // is not now that the adapter correctly suppresses sends and records each one. The chip is a
+    // button; the badges are spans.
+    await page.getByRole('button', { name: 'FAILED' }).click();
     await expect(page).toHaveURL(/status=FAILED/);
   });
 

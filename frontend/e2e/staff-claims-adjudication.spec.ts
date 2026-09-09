@@ -90,6 +90,17 @@ test.describe('staff claims adjudication', () => {
     page,
     browser,
   }) => {
+    // The slowest test in the suite, and it had no headroom. It drives a full policy issuance, a
+    // claim registration, an assessment and a settlement across THREE authenticated browser
+    // contexts -- roughly 52 seconds of genuine work against a 60-second default. It took 54.8s
+    // before the notifications project and 51.4s after, so nothing made it slow: it has always
+    // sat within a few seconds of its limit, and tipped over the first time the full suite ran it
+    // under contention.
+    //
+    // test.slow() triples the budget, which nine other specs here already do for less. Trimming
+    // what it covers would buy seconds by proving less about the one path where money leaves the
+    // platform.
+    test.slow();
     const policyNumber = await issueRealPolicy(page);
     const claimId = await registerRealDeathClaim(page, policyNumber);
 
