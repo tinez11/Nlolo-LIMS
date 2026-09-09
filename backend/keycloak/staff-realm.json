@@ -12,7 +12,7 @@
       },
       {
         "name": "SENIOR_UNDERWRITER",
-        "description": "May decide an underwriting case against the rules engine's recommendation. Strictly additive to UNDERWRITER, never a replacement -- POST /underwriting/cases/{caseId}/decision is gated on UNDERWRITER, and this role only lifts the restriction on departing from the recommendation. A senior without UNDERWRITER cannot reach the endpoint at all."
+        "description": "May decide an underwriting case against the rules engine's recommendation. Additive to UNDERWRITER, never a replacement: the decision endpoint is gated on UNDERWRITER, and this only lifts the bar on overriding."
       },
       {
         "name": "CLAIMS_ASSESSOR"
