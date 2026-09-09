@@ -52,6 +52,9 @@ test.describe('staff issue policy', () => {
     await pickPolicyholder(page);
     await page.getByLabel('Sum assured').fill('2000000.00');
     await page.getByLabel('Premium', { exact: true }).fill('800.00');
+    // Supplied so the only thing missing is the product -- this test asserts a specific
+    // field error, and a second unfilled required field would make it pass for two reasons.
+    await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
     await page.getByLabel('Reason for manual issue').fill('E2E test');
     await page.getByRole('button', { name: 'Issue policy' }).click();
 
@@ -95,6 +98,8 @@ test.describe('staff issue policy', () => {
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('2000000.00');
     await page.getByLabel('Premium', { exact: true }).fill('800.00');
+    // As above: the missing underwriting case must be the only reason this is refused.
+    await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
     await page.getByLabel('Reason for manual issue').fill('E2E no-case test');
     await page.getByRole('button', { name: 'Issue policy' }).click();
 
@@ -122,6 +127,12 @@ test.describe('staff issue policy', () => {
 
     await page.getByLabel('Sum assured').fill('2000000.00');
     await page.getByLabel('Premium', { exact: true }).fill('800.00');
+    // UNDERWRITING_OVERRIDE, and this one is not interchangeable with the others. The case above
+    // was DECLINED, so overturning it by hand is literally what this basis describes -- and
+    // because it is one of the two that do NOT start cover, this test also proves the offer half
+    // end to end: a real 201 that leaves the customer uninsured until they pay.
+    await page.getByLabel('Why is this being issued by hand?').selectOption('UNDERWRITING_OVERRIDE');
+    await expect(page.getByText('Cover starts when the first premium clears.')).toBeVisible();
     await page.getByLabel('Reason for manual issue').fill('E2E full-issuance test');
 
     await page.getByRole('button', { name: 'Issue policy' }).click();
@@ -135,6 +146,12 @@ test.describe('staff issue policy', () => {
     // (real backend behavior, not a rendering bug), so the "Sum assured" field and
     // the "Coverage" panel's death row both show it.
     await expect(page.getByText('TZS 2,000,000.00').first()).toBeVisible();
+    // The offer reads as an offer. A status badge alone would leave a reader guessing whether
+    // this person is covered, which is the single most important thing the page says.
+    await expect(page.getByRole('heading', { name: 'Not yet on cover' })).toBeVisible();
+    await expect(
+      page.getByText('Cover starts when the first premium clears', { exact: false }),
+    ).toBeVisible();
     // Proves a real party id round-tripped AND that it resolves to the right person.
     //
     // The literal `d9937444-3873-4336-9cb7-addb486f3e1b` used to be asserted here, described

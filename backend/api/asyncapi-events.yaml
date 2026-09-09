@@ -78,12 +78,42 @@ channels:
 
   policy.PolicyIssued:
     description: >-
-      Producer: policy. Consumers: billing, distribution, reinsurance, finaccounting, regreporting,
-      communication, audit. M10 (Task 3): regreporting's own PolicyEventListener genuinely projects
-      this event into policy_dimension and policy_movement (policies_issued/sum_assured_issued) --
-      previously listed here as a design placeholder with no listener behind it.
+      Producer: policy. Consumers: billing, finaccounting, communication, audit.
+
+      MEANING CHANGED (offer and acceptance): this now means "the contract record exists", NOT
+      "cover started". A policy is created PROPOSED -- an offer -- and goes on risk only when its
+      first premium clears, at which point policy.PolicyActivated fires. billing is the consumer
+      that still belongs here and is the reason the event exists at this moment at all: it raises
+      the first invoice, which is what the customer pays to accept.
+
+      distribution, reinsurance and regreporting were REMOVED from this list and moved to
+      policy.PolicyActivated. Commission, cession and the regulatory new-business count are all
+      statements about a contract actually on risk; against a proposal they meant paying agents
+      for people who may never pay, ceding risk the platform was not carrying (and paying a
+      reinsurance premium for it), and reporting new business that around 15% of the time never
+      happens.
     publish:
       message: { $ref: '#/components/messages/PolicyIssued' }
+  policy.PolicyActivated:
+    description: >-
+      Producer: policy. Consumers: distribution, reinsurance, regreporting, communication, audit.
+
+      "On risk, premium received." Published when the first premium clears
+      (PremiumCollectedEventListener -> PolicyApi.activateOnFirstPremium), and also at issuance for
+      a manual issue whose issuanceBasis already carries cover (MIGRATION, CONVERSION,
+      REINSTATEMENT) -- in that case both PolicyIssued and PolicyActivated fire together, so every
+      downstream consumer behaves exactly as it did before offer-and-acceptance existed.
+
+      Published exactly once per policy: activateOnFirstPremium returns silently unless the policy
+      is PROPOSED, because a second PremiumCollected is the ordinary second month and re-firing
+      this would double-accrue commission and double-cede the risk.
+
+      The payload carries issueDate as well as activatedAt, and the two are different dates. All
+      three moving consumers read issueDate -- it dates the treaty selection, the surrender-charge
+      band and the clawback window -- and it is the date the contract was issued, not the date the
+      money arrived.
+    publish:
+      message: { $ref: '#/components/messages/PolicyActivated' }
   policy.PolicyEndorsed:
     description: >-
       Producer: policy. Consumers: billing (schedule regen), finaccounting, audit. CORRECTION (M10
@@ -403,6 +433,7 @@ components:
     UnderwritingCaseOpened: { messageId: UnderwritingCaseOpened, name: UnderwritingCaseOpened, payload: { $ref: '#/components/schemas/UnderwritingCaseOpenedPayload' } }
     UnderwritingDecisionMade: { messageId: UnderwritingDecisionMade, name: UnderwritingDecisionMade, payload: { $ref: '#/components/schemas/UnderwritingDecisionMadePayload' } }
     PolicyIssued: { messageId: PolicyIssued, name: PolicyIssued, payload: { $ref: '#/components/schemas/PolicyIssuedPayload' } }
+    PolicyActivated: { messageId: PolicyActivated, name: PolicyActivated, payload: { $ref: '#/components/schemas/PolicyActivatedPayload' } }
     PolicyEndorsed: { messageId: PolicyEndorsed, name: PolicyEndorsed, payload: { $ref: '#/components/schemas/PolicyEndorsedPayload' } }
     PolicyLapsed: { messageId: PolicyLapsed, name: PolicyLapsed, payload: { $ref: '#/components/schemas/PolicyLapsedPayload' } }
     PolicyReinstated: { messageId: PolicyReinstated, name: PolicyReinstated, payload: { $ref: '#/components/schemas/PolicyReinstatedPayload' } }
@@ -524,6 +555,19 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, issueDate: {type: string, format: date}, premium: {type: object}, premiumFrequency: {type: string}, agentOfRecordId: {type: string, format: uuid, nullable: true} }
+    PolicyActivatedPayload:
+      description: >
+        The union of what distribution's, reinsurance's and regreporting's handlers actually read,
+        checked against each handler rather than assumed from the producer -- which is how the
+        omission of issueDate was caught before this event had a single consumer.
+
+        issueDate and activatedAt are both present and are different dates: the contract was
+        issued when the offer was made, and went on risk when the money arrived. Consumers that
+        date a treaty, a surrender-charge band or a clawback window want the former.
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, productId: {type: string, format: uuid}, productVersionId: {type: string, format: uuid}, sumAssured: {type: object}, premium: {type: object}, premiumFrequency: {type: string}, issueDate: {type: string, format: date}, agentOfRecordId: {type: string, format: uuid, nullable: true}, activatedAt: {type: string, format: date} }
     PolicyEndorsedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

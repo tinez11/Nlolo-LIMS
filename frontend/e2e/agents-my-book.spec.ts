@@ -64,6 +64,8 @@ test.describe('agents my book of business', () => {
       if (agentOfRecordId) {
         await staffPage.getByLabel('Agent of record id (optional)').fill(agentOfRecordId);
       }
+      // Required, and MIGRATION so the policy is in force rather than an offer.
+      await staffPage.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
       await staffPage.getByLabel('Reason for manual issue').fill(reason);
       await staffPage.getByRole('button', { name: 'Issue policy' }).click();
       await expect(staffPage).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });

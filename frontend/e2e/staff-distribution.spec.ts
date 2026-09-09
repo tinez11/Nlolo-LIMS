@@ -98,6 +98,8 @@ async function issueRealPolicyForAgent(
   await page.getByLabel('Sum assured').fill('2000000.00');
   await page.getByLabel('Premium', { exact: true }).fill('800.00');
   await page.getByLabel('Agent of record id (optional)').fill(agentId);
+  // Required, and MIGRATION so the policy is in force rather than an offer.
+  await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
   await page.getByLabel('Reason for manual issue').fill('E2E distribution fixture');
   await page.getByRole('button', { name: 'Issue policy' }).click();
   await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
@@ -132,6 +134,8 @@ test.describe('staff distribution', () => {
     await page.getByLabel('Sum assured').fill('2000000.00');
     await page.getByLabel('Premium', { exact: true }).fill('800.00');
     await page.getByLabel('Agent of record id (optional)').fill(agentId);
+    // Required, and MIGRATION so the policy is in force rather than an offer.
+    await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
     await page.getByLabel('Reason for manual issue').fill('E2E drill-in fixture');
     await page.getByRole('button', { name: 'Issue policy' }).click();
     await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
