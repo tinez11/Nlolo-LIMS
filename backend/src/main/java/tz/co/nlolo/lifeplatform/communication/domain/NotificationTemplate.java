@@ -68,8 +68,7 @@ public class NotificationTemplate {
         if (!before.containsAll(after)) {
             Set<String> invented = new java.util.TreeSet<>(after);
             invented.removeAll(before);
-            throw new IllegalArgumentException(
-                "Template " + templateKey + " cannot introduce placeholders nothing supplies: " + invented);
+            throw new tz.co.nlolo.lifeplatform.communication.api.TemplatePlaceholderException(templateKey, invented);
         }
         this.bodyTemplate = newBodyTemplate;
     }

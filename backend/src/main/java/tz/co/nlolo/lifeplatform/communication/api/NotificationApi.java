@@ -37,4 +37,28 @@ public interface NotificationApi {
      *     not a half-rendered message.
      */
     void notify(UUID eventId, UUID partyId, String policyNumber, String templateKey, Map<String, String> values);
+
+    /** Every template for the current tenant, ordered so one message's variants sit together. */
+    java.util.List<NotificationTemplateView> listTemplates();
+
+    /**
+     * Change what a message says, without changing which message it is.
+     *
+     * <p>Body text only. Key, channel and language are identity: a template that changed its key
+     * would silently stop being the one the sender looks up, and one that changed its channel
+     * would be an SMS rendered into an email.
+     *
+     * @throws IllegalArgumentException if the new body introduces a placeholder nothing supplies.
+     *     Caught here rather than at send time, where the message is already owed to a customer
+     *     and the only remaining outcome is a FAILED dispatch.
+     */
+    NotificationTemplateView rewordTemplate(UUID templateId, String bodyTemplate);
+
+    /**
+     * The outbox, newest first, filtered by whichever of these is given.
+     *
+     * <p>{@code policyNumber} is the filter the desk reaches for: looking at an offer, the
+     * question is "has this customer been told about this policy, and did it arrive".
+     */
+    java.util.List<NotificationDispatchView> listDispatches(UUID partyId, String policyNumber, String status);
 }

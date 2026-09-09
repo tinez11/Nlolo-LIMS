@@ -3,6 +3,9 @@ package tz.co.nlolo.lifeplatform.communication.application;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.communication.api.NotificationApi;
 import tz.co.nlolo.lifeplatform.communication.api.NotificationChannel;
+import tz.co.nlolo.lifeplatform.communication.api.NotificationDispatchView;
+import tz.co.nlolo.lifeplatform.communication.api.NotificationTemplateNotFoundException;
+import tz.co.nlolo.lifeplatform.communication.api.NotificationTemplateView;
 import tz.co.nlolo.lifeplatform.communication.domain.NotificationDispatch;
 import tz.co.nlolo.lifeplatform.communication.domain.NotificationTemplate;
 import tz.co.nlolo.lifeplatform.communication.domain.ProcessedEvent;
@@ -161,6 +164,61 @@ public class NotificationApiImpl implements NotificationApi {
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<NotificationTemplateView> listTemplates() {
+        return templateRepository
+            .findByTenantIdOrderByTemplateKeyAscChannelAscLanguageAsc(TenantContext.get())
+            .stream().map(NotificationApiImpl::toView).toList();
+    }
+
+    @Override
+    @Transactional
+    public NotificationTemplateView rewordTemplate(UUID templateId, String bodyTemplate) {
+        UUID tenantId = TenantContext.get();
+        NotificationTemplate template = templateRepository.findById(templateId)
+            // Tenant-checked here rather than trusted from the path: a template id from another
+            // tenant must read as "no such template", not as somebody else's message text.
+            .filter(t -> t.getTenantId().equals(tenantId))
+            .orElseThrow(() -> new NotificationTemplateNotFoundException(templateId));
+        template.reword(bodyTemplate);
+        return toView(templateRepository.save(template));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<NotificationDispatchView> listDispatches(UUID partyId, String policyNumber, String status) {
+        UUID tenantId = TenantContext.get();
+        // Narrowest indexed read first, then filter in memory. Every branch is already scoped to
+        // one policy or one party, so the in-memory pass is over a handful of rows -- not the
+        // whole outbox.
+        List<NotificationDispatch> rows;
+        if (policyNumber != null && !policyNumber.isBlank()) {
+            rows = dispatchRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtDesc(tenantId, policyNumber);
+        } else if (partyId != null) {
+            rows = dispatchRepository.findByTenantIdAndPartyIdOrderByCreatedAtDesc(tenantId, partyId);
+        } else {
+            rows = dispatchRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+        }
+        return rows.stream()
+            .filter(row -> status == null || status.isBlank() || status.equals(row.getStatus()))
+            .map(NotificationApiImpl::toView)
+            .toList();
+    }
+
+    private static NotificationTemplateView toView(NotificationTemplate template) {
+        return new NotificationTemplateView(template.getTemplateId(), template.getTemplateKey(),
+            template.getChannel(), template.getLanguage(), template.getBodyTemplate(),
+            List.copyOf(TemplateRenderer.placeholdersIn(template.getBodyTemplate())));
+    }
+
+    private static NotificationDispatchView toView(NotificationDispatch dispatch) {
+        return new NotificationDispatchView(dispatch.getDispatchId(), dispatch.getPartyId(),
+            dispatch.getPolicyNumber(), dispatch.getTemplateKey(), dispatch.getChannel(),
+            dispatch.getStatus(), dispatch.getFailureReason(), dispatch.getDispatchedAt(),
+            dispatch.getCreatedAt());
     }
 
     /** A channel and the address to use on it. */

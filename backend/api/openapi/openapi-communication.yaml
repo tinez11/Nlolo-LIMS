@@ -1,0 +1,171 @@
+openapi: 3.1.0
+info:
+  title: Customer Communications API
+  version: "1.0.0"
+  description: >-
+    The read surface over what this platform says to customers, and the one write that lets
+    somebody change it.
+
+    Sending is not here and has no endpoint by design: messages are produced by consuming domain
+    events (policy.PolicyIssued for an offer, policy.PolicyActivated for cover starting,
+    policy.PolicyNotTakenUp for one that closed unpaid) and by a pg_cron sweep that queues the
+    reminder a week before an offer expires. Nothing on this platform sends a customer a message
+    because an HTTP caller asked it to.
+
+    Two things this exists for. A typo in a customer's SMS must be fixable without a migration,
+    which is what PUT on a template body is. And the desk must be able to answer "was this
+    customer actually told, and did it arrive" -- which is the outbox, and why a FAILED dispatch
+    carries the reason it failed rather than just a status.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /notifications/templates:
+    get:
+      summary: List the message templates for this tenant
+      description: >-
+        Every template, keyed by message, channel and language. `placeholders` is derived from the
+        body rather than stored: an editor who does not know {{expiryDate}} exists will delete it,
+        and a message that lost its deadline is the reminder failing silently.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/NotificationTemplateView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /notifications/templates/{templateId}:
+    put:
+      summary: Reword one template
+      description: >-
+        The body text, and nothing else. Key, channel and language are identity rather than
+        content: a template that changed its key would silently stop being the message the sender
+        looks up, and one that changed its channel would be an SMS rendered into an email.
+
+        There is deliberately no POST and no DELETE. The set of keys is defined by the code that
+        sends them -- a key nothing sends is dead text, and a listener whose key was deleted fails
+        every send with nothing an operator can do about it. This endpoint changes wording.
+
+        An edit introducing a placeholder the sender does not supply is refused with 422. The
+        renderer would catch it at send time, which is far too late: the message is already owed
+        to a customer and the only remaining outcome is a FAILED dispatch nobody asked for.
+        Dropping a placeholder is allowed -- a shorter message is a legitimate editorial choice.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RewordTemplateRequest' }
+      responses:
+        '200':
+          description: Reworded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationTemplateView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /notifications/dispatches:
+    get:
+      summary: What this platform has said to customers
+      description: >-
+        The outbox, newest first. Filterable by party, by policy, and by status.
+
+        The policy filter is the one the desk reaches for: looking at an offer, the question is
+        not "what went out today" but "has THIS customer been told about THIS policy, and did it
+        arrive". Answering that from a party-keyed list means knowing a party id and filtering by
+        hand.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: policyNumber
+          in: query
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: status
+          in: query
+          schema: { type: string, enum: [PENDING, CLAIMED, SENT, FAILED] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/NotificationDispatchView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+components:
+  securitySchemes:
+    staffAuth:
+      type: openIdConnect
+      openIdConnectUrl: https://iam.nlolo-lifeplatform.tz/realms/staff/.well-known/openid-configuration
+  schemas:
+    NotificationTemplateView:
+      type: object
+      additionalProperties: false
+      required: [templateId, templateKey, channel, language, bodyTemplate, placeholders]
+      properties:
+        templateId: { type: string, format: uuid }
+        templateKey:
+          type: string
+          description: Which message this renders, e.g. OFFER_MADE.
+        channel: { type: string, enum: [SMS, EMAIL] }
+        language:
+          type: string
+          enum: [sw, en]
+          description: >-
+            sw is the customer-facing default; en is the back-office fallback. There is no
+            per-party language preference on this platform yet, so sw is what actually sends.
+        bodyTemplate: { type: string }
+        placeholders:
+          type: array
+          items: { type: string }
+          description: >-
+            The tokens this body declares, derived from it. Shown so an editor can see which are
+            real before rewriting, and used to refuse an edit that invents one.
+    RewordTemplateRequest:
+      type: object
+      additionalProperties: false
+      required: [bodyTemplate]
+      properties:
+        bodyTemplate: { type: string, minLength: 1 }
+    NotificationDispatchView:
+      type: object
+      additionalProperties: false
+      required: [dispatchId, partyId, templateKey, channel, status, createdAt]
+      properties:
+        dispatchId: { type: string, format: uuid }
+        partyId: { type: string, format: uuid }
+        policyNumber:
+          type: [string, "null"]
+          description: What this message was about, when it was about a policy.
+        templateKey: { type: string }
+        channel: { type: string, enum: [SMS, EMAIL] }
+        status:
+          type: string
+          enum: [PENDING, CLAIMED, SENT, FAILED]
+          description: >-
+            SENT means accepted by the transport, never "delivered" or "read" -- neither SMTP nor
+            an aggregator's 200 proves a human received anything, and this platform has no inbound
+            delivery receipt to learn otherwise from. CLAIMED is a queued reminder a sender has
+            taken but not yet resolved.
+        failureReason:
+          type: [string, "null"]
+          description: Why a FAILED dispatch failed, in words an operator can act on.
+        dispatchedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
