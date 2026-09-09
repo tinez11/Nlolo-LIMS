@@ -13,6 +13,14 @@ info:
     exactly one contract, enforced by ux_policy_underwriting_case. Both paths reach
     the same issuePolicy, and until that guard existed either could duplicate the
     other — which the automatic path's own retry advice actively invited.
+    Issuance produces an OFFER, not cover: a policy sits PROPOSED from the moment
+    an underwriter accepts until its first premium clears, and only then is it in
+    force. So a 201 from either path means the contract record exists and the
+    customer has something to pay against — not that anybody is insured yet. An
+    offer nobody pays for ends at NOT_TAKEN_UP, which is deliberately not LAPSED:
+    lapsing is what happens to an in-force policy whose premiums stop. The one
+    exception is a manual issue whose issuanceBasis already carries cover
+    (MIGRATION, CONVERSION, REINSTATEMENT), which is ACTIVE on the 201.
     Surrender/maturity are asynchronous (Camunda-orchestrated loan-netting choreography,
     Deliverable 2 Rev 2 §3.4 / Deliverable 3 Rev 2 §12) — both return 202 with a
     pollable process status, never a synchronous final result.
@@ -95,7 +103,7 @@ paths:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         - name: status
           in: query
-          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED] }
+          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP] }
         - name: q
           in: query
           description: Free-text, case-insensitive substring match against policyNumber.
@@ -688,7 +696,7 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         agentOfRecordId: { type: [string, "null"], format: uuid }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP] }
         issueDate: { type: string, format: date }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cashValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
@@ -836,7 +844,7 @@ components:
       properties:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
         benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }

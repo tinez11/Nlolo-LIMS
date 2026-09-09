@@ -24,6 +24,10 @@ export const STATUS_MAPS = {
     LAPSED: 'danger', // coverage lost to non-payment
     MATURED: 'success', // ran its full term
     SURRENDERED: 'neutral', // closed early, but not a failure
+    // An offer that expired unpaid. Neutral, not danger: nobody lost cover, because cover never
+    // started -- which is the whole reason this is not LAPSED. Colouring it as a failure would
+    // put it in the same visual bucket as the lapses it was deliberately kept out of.
+    NOT_TAKEN_UP: 'neutral',
   },
 
   // claims/api/ClaimStatus.java

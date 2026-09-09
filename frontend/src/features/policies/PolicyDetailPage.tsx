@@ -149,6 +149,33 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         making it tedious.
       */}
       <DetailLayout record={renderRecord()}>
+        {/*
+          First, above everything else, and not a badge.
+
+          "Is this person covered?" is the single most important thing this page answers, and
+          since cover began waiting for the first premium the status alone no longer answers it
+          for a reader who does not already know the rule. PROPOSED looks like a normal status;
+          nothing about the word tells you the customer is uninsured, or what would change that.
+        */}
+        {policy?.status === 'PROPOSED' && (
+          <Panel title="Not yet on cover">
+            <p className="px-4 pb-4 text-xs text-fg-muted">
+              This is an offer, not a policy in force. Cover starts when the first premium
+              clears — until then no claim can be settled against it. The invoices below are
+              what the customer pays to accept.
+            </p>
+          </Panel>
+        )}
+        {policy?.status === 'NOT_TAKEN_UP' && (
+          <Panel title="Offer expired unpaid">
+            <p className="px-4 pb-4 text-xs text-fg-muted">
+              This offer was never taken up: no first premium arrived within the offer window, so
+              it closed. Cover never started, which is why this is not a lapse — it does not
+              count against persistency. A new application is needed to insure this person.
+            </p>
+          </Panel>
+        )}
+
         <Panel title="Beneficiaries">
           {policy && (
             <BeneficiariesPanel policyNumber={policyNumber} beneficiaries={policy.beneficiaries ?? []} />

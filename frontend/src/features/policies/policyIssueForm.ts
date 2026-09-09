@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ManualIssueRequest, PremiumFrequency } from '@/api/types';
+import type { IssuanceBasis, ManualIssueRequest, PremiumFrequency } from '@/api/types';
 import { AMOUNT_PATTERN } from '@/lib/money';
 import { CURRENCY_PATTERN, ISO_DATE_PATTERN, UUID_PATTERN } from '@/lib/patterns';
 import { beneficiaryListSchema, toApiBeneficiaries, type BeneficiaryFormValues } from './beneficiaryForm';
@@ -79,6 +79,21 @@ export const policyIssueFormSchema = z.object({
   // Blank means self-insured. The backend resolves that to the policyholder rather than
   // storing a null, so an issued policy always answers "whose life is this".
   lifeAssuredPartyId: optionalUuid(),
+  /**
+   * Why this is being issued by hand, and -- through the backend's
+   * `IssuanceBasis.startsCoverImmediately()` -- whether cover starts now or waits for the first
+   * premium.
+   *
+   * Starts unset and is refused unset, the same shape `openCaseForm`'s `premiumFrequency` uses,
+   * except that there '' is a legal answer meaning "the applicant did not say". Here it is not:
+   * a default would have the form pick a reason on the user's behalf, and three of the five
+   * values put a contract on risk before anybody has paid for it.
+   */
+  issuanceBasis: z
+    .enum(['', 'MIGRATION', 'CONVERSION', 'REINSTATEMENT', 'UNDERWRITING_OVERRIDE', 'GUARANTEED_ISSUE'])
+    .refine((v): v is IssuanceBasis => v !== '', { message: 'Say why this is being issued by hand' }),
+  // Kept alongside issuanceBasis, not replaced by it: the enum is what a report groups by, this
+  // is what a person reads.
   reasonForManualIssue: z.string().trim().min(1, 'A reason is required -- it feeds the audit trail'),
   beneficiaries: beneficiaryListSchema,
 
@@ -172,6 +187,9 @@ export function blankPolicyIssueForm(): PolicyIssueFormInput {
     premiumFrequency: 'MONTHLY' as PremiumFrequency,
     agentOfRecordId: '',
     lifeAssuredPartyId: '',
+    // Blank, and refused blank. Three of the five bases start cover immediately, so a default
+    // here would be the form choosing to put someone on risk.
+    issuanceBasis: '',
     reasonForManualIssue: '',
     beneficiaries: [],
     // Blank, not today's date. A commencement date is a contract term, and prefilling
@@ -200,6 +218,7 @@ export function toApiRequest(values: PolicyIssueFormValues): ManualIssueRequest 
     // and must be present-but-null, while this one is genuinely optional and an absent key
     // is what says self-insured.
     ...(values.lifeAssuredPartyId.trim() && { lifeAssuredPartyId: values.lifeAssuredPartyId.trim() }),
+    issuanceBasis: values.issuanceBasis,
     reasonForManualIssue: values.reasonForManualIssue.trim(),
     beneficiaries: toApiBeneficiaries({ beneficiaries: values.beneficiaries } as BeneficiaryFormValues),
     // Omitted when blank rather than sent as null or 0. A product that does not term

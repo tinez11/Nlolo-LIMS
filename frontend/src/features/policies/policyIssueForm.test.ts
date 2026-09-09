@@ -21,6 +21,10 @@ const valid = () => ({
   premiumCurrency: 'TZS',
   premiumFrequency: 'MONTHLY' as const,
   agentOfRecordId: '',
+  // MIGRATION because that is what this fixture's own reason describes. Not an arbitrary pick:
+  // the basis decides whether cover starts at issuance, so a fixture whose basis contradicts its
+  // stated reason would be modelling something nobody would ever submit.
+  issuanceBasis: 'MIGRATION' as const,
   reasonForManualIssue: 'Backfilling a legacy paper policy',
   beneficiaries: [],
 });
@@ -28,6 +32,29 @@ const valid = () => ({
 describe('policyIssueFormSchema', () => {
   it('accepts a well-formed request with no beneficiaries and no agent', () => {
     expect(policyIssueFormSchema.safeParse(valid()).success).toBe(true);
+  });
+
+  it('refuses a manual issuance that does not say why', () => {
+    const result = policyIssueFormSchema.safeParse({ ...valid(), issuanceBasis: '' });
+    expect(result.success).toBe(false);
+  });
+
+  it('starts the basis unset, so the form never picks one for the user', () => {
+    // Three of the five bases put the contract on risk before anybody has paid for it, so a
+    // default here would be the form making that choice silently.
+    expect(blankPolicyIssueForm().issuanceBasis).toBe('');
+    expect(policyIssueFormSchema.safeParse(blankPolicyIssueForm()).success).toBe(false);
+  });
+
+  it('sends the basis through unchanged', () => {
+    const parsed = policyIssueFormSchema.parse({ ...valid(), issuanceBasis: 'MIGRATION' });
+    expect(toApiRequest(parsed).issuanceBasis).toBe('MIGRATION');
+  });
+
+  it('sends a basis that does not start cover through just as unchanged', () => {
+    // The pair matters: a toApiRequest that hardcoded MIGRATION would satisfy the test above.
+    const parsed = policyIssueFormSchema.parse({ ...valid(), issuanceBasis: 'UNDERWRITING_OVERRIDE' });
+    expect(toApiRequest(parsed).issuanceBasis).toBe('UNDERWRITING_OVERRIDE');
   });
 
   it('accepts a well-formed request with an agent and beneficiaries summing to 100', () => {

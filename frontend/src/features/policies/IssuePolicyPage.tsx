@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
-import { PREMIUM_FREQUENCIES } from '@/api/types';
+import { ISSUANCE_BASES, PREMIUM_FREQUENCIES } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -99,6 +99,7 @@ export function IssuePolicyPage() {
   const commencementDate = watch('commencementDate');
   const policyTermMonths = watch('policyTermMonths');
   const sumAssuredAmount = watch('sumAssuredAmount');
+  const issuanceBasis = watch('issuanceBasis');
 
   const loadParty = usePartyStore((s) => s.loadParty);
   const policyholder = usePartyStore(selectParty(policyholderPartyId));
@@ -436,6 +437,34 @@ export function IssuePolicyPage() {
         </FormField>
 
         <GatePanel gates={gates} title="Before issuing" />
+
+        {/*
+          The basis, above the free-text reason and not merged into it. The enum is what a
+          report groups by; the sentence below is what a person reads.
+
+          The consequence line is the point of putting this on screen at all. Three of the five
+          values put the contract on risk before anybody has paid for it, and nothing else on
+          this form says so -- an operator picking from a bare dropdown would be choosing
+          between "covered now" and "covered when they pay" without being told that is the
+          choice they are making.
+        */}
+        <FormField label="Why is this being issued by hand?" error={errors.issuanceBasis?.message}>
+          <Select {...register('issuanceBasis')}>
+            <option value="">Select a basis…</option>
+            {ISSUANCE_BASES.map((basis) => (
+              <option key={basis.value} value={basis.value}>
+                {basis.label}
+              </option>
+            ))}
+          </Select>
+          {issuanceBasis !== '' && (
+            <p className="mt-1 text-[11px] text-fg-muted">
+              {ISSUANCE_BASES.find((b) => b.value === issuanceBasis)?.startsCoverImmediately
+                ? 'Cover starts immediately — this contract is already in force elsewhere.'
+                : 'Cover starts when the first premium clears.'}
+            </p>
+          )}
+        </FormField>
 
         <FormField label="Reason for manual issue" error={errors.reasonForManualIssue?.message}>
           <Input

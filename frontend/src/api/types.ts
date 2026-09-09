@@ -326,6 +326,26 @@ export type PremiumFrequency = NonNullable<PolicyView['premiumFrequency']>;
 
 export const PREMIUM_FREQUENCIES: readonly PremiumFrequency[] = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'];
 
+/** Why a policy is being issued by hand. Required on manual issue. */
+export type IssuanceBasis = NonNullable<ManualIssueRequest['issuanceBasis']>;
+
+/**
+ * The five bases, and whether each starts cover at once.
+ *
+ * <p>Mirrors the backend's `IssuanceBasis` enum, including the flag: the three that start cover
+ * are the three where the contract is already in force somewhere else or the money has already
+ * arrived. The other two are new business wearing an exception's clothes, and wait for the first
+ * premium like anything else. Kept here rather than derived from the generated type so the form
+ * can tell the user which of the two they are about to do.
+ */
+export const ISSUANCE_BASES: readonly { value: IssuanceBasis; label: string; startsCoverImmediately: boolean }[] = [
+  { value: 'MIGRATION', label: 'Migration from another system', startsCoverImmediately: true },
+  { value: 'CONVERSION', label: 'Conversion from another policy', startsCoverImmediately: true },
+  { value: 'REINSTATEMENT', label: 'Reinstatement after arrears settled', startsCoverImmediately: true },
+  { value: 'UNDERWRITING_OVERRIDE', label: 'Underwriting override', startsCoverImmediately: false },
+  { value: 'GUARANTEED_ISSUE', label: 'Guaranteed issue', startsCoverImmediately: false },
+];
+
 /** The 7 claim lifecycle states, for the status filter. */
 export const CLAIM_STATUSES: readonly ClaimStatus[] = [
   'REGISTERED',
