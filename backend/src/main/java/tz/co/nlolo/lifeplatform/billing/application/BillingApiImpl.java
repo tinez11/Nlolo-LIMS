@@ -13,6 +13,7 @@ import tz.co.nlolo.lifeplatform.billing.infrastructure.ArrearsCaseRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.FieldReceiptRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import org.springframework.context.ApplicationEventPublisher;
@@ -48,18 +49,28 @@ public class BillingApiImpl implements BillingApi {
     private final ArrearsCaseRepository arrearsCaseRepository;
     private final FieldReceiptRepository fieldReceiptRepository;
     private final ProductApi productApi;
+    /**
+     * Only to name the policyholder on billing.PremiumCollected.
+     *
+     * <p>billing already declares policy::api, so this adds no module edge. The alternative was
+     * leaving the event unable to say WHO paid -- and communication, which needs to thank them,
+     * may not read policy at all.
+     */
+    private final PolicyApi policyApi;
     private final ApplicationEventPublisher eventPublisher;
     private final ArrearsNotificationSweep arrearsNotificationSweep;
 
     public BillingApiImpl(BillingScheduleRepository billingScheduleRepository, PremiumInvoiceRepository premiumInvoiceRepository,
                            ArrearsCaseRepository arrearsCaseRepository, FieldReceiptRepository fieldReceiptRepository,
-                           ProductApi productApi, ApplicationEventPublisher eventPublisher,
+                           ProductApi productApi, PolicyApi policyApi,
+                           ApplicationEventPublisher eventPublisher,
                            ArrearsNotificationSweep arrearsNotificationSweep) {
         this.billingScheduleRepository = billingScheduleRepository;
         this.premiumInvoiceRepository = premiumInvoiceRepository;
         this.arrearsCaseRepository = arrearsCaseRepository;
         this.fieldReceiptRepository = fieldReceiptRepository;
         this.productApi = productApi;
+        this.policyApi = policyApi;
         this.eventPublisher = eventPublisher;
         this.arrearsNotificationSweep = arrearsNotificationSweep;
     }
@@ -288,6 +299,12 @@ public class BillingApiImpl implements BillingApi {
             eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId,
                 Map.of("invoiceId", invoiceId,
                        "policyNumber", invoice.getPolicyNumber(),
+                       // WHO paid, not just what was paid. Carried because the consumer that
+                       // needs it most cannot look it up: communication thanks the customer for
+                       // this payment and may not depend on policy. An event naming only the
+                       // contract would reach it with nobody to tell -- the same gap
+                       // policy.PolicyNotTakenUp had, and closed the same way.
+                       "policyholderPartyId", policyApi.getPolicy(invoice.getPolicyNumber()).policyholderPartyId(),
                        "amount", Map.of("amount", invoice.getAmount().toPlainString(),
                                         "currencyCode", invoice.getCurrency()),
                        "collectedAt", Instant.now().toString())));

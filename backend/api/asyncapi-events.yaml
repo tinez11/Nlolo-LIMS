@@ -736,10 +736,17 @@ components:
         - type: object
           properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, dueDate: {type: string, format: date}, amount: {type: object} }
     PremiumCollectedPayload:
+      description: >
+        `policyholderPartyId` is new with the payment receipt, and genuinely new on the wire.
+        The event said what was paid and against which contract, but never WHO paid — and
+        communication, which now thanks the customer for every collected premium, may not depend
+        on policy to find out. billing already declares policy::api, so it names them at
+        publication rather than leaving the one consumer that needs it with nobody to tell. Same
+        gap, and the same fix, as policy.PolicyNotTakenUp.
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object}, collectedAt: {type: string, format: date-time} }
+          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, amount: {type: object}, collectedAt: {type: string, format: date-time} }
     PremiumOverduePayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

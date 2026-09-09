@@ -3,6 +3,8 @@ package tz.co.nlolo.lifeplatform.communication;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
+import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
 import tz.co.nlolo.lifeplatform.communication.domain.NotificationDispatch;
 import tz.co.nlolo.lifeplatform.communication.infrastructure.NotificationDispatchRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -99,6 +101,9 @@ class OfferNotificationEndToEndTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/billing/V1__create_billing_schema.sql",
+            "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
+            "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/communication/V1__create_communication_schema.sql",
             "db-migrations/communication/V2__template_identity.sql",
             "db-migrations/communication/V3__seed_offer_templates.sql",
@@ -107,6 +112,7 @@ class OfferNotificationEndToEndTest {
             "db-migrations/communication/V6__grants_and_rls.sql",
             "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
             "db-migrations/communication/V8__platform_default_templates.sql",
+            "db-migrations/communication/V9__payment_received_template.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -118,6 +124,7 @@ class OfferNotificationEndToEndTest {
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
+    @Autowired private BillingApi billingApi;
     @Autowired private NotificationDispatchRepository dispatchRepository;
 
     @BeforeEach
@@ -212,6 +219,46 @@ class OfferNotificationEndToEndTest {
         assertThat(messagesAbout(policyNumber))
             .extracting(NotificationDispatch::getTemplateKey)
             .containsExactlyInAnyOrder("OFFER_MADE", "COVER_STARTED");
+    }
+
+    /**
+     * Every premium is acknowledged, not just the one that starts cover.
+     *
+     * <p>The gap this closes was found by paying a real invoice twice: a customer's SECOND monthly
+     * payment produced no message at all. Correct behaviour from activation's point of view — it
+     * is silent on an already-ACTIVE policy so commission is not double-accrued and risk not
+     * double-ceded — and a hole beside it, because the money arriving is a fact the customer is
+     * owed either way.
+     */
+    @Test
+    void everyCollectedPremiumIsAcknowledged() {
+        Fixture fixture = buildFixture("NOTIFY-RECEIPT-01");
+        String policyNumber = issueOffer(fixture, null);
+
+        TenantContext.set(SEEDED_TENANT);
+        InvoiceView first = billingApi.getNextDueInvoice(policyNumber);
+        billingApi.applyConfirmedPayment(first.invoiceId(), new BigDecimal("50000.00"), "TZS", "ref-1");
+
+        // The first payment says both things: the money arrived, and cover has started. Two true
+        // and different facts -- collapsing them would lose the half that matters every month
+        // after this one.
+        assertThat(messagesAbout(policyNumber))
+            .extracting(NotificationDispatch::getTemplateKey)
+            .contains("PAYMENT_RECEIVED", "COVER_STARTED");
+
+        TenantContext.set(SEEDED_TENANT);
+        InvoiceView second = billingApi.getNextDueInvoice(policyNumber);
+        billingApi.applyConfirmedPayment(second.invoiceId(), new BigDecimal("50000.00"), "TZS", "ref-2");
+
+        // The second says only the first of them -- and before this listener existed, said nothing.
+        assertThat(messagesAbout(policyNumber))
+            .filteredOn(d -> "PAYMENT_RECEIVED".equals(d.getTemplateKey()))
+            .as("a customer paying their second month must still hear that it arrived")
+            .hasSizeGreaterThanOrEqualTo(2);
+        assertThat(messagesAbout(policyNumber))
+            .filteredOn(d -> "COVER_STARTED".equals(d.getTemplateKey()) && "SMS".equals(d.getChannel()))
+            .as("cover starts once; the second payment must not claim it started again")
+            .hasSize(1);
     }
 
     @Test
