@@ -112,6 +112,7 @@ class OfferReminderSweepTest {
             "db-migrations/communication/V5__dispatch_claimed_status.sql",
             "db-migrations/communication/V6__grants_and_rls.sql",
             "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
+            "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
 
         // Runs as app_role, NOSUPERUSER NOBYPASSRLS -- and that is the point of this class rather

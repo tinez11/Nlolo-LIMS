@@ -85,6 +85,7 @@ class CommunicationContractTest {
             "db-migrations/communication/V5__dispatch_claimed_status.sql",
             "db-migrations/communication/V6__grants_and_rls.sql",
             "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
+            "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -217,16 +218,32 @@ class CommunicationContractTest {
             .andExpect(status().isForbidden());
     }
 
+    /**
+     * One tenant's OWN wording is invisible to another.
+     *
+     * <p>Deliberately not asserted against a platform default, which every tenant may legitimately
+     * see and override — that is what makes a newly provisioned tenant usable. So this first
+     * creates a tenant-owned row (rewording a default copies it into the caller's tenant), then
+     * proves a different tenant cannot touch it.
+     */
     @Test
-    void aTemplateFromAnotherTenantIsNotFoundRatherThanForbidden() throws Exception {
-        UUID templateId = templateFor("OFFER_MADE", "SMS", "sw").templateId();
+    void aTemplateOwnedByAnotherTenantIsNotFoundRatherThanForbidden() throws Exception {
+        UUID defaultId = templateFor("OFFER_MADE", "SMS", "sw").templateId();
+        // Copy-on-write: this creates a row owned by SEEDED_TENANT.
+        String created = mockMvc.perform(put("/notifications/templates/" + defaultId).with(admin())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"bodyTemplate\":\"Ofa {{policyNumber}} ni yetu.\"}"))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String ownedId = com.jayway.jsonpath.JsonPath.read(created, "$.templateId");
+
         RequestPostProcessor otherTenant = jwt()
             .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
             .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString()));
 
         // 404 and not 403: distinguishing them would let a caller probe for template ids outside
         // their own tenant.
-        mockMvc.perform(put("/notifications/templates/" + templateId).with(otherTenant)
+        mockMvc.perform(put("/notifications/templates/" + ownedId).with(otherTenant)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"bodyTemplate\":\"Not yours.\"}"))
             .andExpect(status().isNotFound())
@@ -280,14 +297,22 @@ class CommunicationContractTest {
             .andExpect(status().isMethodNotAllowed());
     }
 
+    /**
+     * A tenant nobody has provisioned sees the full platform default set, not an empty screen.
+     *
+     * <p>This assertion is the inverse of what it was, and the inversion is the fix. It used to
+     * demand zero, which was true and was the production blocker: templates were seeded against
+     * one hardcoded tenant, so any real tenant had none and every notification recorded FAILED
+     * with "no template seeded". The offer flow would have shipped silently uncommunicative.
+     */
     @Test
-    void everyTemplateIsListedForItsOwnTenantOnly() throws Exception {
+    void aTenantWithNoTemplatesOfItsOwnSeesThePlatformDefaults() throws Exception {
         RequestPostProcessor otherTenant = jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
             .jwt(builder -> builder.claim("tenant_id", UUID.randomUUID().toString()));
 
         mockMvc.perform(get("/notifications/templates").with(otherTenant))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(0));
+            .andExpect(jsonPath("$.length()").value(16));
     }
 
     @Test

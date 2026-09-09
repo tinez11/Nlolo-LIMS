@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -42,6 +43,16 @@ public class NotificationApiImpl implements NotificationApi {
      * gains a language preference, this constant is the single place that changes.
      */
     private static final String DEFAULT_LANGUAGE = "sw";
+
+    /**
+     * The tenant that owns the platform's default wording.
+     *
+     * <p>The nil uuid, because it cannot collide with a real tenant and reads unmistakably as
+     * "not a tenant". A tenant with no row of its own for a message falls back to this one, so a
+     * newly provisioned tenant can tell its customers things on day one instead of recording a
+     * FAILED dispatch per notification until somebody runs SQL. See communication/V8.
+     */
+    private static final UUID PLATFORM_DEFAULT_TENANT = new UUID(0L, 0L);
 
     private final PartyApi partyApi;
     private final NotificationTemplateRepository templateRepository;
@@ -104,9 +115,8 @@ public class NotificationApiImpl implements NotificationApi {
         NotificationDispatch dispatch =
             new NotificationDispatch(tenantId, partyId, templateKey, target.channel().name(), policyNumber);
 
-        Optional<NotificationTemplate> template = templateRepository
-            .findByTenantIdAndTemplateKeyAndChannelAndLanguage(
-                tenantId, templateKey, target.channel().name(), DEFAULT_LANGUAGE);
+        Optional<NotificationTemplate> template =
+            findEffectiveTemplate(tenantId, templateKey, target.channel().name());
         if (template.isEmpty()) {
             // A template nobody seeded. Recorded rather than thrown, for the same reason as
             // everything else here -- but it is a deployment fault, not a customer's problem, so
@@ -166,12 +176,40 @@ public class NotificationApiImpl implements NotificationApi {
         return value != null && !value.isBlank();
     }
 
+    /**
+     * This tenant's wording for a message, falling back to the platform default.
+     *
+     * <p>The fallback is what makes a newly provisioned tenant usable: without it every send
+     * records FAILED until somebody hand-writes sixteen rows in SQL.
+     */
+    private Optional<NotificationTemplate> findEffectiveTemplate(UUID tenantId, String templateKey,
+                                                                  String channel) {
+        return templateRepository
+            .findByTenantIdAndTemplateKeyAndChannelAndLanguage(tenantId, templateKey, channel, DEFAULT_LANGUAGE)
+            .or(() -> templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
+                PLATFORM_DEFAULT_TENANT, templateKey, channel, DEFAULT_LANGUAGE));
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<NotificationTemplateView> listTemplates() {
-        return templateRepository
-            .findByTenantIdOrderByTemplateKeyAscChannelAscLanguageAsc(TenantContext.get())
-            .stream().map(NotificationApiImpl::toView).toList();
+        UUID tenantId = TenantContext.get();
+        // The EFFECTIVE set: what this tenant's customers would actually receive. A tenant's own
+        // row beats the default for the same key/channel/language, and everything it has not
+        // overridden still shows -- so the console lists sixteen templates for a tenant that has
+        // customised none, which is every tenant on day one.
+        Map<String, NotificationTemplateView> effective = new LinkedHashMap<>();
+        for (NotificationTemplate template : templateRepository
+                .findByTenantIdInOrderByTemplateKeyAscChannelAscLanguageAsc(
+                    List.of(PLATFORM_DEFAULT_TENANT, tenantId))) {
+            String identity = template.getTemplateKey() + '|' + template.getChannel() + '|' + template.getLanguage();
+            // The tenant's own row wins. Defaults are listed first by the IN clause only by
+            // accident of ordering, so the override is explicit rather than positional.
+            if (template.getTenantId().equals(tenantId) || !effective.containsKey(identity)) {
+                effective.put(identity, toView(template));
+            }
+        }
+        return List.copyOf(effective.values());
     }
 
     @Override
@@ -179,10 +217,27 @@ public class NotificationApiImpl implements NotificationApi {
     public NotificationTemplateView rewordTemplate(UUID templateId, String bodyTemplate) {
         UUID tenantId = TenantContext.get();
         NotificationTemplate template = templateRepository.findById(templateId)
-            // Tenant-checked here rather than trusted from the path: a template id from another
-            // tenant must read as "no such template", not as somebody else's message text.
-            .filter(t -> t.getTenantId().equals(tenantId))
+            // Tenant-checked rather than trusted from the path: a template id from another tenant
+            // must read as "no such template", not as somebody else's message text. A platform
+            // default is legitimately visible to everyone, so it passes this filter.
+            .filter(t -> t.getTenantId().equals(tenantId) || t.getTenantId().equals(PLATFORM_DEFAULT_TENANT))
             .orElseThrow(() -> new NotificationTemplateNotFoundException(templateId));
+
+        if (template.getTenantId().equals(PLATFORM_DEFAULT_TENANT)) {
+            // COPY ON WRITE, and this is the important line in the method. Editing the default in
+            // place would rewrite the wording every OTHER tenant receives -- a cross-tenant write
+            // wearing an edit's clothes. Instead the tenant gets its own row, which then wins the
+            // lookup for it alone and leaves everybody else on the default.
+            //
+            // The database refuses the alternative independently: V8's WITH CHECK pins every
+            // written row to the caller's own tenant. This is the half that makes the refusal
+            // unnecessary rather than merely survivable.
+            NotificationTemplate override = new NotificationTemplate(tenantId, template.getTemplateKey(),
+                template.getChannel(), template.getLanguage(), template.getBodyTemplate());
+            override.reword(bodyTemplate);
+            return toView(templateRepository.save(override));
+        }
+
         template.reword(bodyTemplate);
         return toView(templateRepository.save(template));
     }

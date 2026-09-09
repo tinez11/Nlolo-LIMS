@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.communication.api.NotificationApi;
 import tz.co.nlolo.lifeplatform.communication.domain.NotificationDispatch;
+import tz.co.nlolo.lifeplatform.communication.api.NotificationTemplateView;
 import tz.co.nlolo.lifeplatform.communication.domain.NotificationTemplate;
 import tz.co.nlolo.lifeplatform.communication.infrastructure.NotificationDispatchRepository;
 import tz.co.nlolo.lifeplatform.communication.infrastructure.NotificationTemplateRepository;
@@ -76,6 +77,10 @@ class NotificationApiIntegrationTest {
             "db-migrations/communication/V2__template_identity.sql",
             "db-migrations/communication/V3__seed_offer_templates.sql",
             "db-migrations/communication/V4__dispatch_reason_and_policy.sql",
+            "db-migrations/communication/V5__dispatch_claimed_status.sql",
+            "db-migrations/communication/V6__grants_and_rls.sql",
+            "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
+            "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -234,23 +239,105 @@ class NotificationApiIntegrationTest {
         assertThat(rows.get(0).getFailureReason()).contains("NO_SUCH_TEMPLATE");
     }
 
+    /**
+     * A tenant nobody has provisioned can still tell its customers things.
+     *
+     * <p>This is the production blocker the platform-default set exists for. Templates were
+     * seeded against one hardcoded tenant, so pointing the platform at any other uuid meant every
+     * notification recorded FAILED with "no template seeded" — the offer flow running silently
+     * uncommunicative, which is the exact failure the whole project exists to prevent. It would
+     * have shipped, because every test used the one seeded tenant.
+     */
     @Test
-    void theSeededTemplatesAreAddressableByChannelAndLanguage() {
-        // The regression guard for communication/V2. Before it, template_key was the sole primary
-        // key, so exactly ONE of these sixteen rows could have existed -- and the failure would
-        // have been an insert error at deploy time, not anything a send-path test would notice.
+    void aTenantWithNoTemplatesOfItsOwnFallsBackToThePlatformDefaults() {
+        UUID freshTenant = UUID.randomUUID();
+        TenantContext.set(freshTenant);
+        PartyView party = partyApi.registerIndividual("Fresh Tenant Customer", LocalDate.of(1990, 1, 1),
+            "+255713000201", null, "test-staff");
+
+        notificationApi.notify(UUID.randomUUID(), party.partyId(), "POL-FRESH01", "OFFER_MADE", offerValues());
+
+        List<NotificationDispatch> rows = dispatchRepository
+            .findByTenantIdAndPartyIdOrderByCreatedAtDesc(freshTenant, party.partyId());
+        assertThat(rows).singleElement().satisfies(dispatch -> {
+            assertThat(dispatch.getStatus())
+                .as("a brand-new tenant must be able to send on day one, not after somebody runs SQL")
+                .isEqualTo("SENT");
+            assertThat(dispatch.getFailureReason()).isNull();
+        });
+    }
+
+    @Test
+    void aTenantSeesTheDefaultsInItsTemplateListWithoutOwningAnyRow() {
+        TenantContext.set(UUID.randomUUID());
+
+        assertThat(notificationApi.listTemplates())
+            .as("the console must show what this tenant's customers would actually receive")
+            .hasSize(16);
+    }
+
+    /**
+     * Editing a default must not rewrite what every other tenant receives.
+     *
+     * <p>Copy-on-write, not update-in-place. Without it, one tenant correcting a typo would
+     * change the wording sent by every other tenant on the platform — a cross-tenant write
+     * wearing an edit's clothes, and the worst thing this table could permit.
+     */
+    @Test
+    void rewordingADefaultCreatesATenantOverrideAndLeavesEveryoneElseAlone() {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+
+        TenantContext.set(tenantA);
+        NotificationTemplateView beforeEdit = notificationApi.listTemplates().stream()
+            .filter(t -> "COVER_STARTED".equals(t.templateKey()) && "SMS".equals(t.channel())
+                && "sw".equals(t.language()))
+            .findFirst().orElseThrow();
+        notificationApi.rewordTemplate(beforeEdit.templateId(), "Bima {{policyNumber}} imeanza. Tenant A.");
+
+        // Tenant A sees its own wording...
+        TenantContext.set(tenantA);
+        assertThat(notificationApi.listTemplates()).filteredOn(t ->
+                "COVER_STARTED".equals(t.templateKey()) && "SMS".equals(t.channel()) && "sw".equals(t.language()))
+            .singleElement()
+            .satisfies(t -> assertThat(t.bodyTemplate()).contains("Tenant A"));
+
+        // ...and tenant B is untouched.
+        TenantContext.set(tenantB);
+        assertThat(notificationApi.listTemplates()).filteredOn(t ->
+                "COVER_STARTED".equals(t.templateKey()) && "SMS".equals(t.channel()) && "sw".equals(t.language()))
+            .singleElement()
+            .satisfies(t -> assertThat(t.bodyTemplate()).doesNotContain("Tenant A"));
+    }
+
+    @Test
+    void everyMessageChannelAndLanguageHasAPlatformDefault() {
+        // Two regression guards in one, both for faults that would have shipped silently.
+        //
+        // communication/V2: template_key was the sole primary key, so exactly ONE of these sixteen
+        // rows could have existed -- an insert error at deploy time, invisible to any send-path
+        // test.
+        //
+        // communication/V8: the sixteen now live under the nil uuid rather than one hardcoded
+        // tenant, which is what lets a tenant nobody has provisioned send anything at all. Asserted
+        // against PLATFORM_DEFAULT_TENANT directly, so a future change that moves them back under a
+        // real tenant fails here rather than in production.
         for (String key : List.of("OFFER_MADE", "OFFER_CLOSING", "COVER_STARTED", "OFFER_EXPIRED")) {
             for (String channel : List.of("SMS", "EMAIL")) {
                 for (String language : List.of("sw", "en")) {
                     assertThat(templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
-                        SEEDED_TENANT, key, channel, language))
-                        .as("%s/%s/%s must be seeded", key, channel, language)
+                        PLATFORM_DEFAULT_TENANT, key, channel, language))
+                        .as("%s/%s/%s must have a platform default", key, channel, language)
                         .isPresent();
                 }
             }
         }
-        assertThat(templateRepository.findByTenantIdOrderByTemplateKeyAscChannelAscLanguageAsc(SEEDED_TENANT))
+        assertThat(templateRepository.findByTenantIdInOrderByTemplateKeyAscChannelAscLanguageAsc(
+                List.of(PLATFORM_DEFAULT_TENANT)))
             .extracting(NotificationTemplate::getTemplateKey)
             .hasSize(16);
     }
+
+    /** The nil uuid, mirroring NotificationApiImpl's own constant. */
+    private static final UUID PLATFORM_DEFAULT_TENANT = new UUID(0L, 0L);
 }

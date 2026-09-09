@@ -13,6 +13,14 @@ public interface NotificationTemplateRepository extends JpaRepository<Notificati
     Optional<NotificationTemplate> findByTenantIdAndTemplateKeyAndChannelAndLanguage(
         UUID tenantId, String templateKey, String channel, String language);
 
-    /** The console's list, ordered so the same key's channels and languages sit together. */
-    List<NotificationTemplate> findByTenantIdOrderByTemplateKeyAscChannelAscLanguageAsc(UUID tenantId);
+    /**
+     * This tenant's own rows plus the platform defaults, in one read.
+     *
+     * <p>The caller picks a winner per (key, channel, language) — a tenant's own row overrides the
+     * default. Both are fetched together rather than in two queries because the console needs the
+     * whole effective set to render, and a tenant with no overrides at all (the common case, and
+     * every new tenant) must still see sixteen templates rather than an empty screen.
+     */
+    List<NotificationTemplate> findByTenantIdInOrderByTemplateKeyAscChannelAscLanguageAsc(
+        List<UUID> tenantIds);
 }

@@ -55,6 +55,8 @@ public class OfferReminderDispatcher {
     /** See NotificationApiImpl: the schema carries a language per template, nothing per party. */
     private static final String DEFAULT_LANGUAGE = "sw";
     private static final long DEFAULT_REMINDER_DAYS = 7L;
+    /** The nil uuid owns the platform default wording. See communication/V8 and NotificationApiImpl. */
+    private static final UUID PLATFORM_DEFAULT_TENANT = new UUID(0L, 0L);
 
     private final NotificationDispatchRepository dispatchRepository;
     private final NotificationTemplateRepository templateRepository;
@@ -138,9 +140,14 @@ public class OfferReminderDispatcher {
     private void sendOne(NotificationDispatch dispatch) {
         NotificationChannel channel = NotificationChannel.valueOf(dispatch.getChannel());
 
+        // Tenant's own wording, else the platform default -- the same fallback the event-driven
+        // path uses. Without it a tenant that has customised nothing gets reminders that fail
+        // while its offer and cover messages work, which would be a baffling thing to debug.
         Optional<NotificationTemplate> template = templateRepository
             .findByTenantIdAndTemplateKeyAndChannelAndLanguage(
-                dispatch.getTenantId(), TEMPLATE_KEY, dispatch.getChannel(), DEFAULT_LANGUAGE);
+                dispatch.getTenantId(), TEMPLATE_KEY, dispatch.getChannel(), DEFAULT_LANGUAGE)
+            .or(() -> templateRepository.findByTenantIdAndTemplateKeyAndChannelAndLanguage(
+                PLATFORM_DEFAULT_TENANT, TEMPLATE_KEY, dispatch.getChannel(), DEFAULT_LANGUAGE));
         if (template.isEmpty()) {
             dispatch.markFailed("No " + channel + "/" + DEFAULT_LANGUAGE + " template seeded for " + TEMPLATE_KEY);
             return;
