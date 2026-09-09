@@ -47,7 +47,18 @@ test.describe('staff arrears queue', () => {
     // number would promise an exact match the endpoint does not do.
     await page.getByText('4+', { exact: true }).click();
     await expect(page).toHaveURL(/minDunningLevel=4/);
-    await expect(page.getByText(/at dunning level 4 or worse/)).toBeVisible({ timeout: 15_000 });
+    // Anchored on the COUNT line, not on the phrase alone. "at dunning level 4 or worse" appears
+    // twice whenever the filtered queue is empty -- once in the count and once in the empty state
+    // ("Nothing at dunning level 4 or worse") -- and a bare substring match then fails on strict
+    // mode rather than on anything being wrong. It only ever matched one element because this
+    // tenant happened to have arrears cases; the volumes reset and the ambiguity surfaced.
+    //
+    // The count line is also the better assertion: it is present whether or not anybody is in
+    // arrears, and it proves the filter reached the SCOPE, not merely that some text mentioning
+    // level 4 rendered somewhere on the page.
+    await expect(
+      page.getByText(/^[\d,]+ (open )?arrears cases · at dunning level 4 or worse/),
+    ).toBeVisible({ timeout: 15_000 });
 
     // Resolved history is a separate view, and "open" carries no parameter -- so clearing
     // back to the live queue removes it rather than writing a sentinel.
