@@ -122,6 +122,20 @@ public class UnderwritingCase {
     @Column(name = "recommendation_at")
     private Instant recommendationAt;
 
+    /**
+     * What the product's rating table priced this applicant at (V8): age band x sum assured band.
+     *
+     * <p>Recomputed alongside the recommendation, but NOT advisory -- unlike the columns above it,
+     * this one reaches a contract. Issuance multiplies the premium by it, which is the whole reason
+     * it is persisted: the multiplier used to exist only as a local variable inside the engine, so
+     * the rating table moved decisions and never moved a price.
+     *
+     * <p>NULL on a case last assessed before V8. Issuance treats that as neutral, because a neutral
+     * multiplier is exactly what those policies were priced at.
+     */
+    @Column(name = "rating_multiplier")
+    private BigDecimal ratingMultiplier;
+
     /** NULL for a pre-V5 case: those were decided by the engine, and no person authored them. */
     @Column(name = "decision_decided_by")
     private String decisionDecidedBy;
@@ -204,11 +218,17 @@ public class UnderwritingCase {
      * and an ACCEPT there published UnderwritingDecisionMade and issued a real policy with no
      * person anywhere in the chain.
      */
-    public void recordRecommendation(String outcome, BigDecimal loadingPercent, String reason) {
+    public void recordRecommendation(String outcome, BigDecimal loadingPercent, String reason,
+                                      BigDecimal ratingMultiplier) {
         this.recommendationOutcome = outcome;
         this.recommendationLoadingPercent = loadingPercent;
         this.recommendationReason = reason;
         this.recommendationAt = Instant.now();
+        // Written on the same call and never separately: the multiplier is the basis the rest of
+        // this recommendation was reached on, and a case carrying one from an earlier evaluation
+        // and a recommendation from a later one would be an explanation that does not match its
+        // own conclusion.
+        this.ratingMultiplier = ratingMultiplier;
     }
 
     /**
@@ -234,6 +254,7 @@ public class UnderwritingCase {
     public BigDecimal getRecommendationLoadingPercent() { return recommendationLoadingPercent; }
     public String getRecommendationReason() { return recommendationReason; }
     public Instant getRecommendationAt() { return recommendationAt; }
+    public BigDecimal getRatingMultiplier() { return ratingMultiplier; }
     public String getDecisionDecidedBy() { return decisionDecidedBy; }
     public boolean isDecisionOverrodeRecommendation() { return decisionOverrodeRecommendation; }
 

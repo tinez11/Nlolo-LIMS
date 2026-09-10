@@ -73,6 +73,7 @@ class GroupSchemeIntegrationTest {
             "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
+            "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",

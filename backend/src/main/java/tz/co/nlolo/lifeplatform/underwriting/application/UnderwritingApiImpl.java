@@ -422,7 +422,11 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         UnderwritingDecision recommendation = rulesEnginePort.evaluate(profile);
 
         underwritingCase.recordRecommendation(
-            recommendation.outcome().name(), recommendation.loadingPercent(), recommendation.reason());
+            recommendation.outcome().name(), recommendation.loadingPercent(), recommendation.reason(),
+            // The multiplier the engine actually rated on, not a second resolution of the same
+            // two factors here. Issuance prices the policy from this column, so it has to be the
+            // number that produced the advice sitting beside it.
+            recommendation.ratingMultiplier());
     }
 
     /**
@@ -534,6 +538,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             c.getRecommendationLoadingPercent(), c.getRecommendationReason(),
             c.getDecisionDecidedBy(), c.isDecisionOverrodeRecommendation(),
             c.getRequestedTermMonths(), c.getPremiumPayingTermMonths(), c.getPremiumFrequency(),
+            c.getRatingMultiplier(),
             List.of());
     }
 
@@ -565,6 +570,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             base.recommendationLoadingPercent(), base.recommendationReason(),
             base.decisionDecidedBy(), base.decisionOverrodeRecommendation(),
             base.requestedTermMonths(), base.premiumPayingTermMonths(), base.premiumFrequency(),
+            base.ratingMultiplier(),
             nominations);
     }
 }

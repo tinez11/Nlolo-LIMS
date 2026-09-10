@@ -131,7 +131,8 @@ public class UnderwritingDecisionEventListener {
                 UnderwritingCaseView decidedCase = underwritingApi.getCase(caseId);
                 // No actuarial rating engine exists anywhere in this codebase (M2's
                 // SimpleRulesEngine is a deliberate placeholder). Global Constraints (M4):
-                // annualPremium = sumAssured * (baseRatePerMille/1000) * (1 + loadingPercent/100),
+                // annualPremium = sumAssured * (baseRatePerMille/1000) * ratingMultiplier
+                //                            * (1 + loadingPercent/100),
                 // divided into MONTHLY instalments for the automatic-issuance path -- manual
                 // issuance (POST /policies/manual-issue) instead accepts staff's own agreed
                 // premium directly, since that path already represents a human override.
@@ -142,8 +143,31 @@ public class UnderwritingDecisionEventListener {
                 BigDecimal baseRatePerMille = new BigDecimal(referenceDataApi.getValue("TZ_BASE_PREMIUM_RATE_PER_MILLE", "TZ"));
                 BigDecimal loadingPercent = decidedCase.decisionLoadingPercent() != null ? decidedCase.decisionLoadingPercent() : BigDecimal.ZERO;
                 BigDecimal loadingMultiplier = BigDecimal.ONE.add(loadingPercent.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
+                // THE RATING TABLE, which until now reached no premium at all.
+                //
+                // product.rating_table has carried real per-band multipliers since M1, and
+                // underwriting resolves the applicant's age band and sum assured band against
+                // it on every assessment -- then dropped the result on the floor. The formula
+                // here was sumAssured x baseRate x (1 + loading), and the only way any of that
+                // rating could show up in a price was as a loading, because SimpleRulesEngine
+                // used to express the multiplier AS one. Which meant that on an ACCEPT -- no
+                // loading by definition -- a 25-year-old and a 55-year-old buying identical
+                // cover were charged an identical premium, and the rating table's entire
+                // contribution to this platform was choosing a decision outcome.
+                //
+                // The multiplier and the loading are now separate terms, and neither
+                // double-counts the other: the engine no longer derives loading from the
+                // multiplier (it derives it from the assessment risk scores), so the rating
+                // sits in exactly one place in this product.
+                //
+                // NULL for a case last assessed before underwriting V8. Neutral, not an error:
+                // 1.0 is precisely what those cases were priced at, so an old case reissued
+                // today prices the same way it always did rather than failing.
+                BigDecimal ratingMultiplier = decidedCase.ratingMultiplier() != null
+                    ? decidedCase.ratingMultiplier() : BigDecimal.ONE;
                 BigDecimal annualPremium = decidedCase.sumAssuredAmount()
                     .multiply(baseRatePerMille).divide(BigDecimal.valueOf(1000), 6, RoundingMode.HALF_UP)
+                    .multiply(ratingMultiplier)
                     .multiply(loadingMultiplier);
 
                 // The instalment follows the frequency the applicant asked for.

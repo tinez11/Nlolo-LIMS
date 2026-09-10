@@ -63,6 +63,16 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     Integer requestedTermMonths,
                                     Integer premiumPayingTermMonths,
                                     String premiumFrequency,
+                                    // What the product's rating table priced this applicant at (V8):
+                                    // age band x sum assured band, as the engine resolved it.
+                                    //
+                                    // @JsonIgnore for the additionalProperties:false reason below --
+                                    // and only for that reason. This is not an internal detail: it is
+                                    // the answer to "why is this premium what it is", and the case
+                                    // detail page is where an underwriter would ask. Exposing it means
+                                    // an openapi-underwriting.yaml change and a console field, which is
+                                    // worth doing and is not this change.
+                                    @JsonIgnore BigDecimal ratingMultiplier,
                                     // @JsonIgnore for the same reason sumAssuredAmount above is:
                                     // the issuance listener reads it in-process, and the response
                                     // schema declares additionalProperties:false. The console

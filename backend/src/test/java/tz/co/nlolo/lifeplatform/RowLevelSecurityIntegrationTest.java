@@ -87,6 +87,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
+            "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata

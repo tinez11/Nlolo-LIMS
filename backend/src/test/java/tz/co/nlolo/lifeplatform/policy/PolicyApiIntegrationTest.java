@@ -85,6 +85,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
+            "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -361,6 +362,98 @@ class PolicyApiIntegrationTest {
         assertThat(quarterly.premiumAmount().subtract(monthly.premiumAmount().multiply(new BigDecimal("3"))))
             .as("a quarterly instalment is three monthly ones, give or take the rounding")
             .isBetween(new BigDecimal("-0.05"), new BigDecimal("0.05"));
+    }
+
+    /**
+     * The rating table has to reach the premium, and for a long time it did not.
+     *
+     * <p>{@code product.rating_table} has held real per-band multipliers since M1, and
+     * underwriting resolves the applicant's age band against it on every assessment. The
+     * result went nowhere: {@code SimpleRulesEngine} used it to pick an outcome and then
+     * dropped it, and the issuance formula was {@code sumAssured x baseRate x (1 + loading)}
+     * with no multiplier term at all. On an ACCEPT — which by definition carries no loading —
+     * two applicants thirty years apart, buying identical cover from a product that prices
+     * them 1.6x apart, were charged exactly the same premium.
+     *
+     * <p>Both lives here are clean (risk score 10, well under the load threshold), so a
+     * loading cannot be smuggling the difference in: the only thing separating them is the
+     * age band, which is precisely what is under test. The figures are exact rather than a
+     * "greater than" so a future change that halves the effect still fails: TZS 1,000,000 at
+     * the 5.0 per mille base rate is 5,000 a year, 416.67 a month at 1.0x and 666.67 at 1.6x.
+     */
+    @Test
+    void theRatingTableMultiplierReachesThePremium() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-RATED-01", "Age rated product",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.AGE, "50-59", new BigDecimal("1.6"), 50, 59),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        ProposalDetails monthly = new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of());
+        PolicyView young = issueFromProposal(tenantId,
+            new Fixture(applicantAged(tenantId, 36, "0001"), product.productId(), versionId), monthly);
+        PolicyView older = issueFromProposal(tenantId,
+            new Fixture(applicantAged(tenantId, 56, "0002"), product.productId(), versionId), monthly);
+
+        assertThat(young.premiumAmount())
+            .as("the 30-39 band is 1.0x, so this is the unrated price")
+            .isEqualByComparingTo(new BigDecimal("416.67"));
+        assertThat(older.premiumAmount())
+            .as("the 50-59 band is 1.6x, and that multiplier must survive the trip to the premium")
+            .isEqualByComparingTo(new BigDecimal("666.67"));
+    }
+
+    /**
+     * A 1.6x rating is a price, not a verdict on the applicant.
+     *
+     * <p>Pinned separately because the engine used to express the rating AS a loading, and the
+     * cheapest way to reintroduce the old behaviour is to multiply the premium by the rating
+     * while still deriving a loading from it — which would square the effect and charge this
+     * life 1,066.67. A clean life is ACCEPTED whatever their age band says.
+     */
+    @Test
+    void anOlderCleanLifeIsRatedNotLoaded() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-RATED-02", "Age rated product",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "50-59", new BigDecimal("1.6"), 50, 59),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        UUID applicantId = applicantAged(tenantId, 56, "0003");
+        UnderwritingCaseView opened = underwritingApi.openCase(applicantId, product.productId(), versionId,
+            new BigDecimal("1000000"), "TZS", null,
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()), "agent1");
+        UnderwritingCaseView assessed = underwritingApi.submitAssessment(opened.caseId(),
+            AssessmentType.MEDICAL, "Standard", new BigDecimal("10"), "uw");
+
+        assertThat(assessed.recommendationOutcome())
+            .as("nothing the evidence found justifies a loading; the age is a price, not a finding")
+            .isEqualTo(DecisionOutcome.ACCEPT);
+        assertThat(assessed.recommendationLoadingPercent()).isNull();
+        assertThat(assessed.ratingMultiplier())
+            .as("and the rating is recorded on the case, which is how it reaches issuance at all")
+            .isEqualByComparingTo(new BigDecimal("1.6"));
+    }
+
+    /** An applicant of a given age today, so the age bands under test resolve the same way every year. */
+    private UUID applicantAged(UUID tenantId, int years, String phoneSuffix) {
+        TenantContext.set(tenantId);
+        return partyApi.registerIndividual("Rated Applicant " + years,
+            LocalDate.now().minusYears(years).minusDays(1),
+            "+25571301" + phoneSuffix, null, "test-agent").partyId();
     }
 
     /** A nomination taken on the proposal becomes a beneficiary on the issued policy. */
