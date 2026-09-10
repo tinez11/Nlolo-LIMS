@@ -344,6 +344,75 @@ class GroupClaimIntegrationTest {
             .isEqualByComparingTo(new BigDecimal("5000000.00"));
     }
 
+    // ---------------------------------------------------------------------------------
+    // What a claim may be approved for
+    // ---------------------------------------------------------------------------------
+
+    /** Registers and assesses, leaving the claim UNDER_ASSESSMENT and ready to decide. */
+    private UUID registerAndAssess(GroupFixture scheme, String memberName) {
+        TenantContext.set(tenantId);
+        ClaimView claim = claimsApi.registerClaim(
+            deathRequest(scheme.policyNumber(), scheme.memberIdNamed(memberName)),
+            "idem-" + UUID.randomUUID(), "clerk");
+        claimsApi.submitAssessment(claim.claimId(), "Findings", new BigDecimal("5000000.00"),
+            "TZS", false, "assessor");
+        return claim.claimId();
+    }
+
+    private UUID registerAndAssessIndividual(String productCode) {
+        String policyNumber = issueIndividualPolicy(productCode);
+        TenantContext.set(tenantId);
+        ClaimView claim = claimsApi.registerClaim(
+            deathRequest(policyNumber, null), "idem-" + UUID.randomUUID(), "clerk");
+        claimsApi.submitAssessment(claim.claimId(), "Findings", new BigDecimal("2000000"),
+            "TZS", false, "assessor");
+        return claim.claimId();
+    }
+
+    @Test
+    void aGroupClaimCannotBeApprovedForMoreThanTheMemberWasCoveredFor() {
+        // The 500x error, at the point it would actually pay out. The scheme's sum assured is
+        // 10,000,000 across two lives; this member was covered for 5,000,000, and that is the
+        // ceiling. Claim.approve used to check only that the amount was positive, so a single
+        // member's death claim could be approved for the whole book and nothing objected.
+        GroupFixture scheme = flatSchemeOfTwo("GRP-CLAIM-07", "Juma Deceased", "Asha Living");
+        UUID claimId = registerAndAssess(scheme, "Juma Deceased");
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true,
+                new BigDecimal("10000000.00"), "TZS", null, "payee-1", "idem-over", "manager"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("5000000.00");
+    }
+
+    @Test
+    void anIndividualClaimCannotBeApprovedForMoreThanTheSumAssured() {
+        // Same ceiling, different source, and this one was never bounded either -- the missing
+        // check was platform-wide, not group-only.
+        UUID claimId = registerAndAssessIndividual("GRP-CLAIM-IND-03");
+
+        TenantContext.set(tenantId);
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true,
+                new BigDecimal("2000000.01"), "TZS", null, "payee-1", "idem-over-ind", "manager"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("2000000");
+    }
+
+    @Test
+    void approvingExactlyTheCoveredAmountIsAllowed() {
+        // The boundary is INCLUSIVE. A death claim normally pays the whole of the cover, so an
+        // exclusive bound would refuse the commonest correct settlement on the platform.
+        GroupFixture scheme = flatSchemeOfTwo("GRP-CLAIM-08", "Juma Deceased", "Asha Living");
+        UUID claimId = registerAndAssess(scheme, "Juma Deceased");
+
+        TenantContext.set(tenantId);
+        claimsApi.decideSettlement(claimId, true, new BigDecimal("5000000.00"), "TZS", null,
+            "payee-1", "idem-exact", "manager");
+
+        assertThat(claimsApi.getClaim(claimId).approvedAmount())
+            .isEqualByComparingTo(new BigDecimal("5000000.00"));
+    }
+
     @Test
     void anIndividualClaimIsValuedFromTheSumAssured() {
         String policyNumber = issueIndividualPolicy("GRP-CLAIM-IND-02");

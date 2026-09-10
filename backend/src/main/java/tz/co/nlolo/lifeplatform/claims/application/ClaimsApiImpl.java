@@ -361,8 +361,16 @@ public class ClaimsApiImpl implements ClaimsApi {
                 approvedAmount, approvedCurrency, null, payeeRef));
 
             // UNDER_ASSESSMENT -> APPROVED, or REGISTERED -> APPROVED for MATURITY's
-            // auto-approval; also validates approvedAmount is positive.
-            claim.approve(approvedAmount, approvedCurrency);
+            // auto-approval; also validates approvedAmount is positive and within cover.
+            //
+            // The ceiling comes from the claim's OWN stored facts -- its policy, its member, its
+            // date of event -- and never from the caller, who is the party being bounded. On a
+            // group scheme that is the member's covered amount, so a 5m life cannot be settled
+            // for the scheme's 2.5bn total; on individual business it is the sum assured, which
+            // was equally unbounded before.
+            ClaimableCoverView claimable = policyApi.claimableCover(
+                claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent());
+            claim.approve(approvedAmount, approvedCurrency, claimable.amount());
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId,
                 Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),
                        "approvedAmount", Map.of("amount", approvedAmount.toPlainString(),

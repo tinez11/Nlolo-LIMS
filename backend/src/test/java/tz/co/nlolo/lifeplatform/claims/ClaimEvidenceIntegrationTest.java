@@ -170,7 +170,7 @@ class ClaimEvidenceIntegrationTest {
 
         // MATURITY auto-approves REGISTERED -> APPROVED -> SETTLEMENT_REQUESTED -> SETTLED,
         // with no assessment required (Claim.approve's own javadoc).
-        claim.approve(BigDecimal.valueOf(1000), "TZS");
+        claim.approve(BigDecimal.valueOf(1000), "TZS", null);
         claim.markSettlementRequested("idem-key-" + claim.getClaimId());
         claim.markSettled();
         claimRepository.save(claim);

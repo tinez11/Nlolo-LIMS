@@ -81,7 +81,7 @@ class ClaimStateMachineTest {
         claim.beginAssessment();
         assertThat(claim.getStatus()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
 
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         assertThat(claim.getStatus()).isEqualTo(ClaimStatus.APPROVED);
         assertThat(claim.getApprovedAmount()).isEqualTo(AMOUNT);
         assertThat(claim.getApprovedCurrency()).isEqualTo(CURRENCY);
@@ -99,7 +99,7 @@ class ClaimStateMachineTest {
         Claim claim = newClaim(ClaimType.MATURITY);
         assertThat(claim.getStatus()).isEqualTo(ClaimStatus.REGISTERED);
 
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
 
         assertThat(claim.getStatus()).isEqualTo(ClaimStatus.APPROVED);
         assertThat(claim.getApprovedAmount()).isEqualTo(AMOUNT);
@@ -109,7 +109,7 @@ class ClaimStateMachineTest {
     @EnumSource(value = ClaimType.class, names = {"DEATH", "DISABILITY", "CRITICAL_ILLNESS"})
     void nonMaturityCannotApproveDirectlyFromRegistered(ClaimType type) {
         Claim claim = newClaim(type);
-        assertThrows(InvalidClaimStateException.class, () -> claim.approve(AMOUNT, CURRENCY));
+        assertThrows(InvalidClaimStateException.class, () -> claim.approve(AMOUNT, CURRENCY, null));
     }
 
     // ---- Illegal transitions --------------------------------------------------------------
@@ -118,7 +118,7 @@ class ClaimStateMachineTest {
     void beginAssessmentRejectsAnApprovedClaim() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         assertThrows(InvalidClaimStateException.class, claim::beginAssessment);
     }
 
@@ -139,7 +139,7 @@ class ClaimStateMachineTest {
     void markSettledRequiresSettlementRequested() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         assertThrows(InvalidClaimStateException.class, claim::markSettled);
     }
 
@@ -165,7 +165,7 @@ class ClaimStateMachineTest {
     void markSettlementFailedReturnsToApprovedAndPreservesReason() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         claim.markSettlementRequested("idem-key-2");
 
         claim.markSettlementFailed("gateway timeout");
@@ -180,7 +180,7 @@ class ClaimStateMachineTest {
     void markSettlementFailedIsANoOpOutsideSettlementRequested() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
 
         claim.markSettlementFailed("should be ignored");
 
@@ -192,7 +192,7 @@ class ClaimStateMachineTest {
     void freshSettlementRequestClearsThePreviousFailureReason() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         claim.markSettlementRequested("idem-key-3");
         claim.markSettlementFailed("first failure");
         assertThat(claim.getSettlementFailureReason()).isEqualTo("first failure");
@@ -222,7 +222,7 @@ class ClaimStateMachineTest {
     void reopenFromSettledThenBeginAssessmentAgainPreservesPriorApprovedAmount() {
         Claim claim = newClaim(ClaimType.CRITICAL_ILLNESS);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         claim.markSettlementRequested("idem-key-5");
         claim.markSettled();
 
@@ -249,9 +249,9 @@ class ClaimStateMachineTest {
     void approveIsIdempotent() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         // second call, even with a different amount, is a silent no-op -- it must not overwrite
-        claim.approve(new BigDecimal("1"), "USD");
+        claim.approve(new BigDecimal("1"), "USD", null);
         assertThat(claim.getStatus()).isEqualTo(ClaimStatus.APPROVED);
         assertThat(claim.getApprovedAmount()).isEqualTo(AMOUNT);
         assertThat(claim.getApprovedCurrency()).isEqualTo(CURRENCY);
@@ -270,7 +270,7 @@ class ClaimStateMachineTest {
     void markSettlementRequestedIsIdempotent() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         claim.markSettlementRequested("idem-key-6");
         // second call, even with a different key, is a silent no-op
         claim.markSettlementRequested("idem-key-7");
@@ -282,7 +282,7 @@ class ClaimStateMachineTest {
     void markSettledIsIdempotent() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         claim.markSettlementRequested("idem-key-8");
         claim.markSettled();
         claim.markSettled();
@@ -305,7 +305,7 @@ class ClaimStateMachineTest {
     void approveRejectsZeroAmount() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        assertThrows(ClaimValidationException.class, () -> claim.approve(BigDecimal.ZERO, CURRENCY));
+        assertThrows(ClaimValidationException.class, () -> claim.approve(BigDecimal.ZERO, CURRENCY, null));
         assertThat(claim.getStatus()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
     }
 
@@ -313,21 +313,21 @@ class ClaimStateMachineTest {
     void approveRejectsNegativeAmount() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        assertThrows(ClaimValidationException.class, () -> claim.approve(new BigDecimal("-1"), CURRENCY));
+        assertThrows(ClaimValidationException.class, () -> claim.approve(new BigDecimal("-1"), CURRENCY, null));
     }
 
     @Test
     void approveRejectsNullAmount() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        assertThrows(ClaimValidationException.class, () -> claim.approve(null, CURRENCY));
+        assertThrows(ClaimValidationException.class, () -> claim.approve(null, CURRENCY, null));
     }
 
     @Test
     void markSettlementRequestedRejectsBlankIdempotencyKey() {
         Claim claim = newClaim(ClaimType.DEATH);
         claim.beginAssessment();
-        claim.approve(AMOUNT, CURRENCY);
+        claim.approve(AMOUNT, CURRENCY, null);
         assertThrows(ClaimValidationException.class, () -> claim.markSettlementRequested("   "));
         assertThrows(ClaimValidationException.class, () -> claim.markSettlementRequested(null));
     }

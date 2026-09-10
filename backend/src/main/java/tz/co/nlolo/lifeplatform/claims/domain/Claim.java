@@ -157,7 +157,15 @@ public class Claim {
 
     /** Settlement decision approved. UNDER_ASSESSMENT -> APPROVED, or REGISTERED -> APPROVED for
      * MATURITY only (auto-approval, docs/03-aggregate-design.md:134 / Cl3). */
-    public void approve(BigDecimal approvedAmount, String approvedCurrency) {
+    /**
+     * @param ceiling the most this claim may pay -- the member's covered amount on a group
+     *     scheme, the policy's sum assured otherwise, both resolved by
+     *     {@code PolicyApi.claimableCover} from the claim's OWN stored facts rather than from
+     *     anything the caller supplied. INCLUSIVE: a death claim normally pays the whole of the
+     *     cover, so an exclusive bound would refuse the commonest correct settlement here.
+     *     Null means unbounded, which no production path uses.
+     */
+    public void approve(BigDecimal approvedAmount, String approvedCurrency, BigDecimal ceiling) {
         if (status == ClaimStatus.APPROVED) {
             return;
         }
@@ -168,6 +176,13 @@ public class Claim {
         }
         if (approvedAmount == null || approvedAmount.signum() <= 0) {
             throw new ClaimValidationException("Approved amount must be positive");
+        }
+        // Positive was the ONLY check here, on every policy. Nothing stopped one member's death
+        // claim being approved for a 500-life scheme's entire total, or an individual claim for
+        // more than the contract insures.
+        if (ceiling != null && approvedAmount.compareTo(ceiling) > 0) {
+            throw new ClaimValidationException("Approved amount " + approvedAmount
+                + " exceeds the " + ceiling + " this claim is covered for");
         }
         this.status = ClaimStatus.APPROVED;
         this.approvedAmount = approvedAmount;
