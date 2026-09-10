@@ -4,6 +4,8 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.policy.api.BeneficiaryType;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -100,6 +102,43 @@ public class UnderwritingDecisionEventListener {
             .toList();
     }
 
+    /**
+     * Turn a decided group case into a scheme offer.
+     *
+     * <p>This method is the ONE place allowed to see both {@code underwriting.api}'s group
+     * types and {@code policy.api}'s. They are deliberately two identical sets of records —
+     * underwriting may not depend on policy, because policy already depends on underwriting
+     * and the cycle would be immediate — so the mapping below is a boundary crossing, not
+     * duplication to be tidied away. The same arrangement already exists for
+     * {@code BeneficiaryNomination} / {@code BeneficiaryInput}, a few lines down.
+     *
+     * <p>Null issuance basis: an ordinary offer. The employer accepts by paying the first
+     * premium, exactly as an individual customer does.
+     */
+    private void issueSchemeFromProposal(UnderwritingCaseView decidedCase) {
+        GroupProposal proposal = decidedCase.groupProposal();
+        policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+            decidedCase.agentOfRecordId(),
+            BenefitBasis.valueOf(proposal.benefitBasis().name()),
+            proposal.flatBenefitAmount(), proposal.salaryMultiple(), proposal.fclAmount(),
+            proposal.currency(),
+            proposal.grades().stream()
+                .map(g -> new PolicyApi.GradeInput(g.gradeCode(), g.benefitAmount())).toList(),
+            proposal.openingSchedule().stream()
+                // joinedOn null: every life on an OPENING schedule joins when the scheme
+                // commences, which issueGroupScheme resolves from the commencement date.
+                .map(m -> new PolicyApi.MemberInput(m.memberPartyId(), m.gradeCode(), m.salaryAmount(), null))
+                .toList(),
+            // The premium AGREED with the employer, verbatim. Not computed: see the branch
+            // that sent us here.
+            proposal.premiumAmount(), proposal.premiumCurrency(), proposal.premiumFrequency(),
+            proposal.commencementDate(), proposal.policyTermMonths(),
+            "Issued on underwriting decision " + decidedCase.caseId(),
+            null),
+            "system:underwriting-decision-listener");
+    }
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         if (!"underwriting.UnderwritingDecisionMade".equals(envelope.eventType())) {
@@ -129,6 +168,18 @@ public class UnderwritingDecisionEventListener {
         try {
             requiresNewTransactionTemplate.executeWithoutResult(status -> {
                 UnderwritingCaseView decidedCase = underwritingApi.getCase(caseId);
+                if (decidedCase.groupScheme()) {
+                    // A SCHEME, NOT A POLICY. Everything below this line prices ONE LIFE from
+                    // an age band and a sum assured band, and neither means anything for a
+                    // company: the age it would read is the employer's, and a scheme's sum
+                    // assured is five hundred people's cover added together -- which is why a
+                    // group case carries none at all until this issuance derives it.
+                    //
+                    // A scheme's premium was agreed with the employer and is carried on the
+                    // proposal, so it is used verbatim.
+                    issueSchemeFromProposal(decidedCase);
+                    return;
+                }
                 // No actuarial rating engine exists anywhere in this codebase (M2's
                 // SimpleRulesEngine is a deliberate placeholder). Global Constraints (M4):
                 // annualPremium = sumAssured * (baseRatePerMille/1000) * ratingMultiplier
