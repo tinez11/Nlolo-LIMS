@@ -2,6 +2,7 @@ import { expect, type Page, test } from '@playwright/test';
 import { issueRealPolicy } from './policies';
 import { dmy } from './dates';
 import { asAdmin } from './admin';
+import { fillPolicyNumberManually } from './guards';
 
 /**
  * Group business, end to end against the real stack.
@@ -260,6 +261,69 @@ test.describe('staff group schemes', () => {
 
     await expect(page.getByText(/Needs a salary like/)).toBeVisible();
     expect(requestFired).toBe(false);
+  });
+
+  test('a claim on a scheme must name the life that died', async ({ page, browser }) => {
+    // The console half of the group-claims fix. A claim registered against a scheme used to
+    // record only a policy number and a claimant -- and the claimant is who is FILING, the
+    // widow, not who died. On a 500-life schedule that left nothing on the claim saying which
+    // employee it was, and registration valued it against the scheme's whole 10,000,000 total
+    // rather than the member's own 5,000,000.
+    //
+    // The backend behaviour is proven against a real database and a real payment rail in
+    // GroupClaimIntegrationTest and ClaimSettlementEndToEndTest. What only a browser can prove
+    // is the wiring: that the field appears for a scheme, is refused empty, and is absent on
+    // individual business.
+    test.slow();
+    const productLabel = await asAdmin(browser, createGroupProduct);
+
+    await page.goto('/staff/group-schemes/new');
+    await pickParty(page, 'Search for the employer by name', 'Amina', 'Amina Owner');
+    await page.getByLabel('Product').selectOption({ label: productLabel });
+    await page.getByLabel('Benefit per member').fill(FLAT_BENEFIT);
+    await pickParty(page, 'Search employees by name', 'Amina', 'Amina Owner');
+    await page.getByRole('button', { name: 'Add member' }).click();
+    await pickParty(page, 'Search employees by name', 'Baraka', 'Baraka Other', 'last');
+    await page.getByLabel('Premium', { exact: true }).fill('1200000.00');
+    await page.getByRole('button', { name: 'Set up scheme' }).click();
+    await expect(page).toHaveURL(/\/staff\/group-schemes\/GRP-[A-Z0-9]+$/, { timeout: 20_000 });
+    const policyNumber = page.url().split('/').pop() as string;
+
+    await page.goto('/staff/claims/new');
+    await fillPolicyNumberManually(page, policyNumber);
+    await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('Amina');
+    await page.getByText('Amina Owner').click();
+
+    // The field exists only because this policy is a scheme.
+    await expect(page.getByLabel('Who died')).toBeVisible({ timeout: 15_000 });
+
+    await page.getByLabel('Date of event').fill(dmy('2026-08-01'));
+    await page.getByLabel('Claim type').selectOption('DEATH');
+    await page.getByLabel('Cause of death').fill('Natural causes');
+    await page.getByLabel('Place of death').fill('Dar es Salaam');
+    await page.getByLabel('Date of death').fill(dmy('2026-08-01'));
+    await page.getByLabel('Attending physician').fill('Dr. E2E Test');
+
+    // Submitted with no member named: refused here, before the network.
+    await page.getByRole('button', { name: 'Register claim' }).click();
+    await expect(page.getByText('Choose which member this claim is for')).toBeVisible();
+    await expect(page).not.toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/);
+
+    // Named, and it goes through.
+    await page.getByLabel('Who died').selectOption({ index: 1 });
+    await page.getByRole('button', { name: 'Register claim' }).click();
+    await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/, { timeout: 20_000 });
+  });
+
+  test('a claim on an individual policy asks for no member', async ({ page }) => {
+    // The mirror: the field is a property of contracts that have a schedule, and its absence
+    // here is what keeps it from being asked for on every claim on the platform.
+    test.slow();
+    const policyNumber = await issueRealPolicy(page, 'E2E group-claims individual fixture');
+    await page.goto('/staff/claims/new');
+    await fillPolicyNumberManually(page, policyNumber);
+    await expect(page.getByLabel('Who died')).toHaveCount(0);
   });
 
   test('an individual policy offers no member schedule', async ({ page }) => {
