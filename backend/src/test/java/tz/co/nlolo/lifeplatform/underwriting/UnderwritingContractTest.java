@@ -83,6 +83,110 @@ class UnderwritingContractTest {
 
     private record ProductFixture(UUID productId, UUID productVersionId) {}
 
+    /**
+     * A scheme proposed over HTTP: the wire shape, the role gate, and the two things the case
+     * must and must not carry.
+     *
+     * <p>Its own endpoint because POST /underwriting/cases requires a sumAssured and a group
+     * case has none — the figure appears only when policy derives it from the schedule at
+     * issuance.
+     */
+    @Test
+    void proposingAGroupSchemeOverHttpMatchesTheSpecAndCarriesNoSumAssured() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID employer = registerTestApplicant(tenantId);
+        UUID life = registerTestApplicant(tenantId);
+        ProductFixture product = publishGroupTestProduct(tenantId);
+        String body = """
+            {"policyholderPartyId":"%s","productId":"%s","productVersionId":"%s",
+             "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
+             "openingSchedule":[{"memberPartyId":"%s"}],
+             "premiumAmount":"1200000.00","premiumCurrency":"TZS","premiumFrequency":"ANNUALLY"}
+            """.formatted(employer, product.productId(), product.productVersionId(), life);
+
+        // Proposing a scheme is the front of the act that ends in a contract on risk, so it
+        // takes the same role that act does. A plain staff token is not enough.
+        mockMvc.perform(post("/underwriting/cases/group")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isForbidden());
+
+        String response = mockMvc.perform(post("/underwriting/cases/group")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.groupScheme").value(true))
+            // NULL, and asserted: the queue must not show a company against a figure nobody
+            // computed. policy derives it at issuance, in the module that owns the calculator.
+            .andExpect(jsonPath("$.sumAssuredAmount").doesNotExist())
+            .andReturn().getResponse().getContentAsString();
+        String caseId = JsonPath.read(response, "$.caseId");
+
+        // The proposal is its own sub-resource: a 500-row schedule has no business on every
+        // row of a queue page.
+        mockMvc.perform(get("/underwriting/cases/" + caseId + "/group-proposal")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.benefitBasis").value("FLAT"))
+            .andExpect(jsonPath("$.openingSchedule.length()").value(1))
+            .andExpect(jsonPath("$.premiumAmount").value("1200000.00"));
+    }
+
+    @Test
+    void anIndividualCaseHasNoGroupProposalToFetch() throws Exception {
+        // 404, not an empty body: there is no proposal, and the URL resolving to nothing is
+        // the plain way to say so.
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerTestApplicant(tenantId);
+        ProductFixture product = publishTestProduct(tenantId);
+        String caseId = JsonPath.read(
+            openCaseViaHttp(tenantId, applicantId, product.productId(), product.productVersionId()), "$.caseId");
+
+        mockMvc.perform(get("/underwriting/cases/" + caseId + "/group-proposal")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound());
+    }
+
+    /** A GROUP_LIFE product, since a group proposal is refused against any other category. */
+    private ProductFixture publishGroupTestProduct(UUID tenantId) throws Exception {
+        String createResponse = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"UW-GRP-%s","productName":"UW Group Contract Test","category":"GROUP_LIFE","defaultCurrency":"TZS"}
+                    """.formatted(UUID.randomUUID().toString().substring(0, 8))))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String productId = JsonPath.read(createResponse, "$.productId");
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
+                    """))
+            .andExpect(status().isCreated());
+
+        String snapshotResponse = mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        return new ProductFixture(UUID.fromString(productId),
+            UUID.fromString(JsonPath.read(snapshotResponse, "$.productVersionId")));
+    }
+
     private ProductFixture publishTestProduct(UUID tenantId) throws Exception {
         String createResponse = mockMvc.perform(post("/products")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))

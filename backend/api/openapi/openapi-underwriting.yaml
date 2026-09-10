@@ -73,6 +73,40 @@ paths:
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+  /underwriting/cases/group:
+    post:
+      summary: Propose a group scheme
+      description: >-
+        An employer asking to cover a schedule of lives. UNDERWRITER, matching
+        POST /group-schemes: proposing a scheme is the front of the same act that ends in a
+        contract on risk.
+
+
+        Its own path rather than a branch inside POST /underwriting/cases, because that one
+        requires a sumAssured and a group case deliberately has none — valuing a schedule
+        needs the benefit calculator that lives in the policy module, so the figure appears
+        only when policy derives it at issuance. The same reasoning already split
+        /group-schemes out of /policies.
+      security:
+        - staffAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenGroupCaseRequest' }
+      responses:
+        '201':
+          description: Case opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnderwritingCaseView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: The schedule is empty, or the product is not GROUP_LIFE
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /underwriting/cases/{caseId}:
     get:
       summary: Get underwriting case status and decision
@@ -193,6 +227,34 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/BeneficiaryNomination' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /underwriting/cases/{caseId}/group-proposal:
+    get:
+      summary: The group scheme this case proposes
+      description: >-
+        Its own sub-resource rather than a field on UnderwritingCaseView, for the same reason
+        beneficiaries are — and more so. A scheme schedule runs to hundreds of lives, and
+        `GET /underwriting/cases` returns the same view twenty at a time, so carrying the
+        proposal on it would ship a 500-row schedule with every row of a queue page. The case
+        carries only the groupScheme flag, which is what a queue needs.
+
+
+        404 when the case is not a scheme: there is no proposal to fetch, and that is the
+        plain meaning of the URL not resolving.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupProposal' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /underwriting/cases/{caseId}/referral:
     post:
@@ -421,6 +483,83 @@ components:
         # POST /underwriting/cases/{caseId}/disclosures -- because a proposal form is answered
         # in a sitting and can be re-taken when new evidence arrives, which a field on the
         # create request cannot express.
+    OpenGroupCaseRequest:
+      description: >-
+        A group scheme proposal plus who is asking for it. No sumAssured: it is derived from
+        the schedule at issuance, in the policy module that owns the benefit calculation.
+      type: object
+      required: [policyholderPartyId, productId, productVersionId, benefitBasis, currency, openingSchedule, premiumAmount, premiumCurrency, premiumFrequency]
+      properties:
+        policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
+        productId: { type: string, format: uuid }
+        productVersionId: { type: string, format: uuid }
+        agentOfRecordId: { type: [string, "null"], format: uuid }
+        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }
+        flatBenefitAmount: { type: [string, "null"] }
+        salaryMultiple: { type: [number, "null"] }
+        fclAmount: { type: [string, "null"] }
+        currency: { type: string }
+        grades:
+          type: array
+          items:
+            type: object
+            properties:
+              gradeCode: { type: string }
+              benefitAmount: { type: string }
+        openingSchedule:
+          type: array
+          items:
+            type: object
+            properties:
+              memberPartyId: { type: string, format: uuid }
+              gradeCode: { type: [string, "null"] }
+              salaryAmount: { type: [string, "null"] }
+        premiumAmount: { type: string }
+        premiumCurrency: { type: string }
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        commencementDate: { type: [string, "null"], format: date }
+        policyTermMonths: { type: [integer, "null"] }
+    GroupProposal:
+      description: >-
+        A group scheme as asked for, before anybody has agreed to write it. Everything policy
+        needs to issue one, held on the case so an underwriter can see the whole proposal
+        before a contract exists — the same relationship BeneficiaryNomination has with
+        policy.BeneficiaryInput, one size up.
+      type: object
+      required: [benefitBasis, currency, openingSchedule, premiumAmount, premiumCurrency, premiumFrequency]
+      properties:
+        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }
+        flatBenefitAmount: { type: [string, "null"] }
+        salaryMultiple: { type: [number, "null"] }
+        fclAmount:
+          description: The benefit a member gets without medical evidence. Null means no limit.
+          type: [string, "null"]
+        currency: { type: string }
+        grades:
+          type: array
+          items:
+            type: object
+            properties:
+              gradeCode: { type: string }
+              benefitAmount: { type: string }
+        openingSchedule:
+          type: array
+          items:
+            type: object
+            properties:
+              memberPartyId: { type: string, format: uuid }
+              gradeCode: { type: [string, "null"] }
+              salaryAmount: { type: [string, "null"] }
+        premiumAmount:
+          description: >-
+            The premium AGREED with the employer, not a computed one. A scheme is not priced
+            by the individual formula — that prices one life from one age band, and the age it
+            would read is the employer's. Carried verbatim to issuance.
+          type: string
+        premiumCurrency: { type: string }
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        commencementDate: { type: [string, "null"], format: date }
+        policyTermMonths: { type: [integer, "null"] }
     BeneficiaryNomination:
       type: object
       # Field-for-field identical to policy's BeneficiaryInput, deliberately. The two say the

@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
+import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
 import tz.co.nlolo.lifeplatform.underwriting.api.MedicalDisclosureView;
 import tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -95,6 +96,24 @@ public class UnderwritingController {
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
+    /**
+     * Propose a group scheme.
+     *
+     * <p>UNDERWRITER, matching {@code POST /group-schemes}: proposing a scheme is the front of
+     * the same act that ends in a contract on risk. Its own path rather than a branch inside
+     * {@code POST /cases} because {@link OpenCaseRequest} requires a sum assured and a group
+     * case deliberately has none — see {@link OpenGroupCaseRequest}.
+     */
+    @PostMapping("/cases/group")
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<UnderwritingCaseView> openGroupCase(@Valid @RequestBody OpenGroupCaseRequest request,
+                                                               @AuthenticationPrincipal Jwt jwt) {
+        UnderwritingCaseView view = underwritingApi.openCase(request.policyholderPartyId(),
+            request.productId(), request.productVersionId(), request.agentOfRecordId(),
+            request.toApiProposal(), jwt.getSubject());
+        return ResponseEntity.status(HttpStatus.CREATED).body(view);
+    }
+
     @GetMapping("/cases/{caseId}")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<UnderwritingCaseView> getCase(@PathVariable UUID caseId) {
@@ -156,6 +175,31 @@ public class UnderwritingController {
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<List<BeneficiaryNomination>> listCaseBeneficiaries(@PathVariable UUID caseId) {
         return ResponseEntity.ok(underwritingApi.getCase(caseId).beneficiaries());
+    }
+
+    /**
+     * The group scheme this case proposes: its terms, grade table and opening schedule.
+     *
+     * <p>Its own sub-resource rather than a field on the case, for the same reason
+     * {@link #listCaseBeneficiaries} is one — and more so. A scheme's schedule runs to
+     * hundreds of lives, and {@code listCases} returns the same {@code UnderwritingCaseView}
+     * this endpoint's parent does, so putting the proposal on the view would ship a 500-row
+     * schedule with every row of a twenty-case queue page. The case itself carries only the
+     * {@code groupScheme} flag, which is what a queue needs.
+     *
+     * <p>Same gate as {@link #getCase}: a caller who may read the case may read what it asks
+     * for.
+     *
+     * @return 404 when the case is not a scheme — there is no proposal to fetch, and that is
+     *     the plain meaning of the URL not resolving to anything.
+     */
+    @GetMapping("/cases/{caseId}/group-proposal")
+    @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<GroupProposalResponseDto> getGroupProposal(@PathVariable UUID caseId) {
+        GroupProposal proposal = underwritingApi.getCase(caseId).groupProposal();
+        return proposal != null
+            ? ResponseEntity.ok(GroupProposalResponseDto.from(proposal))
+            : ResponseEntity.notFound().build();
     }
 
     @PostMapping("/cases/{caseId}/referral")

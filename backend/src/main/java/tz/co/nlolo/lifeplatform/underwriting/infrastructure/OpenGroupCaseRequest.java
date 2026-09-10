@@ -1,0 +1,86 @@
+package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
+
+import tz.co.nlolo.lifeplatform.underwriting.api.GroupBenefitBasis;
+import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Propose a group scheme: an employer asking to cover a schedule of lives.
+ *
+ * <p><b>Its own request, and its own endpoint, rather than a branch inside
+ * {@link OpenCaseRequest}.</b> That one requires a {@code sumAssured}, and a group case
+ * deliberately has none — valuing a schedule needs the benefit calculator that lives in the
+ * policy module, so the figure appears only when policy derives it at issuance. Making
+ * {@code sumAssured} conditionally optional would weaken the check that matters on every
+ * individual case to accommodate one that never carries it.
+ *
+ * <p>The same reasoning already split {@code /group-schemes} out of {@code /policies}: a
+ * scheme read as an individual thing answers a true and useless question.
+ */
+public record OpenGroupCaseRequest(
+    @NotNull UUID policyholderPartyId,
+    @NotNull UUID productId,
+    @NotNull UUID productVersionId,
+    /** Who sold it, carried to issuance so commission accrues. Null for a direct sale. */
+    UUID agentOfRecordId,
+
+    @NotNull GroupBenefitBasis benefitBasis,
+    /** Required on FLAT and rejected on the others; the service answers 409 naming the basis. */
+    @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String flatBenefitAmount,
+    @Positive BigDecimal salaryMultiple,
+    /**
+     * The benefit a member gets without medical evidence. Omit for no limit — which is a real
+     * scheme design, and NOT the same as a limit of zero, which would send every life to
+     * underwriting.
+     */
+    @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String fclAmount,
+    @NotNull @Pattern(regexp = "^[A-Z]{3}$") String currency,
+
+    List<@Valid GradeLineDto> grades,
+    @NotEmpty List<@Valid MemberLineDto> openingSchedule,
+
+    /**
+     * The premium agreed with the employer. Not computed: the individual formula prices one
+     * life from one age band, and the age it would read is the employer's.
+     */
+    @NotNull @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String premiumAmount,
+    @NotNull @Pattern(regexp = "^[A-Z]{3}$") String premiumCurrency,
+    @NotNull String premiumFrequency,
+
+    LocalDate commencementDate,
+    /** Null for the usual annually renewable scheme. */
+    @Positive Integer policyTermMonths) {
+
+    public record GradeLineDto(@NotNull String gradeCode,
+                                @NotNull @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String benefitAmount) {}
+
+    /** No joinedOn: every life on an opening schedule joins when the scheme commences. */
+    public record MemberLineDto(@NotNull UUID memberPartyId, String gradeCode,
+                                 @Pattern(regexp = "^\\d+(\\.\\d{1,2})?$") String salaryAmount) {}
+
+    public GroupProposal toApiProposal() {
+        return new GroupProposal(benefitBasis, decimal(flatBenefitAmount), salaryMultiple,
+            decimal(fclAmount), currency,
+            grades != null
+                ? grades.stream().map(g -> new GroupProposal.GradeLine(g.gradeCode(), decimal(g.benefitAmount()))).toList()
+                : List.of(),
+            openingSchedule.stream()
+                .map(m -> new GroupProposal.MemberLine(m.memberPartyId(), m.gradeCode(), decimal(m.salaryAmount())))
+                .toList(),
+            new BigDecimal(premiumAmount), premiumCurrency, premiumFrequency,
+            commencementDate, policyTermMonths);
+    }
+
+    private static BigDecimal decimal(String amount) {
+        return amount != null && !amount.isBlank() ? new BigDecimal(amount) : null;
+    }
+}
