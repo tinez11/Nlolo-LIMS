@@ -61,7 +61,8 @@ class ClaimDetailsJsonbSmokeTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
-            "db-migrations/claims/V3__registration_idempotency_key.sql");
+            "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql");
     }
 
     @Autowired private ClaimRepository claimRepository;
@@ -79,7 +80,7 @@ class ClaimDetailsJsonbSmokeTest {
     @MethodSource("allDetailsVariants")
     void savesAndReloadsEachClaimDetailsSubtypeWithTheSameConcreteTypeAndFields(ClaimDetails details) {
         UUID tenantId = UUID.randomUUID();
-        Claim claim = new Claim(tenantId, "POL-JSONB-01", UUID.randomUUID(), details.claimType(),
+        Claim claim = new Claim(tenantId, "POL-JSONB-01", null, UUID.randomUUID(), details.claimType(),
             LocalDate.of(2026, 1, 5), details, "test-staff", null);
 
         // save() and findById() below are each Spring Data's own separately-transactional call
@@ -103,7 +104,7 @@ class ClaimDetailsJsonbSmokeTest {
     void allFourSubtypesCoexistInTheSameTableWithoutCrossContamination() {
         List<ClaimDetails> variants = allDetailsVariants();
         List<UUID> ids = variants.stream().map(details -> {
-            Claim claim = new Claim(UUID.randomUUID(), "POL-JSONB-02", UUID.randomUUID(), details.claimType(),
+            Claim claim = new Claim(UUID.randomUUID(), "POL-JSONB-02", null, UUID.randomUUID(), details.claimType(),
                 LocalDate.of(2026, 1, 5), details, "test-staff", null);
             return claimRepository.save(claim).getClaimId();
         }).toList();

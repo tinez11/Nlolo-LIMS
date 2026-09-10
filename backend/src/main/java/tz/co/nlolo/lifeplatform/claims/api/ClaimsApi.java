@@ -21,8 +21,18 @@ import java.util.UUID;
  */
 public interface ClaimsApi {
 
-    record RegisterClaimRequest(String policyNumber, UUID claimantPartyId, ClaimType claimType,
-                                 LocalDate dateOfEvent, ClaimDetails details) {}
+    /**
+     * @param policyMemberId the insured life this claim is for. REQUIRED when the policy is a
+     *     group scheme — a scheme insures many lives, and "somebody on GL-000123 died" cannot
+     *     be assessed, valued or paid — and REJECTED on individual business, where the policy
+     *     names the life itself. Both rules are enforced through
+     *     {@code PolicyApi.claimableCover}, because {@code claims} cannot see a product
+     *     category without breaking its own allowed-dependency list.
+     *     <p>Distinct from {@code claimantPartyId}, which is who is FILING: the widow, not the
+     *     deceased. Conflating the two is what left a group claim unable to say who died.
+     */
+    record RegisterClaimRequest(String policyNumber, UUID policyMemberId, UUID claimantPartyId,
+                                 ClaimType claimType, LocalDate dateOfEvent, ClaimDetails details) {}
 
     ClaimView registerClaim(RegisterClaimRequest request, String idempotencyKey, String registeredBy);
 

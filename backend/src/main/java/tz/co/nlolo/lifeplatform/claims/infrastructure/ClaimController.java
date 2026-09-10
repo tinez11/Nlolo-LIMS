@@ -86,7 +86,8 @@ public class ClaimController {
         enforceCustomerOwnClaimantOnly(request.claimantPartyId(), jwt, authentication);
 
         ClaimsApi.RegisterClaimRequest apiRequest = new ClaimsApi.RegisterClaimRequest(request.policyNumber(),
-            request.claimantPartyId(), request.claimType(), request.dateOfEvent(), request.details());
+            request.policyMemberId(), request.claimantPartyId(), request.claimType(),
+            request.dateOfEvent(), request.details());
         ClaimView view = claimsApi.registerClaim(apiRequest, idempotencyKey, jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(ClaimResponseDto.from(view));
     }

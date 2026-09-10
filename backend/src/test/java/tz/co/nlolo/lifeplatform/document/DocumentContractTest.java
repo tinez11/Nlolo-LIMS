@@ -149,6 +149,7 @@ class DocumentContractTest {
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql");
 
@@ -232,7 +233,7 @@ class DocumentContractTest {
         TenantContext.set(tenantId);
         LocalDate dateOfEvent = LocalDate.now().minusDays(1);
         ClaimView view = claimsApi.registerClaim(
-            new ClaimsApi.RegisterClaimRequest(policyNumber, claimantId, ClaimType.MATURITY, dateOfEvent,
+            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.MATURITY, dateOfEvent,
                 new MaturityClaimDetails(dateOfEvent)),
             "dct-reg-" + UUID.randomUUID(), "claims-staff-fixture");
         TenantContext.clear();

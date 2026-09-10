@@ -316,6 +316,31 @@ public interface PolicyApi {
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
     void markMatured(String policyNumber, String maturedBy);
 
+    /**
+     * What a claim against this contract may pay, for this life, as at {@code asOf}.
+     *
+     * <p><b>As at the date of event, not today.</b> {@code policy_member_benefit} is
+     * effective-dated for exactly this reason: a death two years ago must be valued at the
+     * cover in force then, not at a benefit restated at a renewal since.
+     *
+     * <p>Answered here rather than in {@code claims} because the member schedule is this
+     * module's, and because claims cannot see {@code ProductCategory} without breaking its own
+     * allowed-dependency list. A caller gets one number and does not learn what kind of
+     * contract produced it.
+     *
+     * <p>On a group scheme this returns the member's {@code covered_amount} — the FCL-capped
+     * figure where the limit bit — and NOT the scheme's sum assured, which is 500 people's
+     * cover added together and is nobody's claim.
+     *
+     * @param policyMemberId REQUIRED on a policy that has a member schedule and REJECTED on one
+     *     that does not. A scheme with no member named cannot be valued; a member named against
+     *     an individual policy is a caller who believes that contract has a schedule.
+     * @throws InvalidPolicyStateException if the member is missing, supplied where it does not
+     *     belong, not a member of this scheme, or was not covered on {@code asOf}
+     * @throws PolicyNotFoundException if no such policy exists in this tenant
+     */
+    ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, LocalDate asOf);
+
     /** A DEATH/DISABILITY/CRITICAL_ILLNESS claim settled: coverage is discharged, no further
      * premium is due. Terminal; idempotent on repeat. */
     void terminateForSettledClaim(String policyNumber, UUID claimId, String terminatedBy);

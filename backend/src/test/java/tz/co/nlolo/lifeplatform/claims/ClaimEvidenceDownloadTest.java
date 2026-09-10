@@ -91,7 +91,8 @@ class ClaimEvidenceDownloadTest {
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
-            "db-migrations/claims/V3__registration_idempotency_key.sql");
+            "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql");
 
         minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -121,7 +122,7 @@ class ClaimEvidenceDownloadTest {
      * {@code ClaimEvidenceIntegrationTest.registerClaim} but parameterizes the claimant so two
      * distinct parties can each own a claim under the SAME tenant. */
     private Claim registerClaim(UUID tenantId, UUID claimantPartyId) {
-        Claim claim = new Claim(tenantId, "POL-EVIDENCE-DL-TEST", claimantPartyId, ClaimType.MATURITY,
+        Claim claim = new Claim(tenantId, "POL-EVIDENCE-DL-TEST", null, claimantPartyId, ClaimType.MATURITY,
             LocalDate.now().minusDays(1), new MaturityClaimDetails(LocalDate.now().minusDays(1)),
             "test-registrar", null);
         return claimRepository.save(claim);

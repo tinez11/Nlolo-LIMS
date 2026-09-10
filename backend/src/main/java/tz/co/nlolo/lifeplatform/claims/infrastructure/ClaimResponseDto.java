@@ -8,7 +8,8 @@ import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import java.time.LocalDate;
 import java.util.UUID;
 
-public record ClaimResponseDto(UUID claimId, String policyNumber, UUID claimantPartyId, ClaimType claimType,
+public record ClaimResponseDto(UUID claimId, String policyNumber, UUID policyMemberId,
+                                UUID claimantPartyId, ClaimType claimType,
                                 ClaimStatus status, LocalDate dateOfEvent, ClaimDetails details,
                                 MoneyDto approvedAmount, boolean requiresContestabilityReview) {
 
@@ -19,7 +20,8 @@ public record ClaimResponseDto(UUID claimId, String policyNumber, UUID claimantP
         MoneyDto approvedAmount = view.approvedAmount() != null
             ? new MoneyDto(view.approvedAmount().toPlainString(), view.approvedCurrency())
             : null;
-        return new ClaimResponseDto(view.claimId(), view.policyNumber(), view.claimantPartyId(), view.claimType(),
+        return new ClaimResponseDto(view.claimId(), view.policyNumber(), view.policyMemberId(),
+            view.claimantPartyId(), view.claimType(),
             view.status(), view.dateOfEvent(), view.details(), approvedAmount, view.requiresContestabilityReview());
     }
 }

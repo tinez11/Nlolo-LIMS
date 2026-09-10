@@ -145,6 +145,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
         try (Connection connection = DriverManager.getConnection(
@@ -216,7 +217,7 @@ class ClaimSettlementEndToEndTest {
     /** Registers, assesses, and returns a fresh DEATH claim id, ready to approve. */
     private UUID registerAndAssessDeathClaim(UUID tenantId, Fixture fixture, String policyNumber, String regKey, String assessor) {
         TenantContext.set(tenantId);
-        ClaimsApi.RegisterClaimRequest request = new ClaimsApi.RegisterClaimRequest(policyNumber, fixture.applicantId(),
+        ClaimsApi.RegisterClaimRequest request = new ClaimsApi.RegisterClaimRequest(policyNumber, null, fixture.applicantId(),
             ClaimType.DEATH, LocalDate.now().minusDays(1),
             new DeathClaimDetails("Natural causes", "Dar es Salaam", LocalDate.now().minusDays(1), "Dr. Test"));
         UUID claimId = claimsApi.registerClaim(request, regKey, "claims-staff").claimId();
@@ -228,7 +229,7 @@ class ClaimSettlementEndToEndTest {
      * auto-approves REGISTERED -> APPROVED (Claim.approve, Cl3), unlike DEATH. */
     private UUID registerMaturityClaim(UUID tenantId, Fixture fixture, String policyNumber, String regKey) {
         TenantContext.set(tenantId);
-        ClaimsApi.RegisterClaimRequest request = new ClaimsApi.RegisterClaimRequest(policyNumber, fixture.applicantId(),
+        ClaimsApi.RegisterClaimRequest request = new ClaimsApi.RegisterClaimRequest(policyNumber, null, fixture.applicantId(),
             ClaimType.MATURITY, LocalDate.now(), new MaturityClaimDetails(LocalDate.now()));
         return claimsApi.registerClaim(request, regKey, "claims-staff").claimId();
     }

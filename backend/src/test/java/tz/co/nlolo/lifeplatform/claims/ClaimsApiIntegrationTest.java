@@ -99,7 +99,8 @@ class ClaimsApiIntegrationTest {
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
-            "db-migrations/claims/V3__registration_idempotency_key.sql");
+            "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -151,12 +152,12 @@ class ClaimsApiIntegrationTest {
     }
 
     private ClaimsApi.RegisterClaimRequest deathRequest(String policyNumber, UUID claimantId, LocalDate dateOfEvent) {
-        return new ClaimsApi.RegisterClaimRequest(policyNumber, claimantId, ClaimType.DEATH, dateOfEvent,
+        return new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.DEATH, dateOfEvent,
             new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test"));
     }
 
     private ClaimsApi.RegisterClaimRequest maturityRequest(String policyNumber, UUID claimantId, LocalDate dateOfEvent) {
-        return new ClaimsApi.RegisterClaimRequest(policyNumber, claimantId, ClaimType.MATURITY, dateOfEvent,
+        return new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.MATURITY, dateOfEvent,
             new MaturityClaimDetails(dateOfEvent));
     }
 
@@ -246,7 +247,7 @@ class ClaimsApiIntegrationTest {
         LocalDate dateOfEvent = LocalDate.now().minusDays(1);
         // claimType says DEATH, details says DISABILITY -- Claim's own constructor
         // (Claim.java:107-113) must reject this, and ClaimsApiImpl must let it propagate.
-        ClaimsApi.RegisterClaimRequest request = new ClaimsApi.RegisterClaimRequest(policyNumber, fixture.applicantId(),
+        ClaimsApi.RegisterClaimRequest request = new ClaimsApi.RegisterClaimRequest(policyNumber, null, fixture.applicantId(),
             ClaimType.DEATH, dateOfEvent, new DisabilityClaimDetails("Loss of limb", dateOfEvent, true, new BigDecimal("50")));
 
         assertThrows(ClaimValidationException.class, () -> claimsApi.registerClaim(request, "reg-idem-03", "claims-staff"));

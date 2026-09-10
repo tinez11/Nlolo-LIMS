@@ -51,6 +51,16 @@ public class Claim {
     @Column(name = "policy_number", nullable = false)
     private String policyNumber;
 
+    /**
+     * The insured life this claim is for, on a group scheme (V5).
+     *
+     * <p>NULL on individual business, where the policy names the life itself -- so null here
+     * means "the policy knows", never "unknown". Distinct from {@link #claimantPartyId}, which
+     * is who is FILING: on a death claim that is the widow, not the deceased.
+     */
+    @Column(name = "policy_member_id")
+    private UUID policyMemberId;
+
     @Column(name = "claimant_party_id", nullable = false)
     private UUID claimantPartyId;
 
@@ -114,8 +124,8 @@ public class Claim {
      * DEATH claim can never carry DisabilityClaimDetails"), enforced here since this constructor
      * is the aggregate's single creation point.
      */
-    public Claim(UUID tenantId, String policyNumber, UUID claimantPartyId, ClaimType claimType,
-                 LocalDate dateOfEvent, ClaimDetails details, String createdBy,
+    public Claim(UUID tenantId, String policyNumber, UUID policyMemberId, UUID claimantPartyId,
+                 ClaimType claimType, LocalDate dateOfEvent, ClaimDetails details, String createdBy,
                  String registrationIdempotencyKey) {
         if (details == null || details.claimType() != claimType) {
             throw new ClaimValidationException(
@@ -124,6 +134,7 @@ public class Claim {
         }
         this.tenantId = tenantId;
         this.policyNumber = policyNumber;
+        this.policyMemberId = policyMemberId;
         this.claimantPartyId = claimantPartyId;
         this.claimType = claimType;
         this.dateOfEvent = dateOfEvent;
@@ -249,6 +260,7 @@ public class Claim {
     public UUID getClaimId() { return claimId; }
     public UUID getTenantId() { return tenantId; }
     public String getPolicyNumber() { return policyNumber; }
+    public UUID getPolicyMemberId() { return policyMemberId; }
     public UUID getClaimantPartyId() { return claimantPartyId; }
     public ClaimType getClaimType() { return claimType; }
     public ClaimStatus getStatus() { return status; }

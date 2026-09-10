@@ -84,7 +84,8 @@ class ClaimControllerValidationContractTest {
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
-            "db-migrations/claims/V3__registration_idempotency_key.sql");
+            "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql");
     }
 
     @Autowired private MockMvc mockMvc;

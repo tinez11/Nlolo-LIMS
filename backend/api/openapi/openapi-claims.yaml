@@ -307,6 +307,19 @@ components:
       required: [policyNumber, claimantPartyId, claimType, dateOfEvent, details]
       properties:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        policyMemberId:
+          description: >-
+            The insured life this claim is for. REQUIRED when the policy is a group scheme —
+            a scheme insures many lives and "somebody on this policy died" cannot be assessed,
+            valued or paid — and REJECTED on individual business, where the policy names the
+            life itself. Either mistake is a 409, not a 422: which rule applies depends on the
+            policy, so it cannot be settled by schema validation.
+
+
+            Distinct from claimantPartyId, which is whoever is FILING: on a death claim that is
+            the widow, not the deceased.
+          type: [string, "null"]
+          format: uuid
         claimantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         claimType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY] }
         dateOfEvent: { type: string, format: date }
@@ -400,6 +413,12 @@ components:
       properties:
         claimId: { type: string, format: uuid }
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        policyMemberId:
+          description: >-
+            The insured life, on a group scheme. NULL on individual business, where the policy
+            names the life itself — so null means "the policy knows", never "unknown".
+          type: [string, "null"]
+          format: uuid
         claimantPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         claimType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY] }
         status: { type: string, enum: [REGISTERED, UNDER_ASSESSMENT, APPROVED, REJECTED, SETTLEMENT_REQUESTED, SETTLED, REOPENED] }

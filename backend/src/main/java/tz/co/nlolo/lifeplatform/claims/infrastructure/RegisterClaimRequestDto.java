@@ -17,6 +17,13 @@ import java.util.UUID;
  * openapi-claims.yaml's {@code RegisterClaimRequest.details} description already promises. */
 public record RegisterClaimRequestDto(
     @NotBlank @Pattern(regexp = "^[A-Z0-9-]{6,20}$") String policyNumber,
+    /**
+     * The insured life, on a group scheme. Deliberately NOT {@code @NotNull}: it is required on
+     * a scheme and refused on individual business, and which of those applies depends on the
+     * policy — a fact bean validation cannot reach. Both rules are enforced in the service via
+     * {@code PolicyApi.claimableCover} and answered as a 409.
+     */
+    UUID policyMemberId,
     @NotNull UUID claimantPartyId,
     @NotNull ClaimType claimType,
     @NotNull LocalDate dateOfEvent,

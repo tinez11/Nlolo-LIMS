@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +35,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -649,6 +651,68 @@ public class PolicyApiImpl implements PolicyApi {
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyMatured", tenantId,
             Map.of("policyNumber", policyNumber,
                    "maturedAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, LocalDate asOf) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+
+        // Keyed on the scheme ROW, for the same reason terminateForSettledClaim is: a GROUP_LIFE
+        // policy issued through the ordinary path has no schedule under it, and a contract with
+        // no members is valued from its own sum assured like any other.
+        Optional<GroupScheme> scheme = "GROUP_LIFE".equals(policy.getProductCategory())
+            ? groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
+            : Optional.empty();
+
+        if (scheme.isEmpty()) {
+            if (policyMemberId != null) {
+                throw new InvalidPolicyStateException("Policy " + policyNumber
+                    + " is not a group scheme, so a claim on it cannot name a member");
+            }
+            return new ClaimableCoverView(policy.getSumAssuredAmount(),
+                policy.getSumAssuredCurrency(), null);
+        }
+        if (policyMemberId == null) {
+            throw new InvalidPolicyStateException("Scheme " + policyNumber
+                + " insures many lives, so a claim on it names a member");
+        }
+
+        PolicyMember member = policyMemberRepository
+            .findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
+            .filter(m -> m.getPolicyNumber().equals(policyNumber))
+            .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
+                + " is not a member of scheme " + policyNumber));
+
+        // Covered ON THE DATE OF EVENT, not covered today. An exited member is a legitimate
+        // claimant for an event that happened while they were still on the schedule -- which is
+        // exactly why V9 keeps exited rows rather than deleting them.
+        if (asOf.isBefore(member.getJoinedOn())
+                || (member.getLeftOn() != null && asOf.isAfter(member.getLeftOn()))) {
+            throw new InvalidPolicyStateException("Member " + policyMemberId
+                + " was not covered on " + asOf + " (covered from " + member.getJoinedOn()
+                + (member.getLeftOn() != null ? " to " + member.getLeftOn() : "") + ")");
+        }
+
+        // covered_amount, NOT benefit_amount, and NOT re-capped at the free cover limit. The
+        // stored covered amount already IS the capped figure where the limit bit --
+        // EVIDENCE_REQUIRED and DECLINED both sit at the limit, WITHIN_FCL and ACCEPTED sit at
+        // the full benefit. Applying the limit again here would halve an excess an underwriter
+        // had granted.
+        //
+        // findInForce is (memberId, tenantId, asOf, Pageable), newest-effective first; the
+        // Pageable is how it takes only the row in force. This is its first caller: the bulk
+        // sibling findInForceForMembers backs the member list, while findInForce itself was
+        // written for exactly this and has never been invoked.
+        BigDecimal covered = policyMemberBenefitRepository
+            .findInForce(policyMemberId, tenantId, asOf, PageRequest.of(0, 1))
+            .stream().findFirst()
+            .map(PolicyMemberBenefit::getCoveredAmount)
+            .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
+                + " has no benefit in force on " + asOf));
+
+        return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId);
     }
 
     @Override

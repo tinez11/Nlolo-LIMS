@@ -114,6 +114,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
 
@@ -183,7 +184,7 @@ class AgentBookOfBusinessScopingTest {
         TenantContext.set(tenantId);
         LocalDate dateOfEvent = LocalDate.now().minusDays(1);
         ClaimView view = claimsApi.registerClaim(
-            new ClaimsApi.RegisterClaimRequest(policyNumber, claimantId, ClaimType.DEATH, dateOfEvent,
+            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.DEATH, dateOfEvent,
                 new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test")),
             "book-scope-reg-" + UUID.randomUUID(), "claims-staff-fixture");
         TenantContext.clear();

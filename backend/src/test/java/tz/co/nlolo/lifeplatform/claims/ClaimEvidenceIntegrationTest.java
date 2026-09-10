@@ -75,7 +75,8 @@ class ClaimEvidenceIntegrationTest {
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
-            "db-migrations/claims/V3__registration_idempotency_key.sql");
+            "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql");
 
         minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -105,7 +106,7 @@ class ClaimEvidenceIntegrationTest {
      * claim type that needs no assessment to progress, which keeps this test's fixtures focused
      * on evidence linkage rather than re-deriving the whole approval workflow. */
     private Claim registerClaim(UUID tenantId) {
-        Claim claim = new Claim(tenantId, "POL-EVIDENCE-TEST", UUID.randomUUID(), ClaimType.MATURITY,
+        Claim claim = new Claim(tenantId, "POL-EVIDENCE-TEST", null, UUID.randomUUID(), ClaimType.MATURITY,
             LocalDate.now().minusDays(1), new MaturityClaimDetails(LocalDate.now().minusDays(1)), "test-registrar", null);
         return claimRepository.save(claim);
     }

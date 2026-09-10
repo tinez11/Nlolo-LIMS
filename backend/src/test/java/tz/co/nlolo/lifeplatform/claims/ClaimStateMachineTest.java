@@ -41,19 +41,19 @@ class ClaimStateMachineTest {
         UUID tenantId = UUID.randomUUID();
         UUID claimantPartyId = UUID.randomUUID();
         return switch (type) {
-            case DEATH -> new Claim(tenantId, "POL-0001", claimantPartyId, ClaimType.DEATH,
+            case DEATH -> new Claim(tenantId, "POL-0001", null, claimantPartyId, ClaimType.DEATH,
                 LocalDate.of(2026, 1, 1),
                 new DeathClaimDetails("Cardiac arrest", "Dar es Salaam", LocalDate.of(2026, 1, 1), "Dr. Juma"),
                 "test-staff", null);
-            case DISABILITY -> new Claim(tenantId, "POL-0002", claimantPartyId, ClaimType.DISABILITY,
+            case DISABILITY -> new Claim(tenantId, "POL-0002", null, claimantPartyId, ClaimType.DISABILITY,
                 LocalDate.of(2026, 1, 1),
                 new DisabilityClaimDetails("Loss of limb", LocalDate.of(2026, 1, 1), true, new BigDecimal("80")),
                 "test-staff", null);
-            case CRITICAL_ILLNESS -> new Claim(tenantId, "POL-0003", claimantPartyId, ClaimType.CRITICAL_ILLNESS,
+            case CRITICAL_ILLNESS -> new Claim(tenantId, "POL-0003", null, claimantPartyId, ClaimType.CRITICAL_ILLNESS,
                 LocalDate.of(2026, 1, 1),
                 new CriticalIllnessClaimDetails("Stage 3 carcinoma", LocalDate.of(2026, 1, 1), "C50"),
                 "test-staff", null);
-            case MATURITY -> new Claim(tenantId, "POL-0004", claimantPartyId, ClaimType.MATURITY,
+            case MATURITY -> new Claim(tenantId, "POL-0004", null, claimantPartyId, ClaimType.MATURITY,
                 LocalDate.of(2026, 1, 1),
                 new MaturityClaimDetails(LocalDate.of(2026, 1, 1)),
                 "test-staff", null);
@@ -65,7 +65,7 @@ class ClaimStateMachineTest {
     @Test
     void constructorRejectsDetailsWhoseClaimTypeDoesNotMatch() {
         UUID tenantId = UUID.randomUUID();
-        assertThrows(ClaimValidationException.class, () -> new Claim(tenantId, "POL-9999", UUID.randomUUID(),
+        assertThrows(ClaimValidationException.class, () -> new Claim(tenantId, "POL-9999", null, UUID.randomUUID(),
             ClaimType.DEATH, LocalDate.now(),
             new MaturityClaimDetails(LocalDate.now()), "test-staff", null));
     }

@@ -182,6 +182,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
+            "db-migrations/claims/V5__claim_policy_member.sql",
             // M5 (Task 1) additions: appRoleCanReadWriteAndUpdateDisbursementInstruction below
             // needs payment's own schema/grants -- V1 alone had zero GRANT statements anywhere
             // in the file, the exact M1 failure mode this class exists to catch.

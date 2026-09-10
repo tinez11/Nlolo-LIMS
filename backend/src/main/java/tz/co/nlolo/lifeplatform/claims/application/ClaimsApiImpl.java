@@ -21,6 +21,7 @@ import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.SettlementDecisionRepository;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.policy.api.ClaimableCoverView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -154,9 +155,26 @@ public class ClaimsApiImpl implements ClaimsApi {
         //
         //    What remains genuinely meaningful is that the policy carries a positive sum assured
         //    to claim against. The real per-benefit check is deferred pending ProductApi work.
-        if (policy.sumAssuredAmount() == null || policy.sumAssuredAmount().signum() <= 0) {
+        //    WHAT IS ACTUALLY CLAIMABLE HERE, for this life, on the date of the event.
+        //
+        //    This replaced a `policy.sumAssuredAmount() > 0` check. Everything the comment above
+        //    says about the per-benefit check remains true and is about a different question;
+        //    what that check got wrong was simpler. On a group scheme, sum assured is the TOTAL
+        //    of every member's cover, so a 5m death claim on a 500-life scheme was validated
+        //    against 2.5bn -- and policy_member_benefit.covered_amount, stored and effective-
+        //    dated for the sole purpose of being the figure a claim pays, had no reader at all.
+        //
+        //    policy answers it, not claims. The member schedule is policy's, and claims cannot
+        //    reference ProductCategory without failing ModularityTests -- so the group-versus-
+        //    individual branch lives on the other side of this call, and claims gets one number.
+        //    The member rules (required on a scheme, refused off one, must be on THIS scheme,
+        //    must have been covered on the date) raise InvalidPolicyStateException from there
+        //    and propagate as-is, exactly as PolicyNotFoundException already does.
+        ClaimableCoverView claimable = policyApi.claimableCover(
+            request.policyNumber(), request.policyMemberId(), request.dateOfEvent());
+        if (claimable.amount() == null || claimable.amount().signum() <= 0) {
             throw new ClaimValidationException("Policy " + request.policyNumber()
-                + " has no positive sum assured to claim against");
+                + " has no positive cover to claim against on " + request.dateOfEvent());
         }
 
         // 4. Contestability. Fails CLOSED on an unknown answer, or on any failure reaching
@@ -166,8 +184,9 @@ public class ClaimsApiImpl implements ClaimsApi {
         // 5. The details payload must match the declared claim type. Claim's own constructor
         //    (Claim.java:107-113) already checks details.claimType() == claimType and throws
         //    ClaimValidationException on mismatch -- not duplicated here, that would be dead code.
-        Claim claim = new Claim(tenantId, request.policyNumber(), request.claimantPartyId(),
-            request.claimType(), request.dateOfEvent(), request.details(), registeredBy, idempotencyKey);
+        Claim claim = new Claim(tenantId, request.policyNumber(), request.policyMemberId(),
+            request.claimantPartyId(), request.claimType(), request.dateOfEvent(), request.details(),
+            registeredBy, idempotencyKey);
 
         // 6. Attempt the insert in its OWN transaction (see the constructor's comment on
         //    requiresNewTransactionTemplate for why). The event publish happens INSIDE that same
@@ -478,7 +497,8 @@ public class ClaimsApiImpl implements ClaimsApi {
     }
 
     private ClaimView toView(Claim claim, boolean requiresContestabilityReview) {
-        return new ClaimView(claim.getClaimId(), claim.getPolicyNumber(), claim.getClaimantPartyId(),
+        return new ClaimView(claim.getClaimId(), claim.getPolicyNumber(), claim.getPolicyMemberId(),
+            claim.getClaimantPartyId(),
             claim.getClaimType(), claim.getStatus(), claim.getDateOfEvent(), claim.getDetails(),
             claim.getApprovedAmount(), claim.getApprovedCurrency(), requiresContestabilityReview);
     }
