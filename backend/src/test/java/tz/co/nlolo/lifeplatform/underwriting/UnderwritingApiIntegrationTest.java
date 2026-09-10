@@ -54,6 +54,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
             "db-migrations/underwriting/V8__rating_multiplier.sql",
+            "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql");
     }
 

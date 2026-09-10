@@ -12,6 +12,10 @@ import tz.co.nlolo.lifeplatform.underwriting.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.domain.*;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.MedicalDisclosureRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalBeneficiaryRepository;
+import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
+import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupSchemeRepository;
+import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupGradeRepository;
+import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalGroupMemberRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.RiskAssessmentRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.UnderwritingCaseRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -44,6 +48,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ApplicationEventPublisher eventPublisher;
     private final MedicalDisclosureRepository medicalDisclosureRepository;
     private final ProposalBeneficiaryRepository proposalBeneficiaryRepository;
+    private final ProposalGroupSchemeRepository proposalGroupSchemeRepository;
+    private final ProposalGroupGradeRepository proposalGroupGradeRepository;
+    private final ProposalGroupMemberRepository proposalGroupMemberRepository;
     /** Serialises the disclosure Q&A set into its JSONB column -- see recordDisclosures. */
     private final ObjectMapper objectMapper;
 
@@ -51,8 +58,14 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi, RulesEnginePort rulesEnginePort,
                                 ApplicationEventPublisher eventPublisher,
                                 MedicalDisclosureRepository medicalDisclosureRepository, ObjectMapper objectMapper,
-                                ProposalBeneficiaryRepository proposalBeneficiaryRepository) {
+                                ProposalBeneficiaryRepository proposalBeneficiaryRepository,
+                                ProposalGroupSchemeRepository proposalGroupSchemeRepository,
+                                ProposalGroupGradeRepository proposalGroupGradeRepository,
+                                ProposalGroupMemberRepository proposalGroupMemberRepository) {
         this.proposalBeneficiaryRepository = proposalBeneficiaryRepository;
+        this.proposalGroupSchemeRepository = proposalGroupSchemeRepository;
+        this.proposalGroupGradeRepository = proposalGroupGradeRepository;
+        this.proposalGroupMemberRepository = proposalGroupMemberRepository;
         this.underwritingCaseRepository = underwritingCaseRepository;
         this.riskAssessmentRepository = riskAssessmentRepository;
         this.partyApi = partyApi;
@@ -115,6 +128,100 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // With nominations: the caller just supplied them, and handing back a view that says
         // the case has none would be actively misleading.
         return toViewWithNominations(underwritingCase);
+    }
+
+    @Override
+    @Transactional
+    public UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId,
+                                          UUID agentOfRecordId, GroupProposal proposal, String openedBy) {
+        UUID tenantId = TenantContext.get();
+        partyApi.getParty(applicantPartyId);
+
+        if (proposal == null || proposal.openingSchedule() == null || proposal.openingSchedule().isEmpty()) {
+            // The rule issueGroupScheme already enforces, moved to where the proposal is taken.
+            // A scheme's sum assured IS the total of its schedule, so an empty one is a
+            // contract insuring nobody for nothing -- and refusing it here means it never
+            // reaches an underwriter's queue in the first place.
+            throw new UnderwritingValidationException("A group proposal names at least one life");
+        }
+        ProductCategory category = productApi.getSnapshotByVersionId(productVersionId).category();
+        if (category != ProductCategory.GROUP_LIFE) {
+            // The mirror of issueGroupScheme's own check, applied at proposal time so a case
+            // cannot be decided into an issuance that will then refuse it -- which would leave
+            // a DECIDED case with no policy and no explanation anywhere.
+            throw new UnderwritingValidationException(
+                "A group proposal needs a GROUP_LIFE product; this one is " + category);
+        }
+
+        // SUM ASSURED IS NULL ON A GROUP CASE, and that is a decision rather than an omission.
+        //
+        // Valuing the schedule needs GroupBenefitCalculator -- flat, salary x multiple, or a
+        // grade lookup, each rounded once -- and that lives in policy.domain, which this module
+        // may not reach. Re-implementing it here would put benefit arithmetic in two modules
+        // and let them drift, which is the one thing money arithmetic must never do. (The
+        // console's groupBenefitPreview.ts mirrors it deliberately, but it is labelled a
+        // preview, it sends nothing, and both sides run the same worked examples against each
+        // other. A second SERVER-side copy would have no such safety net.)
+        //
+        // So the case says what is being ASKED FOR -- the basis, the schedule, the count -- and
+        // the sum assured appears when policy derives it at issuance, in the one place that
+        // owns it.
+        UnderwritingCase underwritingCase = new UnderwritingCase(tenantId, applicantPartyId, productId,
+            productVersionId, null, proposal.currency(), agentOfRecordId, openedBy);
+        underwritingCase.recordGroupProposal(nextProposalNumber(), proposal.commencementDate(),
+            proposal.premiumFrequency());
+        underwritingCaseRepository.save(underwritingCase);
+        persistGroupProposal(tenantId, underwritingCase.getCaseId(), proposal, openedBy);
+
+        return toViewWithNominations(underwritingCase);
+    }
+
+    /**
+     * The proposal's three tables, written in one go.
+     *
+     * <p>Mirrors how {@code openCase} already persists {@code ProposalBeneficiary} rows: the
+     * case row first, then its children, all inside the caller's transaction.
+     */
+    private void persistGroupProposal(UUID tenantId, UUID caseId, GroupProposal proposal, String createdBy) {
+        proposalGroupSchemeRepository.save(new ProposalGroupScheme(tenantId, caseId,
+            proposal.benefitBasis().name(), proposal.flatBenefitAmount(), proposal.salaryMultiple(),
+            proposal.fclAmount(), proposal.currency(),
+            proposal.premiumAmount(), proposal.premiumCurrency(), proposal.premiumFrequency(),
+            proposal.commencementDate(), proposal.policyTermMonths(), createdBy));
+
+        for (GroupProposal.GradeLine grade : proposal.grades()) {
+            proposalGroupGradeRepository.save(
+                new ProposalGroupGrade(tenantId, caseId, grade.gradeCode(), grade.benefitAmount()));
+        }
+        for (GroupProposal.MemberLine line : proposal.openingSchedule()) {
+            // Each life validated the same way the applicant is, and for the same reason: a
+            // schedule naming somebody who does not exist in this tenant is unassessable, and
+            // PartyApi.getParty already refuses cross-tenant reads.
+            partyApi.getParty(line.memberPartyId());
+            proposalGroupMemberRepository.save(new ProposalGroupMember(tenantId, caseId,
+                line.memberPartyId(), line.gradeCode(), line.salaryAmount()));
+        }
+    }
+
+    /** The proposal on a case, or null if it is individual business. */
+    private GroupProposal groupProposalFor(UUID caseId, UUID tenantId) {
+        return proposalGroupSchemeRepository.findByCaseIdAndTenantId(caseId, tenantId)
+            .map(scheme -> new GroupProposal(
+                GroupBenefitBasis.valueOf(scheme.getBenefitBasis()),
+                scheme.getFlatBenefitAmount(), scheme.getSalaryMultiple(), scheme.getFclAmount(),
+                scheme.getCurrency(),
+                proposalGroupGradeRepository.findByTenantIdAndCaseIdOrderByCreatedAtAsc(tenantId, caseId)
+                    .stream()
+                    .map(g -> new GroupProposal.GradeLine(g.getGradeCode(), g.getBenefitAmount()))
+                    .toList(),
+                proposalGroupMemberRepository
+                    .findByTenantIdAndCaseIdOrderByCreatedAtAscProposalGroupMemberIdAsc(tenantId, caseId)
+                    .stream()
+                    .map(m -> new GroupProposal.MemberLine(m.getMemberPartyId(), m.getGradeCode(), m.getSalaryAmount()))
+                    .toList(),
+                scheme.getPremiumAmount(), scheme.getPremiumCurrency(), scheme.getPremiumFrequency(),
+                scheme.getCommencementDate(), scheme.getPolicyTermMonths()))
+            .orElse(null);
     }
 
     /**
@@ -411,6 +518,27 @@ public class UnderwritingApiImpl implements UnderwritingApi {
      * occupation. It now recomputes advice each time evidence arrives, and a person decides.
      */
     private void recommendFromEvidence(UnderwritingCase underwritingCase) {
+        // NO ENGINE OPINION ON A GROUP SCHEME, and this is a decision rather than a gap.
+        //
+        // RiskProfile is ageBandMultiplier x sumAssuredBandMultiplier plus assessment scores.
+        // On a scheme the age band it would resolve is the APPLICANT's -- a company, whose
+        // date of birth is null, so it would silently take the neutral 1.0 and dress a
+        // non-answer up as a rating. Group underwriting looks at scheme size, industry, claims
+        // experience and average age, none of which this platform holds, and inventing a group
+        // rule here would be actuarial content nobody has signed.
+        //
+        // A case with no recommendation is already legal and already handled: decide()'s own
+        // rule is that "An ABSENT recommendation is not a disagreement", so an underwriter
+        // settles a scheme without a senior being demanded for departing from advice that was
+        // never given. That is the intended behaviour, not a side effect.
+        //
+        // The rating multiplier is skipped with it, for the same reason: it is the product of
+        // an age band and a sum assured band, and a scheme has neither -- its sum assured is
+        // deliberately null until policy derives it.
+        if (proposalGroupSchemeRepository.existsByCaseIdAndTenantId(
+                underwritingCase.getCaseId(), underwritingCase.getTenantId())) {
+            return;
+        }
         String sumAssuredBand = resolveSumAssuredBand(underwritingCase.getSumAssuredAmount());
 
         BigDecimal ageMultiplier = resolveAgeMultiplier(underwritingCase);
@@ -527,6 +655,12 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     }
 
     private UnderwritingCaseView toView(UnderwritingCase c) {
+        // Resolved per row. On the queue this is one extra query per case, which is the
+        // price of the queue being able to say "this one is a scheme" at all -- and the
+        // proposal itself is @JsonIgnore, so a 500-row schedule never reaches a list
+        // response. If the queue ever gets slow, the fix is a projection carrying just the
+        // boolean, not dropping the distinction.
+        GroupProposal groupProposal = groupProposalFor(c.getCaseId(), c.getTenantId());
         return new UnderwritingCaseView(c.getCaseId(), c.getApplicantPartyId(), c.getProductId(), c.getProductVersionId(),
             UnderwritingCaseStatus.valueOf(c.getStatus()), ReferralStatus.valueOf(c.getReferralStatus()),
             c.getDecisionOutcome() != null ? DecisionOutcome.valueOf(c.getDecisionOutcome()) : null,
@@ -538,6 +672,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             c.getRecommendationLoadingPercent(), c.getRecommendationReason(),
             c.getDecisionDecidedBy(), c.isDecisionOverrodeRecommendation(),
             c.getRequestedTermMonths(), c.getPremiumPayingTermMonths(), c.getPremiumFrequency(),
+            groupProposal != null, groupProposal,
             c.getRatingMultiplier(),
             List.of());
     }
@@ -570,6 +705,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             base.recommendationLoadingPercent(), base.recommendationReason(),
             base.decisionDecidedBy(), base.decisionOverrodeRecommendation(),
             base.requestedTermMonths(), base.premiumPayingTermMonths(), base.premiumFrequency(),
+            base.groupScheme(), base.groupProposal(),
             base.ratingMultiplier(),
             nominations);
     }

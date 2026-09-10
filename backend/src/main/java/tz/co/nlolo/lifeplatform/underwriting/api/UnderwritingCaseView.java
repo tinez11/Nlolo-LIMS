@@ -63,6 +63,21 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     Integer requestedTermMonths,
                                     Integer premiumPayingTermMonths,
                                     String premiumFrequency,
+                                    // A scheme case, and what it asks for (V9).
+                                    //
+                                    // groupScheme IS serialized: the queue must be able to tell a
+                                    // 500-life scheme from an individual proposal in a list, and
+                                    // sumAssuredAmount cannot say which -- it is deliberately NULL
+                                    // on a group case, because valuing a schedule needs
+                                    // GroupBenefitCalculator and that lives in policy.
+                                    // openapi-underwriting.yaml's schema grows to match, since it
+                                    // declares additionalProperties: false.
+                                    boolean groupScheme,
+                                    // @JsonIgnore for the same reason beneficiaries below are: the
+                                    // console reads the full proposal from the case DETAIL endpoint,
+                                    // and smuggling a 500-row schedule onto every row of a
+                                    // twenty-case queue page is not a list response.
+                                    @JsonIgnore GroupProposal groupProposal,
                                     // What the product's rating table priced this applicant at (V8):
                                     // age band x sum assured band, as the engine resolved it.
                                     //

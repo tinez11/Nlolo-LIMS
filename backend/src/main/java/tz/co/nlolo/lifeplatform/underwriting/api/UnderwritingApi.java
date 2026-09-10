@@ -32,6 +32,26 @@ public interface UnderwritingApi {
      * column is always answerable going forward.
      */
     UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, ProposalDetails proposal, String openedBy);
+
+    /**
+     * Open a case for a group scheme: an employer asking to cover a schedule of lives.
+     *
+     * <p>Group business used to skip this entirely — {@code POST /group-schemes} created the
+     * policy, the scheme and every member in one call, on risk on return, with no case, no
+     * assessment and no decision. Individual business had a queue, a person's decision and an
+     * offer the customer accepts by paying; the flow insuring five hundred people at a time
+     * was the unsupervised one.
+     *
+     * <p>No {@code sumAssuredAmount} parameter, and the column is left NULL. Valuing the
+     * schedule needs {@code GroupBenefitCalculator}, which lives in {@code policy} and which
+     * this module must not re-implement — two copies of benefit arithmetic are two copies that
+     * can drift, and this is money. The figure appears when policy derives it at issuance.
+     *
+     * @throws UnderwritingValidationException if the schedule is empty, or the product is not
+     *     GROUP_LIFE
+     */
+    UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId,
+                                   UUID agentOfRecordId, GroupProposal proposal, String openedBy);
     /**
      * Record a piece of evidence against the case and recompute the engine's recommendation.
      *

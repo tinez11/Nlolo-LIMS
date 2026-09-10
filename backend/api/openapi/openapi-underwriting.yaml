@@ -571,3 +571,15 @@ components:
             until this was captured.
           type: [string, "null"]
           enum: [MONTHLY, QUARTERLY, ANNUALLY, null]
+        groupScheme:
+          description: >-
+            True when this case is a group scheme rather than one life. The queue needs it to
+            tell a 500-life scheme from an individual proposal, and sumAssuredAmount cannot
+            say which — it is deliberately null on a group case, because valuing a schedule
+            needs the benefit calculator that lives in the policy module.
+
+
+            The proposal itself — terms, grade table and the schedule of lives — is NOT on
+            this view: a 500-row schedule has no business on every row of a twenty-case queue
+            page. It is read from GET /underwriting/cases/{caseId}.
+          type: boolean

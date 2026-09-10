@@ -184,6 +184,30 @@ public class UnderwritingCase {
         this.premiumFrequency = details.premiumFrequency();
     }
 
+    /**
+     * A group scheme's proposal identity. No life assured, deliberately.
+     *
+     * <p>Separate from {@link #recordProposal} because that one takes an already-resolved,
+     * NON-NULL life assured — correct for individual business, where a null input means "the
+     * applicant insures themselves" and the service resolves it before calling, "so the column
+     * is always answerable rather than carrying a null that every reader has to interpret".
+     *
+     * <p>A scheme has no single life to resolve to, and resolving to the applicant would record
+     * that the EMPLOYER is insured. {@code policy/V8} had to migrate 28 rows to undo exactly
+     * that assertion on the policy side; this is the same rule applied before the mistake can
+     * be made. So {@code life_assured_party_id} stays NULL on a group case, meaning "not a
+     * single person" — the lives are the proposed schedule.
+     *
+     * <p>{@code premiumFrequency} is set too: it is a term of the scheme, it is on the
+     * proposal, and billing reads it off the issued policy either way.
+     */
+    public void recordGroupProposal(String proposalNumber, LocalDate proposedCommencementDate,
+                                     String premiumFrequency) {
+        this.proposalNumber = proposalNumber;
+        this.proposedCommencementDate = proposedCommencementDate;
+        this.premiumFrequency = premiumFrequency;
+    }
+
     public Integer getRequestedTermMonths() { return requestedTermMonths; }
     public Integer getPremiumPayingTermMonths() { return premiumPayingTermMonths; }
     public String getPremiumFrequency() { return premiumFrequency; }
