@@ -717,32 +717,23 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     @Transactional
-    public void terminateForSettledClaim(String policyNumber, UUID claimId, String terminatedBy) {
+    public void dischargeForSettledClaim(String policyNumber, UUID policyMemberId, LocalDate dateOfEvent,
+                                          UUID claimId, String dischargedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         // A SCHEME IS NOT DISCHARGED BY ONE MEMBER'S DEATH.
         //
-        // This method closes a policy because a settled claim has discharged its coverage, and
-        // billing must then stop invoicing a contract that no longer covers anybody. Both halves
-        // are true of individual life and false of a group scheme: the claim discharged ONE
-        // member, the other lives on the schedule are alive and insured, and the employer still
-        // owes premium for them -- so billing continuing is the CORRECT outcome here, not the
-        // problem this closure was written to prevent.
+        // Closing a policy here is right because a settled claim has discharged its coverage,
+        // and billing must then stop invoicing a contract that no longer covers anybody. Both
+        // halves are true of individual life and false of a group scheme: the claim discharged
+        // ONE member, the other lives are alive and insured, and the employer still owes premium
+        // for them -- so billing continuing is the CORRECT outcome here, not the problem this
+        // closure was written to prevent.
         //
-        // Without this guard, one employee's settled death claim set the master policy to
+        // Without the branch below, one member's settled death claim set the master policy to
         // SURRENDERED and uninsured the entire workforce. Silently, from an AFTER_COMMIT
         // listener, with the claim money already paid. No test covered a claim on a scheme,
         // which is how it survived.
-        //
-        // A no-op rather than a throw: the claim is SETTLED and the disbursement COMPLETED
-        // before this runs, and claims' PaymentEventListener treats any exception here as a
-        // POLICY_CLOSURE_FAILED alert for an operator. Raising one for a case that correctly
-        // needs no closure would be crying wolf on every group claim.
-        //
-        // Exiting the member -- which IS what a settled group claim should do -- is deliberately
-        // not done here yet: it needs the claim to say which member died, and claims.claim has
-        // no member column. Leaving them on the roll overstates the scheme total by their cover,
-        // which is a figure a person can find and correct. Cancelling everybody's cover is not.
         //
         // BOTH CONDITIONS, and each is here for its own reason.
         //
@@ -759,10 +750,11 @@ public class PolicyApiImpl implements PolicyApi {
         // claims never apply policy/V9 -- for them the table does not exist, and an unconditional
         // query throws inside an AFTER_COMMIT listener whose only response is to raise
         // POLICY_CLOSURE_FAILED and leave a settled claim's policy open. Found exactly that way.
-        if ("GROUP_LIFE".equals(policy.getProductCategory())
-                && groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).isPresent()) {
-            log.info("Claim {} settled against group scheme {} -- the scheme stays in force; "
-                + "the member's own exit is not wired yet", claimId, policyNumber);
+        Optional<GroupScheme> scheme = "GROUP_LIFE".equals(policy.getProductCategory())
+            ? groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
+            : Optional.empty();
+        if (scheme.isPresent()) {
+            dischargeMember(policy, scheme.get(), policyMemberId, dateOfEvent, tenantId);
             return;
         }
         // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning
@@ -777,6 +769,58 @@ public class PolicyApiImpl implements PolicyApi {
             Map.of("policyNumber", policyNumber,
                    "claimId", claimId,
                    "surrenderedAt", Instant.now().toString())));
+    }
+
+    /**
+     * The group half of {@link #dischargeForSettledClaim}: one life leaves, the contract stays.
+     *
+     * <p>Dated to the EVENT, not to the payment run. A death in March settled in September means
+     * the member stopped being covered in March, and {@code totalCovered} counts only ACTIVE
+     * members — so dating the exit to September would have left them in the scheme's sum assured
+     * for six months they were not alive.
+     */
+    private void dischargeMember(Policy policy, GroupScheme scheme, UUID policyMemberId,
+                                  LocalDate dateOfEvent, UUID tenantId) {
+        if (policyMemberId == null) {
+            // Cannot happen through the claims path -- registration refuses a memberless claim on
+            // a scheme -- but this is a published API and a silent no-op would leave a paid claim
+            // with nobody discharged and no trace of why.
+            throw new InvalidPolicyStateException("Scheme " + policy.getPolicyNumber()
+                + " insures many lives, so discharging a settled claim on it names a member");
+        }
+        PolicyMember member = policyMemberRepository
+            .findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
+            .filter(m -> m.getPolicyNumber().equals(policy.getPolicyNumber()))
+            .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
+                + " is not a member of scheme " + policy.getPolicyNumber()));
+
+        if (MemberStatus.EXITED.name().equals(member.getStatus())) {
+            return; // idempotent on redelivery, mirroring the alreadyClosed flag on the other branch
+        }
+
+        member.exit(dateOfEvent);
+        policyMemberRepository.save(member);
+        // Flush before restating so the total sees the exit. Both inside this transaction: a
+        // scheme must never be readable with the member gone and the total still counting them.
+        policyMemberBenefitRepository.flush();
+        // KNOWN LIMITATION: if this was the LAST covered life, the total goes to zero and
+        // restateSumAssured throws -- deliberately, since "an empty scheme is a scheme to close,
+        // not one to carry at nil" and what closing one should mean has never been decided.
+        // Left to throw rather than papered over: claims' phase 2 keeps the claim SETTLED (the
+        // money moved), raises POLICY_CLOSURE_FAILED and logs both ids, so a person is told.
+        // Pinned by PolicyClaimClosureTest.dischargingTheLastMemberOfASchemeIsNotYetRepresentable.
+        BigDecimal total = restateSchemeTotal(policy, tenantId, LocalDate.now());
+
+        // No consumer yet, and that is a known gap rather than a new one: regreporting does not
+        // listen to policy.GroupMemberAdded either, so policy_dimension's sum assured already
+        // goes stale on a joiner. This adds a second route to the same staleness.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupMemberExited", tenantId,
+            Map.of("policyNumber", policy.getPolicyNumber(),
+                   "policyMemberId", policyMemberId,
+                   "leftOn", dateOfEvent.toString(),
+                   "reason", "CLAIM_SETTLED",
+                   "schemeTotalCovered", Map.of("amount", total.toPlainString(),
+                       "currencyCode", scheme.getCurrency()))));
     }
 
     private List<Beneficiary> validateAndBuildBeneficiaries(UUID tenantId, String policyNumber, List<BeneficiaryInput> inputs) {

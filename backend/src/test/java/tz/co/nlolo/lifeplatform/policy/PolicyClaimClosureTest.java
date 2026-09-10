@@ -16,6 +16,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -168,42 +169,136 @@ class PolicyClaimClosureTest {
      * one call together with its opening schedule, because a scheme's sum assured IS the total of
      * its members and one issued empty would have a sum assured of nil.
      */
-    private String issueGroupScheme(UUID tenantId, String productCode) {
+    private GroupFixture issueGroupScheme(UUID tenantId, String productCode) {
         Fixture fixture = buildFixture(tenantId, productCode, ProductCategory.GROUP_LIFE);
         TenantContext.set(tenantId);
         PartyView life = partyApi.registerIndividual("Insured Life " + productCode, LocalDate.of(1990, 1, 1),
             "+25571500" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
-        return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+        PartyView survivor = partyApi.registerIndividual("Surviving Life " + productCode, LocalDate.of(1990, 1, 1),
+            "+25571600" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
+        // TWO lives, not one, and that is not incidental. Exiting the only member drives the
+        // scheme total to zero, which Policy.restateSumAssured refuses outright -- see
+        // dischargingTheLastMemberOfASchemeIsNotYetRepresentable below.
+        String policyNumber = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(), null,
+            BenefitBasis.FLAT, new BigDecimal("5000000.00"), null, null, "TZS", null,
+            List.of(new PolicyApi.MemberInput(life.partyId(), null, null, null),
+                    new PolicyApi.MemberInput(survivor.partyId(), null, null, null)),
+            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now().minusMonths(9), null,
+            "Claim closure group fixture"), "test-staff").policyNumber();
+        UUID memberId = policyApi.listMembers(policyNumber, null, null, PageRequest.of(0, 25))
+            .getContent().stream()
+            .filter(m -> m.memberPartyId().equals(life.partyId()))
+            .findFirst().orElseThrow().policyMemberId();
+        return new GroupFixture(policyNumber, memberId);
+    }
+
+    /** A one-life scheme, for the last-member case that has no answer yet. */
+    private GroupFixture issueSingleLifeGroupScheme(UUID tenantId, String productCode) {
+        Fixture fixture = buildFixture(tenantId, productCode, ProductCategory.GROUP_LIFE);
+        TenantContext.set(tenantId);
+        PartyView life = partyApi.registerIndividual("Only Life " + productCode, LocalDate.of(1990, 1, 1),
+            "+25571700" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
+        String policyNumber = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
             fixture.applicantId(), fixture.productId(), fixture.productVersionId(), null,
             BenefitBasis.FLAT, new BigDecimal("5000000.00"), null, null, "TZS", null,
             List.of(new PolicyApi.MemberInput(life.partyId(), null, null, null)),
-            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null,
-            "Claim closure group fixture"), "test-staff").policyNumber();
+            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now().minusMonths(9), null,
+            "Single-life scheme fixture"), "test-staff").policyNumber();
+        return new GroupFixture(policyNumber, policyApi.listMembers(policyNumber, null, null,
+            PageRequest.of(0, 25)).getContent().get(0).policyMemberId());
     }
 
     /**
-     * One member's death must not uninsure everybody else on the schedule.
+     * KNOWN LIMITATION, pinned so it is discoverable rather than found in production.
      *
-     * <p>{@code terminateForSettledClaim} exists for individual life, where the single insured
-     * life is now dead and the contract is discharged. On a scheme it discharges one MEMBER: the
-     * others are alive and insured, and the employer still owes premium for them. Before the
-     * guard this set the master policy to SURRENDERED — silently, from an AFTER_COMMIT listener,
-     * with the claim money already paid.
+     * <p>When the last insured life on a scheme dies, the scheme total goes to zero and
+     * {@code Policy.restateSumAssured} refuses — its own comment says "an empty scheme is a
+     * scheme to close, not one to carry at nil", and what closing one should mean (LAPSED?
+     * SURRENDERED? on whose authority?) is a decision nobody has made. Inventing a status
+     * transition here to make one test pass would be inventing contract lifecycle.
      *
-     * <p>The mirror case, that an individual policy still closes, is
-     * {@link #terminateForSettledClaimMovesAnActivePolicyToSurrenderedAndPublishesPolicySurrenderedWithClaimId}
-     * — which is what makes this guard narrow rather than a blanket disabling of closure.
+     * <p>It degrades safely rather than silently: the throw happens in phase 2 of claims'
+     * settlement listener, which keeps the claim SETTLED (the money moved and must not be
+     * unwound), raises POLICY_CLOSURE_FAILED and logs at ERROR naming both ids. A human is
+     * told. This test will start failing the day somebody decides what an emptied scheme
+     * becomes, which is exactly when it should.
      */
     @Test
-    void terminateForSettledClaimLeavesAGroupSchemeInForce() {
+    void dischargingTheLastMemberOfASchemeIsNotYetRepresentable() {
         UUID tenantId = UUID.randomUUID();
-        String policyNumber = issueGroupScheme(tenantId, "CLAIM-CLOSURE-GRP-01");
+        GroupFixture scheme = issueSingleLifeGroupScheme(tenantId, "CLAIM-CLOSURE-GRP-LAST");
 
         TenantContext.set(tenantId);
-        policyApi.terminateForSettledClaim(policyNumber, UUID.randomUUID(), "test-staff");
+        assertThrows(IllegalArgumentException.class, () -> policyApi.dischargeForSettledClaim(
+            scheme.policyNumber(), scheme.policyMemberId(), LocalDate.now().minusMonths(6),
+            UUID.randomUUID(), "test-staff"));
+    }
 
-        assertEquals(PolicyStatus.ACTIVE, policyApi.getPolicy(policyNumber).status(),
+    private record GroupFixture(String policyNumber, UUID policyMemberId) {}
+
+    /**
+     * The member under test, by id.
+     *
+     * <p>NOT getContent().get(0): both fixture members join on the same day, so listMembers
+     * orders them by policyMemberId and the first row is an arbitrary one of the two.
+     */
+    private PolicyMemberView memberById(String policyNumber, UUID policyMemberId) {
+        return policyApi.listMembers(policyNumber, null, null, PageRequest.of(0, 25))
+            .getContent().stream().filter(m -> m.policyMemberId().equals(policyMemberId))
+            .findFirst().orElseThrow(() -> new AssertionError("Member " + policyMemberId + " vanished"));
+    }
+
+    /**
+     * A settled claim discharges one LIFE on a scheme, not the contract.
+     *
+     * <p>Individual life is the case {@code dischargeForSettledClaim} was originally written
+     * for: the single insured life is dead, the contract is over, and billing must stop
+     * invoicing it. On a scheme none of that holds — the other members are alive and insured
+     * and the employer still owes premium — and doing it anyway set the master policy to
+     * SURRENDERED and uninsured the whole workforce, silently, with the claim money already
+     * paid.
+     *
+     * <p>Exercised here through the policy API alone, without the payment rail:
+     * {@code ClaimSettlementEndToEndTest.aSettledMemberClaimExitsThatLifeAndLeavesTheSchemeInForce}
+     * covers the same behaviour through a real disbursement, and this one isolates the branch
+     * itself. The mirror case — that an individual policy still closes — is
+     * {@link #terminateForSettledClaimMovesAnActivePolicyToSurrenderedAndPublishesPolicySurrenderedWithClaimId},
+     * which is what keeps the branch narrow rather than a blanket disabling of closure.
+     */
+    @Test
+    void dischargingASettledClaimOnASchemeExitsTheMemberAndLeavesTheSchemeInForce() {
+        UUID tenantId = UUID.randomUUID();
+        GroupFixture scheme = issueGroupScheme(tenantId, "CLAIM-CLOSURE-GRP-01");
+        LocalDate dateOfEvent = LocalDate.now().minusMonths(6);
+
+        TenantContext.set(tenantId);
+        policyApi.dischargeForSettledClaim(scheme.policyNumber(), scheme.policyMemberId(),
+            dateOfEvent, UUID.randomUUID(), "test-staff");
+
+        assertEquals(PolicyStatus.ACTIVE, policyApi.getPolicy(scheme.policyNumber()).status(),
             "a scheme survives its members");
+        PolicyMemberView member = memberById(scheme.policyNumber(), scheme.policyMemberId());
+        assertEquals(MemberStatus.EXITED, member.status());
+        assertEquals(dateOfEvent, member.leftOn(),
+            "dated to the event, not to the day the payment cleared");
+    }
+
+    /** Redelivery must not re-exit a member or publish a second GroupMemberExited. */
+    @Test
+    void dischargingTheSameSettledClaimTwiceIsASilentNoOpOnAScheme() {
+        UUID tenantId = UUID.randomUUID();
+        GroupFixture scheme = issueGroupScheme(tenantId, "CLAIM-CLOSURE-GRP-02");
+        LocalDate dateOfEvent = LocalDate.now().minusMonths(6);
+        UUID claimId = UUID.randomUUID();
+
+        TenantContext.set(tenantId);
+        policyApi.dischargeForSettledClaim(scheme.policyNumber(), scheme.policyMemberId(), dateOfEvent, claimId, "test-staff");
+        policyApi.dischargeForSettledClaim(scheme.policyNumber(), scheme.policyMemberId(), dateOfEvent, claimId, "test-staff");
+
+        PolicyMemberView member = memberById(scheme.policyNumber(), scheme.policyMemberId());
+        assertEquals(MemberStatus.EXITED, member.status());
+        assertEquals(dateOfEvent, member.leftOn());
     }
 
     @Test
@@ -215,7 +310,7 @@ class PolicyClaimClosureTest {
 
         TenantContext.set(tenantId);
         Instant before = Instant.now();
-        policyApi.terminateForSettledClaim(policyNumber, claimId, "test-staff");
+        policyApi.dischargeForSettledClaim(policyNumber, null, LocalDate.now(), claimId, "test-staff");
 
         assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());
 
@@ -255,8 +350,8 @@ class PolicyClaimClosureTest {
 
         TenantContext.set(tenantId);
         Instant before = Instant.now();
-        policyApi.terminateForSettledClaim(policyNumber, claimId, "test-staff");
-        policyApi.terminateForSettledClaim(policyNumber, claimId, "test-staff"); // second call: silent no-op
+        policyApi.dischargeForSettledClaim(policyNumber, null, LocalDate.now(), claimId, "test-staff");
+        policyApi.dischargeForSettledClaim(policyNumber, null, LocalDate.now(), claimId, "test-staff"); // second call: silent no-op
 
         assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());
         // Exactly one audit row across BOTH calls -- if the second call published a second
@@ -301,7 +396,7 @@ class PolicyClaimClosureTest {
 
         TenantContext.set(tenantId);
         policyApi.lapsePolicy(policyNumber, "test-staff");
-        policyApi.terminateForSettledClaim(policyNumber, UUID.randomUUID(), "test-staff");
+        policyApi.dischargeForSettledClaim(policyNumber, null, LocalDate.now(), UUID.randomUUID(), "test-staff");
 
         assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());
     }
@@ -314,7 +409,7 @@ class PolicyClaimClosureTest {
 
         TenantContext.set(tenantId);
         policyApi.suspendPolicy(policyNumber, "Under investigation", "test-staff");
-        policyApi.terminateForSettledClaim(policyNumber, UUID.randomUUID(), "test-staff");
+        policyApi.dischargeForSettledClaim(policyNumber, null, LocalDate.now(), UUID.randomUUID(), "test-staff");
 
         assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());
     }
@@ -335,10 +430,10 @@ class PolicyClaimClosureTest {
         Instant before = Instant.now();
 
         policyApi.markMatured(maturedFirst, "test-staff");
-        policyApi.terminateForSettledClaim(maturedFirst, UUID.randomUUID(), "test-staff"); // no-op
+        policyApi.dischargeForSettledClaim(maturedFirst, null, LocalDate.now(), UUID.randomUUID(), "test-staff"); // no-op
         assertEquals(PolicyStatus.MATURED, policyApi.getPolicy(maturedFirst).status());
 
-        policyApi.terminateForSettledClaim(surrenderedFirst, UUID.randomUUID(), "test-staff");
+        policyApi.dischargeForSettledClaim(surrenderedFirst, null, LocalDate.now(), UUID.randomUUID(), "test-staff");
         policyApi.markMatured(surrenderedFirst, "test-staff"); // no-op
         assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(surrenderedFirst).status());
 

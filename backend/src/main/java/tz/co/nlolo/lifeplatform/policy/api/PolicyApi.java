@@ -341,7 +341,29 @@ public interface PolicyApi {
      */
     ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, LocalDate asOf);
 
-    /** A DEATH/DISABILITY/CRITICAL_ILLNESS claim settled: coverage is discharged, no further
-     * premium is due. Terminal; idempotent on repeat. */
-    void terminateForSettledClaim(String policyNumber, UUID claimId, String terminatedBy);
+    /**
+     * A DEATH/DISABILITY/CRITICAL_ILLNESS claim settled: cover is discharged.
+     *
+     * <p><b>What that discharges depends on the contract, which is why this is no longer called
+     * "terminate".</b> On individual life the single insured life is dead, the contract is over
+     * and billing must stop invoicing it — the policy goes SURRENDERED. On a group scheme it
+     * discharges ONE MEMBER: they leave the schedule, the scheme total is restated without them,
+     * and the master policy is untouched, because the other lives are alive and insured and the
+     * employer still owes premium for them.
+     *
+     * <p>The old name said "terminate" and the old body did exactly that on both, so one
+     * member's settled death claim surrendered the whole scheme and silently uninsured the
+     * workforce. A verb that described only half the cases is part of how that read as correct.
+     *
+     * @param policyMemberId which life, on a scheme. Ignored on individual business, where the
+     *     policy names the life itself.
+     * @param dateOfEvent when cover for that life ended. A member's exit is dated to THIS, not
+     *     to the day the payment cleared: a death in March settled in September means they
+     *     stopped being covered in March, and dating it to September would leave them counted
+     *     in the scheme total for six months they were not alive.
+     * @implNote idempotent on repeat, on both branches — a redelivered DisbursementCompleted
+     *     must not publish a second event or re-exit an already-exited member.
+     */
+    void dischargeForSettledClaim(String policyNumber, UUID policyMemberId, LocalDate dateOfEvent,
+                                   UUID claimId, String dischargedBy);
 }

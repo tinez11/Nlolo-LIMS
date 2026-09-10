@@ -213,6 +213,22 @@ channels:
       surrender; see PolicyEventListener's own javadoc.
     publish:
       message: { $ref: '#/components/messages/PolicySurrendered' }
+  policy.GroupMemberExited:
+    description: >
+      Producer: policy (PolicyApiImpl.dischargeForSettledClaim) -- one insured life leaves a
+      group scheme. Today the only reason is CLAIM_SETTLED: a settled death claim discharges
+      that MEMBER, not the contract, so the master policy stays in force and the other lives
+      keep their cover. The scheme's sum assured is restated without them in the same
+      transaction and schemeTotalCovered carries the resulting figure. leftOn is the DATE OF
+      EVENT, never the day the payout cleared -- a death in March settled in September means
+      cover ended in March, and dating it later would leave the member counted in the scheme
+      total for six months they were not alive.
+      NO CONSUMER YET, and that is a known gap rather than a new one: regreporting does not
+      listen to policy.GroupMemberAdded either, so policy_dimension's sum assured already goes
+      stale after a joiner. This adds a second route to the same staleness rather than a new
+      kind of it.
+    publish:
+      message: { $ref: '#/components/messages/GroupMemberExited' }
   policy.SurrenderPayoutRequested:
     description: "Producer: policy. Consumer: payment (request/confirm pattern)."
     publish:
@@ -464,6 +480,7 @@ components:
     PolicySurrenderInitiated: { messageId: PolicySurrenderInitiated, name: PolicySurrenderInitiated, payload: { $ref: '#/components/schemas/PolicySurrenderInitiatedPayload' } }
     PolicyMaturityInitiated: { messageId: PolicyMaturityInitiated, name: PolicyMaturityInitiated, payload: { $ref: '#/components/schemas/PolicyMaturityInitiatedPayload' } }
     PolicySurrendered: { messageId: PolicySurrendered, name: PolicySurrendered, payload: { $ref: '#/components/schemas/PolicySurrenderedPayload' } }
+    GroupMemberExited: { messageId: GroupMemberExited, name: GroupMemberExited, payload: { $ref: '#/components/schemas/GroupMemberExitedPayload' } }
     SurrenderPayoutRequested: { messageId: SurrenderPayoutRequested, name: SurrenderPayoutRequested, payload: { $ref: '#/components/schemas/SurrenderPayoutRequestedPayload' } }
     MaturityPayoutRequested: { messageId: MaturityPayoutRequested, name: MaturityPayoutRequested, payload: { $ref: '#/components/schemas/MaturityPayoutRequestedPayload' } }
     LoanOriginated: { messageId: LoanOriginated, name: LoanOriginated, payload: { $ref: '#/components/schemas/LoanOriginatedPayload' } }
@@ -669,6 +686,17 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { policyNumber: {type: string}, claimId: {type: string, format: uuid}, surrenderedAt: {type: string, format: date-time} }
+    GroupMemberExitedPayload:
+      description: >
+        reason is CLAIM_SETTLED for every occurrence today. The field exists anyway because a
+        leaver and a death are different facts about the same row, and a consumer must not have
+        to guess which one it saw -- an exit API for ordinary leavers is a later build and will
+        publish the same event with a different reason. schemeTotalCovered is the scheme total
+        AFTER this member came off it.
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, policyMemberId: {type: string, format: uuid}, leftOn: {type: string, format: date}, reason: {type: string, enum: [CLAIM_SETTLED]}, schemeTotalCovered: {type: object} }
     SurrenderPayoutRequestedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

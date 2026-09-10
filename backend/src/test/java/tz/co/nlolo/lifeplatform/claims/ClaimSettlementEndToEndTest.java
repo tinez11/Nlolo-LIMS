@@ -18,7 +18,11 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.payment.domain.DisbursementInstruction;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementInstructionRepository;
+import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.policy.api.GroupSchemeView;
+import tz.co.nlolo.lifeplatform.policy.api.MemberStatus;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyMemberView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -39,6 +43,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import org.springframework.data.domain.PageRequest;
+
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -46,8 +52,10 @@ import java.sql.Statement;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
@@ -140,6 +148,8 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V8__group_policies_have_no_single_life_assured.sql",
+            "db-migrations/policy/V9__group_scheme_and_members.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
@@ -372,6 +382,113 @@ class ClaimSettlementEndToEndTest {
         assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.SURRENDERED);
 
         wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/disburse")));
+    }
+
+    /**
+     * The group counterpart, and the one that pays the right money to the right contract.
+     *
+     * <p>Same rail as the individual case above and a completely different outcome: a settled
+     * member claim discharges ONE LIFE. The deceased leaves the schedule dated to the event, the
+     * scheme's sum assured drops to what the survivors are covered for, and the master policy
+     * stays in force so the other members keep their cover and the employer keeps being invoiced.
+     *
+     * <p>Before this, the policy went SURRENDERED and 499 people were silently uninsured.
+     */
+    @Test
+    void aSettledMemberClaimExitsThatLifeAndLeavesTheSchemeInForce() {
+        wireMock.stubFor(post(urlPathEqualTo("/disburse")).willReturn(okJson(
+            "{\"status\":\"ACCEPTED\",\"gatewayReference\":\"MM-CLAIM-E2E-GROUP\"}")));
+
+        UUID tenantId = UUID.randomUUID();
+        // Six months back, so "exited on the date of event" is distinguishable from "exited on
+        // the day the payment cleared" -- with an event today the two dates coincide and the
+        // assertion below would pass for an implementation doing the wrong one.
+        LocalDate dateOfEvent = LocalDate.now().minusMonths(6);
+        GroupFixture scheme = issueGroupSchemeOfTwo(tenantId, "CLAIMS-E2E-GROUP", dateOfEvent);
+        UUID deceased = scheme.memberIdNamed("Juma Deceased");
+
+        assertThat(policyApi.getGroupScheme(scheme.policyNumber()).totalCoveredAmount())
+            .isEqualByComparingTo(new BigDecimal("10000000.00"));
+
+        TenantContext.set(tenantId);
+        ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
+            scheme.policyNumber(), deceased, scheme.employerPartyId(), ClaimType.DEATH, dateOfEvent,
+            new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test")),
+            "e2e-group-reg-01", "clerk");
+        claimsApi.submitAssessment(claim.claimId(), "Findings", new BigDecimal("5000000.00"),
+            "TZS", false, "assessor-group-01");
+        claimsApi.decideSettlement(claim.claimId(), true, new BigDecimal("5000000.00"), "TZS", null,
+            "MPESA-0712000099", "e2e-group-settle-01", "manager-group-01");
+
+        TenantContext.set(tenantId);
+        assertThat(claimsApi.getClaim(claim.claimId()).status()).isEqualTo(ClaimStatus.SETTLED);
+
+        // THE ASSERTION THIS WHOLE CHANGE EXISTS FOR.
+        assertThat(policyApi.getPolicy(scheme.policyNumber()).status())
+            .as("499 other people are still insured")
+            .isEqualTo(PolicyStatus.ACTIVE);
+
+        // The deceased is off the roll, dated to the event rather than to the payment run.
+        PolicyMemberView exited = memberById(scheme.policyNumber(), deceased);
+        assertThat(exited.status()).isEqualTo(MemberStatus.EXITED);
+        assertThat(exited.leftOn()).isEqualTo(dateOfEvent);
+
+        // And the contract total is now what the survivor alone is covered for.
+        assertThat(policyApi.getGroupScheme(scheme.policyNumber()).totalCoveredAmount())
+            .as("a dead member must stop contributing to the scheme's sum assured")
+            .isEqualByComparingTo(new BigDecimal("5000000.00"));
+        assertThat(memberById(scheme.policyNumber(), scheme.memberIdNamed("Asha Living")).status())
+            .isEqualTo(MemberStatus.ACTIVE);
+    }
+
+    private record GroupFixture(String policyNumber, UUID employerPartyId, Map<String, UUID> membersByName) {
+        UUID memberIdNamed(String name) {
+            UUID id = membersByName.get(name);
+            if (id == null) throw new AssertionError("No member named " + name + " on " + policyNumber);
+            return id;
+        }
+    }
+
+    /** Two lives at 5,000,000 each, commenced before {@code dateOfEvent} so both were covered then. */
+    private GroupFixture issueGroupSchemeOfTwo(UUID tenantId, String productCode, LocalDate dateOfEvent) {
+        TenantContext.set(tenantId);
+        ProductSummaryView product = productApi.createProduct(productCode, "Group Life " + productCode,
+            ProductCategory.GROUP_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        UUID employer = partyApi.registerIndividual("ABC Company " + productCode, LocalDate.of(1985, 3, 1),
+            "+25571700" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent").partyId();
+        UUID first = partyApi.registerIndividual("Juma Deceased " + productCode, LocalDate.of(1985, 3, 1),
+            "+25571800" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent").partyId();
+        UUID second = partyApi.registerIndividual("Asha Living " + productCode, LocalDate.of(1985, 3, 1),
+            "+25571900" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent").partyId();
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            employer, product.productId(), versionId, null,
+            BenefitBasis.FLAT, new BigDecimal("5000000.00"), null, null, "TZS", null,
+            List.of(new PolicyApi.MemberInput(first, null, null, null),
+                    new PolicyApi.MemberInput(second, null, null, null)),
+            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", dateOfEvent.minusMonths(1), null,
+            "group onboarding"), "staff1");
+
+        Map<UUID, String> nameByParty = Map.of(first, "Juma Deceased", second, "Asha Living");
+        Map<String, UUID> byName = policyApi
+            .listMembers(scheme.policyNumber(), null, null, PageRequest.of(0, 25))
+            .getContent().stream()
+            .collect(Collectors.toMap(m -> nameByParty.get(m.memberPartyId()),
+                                       PolicyMemberView::policyMemberId));
+        return new GroupFixture(scheme.policyNumber(), employer, byName);
+    }
+
+    private PolicyMemberView memberById(String policyNumber, UUID policyMemberId) {
+        return policyApi.listMembers(policyNumber, null, null, PageRequest.of(0, 25))
+            .getContent().stream()
+            .filter(m -> m.policyMemberId().equals(policyMemberId))
+            .findFirst().orElseThrow(() -> new AssertionError("Member " + policyMemberId + " vanished"));
     }
 
     /** Same chain as above, but for a MATURITY claim (auto-approved, no assessment) -- exercises

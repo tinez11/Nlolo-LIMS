@@ -18,6 +18,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -173,7 +174,14 @@ public class PaymentEventListener {
     /** What phase 1 committed, carried into phase 2 so the latter needs no second read (the Claim
      * is detached once phase 1's transaction commits). {@code alreadySettled} is the redelivery
      * flag -- see {@link #handleCompleted}. */
-    private record SettledClaimFacts(boolean alreadySettled, ClaimType claimType, String policyNumber) {}
+    /**
+     * Captured in phase 1 while the claim is loaded, because phase 2 runs in its own transaction
+     * and must not re-read it. {@code policyMemberId} and {@code dateOfEvent} are what let policy
+     * discharge the right LIFE on the right DATE: a group scheme discharges one member, not the
+     * contract, and the member's exit is dated to the event rather than to the payment run.
+     */
+    private record SettledClaimFacts(boolean alreadySettled, ClaimType claimType, String policyNumber,
+                                      UUID policyMemberId, LocalDate dateOfEvent) {}
 
     private void handleCompleted(Map<String, Object> payload) {
         if (!"CLAIM_SETTLEMENT".equals(payload.get("purpose"))) {
@@ -217,7 +225,8 @@ public class PaymentEventListener {
                                                     "currencyCode", claim.getApprovedCurrency()),
                            "settledAt", Instant.now().toString())));
             }
-            return new SettledClaimFacts(alreadySettled, claim.getClaimType(), claim.getPolicyNumber());
+            return new SettledClaimFacts(alreadySettled, claim.getClaimType(), claim.getPolicyNumber(),
+                claim.getPolicyMemberId(), claim.getDateOfEvent());
         });
 
         if (facts == null || facts.alreadySettled()) {
@@ -245,7 +254,8 @@ public class PaymentEventListener {
                 if (facts.claimType() == ClaimType.MATURITY) {
                     policyApi.markMatured(facts.policyNumber(), "claims:" + claimId);
                 } else {
-                    policyApi.terminateForSettledClaim(facts.policyNumber(), claimId, "claims:" + claimId);
+                    policyApi.dischargeForSettledClaim(facts.policyNumber(), facts.policyMemberId(),
+                        facts.dateOfEvent(), claimId, "claims:" + claimId);
                 }
             });
         } catch (RuntimeException e) {

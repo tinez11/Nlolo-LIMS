@@ -665,7 +665,7 @@ class PolicyApiIntegrationTest {
         assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.PROPOSED);
 
         assertThrows(InvalidPolicyStateException.class,
-            () -> policyApi.terminateForSettledClaim(policyNumber, UUID.randomUUID(), "test-claims"));
+            () -> policyApi.dischargeForSettledClaim(policyNumber, null, LocalDate.now(), UUID.randomUUID(), "test-claims"));
         assertThrows(InvalidPolicyStateException.class,
             () -> policyApi.markMatured(policyNumber, "test-claims"));
 
