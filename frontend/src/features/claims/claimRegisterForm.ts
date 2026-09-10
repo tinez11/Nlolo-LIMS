@@ -64,20 +64,76 @@ const claimDetailsSchema = z.discriminatedUnion('claimType', [
   maturityDetailsSchema,
 ]);
 
-export const registerClaimFormSchema = z.object({
-  policyNumber: requiredText('Policy number is required').regex(
-    POLICY_NUMBER_PATTERN,
-    'Not a valid policy number',
-  ),
-  claimantPartyId: requiredText('Claimant party id is required').regex(
-    UUID_PATTERN,
-    'Not a valid party id',
-  ),
-  dateOfEvent: isoDate('Date of event is required'),
-  details: claimDetailsSchema,
-});
+/**
+ * What the form has to know about the policy to validate a claim against it.
+ *
+ * <p>A factory rather than a constant because {@code policyMemberId} is required on a group
+ * scheme and refused on individual business, and only the policy says which. The screen already
+ * loads the policy detail to render its header, so the category is in hand without a new fetch.
+ */
+export interface RegisterClaimFormContext {
+  /**
+   * Undefined until the policy has loaded — treated as "not a scheme", so the field stays
+   * hidden and no member is demanded for a question the form has not asked yet.
+   *
+   * <p>`| undefined` is explicit because this project compiles with
+   * `exactOptionalPropertyTypes`, where an optional property and one that may hold `undefined`
+   * are different types.
+   */
+  productCategory?: string | null | undefined;
+}
 
-export type RegisterClaimFormValues = z.infer<typeof registerClaimFormSchema>;
+export function registerClaimFormSchema(context: RegisterClaimFormContext = {}) {
+  const isGroupScheme = context.productCategory === 'GROUP_LIFE';
+  return z
+    .object({
+      policyNumber: requiredText('Policy number is required').regex(
+        POLICY_NUMBER_PATTERN,
+        'Not a valid policy number',
+      ),
+      // Not required at this level: which rule applies depends on the policy, so it is
+      // enforced in the refinement below rather than by the field's own schema.
+      policyMemberId: z.string().trim(),
+      claimantPartyId: requiredText('Claimant party id is required').regex(
+        UUID_PATTERN,
+        'Not a valid party id',
+      ),
+      dateOfEvent: isoDate('Date of event is required'),
+      details: claimDetailsSchema,
+    })
+    .superRefine((values, ctx) => {
+      // A scheme insures many lives, so a claim on one must say which. The server refuses it
+      // too (409 from PolicyApi.claimableCover) -- this is here so the person filing finds out
+      // while they are still looking at the form.
+      if (isGroupScheme && values.policyMemberId === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['policyMemberId'],
+          message: 'Choose which member this claim is for',
+        });
+      }
+      if (isGroupScheme && values.policyMemberId !== '' && !UUID_PATTERN.test(values.policyMemberId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['policyMemberId'],
+          message: 'Not a valid member',
+        });
+      }
+      // The mirror rule, unreachable through the UI because the field only renders for a
+      // scheme -- validated anyway, because it belongs to the contract rather than to which
+      // inputs happen to be on screen. A member id against an individual policy is somebody
+      // who believes that contract has a schedule.
+      if (!isGroupScheme && values.policyMemberId !== '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['policyMemberId'],
+          message: 'This policy is not a group scheme, so it has no members',
+        });
+      }
+    });
+}
+
+export type RegisterClaimFormValues = z.infer<ReturnType<typeof registerClaimFormSchema>>;
 export type ClaimDetailsFormValues = RegisterClaimFormValues['details'];
 
 /** Blank starting values per claim type, for switching the type selector. */
@@ -98,6 +154,9 @@ export function blankDetailsFor(claimType: ClaimDetailsFormValues['claimType']):
 export function toApiRequest(values: RegisterClaimFormValues): RegisterClaimRequest {
   return {
     policyNumber: values.policyNumber.trim(),
+    // Blank means "individual policy, no member". Sent as null rather than omitted so the
+    // request says so explicitly instead of leaving the server to read absence as a choice.
+    policyMemberId: values.policyMemberId === '' ? null : values.policyMemberId,
     claimantPartyId: values.claimantPartyId.trim(),
     // Derived from details, never a separate field -- see the module doc above.
     claimType: values.details.claimType,

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { CLAIM_TYPES } from '@/api/types';
@@ -15,7 +15,7 @@ import { ClaimPolicyChooser } from './ClaimPolicyChooser';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import { POLICY_NUMBER_PATTERN } from '@/lib/patterns';
 import { useClaimStore } from '@/store/claimStore';
-import { selectCoverage, selectDetail, usePolicyStore } from '@/store/policyStore';
+import { selectCoverage, selectDetail, selectMembers, usePolicyStore } from '@/store/policyStore';
 import {
   blankDetailsFor,
   registerClaimFormSchema,
@@ -23,6 +23,7 @@ import {
   type ClaimDetailsFormValues,
   type RegisterClaimFormValues,
 } from './claimRegisterForm';
+import { PartyName } from '@/components/PartyName';
 import { Input, Select } from '@/components/ui/input';
 
 /**
@@ -62,8 +63,21 @@ export function RegisterClaimPage() {
     control,
     formState: { errors },
   } = useForm<RegisterClaimFormValues>({
-    resolver: zodResolver(registerClaimFormSchema),
-    defaultValues: { policyNumber: '', claimantPartyId: '', dateOfEvent: '', details: blankDetailsFor('DEATH') },
+    // The schema is a factory now, because whether a member is required depends on the policy
+    // -- and the policy is not known until its number has been typed and fetched, which is
+    // after this hook runs. The ref is written in an effect below and read at validation time,
+    // by which point the category has arrived.
+    resolver: (values, context, options) =>
+      zodResolver(
+        registerClaimFormSchema({ productCategory: productCategoryRef.current }),
+      )(values, context, options),
+    defaultValues: {
+      policyNumber: '',
+      policyMemberId: '',
+      claimantPartyId: '',
+      dateOfEvent: '',
+      details: blankDetailsFor('DEATH'),
+    },
   });
 
   // react-hook-form's watch() returns a live-subscribed value the React Compiler
@@ -106,6 +120,39 @@ export function RegisterClaimPage() {
     void loadDetail(policyNumber);
     void loadCoverage(policyNumber);
   }, [policyNumber, loadDetail, loadCoverage]);
+
+  /**
+   * A scheme insures many lives, so a claim on one must say which. Loaded only for a scheme,
+   * and only once the category is known.
+   *
+   * <p>One page of up to 200, which covers most schemes and not all of them. A roll longer
+   * than that needs a searchable picker rather than a select, and the notice under the field
+   * says so rather than silently offering a truncated list.
+   */
+  const isGroupScheme = policy.data?.productCategory === 'GROUP_LIFE';
+  const members = usePolicyStore(selectMembers(policyNumber));
+  const loadMembers = usePolicyStore((s) => s.loadMembers);
+
+  useEffect(() => {
+    if (!isGroupScheme) return;
+    void loadMembers(policyNumber, { pageSize: 200 });
+  }, [isGroupScheme, policyNumber, loadMembers]);
+
+  /**
+   * Read by the resolver above at validation time. A ref rather than state because it must not
+   * trigger a render of its own -- and written in an effect rather than during render, which
+   * this console's lint rules forbid.
+   */
+  const productCategoryRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    productCategoryRef.current = policy.data?.productCategory;
+  }, [policy.data?.productCategory]);
+
+  // Clearing it when the policy stops being a scheme matters: a member id left behind from a
+  // previously-typed scheme number would be sent against an individual policy and refused.
+  useEffect(() => {
+    if (!isGroupScheme) setValue('policyMemberId', '');
+  }, [isGroupScheme, setValue]);
 
   // react-hook-form's FieldErrors type does not narrow per-branch on a
   // discriminated union field the way the VALUE type does -- `errors.details` is
@@ -224,6 +271,32 @@ export function RegisterClaimPage() {
             />
           )}
         </FormField>
+
+        {isGroupScheme && (
+          <FormField label="Who died" error={errors.policyMemberId?.message}>
+            {/* A scheme insures many lives, so "a claim on GL-000123" names none of them, and
+                nothing else on the claim can say which employee it was. The claimant field
+                above is who is FILING -- the widow -- not who died. */}
+            <Select inputSize="sm" {...register('policyMemberId')}>
+              <option value="">Choose the member…</option>
+              {(members.data?.items ?? []).map((m) => (
+                <option key={m.policyMemberId} value={m.policyMemberId}>
+                  {/* memberPartyId is optional on the generated type because the backend
+                      schema allows a member with no party. No such member can exist today,
+                      and when one can, its own name will be what belongs here. */}
+                  {m.memberPartyId ? <PartyName partyId={m.memberPartyId} /> : m.policyMemberId}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-[11px] text-subtle-foreground">
+              Members who have left are listed too — a claim can arrive after somebody leaves,
+              and what decides it is whether they were covered on the date of event.
+              {(members.data?.page?.totalElements ?? 0) > 200 && (
+                <> Only the first 200 of {members.data?.page?.totalElements} are shown.</>
+              )}
+            </p>
+          </FormField>
+        )}
 
         <FormField label="Date of event" error={errors.dateOfEvent?.message}>
           <Controller
