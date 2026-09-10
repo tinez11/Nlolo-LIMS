@@ -171,12 +171,24 @@ public class PolicyController {
     /**
      * Issue a scheme with its opening schedule in one call.
      *
-     * <p>Staff only. A scheme is set up from a submitted employee schedule at a desk, and
-     * no agent- or customer-facing flow for it has been designed -- opening one now
-     * because the endpoint exists would be a guess at a screen nobody has drawn.
+     * <p><b>UNDERWRITER, not plain staff.</b> This puts a contract on risk: it accepts N lives,
+     * fixes the free cover limit and the premium, and the scheme is ACTIVE the moment it
+     * returns. Every other action on this platform that decides whether risk is taken is
+     * role-gated — an underwriting assessment and decision to UNDERWRITER, a claim assessment
+     * to CLAIMS_ASSESSOR, a settlement to CLAIMS_MANAGER, an invoice waiver to FINANCE_OFFICER
+     * — and this one was left at bare REALM_STAFF, so a claims assessor or a finance officer
+     * could put a 500-life scheme on the books.
+     *
+     * <p>READS stay REALM_STAFF deliberately (see the two GETs below). A claims assessor has
+     * to be able to read a schedule when a death is reported — that is exactly what
+     * {@code idx_policy_member_party} was built for — but has no business admitting lives.
+     *
+     * <p>Still no agent- or customer-facing flow: a scheme is set up from a submitted employee
+     * schedule at a desk, and opening one now because the endpoint exists would be a guess at
+     * a screen nobody has drawn.
      */
     @PostMapping("/group-schemes")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('UNDERWRITER')")
     public ResponseEntity<GroupSchemeResponseDto> issueGroupScheme(
             @Valid @RequestBody IssueGroupSchemeRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         // productId comes from the version, never from the caller: a request naming both
@@ -221,8 +233,15 @@ public class PolicyController {
         return ResponseEntity.ok(PolicyMemberResponseDto.PageResponse.from(result));
     }
 
+    /**
+     * Admit one life to an in-force scheme.
+     *
+     * <p>UNDERWRITER for the same reason issuing the scheme is: this accepts a new life onto a
+     * live contract, values them against the scheme's basis, and tests them against its free
+     * cover limit. It is the same decision as the opening schedule, taken one row at a time.
+     */
     @PostMapping("/group-schemes/{policyNumber}/members")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('UNDERWRITER')")
     public ResponseEntity<PolicyMemberResponseDto> addMember(@PathVariable String policyNumber,
             @Valid @RequestBody GroupMemberInputDto request, @AuthenticationPrincipal Jwt jwt) {
         PolicyMemberView view = policyApi.addMember(policyNumber, request.toApiInput(), jwt.getSubject());

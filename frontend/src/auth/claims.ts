@@ -156,3 +156,19 @@ export function avatarHue(seed: string): number {
   }
   return Math.abs(hash) % 360;
 }
+
+/**
+ * Putting a group scheme on risk, or admitting a life to one. Mirrors
+ * `hasRole('UNDERWRITER')` on `POST /group-schemes` and `POST /group-schemes/{n}/members`.
+ *
+ * Deliberately NOT the FINANCE_OFFICER-or-ADMIN pair the finance surfaces use, and
+ * deliberately not ADMIN either: this is the same act as deciding an underwriting case — it
+ * accepts lives, fixes the free cover limit and the premium, and the scheme is on risk
+ * immediately — so it takes the same role that endpoint takes.
+ *
+ * Reading a scheme and its schedule is NOT gated and must not be: a claims assessor has to be
+ * able to check whether a life was covered when a death is reported.
+ */
+export function canUnderwriteGroupSchemes(identity: TokenIdentity): boolean {
+  return staffRoles(identity).UNDERWRITER;
+}

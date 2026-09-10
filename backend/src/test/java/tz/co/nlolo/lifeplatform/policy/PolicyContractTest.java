@@ -938,6 +938,70 @@ class PolicyContractTest {
         return registerApplicant(tenantId, phoneSuffix);
     }
 
+    /**
+     * Putting a scheme on risk is an underwriting act, and a plain staff token is not enough.
+     *
+     * <p>These four endpoints shipped at bare {@code hasRole('REALM_STAFF')} while every other
+     * decision to take risk on this platform was role-gated — an underwriting assessment and
+     * decision to UNDERWRITER, a claim assessment to CLAIMS_ASSESSOR, a settlement to
+     * CLAIMS_MANAGER, an invoice waiver to FINANCE_OFFICER. A claims assessor could put a
+     * 500-life scheme on the books.
+     *
+     * <p>Both halves are asserted, because the gate is only correct if it is narrow: writes
+     * refuse a staff token without the role, and READS still accept one. A claims assessor
+     * must be able to check whether a life was covered when a death is reported — that is what
+     * {@code idx_policy_member_party} exists for.
+     */
+    @Test
+    void onlyAnUnderwriterMayPutASchemeOnRiskButAnyStaffMayReadOne() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID employer = staffRegisteredPerson(tenantId, "8101");
+        UUID member = staffRegisteredPerson(tenantId, "8102");
+        ProductFixture product = publishProduct(tenantId, "GRP-ROLE-01", "GROUP_LIFE");
+        String body = """
+            {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+             "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
+             "openingSchedule":[{"memberPartyId":"%s"}],
+             "premium":{"amount":"1200000.00","currencyCode":"TZS"},
+             "premiumFrequency":"ANNUALLY","reasonForManualIssue":"Role gate test"}
+            """.formatted(employer, product.productVersionId(), member);
+
+        // A plain staff token cannot open a scheme.
+        mockMvc.perform(post("/group-schemes")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isForbidden());
+
+        // An underwriter can.
+        String response = mockMvc.perform(post("/group-schemes")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String policyNumber = JsonPath.read(response, "$.policyNumber");
+
+        // Nor may plain staff admit a life to one.
+        mockMvc.perform(post("/group-schemes/" + policyNumber + "/members")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"memberPartyId\":\"%s\"}".formatted(staffRegisteredPerson(tenantId, "8103"))))
+            .andExpect(status().isForbidden());
+
+        // But reading the scheme and its schedule stays open to any staff token.
+        mockMvc.perform(get("/group-schemes/" + policyNumber)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk());
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk());
+    }
+
     @Test
     void issuingAGroupSchemeOverHttpMatchesTheSpecAndDerivesItsTotal() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -947,7 +1011,7 @@ class PolicyContractTest {
         ProductFixture product = publishProduct(tenantId, "GRP-CONTRACT-01", "GROUP_LIFE");
 
         String response = mockMvc.perform(post("/group-schemes")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -1000,7 +1064,7 @@ class PolicyContractTest {
         // 3x salary against a 30,000,000 free cover limit: the founding member on
         // 20,000,000 is worth 60,000,000 and is therefore over it.
         String scheme = mockMvc.perform(post("/group-schemes")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -1034,7 +1098,7 @@ class PolicyContractTest {
             .andExpect(jsonPath("$.page.totalElements").value(1));
 
         mockMvc.perform(post("/group-schemes/" + policyNumber + "/members")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -1076,7 +1140,7 @@ class PolicyContractTest {
         UUID employer = namedPerson(tenantId, "Search Employer " + suffixBase, suffixBase + "00");
         ProductFixture product = publishProduct(tenantId, productCode, "GROUP_LIFE");
         String scheme = mockMvc.perform(post("/group-schemes")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -1230,7 +1294,7 @@ class PolicyContractTest {
         // @NotEmpty on the DTO, so this is a 422 from Bean Validation rather than the
         // service's own 409 -- both refuse it, and the earlier one gives a field name.
         mockMvc.perform(post("/group-schemes")
-                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

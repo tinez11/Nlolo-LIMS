@@ -8,6 +8,9 @@ import { DatePicker } from '@/components/DatePicker';
 import { FormField } from '@/components/FormField';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
+import { NoAccess } from '@/components/states';
+import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
+import { useAuth } from 'react-oidc-context';
 import { Button } from '@/components/ui/button';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -41,6 +44,11 @@ import { Input, Select } from '@/components/ui/input';
  * server-side backstop.
  */
 export function IssueGroupSchemePage() {
+  // Setting a scheme up is an underwriting act: it accepts lives, fixes the free cover
+  // limit and the premium, and the contract is on risk the moment it is created. The
+  // server enforces it (hasRole(UNDERWRITER) on POST /group-schemes); this keeps the
+  // console from offering a form that can only end in a 403.
+  const canUnderwrite = canUnderwriteGroupSchemes(readIdentity(useAuth().user?.access_token));
   const navigate = useNavigate();
 
   const issueGroupScheme = usePolicyStore((s) => s.issueGroupScheme);
@@ -151,6 +159,11 @@ export function IssueGroupSchemePage() {
         description="One master policy covering many lives — the employer holds the contract."
       />
 
+      {!canUnderwrite && (
+        <NoAccess what="Setting up a group scheme" who="underwriters" />
+      )}
+
+      {canUnderwrite && (
       <form className="max-w-2xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <FormField label="Policyholder (the employer or association)" error={errors.policyholderPartyId?.message}>
           <Controller
@@ -510,6 +523,7 @@ export function IssueGroupSchemePage() {
           </Button>
         </div>
       </form>
+      )}
     </>
   );
 }

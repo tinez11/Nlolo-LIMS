@@ -453,8 +453,15 @@ paths:
         the schedule underneath it.
 
 
-        Staff only: a scheme is set up from a submitted employee schedule at a desk, and no
-        agent- or customer-facing flow for it has been designed.
+        UNDERWRITER role required, not merely a staff token. This puts a contract on risk —
+        it accepts N lives, fixes the free cover limit and the premium, and the scheme is
+        ACTIVE the moment it returns — and every other decision to take risk on this platform
+        is role-gated the same way. Reading a scheme and its schedule stays open to any staff
+        token: a claims assessor must be able to check whether a life was covered.
+
+
+        Staff only in the realm sense too: a scheme is set up from a submitted employee
+        schedule at a desk, and no agent- or customer-facing flow for it has been designed.
       security:
         - staffAuth: []
       requestBody:
