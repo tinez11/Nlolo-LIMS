@@ -99,8 +99,22 @@ export function UnderwritingQueuePage() {
       // queue, 17 of 20 rows rendered the same applicant uuid. `PartyName`
       // caches per id, so a queue of 20 rows costs one request per distinct
       // person, not one per row.
-      render: (c) =>
-        c.applicantPartyId ? <PartyName partyId={c.applicantPartyId} /> : '—',
+      // A GROUP case is marked here rather than in a column of its own. A scheme's
+      // applicant is a company, and a company name in this column reads exactly like a
+      // person's -- so without the tag an underwriter picking work off the queue cannot
+      // tell a 500-life scheme from one proposal. There is no sum-assured column to give
+      // it away either, and a group case would have nothing to put in one: the figure is
+      // derived from the schedule when policy issues the scheme.
+      render: (c) => (
+        <span className="inline-flex items-center gap-1.5">
+          {c.applicantPartyId ? <PartyName partyId={c.applicantPartyId} /> : '—'}
+          {c.groupScheme && (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              Group scheme
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       key: 'productId',

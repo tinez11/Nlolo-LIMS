@@ -434,7 +434,11 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /group-schemes:
     post:
-      summary: Issue a master group policy with its opening member schedule
+      summary: Issue a master group policy with its opening member schedule (exception path)
+      # THE EXCEPTION ROUTE. Ordinary group business is proposed as an underwriting case
+      # (POST /underwriting/cases/group) and issued by the decision, exactly as individual
+      # business is. This endpoint is the group counterpart of /policies/manual-issue: a
+      # scheme already in force elsewhere, or a correction. reasonForManualIssue records why.
       description: >-
         One master policy, many insured lives. ABC Company buys Group Life for 500 employees:
         the company is the policyholder, the employees are the lives, and a member is not a

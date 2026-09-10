@@ -2,8 +2,10 @@ import { get, post } from '@/lib/http';
 import type {
   BeneficiaryNomination,
   DecideRequest,
+  GroupProposal,
   MedicalDisclosureView,
   OpenCaseRequest,
+  OpenGroupCaseRequest,
   Page,
   RecordDisclosuresRequest,
   SubmitAssessmentRequest,
@@ -75,6 +77,23 @@ export async function listCases(params: UnderwritingListParams = {}): Promise<Pa
  *  yet (accepted, not required, per the controller's own comment). */
 export function openCase(request: OpenCaseRequest): Promise<UnderwritingCaseView> {
   return post<UnderwritingCaseView>('/underwriting/cases', request);
+}
+
+/**
+ * `POST /underwriting/cases/group` -- UNDERWRITER only, matching POST /group-schemes:
+ * proposing a scheme is the front of the same act that ends in a contract on risk.
+ *
+ * Its own endpoint rather than a flag on openCase, because that one requires a sumAssured
+ * and a group case deliberately has none -- the figure is derived from the schedule when
+ * policy issues the scheme.
+ */
+export function openGroupCase(request: OpenGroupCaseRequest): Promise<UnderwritingCaseView> {
+  return post<UnderwritingCaseView>('/underwriting/cases/group', request);
+}
+
+/** `GET /underwriting/cases/{caseId}/group-proposal` -- 404 when the case is not a scheme. */
+export function getGroupProposal(caseId: string): Promise<GroupProposal> {
+  return get<GroupProposal>(`/underwriting/cases/${encodeURIComponent(caseId)}/group-proposal`);
 }
 
 /** `GET /underwriting/cases/{caseId}` -- agent or staff. 404s on an unknown or

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { IssueGroupSchemeRequest } from '@/api/types';
+import type { OpenGroupCaseRequest, IssueGroupSchemeRequest } from '@/api/types';
 import { todayIso } from '@/lib/dates';
 import { AMOUNT_PATTERN } from '@/lib/money';
 import { CURRENCY_PATTERN, ISO_DATE_PATTERN, UUID_PATTERN } from '@/lib/patterns';
@@ -270,5 +270,58 @@ export function toApiRequest(values: GroupSchemeIssueFormValues): IssueGroupSche
     ...(values.reasonForManualIssue.trim()
       ? { reasonForManualIssue: values.reasonForManualIssue.trim() }
       : {}),
+  };
+}
+
+/**
+ * The same form, as a group underwriting case rather than a straight issuance.
+ *
+ * <p>This is now the ordinary route: a scheme is proposed, an underwriter decides it, and the
+ * decision issues it as an offer the employer accepts by paying. `toApiRequest` above still
+ * exists for POST /group-schemes, which has become the exception route -- the group
+ * counterpart of manual issue, for a scheme already in force elsewhere or a correction.
+ *
+ * <p>Two shape differences from `toApiRequest`, both consequences of the case not being a
+ * contract yet: `productId` is sent (the issuance endpoint derived it from the version), and
+ * the premium is a flat amount-plus-currency pair rather than a nested Money, matching what
+ * underwriting already accepts elsewhere. There is no `reasonForManualIssue`, because on this
+ * path nothing is being done by hand that needs excusing.
+ */
+export function toProposeCaseRequest(values: GroupSchemeIssueFormValues): OpenGroupCaseRequest {
+  const basis = values.benefitBasis;
+  return {
+    policyholderPartyId: values.policyholderPartyId.trim(),
+    productId: values.productId.trim(),
+    productVersionId: values.productVersionId.trim(),
+    agentOfRecordId: null,
+    benefitBasis: basis,
+    ...(basis === 'FLAT' && values.flatBenefitAmount
+      ? { flatBenefitAmount: values.flatBenefitAmount.trim() }
+      : {}),
+    ...(basis === 'SALARY_MULTIPLE' && values.salaryMultiple
+      ? { salaryMultiple: Number(values.salaryMultiple) }
+      : {}),
+    ...(values.fclAmount ? { fclAmount: values.fclAmount.trim() } : {}),
+    currency: values.currency.trim().toUpperCase(),
+    ...(basis === 'GRADED'
+      ? {
+          grades: values.grades.map((g) => ({
+            gradeCode: g.gradeCode.trim(),
+            benefitAmount: g.benefitAmount.trim(),
+          })),
+        }
+      : {}),
+    openingSchedule: values.openingSchedule.map((m) => ({
+      memberPartyId: m.memberPartyId.trim(),
+      ...(basis === 'GRADED' && m.gradeCode ? { gradeCode: m.gradeCode.trim() } : {}),
+      ...(basis === 'SALARY_MULTIPLE' && m.salaryAmount
+        ? { salaryAmount: m.salaryAmount.trim() }
+        : {}),
+    })),
+    premiumAmount: values.premiumAmount.trim(),
+    premiumCurrency: values.premiumCurrency.trim().toUpperCase(),
+    premiumFrequency: values.premiumFrequency,
+    ...(values.commencementDate ? { commencementDate: values.commencementDate } : {}),
+    ...(values.policyTermMonths ? { policyTermMonths: Number(values.policyTermMonths) } : {}),
   };
 }

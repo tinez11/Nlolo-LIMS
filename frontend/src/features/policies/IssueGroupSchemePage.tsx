@@ -14,7 +14,7 @@ import { useAuth } from 'react-oidc-context';
 import { Button } from '@/components/ui/button';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectIssuingScheme, usePolicyStore } from '@/store/policyStore';
+import { useUnderwritingStore } from '@/store/underwritingStore';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import { previewBenefit, type SchemeBasis } from './groupBenefitPreview';
 import {
@@ -22,7 +22,7 @@ import {
   blankGroupSchemeIssueForm,
   blankMemberRow,
   groupSchemeIssueFormSchema,
-  toApiRequest,
+  toProposeCaseRequest,
   type GroupSchemeIssueFormValues,
 } from './groupSchemeIssueForm';
 import { Input, Select } from '@/components/ui/input';
@@ -51,9 +51,9 @@ export function IssueGroupSchemePage() {
   const canUnderwrite = canUnderwriteGroupSchemes(readIdentity(useAuth().user?.access_token));
   const navigate = useNavigate();
 
-  const issueGroupScheme = usePolicyStore((s) => s.issueGroupScheme);
-  const resetIssueGroupScheme = usePolicyStore((s) => s.resetIssueGroupScheme);
-  const issuing = usePolicyStore(selectIssuingScheme);
+  const openGroupCase = useUnderwritingStore((s) => s.openGroupCase);
+  const resetOpenCase = useUnderwritingStore((s) => s.resetOpenCase);
+  const issuing = useUnderwritingStore((s) => s.opening);
 
   const products = useProductStore((s) => s.list);
   const loadProducts = useProductStore((s) => s.loadList);
@@ -63,7 +63,7 @@ export function IssueGroupSchemePage() {
   // visit's rejection would otherwise greet the next one. Same discipline as
   // IssuePolicyPage.
   useEffect(() => {
-    resetIssueGroupScheme();
+    resetOpenCase();
     void loadProducts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -135,11 +135,22 @@ export function IssueGroupSchemePage() {
   const overLimit = valued.filter((p) => p.status === 'EVIDENCE_REQUIRED').length;
   const runningTotal = sumAmounts(valued.map((p) => p.covered.amount));
 
+  /**
+   * PROPOSES the scheme rather than issuing it.
+   *
+   * <p>This form used to POST /group-schemes, which created the policy, the scheme and every
+   * member in one call, on risk on return -- no case, no assessment, no decision, while
+   * individual business had all three. It now opens an underwriting case, and the decision
+   * issues the scheme as an offer the employer accepts by paying.
+   *
+   * <p>So it lands on the CASE, not on a scheme: there is no scheme yet, and there will not
+   * be one until somebody decides there should be.
+   */
   async function onSubmit(values: GroupSchemeIssueFormValues) {
-    await issueGroupScheme(toApiRequest(values));
-    const result = usePolicyStore.getState().issuingScheme;
-    if (result.status === 'success' && result.data?.policyNumber) {
-      navigate(`/staff/group-schemes/${encodeURIComponent(result.data.policyNumber)}`);
+    await openGroupCase(toProposeCaseRequest(values));
+    const result = useUnderwritingStore.getState().opening;
+    if (result.status === 'success' && result.data?.caseId) {
+      navigate(`/staff/underwriting/${encodeURIComponent(result.data.caseId)}`);
     }
   }
 
@@ -155,8 +166,8 @@ export function IssueGroupSchemePage() {
       </div>
 
       <PageHeader
-        title="Set up a group scheme"
-        description="One master policy covering many lives — the employer holds the contract."
+        title="Propose a group scheme"
+        description="An underwriter decides it, and cover starts when the employer&apos;s first premium clears."
       />
 
       {!canUnderwrite && (
@@ -516,7 +527,7 @@ export function IssueGroupSchemePage() {
 
         <div className="flex items-center gap-2 border-t border-border pt-4">
           <Button type="submit" variant="primary" disabled={issuing.status === 'loading'}>
-            {issuing.status === 'loading' ? 'Setting up…' : 'Set up scheme'}
+            {issuing.status === 'loading' ? 'Proposing…' : 'Propose scheme'}
           </Button>
           <Button asChild type="button" variant="ghost">
             <Link to="/staff/policies">Cancel</Link>

@@ -395,6 +395,8 @@ export const POLICY_STATUSES: readonly PolicyStatus[] = [
  * open it, from that response -- there is no way to read it back afterward.
  */
 export type UnderwritingCaseView = UnderwritingComponents['schemas']['UnderwritingCaseView'];
+export type OpenGroupCaseRequest = UnderwritingComponents['schemas']['OpenGroupCaseRequest'];
+export type GroupProposal = UnderwritingComponents['schemas']['GroupProposal'];
 export type MedicalDisclosureView = UnderwritingComponents['schemas']['MedicalDisclosureView'];
 export type DisclosureAnswer = UnderwritingComponents['schemas']['DisclosureAnswer'];
 export type RecordDisclosuresRequest = UnderwritingComponents['schemas']['RecordDisclosuresRequest'];

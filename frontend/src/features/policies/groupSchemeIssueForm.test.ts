@@ -3,6 +3,7 @@ import {
   blankGroupSchemeIssueForm,
   groupSchemeIssueFormSchema,
   toApiRequest,
+  toProposeCaseRequest,
   type GroupSchemeIssueFormValues,
 } from './groupSchemeIssueForm';
 
@@ -191,5 +192,43 @@ describe('toApiRequest', () => {
     const request = toApiRequest(flatScheme({ currency: 'tzs', premiumCurrency: 'tzs' }));
     expect(request.currency).toBe('TZS');
     expect(request.premium?.currencyCode).toBe('TZS');
+  });
+});
+
+describe('toProposeCaseRequest', () => {
+  // The ORDINARY route now: a scheme is proposed as an underwriting case, an underwriter
+  // decides it, and the decision issues it as an offer. toApiRequest still exists for
+  // POST /group-schemes, which has become the exception path.
+  it('sends the product id, which the issuance endpoint used to derive server-side', () => {
+    const request = toProposeCaseRequest(flatScheme());
+    expect(request.productId).toBe(PRODUCT);
+    expect(request.productVersionId).toBeTruthy();
+  });
+
+  it('sends the premium as a flat amount and currency, not a nested Money', () => {
+    // underwriting takes them flat; policy takes a Money. The two endpoints genuinely
+    // differ, which is why this mapping exists rather than reusing toApiRequest.
+    const request = toProposeCaseRequest(flatScheme());
+    expect(request.premiumAmount).toBe('1200000.00');
+    expect(request.premiumCurrency).toBe('TZS');
+    expect(request).not.toHaveProperty('premium');
+  });
+
+  it('carries no reasonForManualIssue', () => {
+    // Nothing is being done by hand on this path, so there is nothing to excuse.
+    expect(toProposeCaseRequest(flatScheme())).not.toHaveProperty('reasonForManualIssue');
+  });
+
+  it('drops fields that belong to a different basis, exactly as the issuance mapping does', () => {
+    const request = toProposeCaseRequest(
+      flatScheme({
+        salaryMultiple: '3',
+        grades: [{ gradeCode: 'STAFF', benefitAmount: '10.00' }],
+        openingSchedule: [{ memberPartyId: PERSON_B, gradeCode: 'STAFF', salaryAmount: '900.00' }],
+      }),
+    );
+    expect(request).not.toHaveProperty('salaryMultiple');
+    expect(request).not.toHaveProperty('grades');
+    expect(request.openingSchedule?.[0]).toEqual({ memberPartyId: PERSON_B });
   });
 });

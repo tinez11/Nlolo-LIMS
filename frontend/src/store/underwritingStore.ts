@@ -5,6 +5,7 @@ import {
   listCases,
   listDisclosures,
   openCase,
+  openGroupCase,
   recordDisclosures,
   referCase,
   submitAssessment,
@@ -14,6 +15,7 @@ import type {
   DecideRequest,
   MedicalDisclosureView,
   OpenCaseRequest,
+  OpenGroupCaseRequest,
   Page,
   RecordDisclosuresRequest,
   SubmitAssessmentRequest,
@@ -50,6 +52,12 @@ interface UnderwritingState {
 
   loadList: (params: UnderwritingListParams) => Promise<void>;
   openCase: (request: OpenCaseRequest) => Promise<void>;
+  /**
+   * Propose a group scheme. Shares the `opening` slot with openCase deliberately: one
+   * form is on screen at a time, and a second slot would be a second place for a stale
+   * error to surface from.
+   */
+  openGroupCase: (request: OpenGroupCaseRequest) => Promise<void>;
   resetOpenCase: () => void;
   loadCase: (caseId: string) => Promise<void>;
   submitAssessment: (caseId: string, request: SubmitAssessmentRequest) => Promise<void>;
@@ -87,6 +95,14 @@ export const useUnderwritingStore = create<UnderwritingState>((set, getState) =>
       getState().opening,
       (next) => set({ opening: next }),
       () => openCase(request),
+    ),
+
+  openGroupCase: (request) =>
+    track(
+      'underwriting.open-group',
+      getState().opening,
+      (next) => set({ opening: next }),
+      () => openGroupCase(request),
     ),
 
   resetOpenCase: () => set({ opening: idle() }),
