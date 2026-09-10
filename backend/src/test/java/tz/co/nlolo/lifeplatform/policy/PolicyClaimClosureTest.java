@@ -79,6 +79,8 @@ class PolicyClaimClosureTest {
             "db-migrations/policy/V5__beneficiary_party_index.sql",
             "db-migrations/policy/V6__policy_term.sql",
             "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V8__group_policies_have_no_single_life_assured.sql",
+            "db-migrations/policy/V9__group_scheme_and_members.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
@@ -157,6 +159,51 @@ class PolicyClaimClosureTest {
         assertThat(auditRows).hasSize(1);
         JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
         assertThat(payload.path("policyNumber").asText()).isEqualTo(policyNumber);
+    }
+
+    /**
+     * A one-life group scheme, in force. The smallest thing the group guard can be tested against.
+     *
+     * <p>Not built on {@link #issueDirectly}: a scheme is issued by {@code issueGroupScheme}, in
+     * one call together with its opening schedule, because a scheme's sum assured IS the total of
+     * its members and one issued empty would have a sum assured of nil.
+     */
+    private String issueGroupScheme(UUID tenantId, String productCode) {
+        Fixture fixture = buildFixture(tenantId, productCode, ProductCategory.GROUP_LIFE);
+        TenantContext.set(tenantId);
+        PartyView life = partyApi.registerIndividual("Insured Life " + productCode, LocalDate.of(1990, 1, 1),
+            "+25571500" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
+        return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(), null,
+            BenefitBasis.FLAT, new BigDecimal("5000000.00"), null, null, "TZS", null,
+            List.of(new PolicyApi.MemberInput(life.partyId(), null, null, null)),
+            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null,
+            "Claim closure group fixture"), "test-staff").policyNumber();
+    }
+
+    /**
+     * One member's death must not uninsure everybody else on the schedule.
+     *
+     * <p>{@code terminateForSettledClaim} exists for individual life, where the single insured
+     * life is now dead and the contract is discharged. On a scheme it discharges one MEMBER: the
+     * others are alive and insured, and the employer still owes premium for them. Before the
+     * guard this set the master policy to SURRENDERED — silently, from an AFTER_COMMIT listener,
+     * with the claim money already paid.
+     *
+     * <p>The mirror case, that an individual policy still closes, is
+     * {@link #terminateForSettledClaimMovesAnActivePolicyToSurrenderedAndPublishesPolicySurrenderedWithClaimId}
+     * — which is what makes this guard narrow rather than a blanket disabling of closure.
+     */
+    @Test
+    void terminateForSettledClaimLeavesAGroupSchemeInForce() {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = issueGroupScheme(tenantId, "CLAIM-CLOSURE-GRP-01");
+
+        TenantContext.set(tenantId);
+        policyApi.terminateForSettledClaim(policyNumber, UUID.randomUUID(), "test-staff");
+
+        assertEquals(PolicyStatus.ACTIVE, policyApi.getPolicy(policyNumber).status(),
+            "a scheme survives its members");
     }
 
     @Test

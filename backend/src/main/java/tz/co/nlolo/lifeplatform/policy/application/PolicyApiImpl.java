@@ -656,6 +656,51 @@ public class PolicyApiImpl implements PolicyApi {
     public void terminateForSettledClaim(String policyNumber, UUID claimId, String terminatedBy) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // A SCHEME IS NOT DISCHARGED BY ONE MEMBER'S DEATH.
+        //
+        // This method closes a policy because a settled claim has discharged its coverage, and
+        // billing must then stop invoicing a contract that no longer covers anybody. Both halves
+        // are true of individual life and false of a group scheme: the claim discharged ONE
+        // member, the other lives on the schedule are alive and insured, and the employer still
+        // owes premium for them -- so billing continuing is the CORRECT outcome here, not the
+        // problem this closure was written to prevent.
+        //
+        // Without this guard, one employee's settled death claim set the master policy to
+        // SURRENDERED and uninsured the entire workforce. Silently, from an AFTER_COMMIT
+        // listener, with the claim money already paid. No test covered a claim on a scheme,
+        // which is how it survived.
+        //
+        // A no-op rather than a throw: the claim is SETTLED and the disbursement COMPLETED
+        // before this runs, and claims' PaymentEventListener treats any exception here as a
+        // POLICY_CLOSURE_FAILED alert for an operator. Raising one for a case that correctly
+        // needs no closure would be crying wolf on every group claim.
+        //
+        // Exiting the member -- which IS what a settled group claim should do -- is deliberately
+        // not done here yet: it needs the claim to say which member died, and claims.claim has
+        // no member column. Leaving them on the roll overstates the scheme total by their cover,
+        // which is a figure a person can find and correct. Cancelling everybody's cover is not.
+        //
+        // BOTH CONDITIONS, and each is here for its own reason.
+        //
+        // The SCHEME ROW is the real test, and an existing case proves category alone is wrong:
+        // terminateForSettledClaimClosesASuspendedPolicy issues a GROUP_LIFE policy through the
+        // ordinary issuePolicy path -- GROUP_LIFE being the only category refdata/V2 seeds into
+        // POLICY_SUSPENSION_ELIGIBLE_CATEGORIES, so it is that test's only route to a genuinely
+        // SUSPENDED policy. It has no group_scheme row and no members. A contract with no member
+        // schedule has no member to discharge instead, so it closes like any other.
+        //
+        // The CATEGORY is the cheap pre-filter, and it is load-bearing rather than an
+        // optimisation: it keeps an individual policy from touching policy.group_scheme at all.
+        // Almost every policy on the platform is individual, and several test classes that settle
+        // claims never apply policy/V9 -- for them the table does not exist, and an unconditional
+        // query throws inside an AFTER_COMMIT listener whose only response is to raise
+        // POLICY_CLOSURE_FAILED and leave a settled claim's policy open. Found exactly that way.
+        if ("GROUP_LIFE".equals(policy.getProductCategory())
+                && groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).isPresent()) {
+            log.info("Claim {} settled against group scheme {} -- the scheme stays in force; "
+                + "the member's own exit is not wired yet", claimId, policyNumber);
+            return;
+        }
         // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning
         // as markMatured above (a policy already MATURED stays MATURED, so no PolicySurrendered).
         boolean alreadyClosed = "SURRENDERED".equals(policy.getStatus()) || "MATURED".equals(policy.getStatus());
