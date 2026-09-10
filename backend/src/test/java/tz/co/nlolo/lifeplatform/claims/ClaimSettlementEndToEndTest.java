@@ -21,6 +21,7 @@ import tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementInstructionRe
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
 import tz.co.nlolo.lifeplatform.policy.api.GroupSchemeView;
 import tz.co.nlolo.lifeplatform.policy.api.MemberStatus;
+import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyMemberView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
@@ -474,7 +475,7 @@ class ClaimSettlementEndToEndTest {
             List.of(new PolicyApi.MemberInput(first, null, null, null),
                     new PolicyApi.MemberInput(second, null, null, null)),
             new BigDecimal("1200000.00"), "TZS", "ANNUALLY", dateOfEvent.minusMonths(1), null,
-            "group onboarding"), "staff1");
+            "group onboarding", IssuanceBasis.MIGRATION), "staff1");
 
         Map<UUID, String> nameByParty = Map.of(first, "Juma Deceased", second, "Asha Living");
         Map<String, UUID> byName = policyApi

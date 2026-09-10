@@ -1073,7 +1073,8 @@ class PolicyContractTest {
                      "benefitBasis":"SALARY_MULTIPLE","salaryMultiple":3,"fclAmount":"30000000.00",
                      "currency":"TZS",
                      "openingSchedule":[{"memberPartyId":"%s","salaryAmount":"20000000.00"}],
-                     "premium":{"amount":"900000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY"}
+                     "premium":{"amount":"900000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY",
+                     "issuanceBasis":"MIGRATION"}
                     """.formatted(employer, product.productVersionId(), founding)))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))

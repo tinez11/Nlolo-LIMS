@@ -153,7 +153,24 @@ public interface PolicyApi {
                                     List<GradeInput> grades, List<MemberInput> openingSchedule,
                                     BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
                                     LocalDate commencementDate, Integer policyTermMonths,
-                                    String reasonForManualIssue) {}
+                                    String reasonForManualIssue,
+                                    /**
+                                     * Null for an ordinary offer: the scheme is issued PROPOSED
+                                     * and the employer's first cleared premium starts cover,
+                                     * exactly as an individual customer accepts by paying.
+                                     *
+                                     * <p>This REVERSES build5 §2.6 ("a scheme goes on risk at
+                                     * issuance, outside offer-and-acceptance"). That was written
+                                     * when POST /group-schemes was the only way a scheme could
+                                     * exist and waiting for a premium would have meant nobody
+                                     * was ever covered. Group business has a pipeline now.
+                                     *
+                                     * <p>A basis that already carries cover (MIGRATION,
+                                     * CONVERSION, REINSTATEMENT) skips the wait, for the same
+                                     * reason it does on an individual policy: the contract is in
+                                     * force somewhere else already.
+                                     */
+                                    IssuanceBasis issuanceBasis) {}
 
     /**
      * Issue a scheme. The product must be a GROUP_LIFE product, and the opening schedule

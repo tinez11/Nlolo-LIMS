@@ -958,10 +958,24 @@ public class PolicyApiImpl implements PolicyApi {
         // Deliberately no recordLifeAssured: migration V8. An employer is not a life
         // assured, and the lives are the schedule below.
         policy.recordIssuedOn(today);
-        // Group schemes stay outside offer-and-acceptance. A scheme is one contract over many
-        // lives with its own billing arrangement negotiated with the employer, not a single
-        // proposal awaiting a first premium, so it goes on risk at issuance as it always has.
-        policy.activate();
+        // AN OFFER, not cover, unless the basis already carries cover. Identical to
+        // issuePolicy: a scheme is a contract an employer accepts by paying for it, and the
+        // first cleared premium is that acceptance.
+        //
+        // This REVERSES build5 §2.6, which said "group schemes stay outside
+        // offer-and-acceptance ... so it goes on risk at issuance as it always has". That was
+        // written when POST /group-schemes was the only way a scheme could exist: with no
+        // underwriting pipeline behind it, waiting for a premium would have meant nobody was
+        // ever covered. Group business is proposed, assessed and decided now, so the last step
+        // is the same one individual business takes.
+        //
+        // activateOnFirstPremium needs NO change: it activates any PROPOSED policy, and
+        // billing still raises the employer's schedule off PolicyIssued exactly as before.
+        boolean startsCoverNow = request.issuanceBasis() != null
+            && request.issuanceBasis().startsCoverImmediately();
+        if (startsCoverNow) {
+            policy.activate();
+        }
         policyRepository.save(policy);
 
         policyAccountRepository.save(new PolicyAccount(policyNumber, tenantId, BigDecimal.ZERO, request.currency()));
@@ -999,9 +1013,12 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("premium", Map.of("amount", request.premiumAmount().toPlainString(), "currencyCode", request.premiumCurrency()));
         payload.put("premiumFrequency", request.premiumFrequency());
         payload.put("agentOfRecordId", request.agentOfRecordId());
-        // Always ACTIVE here: a scheme goes on risk at issuance, outside offer-and-acceptance.
-        // Declared explicitly rather than omitted, so a consumer branching on this key never has
-        // to treat "absent" as a third case meaning something.
+        // PROPOSED for an ordinary scheme, ACTIVE for a basis that already carries cover --
+        // no longer always the same value, which is why it was already reading the policy's
+        // own status rather than the literal the comment here used to claim.
+        //
+        // Load-bearing downstream: communication's offerMade branches on exactly this key, so
+        // an employer now receives the offer message and its deadline. That is the point.
         payload.put("status", policy.getStatus());
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 

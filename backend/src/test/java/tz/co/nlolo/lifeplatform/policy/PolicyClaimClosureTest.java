@@ -186,7 +186,7 @@ class PolicyClaimClosureTest {
             List.of(new PolicyApi.MemberInput(life.partyId(), null, null, null),
                     new PolicyApi.MemberInput(survivor.partyId(), null, null, null)),
             new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now().minusMonths(9), null,
-            "Claim closure group fixture"), "test-staff").policyNumber();
+            "Claim closure group fixture", IssuanceBasis.MIGRATION), "test-staff").policyNumber();
         UUID memberId = policyApi.listMembers(policyNumber, null, null, PageRequest.of(0, 25))
             .getContent().stream()
             .filter(m -> m.memberPartyId().equals(life.partyId()))
@@ -205,7 +205,7 @@ class PolicyClaimClosureTest {
             BenefitBasis.FLAT, new BigDecimal("5000000.00"), null, null, "TZS", null,
             List.of(new PolicyApi.MemberInput(life.partyId(), null, null, null)),
             new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now().minusMonths(9), null,
-            "Single-life scheme fixture"), "test-staff").policyNumber();
+            "Single-life scheme fixture", IssuanceBasis.MIGRATION), "test-staff").policyNumber();
         return new GroupFixture(policyNumber, policyApi.listMembers(policyNumber, null, null,
             PageRequest.of(0, 25)).getContent().get(0).policyMemberId());
     }

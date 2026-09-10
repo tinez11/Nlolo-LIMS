@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 
 import java.math.BigDecimal;
@@ -61,7 +62,19 @@ public record IssueGroupSchemeRequestDto(
     LocalDate commencementDate,
     /** Null for the usual annually renewable scheme. */
     @Positive Integer policyTermMonths,
-    String reasonForManualIssue) {
+    String reasonForManualIssue,
+    /**
+     * Null for an ordinary offer: the scheme is issued PROPOSED and the employer accepts it
+     * by paying the first premium. A basis that already carries cover (MIGRATION,
+     * CONVERSION, REINSTATEMENT) puts it on risk at once, because the contract is in force
+     * somewhere else already.
+     *
+     * <p>Not @NotNull, and that asymmetry with ManualIssueRequestDto is deliberate: on the
+     * individual manual-issue path a basis is REQUIRED because every such issuance is an
+     * exception that has to name itself. Here the ordinary case is an offer, and null says
+     * exactly that.
+     */
+    IssuanceBasis issuanceBasis) {
 
     public PolicyApi.IssueGroupSchemeRequest toApiRequest(UUID productId) {
         return new PolicyApi.IssueGroupSchemeRequest(
@@ -71,7 +84,7 @@ public record IssueGroupSchemeRequestDto(
             openingSchedule.stream().map(GroupMemberInputDto::toApiInput).toList(),
             new BigDecimal(premium.amount()), premium.currencyCode(),
             premiumFrequency != null && !premiumFrequency.isBlank() ? premiumFrequency : "ANNUALLY",
-            commencementDate, policyTermMonths, reasonForManualIssue);
+            commencementDate, policyTermMonths, reasonForManualIssue, issuanceBasis);
     }
 
     private static BigDecimal decimal(String amount) {

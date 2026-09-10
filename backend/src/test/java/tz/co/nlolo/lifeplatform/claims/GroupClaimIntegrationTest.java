@@ -13,6 +13,7 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
 import tz.co.nlolo.lifeplatform.policy.api.GroupSchemeView;
 import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
+import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyMemberView;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
@@ -198,7 +199,7 @@ class GroupClaimIntegrationTest {
             List.of(new PolicyApi.MemberInput(firstPartyId, null, null, null),
                     new PolicyApi.MemberInput(secondPartyId, null, null, null)),
             new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now().minusYears(1), null,
-            "group onboarding"), "staff1");
+            "group onboarding", IssuanceBasis.MIGRATION), "staff1");
 
         // Keyed off the party ids just minted rather than off a name on the member row: a member
         // row holds no name of its own, which is exactly why listMembers resolves its search

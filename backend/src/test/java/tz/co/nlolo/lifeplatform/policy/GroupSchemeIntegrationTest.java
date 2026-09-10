@@ -125,12 +125,64 @@ class GroupSchemeIntegrationTest {
             "+2557" + String.format("%08d", PHONE_SEQ.incrementAndGet()), null, "test-agent").partyId();
     }
 
+    /**
+     * A flat scheme, issued as an OFFER.
+     *
+     * <p>MIGRATION, not null, and that is what keeps the rest of this class about what it is
+     * about. A scheme is now issued PROPOSED and goes on risk when the employer's first
+     * premium clears; every test below asserts something about members, totals or the free
+     * cover limit, none of which needs the contract to be on risk — but several DO need it
+     * (adding a member requires the scheme in force), and threading activateOnFirstPremium
+     * through all of them would bury the subject under acceptance plumbing. The offer path
+     * itself is asserted directly by the two tests that exist for it.
+     */
     private PolicyApi.IssueGroupSchemeRequest flatScheme(GroupProduct product, UUID employer,
                                                           BigDecimal flatBenefit, BigDecimal fcl,
                                                           List<PolicyApi.MemberInput> members) {
+        return flatScheme(product, employer, flatBenefit, fcl, members, IssuanceBasis.MIGRATION);
+    }
+
+    private PolicyApi.IssueGroupSchemeRequest flatScheme(GroupProduct product, UUID employer,
+                                                          BigDecimal flatBenefit, BigDecimal fcl,
+                                                          List<PolicyApi.MemberInput> members,
+                                                          IssuanceBasis issuanceBasis) {
         return new PolicyApi.IssueGroupSchemeRequest(employer, product.productId(), product.productVersionId(),
             null, BenefitBasis.FLAT, flatBenefit, null, fcl, "TZS", null, members,
-            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, "group onboarding");
+            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, "group onboarding",
+            issuanceBasis);
+    }
+
+    @Test
+    void aSchemeIsIssuedAsAnOfferAndGoesOnRiskOnTheFirstPremium() {
+        // Reverses build5 §2.6 ("a scheme goes on risk at issuance"), deliberately: an employer
+        // buys cover the same way an individual does, and the first premium is what accepts it.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-OFFER-01");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(
+            flatScheme(product, person("ABC Company"), new BigDecimal("5000000.00"), null,
+                List.of(new PolicyApi.MemberInput(person("A Life"), null, null, null)), null),
+            "staff1");
+
+        assertThat(policyApi.getPolicy(scheme.policyNumber()).status()).isEqualTo(PolicyStatus.PROPOSED);
+
+        policyApi.activateOnFirstPremium(scheme.policyNumber());
+
+        assertThat(policyApi.getPolicy(scheme.policyNumber()).status()).isEqualTo(PolicyStatus.ACTIVE);
+    }
+
+    @Test
+    void aSchemeMigratedFromAnotherInsurerIsOnRiskImmediately() {
+        // The same exception individual business has: a basis that already carries cover skips
+        // the wait, because the contract is in force somewhere else already.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-OFFER-MIGRATION");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(
+            flatScheme(product, person("ABC Company"), new BigDecimal("5000000.00"), null,
+                List.of(new PolicyApi.MemberInput(person("A Life"), null, null, null)),
+                IssuanceBasis.MIGRATION),
+            "staff1");
+
+        assertThat(policyApi.getPolicy(scheme.policyNumber()).status()).isEqualTo(PolicyStatus.ACTIVE);
     }
 
     // ---------------------------------------------------------------------------------
@@ -227,7 +279,7 @@ class GroupSchemeIntegrationTest {
             employer, termLife.productId(), snapshot.productVersionId(), null,
             BenefitBasis.FLAT, new BigDecimal("1000000.00"), null, null, "TZS", null,
             List.of(new PolicyApi.MemberInput(person("Somebody"), null, null, null)),
-            new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null), "staff-1"))
+            new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null, IssuanceBasis.MIGRATION), "staff-1"))
             .isInstanceOf(InvalidPolicyStateException.class)
             .hasMessageContaining("GROUP_LIFE");
     }
@@ -265,7 +317,7 @@ class GroupSchemeIntegrationTest {
             null,
             List.of(new PolicyApi.MemberInput(person("Junior Clerk"), null, new BigDecimal("5000000.00"), null),
                     new PolicyApi.MemberInput(person("Senior Manager"), null, new BigDecimal("30000000.00"), null)),
-            new BigDecimal("900000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null), "staff-1");
+            new BigDecimal("900000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null, IssuanceBasis.MIGRATION), "staff-1");
 
         assertThat(scheme.membersRequiringEvidence()).isEqualTo(1);
         // 20,000,000 (junior, fully covered) + 100,000,000 (manager, capped at the limit).
@@ -323,7 +375,7 @@ class GroupSchemeIntegrationTest {
             List.of(new PolicyApi.GradeInput("MANAGEMENT", new BigDecimal("50000000.00")),
                     new PolicyApi.GradeInput("STAFF", new BigDecimal("10000000.00"))),
             List.of(new PolicyApi.MemberInput(person("Mystery Grade"), "DIRECTORS", null, null)),
-            new BigDecimal("500000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null);
+            new BigDecimal("500000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null, IssuanceBasis.MIGRATION);
 
         assertThatThrownBy(() -> policyApi.issueGroupScheme(request, "staff-1"))
             .isInstanceOf(InvalidPolicyStateException.class)
@@ -345,7 +397,7 @@ class GroupSchemeIntegrationTest {
             List.of(new PolicyApi.MemberInput(person("A Manager"), "MANAGEMENT", null, null),
                     new PolicyApi.MemberInput(person("A Staffer"), "STAFF", null, null),
                     new PolicyApi.MemberInput(person("Another Staffer"), "STAFF", null, null)),
-            new BigDecimal("500000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null), "staff-1");
+            new BigDecimal("500000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null, IssuanceBasis.MIGRATION), "staff-1");
 
         assertThat(scheme.grades()).extracting(GroupSchemeGradeView::gradeCode)
             .containsExactly("MANAGEMENT", "STAFF");
@@ -378,7 +430,7 @@ class GroupSchemeIntegrationTest {
             employer, product.productId(), product.productVersionId(), null,
             BenefitBasis.SALARY_MULTIPLE, null, new BigDecimal("3"), null, "TZS", null,
             List.of(new PolicyApi.MemberInput(person("Unpriced Person"), null, null, null)),
-            new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null), "staff-1"))
+            new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null, IssuanceBasis.MIGRATION), "staff-1"))
             .isInstanceOf(InvalidPolicyStateException.class)
             .hasMessageContaining("salary");
     }
@@ -462,7 +514,7 @@ class GroupSchemeIntegrationTest {
             BenefitBasis.SALARY_MULTIPLE, null, new BigDecimal("3"), null, "TZS", null,
             List.of(new PolicyApi.MemberInput(person("Promoted Person"), null, new BigDecimal("10000000.00"),
                 LocalDate.now().minusYears(2))),
-            new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now().minusYears(2), null, null), "staff-1");
+            new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now().minusYears(2), null, null, IssuanceBasis.MIGRATION), "staff-1");
 
         PolicyMemberView member = policyApi
             .listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, null, PageRequest.of(0, 10, Sort.by("joinedOn")))
@@ -511,7 +563,7 @@ class GroupSchemeIntegrationTest {
             List.of(new PolicyApi.MemberInput(person("Paid One"), null, new BigDecimal("1000000.00"), null),
                     new PolicyApi.MemberInput(person("Paid Two"), null, new BigDecimal("2000000.00"), null),
                     new PolicyApi.MemberInput(person("Paid Three"), null, new BigDecimal("3000000.00"), null)),
-            new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null), "staff-1");
+            new BigDecimal("100000.00"), "TZS", "ANNUALLY", LocalDate.now(), null, null, IssuanceBasis.MIGRATION), "staff-1");
 
         List<PolicyMemberView> members = policyApi.listMembers(scheme.policyNumber(), MemberStatus.ACTIVE, null,
             // Total order: joinedOn alone ties for every row of a bulk schedule.

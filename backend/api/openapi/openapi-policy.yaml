@@ -808,6 +808,19 @@ components:
           type: [integer, "null"]
           minimum: 1
         reasonForManualIssue: { type: [string, "null"] }
+        issuanceBasis:
+          description: >-
+            Omit for an ordinary offer: the scheme is issued PROPOSED and the employer accepts
+            it by paying the first premium, exactly as an individual customer does. A basis
+            that already carries cover (MIGRATION, CONVERSION, REINSTATEMENT) puts it on risk
+            at once, because the contract is in force somewhere else already.
+
+
+            Optional here, unlike ManualIssueRequest where it is required. On the individual
+            manual-issue path every issuance is an exception that must name itself; here the
+            ordinary case is an offer, and omitting it says exactly that.
+          type: [string, "null"]
+          enum: [NEW_BUSINESS, MIGRATION, CONVERSION, REINSTATEMENT, UNDERWRITING_OVERRIDE, null]
       required: [policyholderPartyId, productVersionId, benefitBasis, currency, openingSchedule, premium]
     GroupSchemeGradeInput:
       type: object
