@@ -754,9 +754,21 @@ public class PolicyApiImpl implements PolicyApi {
             ? groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
             : Optional.empty();
         if (scheme.isPresent()) {
-            dischargeMember(policy, scheme.get(), policyMemberId, dateOfEvent, tenantId);
+            dischargeMember(policy, scheme.get(), policyMemberId, dateOfEvent, claimId, tenantId);
             return;
         }
+        closeAsSurrendered(policy, claimId, tenantId);
+    }
+
+    /**
+     * No insured life remains: the contract is discharged and billing must stop invoicing it.
+     *
+     * <p>Reached from both branches, because it is the same fact either way — an individual
+     * policy whose one life died, or a scheme whose LAST life did. Note the difference from the
+     * bug this whole change exists to fix: that closed a scheme when ONE OF MANY members died.
+     * Closing when the last one does is the mirror of it, not a repeat.
+     */
+    private void closeAsSurrendered(Policy policy, UUID claimId, UUID tenantId) {
         // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning
         // as markMatured above (a policy already MATURED stays MATURED, so no PolicySurrendered).
         boolean alreadyClosed = "SURRENDERED".equals(policy.getStatus()) || "MATURED".equals(policy.getStatus());
@@ -766,7 +778,7 @@ public class PolicyApiImpl implements PolicyApi {
             return; // idempotent on repeat -- no second event
         }
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,
-            Map.of("policyNumber", policyNumber,
+            Map.of("policyNumber", policy.getPolicyNumber(),
                    "claimId", claimId,
                    "surrenderedAt", Instant.now().toString())));
     }
@@ -780,7 +792,7 @@ public class PolicyApiImpl implements PolicyApi {
      * for six months they were not alive.
      */
     private void dischargeMember(Policy policy, GroupScheme scheme, UUID policyMemberId,
-                                  LocalDate dateOfEvent, UUID tenantId) {
+                                  LocalDate dateOfEvent, UUID claimId, UUID tenantId) {
         if (policyMemberId == null) {
             // Cannot happen through the claims path -- registration refuses a memberless claim on
             // a scheme -- but this is a published API and a silent no-op would leave a paid claim
@@ -803,13 +815,25 @@ public class PolicyApiImpl implements PolicyApi {
         // Flush before restating so the total sees the exit. Both inside this transaction: a
         // scheme must never be readable with the member gone and the total still counting them.
         policyMemberBenefitRepository.flush();
-        // KNOWN LIMITATION: if this was the LAST covered life, the total goes to zero and
-        // restateSumAssured throws -- deliberately, since "an empty scheme is a scheme to close,
-        // not one to carry at nil" and what closing one should mean has never been decided.
-        // Left to throw rather than papered over: claims' phase 2 keeps the claim SETTLED (the
-        // money moved), raises POLICY_CLOSURE_FAILED and logs both ids, so a person is told.
-        // Pinned by PolicyClaimClosureTest.dischargingTheLastMemberOfASchemeIsNotYetRepresentable.
-        BigDecimal total = restateSchemeTotal(policy, tenantId, LocalDate.now());
+
+        // WAS THAT THE LAST LIFE? If so the scheme covers nobody, and restating its total is not
+        // merely wrong but impossible: totalCovered sums only ACTIVE members and returns NULL
+        // with none, which restateSumAssured refuses ("an empty scheme is a scheme to close, not
+        // one to carry at nil").
+        //
+        // So it closes, exactly the way an individual policy does when its one life dies --
+        // SURRENDERED, and billing stops. That is the same fact stated about a different
+        // contract shape, and it is the MIRROR of the bug this method exists to fix rather than
+        // a return to it: that one closed a scheme when ONE OF MANY died.
+        //
+        // The stored sum assured deliberately keeps its last positive value rather than going to
+        // zero -- policy_sum_assured_positive forbids zero, and a closed contract keeping the
+        // figure it was last insured for is how every other closed policy on this platform reads.
+        boolean noLivesRemain = policyMemberRepository.countByTenantIdAndPolicyNumberAndStatus(
+            tenantId, policy.getPolicyNumber(), MemberStatus.ACTIVE.name()) == 0;
+        BigDecimal total = noLivesRemain
+            ? BigDecimal.ZERO
+            : restateSchemeTotal(policy, tenantId, LocalDate.now());
 
         // No consumer yet, and that is a known gap rather than a new one: regreporting does not
         // listen to policy.GroupMemberAdded either, so policy_dimension's sum assured already
@@ -821,6 +845,15 @@ public class PolicyApiImpl implements PolicyApi {
                    "reason", "CLAIM_SETTLED",
                    "schemeTotalCovered", Map.of("amount", total.toPlainString(),
                        "currencyCode", scheme.getCurrency()))));
+
+        // Published AFTER the exit, and in addition to it, because two things happened: this
+        // member left, and the contract then had nobody left to insure. A consumer tracking
+        // membership needs the first; billing needs the second.
+        if (noLivesRemain) {
+            log.info("Scheme {} has no covered lives left after member {} was discharged -- closing it",
+                policy.getPolicyNumber(), policyMemberId);
+            closeAsSurrendered(policy, claimId, tenantId);
+        }
     }
 
     private List<Beneficiary> validateAndBuildBeneficiaries(UUID tenantId, String policyNumber, List<BeneficiaryInput> inputs) {

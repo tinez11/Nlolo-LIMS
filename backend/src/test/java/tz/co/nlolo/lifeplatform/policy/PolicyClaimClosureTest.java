@@ -210,29 +210,64 @@ class PolicyClaimClosureTest {
     }
 
     /**
-     * KNOWN LIMITATION, pinned so it is discoverable rather than found in production.
+     * When the LAST life goes, the scheme goes with it.
      *
-     * <p>When the last insured life on a scheme dies, the scheme total goes to zero and
-     * {@code Policy.restateSumAssured} refuses — its own comment says "an empty scheme is a
-     * scheme to close, not one to carry at nil", and what closing one should mean (LAPSED?
-     * SURRENDERED? on whose authority?) is a decision nobody has made. Inventing a status
-     * transition here to make one test pass would be inventing contract lifecycle.
+     * <p>This is the mirror of the bug the branch exists to fix, not a return to it. That one
+     * closed a scheme when one of many members died; this closes it when there is nobody left
+     * to insure — the same fact an individual policy states when its single life dies, so it
+     * takes the same status and publishes the same event.
      *
-     * <p>It degrades safely rather than silently: the throw happens in phase 2 of claims'
-     * settlement listener, which keeps the claim SETTLED (the money moved and must not be
-     * unwound), raises POLICY_CLOSURE_FAILED and logs at ERROR naming both ids. A human is
-     * told. This test will start failing the day somebody decides what an emptied scheme
-     * becomes, which is exactly when it should.
+     * <p>Both events fire, and both are true: the member left, and the contract then had no
+     * covered lives. A consumer tracking membership needs the first; billing needs the second.
      */
     @Test
-    void dischargingTheLastMemberOfASchemeIsNotYetRepresentable() {
+    void dischargingTheLastLifeClosesTheSchemeItself() throws Exception {
         UUID tenantId = UUID.randomUUID();
         GroupFixture scheme = issueSingleLifeGroupScheme(tenantId, "CLAIM-CLOSURE-GRP-LAST");
+        LocalDate dateOfEvent = LocalDate.now().minusMonths(6);
+        UUID claimId = UUID.randomUUID();
 
         TenantContext.set(tenantId);
-        assertThrows(IllegalArgumentException.class, () -> policyApi.dischargeForSettledClaim(
-            scheme.policyNumber(), scheme.policyMemberId(), LocalDate.now().minusMonths(6),
-            UUID.randomUUID(), "test-staff"));
+        Instant before = Instant.now();
+        policyApi.dischargeForSettledClaim(scheme.policyNumber(), scheme.policyMemberId(),
+            dateOfEvent, claimId, "test-staff");
+
+        assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(scheme.policyNumber()).status(),
+            "a scheme insuring nobody is a closed contract, and billing must stop");
+        assertEquals(MemberStatus.EXITED,
+            memberById(scheme.policyNumber(), scheme.policyMemberId()).status());
+
+        // The sum assured keeps its last positive value rather than going to zero:
+        // policy_sum_assured_positive forbids zero, and every other closed policy on the
+        // platform keeps the figure it was last insured for.
+        assertThat(policyApi.getPolicy(scheme.policyNumber()).sumAssuredAmount())
+            .isEqualByComparingTo(new BigDecimal("5000000.00"));
+
+        List<AuditLogEntry> surrendered = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "policy.PolicySurrendered", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(surrendered).hasSize(1);
+        assertThat(objectMapper.readTree(surrendered.get(0).getPayload()).path("claimId").asText())
+            .isEqualTo(claimId.toString());
+    }
+
+    /** Redelivery on a one-life scheme must not publish a second PolicySurrendered either. */
+    @Test
+    void dischargingTheLastLifeTwiceClosesItOnceAndSaysSoOnce() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        GroupFixture scheme = issueSingleLifeGroupScheme(tenantId, "CLAIM-CLOSURE-GRP-LAST2");
+        LocalDate dateOfEvent = LocalDate.now().minusMonths(6);
+        UUID claimId = UUID.randomUUID();
+
+        TenantContext.set(tenantId);
+        Instant before = Instant.now();
+        policyApi.dischargeForSettledClaim(scheme.policyNumber(), scheme.policyMemberId(), dateOfEvent, claimId, "test-staff");
+        policyApi.dischargeForSettledClaim(scheme.policyNumber(), scheme.policyMemberId(), dateOfEvent, claimId, "test-staff");
+
+        assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(scheme.policyNumber()).status());
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+                tenantId, "policy.PolicySurrendered", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .as("the second call short-circuits on the already-EXITED member, before reaching the close")
+            .hasSize(1);
     }
 
     private record GroupFixture(String policyNumber, UUID policyMemberId) {}

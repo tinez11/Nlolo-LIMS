@@ -125,18 +125,29 @@ export function RegisterClaimPage() {
    * A scheme insures many lives, so a claim on one must say which. Loaded only for a scheme,
    * and only once the category is known.
    *
-   * <p>One page of up to 200, which covers most schemes and not all of them. A roll longer
-   * than that needs a searchable picker rather than a select, and the notice under the field
-   * says so rather than silently offering a truncated list.
+   * <p><b>Searched server-side rather than paged into the browser.</b> The endpoint's own `q`
+   * filters the roll by name — the same filter the scheme page's member search uses — so a
+   * 500-life schedule is answered by typing a name rather than by offering the first N and
+   * hoping. Filtering a fetched page instead would search only the rows in hand and report
+   * "not found" for somebody who is on the schedule.
    */
   const isGroupScheme = policy.data?.productCategory === 'GROUP_LIFE';
   const members = usePolicyStore(selectMembers(policyNumber));
   const loadMembers = usePolicyStore((s) => s.loadMembers);
+  const [memberQuery, setMemberQuery] = useState('');
 
   useEffect(() => {
     if (!isGroupScheme) return;
-    void loadMembers(policyNumber, { pageSize: 200 });
-  }, [isGroupScheme, policyNumber, loadMembers]);
+    // Debounced, so typing a name is one request rather than one per keystroke. 300ms is
+    // PartyPicker's own interval; the two searches should not feel different.
+    const timer = setTimeout(() => {
+      void loadMembers(policyNumber, {
+        ...(memberQuery.trim() ? { q: memberQuery.trim() } : {}),
+        pageSize: 50,
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [isGroupScheme, policyNumber, memberQuery, loadMembers]);
 
   /**
    * Read by the resolver above at validation time. A ref rather than state because it must not
@@ -273,6 +284,19 @@ export function RegisterClaimPage() {
         </FormField>
 
         {isGroupScheme && (
+          <>
+          {/* The search sits OUTSIDE the FormField on purpose. FormField binds its label to the
+              first control inside it, so putting two controls in one leaves the second
+              unlabelled -- the select stopped answering to "Who died" and only an e2e run
+              caught it, since every unit test addresses it by name through register(). */}
+          <Input
+            inputSize="sm"
+            className="mb-1.5"
+            placeholder="Search the schedule by name…"
+            aria-label="Search members by name"
+            value={memberQuery}
+            onChange={(e) => setMemberQuery(e.target.value)}
+          />
           <FormField label="Who died" error={errors.policyMemberId?.message}>
             {/* A scheme insures many lives, so "a claim on GL-000123" names none of them, and
                 nothing else on the claim can say which employee it was. The claimant field
@@ -291,11 +315,16 @@ export function RegisterClaimPage() {
             <p className="mt-1 text-[11px] text-subtle-foreground">
               Members who have left are listed too — a claim can arrive after somebody leaves,
               and what decides it is whether they were covered on the date of event.
-              {(members.data?.page?.totalElements ?? 0) > 200 && (
-                <> Only the first 200 of {members.data?.page?.totalElements} are shown.</>
+              {(members.data?.page?.totalElements ?? 0) > (members.data?.items?.length ?? 0) && (
+                <>
+                  {' '}
+                  Showing {members.data?.items?.length} of {members.data?.page?.totalElements} —
+                  search by name to narrow it.
+                </>
               )}
             </p>
           </FormField>
+          </>
         )}
 
         <FormField label="Date of event" error={errors.dateOfEvent?.message}>

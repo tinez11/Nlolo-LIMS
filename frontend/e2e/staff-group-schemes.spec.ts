@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { issueRealPolicy } from './policies';
-import { dmy } from './dates';
+import { dmy, todayIso } from './dates';
 import { asAdmin } from './admin';
 import { fillPolicyNumberManually } from './guards';
 
@@ -290,19 +290,31 @@ test.describe('staff group schemes', () => {
     const policyNumber = page.url().split('/').pop() as string;
 
     await page.goto('/staff/claims/new');
-    await fillPolicyNumberManually(page, policyNumber);
+    // CLAIMANT FIRST, POLICY SECOND, and the order is load-bearing here in a way it is not on
+    // an individual claim. Once a scheme's number is entered, this page renders a member
+    // <option> per life -- and those lives include Amina Owner, who is also the claimant. An
+    // <option> answers to getByText but is never "visible" to Playwright, so the claimant
+    // picker's own text locator resolves to it and the click hangs until the test times out.
+    // Choosing the claimant before the member list exists sidesteps it, and matches the order
+    // the form itself asks in.
     await page.getByRole('button', { name: 'Search for the claimant by name' }).click();
     await page.getByPlaceholder('Type a name to search').fill('Amina');
     await page.getByText('Amina Owner').click();
+    await fillPolicyNumberManually(page, policyNumber);
 
     // The field exists only because this policy is a scheme.
     await expect(page.getByLabel('Who died')).toBeVisible({ timeout: 15_000 });
 
-    await page.getByLabel('Date of event').fill(dmy('2026-08-01'));
+    // TODAY, not a fixed past date. The scheme was created moments ago, so its members are
+    // covered from today -- and the server checks cover AS AT THE DATE OF EVENT, refusing
+    // "was not covered on 2026-08-01 (covered from ...)". A hardcoded date made this test fail
+    // on a rule that was working correctly, which is the right rule and the wrong fixture.
+    const eventDate = todayIso();
+    await page.getByLabel('Date of event').fill(dmy(eventDate));
     await page.getByLabel('Claim type').selectOption('DEATH');
     await page.getByLabel('Cause of death').fill('Natural causes');
     await page.getByLabel('Place of death').fill('Dar es Salaam');
-    await page.getByLabel('Date of death').fill(dmy('2026-08-01'));
+    await page.getByLabel('Date of death').fill(dmy(eventDate));
     await page.getByLabel('Attending physician').fill('Dr. E2E Test');
 
     // Submitted with no member named: refused here, before the network.
