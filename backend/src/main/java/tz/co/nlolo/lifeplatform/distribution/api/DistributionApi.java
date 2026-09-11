@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.distribution.api;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -60,6 +61,29 @@ public interface DistributionApi {
      * against").
      */
     List<UUID> resolveAgentTeam(UUID partyId);
+
+    /**
+     * The agent this party IS, if any — "who is this person, as an agent".
+     *
+     * <p>Built for {@code policy}, which at issuance reads the policyholder's registering agent
+     * (recorded on the party record as a party id, because party may not depend on distribution)
+     * and has to turn it into the agent of record. That is what makes an agent's commission real:
+     * commission accrues off {@code PolicyActivated.agentOfRecordId}, and before this the only
+     * record of who registered a client was a Keycloak subject nothing could resolve.
+     *
+     * <p>Distinct from {@link #resolveAgentTeam}, which answers "whose business may this caller
+     * SEE" and deliberately includes the hierarchy beneath them. This is one agent, and it is
+     * about who gets paid.
+     *
+     * <p>Prefers an ACTIVE profile and otherwise returns whichever exists, matching how
+     * {@code /agents/me} resolves the same question. A suspended agent still earns on business
+     * they brought in — suspension stops them selling, and silently redirecting their commission
+     * to nobody would be a money decision taken by a null check.
+     *
+     * @return empty when this party is not an agent in this tenant, which is the ordinary case:
+     *     most parties are customers.
+     */
+    Optional<UUID> agentIdForParty(UUID partyId);
 
     /** ACTIVE -> SUSPENDED. {@code AgentProfile.setLicenseStatus} has existed since M7 with no
      * caller anywhere on the platform -- this is the first one. @throws InvalidAgentStateException

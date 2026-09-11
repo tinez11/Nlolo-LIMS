@@ -35,6 +35,81 @@ paths:
         # (errorCode DUPLICATE_IDENTITY_DOCUMENT), enforced by the partial unique index
         # ux_party_individual_identity.
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /parties/individuals/{partyId}:
+    put:
+      summary: Correct a person's recorded details
+      description: >-
+        Replaces what the platform has recorded about this person. A full replacement rather
+        than a patch, so clearing a field is expressible — an omitted field and a cleared one
+        cannot be the same message.
+
+
+        **KYC status is not touched.** KYC here is what a passport is: a document verifying that
+        this person is who they say they are. Amending the record does not un-verify that
+        document, so a correction never sends a verified client back to PENDING and makes them
+        prove themselves again over a misspelled street.
+
+
+        **Staff only**, unlike registration, which agents and customers may also do. Creating
+        your own record is not the same act as rewriting one: an agent able to amend a client
+        afterwards could change the identity a policy was underwritten against, and a customer
+        could change theirs after a claim event.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterIndividualRequest' }
+      responses:
+        '200':
+          description: Amended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartyDetailView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        # The amended identity document already belongs to a DIFFERENT party
+        # (DUPLICATE_IDENTITY_DOCUMENT). Colliding with itself is not a conflict.
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /parties/corporates/{partyId}:
+    put:
+      summary: Correct a company's recorded details
+      description: >-
+        The same act as amending a person, for a company or a group — and with the same rule
+        about KYC, which is untouched.
+
+
+        **No registrationNumber.** A company's registration number is its identity in the
+        national register: the thing the duplicate check runs on, and the thing a policy was
+        underwritten against. Correcting a phone number must not be a route to quietly becoming
+        a different company. A genuinely mis-recorded registration number is a deliberate act
+        with its own evidence, not a side effect of an edit form.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: partyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AmendCorporateRequest' }
+      responses:
+        '200':
+          description: Amended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartyDetailView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /parties/corporates:
     post:
       summary: Register a corporate (e.g. an employer or SACCO for a group scheme)
@@ -351,6 +426,22 @@ components:
           properties:
             phoneNumber: { type: string, pattern: '^\+255\d{9}$' }
             email: { type: [string, "null"], format: email }
+    AmendCorporateRequest:
+      type: object
+      required: [registeredName, contactInfo]
+      description: >-
+        Deliberately NOT RegisterCorporateRequest minus a field — its own schema, because the
+        omission is the point. There is no registrationNumber here: a company's registration
+        number is its identity in the national register, and an edit form must not be a route to
+        becoming a different company.
+      properties:
+        registeredName: { type: string }
+        contactInfo:
+          type: object
+          description: Same shape as RegisterCorporateRequest.contactInfo.
+          properties:
+            phoneNumber: { type: string, pattern: '^\+255\d{9}$' }
+            email: { type: [string, "null"], format: email }
     PartyView:
       type: object
       properties:
@@ -391,6 +482,25 @@ components:
         employerName: { type: [string, "null"] }
         nationality: { type: [string, "null"], example: TZ }
         address: { $ref: '#/components/schemas/AddressView' }
+        registeredByPartyId:
+          description: >-
+            The PARTY id of the agent who registered this client, taken from the registering
+            token's party_id claim. Null when staff registered them, when they registered
+            themselves, or when they predate the column — all real states, not missing data.
+
+
+            This is what makes an agent's commission real. Commission accrues off
+            PolicyActivated.agentOfRecordId, and the policy module resolves this party id to an
+            agent at issuance and binds it as the agent of record. Before it existed, the only
+            record of who registered a client was createdBy — a Keycloak subject that nothing
+            could resolve to an agent — so an agent could sign a customer up and earn nothing on
+            their policies unless somebody separately named them on every case.
+
+
+            A party id rather than an agent id because the party module may not depend on
+            distribution and so cannot name, validate or resolve an agent.
+          type: [string, "null"]
+          format: uuid
     IdentityDocumentView:
       description: >-
         Both fields are set together or both null -- enforced by

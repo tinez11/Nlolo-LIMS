@@ -28,6 +28,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -67,8 +68,34 @@ public class PartyController {
             request.employerName(),
             request.nationality(),
             request.address() != null ? request.address().toAddress() : Address.none());
-        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject());
+        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject(), callerPartyId(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
+    }
+
+    /**
+     * The caller's own party id, which for an agent is the thing that ties them to commission.
+     *
+     * <p>Taken from the {@code party_id} claim — the same claim {@code /agents/me} resolves an
+     * agent by. A staff token carries none, and neither does a customer self-registering, so
+     * null here is a real answer: nobody brought this client in.
+     *
+     * <p><b>Not validated as an agent here, on purpose.</b> Party may not depend on distribution
+     * and so cannot ask whether this party is an agent; policy answers that at issuance, where
+     * it matters and where the modules line up. Storing a party id that turns out not to be an
+     * agent costs nothing — it resolves to no agent and the policy is direct, exactly as today.
+     */
+    private static UUID callerPartyId(Jwt jwt) {
+        String claim = jwt.getClaimAsString("party_id");
+        if (claim == null || claim.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(claim);
+        } catch (IllegalArgumentException malformed) {
+            // A token we cannot read is not a reason to refuse a registration -- the client gets
+            // registered with no attribution, which is the same outcome as staff registering them.
+            return null;
+        }
     }
 
     @PostMapping("/parties/corporates")
@@ -78,8 +105,55 @@ public class PartyController {
         PartyView view = partyApi.registerCorporate(request.registeredName(), request.registrationNumber(),
             request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
             request.contactInfo() != null ? request.contactInfo().email() : null,
-            jwt.getSubject());
+            jwt.getSubject(), callerPartyId(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
+    }
+
+    /**
+     * Correct a person's recorded details.
+     *
+     * <p>PUT, not PATCH, and the request carries the whole person: this replaces the record, so
+     * "clear the employer" is expressible. A PATCH shape would make an omitted field and a
+     * cleared field the same wire message.
+     *
+     * <p><b>STAFF ONLY.</b> Registration is open to agents and to customers themselves, because
+     * creating your own record is not the same act as rewriting one — an agent able to amend a
+     * client after the fact could change the identity a policy was underwritten against, and a
+     * customer could change theirs after a claim event.
+     *
+     * <p>KYC status is deliberately untouched by this. See {@code PartyApi.amendIndividual}.
+     */
+    @PutMapping("/parties/individuals/{partyId}")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PartyDetailView> amendIndividual(@PathVariable UUID partyId,
+                                                            @Valid @RequestBody RegisterIndividualRequest request,
+                                                            @AuthenticationPrincipal Jwt jwt) {
+        IndividualRegistration amended = new IndividualRegistration(
+            request.fullName(),
+            request.dateOfBirth(),
+            request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
+            request.contactInfo() != null ? request.contactInfo().email() : null,
+            request.sex(),
+            request.smokerStatus(),
+            new IdentityDocument(request.idType(), request.idNumber()),
+            request.occupation(),
+            request.occupationClass(),
+            request.employerName(),
+            request.nationality(),
+            request.address() != null ? request.address().toAddress() : Address.none());
+        return ResponseEntity.ok(partyApi.amendIndividual(partyId, amended, jwt.getSubject()));
+    }
+
+    /** @see #amendIndividual — the same act, for a company or a group. */
+    @PutMapping("/parties/corporates/{partyId}")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PartyDetailView> amendCorporate(@PathVariable UUID partyId,
+                                                           @Valid @RequestBody AmendCorporateRequest request,
+                                                           @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(partyApi.amendOrganisation(partyId, request.registeredName(),
+            request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
+            request.contactInfo() != null ? request.contactInfo().email() : null,
+            jwt.getSubject()));
     }
 
     /**

@@ -76,6 +76,13 @@ public class PartyApiImpl implements PartyApi {
     @Override
     @Transactional
     public PartyView registerIndividual(IndividualRegistration registration, String registeredBy) {
+        return registerIndividual(registration, registeredBy, null);
+    }
+
+    @Override
+    @Transactional
+    public PartyView registerIndividual(IndividualRegistration registration, String registeredBy,
+                                         UUID registeredByAgentPartyId) {
         validatePhone(registration.phoneNumber());
         UUID tenantId = TenantContext.get();
 
@@ -96,8 +103,8 @@ public class PartyApiImpl implements PartyApi {
             // the surrounding transaction commits and the violation would surface far from
             // here.
             party = document.recorded()
-                ? partyRepository.saveAndFlush(Party.newIndividual(tenantId, registration, registeredBy))
-                : partyRepository.save(Party.newIndividual(tenantId, registration, registeredBy));
+                ? partyRepository.saveAndFlush(Party.newIndividual(tenantId, registration, registeredBy, registeredByAgentPartyId))
+                : partyRepository.save(Party.newIndividual(tenantId, registration, registeredBy, registeredByAgentPartyId));
         } catch (DataIntegrityViolationException ex) {
             if (document.recorded()) {
                 throw new DuplicateIdentityDocumentException(document.type());
@@ -112,6 +119,13 @@ public class PartyApiImpl implements PartyApi {
     @Override
     @Transactional
     public PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber, String email, String registeredBy) {
+        return registerCorporate(registeredName, registrationNumber, phoneNumber, email, registeredBy, null);
+    }
+
+    @Override
+    @Transactional
+    public PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber,
+                                        String email, String registeredBy, UUID registeredByAgentPartyId) {
         validatePhone(phoneNumber);
         UUID tenantId = TenantContext.get();
         if (partyRepository.findByTenantIdAndRegistrationNumber(tenantId, registrationNumber).isPresent()) {
@@ -128,7 +142,7 @@ public class PartyApiImpl implements PartyApi {
             // queue -- it doesn't hit the DB until the surrounding @Transactional proxy commits, which is
             // after this method (and this catch block) has already returned. saveAndFlush forces the INSERT
             // to execute synchronously, right here, so a real unique-constraint violation is actually caught.
-            party = partyRepository.saveAndFlush(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy));
+            party = partyRepository.saveAndFlush(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy, registeredByAgentPartyId));
         } catch (DataIntegrityViolationException e) {
             throw new DuplicateRegistrationNumberException(registrationNumber);
         }
@@ -159,7 +173,7 @@ public class PartyApiImpl implements PartyApi {
             party.getCreatedBy(),
             party.getSex(), party.getSmokerStatus(), party.getIdentityDocument(),
             party.getOccupation(), party.getOccupationClass(), party.getEmployerName(),
-            party.getNationality(), party.getAddress());
+            party.getNationality(), party.getAddress(), party.getRegisteredByPartyId());
     }
 
     @Override
@@ -226,6 +240,70 @@ public class PartyApiImpl implements PartyApi {
         findPartyOrThrow(groupPartyId);
         return groupMembershipRepository.findByGroupPartyIdAndStatus(groupPartyId, "ACTIVE", pageable)
             .map(m -> new GroupMembershipView(m.getMemberPartyId(), m.getJoinDate(), m.getStatus()));
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The duplicate check EXCLUDES this party, which is the difference between amending and
+     * registering: a correction that leaves the identity document untouched must not be refused
+     * for colliding with itself. The partial unique index still guarantees it against a
+     * concurrent amendment, and the flush below is what makes that violation surface here rather
+     * than at commit — the same reasoning registration records.
+     */
+    @Override
+    @Transactional
+    public PartyDetailView amendIndividual(UUID partyId, IndividualRegistration amended, String amendedBy) {
+        validatePhone(amended.phoneNumber());
+        Party party = findPartyOrThrow(partyId);
+
+        IdentityDocument document = amended.identityDocument();
+        if (document.recorded()) {
+            partyRepository.findByTenantIdAndIdTypeAndIdNumber(
+                    party.getTenantId(), document.type(), document.number())
+                .filter(other -> !other.getPartyId().equals(partyId))
+                .ifPresent(other -> { throw new DuplicateIdentityDocumentException(document.type()); });
+        }
+
+        party.amendIndividualDetails(amended, amendedBy);
+        try {
+            partyRepository.saveAndFlush(party);
+        } catch (DataIntegrityViolationException ex) {
+            if (document.recorded()) {
+                throw new DuplicateIdentityDocumentException(document.type());
+            }
+            throw ex;
+        }
+
+        publishAmended(party, amendedBy);
+        return getPartyDetail(partyId);
+    }
+
+    @Override
+    @Transactional
+    public PartyDetailView amendOrganisation(UUID partyId, String displayName, String phoneNumber,
+                                              String email, String amendedBy) {
+        validatePhone(phoneNumber);
+        Party party = findPartyOrThrow(partyId);
+        party.amendCorporateDetails(displayName, phoneNumber, email, amendedBy);
+        partyRepository.save(party);
+        publishAmended(party, amendedBy);
+        return getPartyDetail(partyId);
+    }
+
+    /**
+     * The audit trail for a correction.
+     *
+     * <p>Carries who and when rather than a field-by-field diff. A client record holds identity
+     * documents, an address and a date of birth; copying those into an event payload would put a
+     * second copy of exactly the data the KYC rules exist to protect into the audit log, which is
+     * read far more widely than the party table. That the record was amended, by whom, and when
+     * is what an auditor needs to go and ask; the answer lives on the record itself.
+     */
+    private void publishAmended(Party party, String amendedBy) {
+        eventPublisher.publishEvent(DomainEventEnvelope.of("party.PartyDetailsAmended", party.getTenantId(),
+            Map.of("partyId", party.getPartyId(), "partyType", party.getPartyType().name(),
+                   "amendedBy", amendedBy)));
     }
 
     private void publishRegistered(Party party) {

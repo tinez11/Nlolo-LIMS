@@ -101,6 +101,7 @@ class CommissionAccrualEndToEndTest {
             "db-migrations/refdata/V4__seed_distribution_parameters.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
+            "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -225,6 +226,70 @@ class CommissionAccrualEndToEndTest {
         TenantContext.set(tenantId);
         policyApi.activateOnFirstPremium(policyNumber);
         return policyNumber;
+    }
+
+    /**
+     * THE AGENT WHO REGISTERED THE CUSTOMER EARNS THE COMMISSION, WITHOUT ANYONE NAMING THEM.
+     *
+     * <p>This is the whole point of the binding, and it is asserted end to end — register a
+     * customer as an agent, issue a policy that names NOBODY, collect the first premium, and the
+     * registering agent is owed money.
+     *
+     * <p>What it replaces: commission accrues off {@code PolicyActivated.agentOfRecordId}, which
+     * used to be only whatever the form carried. "Who registered this client" WAS recorded — as
+     * the registering user's Keycloak subject in {@code created_by} — but nothing could resolve a
+     * subject to an agent, so an agent could sign a customer up and earn nothing on their
+     * policies unless somebody separately named them on every single case. Every test above this
+     * one passes {@code hierarchy.sellerId()} by hand, which is exactly the step real life
+     * forgets.
+     *
+     * <p>Deliberately passes a NULL agent of record. Before the bind that produced a direct sale
+     * and zero accruals, which is the assertion one test further down. The only difference here
+     * is that the policyholder was registered BY an agent.
+     */
+    @Test
+    void commissionGoesToTheAgentWhoRegisteredTheCustomerEvenWhenNobodyNamesThem() {
+        UUID tenantId = UUID.randomUUID();
+        Hierarchy hierarchy = buildHierarchy(tenantId, "REGISTRAR");
+        BigDecimal premium = new BigDecimal("80000.00");
+
+        // The seller's own party -- the identity an agent's token carries as its party_id claim,
+        // and therefore what the console records when that agent registers a customer.
+        TenantContext.set(tenantId);
+        UUID sellerPartyId = distributionApi.getAgent(hierarchy.sellerId()).partyId();
+
+        PartyView policyholder = partyApi.registerIndividual(
+            new tz.co.nlolo.lifeplatform.party.api.IndividualRegistration(
+                "Registered By An Agent", LocalDate.of(1980, 6, 1), "+255729900001", null,
+                null, null, tz.co.nlolo.lifeplatform.party.api.IdentityDocument.none(),
+                null, null, null, null, tz.co.nlolo.lifeplatform.party.api.Address.none()),
+            "agent-user-subject", sellerPartyId);
+
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(policyholder.partyId(),
+            hierarchy.productId(), hierarchy.productVersionId(), new BigDecimal("2000000"), CURRENCY,
+            premium, CURRENCY, "MONTHLY",
+            // NOBODY NAMED. This is the case that used to pay nothing at all.
+            null, List.of(), "Distribution E2E test");
+        String policyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        TenantContext.set(tenantId);
+        policyApi.activateOnFirstPremium(policyNumber);
+
+        TenantContext.set(tenantId);
+        List<CommissionAccrual> firstYear = commissionAccrualRepository
+            .findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(
+                tenantId, policyNumber, TierType.FIRST_YEAR);
+        assertThat(firstYear)
+            .as("an agent who registers a customer must earn on that customer's policy")
+            .hasSize(1);
+        assertThat(firstYear.get(0).getAgentId())
+            .as("and the first-year commission belongs to the agent who registered them")
+            .isEqualTo(hierarchy.sellerId());
+
+        assertThat(policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber))
+            .as("the policy itself is attributed to them, not merely the accrual")
+            .get()
+            .satisfies(projection ->
+                assertThat(projection.getAgentId()).isEqualTo(hierarchy.sellerId()));
     }
 
     /**

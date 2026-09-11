@@ -48,4 +48,13 @@ public record PartyDetailView(
     String occupationClass,
     String employerName,
     String nationality,
-    Address address) {}
+    Address address,
+    /**
+     * The PARTY id of the agent who registered this client (V4), or null when staff registered
+     * them, they registered themselves, or they predate the column.
+     *
+     * <p>Read by the policy module at issuance, where it is resolved to an agent and becomes the
+     * policy's agent of record — which is what makes the registering agent's commission real.
+     * Party cannot resolve it itself: it may not depend on distribution.
+     */
+    UUID registeredByPartyId) {}

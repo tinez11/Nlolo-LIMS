@@ -249,6 +249,29 @@ public class DistributionApiImpl implements DistributionApi {
         return List.copyOf(team);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The ACTIVE-preferred, otherwise-first resolution is copied deliberately from
+     * {@code AgentController.resolveOwnAgentId} rather than reinvented: nothing stops a party
+     * holding more than one profile, and two places answering "which agent is this party"
+     * differently would mean an agent could see a policy in their own book that paid commission
+     * to a different one of their profiles.
+     */
+    @Override
+    public java.util.Optional<UUID> agentIdForParty(UUID partyId) {
+        if (partyId == null) {
+            return java.util.Optional.empty();
+        }
+        List<AgentProfile> profiles = agentProfileRepository
+            .findByTenantIdAndPartyId(TenantContext.get(), partyId);
+        return profiles.stream()
+            .filter(p -> p.getLicenseStatus() == LicenseStatus.ACTIVE)
+            .findFirst()
+            .or(() -> profiles.stream().findFirst())
+            .map(AgentProfile::getAgentId);
+    }
+
     @Override
     @Transactional
     public AgentView suspendAgent(UUID agentId, String suspendedBy) {

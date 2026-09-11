@@ -112,6 +112,22 @@ public class Party {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /**
+     * Who brought this client in, as a PARTY id (V4).
+     *
+     * <p>Set once, at registration, from the registering token's {@code party_id} claim — and
+     * deliberately {@code updatable = false}, with no setter. The rule the business asked for is
+     * that the registering agent ALWAYS earns the commission on this client's business, which an
+     * editable field would make negotiable after the fact.
+     *
+     * <p>A party id rather than an agent id because party may not depend on distribution. Policy
+     * resolves it to an agent at issuance; it is the only module allowed to see both.
+     *
+     * <p>NULL is a real answer — staff registered them, or they registered themselves.
+     */
+    @Column(name = "registered_by_party_id", updatable = false)
+    private UUID registeredByPartyId;
+
     @Column(name = "created_by")
     private String createdBy;
 
@@ -123,8 +139,21 @@ public class Party {
 
     protected Party() {}
 
+    /**
+     * Registered by nobody in particular — staff, or the customer themselves.
+     *
+     * <p>An extra factory rather than a widened call at every construction site, which is the
+     * same move {@code PolicyApi.IssueRequest} makes and for the same reason. Plain Java, no
+     * proxy in the way, so delegation is safe.
+     */
     public static Party newIndividual(UUID tenantId, IndividualRegistration registration, String createdBy) {
+        return newIndividual(tenantId, registration, createdBy, null);
+    }
+
+    public static Party newIndividual(UUID tenantId, IndividualRegistration registration, String createdBy,
+                                       UUID registeredByPartyId) {
         Party party = new Party();
+        party.registeredByPartyId = registeredByPartyId;
         party.tenantId = tenantId;
         party.partyType = PartyType.INDIVIDUAL;
         party.displayName = registration.fullName();
@@ -154,9 +183,17 @@ public class Party {
         return party;
     }
 
+    /** @see #newIndividual(UUID, IndividualRegistration, String) for why this delegates. */
     public static Party newCorporate(UUID tenantId, String displayName, String registrationNumber,
                                       String phoneNumber, String email, String createdBy) {
+        return newCorporate(tenantId, displayName, registrationNumber, phoneNumber, email, createdBy, null);
+    }
+
+    public static Party newCorporate(UUID tenantId, String displayName, String registrationNumber,
+                                      String phoneNumber, String email, String createdBy,
+                                      UUID registeredByPartyId) {
         Party party = new Party();
+        party.registeredByPartyId = registeredByPartyId;
         party.tenantId = tenantId;
         party.partyType = PartyType.CORPORATE;
         party.displayName = displayName;
@@ -186,6 +223,69 @@ public class Party {
         this.updatedAt = Instant.now();
         this.updatedBy = decidedBy;
     }
+
+    /**
+     * Correct this person's recorded details.
+     *
+     * <p><b>KYC STATUS IS NOT TOUCHED, and that is a decision rather than an omission.</b> KYC
+     * here is what a passport is: a document verifying that this person is who they say they
+     * are. Amending what the platform has recorded about them does not un-verify the document
+     * that was checked, so a correction does not send a verified client back to PENDING and make
+     * them prove themselves again over a misspelled street.
+     *
+     * <p>Every field is replaced by what is passed, including with null — this is an amendment
+     * of the record, not a patch, and "clear the employer" has to be expressible. The caller is
+     * responsible for sending the full picture; the request DTO is built that way.
+     *
+     * <p>Not amendable here: KYC status (its own endpoint, its own evidence), party type,
+     * registration number, and who registered the client. The first three are what the record
+     * IS rather than what it says, and the fourth decides who gets paid — an editable
+     * attribution is an editable commission.
+     */
+    public void amendIndividualDetails(IndividualRegistration amended, String amendedBy) {
+        if (partyType != PartyType.INDIVIDUAL) {
+            throw new IllegalStateException("amendIndividualDetails is for an INDIVIDUAL; party "
+                + partyId + " is " + partyType);
+        }
+        this.displayName = amended.fullName();
+        this.dateOfBirth = amended.dateOfBirth();
+        this.phoneNumber = amended.phoneNumber();
+        this.email = amended.email();
+        this.sex = amended.sex();
+        this.smokerStatus = amended.smokerStatus();
+        this.idType = amended.identityDocument().type();
+        this.idNumber = amended.identityDocument().number();
+        this.occupation = amended.occupation();
+        this.occupationClass = amended.occupationClass();
+        this.employerName = amended.employerName();
+        this.nationality = amended.nationality();
+
+        Address address = amended.address();
+        this.addressLine = address.line();
+        this.ward = address.ward();
+        this.district = address.district();
+        this.region = address.region();
+        this.postalCode = address.postalCode();
+
+        this.updatedAt = Instant.now();
+        this.updatedBy = amendedBy;
+    }
+
+    /** @see #amendIndividualDetails for why KYC and party type are not amendable. */
+    public void amendCorporateDetails(String displayName, String phoneNumber, String email,
+                                       String amendedBy) {
+        if (partyType == PartyType.INDIVIDUAL) {
+            throw new IllegalStateException("amendCorporateDetails is for a CORPORATE or GROUP; party "
+                + partyId + " is INDIVIDUAL");
+        }
+        this.displayName = displayName;
+        this.phoneNumber = phoneNumber;
+        this.email = email;
+        this.updatedAt = Instant.now();
+        this.updatedBy = amendedBy;
+    }
+
+    public UUID getRegisteredByPartyId() { return registeredByPartyId; }
 
     public UUID getPartyId() { return partyId; }
     public UUID getTenantId() { return tenantId; }

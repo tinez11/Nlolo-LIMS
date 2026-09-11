@@ -88,6 +88,45 @@ public class PolicyApiImpl implements PolicyApi {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * WHO EARNS THE COMMISSION ON THIS POLICY.
+     *
+     * <p><b>The agent who registered the client, always.</b> That is a business rule, not a
+     * default: the registering agent's attribution BINDS, and a value supplied on the request
+     * does not override it. An overridable attribution is a negotiable commission, and the
+     * negotiation would happen on a form months after the agent did the work.
+     *
+     * <p>What this closes: commission accrues in distribution off
+     * {@code PolicyActivated.agentOfRecordId}, which until now was only ever whatever the form
+     * that opened the case happened to carry — null for a direct sale. "Who registered this
+     * client" was recorded separately, as a Keycloak subject in {@code party.created_by}, which
+     * nothing could resolve to an agent. So an agent could sign a customer up and earn nothing on
+     * their policies unless somebody separately named them on every case.
+     *
+     * <p>This is THE ONLY MODULE that can close it. Party may not depend on distribution and so
+     * cannot name an agent; underwriting may not either, so a case cannot resolve one when it is
+     * opened. Policy may depend on both — and it is also what emits the event commission listens
+     * to, so binding here covers automatic issuance, manual issue and group schemes at once
+     * without three request DTOs having to agree.
+     *
+     * <p>Falls back to the supplied value when the client has no registering agent: staff
+     * registered them, they registered themselves, or they predate the column. Attributing a sale
+     * by hand is still a real thing staff do, and null still means direct.
+     *
+     * @param suppliedAgentOfRecordId what the caller asked for, honoured only as a fallback.
+     */
+    private UUID agentOfRecordFor(UUID policyholderPartyId, UUID suppliedAgentOfRecordId) {
+        UUID registeredBy = partyApi.getPartyDetail(policyholderPartyId).registeredByPartyId();
+        if (registeredBy == null) {
+            return suppliedAgentOfRecordId;
+        }
+        return distributionApi.agentIdForParty(registeredBy)
+            // Registered by somebody who is not an agent in this tenant -- a staff member whose
+            // token happened to carry a party_id, most likely. Not an error, and not a reason to
+            // drop an attribution the caller did make.
+            .orElse(suppliedAgentOfRecordId);
+    }
+
     @Override
     @Transactional
     public PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy) {
@@ -120,7 +159,8 @@ public class PolicyApiImpl implements PolicyApi {
         List<Beneficiary> beneficiaries = validateAndBuildBeneficiaries(tenantId, policyNumber, request.beneficiaries());
 
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(), request.productVersionId(),
-            snapshot.category().name(), request.agentOfRecordId(), request.sumAssuredAmount(), request.sumAssuredCurrency(),
+            snapshot.category().name(), agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId()),
+            request.sumAssuredAmount(), request.sumAssuredCurrency(),
             request.premiumAmount(), request.premiumCurrency(), request.premiumFrequency(), underwritingCaseId, issuedBy);
         // Before activate, so an invalid term is refused before the policy is put in
         // force rather than after. All three may be null: a product that does not term
@@ -951,7 +991,8 @@ public class PolicyApiImpl implements PolicyApi {
         String policyNumber = "GRP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(),
-            request.productVersionId(), snapshot.category().name(), request.agentOfRecordId(),
+            request.productVersionId(), snapshot.category().name(),
+            agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId()),
             total, request.currency(), request.premiumAmount(), request.premiumCurrency(),
             request.premiumFrequency(), null, issuedBy);
         policy.applyTerm(commencement, request.policyTermMonths(), null);

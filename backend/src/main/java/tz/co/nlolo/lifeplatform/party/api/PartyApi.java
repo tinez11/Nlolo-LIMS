@@ -18,6 +18,28 @@ public interface PartyApi {
     PartyView registerIndividual(IndividualRegistration registration, String registeredBy);
 
     /**
+     * Register a person AND record which agent brought them in.
+     *
+     * <p>{@code registeredByAgentPartyId} is the registering agent's own PARTY id, taken from
+     * the caller's {@code party_id} token claim — null when staff registered them or they
+     * registered themselves, which is a real state rather than missing data.
+     *
+     * <p><b>This is what makes an agent's commission real.</b> Commission accrues off
+     * {@code PolicyActivated.agentOfRecordId}, and until this existed the only record of who
+     * registered a client was {@code created_by}, holding a Keycloak subject that nothing can
+     * resolve to an agent. An agent could sign up a customer and earn nothing on their policies
+     * unless somebody separately named them on each case.
+     *
+     * <p>A party id rather than an agent id because party may not depend on distribution. Policy
+     * resolves it at issuance — it is the only module allowed to see both.
+     *
+     * <p>An overload, not a widened signature: about fifty callers, most of them fixtures that
+     * care only that a party exists, have no opinion about who registered it.
+     */
+    PartyView registerIndividual(IndividualRegistration registration, String registeredBy,
+                                  UUID registeredByAgentPartyId);
+
+    /**
      * The pre-Build-1 registration: name, date of birth, contact details.
      *
      * <p>Kept as an overload because roughly fifty callers -- almost all of them test
@@ -40,6 +62,35 @@ public interface PartyApi {
                                   String email, String registeredBy);
 
     PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber, String email, String registeredBy);
+
+    /** @see #registerIndividual(IndividualRegistration, String, UUID) — an employer is brought in by an agent too. */
+    PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber,
+                                 String email, String registeredBy, UUID registeredByAgentPartyId);
+
+    /**
+     * Correct what the platform has recorded about a person.
+     *
+     * <p><b>KYC status is untouched, deliberately.</b> KYC is the passport: a document verifying
+     * that this person is who they say they are. Amending the record does not un-verify that
+     * document, so a correction does not send a verified client back to PENDING and make them
+     * prove themselves again over a misspelled street name.
+     *
+     * <p>A full replacement, not a patch — every field is set to what is passed, nulls included,
+     * because "clear the employer" has to be expressible. Callers send the whole picture.
+     *
+     * <p>Not amendable: KYC status (its own endpoint, backed by its own evidence), party type,
+     * and who registered the client — the last because an editable attribution is an editable
+     * commission.
+     *
+     * @throws PartyNotFoundException if no such party exists in this tenant.
+     * @throws DuplicateIdentityDocumentException if the amended identity document already
+     *     belongs to a DIFFERENT party in this tenant.
+     */
+    PartyDetailView amendIndividual(UUID partyId, IndividualRegistration amended, String amendedBy);
+
+    /** @see #amendIndividual — the same rules, for a company or a group. */
+    PartyDetailView amendOrganisation(UUID partyId, String displayName, String phoneNumber,
+                                       String email, String amendedBy);
 
     /**
      * Not part of openapi-party.yaml (which currently only exposes individual/corporate
