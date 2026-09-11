@@ -65,6 +65,7 @@ class PartyKycEvidenceUploadTest {
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
+            "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
 
         MinioClient minioClient = MinioClient.builder()

@@ -63,6 +63,7 @@ class PartyApiIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
+            "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -188,6 +189,130 @@ class PartyApiIntegrationTest {
             () -> new IdentityDocument(IdType.PASSPORT, null));
         Assertions.assertThrows(IllegalArgumentException.class,
             () -> new IdentityDocument(null, "A1234567"));
+    }
+
+    /**
+     * A CORRECTION DOES NOT UN-VERIFY A PERSON.
+     *
+     * <p>The rule the business stated: KYC is a passport — a document verifying that this person
+     * is who they say they are. Amending what the platform has recorded about them does not
+     * invalidate that document, so a verified client is not sent back to PENDING and made to
+     * prove themselves again over a corrected street name.
+     *
+     * <p>Asserted on an IDENTITY field, not merely a contact one, because that is the case where
+     * an implementation would most plausibly decide to be clever and reset.
+     */
+    @Test
+    void amendingAVerifiedClientLeavesTheirKycAlone() {
+        var registered = partyApi.registerIndividual(
+            registrationWithNationalId("Kyc Survivor", "19900101-22222-00001-11"), "test-agent");
+        partyApi.submitKycEvidence(registered.partyId(), KycStatus.VERIFIED, "doc-ref-1", "kyc-officer");
+
+        var amended = partyApi.amendIndividual(registered.partyId(),
+            new IndividualRegistration("Kyc Survivor Corrected", LocalDate.of(1990, 1, 2),
+                "+255713999888", "corrected@example.tz", Sex.FEMALE, SmokerStatus.NON_SMOKER,
+                new IdentityDocument(IdType.NATIONAL_ID, "19900101-22222-00001-11"),
+                "Teacher", "PROF_1", "Ilala Secondary", "TZ", Address.none()),
+            "staff-1");
+
+        assertThat(amended.displayName()).isEqualTo("Kyc Survivor Corrected");
+        assertThat(amended.dateOfBirth()).isEqualTo(LocalDate.of(1990, 1, 2));
+        assertThat(amended.phoneNumber()).isEqualTo("+255713999888");
+        assertThat(amended.occupation()).isEqualTo("Teacher");
+        assertThat(amended.kycStatus())
+            .as("a correction is not a reason to make a verified client prove themselves again")
+            .isEqualTo(KycStatus.VERIFIED);
+    }
+
+    /**
+     * A full replacement, not a patch: a null clears the field.
+     *
+     * <p>Stated as its own test because the alternative reading is the tempting one — treat null
+     * as "leave alone" — and it would make "remove the employer I recorded by mistake"
+     * impossible to express through the only endpoint that edits a client.
+     */
+    @Test
+    void amendingClearsAFieldThatIsSentEmpty() {
+        var registered = partyApi.registerIndividual(new IndividualRegistration(
+            "Employed Person", LocalDate.of(1990, 1, 1), null, null, null, null,
+            new IdentityDocument(IdType.NATIONAL_ID, "19900101-22222-00002-11"),
+            "Driver", "PROF_2", "Some Employer Ltd", "TZ", Address.none()), "test-agent");
+
+        var amended = partyApi.amendIndividual(registered.partyId(), new IndividualRegistration(
+            "Employed Person", LocalDate.of(1990, 1, 1), null, null, null, null,
+            new IdentityDocument(IdType.NATIONAL_ID, "19900101-22222-00002-11"),
+            "Driver", "PROF_2", null, "TZ", Address.none()), "staff-1");
+
+        assertThat(amended.employerName()).isNull();
+    }
+
+    /**
+     * Amending must not collide with the party's OWN identity document.
+     *
+     * <p>The difference between amending and registering, in one test: registration refuses a
+     * document already in the tenant, and the naive reuse of that check here would refuse every
+     * correction that left the document untouched — which is nearly all of them.
+     */
+    @Test
+    void amendingDoesNotConflictWithThePartysOwnIdentityDocument() {
+        var registered = partyApi.registerIndividual(
+            registrationWithNationalId("Self Collision", "19900101-33333-00001-11"), "test-agent");
+
+        var amended = partyApi.amendIndividual(registered.partyId(),
+            registrationWithNationalId("Self Collision Corrected", "19900101-33333-00001-11"),
+            "staff-1");
+
+        assertThat(amended.displayName()).isEqualTo("Self Collision Corrected");
+    }
+
+    /** But somebody ELSE's document is still a conflict — that check is what it is for. */
+    @Test
+    void amendingOntoAnotherPartysIdentityDocumentIsRefused() {
+        partyApi.registerIndividual(
+            registrationWithNationalId("Document Owner", "19900101-44444-00001-11"), "test-agent");
+        var other = partyApi.registerIndividual(
+            registrationWithNationalId("Document Borrower", "19900101-44444-00002-11"), "test-agent");
+
+        Assertions.assertThrows(DuplicateIdentityDocumentException.class,
+            () -> partyApi.amendIndividual(other.partyId(),
+                registrationWithNationalId("Document Borrower", "19900101-44444-00001-11"),
+                "staff-1"));
+    }
+
+    /**
+     * The registering agent is recorded, and is NOT editable.
+     *
+     * <p>It decides who gets paid — commission accrues off the agent of record, which policy
+     * binds from this field at issuance. An attribution that an edit form could rewrite is a
+     * commission that an edit form could reassign, months after the agent did the work. The
+     * column is {@code updatable = false} and the aggregate exposes no setter; this test is what
+     * stops a future amend method from quietly growing one.
+     */
+    @Test
+    void theRegisteringAgentIsRecordedAndSurvivesAnAmendment() {
+        UUID agentPartyId = UUID.randomUUID();
+        var registered = partyApi.registerIndividual(
+            registrationWithNationalId("Agent Brought Me In", "19900101-55555-00001-11"),
+            "agent-subject", agentPartyId);
+
+        assertThat(partyApi.getPartyDetail(registered.partyId()).registeredByPartyId())
+            .isEqualTo(agentPartyId);
+
+        var amended = partyApi.amendIndividual(registered.partyId(),
+            registrationWithNationalId("Renamed Entirely", "19900101-55555-00001-11"), "staff-1");
+
+        assertThat(amended.registeredByPartyId())
+            .as("who brought this client in is not something an edit form may reassign")
+            .isEqualTo(agentPartyId);
+    }
+
+    /** Nobody brought in a client staff registered, and null says exactly that. */
+    @Test
+    void aClientRegisteredWithoutAnAgentHasNoRegisteringAgent() {
+        var registered = partyApi.registerIndividual(
+            registrationWithNationalId("Walked In", "19900101-66666-00001-11"), "staff-1");
+
+        assertThat(partyApi.getPartyDetail(registered.partyId()).registeredByPartyId()).isNull();
     }
 
     private static IndividualRegistration registrationWithNationalId(String fullName, String idNumber) {

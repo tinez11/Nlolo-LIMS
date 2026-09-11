@@ -1,5 +1,6 @@
-import { get, post } from '@/lib/http';
+import { get, post, put } from '@/lib/http';
 import type {
+  AmendCorporateRequest,
   KycEvidenceUploadResponse,
   KycStatus,
   Page,
@@ -163,4 +164,37 @@ export function registerIndividual(request: RegisterIndividualRequest): Promise<
 /** `POST /parties/corporates` -- agent or staff only, never self-service. */
 export function registerCorporate(request: RegisterCorporateRequest): Promise<PartyView> {
   return post<PartyView>('/parties/corporates', request);
+}
+
+/**
+ * `PUT /parties/individuals/{partyId}` -- correct what is recorded about a person.
+ *
+ * STAFF ONLY, unlike registration, which agents and customers may also do: creating your own
+ * record is not the same act as rewriting one.
+ *
+ * A full replacement, which is why it takes the same request shape as registration. An omitted
+ * field CLEARS the value -- there is no patch semantics here, deliberately, so that "remove the
+ * employer I recorded by mistake" is expressible at all.
+ *
+ * KYC status is untouched by this. KYC is the passport: it verifies that this person is who they
+ * say they are, and correcting their address does not un-verify the document that was checked.
+ */
+export function amendIndividual(
+  partyId: string,
+  request: RegisterIndividualRequest,
+): Promise<PartyDetailView> {
+  return put<PartyDetailView>(`/parties/individuals/${encodeURIComponent(partyId)}`, request);
+}
+
+/**
+ * `PUT /parties/corporates/{partyId}` -- the same act, for a company or a group.
+ *
+ * Note there is NO registrationNumber: a company's registration number is its identity in the
+ * national register, and an edit form must not be a route to becoming a different company.
+ */
+export function amendCorporate(
+  partyId: string,
+  request: AmendCorporateRequest,
+): Promise<PartyDetailView> {
+  return put<PartyDetailView>(`/parties/corporates/${encodeURIComponent(partyId)}`, request);
 }

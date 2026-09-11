@@ -118,6 +118,7 @@ class AppRolePrivilegesIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
+            "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             // M2 additions (final-review finding 4): product/underwriting's GRANT/RLS SQL
             // read correct by inspection but were never exercised under the real app_role

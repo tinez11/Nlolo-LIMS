@@ -59,6 +59,7 @@ class PartyContractTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
+            "db-migrations/party/V4__registered_by_agent.sql",
             // GET /parties/{id}/documents reads document.document_record through DocumentApi, so
             // this class now needs the document schema too -- without it the endpoint 500s on a
             // missing relation, which is exactly how it first failed.
@@ -94,6 +95,65 @@ class PartyContractTest {
                     """))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * Amending a client over real HTTP, against the spec.
+     *
+     * <p>Two things only this level can prove: that the PUT is reachable with a staff token and
+     * that its response really is a {@code PartyDetailView} — the spec declares
+     * {@code additionalProperties: false}, so the new {@code registeredByPartyId} field had to be
+     * declared before this could pass, which is exactly the check that caught the last set of
+     * fields added to a view without a spec change.
+     */
+    @Test
+    void amendIndividualMatchesOpenApiContract() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        var staff = jwt()
+            .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+
+        String created = mockMvc.perform(post("/parties/individuals")
+                .with(staff)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Amend Me","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345699"}}
+                    """))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String partyId = created.replaceAll(".*\"partyId\"\\s*:\\s*\"([0-9a-f-]{36})\".*", "$1");
+
+        mockMvc.perform(put("/parties/individuals/" + partyId)
+                .with(staff)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Amended Name","dateOfBirth":"1990-05-12",
+                     "contactInfo":{"phoneNumber":"+255712345600","email":"amended@example.tz"},
+                     "occupation":"Nurse"}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * An agent may REGISTER a client and may not REWRITE one.
+     *
+     * <p>The asymmetry is deliberate and is the reason the endpoint is gated differently from the
+     * one beside it: creating a record is not the same act as changing one. An agent able to
+     * amend a client afterwards could alter the identity a policy was underwritten against.
+     */
+    @Test
+    void anAgentMayNotAmendAClient() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(put("/parties/individuals/" + UUID.randomUUID())
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Nice Try","dateOfBirth":"1990-05-12","contactInfo":{}}
+                    """))
+            .andExpect(status().isForbidden());
     }
 
     /**

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RegisterIndividualRequest } from '@/api/types';
+import type { PartyDetailView, RegisterIndividualRequest } from '@/api/types';
 import { todayIso } from '@/lib/dates';
 import { ISO_DATE_PATTERN, PHONE_PATTERN } from '@/lib/patterns';
 
@@ -111,6 +111,39 @@ export function blankRegisterIndividualForm(): RegisterIndividualFormValues {
     region: '',
     postalCode: '',
   };
+}
+
+/**
+ * The same form, filled in from a client already on record — the edit form's starting point.
+ *
+ * <p>Every null becomes '', which is what the controls bind to, and `toApiRequest` turns '' back
+ * into an omitted field. So a value that was never recorded stays unrecorded through a round
+ * trip, rather than being written back as a recorded blank: the distinction the backend keeps
+ * between a null smokerStatus and UNKNOWN survives an edit that did not touch it.
+ *
+ * <p>`dateOfBirth` is already an ISO date on the wire and the control wants one, so it passes
+ * through unchanged.
+ */
+export function editIndividualForm(party: PartyDetailView): RegisterIndividualFormValues {
+  return {
+    fullName: party.displayName ?? '',
+    dateOfBirth: party.dateOfBirth ?? '',
+    phoneNumber: party.phoneNumber ?? '',
+    email: party.email ?? '',
+    sex: party.sex ?? '',
+    smokerStatus: party.smokerStatus ?? '',
+    idType: party.identityDocument?.type ?? '',
+    idNumber: party.identityDocument?.number ?? '',
+    occupation: party.occupation ?? '',
+    occupationClass: party.occupationClass ?? '',
+    employerName: party.employerName ?? '',
+    nationality: party.nationality ?? '',
+    addressLine: party.address?.line ?? '',
+    ward: party.address?.ward ?? '',
+    district: party.address?.district ?? '',
+    region: party.address?.region ?? '',
+    postalCode: party.address?.postalCode ?? '',
+  } as RegisterIndividualFormValues;
 }
 
 export function toApiRequest(values: RegisterIndividualFormValues): RegisterIndividualRequest {

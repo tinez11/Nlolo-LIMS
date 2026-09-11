@@ -78,6 +78,7 @@ class CommunicationContractTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
+            "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/communication/V1__create_communication_schema.sql",
             "db-migrations/communication/V2__template_identity.sql",
             "db-migrations/communication/V3__seed_offer_templates.sql",

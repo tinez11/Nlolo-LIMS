@@ -298,6 +298,13 @@ export type RegisterIndividualRequest = PartyComponents['schemas']['RegisterIndi
 export type RegisterCorporateRequest = PartyComponents['schemas']['RegisterCorporateRequest'];
 
 /**
+ * Correcting a company, which is NOT RegisterCorporateRequest: there is no registrationNumber.
+ * That number is the company's identity in the national register, and an edit form must not be
+ * a route to becoming a different company.
+ */
+export type AmendCorporateRequest = PartyComponents['schemas']['AmendCorporateRequest'];
+
+/**
  * `POST /regulatory-returns` (generate) + `GET` (list/get) -- fully built and
  * staff-reachable (FINANCE_OFFICER/ADMIN) since M10, but with zero staff UI
  * until this staff-portal CRUD audit found the gap. `returnType` is

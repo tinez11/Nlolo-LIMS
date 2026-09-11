@@ -173,7 +173,24 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
       <PageHeader
         title={party?.displayName ?? 'Client'}
         description={party?.partyType ? <span>{partyTypeLabel(party.partyType)}</span> : undefined}
-        actions={party?.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
+        actions={
+          <span className="flex items-center gap-2">
+            {party?.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
+            {/*
+              Staff only, and absent entirely in the agents realm rather than present and
+              refused: an agent who can see the button reasonably concludes the record is
+              theirs to change, and finds out otherwise at the point of saving.
+            */}
+            {realm === 'staff' && party && (
+              <Link
+                className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted"
+                to={`/staff/parties/${partyId}/edit`}
+              >
+                Correct details
+              </Link>
+            )}
+          </span>
+        }
       />
 
       {/*
@@ -220,6 +237,28 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                     value={<span className="font-mono text-xs">{party.createdBy ?? '—'}</span>}
                     note="The account that created this record — who the client relationship belongs to."
                   />
+                  {/*
+                    WHO GETS PAID ON THIS CLIENT'S BUSINESS. Distinct from "Registered by"
+                    above, which is a login and resolves to nobody in particular: this is an
+                    agent, and policy binds it as the agent of record at issuance, so it is
+                    what commission accrues against. Shown only when there is one — a client
+                    staff registered has none, and an em dash beside a money question reads
+                    as data the platform lost.
+                  */}
+                  {party.registeredByPartyId && (
+                    <Field
+                      label="Introduced by"
+                      value={
+                        <Link
+                          className="hover:underline"
+                          to={`/staff/parties/${party.registeredByPartyId}`}
+                        >
+                          <PartyName partyId={party.registeredByPartyId} />
+                        </Link>
+                      }
+                      note="The agent who brought this client in. Commission on their policies accrues to this agent."
+                    />
+                  )}
                   <Field label="Client id" value={<span className="font-mono text-xs">{partyId}</span>} />
                 </dl>
               )}

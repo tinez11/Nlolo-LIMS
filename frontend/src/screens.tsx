@@ -37,6 +37,7 @@ import { GlPostingDetailPage } from '@/features/finaccounting/GlPostingDetailPag
 import { GlPostingsPage } from '@/features/finaccounting/GlPostingsPage';
 import { ClientsPage } from '@/features/party/ClientsPage';
 import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
+import { EditClientPage } from '@/features/party/EditClientPage';
 import { PartyDetailPage } from '@/features/party/PartyDetailPage';
 import { GroupSchemePage } from '@/features/policies/GroupSchemePage';
 import { IssueGroupSchemePage } from '@/features/policies/IssueGroupSchemePage';
@@ -327,6 +328,10 @@ const STAFF_SCREENS: Screen[] = [
   // except through the KYC queue above, which is why that queue is a real list
   // rather than a lookup box.
   { path: 'parties/:partyId', element: <PartyDetailPage />, reach: 'drill-in' },
+  // Staff only. Registration is open to agents and customers; rewriting a record is not the
+  // same act, and an agent able to amend a client afterwards could change the identity a
+  // policy was underwritten against.
+  { path: 'parties/:partyId/edit', element: <EditClientPage />, reach: 'drill-in' },
 
   {
     path: 'underwriting',

@@ -54,6 +54,7 @@ class PolicyLoanApiIntegrationTest {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
+            "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",

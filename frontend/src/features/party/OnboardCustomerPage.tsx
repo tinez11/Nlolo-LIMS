@@ -1,12 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { PageHeader } from '@/components/PageHeader';
-import { DatePicker } from '@/components/DatePicker';
+
 import { Field } from '@/components/Field';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
+import { IndividualFields } from './IndividualFields';
 import { cn } from '@/lib/cn';
 import {
   selectRegisteringCorporate,
@@ -25,7 +26,7 @@ import {
   toApiRequest as toIndividualApiRequest,
   type RegisterIndividualFormValues,
 } from './registerIndividualForm';
-import { Input, Select } from '@/components/ui/input';
+import { Input } from '@/components/ui/input';
 
 type CustomerType = 'INDIVIDUAL' | 'CORPORATE';
 
@@ -113,167 +114,7 @@ function RegisterIndividualForm() {
 
   return (
     <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
-      <FormField label="Full name" error={errors.fullName?.message}>
-        <Input
-          placeholder="Amina Hassan"
-          {...register('fullName')}
-        />
-      </FormField>
-
-      <FormField label="Date of birth" error={errors.dateOfBirth?.message}>
-        <Controller
-          control={control}
-          name="dateOfBirth"
-          render={({ field }) => (
-            <DatePicker
-              value={field.value || null}
-              onChange={(iso) => field.onChange(iso ?? '')}
-              disabled={{ after: new Date() }}
-            />
-          )}
-        />
-      </FormField>
-
-      <FormField label="Phone number (optional)" error={errors.phoneNumber?.message}>
-        <Input
-          placeholder="+255712345678"
-          {...register('phoneNumber')}
-        />
-      </FormField>
-
-      <FormField label="Email (optional)" error={errors.email?.message}>
-        <Input
-          placeholder="amina@example.tz"
-          {...register('email')}
-        />
-      </FormField>
-
-      {/* Everything below is optional, and grouped rather than run on as one flat
-          list of thirteen more inputs. The groups are the order a person is
-          actually asked: who they are, what they do, where they live. */}
-      <FieldGroup
-        title="Identity"
-        hint="One document per person. A national ID already on the register is refused."
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="ID type" error={errors.idType?.message}>
-            <Select
-              {...register('idType')}
-            >
-              <option value="">Not recorded</option>
-              <option value="NATIONAL_ID">National ID</option>
-              <option value="PASSPORT">Passport</option>
-              <option value="DRIVING_LICENCE">Driving licence</option>
-              <option value="VOTER_ID">Voter ID</option>
-            </Select>
-          </FormField>
-
-          <FormField label="ID number" error={errors.idNumber?.message}>
-            <Input
-              {...register('idNumber')}
-            />
-          </FormField>
-
-          <FormField label="Nationality" error={errors.nationality?.message}>
-            <Input
-              className="uppercase"
-              placeholder="TZ"
-              {...register('nationality')}
-            />
-          </FormField>
-        </div>
-      </FieldGroup>
-
-      <FieldGroup
-        title="Person"
-        // Not decoration: sex and smoker status, with the date of birth above,
-        // are exactly the key of the product's base rate table. A party
-        // registered without them cannot be priced from its own record.
-        hint="Sex and smoker status are rating factors — a quote needs them."
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Sex" error={errors.sex?.message}>
-            <Select
-              {...register('sex')}
-            >
-              <option value="">Not recorded</option>
-              <option value="FEMALE">Female</option>
-              <option value="MALE">Male</option>
-            </Select>
-          </FormField>
-
-          <FormField label="Smoker status" error={errors.smokerStatus?.message}>
-            <Select
-              {...register('smokerStatus')}
-            >
-              {/* "Not recorded" and "Asked, declined to say" are genuinely
-                  different answers and a product may price them differently. */}
-              <option value="">Not recorded</option>
-              <option value="NON_SMOKER">Non-smoker</option>
-              <option value="SMOKER">Smoker</option>
-              <option value="UNKNOWN">Asked, declined to say</option>
-            </Select>
-          </FormField>
-
-          <FormField label="Occupation" error={errors.occupation?.message}>
-            <Input
-              placeholder="As the applicant describes it"
-              {...register('occupation')}
-            />
-          </FormField>
-
-          <FormField label="Occupation class" error={errors.occupationClass?.message}>
-            <Input
-              placeholder="Rating band"
-              {...register('occupationClass')}
-            />
-          </FormField>
-
-          <div className="col-span-2">
-            <FormField label="Employer" error={errors.employerName?.message}>
-              <Input
-                {...register('employerName')}
-              />
-            </FormField>
-          </div>
-        </div>
-      </FieldGroup>
-
-      <FieldGroup title="Address">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <FormField label="Street or plot" error={errors.addressLine?.message}>
-              <Input
-                {...register('addressLine')}
-              />
-            </FormField>
-          </div>
-
-          <FormField label="Ward" error={errors.ward?.message}>
-            <Input
-              {...register('ward')}
-            />
-          </FormField>
-
-          <FormField label="District" error={errors.district?.message}>
-            <Input
-              {...register('district')}
-            />
-          </FormField>
-
-          <FormField label="Region" error={errors.region?.message}>
-            <Input
-              {...register('region')}
-            />
-          </FormField>
-
-          <FormField label="Postal code" error={errors.postalCode?.message}>
-            <Input
-              {...register('postalCode')}
-            />
-          </FormField>
-        </div>
-      </FieldGroup>
+      <IndividualFields register={register} control={control} errors={errors} />
 
       {registering.status === 'error' && registering.error && (
         <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
@@ -288,35 +129,6 @@ function RegisterIndividualForm() {
         {registering.status === 'loading' ? 'Registering…' : 'Register individual'}
       </Button>
     </form>
-  );
-}
-
-/**
- * A titled group of optional fields inside a form.
- *
- * A real `<fieldset>`/`<legend>`, not a styled div: the legend names the group to a
- * screen reader as it enters, which is the whole reason to group thirteen optional
- * inputs rather than run them together. The hairline-and-caption treatment matches
- * the console's panels without borrowing the `Panel` silhouette, which means
- * something else here.
- */
-function FieldGroup({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <fieldset className="border-t border-border pt-3">
-      <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
-        {title}
-      </legend>
-      {hint && <p className="mb-2.5 text-[11px] text-muted-foreground">{hint}</p>}
-      {children}
-    </fieldset>
   );
 }
 
