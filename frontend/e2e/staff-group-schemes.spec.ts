@@ -10,13 +10,16 @@ import { fillPolicyNumberManually } from './guards';
  * The two things worth proving here cannot be proved anywhere cheaper:
  *
  * 1. **The scheme's total is derived and stays derived.** The form sends no sum
- *    assured; the server computes it from the opening schedule, restates it when
- *    a member joins, and the master policy agrees with the scheme page. Three
- *    surfaces, one number — a unit test can pin any one of them and only a real
- *    round trip pins that they match.
+ *    assured; the server computes it from the opening schedule, and the master
+ *    policy, the scheme page and the client record all agree. One number on
+ *    several surfaces — a unit test can pin any one of them and only a real round
+ *    trip pins that they match.
  * 2. **The free cover limit reaches the screen.** A member over the limit is
  *    covered up to it and flagged for evidence, and the console says so both in
  *    the live preview while typing and in the row afterwards.
+ * 3. **A scheme comes through the pipeline.** The form PROPOSES: it opens an
+ *    underwriting case, an underwriter decides it with no engine recommendation
+ *    to depart from, and the decision issues the scheme as an offer.
  *
  * No GROUP_LIFE product is seeded, so each run authors one. That is the same
  * shape `staff-distribution.spec.ts` already uses, and it keeps this suite from
@@ -81,15 +84,76 @@ async function pickParty(
   await page.getByRole('option', { name: optionName }).click();
 }
 
+/**
+ * Carry a proposed scheme through the pipeline and return the policy number it issued.
+ *
+ * <p>The form PROPOSES now: it opens an underwriting case, an underwriter decides it, and
+ * the decision issues the scheme as an offer. Everything downstream of a scheme existing
+ * therefore has to come through here first — which is the change, not an inconvenience.
+ *
+ * <p>Decided as the default staff.underwriter identity with no senior: a group case carries
+ * NO engine recommendation, so there is nothing to depart from and no override to approve.
+ * That is asserted here rather than assumed, because it is the half of the design most
+ * likely to be broken by a later change to the rules engine.
+ *
+ * <p>The issued scheme is found as the newest policy. /staff/policies orders by createdAt
+ * DESC, this scheme was created seconds ago inside a serial run, and the case detail page
+ * offers no link to what it produced — a real gap, and the one thing here that is a
+ * workaround rather than a design.
+ */
+async function acceptProposedScheme(page: Page): Promise<string> {
+  await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 20_000 });
+
+  await page.getByLabel('Findings').fill('Employer accounts and claims experience reviewed');
+  await page.getByLabel('Risk score (optional)').fill('10');
+
+  /*
+   * WAIT FOR THE ASSESSMENT TO LAND before deciding, rather than clicking straight on.
+   * `decide` refuses a case with no assessment ("there is nothing to decide on"), and that
+   * count is read on the server: clicking the two buttons back to back races the first POST
+   * against the second, and the failure it produces reads like a broken guard rather than a
+   * broken test. It failed exactly once in three runs, which is the worst kind.
+   */
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith('/assessments') && r.status() < 400,
+    ),
+    page.getByRole('button', { name: 'Submit assessment' }).click(),
+  ]);
+  await expect(page.getByText(/The rules engine recommends/)).toHaveCount(0);
+
+  await page.getByLabel('Decision').selectOption({ label: 'Accept' });
+  await page.getByLabel('Reason').fill('Scheme accepted');
+  await page.getByRole('button', { name: 'Record decision' }).click();
+
+  // The Decision PANEL, not the word "Accept" -- which also names an <option> inside the
+  // decision <select>, so a text locator matched the still-open form and reported the
+  // failure as "hidden" rather than as the refusal the alert was actually showing.
+  await expect(page.getByRole('heading', { name: 'Decision', exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  await page.goto('/staff/policies');
+  const number = await page
+    .getByRole('button', { name: /^GRP-[A-Z0-9]+$/ })
+    .first()
+    .textContent();
+  return (number ?? '').trim();
+}
+
 test.describe('staff group schemes', () => {
-  test('sets up a scheme whose total is derived from its members, then moves with a joiner', async ({
+  test('proposes a scheme, has it underwritten, and derives its total from its members', async ({
     page,
     browser,
   }) => {
+    // Authoring a product as admin, proposing, assessing, deciding and then walking four
+    // surfaces does not fit 60 seconds any more -- the pipeline added two round trips and a
+    // second console page to every group fixture.
+    test.slow();
     const productLabel = await asAdmin(browser, createGroupProduct);
 
     await page.goto('/staff/group-schemes/new');
-    await expect(page.getByRole('heading', { name: 'Set up a group scheme' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Propose a group scheme' })).toBeVisible();
 
     await pickParty(page, 'Search for the employer by name', 'Amina', 'Amina Owner');
     await page.getByLabel('Product').selectOption({ label: productLabel });
@@ -108,12 +172,38 @@ test.describe('staff group schemes', () => {
     // two lives at 5,000,000 each.
     await expect(page.getByText('TZS 10,000,000.00')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Set up scheme' }).click();
+    await page.getByRole('button', { name: 'Propose scheme' }).click();
 
-    // Lands on the new scheme, whose policy number the server minted.
-    await expect(page).toHaveURL(/\/staff\/group-schemes\/GRP-[A-Z0-9]+$/, { timeout: 20_000 });
-    const schemeUrl = page.url();
-    const policyNumber = schemeUrl.split('/').pop() as string;
+    // Lands on the CASE, not on a scheme: there is no scheme yet, and there will not be one
+    // until an underwriter decides there should be. That is the whole change.
+    await expect(page).toHaveURL(/\/staff\/underwriting\/[0-9a-f-]{36}$/, { timeout: 20_000 });
+    const caseUrl = page.url();
+
+    /*
+     * And it is in the QUEUE, tagged. A group case carries no life assured -- the schedule
+     * is the life -- so without the tag it reads as an individual case whose applicant is a
+     * company, which is exactly the confusion the tag exists to prevent.
+     *
+     * The row is found by this case's own proposal number, not by position: the queue holds
+     * two dozen open cases, and `first()` would assert the tag on somebody else's work.
+     */
+    const proposalNumber = (
+      await page.getByText(/^PRO-[0-9A-F]{8}$/).first().textContent()
+    )?.trim();
+    expect(proposalNumber).toMatch(/^PRO-[0-9A-F]{8}$/);
+
+    await page.goto('/staff/underwriting');
+    const queueRow = page.getByRole('row').filter({ hasText: proposalNumber! });
+    await expect(queueRow.getByText('Group scheme')).toBeVisible({ timeout: 20_000 });
+
+    await page.goto(caseUrl);
+    const policyNumber = await acceptProposedScheme(page);
+    const schemeUrl = `/staff/group-schemes/${policyNumber}`;
+
+    // Issued as an OFFER: the employer accepts by paying, exactly as an individual does.
+    await page.goto(`/staff/policies/${policyNumber}`);
+    await expect(page.getByText('Proposed', { exact: true })).toBeVisible();
+    await page.goto(schemeUrl);
 
     await expect(page.getByRole('heading', { name: policyNumber })).toBeVisible();
     // Derived server-side, and equal to the preview above.
@@ -129,42 +219,45 @@ test.describe('staff group schemes', () => {
     // is a scheme.
     await expect(page.getByRole('link', { name: 'Member schedule' })).toBeVisible();
 
-    // A joiner moves the total on both surfaces.
+    /*
+     * THE JOINER IS NOT ASSERTED HERE ANY MORE, and the reason is a real gap rather than a
+     * shortcut. addMember requires the scheme IN FORCE, a scheme is now an offer until the
+     * employer's first premium clears, and this console has no action that accepts an offer
+     * — for group or individual business. e2e/policies.ts already works around the same wall
+     * for individual policies by issuing on a MIGRATION basis, "so the policy is in force on
+     * arrival".
+     *
+     * So the browser cannot reach an in-force scheme through the flow a person would use.
+     * GroupSchemeIntegrationTest asserts the joiner and the restated total against a real
+     * database, which is where that behaviour was always proven; what only a browser can
+     * prove — that the form proposes, the queue shows it, the decision issues it, and the
+     * totals agree across three surfaces — is asserted above and below.
+     */
     await page.goto(schemeUrl);
-    await page.getByRole('button', { name: 'Add member' }).click();
-    await pickParty(page, 'Search employees by name', 'Juma', 'Juma Senior');
-    await page.getByRole('button', { name: 'Add member', exact: true }).last().click();
-
-    await expect(page.getByText('TZS 15,000,000.00').first()).toBeVisible({ timeout: 15_000 });
-
-    // Survives a reload: a real row in a real database, not optimistic UI.
-    await page.reload();
-    await expect(page.getByText('TZS 15,000,000.00').first()).toBeVisible();
 
     /*
-     * Searching the roll by member name. Three lives are on this schedule by now, and a
-     * real schedule holds hundreds -- "is this person covered" is not a question anyone
-     * answers by paging.
+     * Searching the roll by member name. Only two lives are on this schedule -- a real one
+     * holds hundreds, and "is this person covered" is not a question anyone answers by
+     * paging.
      *
-     * The filter is server-side, which is what the assertions actually pin: the row that
-     * must be ABSENT, and the TOTAL. A pass over the fetched page would leave the total
-     * at three under a single row, and on a 500-life roll it would search only the
-     * twenty-five rows in hand and report "not covered" for somebody who is.
+     * What the assertions pin is that the filter is SERVER-side: the row that must be
+     * ABSENT is the proof. A pass over the fetched page would search only the twenty-five
+     * rows in hand and report "not covered" for somebody who is.
      */
-    await page.getByLabel('Search members by name').fill('Juma');
+    await page.getByLabel('Search members by name').fill('Baraka');
     await page.getByLabel('Search members by name').press('Enter');
-    await expect(page).toHaveURL(/[?&]q=Juma/, { timeout: 10_000 });
-    await expect(page.getByText('Juma Senior')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Baraka Other')).not.toBeVisible();
+    await expect(page).toHaveURL(/[?&]q=Baraka/, { timeout: 10_000 });
+    await expect(page.getByText('Baraka Other')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('cell', { name: 'Amina Owner' })).toHaveCount(0);
 
     // A name nobody on this scheme has is an empty SEARCH, not an empty scheme -- the
-    // roll has three members and the copy must not claim otherwise.
+    // roll still has its members and the copy must not claim otherwise.
     await page.getByLabel('Search members by name').fill('NobodyHereIsCalledThis12345');
     await page.getByLabel('Search members by name').press('Enter');
     await expect(page.getByText(/No member matching/)).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: 'Show all' }).click();
-    await expect(page.getByText('Juma Senior')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Baraka Other')).toBeVisible();
+    await expect(page.getByText('Baraka Other')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('cell', { name: 'Amina Owner' }).first()).toBeVisible();
 
     /*
      * The client-record route to the same schedule, which is what the Clients area's
@@ -202,10 +295,11 @@ test.describe('staff group schemes', () => {
     await schemeLink.click();
     await expect(page).toHaveURL(`/staff/group-schemes/${policyNumber}`, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: policyNumber })).toBeVisible();
-    await expect(page.getByText('TZS 15,000,000.00').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('TZS 10,000,000.00').first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('a member above the free cover limit is covered up to it and flagged', async ({ page, browser }) => {
+    test.slow();
     const productLabel = await asAdmin(browser, createGroupProduct);
 
     await page.goto('/staff/group-schemes/new');
@@ -230,9 +324,11 @@ test.describe('staff group schemes', () => {
     await expect(page.getByText('1 member over the free cover limit.')).toBeVisible();
 
     await page.getByLabel('Premium', { exact: true }).fill('900000.00');
-    await page.getByRole('button', { name: 'Set up scheme' }).click();
+    await page.getByRole('button', { name: 'Propose scheme' }).click();
 
-    await expect(page).toHaveURL(/\/staff\/group-schemes\/GRP-[A-Z0-9]+$/, { timeout: 20_000 });
+    // Through the pipeline: the free cover limit is a term of the PROPOSAL, so it has to
+    // survive the case and the decision to reach the issued schedule.
+    await page.goto(`/staff/group-schemes/${await acceptProposedScheme(page)}`);
 
     // Covered for the limit, not for the full benefit and not for nothing.
     await expect(page.getByText('TZS 100,000,000.00').first()).toBeVisible();
@@ -246,7 +342,8 @@ test.describe('staff group schemes', () => {
     const productLabel = await asAdmin(browser, createGroupProduct);
     let requestFired = false;
     page.on('request', (req) => {
-      if (req.method() === 'POST' && req.url().endsWith('/group-schemes')) requestFired = true;
+      // The form proposes a CASE now; /group-schemes is the exception route it no longer uses.
+      if (req.method() === 'POST' && req.url().endsWith('/underwriting/cases/group')) requestFired = true;
     });
 
     await page.goto('/staff/group-schemes/new');
@@ -257,7 +354,7 @@ test.describe('staff group schemes', () => {
     await pickParty(page, 'Search employees by name', 'Amina', 'Amina Owner');
     // Salary deliberately left blank.
     await page.getByLabel('Premium', { exact: true }).fill('500000.00');
-    await page.getByRole('button', { name: 'Set up scheme' }).click();
+    await page.getByRole('button', { name: 'Propose scheme' }).click();
 
     await expect(page.getByText(/Needs a salary like/)).toBeVisible();
     expect(requestFired).toBe(false);
@@ -285,9 +382,8 @@ test.describe('staff group schemes', () => {
     await page.getByRole('button', { name: 'Add member' }).click();
     await pickParty(page, 'Search employees by name', 'Baraka', 'Baraka Other', 'last');
     await page.getByLabel('Premium', { exact: true }).fill('1200000.00');
-    await page.getByRole('button', { name: 'Set up scheme' }).click();
-    await expect(page).toHaveURL(/\/staff\/group-schemes\/GRP-[A-Z0-9]+$/, { timeout: 20_000 });
-    const policyNumber = page.url().split('/').pop() as string;
+    await page.getByRole('button', { name: 'Propose scheme' }).click();
+    const policyNumber = await acceptProposedScheme(page);
 
     await page.goto('/staff/claims/new');
     // CLAIMANT FIRST, POLICY SECOND, and the order is load-bearing here in a way it is not on
@@ -322,10 +418,21 @@ test.describe('staff group schemes', () => {
     await expect(page.getByText('Choose which member this claim is for')).toBeVisible();
     await expect(page).not.toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/);
 
-    // Named, and it goes through.
+    // The picker is populated from THIS scheme's schedule, so naming a member clears the
+    // client-side refusal.
     await page.getByLabel('Who died').selectOption({ index: 1 });
-    await page.getByRole('button', { name: 'Register claim' }).click();
-    await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/, { timeout: 20_000 });
+    await expect(page.getByText('Choose which member this claim is for')).toHaveCount(0);
+
+    /*
+     * REGISTRATION ITSELF IS NOT ASSERTED HERE, for the same reason the joiner is not
+     * asserted in the first test: the server refuses a claim on a scheme that is not in
+     * force ("Policy GRP-... was not in force on ..."), a scheme is an offer until the
+     * employer's first premium clears, and this console has no action that accepts an
+     * offer. GroupClaimIntegrationTest registers, approves and settles a member claim
+     * against a real database, and ClaimSettlementEndToEndTest carries one to a real
+     * payment rail; both value it at the member's own benefit rather than the scheme's
+     * total, which was the defect this work fixed.
+     */
   });
 
   test('a claim on an individual policy asks for no member', async ({ page }) => {

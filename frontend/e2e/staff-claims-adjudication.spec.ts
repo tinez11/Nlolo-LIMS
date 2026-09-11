@@ -169,6 +169,12 @@ test.describe('staff claims adjudication', () => {
     page,
     browser,
   }) => {
+    // The same story as the SETTLED journey above, and the same fix. This one issues a real
+    // policy, registers a real claim and drives two further browser contexts through an
+    // assessment, a rejection and a reopening -- and when it timed out, the page snapshot
+    // showed "Reopened" already on screen. It ran out of clock at the last assertion rather
+    // than failing one, which is a budget problem, not a behaviour problem.
+    test.slow();
     const policyNumber = await issueRealPolicy(page);
     const claimId = await registerRealDeathClaim(page, policyNumber);
 
