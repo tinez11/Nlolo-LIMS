@@ -37,7 +37,24 @@ const ratingFactorRowSchema = z
      * Still editable, for a label the bounds cannot express.
      */
     band: z.string().trim().optional(),
-    multiplier: z.coerce.number(),
+    /**
+     * GREATER THAN ZERO, and this bound is the one that was missing when it mattered.
+     *
+     * A product went out with its AGE band at 0.0000. The premium formula multiplies by this
+     * number, so every policy in that band priced at nothing; the insert was refused by a CHECK
+     * inside an AFTER_COMMIT listener, which meant the underwriting case stayed ACCEPTed with no
+     * policy behind it and no error anywhere a person would look.
+     *
+     * `z.coerce.number()` alone accepted it, and would have accepted a negative one too.
+     * ProductApiImpl.rejectNonPositiveMultipliers and the rating_table_multiplier_positive CHECK
+     * now refuse it server-side; this stops it here, where the actuary can still see which row.
+     *
+     * A band that does not load is 1, not 0 -- the message says so, because an actuary typing 0
+     * means "no loading" and has no way to know that is not what it does.
+     */
+    multiplier: z.coerce
+      .number()
+      .positive('A multiplier must be greater than zero -- use 1 for a band that does not load'),
     // Optional on the row, required for AGE by the refinement below: a SUM_ASSURED_BAND or
     // OCCUPATION_CLASS row has no age bounds and the backend's CHECK refuses them there, so
     // demanding the keys on every row would be demanding fields that must stay empty.

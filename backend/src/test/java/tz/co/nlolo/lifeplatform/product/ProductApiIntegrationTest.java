@@ -52,7 +52,12 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V3__base_rate_structured_age.sql",
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
-            "db-migrations/product/V6__eligibility_bounds.sql");
+            "db-migrations/product/V6__eligibility_bounds.sql",
+            // V7 is the RLS fail-closed pass, which no test class lists. V8 IS listed here,
+            // because theMultiplierConstraintBacksTheZeroCheckAtTheDatabase exercises the
+            // constraint it adds -- a backstop nothing tests is one a future migration drops
+            // without anyone noticing.
+            "db-migrations/product/V8__rating_table_multiplier_positive.sql");
     }
 
     @BeforeEach
@@ -381,6 +386,76 @@ class ProductApiIntegrationTest {
         // actuary to find which of forty rows was the duplicate.
         assertTrue(ex.getMessage().contains("30-39"));
         assertTrue(ex.getMessage().contains("AGE"));
+    }
+
+    /**
+     * A ZERO MULTIPLIER ZEROES THE PREMIUM, and this is not hypothetical: a real product was
+     * published with its AGE band at 0.0000, an applicant was accepted against it, and the
+     * premium came out at nil. The insert then hit {@code chk_premium_amount_positive} inside an
+     * AFTER_COMMIT listener, so the case sat there reading ACCEPT with no policy behind it and
+     * nothing said a word.
+     *
+     * <p>Nothing anywhere stopped it. The console's schema says {@code z.coerce.number()} with no
+     * bound, {@code publishVersion} checked coverage, duplicates and age ranges but never the
+     * number itself, and {@code rating_table} had no CHECK. A negative one would have gone
+     * through just as far and produced a negative premium.
+     *
+     * <p>There is no product in which a rating factor of zero is a real design. "Charge this band
+     * nothing" is not a rating decision, it is a typo -- an unrated band is expressed by leaving
+     * the row out, or by 1.0000.
+     */
+    @Test
+    void aZeroRatingMultiplierIsRefusedAtPublish() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-K", "Zero multiplier",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-78", BigDecimal.ZERO, 18, 78),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null, "actuary@nlolo.co.tz"));
+        // Names the band, like every other rating-table refusal here: an actuary should not have
+        // to find which of forty rows carried the nil.
+        assertTrue(ex.getMessage().contains("18-78"));
+        assertTrue(ex.getMessage().contains("AGE"));
+    }
+
+    /** The same refusal below zero, which would price a policy at less than nothing. */
+    @Test
+    void aNegativeRatingMultiplierIsRefusedAtPublish() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-L", "Negative multiplier",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-78", BigDecimal.ONE, 18, 78),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", new BigDecimal("-1.0000"))),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null, "actuary@nlolo.co.tz"));
+    }
+
+    /**
+     * The database backstop, exercised directly because the application check above makes it
+     * unreachable through {@code publishVersion}. A backstop nothing tests is one a future
+     * migration drops without anyone noticing -- the same argument as the unique-band constraint.
+     */
+    @Test
+    void theMultiplierConstraintBacksTheZeroCheckAtTheDatabase() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-M", "Multiplier constraint",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        UUID tenantId = TenantContext.get();
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(tenantId, product.productId())
+            .get(0).getProductVersionId();
+
+        assertThrows(DataIntegrityViolationException.class, () ->
+            ratingFactorRepository.saveAndFlush(new tz.co.nlolo.lifeplatform.product.domain.RatingFactor(
+                tenantId, versionId, FactorType.SUM_ASSURED_BAND.name(), "NIL", BigDecimal.ZERO)));
     }
 
     /**

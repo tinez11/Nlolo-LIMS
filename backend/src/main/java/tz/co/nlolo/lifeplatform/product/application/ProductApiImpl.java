@@ -168,6 +168,7 @@ public class ProductApiImpl implements ProductApi {
             // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
         }
+        rejectNonPositiveMultipliers(ratingTable);
         rejectDuplicateRatingFactors(ratingTable);
         rejectMalformedAgeBands(ratingTable);
 
@@ -364,6 +365,40 @@ public class ProductApiImpl implements ProductApi {
      * had. This check exists as well as that one so the failure names the offending band instead of
      * surfacing as a constraint violation.
      */
+    /**
+     * A rating multiplier must be a positive number.
+     *
+     * <p><b>A zero here zeroes the premium, and it happened.</b> A product was published with its
+     * AGE band at 0.0000; an applicant was accepted against it; the premium computed to nil; the
+     * insert hit {@code chk_premium_amount_positive} inside an AFTER_COMMIT listener, so the
+     * decision stood, no policy was created, and nothing surfaced. The underwriter read ACCEPT
+     * and believed a policy existed.
+     *
+     * <p>Nothing stopped it at any layer: the console's schema had a bare
+     * {@code z.coerce.number()}, this method checked coverage, duplicates and age ranges but
+     * never the number, and {@code rating_table} carried no CHECK. A negative multiplier would
+     * have reached just as far and priced a policy below nothing.
+     *
+     * <p>There is no product in which a rating factor of zero is a real design. A band that adds
+     * nothing is expressed by 1.0000, or by leaving the row out — both of which say so, where a
+     * zero only looks like a number somebody meant.
+     *
+     * <p>{@code rating_table_multiplier_positive} backs this at the database. Checked here as
+     * well so the failure names the band instead of surfacing as a constraint violation, which is
+     * the same arrangement as the duplicate-band and age-bound rules below.
+     */
+    private static void rejectNonPositiveMultipliers(List<RatingFactorInput> ratingTable) {
+        for (RatingFactorInput factor : ratingTable) {
+            if (factor.multiplier() == null || factor.multiplier().signum() <= 0) {
+                throw new InvalidProductVersionException("Rating factor " + factor.factorType()
+                    + " band '" + factor.band() + "' has a multiplier of "
+                    + (factor.multiplier() != null ? factor.multiplier().toPlainString() : "none")
+                    + " -- a rating multiplier must be greater than zero, or it prices every policy"
+                    + " in that band at nothing. Use 1.0000 for a band that does not load.");
+            }
+        }
+    }
+
     private static void rejectDuplicateRatingFactors(List<RatingFactorInput> ratingTable) {
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (RatingFactorInput factor : ratingTable) {

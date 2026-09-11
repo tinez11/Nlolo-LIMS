@@ -1,0 +1,36 @@
+-- A rating multiplier must be a positive number.
+--
+-- WHAT HAPPENED. A product was published with its AGE band 18-78 carrying a multiplier of
+-- 0.0000. An applicant was accepted against it. The premium formula is
+--
+--     sumAssured * (baseRatePerMille/1000) * ratingMultiplier * (1 + loading/100)
+--
+-- so the premium computed to 0.00, the insert hit `chk_premium_amount_positive`, and because
+-- automatic issuance runs in an AFTER_COMMIT listener the decision had already committed.
+-- The case stood as ACCEPT with no policy behind it and nothing said a word. The underwriter
+-- had every reason to believe a policy existed.
+--
+-- Nothing anywhere stopped the zero. The authoring form's schema was a bare
+-- `z.coerce.number()`, `publishVersion` validated coverage, duplicate bands and age ranges but
+-- never the number itself, and this table had no CHECK. A NEGATIVE multiplier would have
+-- travelled the same distance and priced a policy at less than nothing.
+--
+-- WHY ZERO IS NEVER A PRODUCT. A band that does not load is 1.0000, or is left out of the
+-- table entirely. Both of those say what they mean. A zero only looks like a number somebody
+-- intended, which is exactly why it survived review and publication.
+--
+-- NOT VALID, for one row and one reason. The 0.0000 row that caused this is still in the
+-- database and is referenced by a decided underwriting case; deleting or silently rewriting it
+-- here would destroy the evidence of what went wrong and change a published version's terms
+-- behind an actuary's back. A published rating table is a priced contract term, so correcting
+-- it is a republish, not an UPDATE in a migration. NOT VALID still enforces this on every
+-- insert and update from here on, which is the whole point -- it only declines to re-litigate
+-- history. VALIDATE it once the offending version has been superseded.
+--
+-- The application check in ProductApiImpl.rejectNonPositiveMultipliers names the offending band
+-- and runs first, so this constraint should be unreachable through publishVersion. It exists
+-- because "should be unreachable" has been wrong before on this platform, and because a direct
+-- INSERT is not a hypothetical when migrations and seed scripts write to this table.
+
+ALTER TABLE product.rating_table
+    ADD CONSTRAINT rating_table_multiplier_positive CHECK (multiplier > 0) NOT VALID;

@@ -43,6 +43,36 @@ describe('publishVersionFormSchema', () => {
     expect(termLife.safeParse({ ...valid(), ratingTable: [] }).success).toBe(false);
   });
 
+  /**
+   * The bound that was missing when it mattered. A product was published with its AGE band at
+   * 0, so every policy in that band priced at nothing -- the premium formula multiplies by this
+   * number. The nil premium was then refused by a CHECK inside an AFTER_COMMIT listener, which
+   * left the underwriting case reading ACCEPT with no policy behind it and no error on screen.
+   *
+   * A negative one would have gone just as far, and priced a policy below nothing.
+   */
+  it('rejects a multiplier of zero or less, at the row', () => {
+    expect(
+      termLife.safeParse({ ...valid(), ratingTable: [{ ...ageRow, multiplier: 0 }, sumRow] })
+        .success,
+    ).toBe(false);
+    expect(
+      termLife.safeParse({ ...valid(), ratingTable: [ageRow, { ...sumRow, multiplier: -1 }] })
+        .success,
+    ).toBe(false);
+  });
+
+  it('says to use 1 for a band that does not load, since 0 is what an actuary reaches for', () => {
+    const result = termLife.safeParse({
+      ...valid(),
+      ratingTable: [{ ...ageRow, multiplier: 0 }, sumRow],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain('use 1 for a band that does not load');
+    }
+  });
+
   it('accepts extra factor types alongside the two required ones', () => {
     const result = termLife.safeParse({
       ...valid(),
