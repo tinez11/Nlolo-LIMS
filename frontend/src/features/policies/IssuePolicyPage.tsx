@@ -7,6 +7,7 @@ import { ISSUANCE_BASES, PREMIUM_FREQUENCIES } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
+import { PartyName } from '@/components/PartyName';
 import { UnderwritingCasePicker } from '@/components/UnderwritingCasePicker';
 import { listCaseBeneficiaries } from '@/api/underwriting';
 import { Button } from '@/components/ui/button';
@@ -113,6 +114,10 @@ export function IssuePolicyPage() {
     // Only a well-formed id is worth a request; the field accepts free text.
     if (agentOfRecordId && UUID_PATTERN.test(agentOfRecordId)) void loadAgent(agentOfRecordId);
   }, [agentOfRecordId, loadAgent]);
+
+  // Who actually earns on this policy. Derived rather than stored: the server binds the
+  // introducing agent at issuance, so this is a read of the same fact, not a second copy of it.
+  const introducingAgentPartyId = policyholder.data?.registeredByPartyId ?? null;
 
   const snapshot = useProductStore(selectProductSnapshot(productId));
 
@@ -428,13 +433,41 @@ export function IssuePolicyPage() {
           </div>
         </fieldset>
 
-        <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
-          <Input
-            className="font-mono"
-            placeholder="uuid, or leave blank for a direct/online policy"
-            {...register('agentOfRecordId')}
-          />
-        </FormField>
+        {/*
+          THE INTRODUCING AGENT WINS, so this field is disabled rather than silently overridden.
+
+          The agent who registered a client is bound as the agent of record at issuance — a
+          business rule, not a default — so whatever is typed here is ignored for a client who
+          has one. A field that accepts a value and then discards it is worse than no field: the
+          operator believes they have attributed the sale and has not.
+
+          Shown, not hidden, and naming the agent: "who earns on this policy" is a question the
+          person issuing it is entitled to see answered before they issue it.
+        */}
+        {introducingAgentPartyId ? (
+          <FormField label="Agent of record">
+            <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
+              <PartyName partyId={introducingAgentPartyId} />
+            </div>
+            <p className="mt-1 text-[11px] text-subtle-foreground">
+              The agent who introduced this client. Commission on this policy accrues to them, and
+              that is not editable here — an attribution an issue form could rewrite is a
+              commission an issue form could reassign.
+            </p>
+          </FormField>
+        ) : (
+          <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
+            <Input
+              className="font-mono"
+              placeholder="uuid, or leave blank for a direct/online policy"
+              {...register('agentOfRecordId')}
+            />
+            <p className="mt-1 text-[11px] text-subtle-foreground">
+              No agent introduced this client, so the sale is attributed here. Blank means a
+              direct sale and accrues no commission.
+            </p>
+          </FormField>
+        )}
 
         <GatePanel gates={gates} title="Before issuing" />
 

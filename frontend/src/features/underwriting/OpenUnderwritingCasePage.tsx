@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
+import { PartyName } from '@/components/PartyName';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { PREMIUM_FREQUENCIES } from '@/api/types';
@@ -14,6 +15,7 @@ import { BeneficiaryRow } from '@/features/policies/BeneficiaryRow';
 import { blankBeneficiaryRow } from '@/features/policies/beneficiaryForm';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
+import { selectParty, usePartyStore } from '@/store/partyStore';
 import { useUnderwritingStore } from '@/store/underwritingStore';
 import {
   blankOpenCaseForm,
@@ -74,6 +76,16 @@ export function OpenUnderwritingCasePage() {
   // eslint-disable-next-line react-hooks/incompatible-library -- see IssuePolicyPage
   const productId = watch('productId');
   const beneficiaryRows = watch('beneficiaries');
+  const applicantPartyId = watch('applicantPartyId');
+
+  // Who will actually earn on the policy this case issues. The server binds the introducing
+  // agent at issuance, so this reads the same fact rather than keeping a second copy of it.
+  const loadParty = usePartyStore((s) => s.loadParty);
+  const applicant = usePartyStore(selectParty(applicantPartyId));
+  useEffect(() => {
+    if (applicantPartyId) void loadParty(applicantPartyId);
+  }, [applicantPartyId, loadParty]);
+  const introducingAgentPartyId = applicant.data?.registeredByPartyId ?? null;
 
   // Derived from the live rows, not stored: this console's lint bans synchronous setState in
   // an effect, and a second copy of the total could only ever disagree with the rows.
@@ -197,21 +209,40 @@ export function OpenUnderwritingCasePage() {
           </FormField>
         </div>
 
-        {/* Optional, and consequential: a decision that accepts this case issues the policy
-            automatically, and distribution accrues no commission at all for a policy with no
-            agent of record. Leaving it blank records a direct sale, which is a real thing
-            and not a default to fall into by accident. */}
-        <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
-          <Input
-            className="font-mono text-xs"
-            placeholder="00000000-0000-0000-0000-000000000000"
-            {...register('agentOfRecordId')}
-          />
-          <p className="mt-1 text-[11px] text-subtle-foreground">
-            Who sold it. Leave blank for a direct sale — a policy issued with no agent of record
-            accrues no commission.
-          </p>
-        </FormField>
+        {/*
+          THE INTRODUCING AGENT WINS, so this field is replaced rather than silently overridden.
+
+          The agent who registered a client is bound as the agent of record when the policy is
+          issued — a business rule, not a default — so anything typed here is ignored for a
+          client who has one. A field that accepts a value and then discards it is worse than no
+          field at all: whoever opened the case believes they attributed the sale, and did not.
+
+          Named rather than merely suppressed. A decision that accepts this case issues a real
+          policy and pays a real person; who that is belongs on screen before the case is opened.
+        */}
+        {introducingAgentPartyId ? (
+          <FormField label="Agent of record">
+            <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
+              <PartyName partyId={introducingAgentPartyId} />
+            </div>
+            <p className="mt-1 text-[11px] text-subtle-foreground">
+              The agent who introduced this client. Commission on the policy this case issues
+              accrues to them, and that is not editable here.
+            </p>
+          </FormField>
+        ) : (
+          <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
+            <Input
+              className="font-mono text-xs"
+              placeholder="00000000-0000-0000-0000-000000000000"
+              {...register('agentOfRecordId')}
+            />
+            <p className="mt-1 text-[11px] text-subtle-foreground">
+              No agent introduced this client, so the sale is attributed here. Leave blank for a
+              direct sale — a policy issued with no agent of record accrues no commission.
+            </p>
+          </FormField>
+        )}
 
         {/* Where the business came from. Last and grouped: all three are optional, and the
             risk — who, what product, how much — is what the form is actually for. */}

@@ -54,7 +54,8 @@ public class PartyController {
     @PostMapping("/parties/individuals")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PartyView> registerIndividual(@Valid @RequestBody RegisterIndividualRequest request,
-                                                          @AuthenticationPrincipal Jwt jwt) {
+                                                          @AuthenticationPrincipal Jwt jwt,
+                                                          Authentication authentication) {
         IndividualRegistration registration = new IndividualRegistration(
             request.fullName(),
             request.dateOfBirth(),
@@ -68,23 +69,35 @@ public class PartyController {
             request.employerName(),
             request.nationality(),
             request.address() != null ? request.address().toAddress() : Address.none());
-        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject(), callerPartyId(jwt));
+        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject(), registeringAgentPartyId(jwt, authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
     /**
-     * The caller's own party id, which for an agent is the thing that ties them to commission.
+     * The registering AGENT's own party id — the thing that ties them to commission.
      *
-     * <p>Taken from the {@code party_id} claim — the same claim {@code /agents/me} resolves an
-     * agent by. A staff token carries none, and neither does a customer self-registering, so
-     * null here is a real answer: nobody brought this client in.
+     * <p>Taken from the {@code party_id} claim, the same claim {@code /agents/me} resolves an
+     * agent by. A staff token carries none at all, so staff registrations record nobody, which
+     * is correct: nobody brought that client in.
+     *
+     * <p><b>Gated on the agents realm, and that gate is load-bearing.</b> The customers realm
+     * mints {@code party_id} too — it is how a customer reads their own record — so without this
+     * check a customer registering an individual would record THEMSELVES as the introducing
+     * agent. It would cost no commission, since they resolve to no agent, but the client record
+     * would say "introduced by" a person who introduced nobody, and a wrong answer on screen is
+     * worse than a blank one.
      *
      * <p><b>Not validated as an agent here, on purpose.</b> Party may not depend on distribution
-     * and so cannot ask whether this party is an agent; policy answers that at issuance, where
-     * it matters and where the modules line up. Storing a party id that turns out not to be an
-     * agent costs nothing — it resolves to no agent and the policy is direct, exactly as today.
+     * and so cannot ask whether this party is an agent; policy answers that at issuance, where it
+     * matters and where the modules line up. An agents-realm token whose party is not an agent
+     * profile resolves to no agent and the policy falls back to whatever was supplied.
      */
-    private static UUID callerPartyId(Jwt jwt) {
+    private static UUID registeringAgentPartyId(Jwt jwt, Authentication authentication) {
+        boolean isAgent = authentication != null && authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority).anyMatch("ROLE_REALM_AGENTS"::equals);
+        if (!isAgent) {
+            return null;
+        }
         String claim = jwt.getClaimAsString("party_id");
         if (claim == null || claim.isBlank()) {
             return null;
@@ -101,11 +114,12 @@ public class PartyController {
     @PostMapping("/parties/corporates")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PartyView> registerCorporate(@Valid @RequestBody RegisterCorporateRequest request,
-                                                         @AuthenticationPrincipal Jwt jwt) {
+                                                         @AuthenticationPrincipal Jwt jwt,
+                                                         Authentication authentication) {
         PartyView view = partyApi.registerCorporate(request.registeredName(), request.registrationNumber(),
             request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
             request.contactInfo() != null ? request.contactInfo().email() : null,
-            jwt.getSubject(), callerPartyId(jwt));
+            jwt.getSubject(), registeringAgentPartyId(jwt, authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 

@@ -17,6 +17,12 @@ function countLine(page: Page, label: string) {
   return page.getByText(new RegExp(String.raw`^[\d,]+ ${label} · `));
 }
 
+/** A real PNG, because the upload endpoint checks the content type. Same bytes as the KYC suite. */
+const MINIMAL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 /**
  * The client register, and one client's whole record.
  *
@@ -112,6 +118,78 @@ test.describe('staff clients register', () => {
     await page.getByText(fullName).click();
     await expect(page).toHaveURL(`/staff/parties/${partyId}`);
     await expect(page.getByRole('heading', { level: 2, name: 'KYC verification' })).toBeVisible();
+  });
+
+  /**
+   * Correcting a client, and the one rule that governs it: KYC SURVIVES.
+   *
+   * <p>KYC here is what a passport is — a document verifying that this person is who they say
+   * they are — so amending the record does not un-verify it. Only a real round trip can prove
+   * that: the aggregate, the endpoint and the page each have their own opportunity to decide to
+   * be clever and reset a corrected client to PENDING, and a unit test pins any one of them.
+   *
+   * <p>Driven from VERIFIED rather than asserted on whatever the fixture happened to be, for the
+   * same reason the KYC suite drives two transitions: a client that was already PENDING would
+   * pass this test while proving nothing.
+   *
+   * <p>The introducing agent is asserted in the same journey because the same registration
+   * produces it. This client was registered BY agent.senior, so the record must name them — that
+   * is the link commission is bound to at issuance, and it is the only browser-level check that
+   * the party_id claim actually reaches the party record.
+   */
+  test('corrects a client without disturbing their KYC, and keeps who introduced them', async ({
+    page,
+    browser,
+  }) => {
+    test.slow();
+    const agentContext = await browser.newContext({ storageState: 'e2e/.auth/agent.json' });
+    const agentPage = await agentContext.newPage();
+
+    const fullName = `E2E Correct Me ${Date.now()}`;
+    await agentPage.goto('/agents/customers/new');
+    await agentPage.getByLabel('Full name').fill(fullName);
+    await agentPage.getByLabel('Date of birth').fill(dmy('1990-05-12'));
+    await agentPage.getByRole('button', { name: 'Register individual' }).click();
+    await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
+    const partyIdText = await agentPage.getByText(/^[0-9a-f]{8}-[0-9a-f]{4}-/).textContent();
+    const partyId = (partyIdText ?? '').trim();
+    await agentContext.close();
+
+    await page.goto(`/staff/parties/${partyId}`);
+    await expectStaffShellReady(page);
+
+    // Registered BY an agent, so the record says who — distinct from "Registered by" above it,
+    // which is a login id and resolves to nobody in particular.
+    await expect(page.getByText('Introduced by')).toBeVisible({ timeout: 15_000 });
+
+    // Verify them first, so the correction below has something to preserve. Same sequence as
+    // staff-party-kyc.spec.ts, which is where this interaction is actually specified.
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'id-scan.png',
+      mimeType: 'image/png',
+      buffer: MINIMAL_PNG,
+    });
+    await expect(page.getByText(/Evidence uploaded:/)).toBeVisible({ timeout: 20_000 });
+    await page.getByRole('button', { name: 'Verify' }).click();
+    await page.getByRole('button', { name: 'Verify identity' }).click();
+    await expect(page.getByText('Verified').first()).toBeVisible({ timeout: 20_000 });
+
+    // Now correct them, including an IDENTITY field — the case where an implementation would
+    // most plausibly decide a reset was the responsible thing to do.
+    await page.getByRole('link', { name: 'Correct details' }).click();
+    await expect(page).toHaveURL(`/staff/parties/${partyId}/edit`, { timeout: 15_000 });
+
+    const corrected = `${fullName} Corrected`;
+    await page.getByLabel('Full name').fill(corrected);
+    // exact: true -- "Occupation class" contains "Occupation", so a substring match resolves to
+    // both fields. The same trap this console has hit before on "Annual salary".
+    await page.getByLabel('Occupation', { exact: true }).fill('Fisherman');
+    await page.getByRole('button', { name: 'Save corrections' }).click();
+
+    await expect(page).toHaveURL(`/staff/parties/${partyId}`, { timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: corrected })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Fisherman')).toBeVisible();
+    await expect(page.getByText('Verified').first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('a client record shows every panel, populated from real data', async ({ page }) => {

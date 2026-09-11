@@ -136,6 +136,43 @@ class PartyContractTest {
     }
 
     /**
+     * A CUSTOMER REGISTERING THEMSELVES INTRODUCED NOBODY.
+     *
+     * <p>The customers realm mints a {@code party_id} claim too — it is how a customer reads
+     * their own record — so a claim-only check would have recorded the customer as their own
+     * introducing agent. That costs no commission, because they resolve to no agent profile, but
+     * the client record would have said "introduced by" somebody who introduced nobody. A wrong
+     * answer on screen is worse than a blank one, and this is the test that keeps the realm
+     * check from being simplified away as redundant.
+     */
+    @Test
+    void aSelfRegisteringCustomerIsNotRecordedAsTheirOwnIntroducingAgent() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID someExistingPartyId = UUID.randomUUID();
+
+        String created = mockMvc.perform(post("/parties/individuals")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder
+                        .claim("tenant_id", tenantId.toString())
+                        .claim("party_id", someExistingPartyId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Self Signup","dateOfBirth":"1990-05-12","contactInfo":{}}
+                    """))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String partyId = created.replaceAll(".*\"partyId\"\\s*:\\s*\"([0-9a-f-]{36})\".*", "$1");
+
+        mockMvc.perform(get("/parties/" + partyId)
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.registeredByPartyId").doesNotExist());
+    }
+
+    /**
      * An agent may REGISTER a client and may not REWRITE one.
      *
      * <p>The asymmetry is deliberate and is the reason the endpoint is gated differently from the
