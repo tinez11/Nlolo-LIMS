@@ -134,4 +134,22 @@ public interface UnderwritingApi {
                                           Set<UUID> applicantPartyIds, Pageable pageable);
     void referToSeniorUnderwriter(UUID caseId);
     boolean checkContestability(UUID caseId, LocalDate asOfDate);
+
+    /**
+     * Record that automatic issuance failed on this decided case, or clear a failure that has
+     * since been resolved (pass null).
+     *
+     * <p><b>Called by policy's issuance listener, which is the one caller this exists for.</b>
+     * That listener runs AFTER_COMMIT, so when issuance throws there is nothing left to roll
+     * back: the case is decided, and without this it looked identical to a case whose policy was
+     * created. One such case sat as ACCEPT with no policy behind it until somebody happened to
+     * ask why a customer had nothing — the only trace was a stack trace in a log.
+     *
+     * <p>Runs in its own transaction on the caller's side, because the transaction that tried to
+     * issue has already rolled back by the time this is called.
+     *
+     * <p>This does not re-open, re-decide or otherwise move the case. The decision stands; what
+     * is recorded is that the paperwork behind it did not happen.
+     */
+    void recordIssuanceFailure(UUID caseId, String reason);
 }

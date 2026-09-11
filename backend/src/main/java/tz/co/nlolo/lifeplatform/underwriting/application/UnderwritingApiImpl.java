@@ -25,6 +25,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -649,6 +650,26 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         return Period.between(decidedDate, effectiveAsOf).toTotalMonths() < contestabilityMonths;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Its own transaction, because the caller's has already rolled back. Policy's issuance
+     * listener calls this from a catch block: the transaction that tried to create the policy is
+     * gone by then, and writing into it would write into nothing — the same
+     * already-committed-transaction trap that made this listener's very first draft find zero
+     * policy rows with no exception anywhere.
+     *
+     * <p>Deliberately does not touch status, outcome or any decision field. The decision was
+     * real and stands; what failed was the issuance behind it.
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordIssuanceFailure(UUID caseId, String reason) {
+        UnderwritingCase underwritingCase = findOrThrow(caseId, TenantContext.get());
+        underwritingCase.recordIssuanceFailure(reason);
+        underwritingCaseRepository.save(underwritingCase);
+    }
+
     private UnderwritingCase findOrThrow(UUID caseId, UUID tenantId) {
         return underwritingCaseRepository.findByCaseIdAndTenantId(caseId, tenantId)
             .orElseThrow(() -> new UnderwritingCaseNotFoundException(caseId));
@@ -674,6 +695,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             c.getRequestedTermMonths(), c.getPremiumPayingTermMonths(), c.getPremiumFrequency(),
             groupProposal != null, groupProposal,
             c.getRatingMultiplier(),
+            c.getIssuanceFailureReason(), c.getIssuanceFailedAt(),
             List.of());
     }
 
@@ -707,6 +729,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             base.requestedTermMonths(), base.premiumPayingTermMonths(), base.premiumFrequency(),
             base.groupScheme(), base.groupProposal(),
             base.ratingMultiplier(),
+            base.issuanceFailureReason(), base.issuanceFailedAt(),
             nominations);
     }
 }

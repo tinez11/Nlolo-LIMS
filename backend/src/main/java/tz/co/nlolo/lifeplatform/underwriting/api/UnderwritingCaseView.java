@@ -88,6 +88,18 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     // an openapi-underwriting.yaml change and a console field, which is
                                     // worth doing and is not this change.
                                     @JsonIgnore BigDecimal ratingMultiplier,
+                                    // Why automatic issuance failed on this decided case, and when
+                                    // (V10). BOTH SERIALIZED, and openapi-underwriting.yaml's
+                                    // schema grows to match -- it declares
+                                    // additionalProperties: false.
+                                    //
+                                    // This is the one field here whose entire purpose is to be
+                                    // read by a person on a screen. An acceptance that issued no
+                                    // policy used to be indistinguishable from one that did, with
+                                    // the difference recorded only in a log file; @JsonIgnore
+                                    // would put it straight back there.
+                                    String issuanceFailureReason,
+                                    Instant issuanceFailedAt,
                                     // @JsonIgnore for the same reason sumAssuredAmount above is:
                                     // the issuance listener reads it in-process, and the response
                                     // schema declares additionalProperties:false. The console

@@ -722,3 +722,30 @@ components:
             this view: a 500-row schedule has no business on every row of a twenty-case queue
             page. It is read from GET /underwriting/cases/{caseId}.
           type: boolean
+        issuanceFailureReason:
+          description: >-
+            Why automatic policy issuance failed for this decided case, verbatim from the
+            exception that refused it. Null when issuance succeeded, and null when it was never
+            attempted — only ACCEPT and LOADED attempt it, so `decisionOutcome` distinguishes
+            the two.
+
+
+            This field exists because the two states were previously indistinguishable. Issuance
+            runs in an AFTER_COMMIT listener, so a failure cannot roll the decision back: a case
+            whose policy was never created looked exactly like one whose policy was, and the only
+            record of the difference was a stack trace in a log file. One such case — a product
+            whose rating multiplier was zero, so the premium computed to nothing and was refused
+            by a CHECK constraint — sat as ACCEPT with no policy behind it until somebody happened
+            to ask why the customer had nothing.
+
+
+            The message is deliberately not summarised: it names the product terms and the
+            constraint that refused them, which is what tells a reader whether this is a product
+            misconfiguration to correct or an outage to retry. Cleared when the case does issue.
+          type: [string, "null"]
+        issuanceFailedAt:
+          description: >-
+            When that failure was recorded. Set and cleared together with
+            `issuanceFailureReason`, which the database enforces.
+          type: [string, "null"]
+          format: date-time

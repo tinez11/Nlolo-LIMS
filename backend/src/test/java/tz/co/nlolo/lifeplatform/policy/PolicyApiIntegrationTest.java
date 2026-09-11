@@ -87,6 +87,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
+            "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -119,6 +120,7 @@ class PolicyApiIntegrationTest {
     @Autowired private EndorsementRepository endorsementRepository;
     @Autowired private PolicyAccountRepository policyAccountRepository;
     @Autowired private ProductVersionRepository productVersionRepository;
+    @Autowired private tz.co.nlolo.lifeplatform.product.infrastructure.RatingFactorRepository ratingFactorRepository;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -447,6 +449,73 @@ class PolicyApiIntegrationTest {
         assertThat(assessed.ratingMultiplier())
             .as("and the rating is recorded on the case, which is how it reaches issuance at all")
             .isEqualByComparingTo(new BigDecimal("1.6"));
+    }
+
+    /**
+     * AN ACCEPTANCE THAT ISSUES NOTHING MUST SAY SO ON THE CASE.
+     *
+     * <p>This is a production defect, reproduced. A product was published with its AGE band
+     * carrying a multiplier of 0.0000; an applicant was accepted against it; the premium computed
+     * to 0.00; {@code chk_premium_amount_positive} refused the insert. Because issuance runs in an
+     * AFTER_COMMIT listener the decision had already committed, so the case stood as ACCEPT, no
+     * policy existed, and the only record was a stack trace in a log file. It was found days later
+     * because somebody happened to ask why a customer had no policy.
+     *
+     * <p>Three things are asserted, and the third is the one that was missing:
+     * <ol>
+     *   <li>no policy is created — a nil premium must not become a contract;</li>
+     *   <li>the decision still stands, because it was real and AFTER_COMMIT cannot undo it;</li>
+     *   <li><b>the case says what went wrong</b>, in words naming the terms, so the person who
+     *       accepted it can tell a product misconfiguration from an outage.</li>
+     * </ol>
+     *
+     * <p>The zero multiplier is written straight to the repository because
+     * {@code publishVersion} now refuses one — which is the other half of this fix. That refusal
+     * makes this state unreachable through the API and does not make it unreachable: seed
+     * scripts, migrations and older rows all write to that table, and the whole lesson here is
+     * that the failure has to be visible when it happens anyway.
+     */
+    @Test
+    void anAcceptanceThatCannotBeIssuedSaysSoOnTheCase() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-NIL-PREMIUM");
+
+        TenantContext.set(tenantId);
+        // Replace the version's rating table with the one that caused this: an AGE band covering
+        // every adult, at nil. Replaced rather than added to, because two AGE rows covering one
+        // applicant is a different defect with its own test.
+        ratingFactorRepository.deleteAll(
+            ratingFactorRepository.findByProductVersionId(fixture.productVersionId()));
+        ratingFactorRepository.saveAndFlush(new tz.co.nlolo.lifeplatform.product.domain.RatingFactor(
+            tenantId, fixture.productVersionId(), FactorType.AGE.name(), "18-78", BigDecimal.ZERO, 18, 78));
+        ratingFactorRepository.saveAndFlush(new tz.co.nlolo.lifeplatform.product.domain.RatingFactor(
+            tenantId, fixture.productVersionId(), FactorType.SUM_ASSURED_BAND.name(), "LOW", BigDecimal.ONE));
+
+        UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("1000000"), "TZS", null,
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()), "agent1");
+        underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard",
+            new BigDecimal("10"), "uw");
+        underwritingApi.decide(opened.caseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw", false);
+
+        TenantContext.set(tenantId);
+        assertThat(policyApi.searchPolicies(fixture.applicantId(), null, null, null, null,
+                PageRequest.of(0, 10)).getContent())
+            .as("a premium of nil must not become a policy")
+            .isEmpty();
+
+        UnderwritingCaseView decided = underwritingApi.getCase(opened.caseId());
+        assertThat(decided.decisionOutcome())
+            .as("the decision was real and AFTER_COMMIT cannot take it back")
+            .isEqualTo(DecisionOutcome.ACCEPT);
+        assertThat(decided.issuanceFailureReason())
+            .as("and the case must say that nothing came of it -- this is the whole fix")
+            .isNotNull();
+        assertThat(decided.issuanceFailureReason())
+            .as("naming the terms, so the reader knows to go and look at the rating table")
+            .contains("rating multiplier");
+        assertThat(decided.issuanceFailedAt()).isNotNull();
     }
 
     /** An applicant of a given age today, so the age bands under test resolve the same way every year. */

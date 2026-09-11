@@ -89,7 +89,23 @@ export function UnderwritingQueuePage() {
     {
       key: 'status',
       header: 'Status',
-      render: (c) => (c.status ? <StatusBadge kind="underwritingCase" value={c.status} /> : '—'),
+      // A DECIDED case that issued nothing is flagged HERE, beside the status it contradicts,
+      // rather than only on the case itself. The whole failure mode is that nobody had a reason
+      // to open the case again -- it was decided, and decided looks finished. Somebody scanning
+      // this queue for work is exactly who needs to see it.
+      render: (c) => (
+        <span className="inline-flex items-center gap-1.5">
+          {c.status ? <StatusBadge kind="underwritingCase" value={c.status} /> : '—'}
+          {c.issuanceFailureReason && (
+            <span
+              className="rounded bg-status-danger-bg px-1.5 py-0.5 text-[10px] font-medium text-status-danger-fg"
+              title={c.issuanceFailureReason}
+            >
+              No policy
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       key: 'applicantPartyId',

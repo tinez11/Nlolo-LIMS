@@ -53,6 +53,13 @@ public class UnderwritingDecisionEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(UnderwritingDecisionEventListener.class);
 
+    /**
+     * The column is TEXT, so this is about the reader rather than the database. A stack-trace
+     * message long enough to fill a screen is one nobody finishes, and the part that names the
+     * product and the band comes first.
+     */
+    private static final int MAX_FAILURE_REASON_LENGTH = 1000;
+
     private final UnderwritingApi underwritingApi;
     private final PolicyApi policyApi;
     private final ReferenceDataApi referenceDataApi;
@@ -137,6 +144,41 @@ public class UnderwritingDecisionEventListener {
             "Issued on underwriting decision " + decidedCase.caseId(),
             null),
             "system:underwriting-decision-listener");
+    }
+
+    /**
+     * Write the failure onto the case, and never let doing so hide the original failure.
+     *
+     * <p>The nested try is the whole point. If underwriting is unreachable — which is a very
+     * plausible reason issuance failed in the first place — then recording WHY it failed will
+     * fail too, and an exception thrown out of a catch block would replace the real cause with
+     * the bookkeeping error. The log keeps both.
+     *
+     * <p>The reason is the exception's own message, not a summary: the message is what names the
+     * product, the band and the constraint, and a tidied version of it would send the reader back
+     * to the log this exists to replace. Truncated only because the column is TEXT but a screen
+     * is not.
+     */
+    private void recordIssuanceFailure(UUID caseId, Exception cause) {
+        String reason = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getName();
+        if (reason.length() > MAX_FAILURE_REASON_LENGTH) {
+            reason = reason.substring(0, MAX_FAILURE_REASON_LENGTH - 3) + "...";
+        }
+        try {
+            underwritingApi.recordIssuanceFailure(caseId, reason);
+        } catch (Exception recordingFailure) {
+            log.error("Could not record the issuance failure on underwriting case {} -- the case "
+                + "will not show that its policy was never created", caseId, recordingFailure);
+        }
+    }
+
+    /** @see #recordIssuanceFailure(UUID, Exception) for why this cannot be allowed to throw. */
+    private void clearIssuanceFailure(UUID caseId) {
+        try {
+            underwritingApi.recordIssuanceFailure(caseId, null);
+        } catch (Exception e) {
+            log.warn("Could not clear the issuance-failure marker on underwriting case {}", caseId, e);
+        }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -232,6 +274,30 @@ public class UnderwritingDecisionEventListener {
                     ? decidedCase.premiumFrequency() : "MONTHLY";
                 BigDecimal instalmentPremium = annualPremium.divide(
                     BigDecimal.valueOf(instalmentsPerYear(premiumFrequency)), 2, RoundingMode.HALF_UP);
+
+                // THE FORMULA CHECKS ITS OWN OUTPUT, because one of its inputs was nil and the
+                // only thing that noticed was a CHECK constraint three layers down.
+                //
+                // A product went out with its AGE band multiplier at 0.0000. The premium came to
+                // 0.00, chk_premium_amount_positive refused the insert, and the exception
+                // surfaced as a constraint violation from inside an AFTER_COMMIT listener --
+                // which says nothing about which product, which band, or why. Refused here
+                // instead, naming the terms, so whoever reads it knows what to correct.
+                //
+                // Deliberately checked on the OUTPUT rather than on the rating multiplier alone:
+                // a nil base rate does the same damage, and so would a sum assured small enough
+                // to round to zero at two decimal places.
+                if (instalmentPremium.signum() <= 0) {
+                    throw new IllegalStateException("Automatic issuance computed a premium of "
+                        + instalmentPremium.toPlainString() + " " + decidedCase.sumAssuredCurrency()
+                        + " for case " + caseId + ", which is not a premium anyone can be billed."
+                        + " Sum assured " + decidedCase.sumAssuredAmount().toPlainString()
+                        + ", base rate per mille " + baseRatePerMille.toPlainString()
+                        + ", rating multiplier " + ratingMultiplier.toPlainString()
+                        + ", loading multiplier " + loadingMultiplier.toPlainString()
+                        + ". Check the product version's rating table: a multiplier of zero in the"
+                        + " applicant's band prices every policy in it at nothing.");
+                }
                 // agentOfRecordId now comes from the case (underwriting V2). It used to be
                 // hardcoded null here, with the note that no such field existed on the
                 // aggregate -- which was true and was a money bug: distribution's
@@ -277,14 +343,32 @@ public class UnderwritingDecisionEventListener {
                     decidedCase.lifeAssuredPartyId());
                 policyApi.issuePolicy(caseId, request, "system:underwriting-decision-listener");
             });
+            // Issued. Clear any failure this case is still carrying from an earlier attempt, so
+            // a warning that has been dealt with stops being shown. A stale one teaches people
+            // to scroll past the field, which is exactly how the log line below came to be
+            // ignored for as long as it was.
+            clearIssuanceFailure(caseId);
         } catch (Exception e) {
             // AFTER_COMMIT -- underwriting's own transaction already committed; there is
             // nothing left to roll back here. audit.DomainEventAuditListener has already
             // durably recorded the raw UnderwritingDecisionMade event regardless of whether
             // this listener succeeds, so the decision itself is never lost -- only automatic
-            // issuance needs a manual retry (via /policies/manual-issue) if this path fails. No
-            // dead-letter queue is built for this listener specifically in M3.
+            // issuance needs a manual retry (via /policies/manual-issue) if this path fails.
             log.error("Automatic policy issuance failed for underwriting case {}", caseId, e);
+            // AND ON THE CASE ITSELF, which is the half that was missing.
+            //
+            // This used to end at the log line above, with a comment noting that no dead-letter
+            // queue existed "for this listener specifically in M3". The consequence was found in
+            // production rather than in review: a case decided ACCEPT whose premium computed to
+            // zero left a stack trace in a log file and a case on screen that looked exactly like
+            // a successful one. Nobody was told, no retry was triggered, and the customer had no
+            // policy. A retry nobody is instructed to perform is not a recovery path.
+            //
+            // Still not a dead-letter queue and still not an automatic retry -- reissuing on a
+            // timer would hammer a product misconfiguration that no amount of retrying fixes.
+            // What this does is make the failure visible to the person who caused the decision,
+            // where they are already looking.
+            recordIssuanceFailure(caseId, e);
         } finally {
             if (previousTenant != null) {
                 TenantContext.set(previousTenant);

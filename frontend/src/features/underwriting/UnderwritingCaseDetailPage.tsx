@@ -170,6 +170,40 @@ export function UnderwritingCaseDetailPage() {
           whole reason the panel exists, and it was scrolling away exactly when the
           declarations below were being read against it. */}
       <DetailLayout record={renderRecord()}>
+        {/*
+          THE ACCEPTANCE THAT PRODUCED NOTHING.
+
+          Automatic issuance runs in an AFTER_COMMIT listener, so when it fails the decision has
+          already committed and cannot be rolled back. Until this panel existed, such a case was
+          indistinguishable on screen from one whose policy was created: same DECIDED status,
+          same ACCEPT badge, same everything. The only record was a stack trace in a log file.
+
+          One sat like that in production -- a product whose rating multiplier was zero, so the
+          premium computed to nothing and a CHECK constraint refused it -- until somebody
+          happened to ask why the customer had no policy.
+
+          FIRST IN THE COLUMN, above the decision it contradicts, because a reader who sees
+          "Accept" and stops reading has been told the opposite of what happened.
+        */}
+        {view?.issuanceFailureReason && (
+          <Panel title="No policy was issued">
+            <div
+              role="alert"
+              className="mx-4 mb-4 rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
+            >
+              <p className="font-medium">
+                This case was decided, but automatic issuance failed and no policy exists.
+              </p>
+              <p className="mt-1">{view.issuanceFailureReason}</p>
+              <p className="mt-2 opacity-80">
+                Recorded {formatInstant(view.issuanceFailedAt)}. The decision itself stands.
+                Correct what the message names, then issue the policy by hand from Policies — this
+                will not retry on its own.
+              </p>
+            </div>
+          </Panel>
+        )}
+
         {view?.status === 'DECIDED' && (
           <Panel title="Decision">
             <dl className="px-4 pb-2">

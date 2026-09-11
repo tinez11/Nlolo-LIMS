@@ -136,6 +136,21 @@ public class UnderwritingCase {
     @Column(name = "rating_multiplier")
     private BigDecimal ratingMultiplier;
 
+    /**
+     * Why automatic issuance failed on this decided case, and when (V10).
+     *
+     * <p>Issuance runs in an AFTER_COMMIT listener, so a failure there cannot roll the decision
+     * back — the case is decided whatever happens next. Until this column, that meant an ACCEPT
+     * whose policy was never created looked exactly like an ACCEPT whose policy was, and the only
+     * record of the difference was a stack trace in a log file. One sat undetected until somebody
+     * happened to ask why a customer had no policy.
+     */
+    @Column(name = "issuance_failure_reason")
+    private String issuanceFailureReason;
+
+    @Column(name = "issuance_failed_at")
+    private Instant issuanceFailedAt;
+
     /** NULL for a pre-V5 case: those were decided by the engine, and no person authored them. */
     @Column(name = "decision_decided_by")
     private String decisionDecidedBy;
@@ -273,6 +288,24 @@ public class UnderwritingCase {
         this.decisionOverrodeRecommendation = overrodeRecommendation;
         this.status = "DECIDED";
     }
+
+    /**
+     * Automatic issuance failed, or succeeded after having failed.
+     *
+     * <p>Set and cleared through one method so the reason and the timestamp can never disagree —
+     * {@code underwriting_case_issuance_failure_shape} says the same thing at the database.
+     *
+     * <p>CLEARING MATTERS AS MUCH AS SETTING. A case that failed, was corrected and then issued
+     * must stop claiming it failed. A warning that stays up after it has been dealt with is one
+     * people learn to scroll past, which is how the log entry this replaces came to be ignored.
+     */
+    public void recordIssuanceFailure(String reason) {
+        this.issuanceFailureReason = reason;
+        this.issuanceFailedAt = reason != null ? Instant.now() : null;
+    }
+
+    public String getIssuanceFailureReason() { return issuanceFailureReason; }
+    public Instant getIssuanceFailedAt() { return issuanceFailedAt; }
 
     public String getRecommendationOutcome() { return recommendationOutcome; }
     public BigDecimal getRecommendationLoadingPercent() { return recommendationLoadingPercent; }
