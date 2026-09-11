@@ -37,6 +37,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -285,9 +286,15 @@ class OfferReminderSweepTest {
             .findFirst()
             .orElseThrow(() -> new AssertionError("no reminder SMS was sent"));
         assertThat(sent).contains(policyNumber);
+        // ON THE TANZANIAN CALENDAR, not the JVM's. This read `LocalDate.now()` and the
+        // dispatcher read the UTC date, so the two agreed only outside 00:00-03:00 local --
+        // EAT is UTC+3, and inside that window the assertion failed on a date the dispatcher
+        // was rendering exactly as it had been written to. It was a real defect in the copy
+        // rather than a flaky test: a customer reading the SMS at half past midnight was told
+        // the offer closed a day before it did.
         assertThat(sent)
             .as("a reminder whose date is wrong is worse than no reminder")
-            .contains(LocalDate.now().plusDays(7).toString());
+            .contains(LocalDate.now(ZoneId.of("Africa/Dar_es_Salaam")).plusDays(7).toString());
     }
 
     /**

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,6 +55,17 @@ public class OfferReminderDispatcher {
     /** See NotificationApiImpl: the schema carries a language per template, nothing per party. */
     private static final String DEFAULT_LANGUAGE = "sw";
     private static final long DEFAULT_REMINDER_DAYS = 7L;
+
+    /**
+     * The zone a DATE IN A CUSTOMER'S SMS means. Rendering the deadline from the UTC date told a
+     * Tanzanian customer the wrong day for three hours of every night: EAT is UTC+3, so between
+     * midnight and 03:00 local the UTC date is still yesterday's, and the reminder named a
+     * deadline one day earlier than the offer's real one.
+     *
+     * <p>Explicit rather than {@code systemDefault()}, which would make the copy a customer reads
+     * depend on how the host running the drain happens to be configured.
+     */
+    private static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
     /** The nil uuid owns the platform default wording. See communication/V8 and NotificationApiImpl. */
     private static final UUID PLATFORM_DEFAULT_TENANT = new UUID(0L, 0L);
 
@@ -191,6 +202,9 @@ public class OfferReminderDispatcher {
      * policy: {@code communication} may not touch {@code policy.policy}. The sweep queues a row
      * only when the offer closes within exactly that window, so the arithmetic is right for every
      * row it produces — and a row produced any other way is a bug in whatever produced it.
+     *
+     * <p>Read in {@link #CIVIL_ZONE}, not UTC: the customer counts the days on a Tanzanian
+     * calendar, so that is the calendar the deadline has to be named on.
      */
     private String expiryDateFor(NotificationDispatch dispatch) {
         long reminderDays;
@@ -201,6 +215,6 @@ public class OfferReminderDispatcher {
                 DEFAULT_REMINDER_DAYS, e);
             reminderDays = DEFAULT_REMINDER_DAYS;
         }
-        return dispatch.getCreatedAt().atZone(ZoneOffset.UTC).toLocalDate().plusDays(reminderDays).toString();
+        return dispatch.getCreatedAt().atZone(CIVIL_ZONE).toLocalDate().plusDays(reminderDays).toString();
     }
 }
