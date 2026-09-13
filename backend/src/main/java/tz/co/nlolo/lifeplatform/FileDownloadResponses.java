@@ -30,7 +30,7 @@ import org.springframework.http.ResponseEntity;
  * types. Passing the three already-nullable fields as plain {@code String}/{@code byte[]} instead
  * keeps this class's only imports as JDK/Spring types, so it adds no edge to the module graph at
  * all and needs no {@code allowedDependencies} entry anywhere -- verified by
- * {@code ModularityTests}/{@code NoCircularDependencyTest} passing with this class in place.
+ * {@code ModularityTests} passing with this class in place.
  *
  * <p>{@code contentType}/{@code fileName} are nullable for documents predating {@code document/V2},
  * so both fallbacks below are reachable in any real deployment -- not defensive padding.

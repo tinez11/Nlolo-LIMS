@@ -338,28 +338,15 @@ test.describe('staff group schemes', () => {
     await expect(page.getByText('over the free cover limit')).toBeVisible();
   });
 
-  test('refuses a scheme with an unpriced member, before reaching the network', async ({ page, browser }) => {
-    const productLabel = await asAdmin(browser, createGroupProduct);
-    let requestFired = false;
-    page.on('request', (req) => {
-      // The form proposes a CASE now; /group-schemes is the exception route it no longer uses.
-      if (req.method() === 'POST' && req.url().endsWith('/underwriting/cases/group')) requestFired = true;
-    });
-
-    await page.goto('/staff/group-schemes/new');
-    await pickParty(page, 'Search for the employer by name', 'Amina', 'Amina Owner');
-    await page.getByLabel('Product').selectOption({ label: productLabel });
-    await page.getByLabel('Basis').selectOption('SALARY_MULTIPLE');
-    await page.getByLabel('Multiple of annual salary').fill('3');
-    await pickParty(page, 'Search employees by name', 'Amina', 'Amina Owner');
-    // Salary deliberately left blank.
-    await page.getByLabel('Premium', { exact: true }).fill('500000.00');
-    await page.getByRole('button', { name: 'Propose scheme' }).click();
-
-    await expect(page.getByText(/Needs a salary like/)).toBeVisible();
-    expect(requestFired).toBe(false);
-  });
-
+  /*
+   * 'refuses a scheme with an unpriced member, before reaching the network' was removed here. It
+   * built a whole group product through an admin context to reach a form it then never submitted:
+   * the rule it checked is the salary-per-member one, pinned in groupSchemeIssueForm.test.ts
+   * ('requires a salary per member on a salary-multiple scheme'), and the only other thing it
+   * showed was that a client-rejected form sends nothing -- a property of every form on this
+   * console, now pinned once in BeneficiariesPanel.test.tsx rather than re-proved per feature at
+   * real-stack prices.
+   */
   test('a claim on a scheme must name the life that died', async ({ page, browser }) => {
     // The console half of the group-claims fix. A claim registered against a scheme used to
     // record only a policy number and a claimant -- and the claimant is who is FILING, the

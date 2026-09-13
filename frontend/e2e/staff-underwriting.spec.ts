@@ -49,14 +49,14 @@ test.describe('staff underwriting', () => {
     await expect(select.locator('option', { hasText: 'Demo Term Life' })).toHaveCount(1);
   });
 
-  test('shows no matches for a nonsense applicant search, before reaching the network', async ({
-    page,
-  }) => {
-    await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
-    await page.getByPlaceholder('Type a name to search').fill('Zzzznonexistentnamezzz');
-    await expect(page.getByText(/No matches for/)).toBeVisible({ timeout: 5000 });
-  });
-
+  /*
+   * 'shows no matches for a nonsense applicant search' was removed. It is the same PartyPicker on
+   * the same empty-result path as the one staff-issue-policy.spec.ts used to assert, and
+   * PartyPicker.test.tsx already pins that component directly -- zero results, an unresolvable
+   * pasted UUID, a failed search, and the race where a newer search must beat a slower older one.
+   * Re-proving one of those per screen that mounts the picker is per-screen cost for
+   * component-level behaviour.
+   */
   /**
    * Assessing and deciding are two acts, and this is the test that says so.
    *

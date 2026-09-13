@@ -90,65 +90,19 @@ test.describe('staff beneficiaries edit', () => {
     await expect(page.getByRole('heading', { name: 'Beneficiaries' })).toBeVisible();
   });
 
-  test('rejects shares that do not sum to 100 before ever reaching the network', async ({ page }) => {
-    // The zod schema mirrors PolicyApiImpl.validateAndBuildBeneficiaries's own
-    // sum-to-100 rule exactly (by design, so the client rejects what the server
-    // would before a round trip) -- which means this specific rule can NEVER
-    // reach a real 422 through this UI: the PUT is never sent at all. Verified
-    // by listening for the request rather than assuming; an earlier version of
-    // this test claimed to confirm "the real backend 422" here and was wrong --
-    // it was reading the CLIENT schema's identically-worded rejection message.
-    let putFired = false;
-    page.on('request', (req) => {
-      if (req.method() === 'PUT' && req.url().includes('/beneficiaries')) putFired = true;
-    });
-
-    await openEdit(page);
-    await removeAllRows(page);
-    await addFreeformRow(page, 'E2E Underweighted Estate', 50);
-
-    await page.getByRole('button', { name: 'Save' }).click();
-
-    // A whole-array zod issue (path: ['beneficiaries']), rendered via
-    // errors.beneficiaries.root.message -- not the saving-resource's server-error
-    // banner, which never activates because saveBeneficiaries is never called.
-    await expect(page.getByText(/must sum to 100, got 50/i)).toBeVisible();
-    expect(putFired).toBe(false);
-
-    // The form must still be open with the rejected input on screen -- a failed
-    // save silently closing would discard what the user typed.
-    await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
-    await expect(page.getByPlaceholder('Designee, e.g. "My Estate"')).toHaveValue(
-      'E2E Underweighted Estate',
-    );
-
-    // Nothing was ever sent, so cancelling here needs no server-side cleanup.
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByRole('button', { name: 'Edit beneficiaries' })).toBeVisible();
-  });
-
-  test('rejects a row with both a party id and a freeform designee set', async ({ page }) => {
-    await openEdit(page);
-    await removeAllRows(page);
-    await page.getByRole('button', { name: 'Add beneficiary' }).click();
-    // Leave type at its default PARTY, fill the party id field, THEN switch to
-    // FREEFORM without clearing it -- the exact "both set" shape the backend's
-    // hasParty == hasFreeform check rejects independent of the declared type.
-    await page.getByRole('button', { name: 'Search for the beneficiary by name' }).click();
-    await page.getByPlaceholder('Type a name to search').fill('Amina');
-    await selectPickerOption(page, 'Amina Owner');
-    await page.getByRole('combobox').selectOption('FREEFORM');
-    await page.getByPlaceholder('Designee, e.g. "My Estate"').fill('Also this');
-    await page.getByRole('spinbutton').fill('100');
-
-    // Caught client-side by the same zod rule the backend enforces -- this never
-    // reaches the network at all, unlike the sum-to-100 case above.
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText(/exactly one of a party or a freeform designee/i)).toBeVisible();
-
-    await page.getByRole('button', { name: 'Cancel' }).click();
-  });
-
+  /*
+   * Two client-side rejection tests used to sit here: shares not summing to 100, and a row with
+   * both a party id and a freeform designee. Both said so in their own names and comments --
+   * "this never reaches the network at all" -- and both paid this file's beforeEach, which issues
+   * a whole policy through underwriting, to exercise a zod schema.
+   *
+   * The rules they covered are pinned faster and harder in beneficiaryForm.test.ts:
+   * `it.each([99, 101, 0, 50.5])('rejects shares summing to %s, not 100')` tests four totals where
+   * the e2e tested one, and 'rejects a row with BOTH partyId and freeformDesignee set' is the same
+   * rule. The one thing they proved that a schema test cannot -- that the panel short-circuits and
+   * never sends the request -- now lives in BeneficiariesPanel.test.tsx, where it costs
+   * milliseconds instead of two minutes and cannot be lost in a suite-wide timeout.
+   */
   test('saves a real beneficiary, persists it across a reload, then clears it back to empty', async ({
     page,
   }) => {

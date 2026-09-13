@@ -73,30 +73,13 @@ test.describe('staff reinsurance', () => {
     await financeContext.close();
   });
 
-  test('rejects a QUOTA_SHARE treaty with no cession percent, before reaching the network', async ({
-    browser,
-  }) => {
-    const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
-    const page = await financeContext.newPage();
-
-    let requestFired = false;
-    page.on('request', (req) => {
-      if (req.method() === 'POST' && req.url().endsWith('/treaties')) requestFired = true;
-    });
-
-    await page.goto('/staff/treaties/new');
-    await page.getByLabel('Reinsurer name').fill('E2E No Percent Re');
-    await page.getByLabel('Retention limit').fill('0.00');
-    // Cession percent left blank -- QUOTA_SHARE requires it.
-    await page.getByLabel('Effective from').fill(dmy('2020-01-01'));
-    await page.getByRole('button', { name: 'Create treaty' }).click();
-
-    await expect(page.getByText('Must be a decimal percentage like 25.00')).toBeVisible();
-    expect(requestFired).toBe(false);
-
-    await financeContext.close();
-  });
-
+  /*
+   * 'rejects a QUOTA_SHARE treaty with no cession percent, before reaching the network' was
+   * removed: it opened a second browser context as finance to fill a form it never submitted.
+   * createTreatyForm.test.ts pins that rule and its neighbours -- a missing cession percent, one
+   * over 100, a zero one, and the SURPLUS/XOL shapes where the field is legitimately absent --
+   * which is more of the rule than the single blank case here reached.
+   */
   test('issuing a policy against an ACTIVE treaty produces a real cession, visible on the policy', async ({
     browser,
   }) => {
