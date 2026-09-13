@@ -159,11 +159,55 @@ describe('rating basis', () => {
     expect(screen.getByText('Age')).toBeInTheDocument();
     expect(screen.getByText('18-30 · ages 18–30')).toBeInTheDocument();
 
-    // Only AGE rows carry bounds; nothing invented for the ones that do not.
+    // AGE bounds belong to AGE rows and nowhere else. A sum assured band with no age
+    // range must never be described by one -- that is not a fact about that row.
     expect(screen.getByText('Sum assured band')).toBeInTheDocument();
-    expect(screen.getByText('LOW')).toBeInTheDocument();
     expect(screen.queryByText(/ages/i)).not.toBeNull();
     expect(screen.queryByText(/LOW · ages/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The same for SUM_ASSURED_BAND, which had the identical defect one factor type over.
+   *
+   * Its band text was matched by exact string against LOW, MEDIUM or HIGH -- hardcoded in
+   * underwriting on thresholds of two and ten million, and shown on no screen anywhere. A real
+   * product published with the band '5000000' matched none of them, so its multiplier reached
+   * no premium at all. Product V9 gave the row real amount bounds and they, not the label, are
+   * what it resolves on -- so a screen an actuary reviews their own table on has to show them.
+   */
+  it('shows the amount bounds a sum assured factor resolves against, and says when it has none', () => {
+    renderPage({
+      productId: PRODUCT_ID,
+      productVersionId: VERSION_ID,
+      effectiveDate: '2026-01-01',
+      baseRates: [],
+      ratingFactors: [
+        {
+          factorType: 'SUM_ASSURED_BAND',
+          band: 'Up to 5m',
+          multiplier: 1.25,
+          sumAssuredFrom: 0,
+          sumAssuredTo: 5000000,
+        },
+        // null, NOT omitted -- the shape the wire actually sends for a row published
+        // before V9, and the shape whose guard cost a visible bug on the AGE side.
+        {
+          factorType: 'SUM_ASSURED_BAND',
+          band: 'LOW',
+          multiplier: 1,
+          sumAssuredFrom: null,
+          sumAssuredTo: null,
+        },
+      ],
+      benefitSchedule: [],
+    });
+
+    // Grouped, because a reader should not have to count the digits in 5000000.
+    expect(screen.getByText(/Up to 5m · 0–5,000,000/)).toBeInTheDocument();
+
+    // And the pre-V9 row says what it is rather than showing a label with nothing behind
+    // it: with no bounds it resolves for no sum assured at all, which is worth knowing.
+    expect(screen.getByText('LOW · no amount bounds')).toBeInTheDocument();
   });
 
   /**

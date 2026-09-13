@@ -118,6 +118,7 @@ class FinaccountingContractTest {
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/product/V6__eligibility_bounds.sql",
+            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",

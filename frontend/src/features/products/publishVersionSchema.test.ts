@@ -9,7 +9,17 @@ import {
 // AGE rows carry a real range as of product V5: age is resolved by range, not by matching
 // the band text, so an AGE row without one would match nobody and silently rate neutral.
 const ageRow = { factorType: 'AGE' as const, band: '18-30', multiplier: 1, ageFrom: '18', ageTo: '30' };
-const sumRow = { factorType: 'SUM_ASSURED_BAND' as const, band: '0-5000000', multiplier: 1.1 };
+// SUM_ASSURED_BAND rows carry a real amount range as of product V9, for the identical reason
+// AGE does one line up: a sum assured was resolved by matching the band text against LOW,
+// MEDIUM or HIGH -- three strings hardcoded in underwriting and shown on no screen -- so a
+// product published with the band '5000000' rated nobody and this 1.1 reached no premium.
+const sumRow = {
+  factorType: 'SUM_ASSURED_BAND' as const,
+  band: '0-5000000',
+  multiplier: 1.1,
+  sumAssuredFrom: '0',
+  sumAssuredTo: '5000000',
+};
 
 // Built on the blank form so the fixture always carries every key a real submission has.
 const valid = () => ({
@@ -82,23 +92,44 @@ describe('publishVersionFormSchema', () => {
   });
 
   /**
-   * Band used to be required on every row. It is required everywhere EXCEPT age now, and the
-   * distinction is the point rather than a relaxation.
+   * Band used to be required on every row. It is required only where the band text is still
+   * what the platform matches on, and the distinction is the point rather than a relaxation.
    *
-   * On a SUM_ASSURED_BAND or OCCUPATION_CLASS row the band text IS what the platform matches,
-   * so a blank one rates nothing. On an AGE row it is a pure label -- openapi-product.yaml:
-   * "remains as the human-readable label but is not matched against", because age resolves on
-   * ageFrom/ageTo. Requiring it there made an actuary type the same range twice with nothing
-   * keeping the two in step, and the seeded data already showed them disagreeing.
+   * On an OCCUPATION_CLASS or SMOKER_STATUS row the band IS the match, so a blank one rates
+   * nothing. On an AGE row it is a pure label -- openapi-product.yaml: "remains as the
+   * human-readable label but is not matched against", because age resolves on ageFrom/ageTo.
+   * Requiring it there made an actuary type the same range twice with nothing keeping the two
+   * in step, and the seeded data already showed them disagreeing. A bounded SUM_ASSURED_BAND
+   * row joined that second group at product V9.
    */
   it('rejects a blank band on a row whose band is what gets matched', () => {
-    expect(
-      termLife.safeParse({ ...valid(), ratingTable: [ageRow, { ...sumRow, band: '' }] }).success,
-    ).toBe(false);
     expect(
       termLife.safeParse({
         ...valid(),
         ratingTable: [ageRow, sumRow, { factorType: 'SMOKER_STATUS' as const, band: '', multiplier: 0.9 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      termLife.safeParse({
+        ...valid(),
+        ratingTable: [ageRow, sumRow, { factorType: 'OCCUPATION_CLASS' as const, band: '', multiplier: 1.4 }],
+      }).success,
+    ).toBe(false);
+  });
+
+  /**
+   * ...and an UNBOUNDED sum assured row is still one of them. Such a row resolves for no
+   * amount at all, so the band text is the only thing identifying it to a human reading the
+   * product back.
+   */
+  it('rejects a blank band on a sum assured row with no range to label it from', () => {
+    expect(
+      termLife.safeParse({
+        ...valid(),
+        ratingTable: [
+          ageRow,
+          { factorType: 'SUM_ASSURED_BAND' as const, band: '', multiplier: 1 },
+        ],
       }).success,
     ).toBe(false);
   });
@@ -363,9 +394,21 @@ describe('toApiRequest', () => {
 
     expect(api.ratingTable).toEqual([
       { factorType: 'AGE', band: '18-30', multiplier: 1, ageFrom: 18, ageTo: 30 },
-      { factorType: 'SUM_ASSURED_BAND', band: '0-5000000', multiplier: 1.1 },
+      {
+        factorType: 'SUM_ASSURED_BAND',
+        band: '0-5000000',
+        multiplier: 1.1,
+        sumAssuredFrom: 0,
+        sumAssuredTo: 5000000,
+      },
     ]);
+    // Numbers on the wire, not the strings the form holds: the backend binds these to
+    // BigDecimal and a quoted "5000000" is a different request body than 5000000.
+    expect(typeof api.ratingTable[1].sumAssuredTo).toBe('number');
+    // Each row carries only the bounds its own factor type has. The backend CHECK refuses
+    // the others outright, so sending them would be a 422 rather than a tidiness question.
     expect(api.ratingTable[1]).not.toHaveProperty('ageFrom');
+    expect(api.ratingTable[0]).not.toHaveProperty('sumAssuredFrom');
     expect(api.benefitSchedule).toEqual([{ benefitType: 'DEATH', calculationMethod: 'sum_assured' }]);
   });
 
@@ -379,6 +422,52 @@ describe('toApiRequest', () => {
   it('rejects an AGE row whose range ends before it begins', () => {
     const backwards = { ...ageRow, ageFrom: '40', ageTo: '30' };
     expect(termLife.safeParse({ ...valid(), ratingTable: [backwards, sumRow] }).success).toBe(false);
+  });
+
+  /**
+   * A sum assured band that RATES must say whom it rates.
+   *
+   * The asymmetry with the neutral case below is deliberate and mirrors
+   * ProductApiImpl.rejectMalformedSumAssuredBands: a multiplier of exactly 1 changes no price
+   * whether it resolves or not, while a real multiplier with no range is a number that can
+   * never reach a premium -- which is the entire defect product V9 removes.
+   */
+  it('rejects a sum assured row that rates but carries no range', () => {
+    const noRange = { factorType: 'SUM_ASSURED_BAND' as const, band: '5000000', multiplier: 1.5 };
+    expect(termLife.safeParse({ ...valid(), ratingTable: [ageRow, noRange] }).success).toBe(false);
+  });
+
+  it('accepts a neutral sum assured row with no range', () => {
+    // Around eighty fixtures carry exactly this row to satisfy the coverage rule, and
+    // inventing an amount range for them would make none of them more correct.
+    const neutral = { factorType: 'SUM_ASSURED_BAND' as const, band: 'LOW', multiplier: 1 };
+    expect(termLife.safeParse({ ...valid(), ratingTable: [ageRow, neutral] }).success).toBe(true);
+  });
+
+  it('rejects a sum assured range that ends before it begins', () => {
+    const backwards = { ...sumRow, sumAssuredFrom: '5000000', sumAssuredTo: '1000000' };
+    expect(termLife.safeParse({ ...valid(), ratingTable: [ageRow, backwards] }).success).toBe(false);
+  });
+
+  it('rejects a negative sum assured bound', () => {
+    const negative = { ...sumRow, sumAssuredFrom: '-1' };
+    expect(termLife.safeParse({ ...valid(), ratingTable: [ageRow, negative] }).success).toBe(false);
+  });
+
+  it('labels a blank sum assured band from its range on the wire', () => {
+    const result = termLife.safeParse({
+      ...valid(),
+      ratingTable: [ageRow, { ...sumRow, band: '' }],
+    });
+    expect(result.success).toBe(true);
+
+    // Derived rather than sent blank, exactly as an AGE row's label is: the band cannot
+    // contradict the bounds it is read beside, because nobody typed it.
+    expect(toApiRequest(result.data!).ratingTable![1]).toMatchObject({
+      band: '0-5000000',
+      sumAssuredFrom: 0,
+      sumAssuredTo: 5000000,
+    });
   });
 });
 

@@ -6,6 +6,9 @@ import tz.co.nlolo.lifeplatform.policy.api.BeneficiaryType;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -20,6 +23,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -63,13 +68,20 @@ public class UnderwritingDecisionEventListener {
     private final UnderwritingApi underwritingApi;
     private final PolicyApi policyApi;
     private final ReferenceDataApi referenceDataApi;
+    /** Reads the life assured's age, sex and smoker status -- the key to a base rate cell. */
+    private final PartyApi partyApi;
+    /** Reads the product's own rate table, which automatic issuance never used before. */
+    private final ProductApi productApi;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public UnderwritingDecisionEventListener(UnderwritingApi underwritingApi, PolicyApi policyApi, ReferenceDataApi referenceDataApi,
+                                              PartyApi partyApi, ProductApi productApi,
                                               PlatformTransactionManager transactionManager) {
         this.underwritingApi = underwritingApi;
         this.policyApi = policyApi;
         this.referenceDataApi = referenceDataApi;
+        this.partyApi = partyApi;
+        this.productApi = productApi;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -144,6 +156,61 @@ public class UnderwritingDecisionEventListener {
             "Issued on underwriting decision " + decidedCase.caseId(),
             null),
             "system:underwriting-decision-listener");
+    }
+
+    /**
+     * THE PRODUCT'S OWN RATE, not one flat number for the whole platform.
+     *
+     * <p>Every automatically issued policy used to be priced from a single
+     * {@code TZ_BASE_PREMIUM_RATE_PER_MILLE} in reference data. An actuary could author a full
+     * mortality table — age bands, sex, smoker status, real rates — publish it, see it on the
+     * product screen, and watch it change no premium at all. {@code quotePremium} read the table;
+     * nothing that issued a contract did. So an illustration and the policy the customer actually
+     * got were priced by two different mechanisms, which is the defect the quote breakdown exists
+     * to prevent.
+     *
+     * <p><b>A priced version with no cell for this life is REFUSED, not defaulted.</b> A hole in
+     * the table means the actuary did not price that combination, and filling it with a platform
+     * default sells cover nobody costed. The refusal now lands on the case where an underwriter
+     * can read it, rather than in a log — so "we never priced women under 56" surfaces as a
+     * sentence naming the age and sex.
+     *
+     * <p>An UNPRICED version still uses the flat reference rate. Most of this platform's products
+     * carry no base rate table at all, and that is a real product shape rather than a gap.
+     */
+    private BigDecimal baseRatePerMilleFor(UnderwritingCaseView decidedCase) {
+        if (!productApi.isPriced(decidedCase.productVersionId())) {
+            return new BigDecimal(referenceDataApi.getValue("TZ_BASE_PREMIUM_RATE_PER_MILLE", "TZ"));
+        }
+
+        // The LIFE ASSURED's mortality is what a rate table prices, and on a parent insuring a
+        // child that is not the applicant. Null means the applicant insures themselves.
+        UUID lifeAssuredId = decidedCase.lifeAssuredPartyId() != null
+            ? decidedCase.lifeAssuredPartyId() : decidedCase.applicantPartyId();
+        PartyDetailView life = partyApi.getPartyDetail(lifeAssuredId);
+
+        if (life.dateOfBirth() == null) {
+            throw new IllegalStateException("Product version " + decidedCase.productVersionId()
+                + " is priced from a base rate table, but the life assured on case "
+                + decidedCase.caseId() + " has no recorded date of birth, so there is no age to"
+                + " price. Record a date of birth on the client, then issue by hand.");
+        }
+        int ageAtEntry = Period.between(life.dateOfBirth(), LocalDate.now()).getYears();
+
+        // party.api.Sex -> product.api.Sex, by name. Two enums for one concept, because neither
+        // module may depend on the other -- the same boundary crossing as BeneficiaryNomination
+        // above, and mapped in the same place for the same reason: policy is allowed to see both.
+        return productApi.resolveBaseRatePerMille(decidedCase.productVersionId(), ageAtEntry,
+                life.sex() != null
+                    ? tz.co.nlolo.lifeplatform.product.api.Sex.valueOf(life.sex().name()) : null,
+                life.smokerStatus() != null
+                    ? tz.co.nlolo.lifeplatform.product.api.SmokerStatus.valueOf(life.smokerStatus().name()) : null)
+            .orElseThrow(() -> new IllegalStateException("Product version "
+                + decidedCase.productVersionId() + " has no base rate for age " + ageAtEntry
+                + ", sex " + life.sex() + ", smoker status " + life.smokerStatus()
+                + ". The rate table does not cover this life, so there is no price to charge —"
+                + " either the table has a gap, or the client's sex and smoker status were never"
+                + " recorded. Both are fixable; guessing a rate is not."));
     }
 
     /**
@@ -233,7 +300,7 @@ public class UnderwritingDecisionEventListener {
                 // declared type, confirmed by reading the file -- not the Integer/boxed-wrapper
                 // the brief's own sketch assumed), so only a null-guard is needed here, no
                 // BigDecimal.valueOf(...) conversion.
-                BigDecimal baseRatePerMille = new BigDecimal(referenceDataApi.getValue("TZ_BASE_PREMIUM_RATE_PER_MILLE", "TZ"));
+                BigDecimal baseRatePerMille = baseRatePerMilleFor(decidedCase);
                 BigDecimal loadingPercent = decidedCase.decisionLoadingPercent() != null ? decidedCase.decisionLoadingPercent() : BigDecimal.ZERO;
                 BigDecimal loadingMultiplier = BigDecimal.ONE.add(loadingPercent.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
                 // THE RATING TABLE, which until now reached no premium at all.

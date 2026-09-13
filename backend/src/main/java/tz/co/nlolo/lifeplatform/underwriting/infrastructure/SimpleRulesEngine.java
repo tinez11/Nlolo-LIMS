@@ -16,8 +16,11 @@ import java.math.RoundingMode;
  * rule OUTCOMES (this class's return contract), not the engine mechanism itself
  * (docs/01-domain-map.md §2.2).
  *
- * Combined multiplier = ageBandMultiplier x sumAssuredBandMultiplier (occupation-class
- * and smoker-status factors are not yet consulted -- see RiskProfile's javadoc).
+ * Combined multiplier = ageBandMultiplier x sumAssuredBandMultiplier x
+ * occupationClassMultiplier. Smoker status is deliberately still absent, and for a
+ * different reason than occupation class was: it is a KEY of the base rate table, so a
+ * multiplier for it would charge the same fact twice -- which is why publishVersion
+ * refuses a SMOKER_STATUS factor on a priced version. See RiskProfile's javadoc.
  * Decision thresholds below are placeholder values chosen to be explainable and
  * testable, not actuarially validated:
  *   - any submitted risk score >= 90                          -> POSTPONED (inconclusive, needs senior/medical review)
@@ -68,8 +71,16 @@ public class SimpleRulesEngine implements RulesEnginePort {
     // body -- not its signature -- when real Drools/DRL rules are formalized.
     @Override
     public UnderwritingDecision evaluate(RiskProfile riskProfile) {
+        // Age x sum assured x OCCUPATION CLASS. The third term was added once the person record
+        // gave occupation class a real home -- RiskProfile's own javadoc had asked for exactly
+        // that and warned against "silently ignoring the new data", which is what was happening:
+        // a published OCCUPATION_CLASS multiplier of 2.5 reached no premium at all.
+        //
+        // Rounded ONCE, at the end, so three factors do not each contribute a rounding error to a
+        // price.
         BigDecimal combinedMultiplier = riskProfile.ageBandMultiplier()
             .multiply(riskProfile.sumAssuredBandMultiplier())
+            .multiply(riskProfile.occupationClassMultiplier())
             .setScale(MULTIPLIER_SCALE, RoundingMode.HALF_UP);
         BigDecimal maxRiskScore = riskProfile.assessmentRiskScores().stream()
             .max(BigDecimal::compareTo)

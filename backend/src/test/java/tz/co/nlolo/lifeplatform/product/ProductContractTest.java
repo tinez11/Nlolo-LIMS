@@ -23,9 +23,12 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -56,7 +59,8 @@ class ProductContractTest {
             "db-migrations/product/V3__base_rate_structured_age.sql",
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
-            "db-migrations/product/V6__eligibility_bounds.sql");
+            "db-migrations/product/V6__eligibility_bounds.sql",
+            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql");
     }
 
     @AfterEach
@@ -428,6 +432,81 @@ class ProductContractTest {
                      "benefitSchedule":[{"benefitType":"DEATH","basis":"MULTIPLE_OF_SUM_ASSURED","factor":"1.0"}]}
                     """))
             .andExpect(status().isForbidden());
+    }
+
+    /**
+     * A SUM ASSURED BAND'S BOUNDS SURVIVE THE WIRE, publish to read.
+     *
+     * <p><b>This is the test that would have caught the change not working at all.</b> The
+     * bounds existed on {@code RatingFactorInput}, the resolver matched on them, and
+     * {@code ProductApiIntegrationTest} proved every rule about them — while
+     * {@code RatingFactorRequest} did not carry the two fields, so Jackson dropped them off
+     * every publish that arrived over HTTP. Every real publish comes over HTTP. The console
+     * would have collected the amounts, sent them, shown no error, and stored rows with NULL
+     * bounds: the original defect, arriving through a screen that appeared to have fixed it,
+     * with a green suite behind it.
+     *
+     * <p>It asserts on the READ rather than on a 201, for the same reason: a publish that
+     * silently discards half its body is still a 201. The rating basis endpoint is where an
+     * actuary checks their own table, so it is also where a dropped bound becomes visible.
+     */
+    @Test
+    void sumAssuredBandBoundsSurviveAPublishOverHttp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String createResponse = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"SA-BOUNDS-01","productName":"Banded By Amount","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String productId = JsonPath.read(createResponse, "$.productId");
+
+        // The multiplier is 1.25 and not 1.0 on purpose: publish-time validation only demands
+        // bounds of a band that RATES, so a neutral row would be accepted with or without them
+        // and would prove nothing about whether they arrived.
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
+                                    {"factorType":"SUM_ASSURED_BAND","band":"Up to 5m","multiplier":1.25,
+                                     "sumAssuredFrom":0,"sumAssuredTo":5000000}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        String snapshot = mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String versionId = JsonPath.read(snapshot, "$.productVersionId");
+
+        String rating = mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/rating")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+
+        // Compared as BigDecimal rather than asserted on the literal: the column is
+        // numeric(18,2), so the wire carries 0.00 and 5000000.00 and a comparison against 0
+        // would fail on scale while the value it is checking is perfectly correct.
+        List<Object> from = JsonPath.read(rating,
+            "$.ratingFactors[?(@.factorType == 'SUM_ASSURED_BAND')].sumAssuredFrom");
+        List<Object> to = JsonPath.read(rating,
+            "$.ratingFactors[?(@.factorType == 'SUM_ASSURED_BAND')].sumAssuredTo");
+        assertEquals(1, from.size(), "exactly one sum assured band was published");
+        assertEquals(0, new BigDecimal(String.valueOf(from.get(0))).compareTo(BigDecimal.ZERO),
+            "the lower bound was dropped somewhere between the console and the database");
+        assertEquals(0, new BigDecimal(String.valueOf(to.get(0))).compareTo(new BigDecimal("5000000")),
+            "the upper bound was dropped somewhere between the console and the database");
     }
 
     /**

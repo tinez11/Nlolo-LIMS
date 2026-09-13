@@ -82,6 +82,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/product/V6__eligibility_bounds.sql",
+            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",

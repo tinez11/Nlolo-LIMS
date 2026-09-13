@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
 import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
+import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
@@ -80,6 +81,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/product/V6__eligibility_bounds.sql",
+            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -517,6 +519,121 @@ class PolicyApiIntegrationTest {
             .as("naming the terms, so the reader knows to go and look at the rating table")
             .contains("rating multiplier");
         assertThat(decided.issuanceFailedAt()).isNotNull();
+    }
+
+    /**
+     * A PRICED PRODUCT CHARGES ITS OWN RATE, not one flat number for the whole platform.
+     *
+     * <p>Every automatically issued policy was priced from a single
+     * {@code TZ_BASE_PREMIUM_RATE_PER_MILLE} in reference data. An actuary could author a full
+     * mortality table — age bands, sex, smoker status, real rates — publish it, see it on the
+     * product screen, and watch it change no premium at all: {@code quotePremium} read the
+     * table, and nothing that issued a contract did. So the illustration a customer was shown
+     * and the policy they actually got were priced by two different mechanisms, which is the
+     * exact thing the quote breakdown exists to prevent.
+     *
+     * <p>The figure is exact so that a future change which merely moves the price still fails.
+     * TZS 1,000,000 of cover at this product's own 12.0 per mille is 12,000 a year, 1,000.00 a
+     * month. At the platform's flat 5.0 it would be 416.67 — the number this test produced
+     * before, and the number it must never produce again.
+     */
+    @Test
+    void aPricedProductIssuesAtItsOwnRateAndNotThePlatformFlatRate() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-PRICED-01", "Priced product",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            // No AGE and no SMOKER_STATUS factor: both are KEYS of the rate table below, and a
+            // multiplier for either would charge the same fact twice -- publishVersion refuses
+            // them on a priced version for that reason.
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000"))),
+            EligibilityBounds.none(), "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        PolicyView issued = issueFromProposal(tenantId,
+            new Fixture(pricedLife(tenantId, 40, "5001"), product.productId(), versionId),
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()));
+
+        assertThat(issued.premiumAmount())
+            .as("the product's own 12.0 per mille, not the platform's flat 5.0")
+            .isEqualByComparingTo(new BigDecimal("1000.00"));
+    }
+
+    /**
+     * A HOLE IN THE RATE TABLE REFUSES THE POLICY, and says so where a person will read it.
+     *
+     * <p>A combination the actuary never priced has no price. Filling it with a platform
+     * default would sell cover nobody costed — the quietest possible way for a product to lose
+     * money, since every policy issued that way looks perfectly normal.
+     *
+     * <p>The same three assertions as the nil-premium test above, and for the same reason:
+     * issuance runs AFTER_COMMIT, so a refusal that only reaches a log leaves a customer with
+     * an acceptance and no policy and nobody any the wiser.
+     */
+    @Test
+    void aLifeTheRateTableDoesNotCoverIsRefusedRatherThanPricedAtADefault() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-PRICED-02", "Half-priced product",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            // MALE only. "We never priced women" is a real state of a real rate table, and the
+            // applicant below is one -- this is the hole, authored deliberately.
+            List.of(new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000"))),
+            EligibilityBounds.none(), "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        UUID applicantId = pricedLife(tenantId, 40, "5002", Sex.FEMALE, SmokerStatus.NON_SMOKER);
+        UnderwritingCaseView opened = underwritingApi.openCase(applicantId, product.productId(), versionId,
+            new BigDecimal("1000000"), "TZS", null,
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()), "agent1");
+        underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard",
+            new BigDecimal("10"), "uw");
+        underwritingApi.decide(opened.caseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw", false);
+
+        TenantContext.set(tenantId);
+        assertThat(policyApi.searchPolicies(applicantId, null, null, null, null,
+                PageRequest.of(0, 10)).getContent())
+            .as("a life the actuary never priced must not become a contract at a guessed rate")
+            .isEmpty();
+
+        UnderwritingCaseView decided = underwritingApi.getCase(opened.caseId());
+        assertThat(decided.decisionOutcome()).isEqualTo(DecisionOutcome.ACCEPT);
+        assertThat(decided.issuanceFailureReason())
+            .as("the case must say why, naming the life it could not price")
+            .isNotNull();
+        assertThat(decided.issuanceFailureReason())
+            .as("in words that send the reader to the rate table rather than to an outage")
+            .contains("base rate");
+        assertThat(decided.issuanceFailedAt()).isNotNull();
+    }
+
+    /** A life a rate table can actually be keyed on: an age, a sex and a smoker status. */
+    private UUID pricedLife(UUID tenantId, int years, String phoneSuffix) {
+        return pricedLife(tenantId, years, phoneSuffix, Sex.MALE, SmokerStatus.NON_SMOKER);
+    }
+
+    private UUID pricedLife(UUID tenantId, int years, String phoneSuffix, Sex sex, SmokerStatus smokerStatus) {
+        TenantContext.set(tenantId);
+        // party's own Sex/SmokerStatus, which are a different pair of enums from product's --
+        // neither module may depend on the other. Mapped by name, exactly as the listener does.
+        return partyApi.registerIndividual(new IndividualRegistration(
+            "Priced Life " + years + phoneSuffix,
+            LocalDate.now().minusYears(years).minusDays(1),
+            "+25571302" + phoneSuffix, null,
+            tz.co.nlolo.lifeplatform.party.api.Sex.valueOf(sex.name()),
+            tz.co.nlolo.lifeplatform.party.api.SmokerStatus.valueOf(smokerStatus.name()),
+            null, null, null, null, null, null), "test-agent").partyId();
     }
 
     /** An applicant of a given age today, so the age bands under test resolve the same way every year. */

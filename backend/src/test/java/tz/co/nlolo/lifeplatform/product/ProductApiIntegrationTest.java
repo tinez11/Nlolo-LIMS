@@ -28,6 +28,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers
@@ -57,7 +58,8 @@ class ProductApiIntegrationTest {
             // because theMultiplierConstraintBacksTheZeroCheckAtTheDatabase exercises the
             // constraint it adds -- a backstop nothing tests is one a future migration drops
             // without anyone noticing.
-            "db-migrations/product/V8__rating_table_multiplier_positive.sql");
+            "db-migrations/product/V8__rating_table_multiplier_positive.sql",
+            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql");
     }
 
     @BeforeEach
@@ -418,6 +420,84 @@ class ProductApiIntegrationTest {
         // to find which of forty rows carried the nil.
         assertTrue(ex.getMessage().contains("18-78"));
         assertTrue(ex.getMessage().contains("AGE"));
+    }
+
+    /**
+     * A SUM ASSURED RESOLVES TO A BAND BY AMOUNT, NOT BY A STRING NOBODY COULD GUESS.
+     *
+     * <p>This is V5's AGE defect one factor type over, and it reached production. Underwriting
+     * produced one of three band strings hardcoded in Java — LOW, MEDIUM, HIGH, at two and ten
+     * million — and asked the product for a row whose band text equalled it. A real product was
+     * published with the band {@code "5000000"}, matched none of the three, resolved to the
+     * neutral 1.0, and priced every policy as though it had no sum assured factor at all. The row
+     * was there, the multiplier was there, the console showed it, and it did nothing.
+     */
+    @Test
+    void aSumAssuredResolvesToTheBandWhoseRangeCoversIt() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-N", "Banded by amount",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-78", BigDecimal.ONE, 18, 78),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "Up to 5m",
+                        new BigDecimal("1.2000"), null, null,
+                        new BigDecimal("0"), new BigDecimal("5000000")),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "Over 5m",
+                        new BigDecimal("1.5000"), null, null,
+                        new BigDecimal("5000000.01"), new BigDecimal("100000000"))),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        assertThat(productApi.resolveSumAssuredMultiplier(versionId, new BigDecimal("3000000")))
+            .isEqualByComparingTo(new BigDecimal("1.2000"));
+        // INCLUSIVE at both ends, like every other bound on this platform.
+        assertThat(productApi.resolveSumAssuredMultiplier(versionId, new BigDecimal("5000000")))
+            .isEqualByComparingTo(new BigDecimal("1.2000"));
+        assertThat(productApi.resolveSumAssuredMultiplier(versionId, new BigDecimal("30000000")))
+            .isEqualByComparingTo(new BigDecimal("1.5000"));
+        // Above every band: neutral, not an error. Not every product rates the whole range.
+        assertThat(productApi.resolveSumAssuredMultiplier(versionId, new BigDecimal("500000000")))
+            .isEqualByComparingTo(BigDecimal.ONE);
+    }
+
+    /**
+     * A band that RATES must say whom it rates; a neutral one need not.
+     *
+     * <p>The rule is deliberately asymmetric. A row at exactly 1.0000 changes no price whether it
+     * resolves or not, and around eighty fixtures carry one purely to satisfy the coverage rule.
+     * A row carrying a real multiplier and no range is the defect itself — a multiplier that can
+     * never reach a premium — so it is refused.
+     */
+    @Test
+    void aRatingSumAssuredBandWithNoRangeIsRefusedAtPublish() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-O", "Unbounded band",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-78", BigDecimal.ONE, 18, 78),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "5000000",
+                            new BigDecimal("1.5000"))),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null, "actuary@nlolo.co.tz"));
+        assertTrue(ex.getMessage().contains("5000000"));
+    }
+
+    /** Two bands covering one amount would price on row order -- the defect found five times now. */
+    @Test
+    void overlappingSumAssuredBandsAreRefusedAtPublish() {
+        ProductSummaryView product = productApi.createProduct("TERM-M13-P", "Overlapping bands",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-78", BigDecimal.ONE, 18, 78),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "A",
+                            new BigDecimal("1.2000"), null, null,
+                            new BigDecimal("0"), new BigDecimal("5000000")),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "B",
+                            new BigDecimal("1.5000"), null, null,
+                            new BigDecimal("4000000"), new BigDecimal("9000000"))),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null, "actuary@nlolo.co.tz"));
     }
 
     /** The same refusal below zero, which would price a policy at less than nothing. */

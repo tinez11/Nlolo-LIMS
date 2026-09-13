@@ -307,6 +307,14 @@ components:
             human-readable label but is not matched against. Age was previously resolved by
             exact string equality on `band`, which underwriting could not produce, so age was
             never rated at all. ageFrom/ageTo must be absent for every other factor type.
+
+            sumAssuredFrom/sumAssuredTo are the same for factorType SUM_ASSURED_BAND, and are
+            REQUIRED on any such row whose multiplier is not exactly 1. A sum assured used to
+            be rated by exact string equality on `band` against one of LOW, MEDIUM or HIGH --
+            three values hardcoded in underwriting on thresholds of two and ten million, none
+            of them shown on any authoring screen. A real product published with the band
+            "5000000" matched none of them and priced every policy as though it carried no sum
+            assured factor at all. They must be absent for every other factor type (422).
           type: array
           items:
             type: object
@@ -318,6 +326,11 @@ components:
               ageTo:
                 description: Inclusive, matching BaseRate.
                 type: [integer, "null"]
+                minimum: 0
+              sumAssuredFrom: { type: [number, "null"], minimum: 0 }
+              sumAssuredTo:
+                description: Inclusive, matching ageTo and BaseRate.
+                type: [number, "null"]
                 minimum: 0
         baseRates:
           description: >-
@@ -423,6 +436,11 @@ components:
           type: array
           items: { $ref: '#/components/schemas/BaseRate' }
         ratingFactors:
+          description: >-
+            The bounds are returned alongside the band because they, not the band text, are
+            what the platform rates on -- for AGE since V5 and for SUM_ASSURED_BAND since V9.
+            A review screen showing only the label would be showing the part that turned out
+            not to decide anything.
           type: array
           items:
             type: object
@@ -432,6 +450,8 @@ components:
               multiplier: { type: number }
               ageFrom: { type: [integer, "null"] }
               ageTo: { type: [integer, "null"] }
+              sumAssuredFrom: { type: [number, "null"] }
+              sumAssuredTo: { type: [number, "null"] }
         benefitSchedule:
           type: array
           items:

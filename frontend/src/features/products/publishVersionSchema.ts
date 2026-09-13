@@ -60,16 +60,56 @@ const ratingFactorRowSchema = z
     // demanding the keys on every row would be demanding fields that must stay empty.
     ageFrom: z.string().trim().optional(),
     ageTo: z.string().trim().optional(),
+    /**
+     * Inclusive amount bounds for a SUM_ASSURED_BAND row, and what the platform actually matches
+     * a sum assured against.
+     *
+     * Before these existed, underwriting produced one of three band strings hardcoded in Java --
+     * LOW, MEDIUM, HIGH, at two and ten million -- and asked for a row whose band text equalled
+     * it. A real product was published with the band "5000000", matched none of them, and priced
+     * every policy as though it had no sum assured factor. Nothing on this screen could have
+     * told an actuary that the only three spellings that worked were words nobody showed them.
+     */
+    sumAssuredFrom: z.string().trim().optional(),
+    sumAssuredTo: z.string().trim().optional(),
   })
   .superRefine((row, ctx) => {
+    // Mirrors ProductApiImpl.rejectMalformedSumAssuredBands. A range is demanded of a band that
+    // RATES and not of a neutral one: a multiplier of exactly 1 changes no price whether it
+    // resolves or not, while a real multiplier with no range is a number that can never reach a
+    // premium -- which is the whole defect.
+    if (row.factorType === 'SUM_ASSURED_BAND' && row.multiplier !== 1) {
+      const from = Number(row.sumAssuredFrom);
+      const to = Number(row.sumAssuredTo);
+      if (!row.sumAssuredFrom || !row.sumAssuredTo || Number.isNaN(from) || Number.isNaN(to)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['sumAssuredFrom'],
+          message: 'A sum assured band that rates needs a from and to amount — otherwise it rates nobody',
+        });
+      } else if (from < 0) {
+        ctx.addIssue({ code: 'custom', path: ['sumAssuredFrom'], message: 'Amount cannot be negative' });
+      } else if (to < from) {
+        ctx.addIssue({ code: 'custom', path: ['sumAssuredTo'], message: 'The band ends before it begins' });
+      }
+    }
     // Mirrors ProductApiImpl.rejectMalformedAgeBands and the rating_table_age_bounds_shape
     // CHECK. Age is rated by RANGE now -- an AGE row without one matches nobody and would
     // contribute a silent neutral 1.0, which is the defect this whole change removes.
     if (row.factorType !== 'AGE') {
-      // Band carries the whole meaning of a non-AGE row -- SUM_ASSURED_BAND resolves by
-      // matching this text -- so it stays required there, and says so on the row itself
-      // rather than only failing on submit.
-      if (!row.band) {
+      // Band still carries the whole meaning of an OCCUPATION_CLASS or SMOKER_STATUS row --
+      // those genuinely resolve by matching this text, both sides of the match being a code
+      // the same organisation chose -- so it stays required there, and says so on the row
+      // itself rather than only failing on submit.
+      //
+      // A SUM_ASSURED_BAND row with bounds is the exception, and the same exception AGE is: the
+      // amounts beside it are what the platform resolves on, so the band is a label, and a
+      // label the actuary left blank is derived from the bounds in `toApiRequest` rather than
+      // typed a second time with nothing keeping the two in step. Without bounds it is all the
+      // row has, so it is still required.
+      const boundedSumAssured =
+        row.factorType === 'SUM_ASSURED_BAND' && !!row.sumAssuredFrom && !!row.sumAssuredTo;
+      if (!row.band && !boundedSumAssured) {
         ctx.addIssue({ code: 'custom', path: ['band'], message: 'Band is required' });
       }
       return;
@@ -390,7 +430,11 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
 }
 
 export function blankRatingFactorRow(): PublishVersionFormInput['ratingTable'][number] {
-  return { factorType: 'AGE', band: '', multiplier: 1, ageFrom: '', ageTo: '' };
+  // Every bound starts as a controlled empty string, both kinds. A row can be switched to any
+  // factor type after it is added, so the keys the other types need have to exist from the
+  // start -- an input that begins undefined and later receives a value is the uncontrolled-to-
+  // controlled warning, and worse, loses what was typed into it.
+  return { factorType: 'AGE', band: '', multiplier: 1, ageFrom: '', ageTo: '', sumAssuredFrom: '', sumAssuredTo: '' };
 }
 
 /**
@@ -437,7 +481,17 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
             ageFrom: Number(row.ageFrom),
             ageTo: Number(row.ageTo),
           }
-        : { factorType: row.factorType, band: row.band ?? '', multiplier: row.multiplier },
+        : row.factorType === 'SUM_ASSURED_BAND' && row.sumAssuredFrom && row.sumAssuredTo
+          ? {
+              factorType: row.factorType,
+              // Derived when the actuary left it blank, so the label and the bounds cannot
+              // disagree -- the same rule the AGE branch above follows.
+              band: row.band || `${Number(row.sumAssuredFrom)}-${Number(row.sumAssuredTo)}`,
+              multiplier: row.multiplier,
+              sumAssuredFrom: Number(row.sumAssuredFrom),
+              sumAssuredTo: Number(row.sumAssuredTo),
+            }
+          : { factorType: row.factorType, band: row.band ?? '', multiplier: row.multiplier },
     ),
     /*
       One form row expands into one wire cell per PRICED smoker status, so a

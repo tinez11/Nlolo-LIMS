@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.underwriting;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.api.*;
@@ -48,6 +49,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/product/V6__eligibility_bounds.sql",
+            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -470,6 +472,74 @@ class UnderwritingApiIntegrationTest {
             "an applicant in the 18-39 band rates at 1.0 and should be recommended for acceptance");
         assertEquals(DecisionOutcome.DECLINED, recommendationForApplicantBornIn(1950, "+255712345002"),
             "an applicant in the 60-99 band rates at 3.0, past the decline threshold");
+    }
+
+    /**
+     * A product whose only meaningful lever is OCCUPATION CLASS.
+     *
+     * <p>The 3.0 on the hazardous class is past SimpleRulesEngine's decline threshold of 2.5,
+     * for the same reason the age-rated product above uses 3.0: an outcome that changes is the
+     * only evidence visible from outside that the factor reached the engine at all. A
+     * multiplier that merely moves a price would have looked identical to one that was silently
+     * dropped — which is exactly what was happening.
+     */
+    private UUID publishOccupationRatedProduct() {
+        var product = productApi.createProduct("UW-OCC-" + UUID.randomUUID().toString().substring(0, 8),
+            "Occupation Rated Product", ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-99", BigDecimal.ONE, 18, 99),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "PROF_1", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "HAZ_4", new BigDecimal("3.0"))),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary");
+        return product.productId();
+    }
+
+    private DecisionOutcome recommendationForOccupationClass(String occupationClass, String phone) {
+        var applicant = partyApi.registerIndividual(new IndividualRegistration(
+            "Occupation Rated Applicant", LocalDate.of(1990, 1, 1), phone, null,
+            null, null, null, "Test occupation", occupationClass, null, null, null), "test");
+        UUID productId = publishOccupationRatedProduct();
+        var snapshot = productApi.getActiveSnapshot(productId, LocalDate.now());
+        UUID caseId = underwritingApi.openCase(applicant.partyId(), productId, snapshot.productVersionId(),
+            new BigDecimal("1000000"), "TZS", null, "agent1").caseId();
+        // Identical low risk score every time: the occupation class is the only difference.
+        return underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings",
+            new BigDecimal("10"), "underwriter1").recommendationOutcome();
+    }
+
+    /**
+     * AN OCCUPATION CLASS THE ACTUARY PRICED ACTUALLY CHANGES THE ANSWER.
+     *
+     * <p>RiskProfile's own javadoc left OCCUPATION_CLASS out of the profile because "no
+     * structured data source exists yet", and warned that a milestone adding one must extend
+     * the record "not silently ignore the new data by leaving it out of the profile passed in".
+     * The person record added {@code occupationClass}, the registration form collected it, the
+     * client screen displayed it — and nothing rated it. A published multiplier of 3.0 on a
+     * hazardous occupation reached no premium and no decision at all.
+     *
+     * <p>Both calls below differ in exactly one field on the person record.
+     */
+    @Test
+    void aHazardousOccupationAndASafeOneWithIdenticalRiskScoresRateDifferently() {
+        assertEquals(DecisionOutcome.ACCEPT, recommendationForOccupationClass("PROF_1", "+255712346001"),
+            "a professional class rates at 1.0 and should be recommended for acceptance");
+        assertEquals(DecisionOutcome.DECLINED, recommendationForOccupationClass("HAZ_4", "+255712346002"),
+            "a hazardous class rates at 3.0, past the decline threshold");
+    }
+
+    /**
+     * An unrecorded occupation is neutral, not an error and not a guess.
+     *
+     * <p>Every field on the person record below the name is optional on purpose — a registrar
+     * in front of a walk-in may not have the answers. An unclassified applicant is simply not
+     * a rated one.
+     */
+    @Test
+    void anApplicantWithNoRecordedOccupationClassRatesNeutrally() {
+        assertEquals(DecisionOutcome.ACCEPT, recommendationForOccupationClass(null, "+255712346003"),
+            "no occupation class contributes 1.0, exactly as an unmatched band always has");
     }
 
     @Test

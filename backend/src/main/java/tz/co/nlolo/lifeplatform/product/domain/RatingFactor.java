@@ -46,6 +46,26 @@ public class RatingFactor {
     @Column(name = "age_to")
     private Integer ageTo;
 
+    /**
+     * Set for SUM_ASSURED_BAND rows and null for every other factor type (V9) — {@code
+     * rating_table_sum_assured_bounds_shape} enforces exactly that, and {@code sumAssuredTo} is
+     * INCLUSIVE like every other bound on this platform.
+     *
+     * <p>The same fix as {@code ageFrom}/{@code ageTo} above, for the same defect. A
+     * SUM_ASSURED_BAND was matched by EXACT STRING against three values hardcoded in
+     * underwriting — 'LOW', 'MEDIUM', 'HIGH' — while the author typed a band into a free-text
+     * box. A real published product carried '5000000', matched none of them, and priced every
+     * policy as though the factor did not exist.
+     *
+     * <p>NULL on a row published before V9. Such a row resolves for no sum assured at all, which
+     * is exactly what it did before: the string it was matched on could never be produced either.
+     */
+    @Column(name = "sum_assured_from")
+    private BigDecimal sumAssuredFrom;
+
+    @Column(name = "sum_assured_to")
+    private BigDecimal sumAssuredTo;
+
     protected RatingFactor() {}
 
     public RatingFactor(UUID tenantId, UUID productVersionId, String factorType, String band, BigDecimal multiplier) {
@@ -54,6 +74,12 @@ public class RatingFactor {
 
     public RatingFactor(UUID tenantId, UUID productVersionId, String factorType, String band,
                          BigDecimal multiplier, Integer ageFrom, Integer ageTo) {
+        this(tenantId, productVersionId, factorType, band, multiplier, ageFrom, ageTo, null, null);
+    }
+
+    public RatingFactor(UUID tenantId, UUID productVersionId, String factorType, String band,
+                         BigDecimal multiplier, Integer ageFrom, Integer ageTo,
+                         BigDecimal sumAssuredFrom, BigDecimal sumAssuredTo) {
         this.tenantId = tenantId;
         this.productVersionId = productVersionId;
         this.factorType = factorType;
@@ -61,6 +87,8 @@ public class RatingFactor {
         this.multiplier = multiplier;
         this.ageFrom = ageFrom;
         this.ageTo = ageTo;
+        this.sumAssuredFrom = sumAssuredFrom;
+        this.sumAssuredTo = sumAssuredTo;
     }
 
     public UUID getProductVersionId() { return productVersionId; }
@@ -69,4 +97,6 @@ public class RatingFactor {
     public BigDecimal getMultiplier() { return multiplier; }
     public Integer getAgeFrom() { return ageFrom; }
     public Integer getAgeTo() { return ageTo; }
+    public BigDecimal getSumAssuredFrom() { return sumAssuredFrom; }
+    public BigDecimal getSumAssuredTo() { return sumAssuredTo; }
 }

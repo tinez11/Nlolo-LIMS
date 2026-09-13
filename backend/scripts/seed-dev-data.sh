@@ -222,12 +222,24 @@ CUSTOMER_OWNER_TOKEN=$(token_for customers customer.owner "$CUSTOMERS_SECRET")
 echo "=== Step 5: Underwriting -> auto-issue ==="
 STAFF_UNDERWRITER_TOKEN=$(token_for staff staff.underwriter "$STAFF_SECRET")
 
-# Sum assured 1,500,000 TZS -> resolveSumAssuredBand's LOW band (<2,000,000), matching the
-# SUM_ASSURED_BAND=LOW/multiplier=1.0 rating row above. Age band always resolves to the
-# "UNKNOWN" sentinel (PartyView exposes no dateOfBirth yet -- see
-# UnderwritingApiImpl.resolveAgeBand's own javadoc), which falls back to a neutral 1.0
-# multiplier regardless of the rating table. combinedMultiplier = 1.0 x 1.0 = 1.0 (not > 1.0)
-# and a risk score of 10 (< 40) => SimpleRulesEngine returns ACCEPT.
+# Sum assured 1,500,000 TZS. It resolves to NO sum assured band at all, and that is now a
+# deliberate neutral rather than an accident: the seeded SUM_ASSURED_BAND row above carries the
+# label "LOW" and no amount bounds, and as of product V9 a band is matched by RANGE against the
+# real amount. An unbounded row covers nothing, which contributes the neutral 1.0.
+#
+# (It contributed 1.0 before V9 too, by a worse route. resolveSumAssuredBand produced one of
+# three strings hardcoded in Java -- LOW/MEDIUM/HIGH at two and ten million -- and "LOW" here
+# matched by luck of spelling. A real product published with the band "5000000" matched nothing
+# and silently priced as though it had no sum assured factor.)
+#
+# Age resolves by range against the applicant's date of birth (product V5), and the seeded
+# 30-39 band carries 1.0. Occupation class is unrated here because this applicant is registered
+# without one. So combinedMultiplier = 1.0 x 1.0 x 1.0 = 1.0 (not > 1.0) and a risk score of
+# 10 (< 40) => SimpleRulesEngine returns ACCEPT.
+#
+# This product publishes no base rate table, so issuance prices from the platform's flat
+# TZ_BASE_PREMIUM_RATE_PER_MILLE. A version WITH a rate table now prices from its own cells and
+# refuses a life the table does not cover -- see UnderwritingDecisionEventListener.
 CASE_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/underwriting/cases" \
   "{\"applicantPartyId\":\"$OWNER_PARTY_ID\",\"productId\":\"$PRODUCT_ID\",\"productVersionId\":\"$PRODUCT_VERSION_ID\",\"sumAssured\":{\"amount\":\"1500000.00\",\"currencyCode\":\"TZS\"}}")
 CASE_ID=$(jsonval "$CASE_JSON" caseId)

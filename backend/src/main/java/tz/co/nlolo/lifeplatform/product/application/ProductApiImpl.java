@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -171,6 +172,7 @@ public class ProductApiImpl implements ProductApi {
         rejectNonPositiveMultipliers(ratingTable);
         rejectDuplicateRatingFactors(ratingTable);
         rejectMalformedAgeBands(ratingTable);
+        rejectMalformedSumAssuredBands(ratingTable);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -196,7 +198,8 @@ public class ProductApiImpl implements ProductApi {
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
-                input.factorType().name(), input.band(), input.multiplier(), input.ageFrom(), input.ageTo()));
+                input.factorType().name(), input.band(), input.multiplier(), input.ageFrom(), input.ageTo(),
+                input.sumAssuredFrom(), input.sumAssuredTo()));
         }
         if (baseRates != null) {
             for (BaseRateInput input : baseRates) {
@@ -328,8 +331,13 @@ public class ProductApiImpl implements ProductApi {
                 SmokerStatus.valueOf(r.getSmokerStatus()), r.getRatePerMille()))
             .toList();
         List<RatingFactorInput> factors = ratingFactorRepository.findByProductVersionId(versionId).stream()
+            // Bounds included, both kinds: this is the read an actuary reviews a version's
+            // rating basis on, and a SUM_ASSURED_BAND row's bounds are what it now rates by.
+            // Showing only the band text would show the label while hiding the rule -- and the
+            // label is exactly what turned out to be untrustworthy (V9).
             .map(f -> new RatingFactorInput(FactorType.valueOf(f.getFactorType()), f.getBand(),
-                f.getMultiplier(), f.getAgeFrom(), f.getAgeTo()))
+                f.getMultiplier(), f.getAgeFrom(), f.getAgeTo(),
+                f.getSumAssuredFrom(), f.getSumAssuredTo()))
             .toList();
         List<BenefitInput> benefits = benefitScheduleEntryRepository.findByProductVersionId(versionId).stream()
             .map(b -> new BenefitInput(BenefitType.valueOf(b.getBenefitType()), b.getCalculationMethod()))
@@ -424,6 +432,74 @@ public class ProductApiImpl implements ProductApi {
      * the query returned first. That is the same silent-mispricing shape found four times
      * over on this platform, and it decides an underwriting outcome here, not just a label.
      */
+    /**
+     * SUM_ASSURED_BAND rating factors must carry an amount range, and the ranges must not overlap.
+     *
+     * <p>The same rule as {@link #rejectMalformedAgeBands}, for the same defect one factor type
+     * over (V9). A band was matched by exact string against three values hardcoded in
+     * underwriting, so a product author's band could never match and the factor silently did
+     * nothing. Bounds are now what the platform resolves on, so a row without them would be a row
+     * that rates nobody — which is precisely the failure being removed, and must not be
+     * publishable.
+     *
+     * <p>The shape half is also a database CHECK ({@code rating_table_sum_assured_bounds_shape}),
+     * checked here so the failure names the offending band. The overlap half exists only here,
+     * for the same reason it does for ages and base rates: a true non-overlap constraint needs an
+     * EXCLUDE ... USING gist, and the rule is cheap to check where the rows are authored.
+     *
+     * <p><b>A range is demanded of a row that RATES, and not of a neutral one.</b> The defect
+     * being removed is a row that claims to change a price and silently does not; a row at
+     * exactly 1.0000 changes no price whether it resolves or not, so demanding bounds of it would
+     * be ceremony. It would also invalidate every version published before V9 on republish, and
+     * around eighty existing fixtures whose SUM_ASSURED_BAND row exists only to satisfy the
+     * coverage rule — none of which would be made more correct by inventing an amount range for
+     * them.
+     */
+    private static void rejectMalformedSumAssuredBands(List<RatingFactorInput> ratingTable) {
+        List<RatingFactorInput> bands = ratingTable.stream()
+            .filter(f -> f.factorType() == FactorType.SUM_ASSURED_BAND)
+            .toList();
+
+        for (RatingFactorInput f : bands) {
+            boolean neutral = f.multiplier() != null && f.multiplier().compareTo(BigDecimal.ONE) == 0;
+            boolean unbounded = f.sumAssuredFrom() == null || f.sumAssuredTo() == null;
+            if (unbounded && !neutral) {
+                throw new InvalidProductVersionException("SUM_ASSURED_BAND rating factor '" + f.band()
+                    + "' carries a multiplier of " + f.multiplier().toPlainString()
+                    + " but no amount range. A sum assured is rated by RANGE, not by matching the"
+                    + " band text, so this row would rate nobody and the multiplier would never"
+                    + " reach a premium -- which is the defect this rule exists to stop.");
+            }
+            if (unbounded) {
+                continue;
+            }
+            if (f.sumAssuredFrom().signum() < 0) {
+                throw new InvalidProductVersionException("SUM_ASSURED_BAND rating factor '" + f.band()
+                    + "' starts below zero");
+            }
+            if (f.sumAssuredTo().compareTo(f.sumAssuredFrom()) < 0) {
+                throw new InvalidProductVersionException("SUM_ASSURED_BAND rating factor '" + f.band()
+                    + "' ends before it begins");
+            }
+        }
+
+        // Only bounded rows can overlap; an unbounded neutral one covers nothing.
+        List<RatingFactorInput> bounded = bands.stream()
+            .filter(f -> f.sumAssuredFrom() != null && f.sumAssuredTo() != null)
+            .toList();
+        for (RatingFactorInput a : bounded) {
+            for (RatingFactorInput b : bounded) {
+                if (a == b) continue;
+                if (a.sumAssuredFrom().compareTo(b.sumAssuredTo()) <= 0
+                        && b.sumAssuredFrom().compareTo(a.sumAssuredTo()) <= 0) {
+                    throw new InvalidProductVersionException("SUM_ASSURED_BAND ranges '" + a.band()
+                        + "' and '" + b.band() + "' overlap -- a sum assured in both would price"
+                        + " differently depending on row order");
+                }
+            }
+        }
+    }
+
     private static void rejectMalformedAgeBands(List<RatingFactorInput> ratingTable) {
         List<RatingFactorInput> ageBands = ratingTable.stream()
             .filter(f -> f.factorType() == FactorType.AGE)
@@ -521,6 +597,60 @@ public class ProductApiImpl implements ProductApi {
             .map(RatingFactor::getMultiplier)
             .findFirst()
             .orElse(BigDecimal.ONE); // No matching band -- neutral multiplier, not an error (see ProductApi.resolveRatingMultiplier's javadoc).
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Returns a list and inspects it rather than taking {@code findFirst()}, for the same
+     * reason {@code findAgeBandCovering} does: publish-time validation refuses overlapping bands,
+     * so the steady state is 0 or 1 rows — but the invariant is enforced where the rows are
+     * authored, not assumed here. A version published before that validation existed could still
+     * hold overlaps, and silently taking one of two matches is the scan-order mispricing this
+     * platform has now found five times.
+     */
+    @Override
+    public BigDecimal resolveSumAssuredMultiplier(UUID productVersionId, BigDecimal sumAssuredAmount) {
+        if (sumAssuredAmount == null) {
+            return BigDecimal.ONE;
+        }
+        List<RatingFactor> covering = ratingFactorRepository
+            .findByProductVersionIdAndFactorType(productVersionId, FactorType.SUM_ASSURED_BAND.name())
+            .stream()
+            .filter(f -> f.getSumAssuredFrom() != null && f.getSumAssuredTo() != null)
+            .filter(f -> f.getSumAssuredFrom().compareTo(sumAssuredAmount) <= 0
+                && f.getSumAssuredTo().compareTo(sumAssuredAmount) >= 0)
+            .toList();
+        if (covering.size() > 1) {
+            throw new InvalidProductVersionException("Product version " + productVersionId
+                + " has " + covering.size() + " SUM_ASSURED_BAND rows covering "
+                + sumAssuredAmount.toPlainString()
+                + " -- which multiplier applies would depend on row order");
+        }
+        return covering.isEmpty() ? BigDecimal.ONE : covering.get(0).getMultiplier();
+    }
+
+    @Override
+    public boolean isPriced(UUID productVersionId) {
+        return baseRateRepository.existsByProductVersionId(productVersionId);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A null sex or smoker status returns empty rather than guessing a cell. The caller then
+     * refuses, which is the point: on a priced product those two facts are half the key to the
+     * price, and a policy issued without them would be priced as somebody else.
+     */
+    @Override
+    public Optional<BigDecimal> resolveBaseRatePerMille(UUID productVersionId, int ageAtEntry,
+                                                         Sex sex, SmokerStatus smokerStatus) {
+        if (sex == null || smokerStatus == null) {
+            return Optional.empty();
+        }
+        return baseRateRepository
+            .findApplicable(productVersionId, ageAtEntry, sex.name(), smokerStatus.name())
+            .map(BaseRate::getRatePerMille);
     }
 
     @Override

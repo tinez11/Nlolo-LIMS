@@ -83,6 +83,14 @@ test.describe('staff products', () => {
     await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
     await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
     await ratingSection.getByLabel('Rating factor 2 band').fill('1000000-5000000');
+    // A sum assured is rated by RANGE as of product V9, exactly as an age is: the band text
+    // above is a label, and these two are what the platform resolves against. Filled here
+    // rather than left neutral because this is the only test on the platform that carries a
+    // rating factor over the real wire -- the bounds existed on every layer but the request
+    // DTO once, so a publish over HTTP dropped them and stored a row that rated nobody.
+    await ratingSection.getByLabel('Rating factor 2 multiplier').fill('1.25');
+    await ratingSection.getByLabel('Rating factor 2 from sum assured').fill('1000000');
+    await ratingSection.getByLabel('Rating factor 2 to sum assured').fill('5000000');
 
     await page.getByRole('button', { name: 'Publish version' }).click();
 
@@ -90,6 +98,13 @@ test.describe('staff products', () => {
     // readable through GET /products for the first time (DRAFT -> ACTIVE).
     await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name })).toBeVisible();
+
+    // The whole round trip, which is the only place it is ever exercised: the amounts typed
+    // on the previous screen, through the request DTO, into the database, and back out onto
+    // the screen an actuary reviews their own rating table on. Every layer of this had the
+    // bounds except the request record once, and nothing failed -- the publish returned 201
+    // and stored a band that rated nobody.
+    await expect(page.getByText(/1,000,000–5,000,000/)).toBeVisible();
 
     // publishVersion() also refreshes loadList() -- the product shows up here
     // without a manual reload.

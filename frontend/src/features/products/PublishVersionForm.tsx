@@ -33,7 +33,9 @@ import { humanizeStatus } from '@/lib/status';
  */
 const BAND_PLACEHOLDER: Record<(typeof RATING_FACTOR_TYPES)[number], string> = {
   AGE: 'Label, optional',
-  SUM_ASSURED_BAND: 'e.g. 0-5000000',
+  // Optional for the same reason AGE's is: the amounts beside it are what the platform rates
+  // on now, and a band left blank is labelled from them rather than left to disagree with them.
+  SUM_ASSURED_BAND: 'Label, optional',
   OCCUPATION_CLASS: 'e.g. CLASS_2',
   SMOKER_STATUS: 'e.g. NON_SMOKER',
 };
@@ -258,8 +260,10 @@ export function PublishVersionForm({
           <div className="mb-1 hidden items-center gap-2 px-1 text-[11px] text-subtle-foreground @min-[37.5rem]:flex">
             <span className="w-44 shrink-0">Factor</span>
             <span className="min-w-32 flex-1">Band</span>
-            <span className="w-16 shrink-0 text-right">From</span>
-            <span className="w-16 shrink-0 text-right">To</span>
+            {/* Wide enough for an amount, not just an age: the same two columns now carry a
+                sum assured band's bounds, and a seven-figure amount does not fit in 4rem. */}
+            <span className="w-24 shrink-0 text-right">From</span>
+            <span className="w-24 shrink-0 text-right">To</span>
             <span className="w-24 shrink-0 text-right">Multiplier</span>
             {/* Matches the remove button's 32px footprint, so the columns stay aligned. */}
             <span className="w-8 shrink-0" aria-hidden />
@@ -285,6 +289,8 @@ export function PublishVersionForm({
               : (rowErrors?.band?.message ??
                 rowErrors?.ageFrom?.message ??
                 rowErrors?.ageTo?.message ??
+                rowErrors?.sumAssuredFrom?.message ??
+                rowErrors?.sumAssuredTo?.message ??
                 rowErrors?.multiplier?.message);
 
             return (
@@ -320,17 +326,23 @@ export function PublishVersionForm({
                     aria-invalid={!doubleCounted && rowErrors?.band ? true : undefined}
                     {...register(`ratingTable.${index}.band`)}
                   />
-                  {/* AGE is rated by RANGE, not by matching the band text. The band stays as
-                      the label an actuary reads on the product screen; these two are what the
-                      platform actually resolves against, so they show only where they mean
-                      something and the backend refuses them anywhere else. The columns are
-                      held open on other rows so the grid does not shift as the type changes. */}
+                  {/* AGE and SUM_ASSURED_BAND are both rated by RANGE, not by matching the band
+                      text. The band stays as the label an actuary reads on the product screen;
+                      these two are what the platform actually resolves against, so they show
+                      only where they mean something and the backend refuses them anywhere else.
+                      The columns are held open on other rows so the grid does not shift as the
+                      type changes.
+
+                      Sum assured shares the two columns rather than adding its own pair: a row
+                      is one factor type at a time, and four bound inputs -- two of them always
+                      inert -- would put the grid's width into a set of fields that can never
+                      both apply. The header says From/To for the same reason it did before. */}
                   {rowType === 'AGE' ? (
                     <>
                       <Input
                         type="number"
                         min={0}
-                        inputSize="sm" className="w-16 shrink-0 text-right"
+                        inputSize="sm" className="w-24 shrink-0 text-right"
                         placeholder="from"
                         aria-label={`Rating factor ${index + 1} from age`}
                         aria-invalid={!doubleCounted && rowErrors?.ageFrom ? true : undefined}
@@ -339,11 +351,32 @@ export function PublishVersionForm({
                       <Input
                         type="number"
                         min={0}
-                        inputSize="sm" className="w-16 shrink-0 text-right"
+                        inputSize="sm" className="w-24 shrink-0 text-right"
                         placeholder="to"
                         aria-label={`Rating factor ${index + 1} to age`}
                         aria-invalid={!doubleCounted && rowErrors?.ageTo ? true : undefined}
                         {...register(`ratingTable.${index}.ageTo`)}
+                      />
+                    </>
+                  ) : rowType === 'SUM_ASSURED_BAND' ? (
+                    <>
+                      <Input
+                        type="number"
+                        min={0}
+                        inputSize="sm" className="w-24 shrink-0 text-right"
+                        placeholder="from"
+                        aria-label={`Rating factor ${index + 1} from sum assured`}
+                        aria-invalid={!doubleCounted && rowErrors?.sumAssuredFrom ? true : undefined}
+                        {...register(`ratingTable.${index}.sumAssuredFrom`)}
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        inputSize="sm" className="w-24 shrink-0 text-right"
+                        placeholder="to"
+                        aria-label={`Rating factor ${index + 1} to sum assured`}
+                        aria-invalid={!doubleCounted && rowErrors?.sumAssuredTo ? true : undefined}
+                        {...register(`ratingTable.${index}.sumAssuredTo`)}
                       />
                     </>
                   ) : (
@@ -351,10 +384,10 @@ export function PublishVersionForm({
                        these are two stray dashes, one ending the first line and one
                        starting the second. */
                     <>
-                      <span className="hidden w-16 shrink-0 text-right text-xs text-subtle-foreground @min-[37.5rem]:inline">
+                      <span className="hidden w-24 shrink-0 text-right text-xs text-subtle-foreground @min-[37.5rem]:inline">
                         —
                       </span>
-                      <span className="hidden w-16 shrink-0 text-right text-xs text-subtle-foreground @min-[37.5rem]:inline">
+                      <span className="hidden w-24 shrink-0 text-right text-xs text-subtle-foreground @min-[37.5rem]:inline">
                         —
                       </span>
                     </>

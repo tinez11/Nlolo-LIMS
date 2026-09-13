@@ -540,14 +540,20 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                 underwritingCase.getCaseId(), underwritingCase.getTenantId())) {
             return;
         }
-        String sumAssuredBand = resolveSumAssuredBand(underwritingCase.getSumAssuredAmount());
-
         BigDecimal ageMultiplier = resolveAgeMultiplier(underwritingCase);
-        BigDecimal sumAssuredMultiplier = productApi.resolveRatingMultiplier(underwritingCase.getProductVersionId(), FactorType.SUM_ASSURED_BAND, sumAssuredBand);
+        // BY RANGE, against the real amount (V9). This used to hand the product a band STRING
+        // produced from thresholds hardcoded here -- LOW/MEDIUM/HIGH at two and ten million --
+        // while the product author typed a band into a free-text box. A real published product
+        // carried '5000000', matched none of the three, resolved to the neutral 1.0, and priced
+        // every policy as though the factor did not exist. Nobody was warned: the row was there,
+        // the multiplier was there, the console showed it, and it did nothing.
+        BigDecimal sumAssuredMultiplier = productApi.resolveSumAssuredMultiplier(
+            underwritingCase.getProductVersionId(), underwritingCase.getSumAssuredAmount());
 
         List<BigDecimal> riskScores = latestScorePerAssessmentType(underwritingCase.getCaseId());
 
-        RiskProfile profile = new RiskProfile(ageMultiplier, sumAssuredMultiplier, riskScores);
+        RiskProfile profile = new RiskProfile(ageMultiplier, sumAssuredMultiplier,
+            resolveOccupationClassMultiplier(underwritingCase), riskScores);
         UnderwritingDecision recommendation = rulesEnginePort.evaluate(profile);
 
         underwritingCase.recordRecommendation(
@@ -572,7 +578,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
      * {@code rating_table} carries real {@code age_from}/{@code age_to} bounds as of V5,
      * precisely so nothing has to guess how a publisher spelled a band.
      *
-     * <p>Neutral 1.0 when the applicant has no recorded date of birth. A CORPORATE or GROUP
+     * <p>Neutral 1.0 when the life assured has no recorded date of birth. A CORPORATE or GROUP
      * party genuinely has none, and an individual registered without one is a real record
      * on this platform — refusing to decide those cases would break underwriting for every
      * group scheme, so age simply does not contribute. It is a rating input, not an
@@ -585,8 +591,12 @@ public class UnderwritingApiImpl implements UnderwritingApi {
      * open long enough for it to move a decision.
      */
     private BigDecimal resolveAgeMultiplier(UnderwritingCase underwritingCase) {
-        PartyDetailView applicant = partyApi.getPartyDetail(underwritingCase.getApplicantPartyId());
-        LocalDate dateOfBirth = applicant.dateOfBirth();
+        // THE LIFE ASSURED's age, not the applicant's. This read the applicant until occupation
+        // class and the base rate table arrived, both of which key on the life assured -- so on
+        // a parent insuring a child the same contract was being rated on the parent's age and
+        // priced on the child's mortality. Whose age it is has to be one answer, and it is the
+        // life assured's: they are the life the product is pricing.
+        LocalDate dateOfBirth = partyApi.getPartyDetail(lifeAssuredPartyId(underwritingCase)).dateOfBirth();
         if (dateOfBirth == null) {
             return BigDecimal.ONE;
         }
@@ -594,12 +604,57 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         return productApi.resolveAgeMultiplier(underwritingCase.getProductVersionId(), age);
     }
 
-    private String resolveSumAssuredBand(BigDecimal sumAssuredAmount) {
-        if (sumAssuredAmount == null) return "LOW";
-        if (sumAssuredAmount.compareTo(new BigDecimal("10000000")) >= 0) return "HIGH";
-        if (sumAssuredAmount.compareTo(new BigDecimal("2000000")) >= 0) return "MEDIUM";
-        return "LOW";
+    /**
+     * Whose life the product is rating.
+     *
+     * <p>A null {@code lifeAssuredPartyId} means the applicant insures themselves, which is
+     * most business — it is not missing data. Every rating input on this path resolves through
+     * here so they cannot disagree about whose facts are being priced, which they did once.
+     */
+    private static UUID lifeAssuredPartyId(UnderwritingCase underwritingCase) {
+        return underwritingCase.getLifeAssuredPartyId() != null
+            ? underwritingCase.getLifeAssuredPartyId()
+            : underwritingCase.getApplicantPartyId();
     }
+
+    /**
+     * What this applicant does for a living, priced.
+     *
+     * <p>Matched by STRING, unlike age and sum assured, and that is correct rather than an
+     * inconsistency. An occupation class is a code an actuary writes on a rating table and a
+     * registrar picks on a form — both sides are the same vocabulary, chosen by the same
+     * organisation. The two factors that had to move to ranges were the ones where the platform
+     * INVENTED a string the author never saw: an age band rendered from a date of birth, and
+     * LOW/MEDIUM/HIGH hardcoded in Java.
+     *
+     * <p>Neutral 1.0 when nobody recorded an occupation class, which is a real state — the
+     * person record makes every field below the name optional, precisely because a registrar in
+     * front of a walk-in may not have the answers. An unclassified applicant is not a rated one.
+     */
+    private BigDecimal resolveOccupationClassMultiplier(UnderwritingCase underwritingCase) {
+        // The LIFE ASSURED, not the applicant: it is their occupation that carries the risk, and
+        // on a parent insuring a child the two are different people.
+        String occupationClass = partyApi.getPartyDetail(lifeAssuredPartyId(underwritingCase)).occupationClass();
+        if (occupationClass == null || occupationClass.isBlank()) {
+            return BigDecimal.ONE;
+        }
+        return productApi.resolveRatingMultiplier(underwritingCase.getProductVersionId(),
+            FactorType.OCCUPATION_CLASS, occupationClass);
+    }
+
+    /*
+     * resolveSumAssuredBand(BigDecimal) is GONE, and its removal is the fix rather than a tidy-up.
+     *
+     * It returned one of three strings -- "LOW", "MEDIUM", "HIGH" -- on thresholds of 2,000,000
+     * and 10,000,000 written here in Java, and the product was then asked for a rating row whose
+     * band text equalled that string. So a product's sum assured bands were not the product's to
+     * decide: only three spellings ever worked, none of them appeared on the authoring screen,
+     * and everything else resolved to the neutral 1.0 with nothing said. A real product published
+     * with the band '5000000' priced every policy as though it had no sum assured factor at all.
+     *
+     * productApi.resolveSumAssuredMultiplier now matches the real amount against the product's
+     * own inclusive bounds (product V9), which is what V5 did for AGE after the identical defect.
+     */
 
     /**
      * The single-case read, and the one the issuance listener uses — so this is the read that

@@ -278,6 +278,15 @@ const MULTIPLIER = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 3,
 });
 
+/**
+ * Sum assured bounds, grouped. A band running to 5000000 is a number a reader has to count
+ * digits on; 5,000,000 is one they can read. Whole amounts only -- the bounds are
+ * `numeric(18,2)` but a rating band is written in round money, and the cents would be noise.
+ */
+const AMOUNT = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 0,
+});
+
 const BASE_RATE_COLUMNS: Column<BaseRate>[] = [
   {
     key: 'age',
@@ -361,7 +370,7 @@ function RatingBasis({
         rows={factors.map((f) => ({
           key: `${f.factorType}-${f.band}`,
           label: factorLabel(f),
-          note: [f.band, factorAgeRange(f)].filter(Boolean).join(' · ') || null,
+          note: [f.band, factorRange(f)].filter(Boolean).join(' · ') || null,
           value: f.multiplier == null ? '—' : `× ${MULTIPLIER.format(f.multiplier)}`,
         }))}
       />
@@ -441,16 +450,34 @@ function SectionHeading({ children }: { children: ReactNode }) {
  * 2. It appended the age range to EVERY factor type. A sum-assured band was rendered
  *    with an age range beside it, which is not a fact about that row -- the bounds
  *    only mean anything on an AGE factor.
+ *
+ * SUM_ASSURED_BAND now reads the same way, and for the identical reason one factor type
+ * over (product V9): its band text was matched by exact string against LOW/MEDIUM/HIGH
+ * hardcoded in underwriting, so a real product's band matched nothing and the multiplier
+ * beside it reached no premium. The bounds are what it rates on now, so the bounds are what
+ * a reviewer has to be able to see -- including their absence, which on such a row means it
+ * still rates nobody.
  */
-function factorAgeRange(factor: RatingFactorRow): string | null {
-  if (factor.factorType !== 'AGE') return null;
-  // `!= null` on purpose: catches both null and undefined, which is the whole fix.
-  if (factor.ageFrom == null || factor.ageTo == null) {
-    // An AGE factor with no bounds is the state that let age go unrated before V5.
-    // Saying so is more useful than saying nothing.
-    return 'no age bounds';
+function factorRange(factor: RatingFactorRow): string | null {
+  if (factor.factorType === 'AGE') {
+    // `!= null` on purpose: catches both null and undefined, which is the whole fix.
+    if (factor.ageFrom == null || factor.ageTo == null) {
+      // An AGE factor with no bounds is the state that let age go unrated before V5.
+      // Saying so is more useful than saying nothing.
+      return 'no age bounds';
+    }
+    return `ages ${factor.ageFrom}–${factor.ageTo}`;
   }
-  return `ages ${factor.ageFrom}–${factor.ageTo}`;
+  if (factor.factorType === 'SUM_ASSURED_BAND') {
+    if (factor.sumAssuredFrom == null || factor.sumAssuredTo == null) {
+      // A version published before V9, or a neutral row. Either way this row resolves for
+      // no sum assured at all, which is worth saying on a screen whose whole job is to show
+      // an actuary what their product actually does.
+      return 'no amount bounds';
+    }
+    return `${AMOUNT.format(factor.sumAssuredFrom)}–${AMOUNT.format(factor.sumAssuredTo)}`;
+  }
+  return null;
 }
 
 function factorLabel(factor: RatingFactorRow): string {

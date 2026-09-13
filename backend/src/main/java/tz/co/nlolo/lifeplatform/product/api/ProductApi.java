@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.product.api;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,9 +22,21 @@ public interface ProductApi {
      * existing non-AGE call sites unchanged.
      */
     record RatingFactorInput(FactorType factorType, String band, BigDecimal multiplier,
-                              Integer ageFrom, Integer ageTo) {
+                              Integer ageFrom, Integer ageTo,
+                              /**
+                               * Inclusive bounds for a SUM_ASSURED_BAND row (V9), and null for
+                               * every other factor type. What the platform actually matches a
+                               * sum assured against — {@code band} stays as the label an actuary
+                               * reads, exactly as it does for AGE.
+                               */
+                              BigDecimal sumAssuredFrom, BigDecimal sumAssuredTo) {
         public RatingFactorInput(FactorType factorType, String band, BigDecimal multiplier) {
-            this(factorType, band, multiplier, null, null);
+            this(factorType, band, multiplier, null, null, null, null);
+        }
+
+        public RatingFactorInput(FactorType factorType, String band, BigDecimal multiplier,
+                                  Integer ageFrom, Integer ageTo) {
+            this(factorType, band, multiplier, ageFrom, ageTo, null, null);
         }
     }
     record BenefitInput(BenefitType benefitType, String calculationMethod) {}
@@ -227,6 +240,49 @@ public interface ProductApi {
      * defines every factor type/band combination.
      */
     BigDecimal resolveRatingMultiplier(UUID productVersionId, FactorType factorType, String band);
+
+    /**
+     * The SUM_ASSURED_BAND multiplier for a real amount, resolved by RANGE (V9).
+     *
+     * <p><b>Replaces matching a band by string, which never matched anything.</b> Underwriting
+     * produced one of three values hardcoded in Java — LOW, MEDIUM, HIGH, on thresholds of two
+     * and ten million — while a product author typed a band into a free-text box. A real
+     * published product carried '5000000', matched none of the three, and priced every policy as
+     * though the factor did not exist. The thresholds being in code was the deeper half: a
+     * product's own bands are the product's business, and three fixed tiers cannot express a
+     * real rating table.
+     *
+     * <p>Neutral 1.0 when no band covers the amount, matching {@link #resolveRatingMultiplier}:
+     * not every product rates on sum assured, and a version published before V9 has no bounds at
+     * all. A premium path that cannot tolerate a missing factor must say so itself.
+     *
+     * <p>Bounds are inclusive at both ends. Publish-time validation refuses overlapping bands, so
+     * at most one row can cover any amount.
+     */
+    BigDecimal resolveSumAssuredMultiplier(UUID productVersionId, BigDecimal sumAssuredAmount);
+
+    /** Whether this version carries a base rate table, and is therefore priced from one. */
+    boolean isPriced(UUID productVersionId);
+
+    /**
+     * The rate per mille this version charges a life of this age, sex and smoker status.
+     *
+     * <p><b>The product's own price, which automatic issuance never used.</b> Issuance computed
+     * every premium from a single flat {@code TZ_BASE_PREMIUM_RATE_PER_MILLE} in reference data,
+     * so an actuary could author a full mortality table — age bands, sex, smoker status — and
+     * watch it change nothing. {@code quotePremium} read it; nothing that issued a contract did.
+     *
+     * <p>Empty when no cell covers that combination, which is a REAL and important answer: it
+     * means the table has a hole, and the caller must refuse rather than price at some default.
+     * Pricing a life the actuary never priced is how a product ends up selling cover it has not
+     * costed. Callers on an unpriced version should ask {@link #isPriced} first rather than
+     * reading an empty here as "no table".
+     *
+     * @param sex null when unrecorded, which matches no cell — a priced product needs the fact.
+     * @param smokerStatus null when unrecorded, same.
+     */
+    Optional<BigDecimal> resolveBaseRatePerMille(UUID productVersionId, int ageAtEntry,
+                                                  Sex sex, SmokerStatus smokerStatus);
 
     /**
      * The AGE multiplier for an applicant of {@code age}, resolved by RANGE rather than by
