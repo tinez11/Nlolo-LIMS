@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
+import { AgentPicker } from '@/components/AgentPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
@@ -19,13 +20,16 @@ import {
 import { Input } from '@/components/ui/input';
 
 /**
- * `POST /agents` -- the only entry point onto this domain that exists
- * server-side, same shape as underwriting's own case-opening page: there is
- * no `GET /agents` list or search endpoint anywhere on this platform. Unlike
- * underwriting, though, an agent IS re-discoverable afterward through a
- * policy's own `agentOfRecordId` (confirmed on the real wire DTO -- unlike
- * underwriting's id, this one is not dropped), so this page's own success
- * response is not the only way back to a given agent, just the first one.
+ * `POST /agents`.
+ *
+ * CORRECTION: this javadoc used to say "there is no `GET /agents` list or search endpoint
+ * anywhere on this platform". That stopped being true in M13, which added the paged list the
+ * Agents table and this page's own supervisor picker both read.
+ *
+ * <p><b>What this endpoint does NOT do is create an identity.</b> It writes an
+ * `agent_profile` -- a payee, a licence and a place in the hierarchy -- against a party that
+ * already exists. The agents-realm login is a separate, manual step, and the form says so
+ * rather than leaving the operator to discover it when the agent cannot sign in.
  */
 export function OnboardAgentPage() {
   const navigate = useNavigate();
@@ -111,13 +115,53 @@ export function OnboardAgentPage() {
           />
         </FormField>
 
-        <FormField label="Hierarchy parent id (optional)" error={errors.hierarchyParentId?.message}>
-          <Input
-            className="font-mono"
-            placeholder="uuid, or leave blank for the top of the hierarchy"
-            {...register('hierarchyParentId')}
+        <FormField label="Reports to (optional)" error={errors.hierarchyParentId?.message}>
+          {/*
+            An agent picker, not a uuid box, for the same reason the agent of record got one:
+            nobody knows a supervisor's uuid, and the hierarchy decides who earns OVERRIDE and
+            SUPERVISOR_OVERRIDE commission on this agent's sales. A wrong parent here misroutes
+            somebody else's money.
+          */}
+          <Controller
+            control={control}
+            name="hierarchyParentId"
+            render={({ field }) => (
+              <AgentPicker
+                value={field.value || null}
+                onChange={(agentId) => field.onChange(agentId ?? '')}
+                placeholder="Search for their supervisor by name…"
+              />
+            )}
           />
+          <p className="mt-1 text-[11px] text-subtle-foreground">
+            Their supervisor, who earns override commission on this agent's business. Leave it
+            empty for an agent at the top of the hierarchy.
+          </p>
         </FormField>
+
+        {/*
+          THE SECOND STEP, SAID OUT LOUD.
+
+          Onboarding creates the COMMISSION record and nothing else. It does not create a
+          Keycloak login: this backend makes no Admin API calls anywhere, and the `party_id`
+          claim that ties a signed-in agent to this profile is written by an administrator, not
+          by this form. Until that happens the agent cannot sign in, cannot register clients,
+          and therefore can never be bound as an introducing agent on their own business.
+
+          Said here because the form otherwise looks complete. Of the agent profiles in this
+          platform's own dev data, only two have a login at all -- and nothing on screen has
+          ever indicated that the rest are, from the agent's point of view, not yet onboarded.
+        */}
+        <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
+          <p className="font-medium">This is step one of two</p>
+          <p className="mt-1 text-subtle-foreground">
+            Onboarding creates the agent's commission record. It does not create their login —
+            an administrator must separately create their user in the <code>agents</code> realm
+            and set its <code>party_id</code> to the party above. Until that is done they cannot
+            sign in or register clients, and business they introduce cannot be attributed to
+            them automatically.
+          </p>
+        </div>
 
         {onboarding.status === 'error' && onboarding.error && (
           <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">

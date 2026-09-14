@@ -27,6 +27,20 @@ public interface DistributionApi {
     AgentView getAgent(UUID agentId);
 
     /**
+     * "Is this id an agent in this tenant" — the question, asked without an exception.
+     *
+     * <p>{@link #getAgent} throws {@code AgentNotFoundException}, which is right for a caller
+     * addressing an agent it expects to exist. Its callers here are validating a SUBMITTED
+     * FIELD (a case's or an issue request's {@code agentOfRecordId}) where "not an agent" is an
+     * ordinary answer to be turned into a 422, not an exceptional one — and catching an
+     * exception to express a boolean puts control flow in a catch block in two modules.
+     *
+     * <p>Empty for an agent in another tenant too: the lookup is tenant-scoped and RLS is the
+     * backstop, so a cross-tenant id is simply not an agent here.
+     */
+    Optional<AgentView> getAgentIfPresent(UUID agentId);
+
+    /**
      * M13: the agents list, tenant-scoped and paged.
      *
      * Until now this module served every per-agent read but no list, so an agent
@@ -75,10 +89,15 @@ public interface DistributionApi {
      * SEE" and deliberately includes the hierarchy beneath them. This is one agent, and it is
      * about who gets paid.
      *
-     * <p>Prefers an ACTIVE profile and otherwise returns whichever exists, matching how
+     * <p>Prefers an ACTIVE profile and otherwise returns the newest, matching how
      * {@code /agents/me} resolves the same question. A suspended agent still earns on business
      * they brought in — suspension stops them selling, and silently redirecting their commission
      * to nobody would be a money decision taken by a null check.
+     *
+     * <p><b>Deterministic, and it has to be.</b> A party may hold several agent profiles, and
+     * this method decides WHO GETS PAID. The underlying query orders newest-first; before it did,
+     * the answer was whichever row Postgres returned first and two identical calls could credit
+     * two different agents.
      *
      * @return empty when this party is not an agent in this tenant, which is the ordinary case:
      *     most parties are customers.

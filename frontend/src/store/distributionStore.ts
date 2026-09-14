@@ -43,6 +43,16 @@ interface DistributionState {
    *  until M13, so an agent table had no feed at all. */
   list: Resource<Page<AgentView>>;
   agents: Keyed<AgentView>;
+  /**
+   * Keyed by PARTY id: the agent record(s) one party holds.
+   *
+   * Answers "which agent will actually be paid for this client's business", which is a
+   * different question from `agents` ("show me the agent with this id"). A client the server
+   * binds an introducing agent for names no agent on the form at all, so without this the
+   * console could not say who earns — or check their licence — on exactly the policies the
+   * binding exists for.
+   */
+  agentsByParty: Keyed<AgentView[]>;
   // A single slot, not keyed: there is only ever one "me" for the calling
   // session, unlike `agents` which is keyed by whichever agentId a staff
   // caller happens to be looking at.
@@ -66,6 +76,7 @@ interface DistributionState {
   resetOnboardAgent: () => void;
   loadList: (params: AgentSearchParams) => Promise<void>;
   loadAgent: (agentId: string) => Promise<void>;
+  loadAgentForParty: (partyId: string) => Promise<void>;
   loadOwnAgent: () => Promise<void>;
   suspendAgent: (agentId: string) => Promise<void>;
   resetSuspendAgent: (agentId: string) => void;
@@ -92,6 +103,7 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
   onboarding: idle(),
   list: idle(),
   agents: {},
+  agentsByParty: {},
   ownAgent: idle(),
   plans: {},
   creatingPlan: idle(),
@@ -125,6 +137,16 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
       getState().agents[agentId] ?? idle<AgentView>(),
       (next) => set((s) => ({ agents: { ...s.agents, [agentId]: next } })),
       () => getAgent(agentId),
+    ),
+
+  // `partyId` on GET /agents ignores q/status and returns that party's agent record(s) --
+  // a party may hold more than one, which is why this is a list and not a single record.
+  loadAgentForParty: (partyId) =>
+    track(
+      `distribution.agentForParty.${partyId}`,
+      getState().agentsByParty[partyId] ?? idle<AgentView[]>(),
+      (next) => set((s) => ({ agentsByParty: { ...s.agentsByParty, [partyId]: next } })),
+      () => listAgents({ partyId }).then((page) => page.items),
     ),
 
   loadOwnAgent: () =>
@@ -259,6 +281,22 @@ export const useDistributionStore = create<DistributionState>((set, getState) =>
 export const selectAgent = (agentId: string) => (s: DistributionState) =>
   s.agents[agentId] ?? idle<AgentView>();
 export const selectOwnAgent = (s: DistributionState) => s.ownAgent;
+
+/**
+ * The agent a party IS — the one who will actually be credited.
+ *
+ * Prefers an ACTIVE record and otherwise takes the first, which is deliberately the same
+ * rule `DistributionApi.agentIdForParty` applies server-side when it decides who gets paid.
+ * The list arrives newest-first, so "the first" is the party's current licence. If this
+ * picked differently from the server, the console would name one agent and the platform
+ * would pay another.
+ */
+export const selectAgentForParty = (partyId: string | null) => (s: DistributionState) => {
+  if (!partyId) return null;
+  const profiles = s.agentsByParty[partyId]?.data;
+  if (!profiles || profiles.length === 0) return null;
+  return profiles.find((a) => a.licenseStatus === 'ACTIVE') ?? profiles[0];
+};
 export const selectApplicablePlan = (agentId: string, productId: string) => (s: DistributionState) =>
   s.plans[planKey(agentId, productId)] ?? idle<CommissionPlanView>();
 export const selectStatements = (agentId: string) => (s: DistributionState) =>

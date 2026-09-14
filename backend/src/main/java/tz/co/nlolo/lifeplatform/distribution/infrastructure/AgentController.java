@@ -121,7 +121,11 @@ public class AgentController {
      * precedent. It is now force-scoped to an agent's own registered clients. The
      * conclusion here still stands on its own terms; the citation was wrong.
      *
-     * `q` matches licence number; an agent has no name in this module.
+     * `q` matches a licence number OR the agent's NAME. An agent still has no name in this
+     * module -- the name lives in `party` -- so the name half is resolved to party ids through
+     * `party::api` and filtered against ids this module already holds, never joined. See
+     * `AgentProfileRepository.search`.
+     *
      * `partyId` answers "is this client also an agent" for the client register.
      */
     @GetMapping("/agents")
@@ -289,10 +293,10 @@ public class AgentController {
      *
      * <p>The caller is resolved from the token's {@code party_id} claim rather than trusted from
      * the path -- {@code tenant_id}/{@code party_id} never come from client input
-     * (docs/04-api-contracts.md:39). {@code findByTenantIdAndPartyId} returns a list because
-     * nothing constrains one party to one agent profile (the unique index is on
-     * {@code (tenant_id, license_number)}), so ANY profile the caller owns granting access is
-     * sufficient.
+     * (docs/04-api-contracts.md:39). The party lookup returns a list because nothing constrains
+     * one party to one agent profile (the unique index is on {@code (tenant_id, license_number)}),
+     * so ANY profile the caller owns granting access is sufficient -- which is why ordering does
+     * not matter on THIS path, unlike {@link #resolveOwnAgentId} where one row must be picked.
      */
     private void enforceAgentReadAccess(UUID requestedAgentId, Jwt jwt, Authentication authentication) {
         if (hasAuthority(authentication, "ROLE_REALM_STAFF")) {
@@ -304,7 +308,7 @@ public class AgentController {
             throw new AccessDeniedException("Agent token carries no party_id claim");
         }
         List<AgentProfile> callerProfiles = agentProfileRepository
-            .findByTenantIdAndPartyId(tenantId, UUID.fromString(partyIdClaim));
+            .findByTenantIdAndPartyIdOrderByCreatedAtDescAgentIdDesc(tenantId, UUID.fromString(partyIdClaim));
         if (callerProfiles.isEmpty()) {
             throw new AccessDeniedException("Token's party is not an agent in this tenant");
         }
@@ -327,11 +331,16 @@ public class AgentController {
     /**
      * Same {@code party_id -> AgentProfile} resolution as {@link #enforceAgentReadAccess}, but
      * returning the id instead of merely authorizing against one supplied by the caller.
-     * {@code findByTenantIdAndPartyId} can return more than one profile for a party (no DB
-     * constraint limits a party to a single agent record) -- an ACTIVE one is preferred if any
-     * exists, since that is the license a logged-in agent would actually expect to land on;
-     * otherwise the first one found stands in rather than 404ing a party that IS an agent, just
-     * not an active one right now.
+     *
+     * <p>The lookup can return more than one profile for a party (no DB constraint limits a party
+     * to a single agent record) -- an ACTIVE one is preferred if any exists, since that is the
+     * license a logged-in agent would actually expect to land on; otherwise the newest stands in
+     * rather than 404ing a party that IS an agent, just not an active one right now.
+     *
+     * <p><b>Which one is now deterministic.</b> The repository orders newest-first, so an agent
+     * holding several profiles lands on the same record every time they sign in. Unordered, this
+     * returned whichever row Postgres produced first and could differ between two logins by the
+     * same person -- see the repository method's own javadoc.
      */
     private UUID resolveOwnAgentId(Jwt jwt) {
         UUID tenantId = TenantContext.get();
@@ -340,7 +349,7 @@ public class AgentController {
             throw new AccessDeniedException("Agent token carries no party_id claim");
         }
         List<AgentProfile> callerProfiles = agentProfileRepository
-            .findByTenantIdAndPartyId(tenantId, UUID.fromString(partyIdClaim));
+            .findByTenantIdAndPartyIdOrderByCreatedAtDescAgentIdDesc(tenantId, UUID.fromString(partyIdClaim));
         if (callerProfiles.isEmpty()) {
             throw new AgentNotFoundException("Token's party is not an agent in this tenant");
         }

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
+import { selectAgentOfRecord } from './policies';
 import { dmy } from './dates';
 import { fillPolicyNumberManually } from './guards';
 
@@ -62,7 +63,7 @@ test.describe('agents my book of business', () => {
       await staffPage.getByLabel('Sum assured').fill('1000000.00');
       await staffPage.getByLabel('Premium', { exact: true }).fill('500.00');
       if (agentOfRecordId) {
-        await staffPage.getByLabel('Agent of record id (optional)').fill(agentOfRecordId);
+        await selectAgentOfRecord(staffPage, agentOfRecordId);
       }
       // Required, and MIGRATION so the policy is in force rather than an offer.
       await staffPage.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');

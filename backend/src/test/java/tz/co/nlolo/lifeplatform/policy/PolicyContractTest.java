@@ -300,6 +300,17 @@ class PolicyContractTest {
             .andExpect(jsonPath("$.status").value("PROPOSED"));
     }
 
+    /**
+     * ISSUED AS A DIRECT SALE, and the null agent of record is the point rather than a
+     * shortcut. This helper used to send {@code UUID.randomUUID()} in that field — a fabricated
+     * agent, which is exactly the defect issuance now refuses: it named a payee that does not
+     * exist, so the policy earned nobody anything and no surface ever said so.
+     *
+     * <p>No test in this class asserts anything about the agent of record, so the honest value
+     * is the one that says "nobody sold this" rather than one that says somebody did and is
+     * lying. A test that genuinely needs an attributed policy must onboard a real agent — see
+     * {@code PolicyApiIntegrationTest.onboardTestAgent}.
+     */
     private IssuedPolicy manualIssueOffer(UUID tenantId, String productCode, String category) throws Exception {
         UUID applicantId = registerApplicant(tenantId, String.valueOf(Math.abs(productCode.hashCode() % 10000)));
         ProductFixture product = publishProduct(tenantId, productCode, category);
@@ -312,9 +323,9 @@ class PolicyContractTest {
                 .content("""
                     {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
-                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
                      "reasonForManualIssue":"Contract test manual issuance"}
-                    """.formatted(caseId, applicantId, product.productVersionId(), UUID.randomUUID())))
+                    """.formatted(caseId, applicantId, product.productVersionId())))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andReturn().getResponse().getContentAsString();
@@ -430,9 +441,9 @@ class PolicyContractTest {
                 .content("""
                     {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
-                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
                      "reasonForManualIssue":"Contract test -- nonexistent policyholder"}
-                    """.formatted(UUID.randomUUID(), nonexistentPartyId, product.productVersionId(), UUID.randomUUID())))
+                    """.formatted(UUID.randomUUID(), nonexistentPartyId, product.productVersionId())))
             .andExpect(status().isNotFound());
     }
 
@@ -1474,11 +1485,10 @@ class PolicyContractTest {
                 .content("""
                     {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
-                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
                      "reasonForManualIssue":"Contract test manual issuance",
                      "lifeAssuredPartyId":"%s"}
-                    """.formatted(caseId, applicantId, product.productVersionId(), UUID.randomUUID(),
-                        lifeAssuredPartyId)))
+                    """.formatted(caseId, applicantId, product.productVersionId(), lifeAssuredPartyId)))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         return new IssuedPolicy(JsonPath.read(response, "$.policyNumber"), applicantId);

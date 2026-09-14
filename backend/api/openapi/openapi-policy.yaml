@@ -633,7 +633,19 @@ components:
         productVersionId: { type: string, format: uuid }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         premiumAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        agentOfRecordId: { type: [string, "null"], format: uuid }
+        agentOfRecordId:
+          description: >-
+            Who earns commission on this policy. HONOURED ONLY AS A FALLBACK: where the
+            policyholder was registered by an agent, that agent is bound at issuance and the
+            value sent here is ignored, because an attribution an issue form could rewrite is
+            a commission an issue form could reassign.
+
+            Null means a direct sale and accrues no commission to anybody. A non-null value
+            that is not an agent in this tenant is REFUSED with 422 `UNKNOWN_AGENT_OF_RECORD`
+            rather than stored: an unrecognised agent id silently earns nobody anything, and
+            the failure is invisible to whoever issued the policy.
+          type: [string, "null"]
+          format: uuid
         premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
         beneficiaries:
           type: array
@@ -753,7 +765,12 @@ components:
             - $ref: 'openapi-common.yaml#/components/schemas/PartyRef'
         productVersionId: { type: string, format: uuid }
         agentOfRecordId:
-          description: Present-but-nullable. A scheme sold direct has no broker.
+          description: >-
+            Present-but-nullable. A scheme sold direct has no broker.
+
+            Honoured only as a fallback, exactly as on `ManualIssueRequest`: an employer
+            registered by an agent has that agent bound at issuance. A non-null value that is
+            not an agent in this tenant is refused with 422 `UNKNOWN_AGENT_OF_RECORD`.
           type: [string, "null"]
           format: uuid
         benefitBasis:

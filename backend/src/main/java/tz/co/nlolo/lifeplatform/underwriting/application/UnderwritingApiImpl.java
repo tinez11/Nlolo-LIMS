@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.underwriting.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
@@ -44,6 +45,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final RiskAssessmentRepository riskAssessmentRepository;
     private final PartyApi partyApi;
     private final ProductApi productApi;
+    private final DistributionApi distributionApi;
     private final ReferenceDataApi referenceDataApi;
     private final RulesEnginePort rulesEnginePort;
     private final ApplicationEventPublisher eventPublisher;
@@ -56,7 +58,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ObjectMapper objectMapper;
 
     public UnderwritingApiImpl(UnderwritingCaseRepository underwritingCaseRepository, RiskAssessmentRepository riskAssessmentRepository,
-                                PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi, RulesEnginePort rulesEnginePort,
+                                PartyApi partyApi, ProductApi productApi, DistributionApi distributionApi,
+                                ReferenceDataApi referenceDataApi, RulesEnginePort rulesEnginePort,
                                 ApplicationEventPublisher eventPublisher,
                                 MedicalDisclosureRepository medicalDisclosureRepository, ObjectMapper objectMapper,
                                 ProposalBeneficiaryRepository proposalBeneficiaryRepository,
@@ -71,6 +74,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         this.riskAssessmentRepository = riskAssessmentRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
+        this.distributionApi = distributionApi;
         this.referenceDataApi = referenceDataApi;
         this.rulesEnginePort = rulesEnginePort;
         this.eventPublisher = eventPublisher;
@@ -85,6 +89,27 @@ public class UnderwritingApiImpl implements UnderwritingApi {
      * the delegation below happens inside an already-open transaction. See
      * {@link UnderwritingApi#openCase(UUID, UUID, UUID, BigDecimal, String, UUID, String)}.
      */
+    /**
+     * A named agent of record must be a real agent in this tenant.
+     *
+     * <p>Null is untouched: a direct sale names nobody, and forcing an agent would invent a
+     * commission payee.
+     *
+     * <p>422 rather than 404 -- the agent is a field on a submitted case, not the thing being
+     * addressed -- and refused HERE rather than at issuance because a case's agent of record
+     * cannot be corrected afterwards. Letting an unknown id through would produce a case that
+     * passes underwriting, is accepted, and then fails issuance permanently.
+     */
+    private void requireRealAgent(UUID agentOfRecordId) {
+        if (agentOfRecordId == null) {
+            return;
+        }
+        if (distributionApi.getAgentIfPresent(agentOfRecordId).isEmpty()) {
+            throw new UnderwritingValidationException("Agent of record " + agentOfRecordId
+                + " is not an agent in this tenant; a case naming an unknown agent cannot be issued");
+        }
+    }
+
     @Override
     @Transactional
     public UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, String openedBy) {
@@ -101,10 +126,14 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // (M1's anti-enumeration pattern), which is exactly the failure mode we want here too.
         partyApi.getParty(applicantPartyId);
 
-        // agentOfRecordId is stored as an opaque id and NOT validated against distribution:
-        // this module declares no dependency on it, and the same convention already applies to
-        // productId and applicantPartyId's outbound refs. PolicyApiImpl treats the field the
-        // same way on the manual-issue path.
+        // CORRECTION: agentOfRecordId used to be stored as an opaque id and NOT validated
+        // against distribution, on the grounds that this module need only carry it through to
+        // issuance. Issuance now refuses an agent of record that is not an agent, and there is
+        // no endpoint to correct a case's agent -- so an unchecked id here produces a case that
+        // is accepted and can then never be issued. Checked at the boundary instead, where
+        // whoever supplied it is still on the form, exactly as the applicant is checked above.
+        requireRealAgent(agentOfRecordId);
+
         ProposalDetails details = proposal != null ? proposal : ProposalDetails.selfInsured();
         UUID lifeAssuredPartyId = details.resolveLifeAssured(applicantPartyId);
         // Validated the same way the applicant is, and for the same reason: a case naming
@@ -137,6 +166,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                           UUID agentOfRecordId, GroupProposal proposal, String openedBy) {
         UUID tenantId = TenantContext.get();
         partyApi.getParty(applicantPartyId);
+        // Same check as the individual path: a broker named on a scheme must be a real agent,
+        // or the scheme is decided and can then never be issued.
+        requireRealAgent(agentOfRecordId);
 
         if (proposal == null || proposal.openingSchedule() == null || proposal.openingSchedule().isEmpty()) {
             // The rule issueGroupScheme already enforces, moved to where the proposal is taken.

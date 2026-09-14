@@ -598,6 +598,14 @@ components:
         policy, so it cannot look the status up; carrying it is the only way it can tell the two
         apart. PROPOSED for ordinary new business, ACTIVE otherwise, and always present so no
         consumer has to treat an absent key as a third case.
+
+        agentOfRecordId is the RESOLVED agent -- the one written on the policy -- not the value
+        the issue request carried. The two are not always the same: where an agent registered
+        the policyholder, that agent is bound at issuance and whatever the caller supplied is
+        discarded. This event used to announce the caller's value while PolicyActivated carried
+        the resolved one, so the platform published two different answers to "who sold this
+        policy" and the wrong one was on the earlier, more obvious event to consume. Null still
+        means a direct sale.
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object

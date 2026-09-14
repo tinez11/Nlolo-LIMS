@@ -1,4 +1,9 @@
-import type { AgentView, PartyDetailView, ProductSnapshot } from '@/api/types';
+import type {
+  AgentView,
+  CommissionPlanView,
+  PartyDetailView,
+  ProductSnapshot,
+} from '@/api/types';
 import { formatDate, formatMonths } from '@/lib/dates';
 import type { Gate } from './types';
 
@@ -43,6 +48,15 @@ export interface IssueGateInput {
   policyholder: PartyDetailView | null;
   /** The agent of record, when one is named. A direct sale has none, which is not a failure. */
   agent: AgentView | null;
+  /**
+   * The commission plan that applies to this agent on this product.
+   *
+   * Three states, and the third is why this is not just `CommissionPlanView | null`:
+   * `undefined` means the lookup has not resolved, and no gate is rendered — a panel that
+   * announced "no commission plan" while still loading would be wrong half the time.
+   * `null` means the lookup finished and there is none.
+   */
+  commissionPlan?: CommissionPlanView | null | undefined;
   /** ISO date the cover starts, and what entry age is computed against. */
   commencementDate: string | null;
   policyTermMonths: number | null;
@@ -76,6 +90,7 @@ export function issueGates({
   snapshot,
   policyholder,
   agent,
+  commissionPlan,
   commencementDate,
   policyTermMonths,
   sumAssured,
@@ -185,6 +200,28 @@ export function issueGates({
         detail: validAtCommencement
           ? `Expires ${formatDate(agent.licenseExpiryDate)}`
           : `It expires ${formatDate(agent.licenseExpiryDate)}, before cover starts on ${formatDate(asOf)}`,
+      });
+    }
+
+    // ---- A commission plan exists (SOFT) ----------------------------------
+    // Soft, because the platform genuinely does not refuse this: `CommissionCalculator`
+    // treats a missing plan as "zero commission, not an error" and accrues nothing. That
+    // is correct behaviour and completely invisible — the policy issues, the agent is
+    // named on it, and nobody is ever told they will not be paid for it. Of this
+    // platform's own ACTIVE policies carrying an agent, 15 earned nothing for exactly
+    // this reason.
+    //
+    // Only rendered once the lookup has resolved, and only when an agent is named: a
+    // direct sale has nobody to pay, so a missing plan is not a finding.
+    if (commissionPlan !== undefined) {
+      gates.push({
+        ok: commissionPlan !== null,
+        hard: false,
+        title: 'A commission plan covers this product',
+        detail:
+          commissionPlan !== null
+            ? 'Commission on this policy will accrue to the agent of record'
+            : 'No commission plan applies to this agent on this product, so this policy will accrue them nothing. Issuing is still valid — but if the sale is meant to earn, the plan has to exist before the policy is activated.',
       });
     }
   }

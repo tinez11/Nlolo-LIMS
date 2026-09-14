@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.policy.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
@@ -118,13 +119,41 @@ public class PolicyApiImpl implements PolicyApi {
     private UUID agentOfRecordFor(UUID policyholderPartyId, UUID suppliedAgentOfRecordId) {
         UUID registeredBy = partyApi.getPartyDetail(policyholderPartyId).registeredByPartyId();
         if (registeredBy == null) {
-            return suppliedAgentOfRecordId;
+            return requireRealAgent(suppliedAgentOfRecordId);
         }
         return distributionApi.agentIdForParty(registeredBy)
             // Registered by somebody who is not an agent in this tenant -- a staff member whose
             // token happened to carry a party_id, most likely. Not an error, and not a reason to
             // drop an attribution the caller did make.
-            .orElse(suppliedAgentOfRecordId);
+            .orElseGet(() -> requireRealAgent(suppliedAgentOfRecordId));
+    }
+
+    /**
+     * A hand-typed agent of record must name a real agent, or the issuance is refused.
+     *
+     * <p>Until this check existed the id was stored opaquely and never verified, so a mistyped or
+     * stale uuid produced a policy attributed to nobody: the accrual listener resolved no agent,
+     * logged it server-side, and accrued nothing. The operator saw a successfully issued policy
+     * and had, without being told, made the sale direct. Six such policies exist in this
+     * platform's own dev data, all pointing at one phantom id.
+     *
+     * <p>Null is untouched and still means a direct sale -- the honest, deliberate way to issue a
+     * policy nobody earns on.
+     *
+     * <p>A BACKSTOP, not the only check. {@code UnderwritingApiImpl.openCase} refuses an unknown
+     * agent when the case is opened, which is where whoever supplied it can still fix it — a
+     * case's agent of record cannot be corrected afterwards. This catches the manual-issue path,
+     * where the value arrives on the issue request itself and there is no earlier boundary.
+     */
+    private UUID requireRealAgent(UUID suppliedAgentOfRecordId) {
+        if (suppliedAgentOfRecordId == null) {
+            return null;
+        }
+        // Tenant-scoped, so an agent belonging to another tenant is correctly "not an agent".
+        if (distributionApi.getAgentIfPresent(suppliedAgentOfRecordId).isEmpty()) {
+            throw new UnknownAgentOfRecordException(suppliedAgentOfRecordId);
+        }
+        return suppliedAgentOfRecordId;
     }
 
     @Override
@@ -206,7 +235,18 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("issueDate", policy.getIssueDate().toString());
         payload.put("premium", Map.of("amount", request.premiumAmount().toPlainString(), "currencyCode", request.premiumCurrency()));
         payload.put("premiumFrequency", request.premiumFrequency());
-        payload.put("agentOfRecordId", request.agentOfRecordId()); // nullable -- see Global Constraints
+        // THE RESOLVED AGENT, off the policy -- not the raw request value.
+        //
+        // These two had drifted apart: the policy row stored the agent bound by
+        // agentOfRecordFor (the client's registering agent, where there is one) while this event
+        // still announced whatever the caller typed. PolicyActivated already carried the resolved
+        // one, and commission accrues off PolicyActivated, so nothing was mispaid -- but the
+        // platform was publishing two different answers to "who sold this policy" and the wrong
+        // one was the earlier, more obvious event to consume. Neither current subscriber reads
+        // this key; the next one should not have to know which event to trust.
+        //
+        // Still nullable: null means a direct sale. See Global Constraints.
+        payload.put("agentOfRecordId", policy.getAgentOfRecordId());
         // PROPOSED for ordinary new business, ACTIVE for an issuance basis that already carries
         // cover. Carried because a consumer cannot ask: communication must tell an offer's
         // customer to pay by a date, and must NOT tell that to somebody whose migrated policy is
@@ -1053,7 +1093,9 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("issueDate", policy.getIssueDate().toString());
         payload.put("premium", Map.of("amount", request.premiumAmount().toPlainString(), "currencyCode", request.premiumCurrency()));
         payload.put("premiumFrequency", request.premiumFrequency());
-        payload.put("agentOfRecordId", request.agentOfRecordId());
+        // The RESOLVED agent, off the policy, not the raw request value -- see issuePolicy's
+        // own note on why the two must not disagree.
+        payload.put("agentOfRecordId", policy.getAgentOfRecordId());
         // PROPOSED for an ordinary scheme, ACTIVE for a basis that already carries cover --
         // no longer always the same value, which is why it was already reading the policy's
         // own status rather than the literal the comment here used to claim.

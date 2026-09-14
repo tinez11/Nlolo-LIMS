@@ -9,6 +9,9 @@ import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.distribution.api.AgentView;
+import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.party.api.KycStatus;
 import tz.co.nlolo.lifeplatform.policy.domain.Endorsement;
 import tz.co.nlolo.lifeplatform.policy.domain.Policy;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyAccount;
@@ -110,6 +113,12 @@ class PolicyApiIntegrationTest {
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
+            // Issuance now validates agentOfRecordId against distribution, so this schema has to
+            // exist here -- without it the check fails on a missing relation rather than on the
+            // agent, which is a different (and much less useful) failure.
+            "db-migrations/distribution/V1__create_distribution_schema.sql",
+            "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
+            "db-migrations/distribution/V3__rls_fail_closed.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -118,6 +127,7 @@ class PolicyApiIntegrationTest {
     @Autowired private ProductApi productApi;
     @Autowired private UnderwritingApi underwritingApi;
     @Autowired private PolicyApi policyApi;
+    @Autowired private DistributionApi distributionApi;
     @Autowired private AuditLogRepository auditLogRepository;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private EndorsementRepository endorsementRepository;
@@ -254,7 +264,11 @@ class PolicyApiIntegrationTest {
     void anAutomaticallyIssuedPolicyCarriesTheCasesAgentOfRecord() throws InterruptedException {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "POLICY-AUTO-AGENT");
-        UUID agentOfRecordId = UUID.randomUUID();
+        // A REAL agent, not a random uuid. It used to be fabricated, which stopped working when
+        // openCase began refusing an agent of record that is not an agent -- and a fabricated one
+        // was never a fair test of "the agent who sold it" anyway, since no such agent could ever
+        // have been paid.
+        UUID agentOfRecordId = onboardTestAgent(tenantId, "AUTO-AGENT", "+255713099557").agentId();
 
         UnderwritingCaseView opened = underwritingApi.openCase(fixture.applicantId(), fixture.productId(),
             fixture.productVersionId(), new BigDecimal("1000000"), "TZS", agentOfRecordId, "agent1");
@@ -773,6 +787,97 @@ class PolicyApiIntegrationTest {
         PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(), request, "test-agent");
         assertThat(issued.status()).isEqualTo(PolicyStatus.ACTIVE);
         assertTrue(policyApi.isPolicyInForce(issued.policyNumber(), LocalDate.now()));
+    }
+
+    // ---- The agent of record must be a real agent ---------------------------------------------
+
+    /** A VERIFIED party onboarded as an agent, for the tests that need a real agent of record. */
+    private AgentView onboardTestAgent(UUID tenantId, String tag, String phone) {
+        TenantContext.set(tenantId);
+        PartyView agentParty = partyApi.registerIndividual("Policy Test Agent " + tag,
+            LocalDate.of(1985, 1, 1), phone, null, "test-staff");
+        partyApi.submitKycEvidence(agentParty.partyId(), KycStatus.VERIFIED, "doc-" + tag, "kyc-officer");
+        return distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            agentParty.partyId(), "LIC-POLICY-" + tag, LocalDate.now().plusYears(1), null), "test-staff");
+    }
+
+    /**
+     * A hand-typed agent of record used to be stored without ever being checked, and a wrong one
+     * was not inert: the policy issued, was attributed to nobody, and the accrual listener logged
+     * "does not resolve to an agent" into a server log nobody reads. The sale earned the named
+     * agent nothing and no surface ever said so. Six such policies exist in this platform's own
+     * dev data, all pointing at one id that is not an agent.
+     */
+    @Test
+    void issuingWithAnAgentOfRecordThatIsNotAnAgentIsRefused() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-AOR-BAD");
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            UUID.randomUUID(), List.of(), null,
+            null, null, null, null, null);
+
+        assertThrows(UnknownAgentOfRecordException.class,
+            () -> policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff"));
+    }
+
+    /** Null is the honest way to say "nobody earns on this". It must keep working. */
+    @Test
+    void issuingWithNoAgentOfRecordIsStillADirectSale() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-AOR-NULL");
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), null,
+            null, null, null, null, null);
+
+        PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff");
+        assertThat(issued.agentOfRecordId()).isNull();
+    }
+
+    /** The check must not reject a REAL agent -- a validation nobody can satisfy is worse than none. */
+    @Test
+    void issuingWithARealAgentOfRecordKeepsTheAttribution() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-AOR-GOOD");
+        AgentView agent = onboardTestAgent(tenantId, "AOR", "+255713099555");
+        TenantContext.set(tenantId);
+
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            agent.agentId(), List.of(), null,
+            null, null, null, null, null);
+
+        PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff");
+        assertThat(issued.agentOfRecordId()).isEqualTo(agent.agentId());
+    }
+
+    /**
+     * An agent from ANOTHER tenant is not an agent here. `getAgent` 404s cross-tenant under RLS,
+     * so this lands on the same refusal as a made-up uuid rather than silently attributing a
+     * policy across a tenant boundary.
+     */
+    @Test
+    void anAgentFromAnotherTenantIsNotAValidAgentOfRecord() {
+        UUID otherTenant = UUID.randomUUID();
+        AgentView foreignAgent = onboardTestAgent(otherTenant, "FOREIGN", "+255713099556");
+
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-AOR-XT");
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(
+            fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            foreignAgent.agentId(), List.of(), null,
+            null, null, null, null, null);
+
+        assertThrows(UnknownAgentOfRecordException.class,
+            () -> policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff"));
     }
 
     @Test

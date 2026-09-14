@@ -210,9 +210,9 @@ class PolicyLoanContractTest {
                 .content("""
                     {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
-                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
                      "reasonForManualIssue":"Loan contract test issuance"}
-                    """.formatted(caseId, applicantId, productVersionId, UUID.randomUUID())))
+                    """.formatted(caseId, applicantId, productVersionId)))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String policyNumber = JsonPath.read(policyResponse, "$.policyNumber");
 

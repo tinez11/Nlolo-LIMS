@@ -47,6 +47,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -200,6 +201,15 @@ public class DistributionApiImpl implements DistributionApi {
         return toAgentView(findAgentOrThrow(agentId, TenantContext.get()));
     }
 
+    @Override
+    public Optional<AgentView> getAgentIfPresent(UUID agentId) {
+        if (agentId == null) {
+            return Optional.empty();
+        }
+        return agentProfileRepository.findByAgentIdAndTenantId(agentId, TenantContext.get())
+            .map(this::toAgentView);
+    }
+
     /**
      * M13. Branches on which filters are present rather than building a single
      * do-everything query, mirroring PolicyController's structure -- a JPQL method
@@ -216,10 +226,21 @@ public class DistributionApiImpl implements DistributionApi {
             // The other filters are ignored on this branch on purpose -- "is this party an agent"
             // is a different question from "search the agent register", and combining them would
             // invite a caller to think it had searched when it had not.
-            List<AgentProfile> profiles = agentProfileRepository.findByTenantIdAndPartyId(tenantId, partyId);
+            List<AgentProfile> profiles = agentProfileRepository.findByTenantIdAndPartyIdOrderByCreatedAtDescAgentIdDesc(tenantId, partyId);
             page = new PageImpl<>(profiles, pageable, profiles.size());
         } else if (q != null && !q.isBlank()) {
-            page = agentProfileRepository.search(tenantId, q.trim(), status, pageable);
+            // `q` matches a licence number OR the agent's NAME. The name half is resolved here,
+            // not joined: party owns names, so its ids come back through party::api and the
+            // repository filters ids this module already holds -- the same idiom the group-scheme
+            // member roll uses to search a schedule by member name.
+            //
+            // An empty match becomes the NO_PARTY_MATCH sentinel rather than an empty collection:
+            // an empty `in` list is invalid SQL, and passing null would widen the predicate to
+            // every agent, turning "no name matched" into "no filter".
+            Set<UUID> namedPartyIds = partyApi.partyIdsMatchingName(q.trim());
+            page = agentProfileRepository.search(tenantId, q.trim(),
+                namedPartyIds.isEmpty() ? AgentProfileRepository.NO_PARTY_MATCH : namedPartyIds,
+                status, pageable);
         } else if (status != null) {
             page = agentProfileRepository.findByTenantIdAndLicenseStatus(tenantId, status, pageable);
         } else {
@@ -231,7 +252,7 @@ public class DistributionApiImpl implements DistributionApi {
     @Override
     public List<UUID> resolveAgentTeam(UUID partyId) {
         UUID tenantId = TenantContext.get();
-        List<AgentProfile> ownProfiles = agentProfileRepository.findByTenantIdAndPartyId(tenantId, partyId);
+        List<AgentProfile> ownProfiles = agentProfileRepository.findByTenantIdAndPartyIdOrderByCreatedAtDescAgentIdDesc(tenantId, partyId);
         if (ownProfiles.isEmpty()) {
             return List.of();
         }
@@ -264,7 +285,7 @@ public class DistributionApiImpl implements DistributionApi {
             return java.util.Optional.empty();
         }
         List<AgentProfile> profiles = agentProfileRepository
-            .findByTenantIdAndPartyId(TenantContext.get(), partyId);
+            .findByTenantIdAndPartyIdOrderByCreatedAtDescAgentIdDesc(TenantContext.get(), partyId);
         return profiles.stream()
             .filter(p -> p.getLicenseStatus() == LicenseStatus.ACTIVE)
             .findFirst()

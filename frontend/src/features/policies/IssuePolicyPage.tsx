@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { PartyName } from '@/components/PartyName';
+import { AgentPicker } from '@/components/AgentPicker';
 import { UnderwritingCasePicker } from '@/components/UnderwritingCasePicker';
 import { listCaseBeneficiaries } from '@/api/underwriting';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,12 @@ import { hasHardFailure, issueGates, softBreaches } from '@/gates/issueGates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { usePolicyStore } from '@/store/policyStore';
 import { selectParty, usePartyStore } from '@/store/partyStore';
-import { selectAgent, useDistributionStore } from '@/store/distributionStore';
+import {
+  selectAgent,
+  selectAgentForParty,
+  selectApplicablePlan,
+  useDistributionStore,
+} from '@/store/distributionStore';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import { blankBeneficiaryRow } from './beneficiaryForm';
 import {
@@ -119,12 +125,47 @@ export function IssuePolicyPage() {
   // introducing agent at issuance, so this is a read of the same fact, not a second copy of it.
   const introducingAgentPartyId = policyholder.data?.registeredByPartyId ?? null;
 
+  // The introducing agent's own record, resolved from their party id.
+  //
+  // Without this the gates below saw an agent ONLY when one was typed into the form -- so for
+  // a client an agent introduced, which is precisely when the binding applies, the licence
+  // gates evaluated against `null` and silently did not run. The console was checking the
+  // licence of the agent it was NOT going to attribute, and skipping the one it was.
+  const loadAgentForParty = useDistributionStore((s) => s.loadAgentForParty);
+  const introducingAgent = useDistributionStore(selectAgentForParty(introducingAgentPartyId));
+  useEffect(() => {
+    if (introducingAgentPartyId) void loadAgentForParty(introducingAgentPartyId);
+  }, [introducingAgentPartyId, loadAgentForParty]);
+
+  // The agent the PLATFORM will use, in the platform's own precedence: an introducing agent
+  // binds and wins; otherwise whatever was attributed by hand.
+  const effectiveAgent = introducingAgent ?? agent.data ?? null;
+
   const snapshot = useProductStore(selectProductSnapshot(productId));
+
+  // Does a commission plan cover this agent on this product? A 404 is the real answer "none
+  // applies", not a failure -- see CommissionPlanPanel, which treats it the same way.
+  const loadApplicablePlan = useDistributionStore((s) => s.loadApplicablePlan);
+  const planResource = useDistributionStore(
+    selectApplicablePlan(effectiveAgent?.agentId ?? '', productId ?? ''),
+  );
+  useEffect(() => {
+    if (effectiveAgent?.agentId && productId) {
+      void loadApplicablePlan(effectiveAgent.agentId, productId);
+    }
+  }, [effectiveAgent?.agentId, productId, loadApplicablePlan]);
+  const commissionPlan =
+    planResource.status === 'success'
+      ? (planResource.data ?? null)
+      : planResource.status === 'error' && planResource.error?.kind === 'notFound'
+        ? null
+        : undefined;
 
   const gates = issueGates({
     snapshot: snapshot.data ?? null,
     policyholder: policyholder.data ?? null,
-    agent: agent.data ?? null,
+    agent: effectiveAgent,
+    commissionPlan,
     commencementDate: commencementDate || null,
     policyTermMonths: policyTermMonths ? Number(policyTermMonths) : null,
     sumAssured: sumAssuredAmount ? Number(sumAssuredAmount) : null,
@@ -456,15 +497,23 @@ export function IssuePolicyPage() {
             </p>
           </FormField>
         ) : (
-          <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
-            <Input
-              className="font-mono"
-              placeholder="uuid, or leave blank for a direct/online policy"
-              {...register('agentOfRecordId')}
+          <FormField label="Agent of record (optional)" error={errors.agentOfRecordId?.message}>
+            {/*
+              A picker, not a uuid box. Nobody knows an agent's uuid, so one got copied from
+              somewhere else -- and a wrong one was accepted in silence: the policy was
+              attributed to nobody, and only a server log said so. The backend now refuses an
+              unknown agent outright; searching by name is what stops one being entered.
+            */}
+            <AgentPicker
+              value={agentOfRecordId || null}
+              onChange={(agentId) =>
+                setValue('agentOfRecordId', agentId ?? '', { shouldValidate: true })
+              }
+              placeholder="Search agents by name or licence…"
             />
             <p className="mt-1 text-[11px] text-subtle-foreground">
-              No agent introduced this client, so the sale is attributed here. Blank means a
-              direct sale and accrues no commission.
+              No agent introduced this client, so the sale is attributed here. Leave it empty for
+              a direct sale, which accrues no commission.
             </p>
           </FormField>
         )}

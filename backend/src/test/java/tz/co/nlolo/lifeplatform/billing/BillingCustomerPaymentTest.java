@@ -209,8 +209,8 @@ class BillingCustomerPaymentTest {
                     {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"premiumFrequency":"MONTHLY",
-                     "agentOfRecordId":"%s","reasonForManualIssue":"Customer payment test issuance"}
-                    """.formatted(caseId, owner, productVersionId, UUID.randomUUID())))
+                     "agentOfRecordId":null,"reasonForManualIssue":"Customer payment test issuance"}
+                    """.formatted(caseId, owner, productVersionId)))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String policyNumber = JsonPath.read(policyResponse, "$.policyNumber");
 

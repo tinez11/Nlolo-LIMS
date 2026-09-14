@@ -35,16 +35,20 @@ paths:
         which is a new disclosure rather than a convenience.
 
 
-        `q` matches LICENCE NUMBER, not a name: an agent has no name in this
-        context. The person's name lives in `party`, reached through `partyId`, and
-        resolving it here would make distribution read another context's data to
-        fill a column.
+        `q` matches a LICENCE NUMBER or the agent's NAME. An agent still has no name
+        of its own in this context -- the person's name lives in `party` -- so the
+        name half is not a join: `q` is resolved to matching party ids in `party`
+        and distribution filters ids it already holds. Both halves run as one query,
+        so the page and its `totalElements` count the same thing.
       security:
         - staffAuth: []
       parameters:
         - name: q
           in: query
-          description: Case-insensitive substring match against licenceNumber.
+          description: >-
+            Case-insensitive substring match against the licence number OR the agent's
+            name. A name search resolving to nobody matches nothing, rather than
+            falling back to an unfiltered list.
           schema: { type: string }
         - name: status
           in: query

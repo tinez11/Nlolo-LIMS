@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
+import { selectAgentOfRecord } from './policies';
 import { dmy } from './dates';
 import { asAdmin } from './admin';
 
@@ -97,7 +98,7 @@ async function issueRealPolicyForAgent(
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill('2000000.00');
   await page.getByLabel('Premium', { exact: true }).fill('800.00');
-  await page.getByLabel('Agent of record id (optional)').fill(agentId);
+  await selectAgentOfRecord(page, agentId);
   // Required, and MIGRATION so the policy is in force rather than an offer.
   await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
   await page.getByLabel('Reason for manual issue').fill('E2E distribution fixture');
@@ -133,7 +134,7 @@ test.describe('staff distribution', () => {
     await expect(page.getByText('Resolving product version…')).not.toBeVisible();
     await page.getByLabel('Sum assured').fill('2000000.00');
     await page.getByLabel('Premium', { exact: true }).fill('800.00');
-    await page.getByLabel('Agent of record id (optional)').fill(agentId);
+    await selectAgentOfRecord(page, agentId);
     // Required, and MIGRATION so the policy is in force rather than an offer.
     await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
     await page.getByLabel('Reason for manual issue').fill('E2E drill-in fixture');

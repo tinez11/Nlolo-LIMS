@@ -324,9 +324,9 @@ class ModuleArchitectureB1EndToEndRaceTest {
                 .content("""
                     {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"%s","currencyCode":"TZS"},
-                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":"%s",
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
                      "reasonForManualIssue":"E2E race test issuance"}
-                    """.formatted(caseId, applicantId, productVersionId, CASH_VALUE.toPlainString(), UUID.randomUUID())))
+                    """.formatted(caseId, applicantId, productVersionId, CASH_VALUE.toPlainString())))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String policyNumber = JsonPath.read(policyResponse, "$.policyNumber");
 

@@ -1566,3 +1566,119 @@ beneficiary, one for the customer oracle — each carrying a second policy that 
 so none of them can pass against a filter that is silently ignored. Proven by **negative
 control**: removing `relatedPartyId` from the routing guard makes two of them fail on exactly
 the `doesNotExist()` assertion, then pass again when restored.
+
+### 14.15 The agent of record stops being a uuid you type
+
+Three defects, one seam: **who earns commission on a policy, and how that person gets named.**
+
+**The field was a raw uuid box.** "uuid, or leave blank for a direct/online policy", on both
+the issue form and the open-case form. Nobody knows an agent's uuid, so one gets copied from
+somewhere — and a wrong one was accepted in silence. The policy issued, `agent_of_record_id`
+was stored unvalidated, and at activation distribution's listener logged *"does not resolve to
+an agent … no commission accrued"* into a server log nobody reads. **This platform's own dev
+database carries six policies pointing at one phantom agent id, three of them ACTIVE, with zero
+accruals between them.** The operator saw a successful issuance and had, without being told,
+made the sale direct.
+
+It is an `AgentPicker` now — search, names, licence numbers, status badges. Building it needed
+a backend change, because **`GET /agents`'s `q` matched licence numbers only**: an agent has no
+name in the distribution context. Rather than join across schemas, `q` now also resolves to
+party ids through `PartyApi.partyIdsMatchingName` and filters ids distribution already holds —
+the same ids-only idiom §14.10 established for the member roll, and `distribution` already
+declared `party::api`. Both halves run as **one query**, so the page and its `totalElements`
+still count the same thing.
+
+The empty case is the one worth guarding: an `in` clause cannot take an empty collection, and
+the obvious workaround — pass null, let the predicate fall away — turns *"no name matched"*
+into *"no filter at all"*, i.e. every agent in the tenant. A sentinel constant keeps it honest,
+and a test asserts a nonsense search returns nothing **while two agents exist**, so an empty
+result is provably a filter and not an empty tenant.
+
+**Validation had to move upstream, and that cost a module edge.** Refusing an unknown agent at
+issuance is right for the manual path, where the operator is on the form. It is *wrong* as the
+only check: a case carries its agent all the way to issuance, there is **no endpoint to correct
+a case's agent**, and auto-issuance happens in an event listener — so an unchecked id would
+produce a case that passes underwriting, is accepted, and can then never be issued. So
+`underwriting` now declares `distribution::api` and refuses an unknown agent at `openCase`.
+
+`V2__agent_of_record.sql` had explicitly argued the other way ("underwriting does not depend on
+that module and does not need to in order to carry an id through to issuance"). That was sound
+while nothing could fail on the id. It stopped being sound the moment issuance began refusing
+one. The precedent is one field over in the same method: `openCase` already validates
+`applicantPartyId` against `party::api`, for exactly this reason — check an outbound reference
+at the boundary where whoever supplied it is still present to fix it.
+
+**Two bugs found while wiring it, neither of them the task.**
+
+- **The licence gates were checking the wrong agent.** `issueGates` read the agent from the
+  *form field*. Where an agent registered the client, the server binds that agent and the field
+  is not rendered at all — so for precisely the policies the binding exists for, `agent` was
+  `null` and the hard "holds an active licence" / "valid when cover starts" gates **silently did
+  not run**. The console was checking the licence of the agent it was not going to attribute and
+  skipping the one it was. Fixed by resolving the introducing agent's own record
+  (`selectAgentForParty`), which deliberately applies the same ACTIVE-then-newest preference as
+  `DistributionApi.agentIdForParty` — if the console picked differently it would name one agent
+  while the platform paid another.
+- **`agentIdForParty` was non-deterministic.** No `ORDER BY`, then `.findFirst()`. A party may
+  hold several profiles (one in the dev database holds **46**), so the answer to *who gets paid*
+  was whatever Postgres returned first. Same defect `resolveApplicablePlan` already fixed one
+  lookup over; now ordered newest-first, one convention for both. `/agents/me` shared the flaw
+  and is fixed by the same ordering — an agent with two profiles could otherwise land on a
+  different record between logins.
+
+**A third gate, and it is soft on purpose.** `CommissionCalculator` treats a missing commission
+plan as *"zero commission, not an error"*. That is correct and completely invisible: **106 of
+123 products in the dev database have no plan**, and of the ACTIVE policies that do carry a
+valid agent, **15 earned nothing for exactly this reason**. The gate says so before issuing.
+Soft, because the platform genuinely issues anyway — a hard block would be the console
+inventing a refusal. Its input is deliberately three-state (`undefined` = unresolved), because
+announcing "no commission plan" while the lookup is in flight would be wrong on every product
+that has one.
+
+**What was NOT built, and why it is the biggest gap.** `POST /agents` creates a payee, not an
+identity. There are **no Keycloak Admin API calls anywhere in this backend**, so onboarding an
+agent does not create their login, and the `party_id` claim that ties a signed-in agent to
+their profile is written by an administrator. Of 49 agent profiles in the dev database, **two
+have a login**. Until that step happens the agent cannot sign in, cannot register clients, and
+can therefore never be bound as an introducing agent on their own business — which is the whole
+mechanism above. Provisioning users from the backend means admin credentials inside the app and
+a confidential admin client; that is a security decision, not a refactor. The form now says so
+instead of looking complete. `hierarchyParentId` on that same form was also a raw uuid box and
+is now an `AgentPicker` — it decides who earns OVERRIDE and SUPERVISOR_OVERRIDE, so a wrong
+parent misroutes somebody else's money.
+
+**One consistency fix taken while in the file.** `PolicyIssued` announced the caller's
+`agentOfRecordId` while the policy row and `PolicyActivated` carried the *resolved* one. Nothing
+was mispaid — commission accrues off `PolicyActivated` — but the platform published two
+different answers to "who sold this policy", and the wrong one was on the earlier, more obvious
+event to consume. Both consumers (billing, communication) were checked and read neither.
+
+**E2E fallout, exactly as §14.5 predicts.** Swapping an `<Input>` for a picker broke three call
+sites that did `getByLabel('Agent of record id (optional)').fill(id)`. Replaced with one shared
+`selectAgentOfRecord` helper. It **pastes** the id rather than typing it — every prefix of a
+uuid is not a uuid, so a typed one can trip the 300 ms debounce mid-string and fire a text
+search for a partial id. The same trap sits in the existing `PartyPicker` spec, which failed
+once under CPU contention during this work and passes on its own; the new spec is written not to
+inherit it.
+
+**Six backend classes failed, and the failure was the change working.** Their fixture helpers
+issued policies with `UUID.randomUUID()` as the agent of record — a fabricated agent, hardcoded
+into the setup, which is precisely the defect issuance now refuses. Two symptoms from one cause:
+a **422** where the distribution schema was present (the refusal firing correctly) and a **500**
+where it was not (five of the six classes do not migrate `distribution`, so the lookup hit a
+missing relation). Before choosing a fix I checked whether anything depended on that value:
+**no test anywhere asserts `agentOfRecordId` is non-null.** So the honest correction is `null` —
+a direct sale, which is what those policies always effectively were, since a fabricated agent
+earned nobody anything. Eight occurrences across six files. `PolicyApiIntegrationTest` is the
+exception: it genuinely needs the schema now, and its "carries the case's agent of record" test
+was repointed at a real onboarded agent, because a non-existent one could never have
+demonstrated what that test claims.
+
+**Verified:** backend **1111** across 111 classes (`clean test`, BUILD SUCCESS), frontend unit
+**813** in 65 files, full e2e **121 passed, 1 skipped** (39.4m) — the skip is
+`staff-policy-loans`' own data conditional, `'no repayable loan in this tenant'`. The e2e run
+that matters for this entry is `staff-distribution.spec.ts:111`, which onboards an agent, names
+it as agent of record **through the new picker**, and drills into the same agent page; plus
+`agents-my-book`, which issues through the picker twice and asserts the agent sees exactly its
+own book.
+

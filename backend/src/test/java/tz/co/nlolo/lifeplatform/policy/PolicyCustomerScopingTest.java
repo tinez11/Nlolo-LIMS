@@ -271,8 +271,8 @@ class PolicyCustomerScopingTest {
                     {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
                      "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
                      "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"premiumFrequency":"MONTHLY",
-                     "agentOfRecordId":"%s","reasonForManualIssue":"Policy scoping test issuance"}
-                    """.formatted(caseId, applicantId, productVersionId, UUID.randomUUID())))
+                     "agentOfRecordId":null,"reasonForManualIssue":"Policy scoping test issuance"}
+                    """.formatted(caseId, applicantId, productVersionId)))
             .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         String policyNumber = JsonPath.read(policyResponse, "$.policyNumber");
 

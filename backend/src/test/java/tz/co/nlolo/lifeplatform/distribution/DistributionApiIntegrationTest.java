@@ -212,6 +212,134 @@ class DistributionApiIntegrationTest {
         assertThat(distributionApi.listAgents("LIC-", null, null, PageRequest.of(0, 20)).getTotalElements()).isEqualTo(2);
     }
 
+    /**
+     * `q` ALSO matches the person's name now, which is what lets the console offer an agent
+     * picker instead of a uuid box. An agent still has no name in this module: the name half is
+     * resolved to party ids through {@code party::api} and filtered against ids distribution
+     * already holds.
+     *
+     * <p>The licence numbers here deliberately share no substring with the names, so a hit can
+     * only have come from the name half.
+     */
+    @Test
+    void listAgentsSearchesByThePersonsNameNotOnlyTheLicenceNumber() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView zebra = registerVerifiedParty(tenantId, "ZEBRA");
+        PartyView walrus = registerVerifiedParty(tenantId, "WALRUS");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            zebra.partyId(), "LIC-0001", LocalDate.now().plusYears(1), null), "staff-1");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            walrus.partyId(), "LIC-0002", LocalDate.now().plusYears(1), null), "staff-1");
+        TenantContext.set(tenantId);
+
+        assertThat(distributionApi.listAgents("ZEBRA", null, null, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-0001");
+        assertThat(distributionApi.listAgents("WALRUS", null, null, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-0002");
+        // Case-insensitive on the name half too, like the licence half.
+        assertThat(distributionApi.listAgents("zebra", null, null, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-0001");
+        // A licence search still works, and does NOT accidentally widen to both via the name half.
+        assertThat(distributionApi.listAgents("LIC-0001", null, null, PageRequest.of(0, 20)).getContent())
+            .extracting(AgentView::licenseNumber).containsExactly("LIC-0001");
+    }
+
+    /**
+     * The failure this guards is specific and silent: an `in` clause cannot take an empty
+     * collection, and the obvious workaround -- passing null and letting the predicate fall
+     * away -- turns "no name matched" into "no filter at all", i.e. every agent in the tenant.
+     * A picker built on that would offer every agent for any typo.
+     */
+    @Test
+    void aNameSearchMatchingNobodyReturnsNothingRatherThanEveryAgent() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView one = registerVerifiedParty(tenantId, "PRESENT-A");
+        PartyView two = registerVerifiedParty(tenantId, "PRESENT-B");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            one.partyId(), "LIC-PRESENT-A", LocalDate.now().plusYears(1), null), "staff-1");
+        distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            two.partyId(), "LIC-PRESENT-B", LocalDate.now().plusYears(1), null), "staff-1");
+        TenantContext.set(tenantId);
+
+        // Sanity: there ARE two agents, so an empty result below is a real filter, not an
+        // empty tenant.
+        assertThat(distributionApi.listAgents(null, null, null, PageRequest.of(0, 20)).getTotalElements())
+            .isEqualTo(2);
+        assertThat(distributionApi.listAgents("Nobodyofthatname", null, null, PageRequest.of(0, 20))
+            .getTotalElements()).isZero();
+    }
+
+    // ---- agentIdForParty: who actually gets paid ----------------------------------------------
+
+    /**
+     * This method decides WHO GETS PAID -- it is how a client's registering agent becomes the
+     * agent of record at issuance -- and until now nothing exercised it at all.
+     */
+    @Test
+    void agentIdForPartyResolvesThePartysAgent() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView party = registerVerifiedParty(tenantId, "IDFOR-1");
+        AgentView agent = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party.partyId(), "LIC-IDFOR-1", LocalDate.now().plusYears(1), null), "staff-1");
+        TenantContext.set(tenantId);
+
+        assertThat(distributionApi.agentIdForParty(party.partyId())).contains(agent.agentId());
+    }
+
+    /** Most parties are customers. That is the ordinary case, not an error. */
+    @Test
+    void agentIdForPartyIsEmptyForAPartyThatIsNotAnAgent() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView customer = registerVerifiedParty(tenantId, "IDFOR-CUSTOMER");
+        TenantContext.set(tenantId);
+
+        assertThat(distributionApi.agentIdForParty(customer.partyId())).isEmpty();
+    }
+
+    /**
+     * A party may hold SEVERAL agent profiles -- nothing in the DDL prevents it, and this
+     * platform's own dev database has one party carrying 46. Which profile this resolves to is
+     * therefore a live question, and the answer decides whose statement a commission lands on.
+     *
+     * <p>ACTIVE wins over recency: the newer profile here is SUSPENDED, and a suspended licence
+     * is not the one an agent is currently writing business on.
+     */
+    @Test
+    void agentIdForPartyPrefersAnActiveProfileOverANewerSuspendedOne() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView party = registerVerifiedParty(tenantId, "IDFOR-MULTI");
+        AgentView older = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party.partyId(), "LIC-IDFOR-OLD", LocalDate.now().plusYears(1), null), "staff-1");
+        AgentView newer = distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party.partyId(), "LIC-IDFOR-NEW", LocalDate.now().plusYears(1), null), "staff-1");
+        distributionApi.suspendAgent(newer.agentId(), "staff-1");
+        TenantContext.set(tenantId);
+
+        assertThat(distributionApi.agentIdForParty(party.partyId())).contains(older.agentId());
+    }
+
+    /**
+     * DETERMINISM, which is the actual defect this closes. With several equally-eligible
+     * profiles the underlying query had no ORDER BY and the caller took the first row, so the
+     * answer was whatever Postgres happened to return -- two identical calls could credit two
+     * different agents. Repeating the call is the only way to observe that from outside.
+     */
+    @Test
+    void agentIdForPartyReturnsTheSameAgentEveryTimeWhenAPartyHasSeveralActiveProfiles() {
+        UUID tenantId = UUID.randomUUID();
+        PartyView party = registerVerifiedParty(tenantId, "IDFOR-STABLE");
+        for (int i = 1; i <= 5; i++) {
+            distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+                party.partyId(), "LIC-IDFOR-ST-" + i, LocalDate.now().plusYears(1), null), "staff-1");
+        }
+        TenantContext.set(tenantId);
+
+        UUID first = distributionApi.agentIdForParty(party.partyId()).orElseThrow();
+        for (int i = 0; i < 5; i++) {
+            assertThat(distributionApi.agentIdForParty(party.partyId())).contains(first);
+        }
+    }
+
     @Test
     void listAgentsFiltersByLicenceStatus() {
         UUID tenantId = UUID.randomUUID();

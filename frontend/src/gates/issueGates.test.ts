@@ -184,6 +184,41 @@ describe('agent licence', () => {
   });
 });
 
+describe('commission plan', () => {
+  // A direct sale has nobody to pay, so a missing plan is not a finding -- otherwise
+  // every direct policy would carry a warning about commission that was never coming.
+  it('produces no gate when no agent is named, however the lookup resolved', () => {
+    expect(byTitle(issueGates({ ...base, commissionPlan: null }), 'commission plan')).toBeUndefined();
+  });
+
+  // The three-state input is the whole point: announcing "no commission plan" while the
+  // lookup is still in flight would be wrong on every product that does have one.
+  it('produces no gate while the lookup is unresolved', () => {
+    const gates = issueGates({ ...base, agent: agent(), commissionPlan: undefined });
+    expect(byTitle(gates, 'commission plan')).toBeUndefined();
+  });
+
+  it('flags a missing plan SOFTLY, because the platform issues anyway and pays nobody', () => {
+    const gates = issueGates({ ...base, agent: agent(), commissionPlan: null });
+    const gate = byTitle(gates, 'commission plan');
+    expect(gate?.ok).toBe(false);
+    // Soft, not hard: CommissionCalculator treats a missing plan as zero commission,
+    // not an error, so a hard block here would be the console inventing a refusal.
+    expect(gate?.hard).toBe(false);
+    expect(hasHardFailure(gates)).toBe(false);
+    expect(softBreaches(gates).map((g) => g.title)).toContain(gate!.title);
+  });
+
+  it('passes when a plan covers the product', () => {
+    const gates = issueGates({
+      ...base,
+      agent: agent(),
+      commissionPlan: { planId: 'cp', productId: 'p', status: 'ACTIVE', rules: [] },
+    });
+    expect(byTitle(gates, 'commission plan')?.ok).toBe(true);
+  });
+});
+
 describe('the gate set as a whole', () => {
   it('is empty when a product states no bounds and nothing else is known', () => {
     const gates = issueGates({

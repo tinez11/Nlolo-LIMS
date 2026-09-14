@@ -5,6 +5,7 @@ import tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException;
 import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyAlreadyIssuedForCaseException;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyNotFoundException;
+import tz.co.nlolo.lifeplatform.policy.api.UnknownAgentOfRecordException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -52,6 +53,11 @@ public class PolicyExceptionHandler {
     @ExceptionHandler(InsufficientLoanValueException.class)
     public ProblemDetail handleInsufficientLoanValue(InsufficientLoanValueException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "INSUFFICIENT_LOAN_VALUE");
+    }
+
+    @ExceptionHandler(UnknownAgentOfRecordException.class)
+    public ProblemDetail handleUnknownAgentOfRecord(UnknownAgentOfRecordException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "UNKNOWN_AGENT_OF_RECORD");
     }
 
     private static ProblemDetail problem(HttpStatus status, String detail, String errorCode) {

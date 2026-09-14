@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { PartyName } from '@/components/PartyName';
+import { AgentPicker } from '@/components/AgentPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { PREMIUM_FREQUENCIES } from '@/api/types';
@@ -77,6 +78,7 @@ export function OpenUnderwritingCasePage() {
   const productId = watch('productId');
   const beneficiaryRows = watch('beneficiaries');
   const applicantPartyId = watch('applicantPartyId');
+  const agentOfRecordId = watch('agentOfRecordId');
 
   // Who will actually earn on the policy this case issues. The server binds the introducing
   // agent at issuance, so this reads the same fact rather than keeping a second copy of it.
@@ -231,15 +233,21 @@ export function OpenUnderwritingCasePage() {
             </p>
           </FormField>
         ) : (
-          <FormField label="Agent of record id (optional)" error={errors.agentOfRecordId?.message}>
-            <Input
-              className="font-mono text-xs"
-              placeholder="00000000-0000-0000-0000-000000000000"
-              {...register('agentOfRecordId')}
+          <FormField label="Agent of record (optional)" error={errors.agentOfRecordId?.message}>
+            {/*
+              A picker, not a uuid box — see IssuePolicyPage's note. The case carries this value
+              all the way to issuance, so a uuid mistyped here surfaced as a policy attributed to
+              nobody, one step removed from the form that caused it.
+            */}
+            <AgentPicker
+              value={agentOfRecordId || null}
+              onChange={(agentId) =>
+                setValue('agentOfRecordId', agentId ?? '', { shouldValidate: true })
+              }
             />
             <p className="mt-1 text-[11px] text-subtle-foreground">
-              No agent introduced this client, so the sale is attributed here. Leave blank for a
-              direct sale — a policy issued with no agent of record accrues no commission.
+              No agent introduced this client, so the sale is attributed here. Leave it empty for
+              a direct sale — a policy issued with no agent of record accrues no commission.
             </p>
           </FormField>
         )}

@@ -61,3 +61,29 @@ export async function issueRealPolicy(page: Page, reason: string): Promise<strin
   await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
   return page.url().split('/').pop() as string;
 }
+
+/**
+ * Picks the agent of record on the issue and open-case forms.
+ *
+ * The field used to be a plain text input taking a raw uuid, which is why three specs simply
+ * `.fill(agentId)`-ed it. It is an `AgentPicker` now — a trigger, a search box and a list —
+ * because a mistyped uuid silently attributed a policy to nobody, and the backend refuses an
+ * unknown agent outright rather than storing it.
+ *
+ * Pasting the id is still the right move HERE even though the control searches by name: these
+ * specs hold an agentId and not a name, and the picker takes a pasted uuid through a direct
+ * `GET /agents/{id}` lookup. It exercises the same selection path a name search ends in.
+ *
+ * Note the form only offers this control for a client NOBODY INTRODUCED. Where an agent
+ * registered the client, the agent of record is bound server-side and rendered read-only, so
+ * there is nothing to pick — a spec needing that case must assert the name instead.
+ */
+export async function selectAgentOfRecord(page: Page, agentId: string): Promise<void> {
+  await page.getByRole('button', { name: /Search agents by name or licence/ }).click();
+  await page.getByPlaceholder('Type a name or licence number').fill(agentId);
+  // The row renders the agent's PERSON name, resolved through party -- so it is matched as the
+  // one option in the list rather than by a name this helper cannot know.
+  const option = page.getByRole('option').first();
+  await expect(option).toBeVisible({ timeout: 10_000 });
+  await option.click();
+}
