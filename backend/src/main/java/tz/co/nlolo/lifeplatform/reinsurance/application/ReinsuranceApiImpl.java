@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceValidationException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyNotFoundException;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyStatus;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyType;
+import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyUtilisationView;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyView;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.Cession;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.CessionCalculator;
@@ -19,6 +20,8 @@ import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.CessionRepository;
 import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.ClaimRecoveryRepository;
 import tz.co.nlolo.lifeplatform.reinsurance.infrastructure.ReinsuranceTreatyRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -125,6 +128,35 @@ public class ReinsuranceApiImpl implements ReinsuranceApi {
         UUID tenantId = TenantContext.get();
         return cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(tenantId, policyNumber).stream()
             .map(this::toCessionView).toList();
+    }
+
+    @Override
+    public Page<CessionView> listCessionsForTreaty(UUID treatyId, Pageable pageable) {
+        UUID tenantId = TenantContext.get();
+        // 404s cross-tenant before anything is listed, so a treaty in another tenant cannot be
+        // probed for its cession count -- the same anti-enumeration order every per-entity read
+        // on this platform uses.
+        getTreaty(treatyId);
+        return cessionRepository.findByTenantIdAndTreatyIdOrderByCreatedAtDesc(tenantId, treatyId, pageable)
+            .map(this::toCessionView);
+    }
+
+    @Override
+    public TreatyUtilisationView getTreatyUtilisation(UUID treatyId) {
+        UUID tenantId = TenantContext.get();
+        TreatyView treaty = getTreaty(treatyId);
+
+        CessionRepository.TreatyTotals totals = cessionRepository.totalsForTreaty(tenantId, treatyId);
+        long count = totals.getCessionCount();
+        BigDecimal ceded = totals.getCededAmount();
+        BigDecimal cededPremium = totals.getCededPremium();
+
+        // The currency comes from the TREATY's own retention limit, not from a cession row: with
+        // no cessions there is no row to read one off, and a treaty with no currency on screen
+        // reads as a failure to load rather than as "nothing ceded yet". Every cession against a
+        // treaty is in that treaty's currency by construction.
+        String currency = treaty.retentionLimitCurrency();
+        return new TreatyUtilisationView(treatyId, count, ceded, currency, cededPremium, currency);
     }
 
     @Override

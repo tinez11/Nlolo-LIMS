@@ -1,15 +1,22 @@
 import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import type { CessionView } from '@/api/types';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
-import { ErrorPanel, LoadingBlock } from '@/components/states';
+import { EmptyState, ErrorPanel, LoadingBlock, TableSkeleton } from '@/components/states';
+import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectTreatyDetail, useReinsuranceStore } from '@/store/reinsuranceStore';
+import {
+  selectTreatyCessions,
+  selectTreatyDetail,
+  selectTreatyUtilisation,
+  useReinsuranceStore,
+} from '@/store/reinsuranceStore';
 
 /**
  * The "acts" half of drawer-previews-page-acts, though there is nothing to
@@ -84,7 +91,113 @@ export function TreatyDetailPage() {
           </section>
         </div>
       )}
+
+      {treaty && treatyId && <TreatyCessions treatyId={treatyId} />}
     </>
+  );
+}
+
+/**
+ * What has actually been ceded to this treaty.
+ *
+ * The terms above say what the treaty PROMISES; this says what it has taken. Until
+ * `GET /treaties/{id}/cessions` and `.../utilisation` existed neither could be asked:
+ * cessions were reachable only through the policy they were made on, so a treaty could
+ * state a retention limit and a cession percent beside hundreds of cessions naming it
+ * and show none of them.
+ *
+ * The totals come from the server, never from summing the page below. Summing a page
+ * would report one page's worth of cession as the treaty's utilisation -- a figure that
+ * is always plausible and always too small.
+ */
+function TreatyCessions({ treatyId }: { treatyId: string }) {
+  const utilisation = useReinsuranceStore(selectTreatyUtilisation(treatyId));
+  const cessions = useReinsuranceStore(selectTreatyCessions(treatyId));
+  const loadTreatyUtilisation = useReinsuranceStore((s) => s.loadTreatyUtilisation);
+  const loadTreatyCessions = useReinsuranceStore((s) => s.loadTreatyCessions);
+
+  useEffect(() => {
+    void loadTreatyUtilisation(treatyId);
+    void loadTreatyCessions(treatyId);
+  }, [treatyId, loadTreatyUtilisation, loadTreatyCessions]);
+
+  const totals = utilisation.data;
+  const rows = cessions.data?.items ?? [];
+
+  const columns: Column<CessionView>[] = [
+    {
+      key: 'policyNumber',
+      header: 'Policy',
+      render: (c) => <span className="font-mono font-medium">{c.policyNumber ?? '—'}</span>,
+    },
+    {
+      key: 'cededAmount',
+      header: 'Ceded',
+      align: 'right',
+      render: (c) => (c.cededAmount ? formatMoney(c.cededAmount) : '—'),
+    },
+    {
+      key: 'cededPremium',
+      header: 'Ceded premium',
+      align: 'right',
+      secondary: true,
+      // An em dash, not a zero: a treaty type that cedes risk without a modelled premium
+      // share genuinely has none, and a 0.00 would read as "nothing was due".
+      render: (c) => (c.cededPremium ? formatMoney(c.cededPremium) : '—'),
+    },
+  ];
+
+  return (
+    <div className="px-6 pb-8">
+      <section className="rounded-lg border border-border bg-surface">
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b border-border px-4 py-3">
+          <h2 className="text-sm font-medium">Ceded to this treaty</h2>
+          {totals && (
+            <span className="ml-auto flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs tabular-nums">
+              <span>
+                <span className="text-muted-foreground">Cessions </span>
+                {totals.cessionCount}
+              </span>
+              <span>
+                <span className="text-muted-foreground">Risk ceded </span>
+                {totals.cededAmount ? formatMoney(totals.cededAmount) : '—'}
+              </span>
+              <span>
+                <span className="text-muted-foreground">Premium ceded </span>
+                {totals.cededPremium ? formatMoney(totals.cededPremium) : '—'}
+              </span>
+            </span>
+          )}
+        </div>
+
+        {isInitialLoad(cessions) ? (
+          <TableSkeleton columns={columns.length} />
+        ) : cessions.status === 'error' && cessions.error && cessions.data === null ? (
+          <ErrorPanel error={cessions.error} onRetry={() => void loadTreatyCessions(treatyId)} />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            title="Nothing ceded yet"
+            description="Cessions are recorded automatically as covered policies go on risk. An active treaty with none is an ordinary state, not a gap."
+          />
+        ) : (
+          <>
+            <DataTable
+              columns={columns}
+              rows={rows}
+              rowKey={(c) => c.cessionId ?? JSON.stringify(c)}
+              caption="Cessions made to this treaty"
+            />
+            {cessions.data && (
+              <Pager
+                page={cessions.data.page}
+                busy={cessions.status === 'loading'}
+                onPageChange={(next) => void loadTreatyCessions(treatyId, next)}
+              />
+            )}
+          </>
+        )}
+      </section>
+    </div>
   );
 }
 

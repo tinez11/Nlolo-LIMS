@@ -195,6 +195,8 @@ export type TreatyType = ReinsuranceComponents['schemas']['TreatyType'];
 export type TreatyStatus = ReinsuranceComponents['schemas']['TreatyStatus'];
 export type CreateTreatyRequest = ReinsuranceComponents['schemas']['CreateTreatyRequest'];
 export type CessionView = ReinsuranceComponents['schemas']['CessionView'];
+/** A treaty's own totals. Count plus two money figures, never a percentage -- see the endpoint. */
+export type TreatyUtilisationView = ReinsuranceComponents['schemas']['TreatyUtilisationView'];
 export type ClaimRecoveryView = ReinsuranceComponents['schemas']['ClaimRecoveryView'];
 
 export const TREATY_TYPES: readonly TreatyType[] = ['QUOTA_SHARE', 'SURPLUS', 'XOL'];

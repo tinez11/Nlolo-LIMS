@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceApi;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyStatus;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyView;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -65,6 +66,40 @@ public class TreatyController {
     public ResponseEntity<TreatyResponseDto> getTreaty(@PathVariable UUID treatyId) {
         TreatyView view = reinsuranceApi.getTreaty(treatyId);
         return ResponseEntity.ok(TreatyResponseDto.from(view));
+    }
+
+    /**
+     * What has actually been ceded to this treaty.
+     *
+     * <p>The read a treaty most obviously needs and did not have: cessions could be listed only
+     * through the policy they were made on, so a treaty stated a retention limit and a cession
+     * percent while hundreds of cessions naming it were unreachable from it.
+     *
+     * <p>Paged, unlike {@code GET /policies/{n}/cessions}. A policy has a handful; a treaty gains
+     * one per policy it covers for as long as it runs.
+     */
+    @GetMapping("/treaties/{treatyId}/cessions")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<CessionSearchResponseDto> listTreatyCessions(@PathVariable UUID treatyId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        return ResponseEntity.ok(CessionSearchResponseDto.from(reinsuranceApi.listCessionsForTreaty(
+            treatyId, PageRequest.of(page, Math.min(pageSize, 100)))));
+    }
+
+    /**
+     * The treaty's totals, summed server-side.
+     *
+     * <p>Its own path rather than fields on {@code GET /treaties/{n}} so that listing treaties
+     * does not aggregate the whole cession table per row, and separate from the paged list above
+     * because a caller must never sum the page in hand and call it the treaty's utilisation --
+     * that figure is always too small and always plausible.
+     */
+    @GetMapping("/treaties/{treatyId}/utilisation")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<TreatyUtilisationResponseDto> getTreatyUtilisation(@PathVariable UUID treatyId) {
+        return ResponseEntity.ok(TreatyUtilisationResponseDto.from(
+            reinsuranceApi.getTreatyUtilisation(treatyId)));
     }
 
     @GetMapping("/treaties")

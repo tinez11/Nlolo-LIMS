@@ -16,6 +16,7 @@ import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import tz.co.nlolo.lifeplatform.product.api.ProductSummaryView;
 import tz.co.nlolo.lifeplatform.reinsurance.api.ReinsuranceApi;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyType;
+import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyUtilisationView;
 import tz.co.nlolo.lifeplatform.reinsurance.api.TreatyView;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.Cession;
 import tz.co.nlolo.lifeplatform.reinsurance.domain.PolicyProjection;
@@ -25,6 +26,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationEventPublisher;
@@ -371,5 +374,77 @@ class CessionEndToEndTest {
         assertThat(eventRecorder.ofType("reinsurance.CessionRecorded"))
             .as("a redelivered PolicyIssued must not publish a second CessionRecorded")
             .hasSize(1);
+    }
+
+    // ---- What has been ceded TO a treaty ------------------------------------------------------
+
+    /**
+     * Cessions could previously be reached only through the policy they were made on, so a treaty
+     * stated a retention limit and a cession percent while every cession naming it was
+     * unreachable from it -- "how much have we ceded to this reinsurer" had no query behind it.
+     */
+    @Test
+    void aTreatyListsTheCessionsMadeToItAndTotalsThem() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CESSION-E2E-BYTREATY");
+        TreatyView treaty = createTreaty(tenantId, TreatyType.QUOTA_SHARE,
+            new BigDecimal("0.00"), new BigDecimal("30.00"));
+
+        issuePolicy(tenantId, fixture, new BigDecimal("2000000"), new BigDecimal("100000.00"));
+        issuePolicy(tenantId, fixture, new BigDecimal("1000000"), new BigDecimal("50000.00"));
+
+        TenantContext.set(tenantId);
+        assertThat(reinsuranceApi.listCessionsForTreaty(treaty.treatyId(), Pageable.unpaged()))
+            .as("both policies ceded to this treaty")
+            .hasSize(2);
+
+        TreatyUtilisationView utilisation = reinsuranceApi.getTreatyUtilisation(treaty.treatyId());
+        assertThat(utilisation.cessionCount()).isEqualTo(2);
+        // 30% of 2,000,000 + 30% of 1,000,000.
+        assertThat(utilisation.cededAmount()).isEqualByComparingTo("900000.00");
+        // 30% of 100,000 + 30% of 50,000.
+        assertThat(utilisation.cededPremiumAmount()).isEqualByComparingTo("45000.00");
+    }
+
+    /**
+     * The totals are summed in the DATABASE, not over the page in hand. Summing a page would
+     * report one page's worth of cession as the treaty's utilisation -- a number that is wrong in
+     * the way nobody notices, because it is always plausible and always too small.
+     */
+    @Test
+    void treatyTotalsCoverEveryCessionNotJustTheFirstPage() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CESSION-E2E-PAGED");
+        TreatyView treaty = createTreaty(tenantId, TreatyType.QUOTA_SHARE,
+            new BigDecimal("0.00"), new BigDecimal("30.00"));
+
+        for (int i = 0; i < 3; i++) {
+            issuePolicy(tenantId, fixture, new BigDecimal("1000000"), new BigDecimal("50000.00"));
+        }
+
+        TenantContext.set(tenantId);
+        // One row per page, so a page-summing implementation would report 300,000.00 here.
+        assertThat(reinsuranceApi.listCessionsForTreaty(treaty.treatyId(), PageRequest.of(0, 1)).getContent())
+            .hasSize(1);
+        assertThat(reinsuranceApi.getTreatyUtilisation(treaty.treatyId()).cededAmount())
+            .isEqualByComparingTo("900000.00");
+    }
+
+    /** An ACTIVE treaty nobody has ceded to yet reports zero, never null -- a null on a money
+     *  screen reads as a failure to load rather than as "nothing ceded". */
+    @Test
+    void aTreatyWithNoCessionsReportsZeroRatherThanNull() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        TreatyView treaty = createTreaty(tenantId, TreatyType.QUOTA_SHARE,
+            new BigDecimal("0.00"), new BigDecimal("30.00"));
+
+        TenantContext.set(tenantId);
+        TreatyUtilisationView utilisation = reinsuranceApi.getTreatyUtilisation(treaty.treatyId());
+        assertThat(utilisation.cessionCount()).isZero();
+        assertThat(utilisation.cededAmount()).isEqualByComparingTo("0");
+        assertThat(utilisation.cededPremiumAmount()).isEqualByComparingTo("0");
+        // The currency comes from the treaty itself, since there is no cession row to read one off.
+        assertThat(utilisation.cededCurrency()).isEqualTo("TZS");
     }
 }

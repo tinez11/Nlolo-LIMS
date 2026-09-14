@@ -3,12 +3,16 @@ import {
   confirmRecovery,
   createTreaty,
   getTreaty,
+  getTreatyUtilisation,
   listCessionsForPolicy,
+  listCessionsForTreaty,
   listRecoveriesForClaim,
   listTreaties,
 } from '@/api/reinsurance';
 import type {
   CessionView,
+  Page,
+  TreatyUtilisationView,
   ClaimRecoveryView,
   CreateTreatyRequest,
   TreatyStatus,
@@ -30,6 +34,9 @@ interface ReinsuranceState {
   // existing id to key against yet -- same shape as products' `creating`.
   creating: Resource<TreatyView>;
   cessions: Keyed<CessionView[]>;
+  /** Keyed by TREATY, not policy: "what has this reinsurer taken" is a different question. */
+  treatyCessions: Keyed<Page<CessionView>>;
+  treatyUtilisation: Keyed<TreatyUtilisationView>;
   recoveries: Keyed<ClaimRecoveryView[]>;
   confirmingRecovery: Keyed<true>;
 
@@ -38,6 +45,8 @@ interface ReinsuranceState {
   createTreaty: (request: CreateTreatyRequest, attempt: MutationAttempt) => Promise<void>;
   resetCreateTreaty: () => void;
   loadCessions: (policyNumber: string) => Promise<void>;
+  loadTreatyCessions: (treatyId: string, page?: number) => Promise<void>;
+  loadTreatyUtilisation: (treatyId: string) => Promise<void>;
   loadRecoveries: (claimId: string) => Promise<void>;
   confirmRecovery: (claimId: string, recoveryId: string, attempt: MutationAttempt) => Promise<void>;
   resetConfirmRecovery: (recoveryId: string) => void;
@@ -48,6 +57,8 @@ export const useReinsuranceStore = create<ReinsuranceState>((set, getState) => (
   detail: {},
   creating: idle(),
   cessions: {},
+  treatyCessions: {},
+  treatyUtilisation: {},
   recoveries: {},
   confirmingRecovery: {},
 
@@ -97,6 +108,25 @@ export const useReinsuranceStore = create<ReinsuranceState>((set, getState) => (
       () => listCessionsForPolicy(policyNumber),
     ),
 
+  // Keyed by treaty, separately from `cessions` (keyed by POLICY): the two answer different
+  // questions -- "what was ceded on this contract" and "what has this reinsurer taken" -- and
+  // one slot would let a policy's cessions render under a treaty's heading.
+  loadTreatyCessions: (treatyId, page = 0) =>
+    track(
+      `reinsurance.treatyCessions.${treatyId}`,
+      getState().treatyCessions[treatyId] ?? idle<Page<CessionView>>(),
+      (next) => set((s) => ({ treatyCessions: { ...s.treatyCessions, [treatyId]: next } })),
+      () => listCessionsForTreaty(treatyId, page),
+    ),
+
+  loadTreatyUtilisation: (treatyId) =>
+    track(
+      `reinsurance.treatyUtilisation.${treatyId}`,
+      getState().treatyUtilisation[treatyId] ?? idle<TreatyUtilisationView>(),
+      (next) => set((s) => ({ treatyUtilisation: { ...s.treatyUtilisation, [treatyId]: next } })),
+      () => getTreatyUtilisation(treatyId),
+    ),
+
   loadRecoveries: (claimId) =>
     track(
       `reinsurance.recoveries.${claimId}`,
@@ -133,6 +163,10 @@ export const selectTreatyDetail = (treatyId: string) => (s: ReinsuranceState) =>
   s.detail[treatyId] ?? idle<TreatyView>();
 export const selectCessions = (policyNumber: string) => (s: ReinsuranceState) =>
   s.cessions[policyNumber] ?? idle<CessionView[]>();
+export const selectTreatyCessions = (treatyId: string) => (s: ReinsuranceState) =>
+  s.treatyCessions[treatyId] ?? idle<Page<CessionView>>();
+export const selectTreatyUtilisation = (treatyId: string) => (s: ReinsuranceState) =>
+  s.treatyUtilisation[treatyId] ?? idle<TreatyUtilisationView>();
 export const selectRecoveries = (claimId: string) => (s: ReinsuranceState) =>
   s.recoveries[claimId] ?? idle<ClaimRecoveryView[]>();
 export const selectConfirmingRecovery = (recoveryId: string) => (s: ReinsuranceState) =>
