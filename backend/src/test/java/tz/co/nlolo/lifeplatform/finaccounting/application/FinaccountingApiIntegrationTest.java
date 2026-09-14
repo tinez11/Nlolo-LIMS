@@ -5,7 +5,9 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.finaccounting.api.ChartOfAccountView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.FinaccountingApi;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.GlPostingView;
+import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
@@ -400,5 +402,181 @@ class FinaccountingApiIntegrationTest {
         JournalEntry entry = balancedEntryAgainst(
             tenantId, PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM, "TZS");
         assertThat(finaccountingApiImpl.postEntry(entry)).isPresent();
+    }
+
+    // ---- Balances: the aggregation this module never had -------------------------------------
+
+    private AccountBalanceView accountIn(TrialBalanceView balance, String accountCode) {
+        return balance.accounts().stream()
+            .filter(a -> a.accountCode().equals(accountCode)).findFirst()
+            .orElseThrow(() -> new AssertionError("no account " + accountCode + " in the trial balance"));
+    }
+
+    /**
+     * Nothing on this platform summed a posting before this: a ledger of thousands of balanced
+     * entries could not state the balance of one account, which is what a general ledger is for.
+     */
+    @Test
+    void trialBalanceStatesEachPostedAccountsOwnDebitsAndCredits() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        finaccountingApiImpl.postEntry(
+            balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-1", "2026-08", "POL-0001"));
+        TenantContext.set(tenantId);
+
+        TrialBalanceView balance = finaccountingApi.trialBalance(null);
+
+        assertThat(accountIn(balance, PostingRule.CASH).ownDebit()).isEqualByComparingTo("15000.00");
+        assertThat(accountIn(balance, PostingRule.CASH).ownCredit()).isEqualByComparingTo("0");
+        assertThat(accountIn(balance, PostingRule.PREMIUM_RECEIVABLE).ownCredit())
+            .isEqualByComparingTo("15000.00");
+    }
+
+    /**
+     * THE ROLL-UP, which is the whole reason the chart is a hierarchy. A parent takes no postings
+     * of its own -- `postingAllowed` is false for it and the ledger refuses a leg naming it -- so
+     * without rolling up, every summary account would report zero against a branch holding
+     * millions.
+     */
+    @Test
+    void aParentAccountRollsUpItsDescendantsWhileReportingNoPostingsOfItsOwn() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        finaccountingApiImpl.postEntry(
+            balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-1", "2026-08", "POL-0001"));
+        TenantContext.set(tenantId);
+
+        TrialBalanceView balance = finaccountingApi.trialBalance(null);
+        AccountBalanceView leaf = accountIn(balance, PostingRule.CASH);
+        AccountBalanceView root = accountIn(balance, "1000");
+
+        // CASH is 1120, under 1100 "Cash and Cash Equivalents", under 1000 "Assets" -- so this is
+        // a TWO-level walk, and asserting the intermediate is what tells a real recursive roll-up
+        // apart from one that only sums direct children.
+        AccountBalanceView intermediate = accountIn(balance, "1100");
+
+        // The leaf took the posting...
+        assertThat(leaf.ownDebit()).isEqualByComparingTo("15000.00");
+        // ...neither account above it took any of its own...
+        assertThat(intermediate.ownDebit()).isEqualByComparingTo("0");
+        assertThat(root.ownDebit()).isEqualByComparingTo("0");
+        // ...and both still report it, because both are above it in the chart.
+        assertThat(intermediate.debit()).isEqualByComparingTo("15000.00");
+        assertThat(root.debit()).isEqualByComparingTo("15000.00");
+        assertThat(root.postingAllowed()).isFalse();
+
+        // A sibling branch must NOT absorb it -- otherwise "rolls up" would just mean "sums
+        // everything".
+        assertThat(accountIn(balance, "2000").debit()).isEqualByComparingTo("0");
+    }
+
+    /**
+     * Signed in the account's OWN normal direction, so a positive balance always means "normal"
+     * and a negative one is a real anomaly rather than an artefact of which way the subtraction
+     * ran. CASH is an asset (DR-normal); PREMIUM_RECEIVABLE was credited here.
+     */
+    @Test
+    void balanceIsNettedInTheAccountsOwnNormalDirection() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        finaccountingApiImpl.postEntry(
+            balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-1", "2026-08", "POL-0001"));
+        TenantContext.set(tenantId);
+
+        TrialBalanceView balance = finaccountingApi.trialBalance(null);
+        assertThat(accountIn(balance, PostingRule.CASH).balance())
+            .as("a debit on a debit-normal account is a positive balance")
+            .isEqualByComparingTo("15000.00");
+    }
+
+    /**
+     * THE TRAP THIS PINS. Totals sum each account's OWN postings, never the rolled ones: adding
+     * rolled figures counts every posting once for its account and again for every ancestor
+     * above it, so a perfectly sound ledger reports a wild imbalance. A negative control is the
+     * only way to show the totals are not merely "some equal pair of numbers": the entry below
+     * is balanced, so DR must equal CR, AND each must equal the one posting's amount rather than
+     * a multiple of it.
+     */
+    @Test
+    void trialBalanceTotalsSumOwnPostingsSoRollUpDoesNotDoubleCount() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        finaccountingApiImpl.postEntry(
+            balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-1", "2026-08", "POL-0001"));
+        TenantContext.set(tenantId);
+
+        TrialBalanceView balance = finaccountingApi.trialBalance(null);
+
+        assertThat(balance.totalDebit()).isEqualByComparingTo("15000.00");
+        assertThat(balance.totalCredit()).isEqualByComparingTo("15000.00");
+        assertThat(balance.balanced()).isTrue();
+    }
+
+    /** A period filters the aggregation; a period with no postings is an empty, balanced ledger
+     *  rather than an error or a null. */
+    @Test
+    void trialBalanceIsScopedToThePeriodAndEchoesItBack() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        finaccountingApiImpl.postEntry(
+            balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-1", "2026-08", "POL-0001"));
+        TenantContext.set(tenantId);
+
+        TrialBalanceView august = finaccountingApi.trialBalance("2026-08");
+        assertThat(august.period()).isEqualTo("2026-08");
+        assertThat(august.totalDebit()).isEqualByComparingTo("15000.00");
+
+        TrialBalanceView september = finaccountingApi.trialBalance("2026-09");
+        assertThat(september.totalDebit()).isEqualByComparingTo("0");
+        assertThat(september.balanced()).as("nothing posted is still in balance").isTrue();
+        assertThat(accountIn(september, PostingRule.CASH).ownDebit()).isEqualByComparingTo("0");
+    }
+
+    // ---- The account filter that lets a balance be opened up ---------------------------------
+
+    /**
+     * Every posting already carried an account code, so "what made up this balance" was in the
+     * data and unanswerable through the API -- which is why the chart of accounts and the GL
+     * postings list could not reach each other.
+     */
+    @Test
+    void journalEntriesCanBeFilteredToOneAccount() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        // Touches CASH and PREMIUM_RECEIVABLE.
+        finaccountingApiImpl.postEntry(
+            balancedEntry(tenantId, "billing.PremiumInvoiceGenerated", "inv-1", "2026-08", "POL-0001"));
+        // Touches PREMIUM_RECEIVABLE and UNEARNED_PREMIUM -- so CASH must NOT match it.
+        finaccountingApiImpl.postEntry(
+            balancedEntryAgainst(tenantId, PostingRule.PREMIUM_RECEIVABLE, PostingRule.UNEARNED_PREMIUM, "TZS"));
+        TenantContext.set(tenantId);
+
+        assertThat(finaccountingApi.listJournalEntries(null, null, PostingRule.CASH, Pageable.unpaged()))
+            .as("only the entry with a CASH leg")
+            .hasSize(1);
+        assertThat(finaccountingApi.listJournalEntries(null, null, PostingRule.PREMIUM_RECEIVABLE, Pageable.unpaged()))
+            .as("both entries touch premium receivable")
+            .hasSize(2);
+        // Negative control: without the filter the query is genuinely wider, so the numbers above
+        // are a filter doing something rather than a short list.
+        assertThat(finaccountingApi.listJournalEntries(null, null, null, Pageable.unpaged())).hasSize(2);
+    }
+
+    /** An entry is returned ONCE however many of its legs hit the account. A join rather than an
+     *  EXISTS would return a two-legged entry twice, and paging duplicates is how a page silently
+     *  goes short. */
+    @Test
+    void anEntryWithBothLegsOnOneAccountIsReturnedOnce() {
+        UUID tenantId = UUID.randomUUID();
+        seedChart(tenantId);
+        JournalEntry bothLegsSameAccount = new JournalEntry(tenantId, "test.SameAccountBothLegs",
+            "same-1", "2026-08", "POL-0001", "system:test");
+        bothLegsSameAccount.addLeg(PostingRule.CASH, PostingDirection.DR, new BigDecimal("100.00"), "TZS");
+        bothLegsSameAccount.addLeg(PostingRule.CASH, PostingDirection.CR, new BigDecimal("100.00"), "TZS");
+        finaccountingApiImpl.postEntry(bothLegsSameAccount);
+        TenantContext.set(tenantId);
+
+        assertThat(finaccountingApi.listJournalEntries(null, null, PostingRule.CASH, Pageable.unpaged()))
+            .hasSize(1);
     }
 }

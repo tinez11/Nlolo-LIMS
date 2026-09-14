@@ -39,6 +39,7 @@ export function AccountTreeView({
   onToggle,
   renderActions,
   renderForm,
+  renderBalance,
 }: {
   nodes: AccountNode[];
   expanded: Set<string>;
@@ -46,6 +47,9 @@ export function AccountTreeView({
   renderActions: (node: AccountNode) => ReactNode;
   /** The rename/delete form for the one row that has it open, or null. */
   renderForm: (node: AccountNode) => ReactNode;
+  /** The account's balance cell, or nothing when balances have not loaded. A render prop
+   *  like the two above, so this component stays unaware of money and of routing. */
+  renderBalance?: ((node: AccountNode) => ReactNode) | undefined;
 }) {
   return (
     <>
@@ -56,6 +60,7 @@ export function AccountTreeView({
       <div className="flex items-center border-b border-border px-4 py-2.5 text-xs font-medium text-muted-foreground">
         <span>Account</span>
         <span className="ml-auto flex shrink-0 items-center pl-4">
+          <span className="w-44 pr-6 text-right">Balance</span>
           <span className="w-20">Type</span>
           <span className="w-16">Normal</span>
           <span className="w-20">Status</span>
@@ -72,6 +77,7 @@ export function AccountTreeView({
             onToggle={onToggle}
             renderActions={renderActions}
             renderForm={renderForm}
+            renderBalance={renderBalance}
           />
         ))}
       </ul>
@@ -85,12 +91,14 @@ function AccountTreeRow({
   onToggle,
   renderActions,
   renderForm,
+  renderBalance,
 }: {
   node: AccountNode;
   expanded: Set<string>;
   onToggle: (accountCode: string) => void;
   renderActions: (node: AccountNode) => ReactNode;
   renderForm: (node: AccountNode) => ReactNode;
+  renderBalance?: ((node: AccountNode) => ReactNode) | undefined;
 }) {
   const hasChildren = node.children.length > 0;
   const isOpen = expanded.has(node.accountCode);
@@ -166,6 +174,7 @@ function AccountTreeRow({
           </span>
 
           <span className="ml-auto flex shrink-0 items-center pl-4 text-xs text-muted-foreground">
+            <span className="w-44 pr-6 text-right tabular-nums">{renderBalance ? renderBalance(node) : null}</span>
             <span className="w-20">{accountTypeLabel(node.accountType)}</span>
             {/* DR/CR unexpanded: it is the abbreviation this audience writes itself,
                 and the header strip above says which column it is. */}
@@ -204,6 +213,7 @@ function AccountTreeRow({
               onToggle={onToggle}
               renderActions={renderActions}
               renderForm={renderForm}
+              renderBalance={renderBalance}
             />
           ))}
         </ul>

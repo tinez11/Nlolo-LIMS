@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, RotateCcw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { AccountType, ChartOfAccountView } from '@/api/types';
 import { FilterChip } from '@/components/FilterChip';
 import { FormField } from '@/components/FormField';
@@ -13,6 +13,7 @@ import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
+import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectDeletingAccount,
@@ -94,6 +95,68 @@ export function ChartOfAccountsPage() {
   useEffect(() => {
     void loadChartOfAccounts();
   }, [loadChartOfAccounts]);
+
+  // Balances come from their own endpoint, so the structural read stays cheap. Inception-to-date
+  // for now: the chart has no period control, and showing a period-scoped figure without saying
+  // which period would be a number nobody could reconcile.
+  const trialBalance = useFinaccountingStore((s) => s.trialBalance);
+  const loadTrialBalance = useFinaccountingStore((s) => s.loadTrialBalance);
+  useEffect(() => {
+    void loadTrialBalance();
+  }, [loadTrialBalance]);
+
+  const balancesByCode = useMemo(() => {
+    const balances = trialBalance.data?.accounts ?? [];
+    return new Map(balances.filter((a) => a.accountCode).map((a) => [a.accountCode, a]));
+  }, [trialBalance.data]);
+
+  /**
+   * One account's rolled balance, linking through to the postings behind it.
+   *
+   * <p>The link is the point: an account and its postings were two screens in the Finance nav
+   * with no way to reach each other, because `GET /gl-postings` could not filter by account.
+   * A balance you cannot open is a number you have to take on trust.
+   *
+   * <p>Nothing is rendered while the balances are still loading, and a dash for an account with
+   * no postings -- never a zero, which on a ledger reads as "counted, and it came to nothing"
+   * rather than "not counted".
+   */
+  function renderBalance(node: { accountCode: string }) {
+    const account = balancesByCode.get(node.accountCode);
+    if (!account) return null;
+    const hasMovement = account.debit?.amount !== '0' || account.credit?.amount !== '0';
+    if (!hasMovement) return <span className="text-subtle-foreground">—</span>;
+
+    const figure = account.balance ? formatMoney(account.balance) : '—';
+
+    /*
+     * ONLY A POSTABLE ACCOUNT'S BALANCE IS A LINK, and this was found by clicking one.
+     *
+     * A summary account's figure is ROLLED UP from its descendants; it has no postings of its
+     * own, because the ledger refuses a leg naming it. `GET /gl-postings?accountCode=` matches
+     * direct legs, so linking a parent produced a real balance opening onto "0 matching journal
+     * entries" -- a number that looks wrong about itself.
+     *
+     * A parent's figure is therefore plain text. The postings are one level down, where the
+     * link is. Making the filter roll up too -- "everything under Assets" -- is a genuinely
+     * useful thing the backend does not do yet, and is not something to fake here by linking to
+     * a query that answers a different question.
+     */
+    if (!account.postingAllowed) {
+      return <span title="A summary account: its postings are on the accounts beneath it">{figure}</span>;
+    }
+
+    return (
+      <Link
+        to={`../gl-postings?accountCode=${encodeURIComponent(node.accountCode)}`}
+        relative="path"
+        className="underline-offset-2 hover:underline"
+        title={`Postings behind ${node.accountCode}`}
+      >
+        {figure}
+      </Link>
+    );
+  }
 
   // Debounced, matching this console's other list searches: a keystroke should not
   // re-filter 36 rows on every character.
@@ -254,6 +317,7 @@ export function ChartOfAccountsPage() {
         onToggle={toggle}
         renderActions={renderActions}
         renderForm={renderForm}
+        renderBalance={renderBalance}
       />
     ) : (
       <AccountTableView
@@ -290,6 +354,43 @@ export function ChartOfAccountsPage() {
       />
 
       <div className="space-y-4 px-6 pb-6">
+        {/*
+          THE ONE ASSERTION A LEDGER MUST ALWAYS BE ABLE TO MAKE.
+
+          Until the balances endpoint existed nothing on this platform could sum a posting, so
+          "do the books balance" was unanswerable from the console. `balanced` is the SERVER's
+          own verdict, not a comparison of two decimal strings done here -- money arithmetic
+          stays off the client, and a totals line that could be silently wrong is precisely why.
+
+          Inception-to-date, and it says so: a balance with no period beside it is a number
+          nobody can reconcile against anything.
+        */}
+        {trialBalance.data && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs">
+            <span className="font-medium">Trial balance</span>
+            <span className="text-muted-foreground">
+              inception to date
+            </span>
+            <span className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 tabular-nums">
+              <span>
+                <span className="text-muted-foreground">Debits </span>
+                {trialBalance.data.totalDebit ? formatMoney(trialBalance.data.totalDebit) : '—'}
+              </span>
+              <span>
+                <span className="text-muted-foreground">Credits </span>
+                {trialBalance.data.totalCredit ? formatMoney(trialBalance.data.totalCredit) : '—'}
+              </span>
+              <span
+                className={
+                  trialBalance.data.balanced ? 'text-status-success-fg' : 'text-status-danger-fg'
+                }
+              >
+                {trialBalance.data.balanced ? 'In balance' : 'OUT OF BALANCE'}
+              </span>
+            </span>
+          </div>
+        )}
+
         {creatingOpen && <CreateAccountForm onDone={() => setCreatingOpen(false)} />}
 
         <div className="rounded-lg border border-border bg-surface">

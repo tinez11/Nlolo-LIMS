@@ -50,9 +50,41 @@ public interface FinaccountingApi {
      * merely wasteful while results were unbounded and would have been outright wrong once paged --
      * it would have filtered within a page and silently returned short pages (finding M8).
      */
-    Page<JournalEntryView> listJournalEntries(String period, String policyNumber, Pageable pageable);
+    /**
+     * @param accountCode restricts to entries with at least one LEG against this account.
+     *     Every posting already carries an {@code account_code}, so "what hit Premium
+     *     Receivables" was answerable from the data and unanswerable through this API -- which
+     *     is also why the chart of accounts could not link to the postings behind a balance.
+     *     Null for no account filter.
+     */
+    Page<JournalEntryView> listJournalEntries(String period, String policyNumber, String accountCode,
+                                               Pageable pageable);
+
+    /** Pre-account-filter overload, kept so existing callers and tests read unchanged. */
+    default Page<JournalEntryView> listJournalEntries(String period, String policyNumber, Pageable pageable) {
+        return listJournalEntries(period, policyNumber, null, pageable);
+    }
 
     JournalEntryView getJournalEntry(UUID journalEntryId);
+
+    /**
+     * The chart with its balances, and whether the ledger balances.
+     *
+     * <p>The aggregation this module never had. Nothing anywhere summed a posting, so a ledger
+     * holding thousands of balanced entries could not state the balance of a single account --
+     * and the chart of accounts, hierarchy and all, was a structural reference list rather than
+     * a ledger view.
+     *
+     * <p>Balances ROLL UP the hierarchy: a parent reports itself plus every descendant. That is
+     * the standard convention and the one this chart is shaped for -- {@code postingAllowed}
+     * marks the accounts that accept direct postings, which makes every other account a summary
+     * of the ones beneath it. {@link AccountBalanceView} carries the un-rolled figures beside
+     * the rolled ones so the two are never confused.
+     *
+     * @param period {@code YYYY-MM}, or null for inception-to-date. Echoed back on the result,
+     *     because a balance with no period beside it cannot be reconciled against anything.
+     */
+    TrialBalanceView trialBalance(String period);
 
     /** Not paged, deliberately: a chart of accounts is bounded reference data (36 rows per tenant
      * as {@code ChartOfAccountBlueprint} seeds it, a few hundred at most for a real

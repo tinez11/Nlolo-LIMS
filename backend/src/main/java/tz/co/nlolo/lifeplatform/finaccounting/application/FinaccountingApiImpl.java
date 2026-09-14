@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.finaccounting.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.finaccounting.api.AccountBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountHasChildrenException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountInUseException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.AccountStatus;
@@ -14,6 +15,7 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.GlPostingView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryNotFoundException;
 import tz.co.nlolo.lifeplatform.finaccounting.api.JournalEntryView;
 import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import tz.co.nlolo.lifeplatform.finaccounting.api.TrialBalanceView;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccount;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.ChartOfAccountBlueprint;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPosting;
@@ -29,10 +31,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -50,6 +56,8 @@ public class FinaccountingApiImpl implements FinaccountingApi {
 
     private static final Pattern ACCOUNT_CODE_PATTERN = Pattern.compile("^[1-5]\\d{3}$");
     private static final int MAX_ACCOUNT_NAME_LENGTH = 200;
+    /** Bound once: the roll-up below reads far better without `BigDecimal.` on every zero. */
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private final JournalEntryRepository journalEntryRepository;
     private final GlPostingRepository glPostingRepository;
@@ -183,20 +191,14 @@ public class FinaccountingApiImpl implements FinaccountingApi {
      * page contains.
      */
     @Override
-    public Page<JournalEntryView> listJournalEntries(String period, String policyNumber, Pageable pageable) {
+    public Page<JournalEntryView> listJournalEntries(String period, String policyNumber, String accountCode,
+                                                      Pageable pageable) {
         UUID tenantId = TenantContext.get();
-        Page<JournalEntry> entries;
-        if (period != null && policyNumber != null) {
-            entries = journalEntryRepository.findByTenantIdAndPeriodAndPolicyNumberOrderByPostedAtDesc(
-                tenantId, period, policyNumber, pageable);
-        } else if (period != null) {
-            entries = journalEntryRepository.findByTenantIdAndPeriodOrderByPostedAtDesc(tenantId, period, pageable);
-        } else if (policyNumber != null) {
-            entries = journalEntryRepository.findByTenantIdAndPolicyNumberOrderByPostedAtDesc(
-                tenantId, policyNumber, pageable);
-        } else {
-            entries = journalEntryRepository.findByTenantIdOrderByPostedAtDesc(tenantId, pageable);
-        }
+        // One null-safe query rather than a branch per filter combination: `accountCode` is a
+        // third optional dimension, and three of them is eight branches -- each one a place for a
+        // filter to be quietly dropped. See the repository method's own note.
+        Page<JournalEntry> entries = journalEntryRepository.search(
+            tenantId, period, policyNumber, accountCode, pageable);
         if (entries.isEmpty()) {
             // Short-circuited on purpose: an `IN ()` with an empty collection is a needless round
             // trip, and some dialects reject it outright.
@@ -224,6 +226,96 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         UUID tenantId = TenantContext.get();
         return chartOfAccountRepository.findByTenantIdOrderByAccountCodeAsc(tenantId).stream()
             .map(this::toView).toList();
+    }
+
+    @Override
+    public TrialBalanceView trialBalance(String period) {
+        UUID tenantId = TenantContext.get();
+        List<ChartOfAccount> accounts = chartOfAccountRepository.findByTenantIdOrderByAccountCodeAsc(tenantId);
+
+        // ONE aggregation for the whole chart, then rolled up in memory. The chart is bounded
+        // reference data (36 rows as seeded, a few hundred at most), so the walk is trivial --
+        // and doing the roll-up here rather than in a recursive SQL CTE keeps the hierarchy rule
+        // in one readable place that is testable without a database.
+        Map<String, BigDecimal[]> own = new HashMap<>();
+        for (Object[] row : glPostingRepository.sumByAccountAndDirection(tenantId, period)) {
+            String accountCode = (String) row[0];
+            PostingDirection direction = (PostingDirection) row[1];
+            BigDecimal amount = (BigDecimal) row[2];
+            BigDecimal[] slot = own.computeIfAbsent(accountCode, key -> new BigDecimal[] { ZERO, ZERO });
+            if (direction == PostingDirection.DR) {
+                slot[0] = slot[0].add(amount);
+            } else {
+                slot[1] = slot[1].add(amount);
+            }
+        }
+
+        Map<String, List<String>> childrenOf = new HashMap<>();
+        for (ChartOfAccount account : accounts) {
+            if (account.getParentCode() != null) {
+                childrenOf.computeIfAbsent(account.getParentCode(), key -> new ArrayList<>())
+                    .add(account.getAccountCode());
+            }
+        }
+
+        // Rolled = own + every descendant. Memoised, so a deep chart costs one visit per account
+        // rather than one per ancestor-path.
+        Map<String, BigDecimal[]> rolled = new HashMap<>();
+        for (ChartOfAccount account : accounts) {
+            rollUp(account.getAccountCode(), own, childrenOf, rolled, new HashSet<>());
+        }
+
+        List<AccountBalanceView> views = new ArrayList<>();
+        BigDecimal totalDebit = ZERO;
+        BigDecimal totalCredit = ZERO;
+        for (ChartOfAccount account : accounts) {
+            BigDecimal[] ownTotals = own.getOrDefault(account.getAccountCode(), new BigDecimal[] { ZERO, ZERO });
+            BigDecimal[] rolledTotals = rolled.getOrDefault(account.getAccountCode(), new BigDecimal[] { ZERO, ZERO });
+            BigDecimal balance = account.getNormalBalance() == PostingDirection.DR
+                ? rolledTotals[0].subtract(rolledTotals[1])
+                : rolledTotals[1].subtract(rolledTotals[0]);
+            views.add(new AccountBalanceView(account.getAccountCode(), account.getName(), account.getAccountType(),
+                account.getNormalBalance(), account.getParentCode(), account.getLevel(),
+                account.isPostingAllowed(), account.getStatus(), account.getCurrency(),
+                ownTotals[0], ownTotals[1], rolledTotals[0], rolledTotals[1], balance));
+
+            // THE TOTALS SUM OWN FIGURES, NEVER ROLLED ONES. Adding rolled balances would count
+            // each posting once for its own account and again for every ancestor above it, so a
+            // perfectly sound ledger would report a wild imbalance.
+            totalDebit = totalDebit.add(ownTotals[0]);
+            totalCredit = totalCredit.add(ownTotals[1]);
+        }
+
+        return new TrialBalanceView(period, views, totalDebit, totalCredit,
+            totalDebit.compareTo(totalCredit) == 0);
+    }
+
+    /**
+     * One account's own totals plus every descendant's.
+     *
+     * <p>{@code visiting} is not defensive padding: {@code parent_code} is a self-reference with
+     * no constraint preventing a cycle, and a cycle here would recurse until the stack gave out.
+     * Same reasoning {@code CommissionCalculator}'s hierarchy walk records for its own self-FK.
+     */
+    private BigDecimal[] rollUp(String accountCode, Map<String, BigDecimal[]> own,
+                                 Map<String, List<String>> childrenOf, Map<String, BigDecimal[]> memo,
+                                 Set<String> visiting) {
+        BigDecimal[] cached = memo.get(accountCode);
+        if (cached != null) {
+            return cached;
+        }
+        if (!visiting.add(accountCode)) {
+            return new BigDecimal[] { ZERO, ZERO };
+        }
+        BigDecimal[] totals = own.getOrDefault(accountCode, new BigDecimal[] { ZERO, ZERO }).clone();
+        for (String child : childrenOf.getOrDefault(accountCode, List.of())) {
+            BigDecimal[] childTotals = rollUp(child, own, childrenOf, memo, visiting);
+            totals[0] = totals[0].add(childTotals[0]);
+            totals[1] = totals[1].add(childTotals[1]);
+        }
+        visiting.remove(accountCode);
+        memo.put(accountCode, totals);
+        return totals;
     }
 
     /**

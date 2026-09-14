@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,6 +51,29 @@ public class ChartOfAccountController {
     public ResponseEntity<List<ChartOfAccountResponseDto>> listChartOfAccounts() {
         return ResponseEntity.ok(finaccountingApi.listChartOfAccounts().stream()
             .map(ChartOfAccountResponseDto::from).toList());
+    }
+
+    /**
+     * The chart with its balances, and whether the ledger balances.
+     *
+     * <p>A separate path from {@code GET /chart-of-accounts} rather than a flag on it. That one
+     * is bounded reference data a caller reads to render a tree or populate a picker; this one
+     * aggregates the whole posting table behind it. Folding them together would make every
+     * structural read pay for an aggregation it did not ask for, and would leave a caller unable
+     * to say which it wanted.
+     *
+     * <p>Balances ROLL UP: a parent reports itself plus every descendant. The totals do NOT --
+     * they sum each account's own postings, because adding rolled figures would count every
+     * posting once per ancestor and report a sound ledger as wildly out. See
+     * {@code TrialBalanceView}.
+     */
+    @GetMapping("/chart-of-accounts/balances")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<TrialBalanceResponseDto> trialBalance(
+            /* YYYY-MM, or omitted for inception-to-date. Echoed back on the response, because a
+               balance with no period beside it cannot be reconciled against anything. */
+            @RequestParam(required = false) String period) {
+        return ResponseEntity.ok(TrialBalanceResponseDto.from(finaccountingApi.trialBalance(period)));
     }
 
     @PostMapping("/chart-of-accounts")

@@ -3,6 +3,7 @@ import {
   createAccount,
   deleteAccount,
   getGlPosting,
+  getTrialBalance,
   listChartOfAccounts,
   listGlPostings,
   setAccountStatus,
@@ -15,6 +16,7 @@ import type {
   CreateAccountRequest,
   JournalEntryView,
   Page,
+  TrialBalanceView,
   UpdateAccountRequest,
 } from '@/api/types';
 import { idle, track, type Resource } from './createResourceSlice';
@@ -32,6 +34,10 @@ interface FinaccountingState {
   list: Resource<Page<JournalEntryView>>;
   detail: Keyed<JournalEntryView>;
   chartOfAccounts: Resource<ChartOfAccountView[]>;
+  /** The same chart WITH balances. Its own slot, not folded into chartOfAccounts: that one
+   *  is bounded reference data every screen reads, this one aggregates the posting table and
+   *  is re-fetched whenever the period changes. */
+  trialBalance: Resource<TrialBalanceView>;
   // A single slot, not keyed: creation makes a NEW account, so there is no
   // existing accountCode to key against yet -- same shape as products' `creating`.
   creating: Resource<ChartOfAccountView>;
@@ -46,6 +52,7 @@ interface FinaccountingState {
   loadList: (params: GlPostingSearchParams) => Promise<void>;
   loadDetail: (journalEntryId: string) => Promise<void>;
   loadChartOfAccounts: () => Promise<void>;
+  loadTrialBalance: (period?: string) => Promise<void>;
   createAccount: (request: CreateAccountRequest) => Promise<void>;
   resetCreateAccount: () => void;
   updateAccount: (accountCode: string, request: UpdateAccountRequest) => Promise<void>;
@@ -60,6 +67,7 @@ export const useFinaccountingStore = create<FinaccountingState>((set, getState) 
   list: idle(),
   detail: {},
   chartOfAccounts: idle(),
+  trialBalance: idle(),
   creating: idle(),
   updating: {},
   settingStatus: {},
@@ -87,6 +95,17 @@ export const useFinaccountingStore = create<FinaccountingState>((set, getState) 
       getState().chartOfAccounts,
       (next) => set({ chartOfAccounts: next }),
       () => listChartOfAccounts(),
+    ),
+
+  // Keyed by period in the track id so switching periods is a distinct in-flight request, but
+  // held in ONE slot: a trial balance is a single figure set for a single period, and keeping
+  // several around would let one period's totals render under another period's heading.
+  loadTrialBalance: (period) =>
+    track(
+      `finaccounting.trialBalance.${period ?? 'all'}`,
+      getState().trialBalance,
+      (next) => set({ trialBalance: next }),
+      () => getTrialBalance(period),
     ),
 
   createAccount: (request) =>

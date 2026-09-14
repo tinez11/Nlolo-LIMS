@@ -1,3 +1,4 @@
+import { X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { JournalEntryView } from '@/api/types';
@@ -31,6 +32,10 @@ export function GlPostingsPage() {
 
   const period = params.get('period') ?? '';
   const policyNumber = params.get('policyNumber') ?? '';
+  // Arrives from the chart of accounts: "show me what made up this balance". Deliberately NOT
+  // an input on this form -- an account code is chosen from the chart, where its name is, not
+  // typed as four digits into a box. It is shown as a removable chip instead.
+  const accountCode = params.get('accountCode') ?? '';
   const page = Math.max(0, Number(params.get('page') ?? '0') || 0);
 
   const [periodInput, setPeriodInput] = useState(period);
@@ -43,9 +48,10 @@ export function GlPostingsPage() {
     void loadList({
       ...(period ? { period } : {}),
       ...(policyNumber ? { policyNumber } : {}),
+      ...(accountCode ? { accountCode } : {}),
       page,
     });
-  }, [loadList, period, policyNumber, page]);
+  }, [loadList, period, policyNumber, accountCode, page]);
 
   function applyFilters(e: React.FormEvent) {
     e.preventDefault();
@@ -73,7 +79,14 @@ export function GlPostingsPage() {
 
   const total = list.data?.page.totalElements ?? null;
   const busy = list.status === 'loading';
-  const filtered = Boolean(period || policyNumber);
+  const filtered = Boolean(period || policyNumber || accountCode);
+
+  function clearAccountFilter() {
+    const merged = new URLSearchParams(params);
+    merged.delete('accountCode');
+    merged.delete('page');
+    setParams(merged);
+  }
 
   const count: Stat = {
     label: filtered ? 'matching journal entries' : 'journal entries',
@@ -124,6 +137,9 @@ export function GlPostingsPage() {
             void loadList({
               ...(period ? { period } : {}),
               ...(policyNumber ? { policyNumber } : {}),
+              // Retrying must reissue the SAME query. Dropping the account filter here would
+              // silently widen it and show the whole ledger under an "Account 1210" chip.
+              ...(accountCode ? { accountCode } : {}),
               page,
             })
           }
@@ -208,6 +224,25 @@ export function GlPostingsPage() {
               <Button type="button" size="sm" variant="ghost" onClick={clearFilters}>
                 Clear
               </Button>
+            )}
+            {/*
+              A chip, not a text input. An account code is picked from the chart of accounts --
+              where it has a name beside it -- and arrives here on the URL. Offering a box for
+              four digits would invite somebody to type one nobody can read back.
+            */}
+            {accountCode && (
+              <span className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-muted px-2 py-1 text-xs">
+                <span className="text-muted-foreground">Account</span>
+                <span className="font-mono font-medium">{accountCode}</span>
+                <button
+                  type="button"
+                  aria-label="Clear account filter"
+                  className="rounded p-0.5 text-muted-foreground hover:bg-hover hover:text-foreground"
+                  onClick={clearAccountFilter}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </span>
             )}
           </form>
 

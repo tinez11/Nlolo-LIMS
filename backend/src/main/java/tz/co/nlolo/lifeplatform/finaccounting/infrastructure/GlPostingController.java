@@ -49,9 +49,14 @@ public class GlPostingController {
     public ResponseEntity<JournalEntrySearchResponseDto> listGlPostings(
             @RequestParam(required = false) String period,
             @RequestParam(required = false) String policyNumber,
+            // The filter that lets a balance be opened up. Every posting already carried an
+            // account code, so "what made up account 1210" was in the data and unanswerable
+            // through this endpoint -- which is why the chart of accounts and this screen sat
+            // side by side in the Finance nav with no way to reach each other.
+            @RequestParam(required = false) String accountCode,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
-        Page<JournalEntryView> result = finaccountingApi.listJournalEntries(period, policyNumber,
+        Page<JournalEntryView> result = finaccountingApi.listJournalEntries(period, policyNumber, accountCode,
             PageRequest.of(page, Math.min(pageSize, 100)));
         return ResponseEntity.ok(JournalEntrySearchResponseDto.from(result));
     }

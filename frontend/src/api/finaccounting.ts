@@ -6,6 +6,7 @@ import type {
   CreateAccountRequest,
   JournalEntryView,
   Page,
+  TrialBalanceView,
   UpdateAccountRequest,
 } from './types';
 
@@ -22,6 +23,9 @@ import type {
  */
 
 export interface GlPostingSearchParams {
+  /** Restricts to entries with at least one leg against this account -- what lets a
+   *  balance on the chart be opened up into the postings that made it. */
+  accountCode?: string;
   period?: string;
   policyNumber?: string;
   page?: number;
@@ -46,6 +50,7 @@ export async function listGlPostings(
     params: {
       ...(params.period ? { period: params.period } : {}),
       ...(params.policyNumber ? { policyNumber: params.policyNumber } : {}),
+      ...(params.accountCode ? { accountCode: params.accountCode } : {}),
       page,
       pageSize,
     },
@@ -66,9 +71,29 @@ export function getGlPosting(journalEntryId: string): Promise<JournalEntryView> 
 }
 
 /** `GET /chart-of-accounts` -- a bare array; some rows are seeded, others
- *  created through the endpoint below. */
+ *  created through the endpoint below. Structure only: balances come from
+ *  {@link getTrialBalance}, so rendering the tree does not pay for an
+ *  aggregation over the whole posting table. */
 export function listChartOfAccounts(): Promise<ChartOfAccountView[]> {
   return get<ChartOfAccountView[]>('/chart-of-accounts');
+}
+
+/**
+ * `GET /chart-of-accounts/balances` -- the chart with its balances, and whether
+ * the ledger balances.
+ *
+ * The aggregation this module never had: nothing summed a posting anywhere, so a
+ * ledger of thousands of balanced entries could not state one account's balance.
+ *
+ * Balances ROLL UP the hierarchy (a parent reports itself plus every descendant);
+ * the TOTALS deliberately do not, because adding rolled figures would count each
+ * posting once per ancestor. `balanced` is the server's own assertion -- this
+ * console never does arithmetic on money.
+ *
+ * @param period `YYYY-MM`, or omitted for inception-to-date.
+ */
+export function getTrialBalance(period?: string): Promise<TrialBalanceView> {
+  return get<TrialBalanceView>('/chart-of-accounts/balances', period ? { params: { period } } : undefined);
 }
 
 /** `POST /chart-of-accounts` -- staff FINANCE_OFFICER/ADMIN only. A duplicate

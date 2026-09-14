@@ -211,6 +211,11 @@ export type GlPostingView = FinaccountingComponents['schemas']['GlPostingView'];
 export type ChartOfAccountView = FinaccountingComponents['schemas']['ChartOfAccountView'];
 export type AccountType = ChartOfAccountView['accountType'];
 export type PostingDirection = GlPostingView['direction'];
+/** The chart WITH its balances. Structurally a superset of ChartOfAccountView minus the
+ *  audit columns, plus the money — kept separate because the two endpoints answer different
+ *  questions and only one of them aggregates the posting table. */
+export type TrialBalanceView = FinaccountingComponents['schemas']['TrialBalanceView'];
+export type AccountBalanceView = FinaccountingComponents['schemas']['AccountBalanceView'];
 
 /**
  * The chart of accounts is NOT read-only (added on explicit request, after the

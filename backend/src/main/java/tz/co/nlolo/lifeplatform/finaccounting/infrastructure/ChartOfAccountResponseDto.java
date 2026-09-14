@@ -8,9 +8,13 @@ import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
 import java.time.Instant;
 
 /** One row of {@code finaccounting.chart_of_account}. Every account on this platform is currently
- * a PLACEHOLDER pending Finance sign-off (see {@code ChartOfAccountView}'s javadoc). No money
- * field: a chart-of-account row still carries no balance of its own -- account balances and a
- * trial balance are a separate, not-yet-built concern. */
+ * a PLACEHOLDER pending Finance sign-off (see {@code ChartOfAccountView}'s javadoc).
+ *
+ * <p>No money field, and that is now a SPLIT rather than a gap: balances live on
+ * {@code GET /chart-of-accounts/balances} ({@code TrialBalanceResponseDto}), so a caller reading
+ * the chart to render a tree or fill a picker does not pay for an aggregation over the whole
+ * posting table. This javadoc used to say a trial balance was "a separate, not-yet-built
+ * concern"; it is built. */
 public record ChartOfAccountResponseDto(String accountCode, String name, AccountType accountType,
                                          PostingDirection normalBalance, String parentCode,
                                          short level, boolean postingAllowed, AccountStatus status,

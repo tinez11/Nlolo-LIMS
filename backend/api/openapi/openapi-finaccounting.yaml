@@ -38,18 +38,31 @@ servers:
 paths:
   /gl-postings:
     get:
-      summary: List journal entries (GL postings), optionally filtered by period and/or policy number
+      summary: List journal entries (GL postings), optionally filtered by period, policy number and/or account
       description: >
         Each item is one journal entry with BOTH of its legs -- an entry always has exactly two
-        legs in M9, and their DR and CR totals are always equal. Omitting both filters returns
+        legs in M9, and their DR and CR totals are always equal. Omitting every filter returns
         every journal entry visible to the caller's tenant, ONE PAGE AT A TIME: journal_entry is
         an append-only ledger fed by every money-moving event on the platform, so an unpaged
         read of it has no upper bound. Newest entries first, by postedAt.
+
+
+        `accountCode` is what lets a balance be opened up. Every posting already carried an
+        account code, so "what made up account 1210" was in the data and unanswerable here --
+        which is why the chart of accounts and this list sat side by side with no way to reach
+        each other. An entry is returned ONCE however many of its legs hit the account.
       security:
         - staffAuth: []
       parameters:
         - $ref: '#/components/parameters/Period'
         - $ref: '#/components/parameters/PolicyNumberFilter'
+        - name: accountCode
+          in: query
+          required: false
+          description: >-
+            Restricts to entries with at least one leg against this account. Matches the chart's
+            own five-block convention.
+          schema: { type: string, pattern: '^[1-5]\d{3}$' }
         - name: page
           in: query
           required: false
@@ -131,6 +144,49 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /chart-of-accounts/balances:
+    get:
+      summary: The chart with its balances, and whether the ledger balances
+      description: >
+        The aggregation this module never had. Nothing anywhere summed a posting, so a ledger
+        holding thousands of balanced entries could not state the balance of a single account --
+        and the chart of accounts, hierarchy and all, was a structural reference list rather than
+        a ledger view.
+
+
+        A separate path from GET /chart-of-accounts rather than a flag on it: that one is bounded
+        reference data read to render a tree or fill a picker, while this aggregates the whole
+        posting table behind it.
+
+
+        BALANCES ROLL UP. A parent reports itself plus every descendant, which is the standard
+        convention and the one this chart is shaped for -- `postingAllowed` marks the accounts
+        that take direct postings, making every other account a summary of those beneath it. Each
+        row carries its OWN figures beside the rolled ones so the two cannot be confused.
+
+
+        THE TOTALS DO NOT ROLL UP. They sum each account's own postings, because adding rolled
+        figures would count every posting once for its own account and again for every ancestor,
+        reporting a sound ledger as wildly out. `balanced` is stated by the server rather than
+        left to a caller comparing two decimal strings.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: period
+          in: query
+          required: false
+          description: >-
+            YYYY-MM. Omitted means inception-to-date. Echoed back on the response, because a
+            balance with no period beside it cannot be reconciled against anything.
+          schema: { type: string, pattern: '^\d{4}-\d{2}$' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrialBalanceView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /chart-of-accounts/{accountCode}:
     put:
       summary: Update a chart-of-account row
@@ -335,6 +391,56 @@ components:
         INACTIVE is the RETIREMENT path and is distinct in kind from deletion: an account that has
         ever been posted against must stay resolvable, so it is deactivated rather than deleted.
       enum: [ACTIVE, INACTIVE]
+    TrialBalanceView:
+      type: object
+      required: [accounts, totalDebit, totalCredit, balanced]
+      properties:
+        period:
+          type: string
+          nullable: true
+          description: "Echoed back. Null means inception-to-date."
+        accounts:
+          type: array
+          items: { $ref: '#/components/schemas/AccountBalanceView' }
+        totalDebit:
+          allOf: [{ $ref: 'openapi-common.yaml#/components/schemas/Money' }]
+          description: >-
+            Sum of every account's OWN debits, never the rolled figures -- adding those would
+            count each posting once per ancestor and report a sound ledger as out.
+        totalCredit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        balanced:
+          type: boolean
+          description: >-
+            Whether totalDebit equals totalCredit. Stated by the server rather than left to a
+            caller comparing two decimal strings.
+    AccountBalanceView:
+      type: object
+      required: [accountCode, name, accountType, normalBalance, level, postingAllowed, status,
+                 ownDebit, ownCredit, debit, credit, balance]
+      description: >
+        One account's structure and its figures. `ownDebit`/`ownCredit` are postings against this
+        account code alone; `debit`/`credit` roll up every descendant and are equal to the `own`
+        pair for a leaf. Both are present so a summary account reporting millions it never
+        received directly cannot be mistaken for one that did.
+      properties:
+        accountCode: { type: string }
+        name: { type: string }
+        accountType: { $ref: '#/components/schemas/AccountType' }
+        normalBalance: { $ref: '#/components/schemas/PostingDirection' }
+        parentCode: { type: string, nullable: true }
+        level: { type: integer }
+        postingAllowed: { type: boolean }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        ownDebit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        ownCredit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        debit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        credit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        balance:
+          allOf: [{ $ref: 'openapi-common.yaml#/components/schemas/Money' }]
+          description: >-
+            Rolled debit and credit netted in THIS account's normal direction, so a positive value
+            always means "normal" and a negative one is a real anomaly rather than an artefact of
+            which way the subtraction ran. Unlike a posting's amount, this one is signed.
     ChartOfAccountView:
       type: object
       required: [accountCode, name, accountType, normalBalance, level, postingAllowed, status, currency]
