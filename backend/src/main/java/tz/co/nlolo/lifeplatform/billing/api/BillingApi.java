@@ -37,6 +37,35 @@ public interface BillingApi {
      */
     Page<FieldReceiptView> searchFieldReceipts(String status, Pageable pageable);
 
+    /**
+     * Match field-captured cash to money actually received, and close the receipt.
+     *
+     * <p><b>The transition this closes had no caller at all.</b> {@code FieldReceipt.reconcile()}
+     * has existed since M5 with a javadoc claiming it "closes the offline-receipt SLA loop", and
+     * nothing in the platform ever invoked it -- no endpoint, no event listener, no sweep step.
+     * So a receipt could only ever ratchet PENDING_RECONCILIATION -> RECONCILIATION_OVERDUE via
+     * {@code billing.sweep_billing_state()} and stay there: the reconciliation queue could fill
+     * and never drain, and the {@code FieldReceiptReconciliationOverdue} alert, once firing,
+     * would never clear.
+     *
+     * <p><b>Manual, by a finance officer, rather than automatic on {@code PaymentConfirmed}.</b>
+     * Matching cash to a receipt automatically needs a rule nobody has written down -- which
+     * payment clears which receipt, what a partial amount means, what happens when one policy has
+     * several open receipts -- and inventing one would put a guess between an agent's collection
+     * and the ledger. Reconciling is what a person does against a bank statement; this records
+     * that they did it, and who.
+     *
+     * <p>Idempotent: reconciling an already-RECONCILED receipt returns it unchanged rather than
+     * throwing, matching {@code FieldReceipt.reconcile()}'s own early return. A receipt is
+     * reconcilable from PENDING_RECONCILIATION or RECONCILIATION_OVERDUE alike -- being past SLA
+     * is exactly when this is most needed, so overdue is not a state that blocks it.
+     *
+     * @param reconciledBy the acting user, carried on the published event and therefore into
+     *     {@code audit_log} -- the same way {@code waiveInvoice} records who waived, since
+     *     {@code field_receipt} has no actor column.
+     */
+    FieldReceiptView reconcileFieldReceipt(UUID receiptId, String reconciledBy);
+
     InvoiceView getNextDueInvoice(String policyNumber);
     List<InvoiceView> listInvoices(String policyNumber, InvoiceStatus status);
 

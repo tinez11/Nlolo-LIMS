@@ -140,6 +140,37 @@ public class BillingApiImpl implements BillingApi {
         return fieldReceiptRepository.search(tenantId, status, pageable).map(BillingApiImpl::toView);
     }
 
+    @Override
+    @Transactional
+    public FieldReceiptView reconcileFieldReceipt(UUID receiptId, String reconciledBy) {
+        UUID tenantId = TenantContext.get();
+        FieldReceipt receipt = fieldReceiptRepository.findByReceiptIdAndTenantId(receiptId, tenantId)
+            .orElseThrow(() -> new FieldReceiptNotFoundException(receiptId));
+
+        // Re-reconciling is a no-op inside the aggregate, and the event below would then announce
+        // a state change that did not happen -- so the publish is skipped too, not just the write.
+        // An already-reconciled receipt returns unchanged rather than 409ing: two finance officers
+        // clearing the same queue row is a race, not an error.
+        if ("RECONCILED".equals(receipt.getStatus())) {
+            return toView(receipt);
+        }
+
+        receipt.reconcile();
+        fieldReceiptRepository.save(receipt);
+
+        // `reconciledBy` lives on the event rather than the row: field_receipt has no actor
+        // column, and DomainEventAuditListener writes every envelope to audit_log, which is
+        // exactly how waiveInvoice records who waived an invoice.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.FieldReceiptReconciled", tenantId,
+            Map.of("receiptId", receipt.getReceiptId(),
+                   "policyNumber", receipt.getPolicyNumber(),
+                   "amount", Map.of("amount", receipt.getAmount().toPlainString(),
+                                    "currencyCode", receipt.getCurrency()),
+                   "reconciledAt", receipt.getReconciledAt().toString(),
+                   "reconciledBy", reconciledBy)));
+        return toView(receipt);
+    }
+
     private static FieldReceiptView toView(FieldReceipt receipt) {
         return new FieldReceiptView(receipt.getReceiptId(), receipt.getPolicyNumber(), receipt.getAgentId(),
             receipt.getAmount(), receipt.getCurrency(), receipt.getCapturedAtClient(),

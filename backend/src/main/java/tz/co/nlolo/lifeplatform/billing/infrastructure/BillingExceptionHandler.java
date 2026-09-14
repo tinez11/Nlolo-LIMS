@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.billing.infrastructure;
 
+import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptNotFoundException;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceNotFoundException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -13,6 +14,11 @@ import java.util.UUID;
 @RestControllerAdvice
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class BillingExceptionHandler {
+
+    @ExceptionHandler(FieldReceiptNotFoundException.class)
+    public ProblemDetail handleFieldReceiptNotFound(FieldReceiptNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "FIELD_RECEIPT_NOT_FOUND");
+    }
 
     @ExceptionHandler(InvoiceNotFoundException.class)
     public ProblemDetail handleNotFound(InvoiceNotFoundException ex) {

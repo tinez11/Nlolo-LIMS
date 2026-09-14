@@ -13,6 +13,10 @@ import java.util.UUID;
 
 public interface FieldReceiptRepository extends JpaRepository<FieldReceipt, UUID> {
     Optional<FieldReceipt> findByTenantIdAndClientIdempotencyKey(UUID tenantId, String clientIdempotencyKey);
+
+    /** Tenant-scoped by id, so a receipt in another tenant is NOT FOUND rather than forbidden --
+     *  the same anti-enumeration shape every other per-entity read on this platform uses. */
+    Optional<FieldReceipt> findByReceiptIdAndTenantId(UUID receiptId, UUID tenantId);
     // Java-side sweep entry point (Task 5): receipts the SQL sweep already flipped to
     // RECONCILIATION_OVERDUE that the app hasn't published an event for yet, tenant-scoped.
     List<FieldReceipt> findByTenantIdAndStatusAndNotifiedOverdueAtIsNull(UUID tenantId, String status);

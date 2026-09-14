@@ -58,6 +58,53 @@ paths:
                   page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /field-receipts/{receiptId}/reconcile:
+    post:
+      summary: Match a field receipt to money received, and close it
+      description: >
+        The transition that had no caller. FieldReceipt.reconcile() has existed since M5 with a
+        javadoc claiming it closes the offline-receipt SLA loop, and nothing on the platform ever
+        invoked it — no endpoint, no event listener, no sweep step. A receipt could therefore only
+        ratchet PENDING_RECONCILIATION → RECONCILIATION_OVERDUE and stay there: the reconciliation
+        queue could fill and never drain, and the FieldReceiptReconciliationOverdue alert, once
+        firing, would never clear.
+
+
+        MANUAL, by a finance officer, rather than automatic on payment.PaymentConfirmed. Matching
+        cash to a receipt automatically needs a rule nobody has written down — which payment clears
+        which receipt, what a partial amount means, what happens when one policy has several open
+        receipts — and inventing one would put a guess between an agent's collection and the
+        ledger. This records that a person matched it, and who: the acting subject travels on
+        billing.FieldReceiptReconciled into audit_log, because field_receipt has no actor column
+        (the same way InvoiceWaived records who waived).
+
+
+        Idempotent: reconciling an already-RECONCILED receipt returns it unchanged rather than
+        409ing, because two officers clearing the same queue row is a race, not an error.
+        RECONCILIATION_OVERDUE is reconcilable too — being past SLA is exactly when this is most
+        needed.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: receiptId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The reconciled receipt, so the caller can render the new status without a second read
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldReceiptView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: >
+            No such receipt in the caller's tenant. A receipt in ANOTHER tenant lands here too,
+            not on a 403 — telling a caller "this exists but is not yours" confirms the id.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /arrears:
     get:
       summary: The collections queue — this tenant's arrears cases, worst escalation first

@@ -311,6 +311,13 @@ channels:
     description: "Producer: billing (24h SLA breach, Deliverable 2 Rev 2 B4). Consumers: communication (staff alert), audit."
     publish:
       message: { $ref: '#/components/messages/FieldReceiptReconciliationOverdue' }
+  billing.FieldReceiptReconciled:
+    description: >-
+      Producer: billing (a finance officer matching field cash to money received). Consumer: audit.
+      Carries reconciledBy because field_receipt has no actor column -- this event is the only
+      record of WHO closed the receipt, exactly as InvoiceWaived carries waivedBy.
+    publish:
+      message: { $ref: '#/components/messages/FieldReceiptReconciled' }
 
   claims.ClaimRegistered:
     description: >-
@@ -498,6 +505,7 @@ components:
     PolicyLapseRecommended: { messageId: PolicyLapseRecommended, name: PolicyLapseRecommended, payload: { $ref: '#/components/schemas/PolicyLapseRecommendedPayload' } }
     FieldReceiptCaptured: { messageId: FieldReceiptCaptured, name: FieldReceiptCaptured, payload: { $ref: '#/components/schemas/FieldReceiptCapturedPayload' } }
     FieldReceiptReconciliationOverdue: { messageId: FieldReceiptReconciliationOverdue, name: FieldReceiptReconciliationOverdue, payload: { $ref: '#/components/schemas/FieldReceiptReconciliationOverduePayload' } }
+    FieldReceiptReconciled: { messageId: FieldReceiptReconciled, name: FieldReceiptReconciled, payload: { $ref: '#/components/schemas/FieldReceiptReconciledPayload' } }
     ClaimRegistered: { messageId: ClaimRegistered, name: ClaimRegistered, payload: { $ref: '#/components/schemas/ClaimRegisteredPayload' } }
     ClaimAssessed: { messageId: ClaimAssessed, name: ClaimAssessed, payload: { $ref: '#/components/schemas/ClaimAssessedPayload' } }
     ClaimApproved: { messageId: ClaimApproved, name: ClaimApproved, payload: { $ref: '#/components/schemas/ClaimApprovedPayload' } }
@@ -818,6 +826,11 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { receiptId: {type: string, format: uuid}, policyNumber: {type: string}, overdueSince: {type: string, format: date-time} }
+    FieldReceiptReconciledPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { receiptId: {type: string, format: uuid}, policyNumber: {type: string}, amount: {type: object}, reconciledAt: {type: string, format: date-time}, reconciledBy: {type: string} }
 
     ClaimRegisteredPayload:
       allOf:

@@ -1,4 +1,4 @@
-import { get } from '@/lib/http';
+import { get, post } from '@/lib/http';
 import type { ArrearsCaseView, FieldReceiptStatus, FieldReceiptView, Page } from './types';
 
 /**
@@ -111,4 +111,19 @@ export async function searchFieldReceipts(
       totalElements: body.page?.totalElements ?? 0,
     },
   };
+}
+
+/**
+ * `POST /field-receipts/{id}/reconcile` — matches field-captured cash to money received.
+ *
+ * The action this queue never had. `FieldReceipt.reconcile()` existed server-side with no
+ * caller at all, so a receipt could only ratchet PENDING_RECONCILIATION →
+ * RECONCILIATION_OVERDUE and stay there: the queue filled and never drained.
+ *
+ * Finance-gated server-side. Idempotent — reconciling an already-reconciled receipt returns it
+ * unchanged rather than erroring, because two officers clearing the same row is a race rather
+ * than a mistake. Returns the updated receipt so the row can be replaced without a refetch.
+ */
+export function reconcileFieldReceipt(receiptId: string): Promise<FieldReceiptView> {
+  return post<FieldReceiptView>(`/field-receipts/${encodeURIComponent(receiptId)}/reconcile`);
 }

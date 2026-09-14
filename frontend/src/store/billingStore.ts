@@ -2,11 +2,16 @@ import { create } from 'zustand';
 import {
   searchArrears,
   searchFieldReceipts,
+  reconcileFieldReceipt,
   type ArrearsSearchParams,
   type FieldReceiptSearchParams,
 } from '@/api/billing';
 import type { ArrearsCaseView, FieldReceiptView, Page } from '@/api/types';
 import { idle, track, type Resource } from './createResourceSlice';
+
+/** Local, like every other store here declares its own. One line beats a shared import
+ *  that ties ten stores to one file for a type alias. */
+type Keyed<T> = Record<string, Resource<T>>;
 
 /**
  * The `billing` domain store: the two work queues this module gained a read surface for — who
@@ -34,13 +39,21 @@ interface BillingState {
    * register already taught this lesson the hard way.
    */
   fieldReceipts: Resource<Page<FieldReceiptView>>;
+  /**
+   * Keyed by receiptId, because several rows of one queue can be cleared in a row and each
+   * needs its own busy state and its own error. A single slot would disable every button
+   * while one was in flight, and put one row's failure under another row's action.
+   */
+  reconciling: Keyed<FieldReceiptView>;
   loadArrears: (params: ArrearsSearchParams) => Promise<void>;
   loadFieldReceipts: (params: FieldReceiptSearchParams) => Promise<void>;
+  reconcileFieldReceipt: (receiptId: string) => Promise<void>;
 }
 
 export const useBillingStore = create<BillingState>((set, getState) => ({
   arrears: idle(),
   fieldReceipts: idle(),
+  reconciling: {},
 
   loadArrears: (params) =>
     track(
@@ -57,7 +70,36 @@ export const useBillingStore = create<BillingState>((set, getState) => ({
       (next) => set({ fieldReceipts: next }),
       () => searchFieldReceipts(params),
     ),
+
+  reconcileFieldReceipt: (receiptId) =>
+    track(
+      `billing.reconcile.${receiptId}`,
+      getState().reconciling[receiptId] ?? idle<FieldReceiptView>(),
+      (next) => set((s) => ({ reconciling: { ...s.reconciling, [receiptId]: next } })),
+      async () => {
+        const updated = await reconcileFieldReceipt(receiptId);
+        // Patch the row in place rather than refetching the page. A refetch would re-sort and
+        // re-page a queue somebody is working down, and on the default RECONCILIATION_OVERDUE
+        // filter it would make the row they just cleared vanish mid-scroll. The status badge
+        // changing to RECONCILED where they clicked is the honest feedback.
+        const current = getState().fieldReceipts;
+        if (current.data) {
+          set({
+            fieldReceipts: {
+              ...current,
+              data: {
+                ...current.data,
+                items: current.data.items.map((r) => (r.receiptId === receiptId ? updated : r)),
+              },
+            },
+          });
+        }
+        return updated;
+      },
+    ),
 }));
 
 export const selectArrears = (s: BillingState) => s.arrears;
 export const selectFieldReceipts = (s: BillingState) => s.fieldReceipts;
+export const selectReconciling = (receiptId: string) => (s: BillingState) =>
+  s.reconciling[receiptId] ?? idle<FieldReceiptView>();

@@ -7,6 +7,8 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.audit.domain.AuditLogEntry;
 import tz.co.nlolo.lifeplatform.audit.infrastructure.AuditLogRepository;
 import tz.co.nlolo.lifeplatform.billing.api.BillingApi;
+import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptNotFoundException;
+import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptView;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
 import tz.co.nlolo.lifeplatform.billing.application.ArrearsNotificationSweep;
 import tz.co.nlolo.lifeplatform.billing.application.BillingApiImpl;
@@ -44,6 +46,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -671,6 +674,128 @@ class BillingApiIntegrationTest {
         assertThat(afterPayment.getAmountPaid()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
+    /**
+     * THE TRANSITION, THROUGH THE API THAT NOW REACHES IT.
+     *
+     * <p>{@link #reconcilingAFieldReceiptMovesItToReconciled} below calls {@code reconcile()} on
+     * the aggregate directly, which is why it passed for as long as it did while the transition
+     * was unreachable: {@code FieldReceipt.reconcile()} had ZERO callers anywhere in main source,
+     * so a receipt could only ratchet PENDING_RECONCILIATION -> RECONCILIATION_OVERDUE and stay
+     * there. That test proved the method worked, and nothing about whether anything could invoke
+     * it. This one goes through {@code BillingApi}.
+     */
+    @Test
+    void reconcilingThroughTheApiMovesTheReceiptAndRecordsWhoDidIt() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-RECEIPT-API-01");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(
+            UUID.randomUUID(), policyNumber, new BigDecimal("15000.00"), "TZS",
+            "client-key-" + UUID.randomUUID(), Instant.now());
+
+        TenantContext.set(tenantId);
+        Instant before = Instant.now();
+        FieldReceiptView view = billingApi.reconcileFieldReceipt(result.receiptId(), "staff-finance-1");
+
+        assertThat(view.status()).isEqualTo("RECONCILED");
+        assertThat(view.reconciledAt()).isNotNull();
+
+        // field_receipt has no actor column, so the event IS the record of who closed it --
+        // the same shape waiveInvoice uses. Asserted through audit_log rather than by trusting
+        // the publish, which is this file's established falsifiability idiom.
+        List<AuditLogEntry> auditRows = auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "billing.FieldReceiptReconciled", before.minusSeconds(5), Instant.now().plusSeconds(5));
+        assertThat(auditRows).hasSize(1);
+        JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
+        assertThat(payload.path("receiptId").asText()).isEqualTo(result.receiptId().toString());
+        assertThat(payload.path("reconciledBy").asText()).isEqualTo("staff-finance-1");
+    }
+
+    /** Two officers clearing the same queue row is a race, not an error -- and the second one
+     *  must not publish a second event announcing a change that did not happen. */
+    @Test
+    void reconcilingAnAlreadyReconciledReceiptIsAQuietNoOp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-RECEIPT-API-02");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(
+            UUID.randomUUID(), policyNumber, new BigDecimal("15000.00"), "TZS",
+            "client-key-" + UUID.randomUUID(), Instant.now());
+
+        TenantContext.set(tenantId);
+        Instant before = Instant.now();
+        FieldReceiptView first = billingApi.reconcileFieldReceipt(result.receiptId(), "staff-finance-1");
+        FieldReceiptView second = billingApi.reconcileFieldReceipt(result.receiptId(), "staff-finance-2");
+
+        assertThat(second.status()).isEqualTo("RECONCILED");
+        // The timestamp is the FIRST reconciliation's, not overwritten by the second caller.
+        //
+        // Truncated to milliseconds on both sides, and that is about storage rather than
+        // laxity: the first call returns the in-memory Instant at nanosecond precision, while
+        // the second returns the value round-tripped through a Postgres timestamptz, which
+        // holds microseconds. Comparing them raw fails on digits Postgres cannot store, which
+        // says nothing about whether the value was overwritten.
+        assertThat(second.reconciledAt().truncatedTo(ChronoUnit.MILLIS))
+            .isEqualTo(first.reconciledAt().truncatedTo(ChronoUnit.MILLIS));
+        assertThat(auditLogRepository.findByTenantIdAndEventTypeAndOccurredAtBetween(
+            tenantId, "billing.FieldReceiptReconciled", before.minusSeconds(5), Instant.now().plusSeconds(5)))
+            .as("the no-op must not announce a second state change")
+            .hasSize(1);
+    }
+
+    /** Past SLA is exactly when reconciling matters most, so RECONCILIATION_OVERDUE must not
+     *  be a state that blocks it. */
+    @Test
+    void anOverdueReceiptIsStillReconcilable() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILLING-RECEIPT-API-03");
+        String policyNumber = issueDirectly(tenantId, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(
+            UUID.randomUUID(), policyNumber, new BigDecimal("15000.00"), "TZS",
+            "client-key-" + UUID.randomUUID(), Instant.now());
+
+        // Seeded exactly as sweep_billing_state()'s own SLA-breach UPDATE would perform it --
+        // the same isolation idiom capturingAFieldReceiptThenSweepingAfterTheSlaWindow... uses,
+        // so this test is about the reconcile transition and not about the sweep.
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                 "UPDATE billing.field_receipt SET status = 'RECONCILIATION_OVERDUE' WHERE receipt_id = ?")) {
+            update.setObject(1, result.receiptId());
+            assertThat(update.executeUpdate()).isEqualTo(1);
+        }
+
+        TenantContext.set(tenantId);
+        assertThat(billingApi.reconcileFieldReceipt(result.receiptId(), "staff-finance-1").status())
+            .isEqualTo("RECONCILED");
+    }
+
+    /** Tenant-scoped, and NOT FOUND rather than forbidden -- telling a caller "this exists but is
+     *  not yours" confirms the id, which is the enumeration this platform closes everywhere. */
+    @Test
+    void aReceiptInAnotherTenantIsNotFound() {
+        UUID ownerTenant = UUID.randomUUID();
+        Fixture fixture = buildFixture(ownerTenant, "BILLING-RECEIPT-API-04");
+        String policyNumber = issueDirectly(ownerTenant, fixture, new BigDecimal("15000.00"), "MONTHLY");
+
+        BillingApi.FieldReceiptResult result = billingApi.captureFieldReceipt(
+            UUID.randomUUID(), policyNumber, new BigDecimal("15000.00"), "TZS",
+            "client-key-" + UUID.randomUUID(), Instant.now());
+
+        TenantContext.set(UUID.randomUUID());
+        assertThatThrownBy(() -> billingApi.reconcileFieldReceipt(result.receiptId(), "staff-finance-1"))
+            .isInstanceOf(FieldReceiptNotFoundException.class);
+    }
+
+    /**
+     * Exercises the AGGREGATE, not the platform. Kept because the domain should still state its
+     * own rule and this is the only place it is testable with no API in the way -- but note it
+     * passed happily for as long as {@code reconcile()} had no caller at all, so on its own it
+     * proves nothing about reconciliation being reachable. See
+     * {@link #reconcilingThroughTheApiMovesTheReceiptAndRecordsWhoDidIt}.
+     */
     @Test
     void reconcilingAFieldReceiptMovesItToReconciled() {
         UUID tenantId = UUID.randomUUID();
