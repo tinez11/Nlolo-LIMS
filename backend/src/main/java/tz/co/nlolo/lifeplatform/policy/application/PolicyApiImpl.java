@@ -10,6 +10,7 @@ import tz.co.nlolo.lifeplatform.policy.domain.*;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.*;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.BenefitDefinition;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceCodeView;
@@ -218,11 +219,28 @@ public class PolicyApiImpl implements PolicyApi {
 
         policyAccountRepository.save(new PolicyAccount(policyNumber, tenantId, BigDecimal.ZERO, request.sumAssuredCurrency()));
 
-        // Only a DEATH coverage row is created at issuance -- ProductApi does not expose the
-        // full benefit schedule list back to callers (publishVersion accepts one at authoring
-        // time, but no getter returns it), so a Coverage row per BenefitScheduleEntry isn't
-        // buildable without a further ProductApi change this plan does not make. Flagged.
-        coverageRepository.save(new Coverage(tenantId, policyNumber, BenefitType.DEATH.name(), request.sumAssuredAmount(), request.sumAssuredCurrency()));
+        // One Coverage per authored benefit, at the amount that benefit pays. This was a single
+        // hardcoded DEATH row whatever the product declared -- the comment here used to explain
+        // that a per-benefit row was not buildable because ProductApi exposed no getter for the
+        // schedule. resolveBenefitSchedule is that getter.
+        List<BenefitDefinition> benefits = productApi.resolveBenefitSchedule(request.productVersionId());
+        if (benefits.isEmpty()) {
+            // GRANDFATHERING, and it expires on its own. 143 versions predate the rule that a
+            // version must cover at least one benefit; publishVersion now refuses an empty
+            // schedule, so this population can only SHRINK -- which is what makes this a
+            // migration path rather than a permanent default.
+            //
+            // Nothing is invented here: these policies keep exactly the cover they have today,
+            // the policy's own sum assured, which is the number claimableCover already returned
+            // for them before it knew about benefit types at all.
+            coverageRepository.save(new Coverage(tenantId, policyNumber, BenefitType.DEATH.name(),
+                request.sumAssuredAmount(), request.sumAssuredCurrency()));
+        } else {
+            for (BenefitDefinition benefit : benefits) {
+                coverageRepository.save(new Coverage(tenantId, policyNumber, benefit.benefitType().name(),
+                    benefit.amountFor(request.sumAssuredAmount()), request.sumAssuredCurrency()));
+            }
+        }
 
         beneficiaryRepository.saveAll(beneficiaries);
 
@@ -1060,6 +1078,9 @@ public class PolicyApiImpl implements PolicyApi {
         policyRepository.save(policy);
 
         policyAccountRepository.save(new PolicyAccount(policyNumber, tenantId, BigDecimal.ZERO, request.currency()));
+        // Deliberately NOT per-benefit. A scheme's claimable cover derives from its member
+        // schedule -- claimableCover branches on the scheme before it looks at coverage at all --
+        // so per-benefit rows here would be decorative.
         coverageRepository.save(new Coverage(tenantId, policyNumber, BenefitType.DEATH.name(), total, request.currency()));
 
         groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),

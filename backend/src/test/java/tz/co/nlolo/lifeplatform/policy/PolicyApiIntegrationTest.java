@@ -139,6 +139,8 @@ class PolicyApiIntegrationTest {
     @Autowired private PolicyAccountRepository policyAccountRepository;
     @Autowired private ProductVersionRepository productVersionRepository;
     @Autowired private tz.co.nlolo.lifeplatform.product.infrastructure.RatingFactorRepository ratingFactorRepository;
+    /** Only for reproducing a pre-V13 version, which publishVersion can no longer create. */
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
@@ -717,6 +719,71 @@ class PolicyApiIntegrationTest {
         assertThat(underwritingApi.getCase(opened.caseId()).issuanceFailureReason())
             .as("names the undeclared status rather than printing a bare null")
             .contains("UNKNOWN (never recorded)");
+    }
+
+    // ---- Batch 2b: a contract covers what its product authored ------------------
+
+    @Test
+    void issuanceWritesOneCoveragePerAuthoredBenefit() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-B2B-01", "Death plus CI",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED),
+                    new ProductApi.BenefitInput(BenefitType.CRITICAL_ILLNESS,
+                        BenefitCalculationMethod.PERCENTAGE_OF_SUM_ASSURED, new BigDecimal("25.00"), null)),
+            null, ANY_FILING, "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        String policyNumber = issueDirectly(tenantId,
+            new Fixture(pricedLife(tenantId, 35, "7001"), product.productId(), versionId), List.of());
+
+        // issueDirectly insures 1,000,000: DEATH pays all of it, CRITICAL_ILLNESS a quarter.
+        CoverageStatusView status = policyApi.getCoverageStatus(policyNumber, LocalDate.now());
+        assertThat(status.activeCoverages()).hasSize(2);
+        assertThat(status.activeCoverages())
+            .filteredOn(c -> c.benefitType() == BenefitType.CRITICAL_ILLNESS)
+            .singleElement()
+            .satisfies(ci -> assertThat(ci.sumAssuredAmount()).isEqualByComparingTo(new BigDecimal("250000.00")));
+        assertThat(status.activeCoverages())
+            .filteredOn(c -> c.benefitType() == BenefitType.DEATH)
+            .singleElement()
+            .satisfies(d -> assertThat(d.sumAssuredAmount()).isEqualByComparingTo(new BigDecimal("1000000")));
+    }
+
+    /**
+     * THE GRANDFATHERING ASSERTION, and the one that proves nothing in force changed.
+     *
+     * <p>143 of 146 versions have no benefit rows, because the console allowed an empty schedule
+     * until now. Refusing to issue on them would have made almost the whole catalogue unsellable,
+     * and they cannot simply be republished -- that now needs entry-age bounds, rate-table
+     * coverage and a TIRA filing. So they keep exactly today's behaviour: one DEATH coverage at
+     * the policy's own sum assured, which is the number claimableCover already returns.
+     *
+     * <p>The rows are deleted directly because publishVersion can no longer create a benefit-less
+     * version -- the same technique batches 1 and 3 each needed once a new rule made a real state
+     * unreachable through the API.
+     */
+    @Test
+    void aVersionWithNoAuthoredBenefitsStillIssuesWithASingleDeathCoverage() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-B2B-LEGACY");
+
+        jdbcTemplate.update("DELETE FROM product.benefit_schedule WHERE product_version_id = ?",
+            fixture.productVersionId());
+
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+
+        CoverageStatusView status = policyApi.getCoverageStatus(policyNumber, LocalDate.now());
+        assertThat(status.activeCoverages()).singleElement()
+            .satisfies(c -> {
+                assertThat(c.benefitType()).isEqualTo(BenefitType.DEATH);
+                assertThat(c.sumAssuredAmount()).isEqualByComparingTo(new BigDecimal("1000000"));
+            });
     }
 
     /**
