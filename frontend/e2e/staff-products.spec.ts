@@ -248,6 +248,13 @@ test.describe('staff products', () => {
 
     await page.getByLabel('Minimum entry age').fill('18');
     await page.getByLabel('Maximum entry age').fill('30');
+
+    // What paying in instalments costs. A monthly payer is charged more over a year than an
+    // annual one -- the annual payer's premium is investable on day one, twelve collections
+    // cost more than one, and monthly business lapses part-paid.
+    await page.getByLabel('Monthly loading %').fill('8');
+    await page.getByLabel('Quarterly loading %').fill('3');
+
     await page.getByRole('button', { name: 'Publish version' }).click();
 
     // A real 201 and a navigation to the product's own page.
@@ -258,6 +265,14 @@ test.describe('staff products', () => {
     // warning must be gone -- that copy is the whole symptom being fixed.
     await expect(page.getByRole('table', { name: 'Base rate table' })).toBeVisible();
     await expect(page.getByText(/This version is unpriced/)).toHaveCount(0);
+
+    // And the instalment loading survived the round trip, which is the half a backend test
+    // cannot see: the percentages have to reach ProductVersionSpec on the wire, come back on
+    // VersionRatingView, and render. The field was missing from the request schema entirely at
+    // one point, with every backend test green.
+    await expect(page.getByText('Instalment loading')).toBeVisible();
+    await expect(page.getByText('+ 8%')).toBeVisible();
+    await expect(page.getByText('+ 3%')).toBeVisible();
 
     // Four decimals, so the column reads down. Both sexes present, both statuses.
     await expect(page.getByRole('cell', { name: '0.6200', exact: true })).toBeVisible();
