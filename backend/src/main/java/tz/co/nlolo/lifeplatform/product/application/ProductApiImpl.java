@@ -165,6 +165,7 @@ public class ProductApiImpl implements ProductApi {
                         + " rating factors -- those dimensions are keys of the base rate table and would be counted twice");
             }
             rejectOverlappingAgeBands(baseRates);
+            rejectPricedVersionWithoutEntryAgeBounds(bounds);
         } else if (!coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
             // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
@@ -530,6 +531,28 @@ public class ProductApiImpl implements ProductApi {
         // range to check completeness against. An uncovered age resolves to the neutral 1.0
         // rather than failing, which is the documented contract -- worth revisiting if entry
         // age limits ever become product data.
+    }
+
+    /**
+     * A priced version must say what ages it sells to.
+     *
+     * <p>Without bounds there is no declared range for {@link #rejectUncoveredEntryAges} to check
+     * a rate table against, so the table's own span silently becomes the product's selling range.
+     * That is not hypothetical: a real published version declares it accepts entry ages 18-78
+     * while pricing no woman under 56, and nothing could tell the difference between "we price
+     * 18-30 deliberately" and "we forgot the rest".
+     *
+     * <p>Only priced versions. An unpriced version has no rate table to be incomplete against, and
+     * bounds stay optional there exactly as {@link EligibilityBounds} describes.
+     */
+    private static void rejectPricedVersionWithoutEntryAgeBounds(EligibilityBounds bounds) {
+        if (bounds == null || bounds.minEntryAge() == null || bounds.maxEntryAge() == null) {
+            throw new InvalidProductVersionException(
+                "A version priced from a base rate table must declare its minimum and maximum"
+                    + " entry age. Without them the rate table's own span silently becomes the"
+                    + " product's selling range, and nothing can tell a deliberate range from an"
+                    + " incomplete one.");
+        }
     }
 
     private static void rejectOverlappingAgeBands(List<BaseRateInput> baseRates) {

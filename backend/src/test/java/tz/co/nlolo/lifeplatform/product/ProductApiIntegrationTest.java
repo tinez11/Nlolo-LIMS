@@ -238,6 +238,41 @@ class ProductApiIntegrationTest {
                 "actuary@nlolo.co.tz"));
     }
 
+    // ---- Batch 1: a priced version must be able to price what it accepts -------
+
+    @Test
+    void publishVersionRejectsAPricedVersionThatDoesNotSayWhatAgesItSellsTo() {
+        ProductSummaryView product = productApi.createProduct("TERM-B1-R1", "Priced but unbounded",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput(18, 65, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.5000")),
+                        new ProductApi.BaseRateInput(18, 65, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.0000"))),
+                "actuary@nlolo.co.tz"));
+
+        assertThat(thrown.getMessage()).contains("entry age");
+    }
+
+    @Test
+    void publishVersionStillAcceptsAnUnpricedVersionWithNoBoundsAtAll() {
+        ProductSummaryView product = productApi.createProduct("TERM-B1-R1-OK", "Unpriced, unbounded",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            "actuary@nlolo.co.tz");
+
+        assertThat(productApi.listActiveProducts(ProductCategory.TERM_LIFE))
+            .anyMatch(p -> p.productCode().equals("TERM-B1-R1-OK"));
+    }
+
     /**
      * A priced version does NOT need an AGE multiplier -- age is rated by the base
      * rate table's own key. Requiring one while the guard above forbids it would
@@ -253,6 +288,7 @@ class ProductApiIntegrationTest {
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
                     new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8000"))),
+            new EligibilityBounds(18, 25, null, null, null, null),
             "actuary@nlolo.co.tz");
 
         List<ProductSummaryView> active = productApi.listActiveProducts(ProductCategory.TERM_LIFE);
@@ -358,7 +394,12 @@ class ProductApiIntegrationTest {
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
                 null,
-                List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, BigDecimal.ZERO)),
+                // The MALE row is valid and is here only so the publish reaches the database:
+                // Batch 1's coverage rule refuses a table that cannot price every life the
+                // version accepts, and would otherwise reject this before the CHECK is tested.
+                List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, BigDecimal.ZERO),
+                        new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8000"))),
+                new EligibilityBounds(18, 25, null, null, null, null),
                 "actuary@nlolo.co.tz"));
     }
 
@@ -687,7 +728,15 @@ class ProductApiIntegrationTest {
 
     // ---- M13 step 3: the premium calculation -----------------------------------
 
-    /** A priced version: one band, one occupation class, one sum-assured band. */
+    /**
+     * A priced version: one band, one occupation class, one sum-assured band.
+     *
+     * <p>Carries a MALE cell it makes no assertion about, and declares entry ages 18-25. Batch 1
+     * refuses a priced version that does not say what ages it sells to, and refuses one whose
+     * table cannot price every life inside that declaration -- a version priced for women only
+     * could never have been sold to half its market. The quotes below still ask for FEMALE, so
+     * the extra row changes no expected number.
+     */
     private UUID pricedProduct(String code, BigDecimal ratePerMille) {
         ProductSummaryView product = productApi.createProduct(code, code, ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
@@ -695,7 +744,9 @@ class ProductApiIntegrationTest {
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null,
-            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, ratePerMille)),
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, ratePerMille),
+                    new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, ratePerMille)),
+            new EligibilityBounds(18, 25, null, null, null, null),
             "actuary@nlolo.co.tz");
         return product.productId();
     }
@@ -751,7 +802,11 @@ class ProductApiIntegrationTest {
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_3", new BigDecimal("1.25"))),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null,
-            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("20.0000"))),
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("20.0000")),
+                    // Priced but never quoted here -- the quote below asks for FEMALE. Present so
+                    // the version can price every life it accepts, which Batch 1 requires.
+                    new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("22.0000"))),
+            new EligibilityBounds(18, 25, null, null, null, null),
             "actuary@nlolo.co.tz");
 
         ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
@@ -775,7 +830,19 @@ class ProductApiIntegrationTest {
         // age outside every band
         assertThrows(PremiumNotQuotableException.class, () ->
             productApi.quotePremium(quoteFor(productId, LocalDate.now().minusYears(40), PremiumFrequency.MONTHLY)));
-        // sex with no cell
+        // sex with no cell.
+        //
+        // The MALE row is DELETED after publishing rather than never published, because Batch 1's
+        // coverage rule means a version priced for one sex only can no longer be published at
+        // all. Versions carrying exactly that hole predate the rule and are grandfathered, so the
+        // dimension must still refuse rather than fall back to something plausible -- and this is
+        // now the only way the state occurs.
+        UUID versionId = productVersionRepository
+            .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), productId)
+            .get(0).getProductVersionId();
+        baseRateRepository.deleteAll(baseRateRepository.findByProductVersionId(versionId).stream()
+            .filter(r -> "MALE".equals(r.getSex()))
+            .toList());
         assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
             Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", "LOW", PremiumFrequency.MONTHLY, LocalDate.now())));
@@ -846,13 +913,19 @@ class ProductApiIntegrationTest {
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2")),
-                    new ProductApi.BaseRateInput(26, 30, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4"))),
+                    new ProductApi.BaseRateInput(26, 30, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4")),
+                    // The MALE half of the same two bands. This test's subject is adjacency, but
+                    // Batch 1 refuses a priced version that cannot price every life it accepts,
+                    // and a table covering women only has never been a sellable product.
+                    new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8")),
+                    new ProductApi.BaseRateInput(26, 30, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("19.1"))),
+            new EligibilityBounds(18, 30, null, null, null, null),
             "actuary@nlolo.co.tz");
 
         UUID versionId = productVersionRepository
             .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), product.productId())
             .get(0).getProductVersionId();
-        assertEquals(2, baseRateRepository.findByProductVersionId(versionId).size());
+        assertEquals(4, baseRateRepository.findByProductVersionId(versionId).size());
     }
 
     /** Same band, different sex: not an overlap. */
@@ -865,6 +938,7 @@ class ProductApiIntegrationTest {
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2")),
                     new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8"))),
+            new EligibilityBounds(18, 25, null, null, null, null),
             "actuary@nlolo.co.tz");
 
         UUID versionId = productVersionRepository
@@ -882,10 +956,15 @@ class ProductApiIntegrationTest {
             .get(0).getProductVersionId();
 
         ProductApi.VersionRatingView rating = productApi.getVersionRating(productId, versionId);
-        assertEquals(1, rating.baseRates().size());
+        assertEquals(2, rating.baseRates().size());
         assertEquals(2, rating.ratingFactors().size());
         assertEquals(1, rating.benefitSchedule().size());
-        assertEquals(0, new BigDecimal("15.2000").compareTo(rating.baseRates().get(0).ratePerMille()));
+        // Found by its key rather than by index: findByProductVersionId carries no ORDER BY, so
+        // baseRates().get(0) asserted on whichever row Postgres happened to return first.
+        assertThat(rating.baseRates())
+            .filteredOn(r -> r.sex() == Sex.FEMALE && r.smokerStatus() == SmokerStatus.NON_SMOKER)
+            .singleElement()
+            .satisfies(r -> assertEquals(0, new BigDecimal("15.2000").compareTo(r.ratePerMille())));
     }
 
     @Test
