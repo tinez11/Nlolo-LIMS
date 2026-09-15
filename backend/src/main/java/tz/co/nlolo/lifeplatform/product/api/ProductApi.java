@@ -99,6 +99,13 @@ public interface ProductApi {
                             int ageAtEntry, int ageFrom, int ageTo, BigDecimal ratePerMille,
                             BigDecimal annualBase, List<AppliedFactor> appliedFactors,
                             BigDecimal annualAfterFactors,
+                            /**
+                             * What paying at this frequency costs, and the annual figure the
+                             * instalment is actually divided from. Both present even when zero:
+                             * without them the view reports an annual premium that does not divide
+                             * into the instalment beside it, which is worse than showing nothing.
+                             */
+                            BigDecimal frequencyLoadingPercent, BigDecimal annualAfterFrequencyLoading,
                             PremiumFrequency frequency, int instalmentsPerYear,
                             BigDecimal instalmentAmount) {}
 
@@ -258,7 +265,13 @@ public interface ProductApi {
      */
     record VersionRatingView(UUID productId, UUID productVersionId, LocalDate effectiveDate,
                              List<BaseRateInput> baseRates, List<RatingFactorInput> ratingFactors,
-                             List<BenefitInput> benefitSchedule) {}
+                             List<BenefitInput> benefitSchedule,
+                             /**
+                              * What paying in instalments costs. Part of the rating basis an
+                              * actuary reviews, so it belongs on this read rather than only on a
+                              * quote. {@link FrequencyLoading#none()} when nothing is loaded.
+                              */
+                             FrequencyLoading frequencyLoading) {}
 
     VersionRatingView getVersionRating(UUID productId, UUID versionId);
 

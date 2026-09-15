@@ -426,6 +426,8 @@ components:
               band: { type: string }
               multiplier: { type: number }
         annualAfterFactors: { type: number }
+        frequencyLoadingPercent: { type: number }
+        annualAfterFrequencyLoading: { type: number }
         frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
         instalmentsPerYear: { type: integer }
         instalmentAmount: { type: number }
@@ -436,6 +438,15 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         effectiveDate: { type: string, format: date }
+        frequencyLoading:
+          description: >-
+            What paying in instalments costs. Part of the rating basis an actuary reviews,
+            so it belongs here and not only on a quote. Absent percentages mean unloaded --
+            a monthly payer charged the same total as an annual one.
+          type: object
+          properties:
+            monthlyPercent: { type: number }
+            quarterlyPercent: { type: number }
         baseRates:
           type: array
           items: { $ref: '#/components/schemas/BaseRate' }

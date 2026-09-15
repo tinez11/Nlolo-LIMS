@@ -138,6 +138,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/product/V6__eligibility_bounds.sql",
             "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
+            "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",

@@ -93,6 +93,7 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/product/V6__eligibility_bounds.sql",
             "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
+            "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",

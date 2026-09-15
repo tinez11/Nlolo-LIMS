@@ -281,9 +281,13 @@ public class ProductApiImpl implements ProductApi {
      * 2. Derive entry age from dateOfBirth and asOf. Never taken from the caller.
      * 3. Look up the rate cell for (age, sex, smoker). No match is a 422.
      * 4. annualBase = sumAssured / 1000 * ratePerMille.
-     * 5. Apply OCCUPATION_CLASS then SUM_ASSURED_BAND multipliers, strictly.
-     * 6. Divide by the frequency's instalments per year.
-     * 7. Round ONCE, at the end, HALF_UP to 2dp. Intermediate values keep full
+     * 5. Apply the OCCUPATION_CLASS multiplier strictly, then the SUM_ASSURED_BAND
+     *    multiplier resolved BY RANGE from the amount -- the same lookup issuance
+     *    makes, so an illustration and the policy it becomes cannot disagree.
+     * 6. Apply the version's frequency loading to the annual premium. A payment
+     *    term, applied after every risk term, so the breakdown reads in that order.
+     * 7. Divide by the frequency's instalments per year.
+     * 8. Round ONCE, at the end, HALF_UP to 2dp. Intermediate values keep full
      *    precision: rounding at each step would drift by cents that compound over
      *    a 20-year premium term.
      *
@@ -333,14 +337,22 @@ public class ProductApiImpl implements ProductApi {
             })
             .orElse(BigDecimal.ONE));
 
+        // The payment term, applied after all the risk arithmetic. Multiplication commutes, so its
+        // position does not change the number -- it changes whether a reader can follow the
+        // breakdown, which is the whole reason this view returns one.
+        FrequencyLoading loading = version.getFrequencyLoading();
+        BigDecimal loadedAnnual = loading.applyTo(annual, input.frequency());
+
         int instalments = input.frequency().instalmentsPerYear();
-        BigDecimal instalment = annual
+        BigDecimal instalment = loadedAnnual
             .divide(BigDecimal.valueOf(instalments), 2, java.math.RoundingMode.HALF_UP);
 
         return new PremiumQuoteView(versionId, input.sumAssuredCurrency(),
             ageAtEntry, cell.getAgeFrom(), cell.getAgeTo(), cell.getRatePerMille(),
             annualBase.setScale(2, java.math.RoundingMode.HALF_UP), List.copyOf(applied),
             annual.setScale(2, java.math.RoundingMode.HALF_UP),
+            loading.percentFor(input.frequency()),
+            loadedAnnual.setScale(2, java.math.RoundingMode.HALF_UP),
             input.frequency(), instalments, instalment);
     }
 
@@ -368,7 +380,8 @@ public class ProductApiImpl implements ProductApi {
             .map(b -> new BenefitInput(BenefitType.valueOf(b.getBenefitType()), b.getCalculationMethod()))
             .toList();
 
-        return new VersionRatingView(productId, versionId, version.getEffectiveDate(), rates, factors, benefits);
+        return new VersionRatingView(productId, versionId, version.getEffectiveDate(), rates, factors, benefits,
+            version.getFrequencyLoading());
     }
 
     /**

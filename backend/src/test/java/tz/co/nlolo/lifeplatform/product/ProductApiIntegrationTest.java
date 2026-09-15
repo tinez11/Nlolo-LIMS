@@ -968,6 +968,49 @@ class ProductApiIntegrationTest {
             .satisfies(f -> assertEquals(FactorType.OCCUPATION_CLASS, f.factorType()));
     }
 
+    @Test
+    void quotePremiumAppliesTheVersionsFrequencyLoadingAndShowsIt() {
+        ProductSummaryView product = productApi.createProduct("TERM-B2A-QLOAD", "Loaded quote",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.2000")),
+                    new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.4000"))),
+            new EligibilityBounds(18, 25, null, null, null, null),
+            new FrequencyLoading(new BigDecimal("8"), new BigDecimal("3")), "actuary@nlolo.co.tz");
+
+        // 10,000,000 / 1000 * 1.2 = 12,000 annual. Monthly: x 1.08 = 12,960, / 12 = 1,080.00.
+        ProductApi.PremiumQuoteView monthly =
+            productApi.quotePremium(quoteFor(product.productId(), LocalDate.now().minusYears(20), PremiumFrequency.MONTHLY));
+        assertThat(monthly.annualAfterFactors()).isEqualByComparingTo(new BigDecimal("12000.00"));
+        assertThat(monthly.frequencyLoadingPercent()).isEqualByComparingTo(new BigDecimal("8"));
+        assertThat(monthly.annualAfterFrequencyLoading()).isEqualByComparingTo(new BigDecimal("12960.00"));
+        assertThat(monthly.instalmentAmount()).isEqualByComparingTo(new BigDecimal("1080.00"));
+
+        // Annual is never loaded, and pays less over the year than the monthly payer -- which is
+        // the entire point of the change.
+        ProductApi.PremiumQuoteView annually =
+            productApi.quotePremium(quoteFor(product.productId(), LocalDate.now().minusYears(20), PremiumFrequency.ANNUALLY));
+        assertThat(annually.frequencyLoadingPercent()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(annually.instalmentAmount()).isEqualByComparingTo(new BigDecimal("12000.00"));
+    }
+
+    @Test
+    void anUnloadedVersionQuotesExactlyWhatItDidBefore() {
+        UUID productId = pricedProduct("TERM-B2A-NOLOAD", new BigDecimal("15.2000"));
+        ProductApi.PremiumQuoteView quote =
+            productApi.quotePremium(quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.MONTHLY));
+
+        // 10,000,000 / 1000 * 15.2 = 152,000 / 12 = 12,666.67 -- the figure this product has
+        // always quoted. The migration defaults to zero precisely so this cannot move.
+        assertThat(quote.frequencyLoadingPercent()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(quote.annualAfterFrequencyLoading()).isEqualByComparingTo(new BigDecimal("152000.00"));
+        assertThat(quote.instalmentAmount()).isEqualByComparingTo(new BigDecimal("12666.67"));
+    }
+
     /** Rounding happens ONCE at the end; 152,000 / 4 and / 1 are exact. */
     @Test
     void quotePremiumDividesByTheFrequency() {
