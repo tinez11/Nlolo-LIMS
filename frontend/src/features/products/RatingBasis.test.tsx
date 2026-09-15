@@ -118,10 +118,10 @@ describe('rating basis', () => {
     // Multipliers get three, for the same reason at their own precision.
     expect(screen.getByText('× 1.100')).toBeInTheDocument();
 
-    // Humanised, not raw. This asserted `SUM_ASSURED` before, which is the wire
-    // literal -- a calculation method is shown to a person here, and every other
-    // enum on this platform goes through the same humaniser.
-    expect(screen.getByText('Sum assured')).toBeInTheDocument();
+    // The amount, not the mechanism. This read "Sum assured" before -- the name of a
+    // calculation method rather than what the benefit pays, which is the one thing a
+    // reviewer opens this panel for. Never the raw wire literal either.
+    expect(screen.getByText('Full sum assured')).toBeInTheDocument();
     expect(screen.queryByText('SUM_ASSURED')).not.toBeInTheDocument();
 
     // Sex was printed raw while the column beside it was lowercased, so the table
@@ -132,6 +132,31 @@ describe('rating basis', () => {
 
     // The unpriced warning must NOT appear next to a real rate table.
     expect(screen.queryByText(/unpriced/)).not.toBeInTheDocument();
+  });
+
+  it('shows what each benefit pays, not the name of its calculation method', () => {
+    // This is the number a claim against the benefit is settled at -- `claimableCover`
+    // resolves the coverage row this schedule produces -- so a reviewer checking a rider
+    // has to be able to read it here. The panel printed "Percentage of sum assured" and
+    // stopped, leaving the one figure that matters on the wire and off the screen.
+    renderPage({
+      productId: PRODUCT_ID,
+      productVersionId: VERSION_ID,
+      effectiveDate: '2026-01-01',
+      baseRates: [],
+      ratingFactors: [],
+      benefitSchedule: [
+        { benefitType: 'DEATH', calculationMethod: 'SUM_ASSURED' },
+        { benefitType: 'CRITICAL_ILLNESS', calculationMethod: 'PERCENTAGE_OF_SUM_ASSURED', percent: 25 },
+        { benefitType: 'DISABILITY', calculationMethod: 'FLAT_AMOUNT', flatAmount: 500000 },
+      ],
+    });
+
+    expect(screen.getByText('Full sum assured')).toBeInTheDocument();
+    expect(screen.getByText('25% of sum assured')).toBeInTheDocument();
+    // Grouped, for the reason the sum assured bounds are: 500000 is a number a reader
+    // has to count digits on.
+    expect(screen.getByText('Flat 500,000')).toBeInTheDocument();
   });
 
   it('shows the age bounds an AGE factor actually resolves against, not just its band label', () => {

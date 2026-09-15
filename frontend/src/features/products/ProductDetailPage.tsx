@@ -287,6 +287,39 @@ const AMOUNT = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 0,
 });
 
+/**
+ * Unlike a rating band, a flat benefit is a sum somebody is paid, so its cents are not noise.
+ */
+const BENEFIT_AMOUNT = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2,
+});
+
+/**
+ * What a benefit pays, as an amount rather than as the name of a mechanism.
+ *
+ * The method alone said "Percentage of sum assured" and stopped there -- the one number a
+ * reviewer opens this panel for was on the wire and not on the screen. This is the amount a
+ * claim against the benefit is settled at, so it reads as the answer.
+ *
+ * No currency on the flat amount: a version carries none. The sum is paid in the currency of
+ * the policy it is claimed on, and printing the product's default here would assert a currency
+ * this row does not have.
+ */
+function benefitAmount(benefit: NonNullable<VersionRatingView['benefitSchedule']>[number]): string {
+  switch (benefit.calculationMethod) {
+    case 'SUM_ASSURED':
+      return 'Full sum assured';
+    case 'PERCENTAGE_OF_SUM_ASSURED':
+      return benefit.percent == null ? '—' : `${BENEFIT_AMOUNT.format(benefit.percent)}% of sum assured`;
+    case 'FLAT_AMOUNT':
+      return benefit.flatAmount == null ? '—' : `Flat ${BENEFIT_AMOUNT.format(benefit.flatAmount)}`;
+    default:
+      // Versions published before V13 normalised to SUM_ASSURED, so this is unreachable
+      // through the platform -- it exists because the generated type makes the field optional.
+      return benefit.calculationMethod ? humanizeStatus(benefit.calculationMethod) : '—';
+  }
+}
+
 const BASE_RATE_COLUMNS: Column<BaseRate>[] = [
   {
     key: 'age',
@@ -400,7 +433,7 @@ function RatingBasis({
           key: `${b.benefitType}-${b.calculationMethod}`,
           label: b.benefitType ? humanizeStatus(b.benefitType) : '—',
           note: null,
-          value: b.calculationMethod ? humanizeStatus(b.calculationMethod) : '—',
+          value: benefitAmount(b),
         }))}
       />
 

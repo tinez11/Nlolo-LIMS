@@ -21,6 +21,13 @@ const sumRow = {
   sumAssuredTo: '5000000',
 };
 
+const deathBenefit = {
+  benefitType: 'DEATH' as const,
+  calculationMethod: 'SUM_ASSURED' as const,
+  percent: '',
+  flatAmount: '',
+};
+
 // Built on the blank form so the fixture always carries every key a real submission has.
 const valid = () => ({
   ...blankPublishVersionForm(),
@@ -28,7 +35,9 @@ const valid = () => ({
   effectiveDate: '2026-01-01',
   retirementDate: '',
   ratingTable: [ageRow, sumRow],
-  benefitSchedule: [],
+  // A version that covers nothing is refused as of V13, so every fixture carries a benefit
+  // or nothing parses -- the same reason the TIRA filing below is here.
+  benefitSchedule: [deathBenefit],
   fundDefinitions: [],
   // Required as of V12: a version may not exist without the filing that authorises it, so
   // every fixture carries one or nothing parses.
@@ -415,25 +424,102 @@ describe('publishVersionFormSchema', () => {
     });
   });
 
-  it('accepts an empty benefit schedule -- no minimum coverage required', () => {
-    expect(termLife.safeParse({ ...valid(), benefitSchedule: [] }).success).toBe(true);
-  });
-
-  it('accepts a populated benefit schedule', () => {
-    const result = termLife.safeParse({
-      ...valid(),
-      benefitSchedule: [{ benefitType: 'DEATH', calculationMethod: 'sum_assured' }],
+  describe('benefit amounts', () => {
+    // The benefit schedule is what a claim is valued against as of V13, so the rules
+    // below mirror ProductApiImpl.publishVersion rather than merely tidying the form.
+    it('requires at least one benefit', () => {
+      const result = termLife.safeParse({ ...valid(), benefitSchedule: [] });
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain('at least one benefit');
     });
-    expect(result.success).toBe(true);
-  });
 
-  it('rejects a benefit row with a blank calculation method', () => {
-    expect(
-      termLife.safeParse({
+    it('accepts a populated benefit schedule', () => {
+      expect(termLife.safeParse(valid()).success).toBe(true);
+    });
+
+    it('rejects a benefit row with a blank calculation method', () => {
+      expect(
+        termLife.safeParse({
+          ...valid(),
+          benefitSchedule: [{ ...deathBenefit, calculationMethod: '' }],
+        }).success,
+      ).toBe(false);
+    });
+
+    it('requires a percentage on a PERCENTAGE_OF_SUM_ASSURED benefit', () => {
+      const result = termLife.safeParse({
         ...valid(),
-        benefitSchedule: [{ benefitType: 'DEATH', calculationMethod: '' }],
-      }).success,
-    ).toBe(false);
+        benefitSchedule: [
+          {
+            benefitType: 'CRITICAL_ILLNESS',
+            calculationMethod: 'PERCENTAGE_OF_SUM_ASSURED',
+            percent: '',
+            flatAmount: '',
+          },
+        ],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('requires an amount on a FLAT_AMOUNT benefit', () => {
+      const result = termLife.safeParse({
+        ...valid(),
+        benefitSchedule: [
+          { benefitType: 'DISABILITY', calculationMethod: 'FLAT_AMOUNT', percent: '', flatAmount: '' },
+        ],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    // The server's amount_shape CHECK refuses an amount the method does not use, so the
+    // form has to refuse it too rather than let the staff user learn it from a 422.
+    it('rejects an amount the method does not use', () => {
+      const result = termLife.safeParse({
+        ...valid(),
+        benefitSchedule: [{ ...deathBenefit, flatAmount: '500000' }],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('sends a percentage benefit as a number', () => {
+      const result = termLife.safeParse({
+        ...valid(),
+        benefitSchedule: [
+          {
+            benefitType: 'CRITICAL_ILLNESS',
+            calculationMethod: 'PERCENTAGE_OF_SUM_ASSURED',
+            percent: '25',
+            flatAmount: '',
+          },
+        ],
+      });
+      expect(result.success).toBe(true);
+      expect(toApiRequest(result.data!).benefitSchedule[0]).toEqual({
+        benefitType: 'CRITICAL_ILLNESS',
+        calculationMethod: 'PERCENTAGE_OF_SUM_ASSURED',
+        percent: 25,
+      });
+    });
+
+    it('sends a flat benefit as a number', () => {
+      const result = termLife.safeParse({
+        ...valid(),
+        benefitSchedule: [
+          {
+            benefitType: 'DISABILITY',
+            calculationMethod: 'FLAT_AMOUNT',
+            percent: '',
+            flatAmount: '500000',
+          },
+        ],
+      });
+      expect(result.success).toBe(true);
+      expect(toApiRequest(result.data!).benefitSchedule[0]).toEqual({
+        benefitType: 'DISABILITY',
+        calculationMethod: 'FLAT_AMOUNT',
+        flatAmount: 500000,
+      });
+    });
   });
 
   // ProductApiImpl.publishVersion: fund definitions are rejected outright for any
@@ -495,10 +581,7 @@ describe('toApiRequest', () => {
     // empty numeric input is '', and coercing that to 0 would be a real age rather than an
     // absence), while the wire wants integers. Non-AGE rows must carry no bounds at all --
     // the backend's rating_table_age_bounds_shape CHECK refuses them there.
-    const parsed = termLife.parse({
-      ...valid(),
-      benefitSchedule: [{ benefitType: 'DEATH', calculationMethod: 'sum_assured' }],
-    });
+    const parsed = termLife.parse(valid());
     const api = toApiRequest(parsed);
 
     expect(api.ratingTable).toEqual([
@@ -518,7 +601,11 @@ describe('toApiRequest', () => {
     // the others outright, so sending them would be a 422 rather than a tidiness question.
     expect(api.ratingTable[1]).not.toHaveProperty('ageFrom');
     expect(api.ratingTable[0]).not.toHaveProperty('sumAssuredFrom');
-    expect(api.benefitSchedule).toEqual([{ benefitType: 'DEATH', calculationMethod: 'sum_assured' }]);
+    // No percent or flatAmount key at all: SUM_ASSURED uses neither, and the server's
+    // amount_shape CHECK refuses the one it does not use rather than ignoring it.
+    expect(api.benefitSchedule).toEqual([
+      { benefitType: 'DEATH', calculationMethod: 'SUM_ASSURED' },
+    ]);
   });
 
   it('rejects an AGE row with no range', () => {

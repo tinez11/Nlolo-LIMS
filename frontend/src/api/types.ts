@@ -256,6 +256,10 @@ export type RatingFactorType = NonNullable<
 export type BenefitScheduleType = NonNullable<
   NonNullable<ProductVersionSpec['benefitSchedule'][number]['benefitType']>
 >;
+/** How a benefit's amount is worked out from the policy's sum assured. */
+export type BenefitCalculationMethod = NonNullable<
+  NonNullable<ProductVersionSpec['benefitSchedule'][number]['calculationMethod']>
+>;
 export type IfrsMeasurementModel = NonNullable<ProductVersionSpec['ifrsMeasurementModel']>;
 export type VersionRatingView = ProductComponents['schemas']['VersionRatingView'];
 export type BaseRate = ProductComponents['schemas']['BaseRate'];
@@ -348,6 +352,23 @@ export const BENEFIT_TYPES: readonly BenefitScheduleType[] = [
   'MATURITY',
   'SURRENDER',
 ];
+
+export const BENEFIT_CALCULATION_METHODS: readonly BenefitCalculationMethod[] = [
+  'SUM_ASSURED',
+  'PERCENTAGE_OF_SUM_ASSURED',
+  'FLAT_AMOUNT',
+];
+
+/**
+ * What each method pays, in the words an actuary would use rather than the wire literal.
+ * `humanizeStatus` would render PERCENTAGE_OF_SUM_ASSURED as "Percentage of sum assured",
+ * which is the mechanism and not the answer to "what does this benefit pay?".
+ */
+export const BENEFIT_CALCULATION_METHOD_LABELS: Record<BenefitCalculationMethod, string> = {
+  SUM_ASSURED: 'Full sum assured',
+  PERCENTAGE_OF_SUM_ASSURED: '% of sum assured',
+  FLAT_AMOUNT: 'Flat amount',
+};
 export type PremiumFrequency = NonNullable<PolicyView['premiumFrequency']>;
 
 export const PREMIUM_FREQUENCIES: readonly PremiumFrequency[] = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'];

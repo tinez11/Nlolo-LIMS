@@ -2,7 +2,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, X } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm, useFieldArray, useWatch, Controller } from 'react-hook-form';
-import { BENEFIT_TYPES, IFRS_MEASUREMENT_MODELS, RATING_FACTOR_TYPES, type ProductCategory } from '@/api/types';
+import {
+  BENEFIT_CALCULATION_METHODS,
+  BENEFIT_CALCULATION_METHOD_LABELS,
+  BENEFIT_TYPES,
+  IFRS_MEASUREMENT_MODELS,
+  RATING_FACTOR_TYPES,
+  type ProductCategory,
+} from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
@@ -86,7 +93,10 @@ export function PublishVersionForm({
       retirementDate: '',
       ratingTable: [blankRatingFactorRow(), { ...blankRatingFactorRow(), factorType: 'SUM_ASSURED_BAND' }],
       baseRates: [],
-      benefitSchedule: [],
+      // One row from the start, like the rating table above: at least one benefit is now
+      // required, and a panel that starts empty would make every publish begin with a
+      // refusal for something the form could have offered.
+      benefitSchedule: [blankBenefitRow()],
       fundDefinitions: [],
       minEntryAge: '',
       maxEntryAge: '',
@@ -113,6 +123,9 @@ export function PublishVersionForm({
   const baseRateRows = useWatch({ control, name: 'baseRates' });
   const priced = (baseRateRows ?? []).some(isBaseRateRowPriced);
   const benefitSchedule = useFieldArray({ control, name: 'benefitSchedule' });
+  // Which amount input a benefit row shows follows the method selected on that row, and
+  // `benefitSchedule.fields` will not do it for the reason given above.
+  const benefitRows = useWatch({ control, name: 'benefitSchedule' });
   const fundDefinitions = useFieldArray({ control, name: 'fundDefinitions' });
 
   async function onSubmit(values: PublishVersionFormValues) {
@@ -635,36 +648,103 @@ export function PublishVersionForm({
       </div>
 
       <div className="rounded-md border border-border p-3">
-        <p className="mb-2 text-xs font-medium text-muted-foreground">Benefit schedule (optional)</p>
+        {/* Not optional any more, and the label has to say so before the submit does: a
+            version that covers nothing is refused, and what is authored here is what a
+            claim is later valued at. */}
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Benefit schedule</p>
+        {errors.benefitSchedule?.root?.message && (
+          <p role="alert" className="mb-2 text-[11px] text-status-danger-fg">
+            {errors.benefitSchedule.root.message}
+          </p>
+        )}
         <div className="space-y-2">
-          {benefitSchedule.fields.map((field, index) => (
-            <div key={field.id} className="flex items-center gap-2">
-              <Select
-                inputSize="sm"
-                {...register(`benefitSchedule.${index}.benefitType`)}
-              >
-                {BENEFIT_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </Select>
-              <Input
-                inputSize="sm" className="flex-1"
-                placeholder="Calculation method"
-                {...register(`benefitSchedule.${index}.calculationMethod`)}
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label="Remove benefit"
-                onClick={() => benefitSchedule.remove(index)}
-              >
-                <X />
-              </Button>
-            </div>
-          ))}
+          {benefitSchedule.fields.map((field, index) => {
+            const method = benefitRows?.[index]?.calculationMethod;
+            const rowErrors = errors.benefitSchedule?.[index];
+            const rowMessage =
+              rowErrors?.calculationMethod?.message ??
+              rowErrors?.percent?.message ??
+              rowErrors?.flatAmount?.message;
+
+            return (
+              <div key={field.id}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select
+                    inputSize="sm"
+                    className="w-40 shrink-0"
+                    aria-label={`Benefit ${index + 1} type`}
+                    {...register(`benefitSchedule.${index}.benefitType`)}
+                  >
+                    {BENEFIT_TYPES.map((t) => (
+                      // Humanised, like every other enum on this console.
+                      <option key={t} value={t}>
+                        {humanizeStatus(t)}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    inputSize="sm"
+                    className="w-44 shrink-0"
+                    aria-label={`Benefit ${index + 1} calculation method`}
+                    aria-invalid={rowErrors?.calculationMethod ? true : undefined}
+                    {...register(`benefitSchedule.${index}.calculationMethod`)}
+                  >
+                    {BENEFIT_CALCULATION_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {BENEFIT_CALCULATION_METHOD_LABELS[m]}
+                      </option>
+                    ))}
+                  </Select>
+                  {/* One amount input, showing only for the method that uses it. The shape
+                      rule refuses an amount the method does not use, so an always-present
+                      pair of inputs would be a field that can only ever be wrong. A full
+                      sum assured benefit needs no amount at all and says so. */}
+                  {method === 'PERCENTAGE_OF_SUM_ASSURED' ? (
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputSize="sm" className="w-28 shrink-0 text-right"
+                      placeholder="%"
+                      aria-label={`Benefit ${index + 1} percentage`}
+                      aria-invalid={rowErrors?.percent ? true : undefined}
+                      {...register(`benefitSchedule.${index}.percent`)}
+                    />
+                  ) : method === 'FLAT_AMOUNT' ? (
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputSize="sm" className="w-28 shrink-0 text-right"
+                      placeholder="amount"
+                      aria-label={`Benefit ${index + 1} flat amount`}
+                      aria-invalid={rowErrors?.flatAmount ? true : undefined}
+                      {...register(`benefitSchedule.${index}.flatAmount`)}
+                    />
+                  ) : (
+                    <span className="w-28 shrink-0 text-right text-xs text-subtle-foreground">
+                      —
+                    </span>
+                  )}
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="shrink-0"
+                    aria-label="Remove benefit"
+                    onClick={() => benefitSchedule.remove(index)}
+                  >
+                    <X />
+                  </Button>
+                </div>
+                {rowMessage && (
+                  <p role="alert" className="mt-1 px-1 text-[11px] text-status-danger-fg">
+                    {rowMessage}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
         <Button
           type="button"

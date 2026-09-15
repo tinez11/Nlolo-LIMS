@@ -205,11 +205,6 @@ export function doubleCountedFactorMessage(factorType: 'AGE' | 'SMOKER_STATUS'):
   );
 }
 
-const benefitRowSchema = z.object({
-  benefitType: z.enum(['DEATH', 'DISABILITY', 'CRITICAL_ILLNESS', 'MATURITY', 'SURRENDER']),
-  calculationMethod: z.string().trim().min(1, 'Calculation method is required'),
-});
-
 const fundRowSchema = z.object({
   fundCode: z.string().trim().min(1, 'Fund code is required'),
   currentNav: z.coerce.number(),
@@ -246,6 +241,63 @@ const percentZeroToHundred = (label: string) =>
     .refine((v) => v === '' || /^\d+(\.\d{1,2})?$/.test(v), `${label} must be a percentage`)
     .refine((v) => v === '' || Number(v) >= 0, `${label} cannot be negative`)
     .refine((v) => v === '' || Number(v) <= 100, `${label} cannot exceed 100`);
+
+/**
+ * A benefit percentage. Unlike the loading percentages above, zero is NOT a real answer:
+ * `benefit_schedule_amount_shape` and `BenefitDefinition`'s compact constructor both refuse it,
+ * because a benefit that pays nothing is not a benefit.
+ */
+const benefitPercent = z
+  .string()
+  .trim()
+  .refine((v) => v === '' || /^\d+(\.\d{1,2})?$/.test(v), 'Benefit percentage must be a percentage')
+  .refine((v) => v === '' || Number(v) > 0, 'Benefit percentage must be greater than zero')
+  .refine((v) => v === '' || Number(v) <= 100, 'Benefit percentage cannot exceed 100');
+
+/**
+ * One benefit a product version covers, and what it pays.
+ *
+ * This is the number a claim is settled at -- `claimableCover` resolves the coverage row this
+ * produces -- so the shape rule below is not tidiness. It mirrors `BenefitDefinition`'s compact
+ * constructor and the `benefit_schedule_amount_shape` CHECK exactly: each method carries the one
+ * amount it uses and no other, so an amount that would be silently ignored is refused on the
+ * field rather than learned from a 422.
+ *
+ * `percent` and `flatAmount` stay strings for the reason the file header gives about
+ * `z.coerce.number()`: an empty numeric input is `''`, and coercing that to 0 would be a real
+ * amount rather than an absence -- and zero is refused on both.
+ */
+const benefitRowSchema = z
+  .object({
+    benefitType: z.enum(['DEATH', 'DISABILITY', 'CRITICAL_ILLNESS', 'MATURITY', 'SURRENDER']),
+    calculationMethod: z.enum(['SUM_ASSURED', 'PERCENTAGE_OF_SUM_ASSURED', 'FLAT_AMOUNT'], {
+      error: 'Calculation method is required',
+    }),
+    percent: benefitPercent,
+    flatAmount: optionalAmount('Flat benefit amount'),
+  })
+  .superRefine((row, ctx) => {
+    const needs = (field: 'percent' | 'flatAmount', message: string) => {
+      if (row[field] === '') ctx.addIssue({ code: 'custom', message, path: [field] });
+    };
+    const carriesNo = (field: 'percent' | 'flatAmount', message: string) => {
+      if (row[field] !== '') ctx.addIssue({ code: 'custom', message, path: [field] });
+    };
+    switch (row.calculationMethod) {
+      case 'SUM_ASSURED':
+        carriesNo('percent', 'A benefit paying the whole sum assured carries no percentage');
+        carriesNo('flatAmount', 'A benefit paying the whole sum assured carries no flat amount');
+        break;
+      case 'PERCENTAGE_OF_SUM_ASSURED':
+        needs('percent', 'A percentage benefit needs a percentage');
+        carriesNo('flatAmount', 'A percentage benefit carries no flat amount');
+        break;
+      case 'FLAT_AMOUNT':
+        needs('flatAmount', 'A flat benefit needs an amount');
+        carriesNo('percent', 'A flat benefit carries no percentage');
+        break;
+    }
+  });
 
 /** Both blank, or max at or above min. Mirrors EligibilityBounds and the DB CHECKs. */
 function requireOrdered(
@@ -376,7 +428,9 @@ export function publishVersionFormSchema(category: ProductCategory) {
         'An approval that has not happened cannot authorise a product',
       ),
 
-    benefitSchedule: z.array(benefitRowSchema), // no minimum coverage required
+    // ProductApiImpl.publishVersion refuses a version that covers nothing, the first check it
+    // runs. A contract has to say what it insures before it can be priced or claimed against.
+    benefitSchedule: z.array(benefitRowSchema).min(1, 'A product must cover at least one benefit'),
     fundDefinitions: z.array(fundRowSchema).superRefine((rows, ctx) => {
       // ProductApiImpl.publishVersion: rejected outright for any category other
       // than UNIT_LINKED, even a well-formed one.
@@ -552,7 +606,10 @@ export function blankBaseRateBand(ageFrom = '', ageTo = ''): PublishVersionFormI
 }
 
 export function blankBenefitRow(): PublishVersionFormInput['benefitSchedule'][number] {
-  return { benefitType: 'DEATH', calculationMethod: '' };
+  // Both amount keys exist from the start for the reason blankRatingFactorRow gives: the method
+  // can be switched after the row is added, and an input that begins undefined and later
+  // receives a value is the uncontrolled-to-controlled warning, and loses what was typed in it.
+  return { benefitType: 'DEATH', calculationMethod: 'SUM_ASSURED', percent: '', flatAmount: '' };
 }
 
 export function blankFundRow(): PublishVersionFormInput['fundDefinitions'][number] {
@@ -620,7 +677,19 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
       reference: values.tiraReference,
       approvalDate: values.tiraApprovalDate,
     },
-    benefitSchedule: values.benefitSchedule,
+    // Each row carries only the amount its own method uses -- benefit_schedule_amount_shape
+    // refuses the others outright, so sending them would be a 422 rather than a tidiness
+    // question. The same arrangement as the rating table's per-factor bounds above.
+    benefitSchedule: values.benefitSchedule.map((benefit) => ({
+      benefitType: benefit.benefitType,
+      calculationMethod: benefit.calculationMethod,
+      ...(benefit.calculationMethod === 'PERCENTAGE_OF_SUM_ASSURED' && {
+        percent: Number(benefit.percent),
+      }),
+      ...(benefit.calculationMethod === 'FLAT_AMOUNT' && {
+        flatAmount: Number(benefit.flatAmount),
+      }),
+    })),
     fundDefinitions: values.fundDefinitions,
     // Omitted entirely when nothing is bounded, rather than sent as an object of nulls.
     // An absent block and a block of nulls mean the same thing to the backend, but the
