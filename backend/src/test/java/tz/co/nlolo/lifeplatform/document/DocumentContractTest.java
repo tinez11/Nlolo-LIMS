@@ -217,7 +217,11 @@ class DocumentContractTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            // DEATH and MATURITY: this class claims against both, and a claim is now valued
+            // against the benefit its product authored. Both at SUM_ASSURED, so every
+            // existing amount assertion is unchanged.
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED),
+                    new ProductApi.BenefitInput(BenefitType.MATURITY, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         TenantContext.clear();

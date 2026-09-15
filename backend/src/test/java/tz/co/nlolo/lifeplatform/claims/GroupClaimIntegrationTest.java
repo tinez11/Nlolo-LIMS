@@ -349,7 +349,7 @@ class GroupClaimIntegrationTest {
 
         assertThat(claim.policyMemberId()).isEqualTo(scheme.memberIdNamed("Juma Deceased"));
         assertThat(policyApi.claimableCover(scheme.policyNumber(),
-                scheme.memberIdNamed("Juma Deceased"), dateOfEvent).amount())
+                scheme.memberIdNamed("Juma Deceased"), dateOfEvent, "DEATH").amount())
             .as("what a claim on this life may pay is their own cover, not the schedule's total")
             .isEqualByComparingTo(new BigDecimal("5000000.00"));
     }
@@ -428,7 +428,7 @@ class GroupClaimIntegrationTest {
         String policyNumber = issueIndividualPolicy("GRP-CLAIM-IND-02");
 
         TenantContext.set(tenantId);
-        assertThat(policyApi.claimableCover(policyNumber, null, dateOfEvent))
+        assertThat(policyApi.claimableCover(policyNumber, null, dateOfEvent, "DEATH"))
             .satisfies(cover -> {
                 assertThat(cover.amount()).isEqualByComparingTo(new BigDecimal("2000000"));
                 assertThat(cover.currencyCode()).isEqualTo("TZS");
