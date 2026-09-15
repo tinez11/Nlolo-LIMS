@@ -105,6 +105,7 @@ VERSION_RESP=$(curl -sfi -X POST "$API/products/$PRODUCT_ID/versions" \
   -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{
     "ifrsMeasurementModel":"PAA","effectiveDate":"2020-01-01",
+    "tiraFiling":{"reference":"TIRA/DEMO/0001","approvalDate":"2020-01-01"},
     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]
   }')

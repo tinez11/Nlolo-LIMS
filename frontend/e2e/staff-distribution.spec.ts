@@ -66,6 +66,9 @@ async function createRealActiveProduct(page: Page): Promise<{ productId: string;
   await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
   await ratingSection.getByLabel('Rating factor 2 band').fill('1-99999999');
   await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
+  // The TIRA filing that authorises this version -- required as of V12.
+  await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
+  await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
   await page.getByRole('button', { name: 'Publish version' }).click();
   await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 

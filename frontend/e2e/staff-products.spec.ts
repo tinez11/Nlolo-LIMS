@@ -72,6 +72,9 @@ test.describe('staff products', () => {
     await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
     await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
     await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
+    // The TIRA filing that authorises this version -- required as of V12.
+    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
+    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
 
     await page.getByRole('button', { name: 'Publish version' }).click();
     await expect(
@@ -160,6 +163,9 @@ test.describe('staff products', () => {
     await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
     await ratingSection.getByLabel('Rating factor 2 band').fill('1-99999999');
     await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
+    // The TIRA filing that authorises this version -- required as of V12.
+    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
+    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
     await page.getByRole('button', { name: 'Publish version' }).click();
 
     // Published: it joins the catalogue and stops being an unfinished task. Both
@@ -237,6 +243,9 @@ test.describe('staff products', () => {
     ).toHaveCount(0);
 
     await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
+    // The TIRA filing that authorises this version -- required as of V12.
+    await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
+    await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
 
     // A priced version must say what ages it sells to, and the form refuses the submit until
     // it does. Asserted before filling them in, because this is the rule that stops a rate
