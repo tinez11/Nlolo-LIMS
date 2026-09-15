@@ -203,14 +203,25 @@ public class UnderwritingDecisionEventListener {
         return productApi.resolveBaseRatePerMille(decidedCase.productVersionId(), ageAtEntry,
                 life.sex() != null
                     ? tz.co.nlolo.lifeplatform.product.api.Sex.valueOf(life.sex().name()) : null,
+                // An unrecorded smoker status is UNKNOWN, not absent. SmokerStatus.UNKNOWN exists
+                // precisely so a product can price the undeclared case deliberately, and passing
+                // null made that cell unreachable from the only path that issues a contract --
+                // authored, visible on the product screen, and pricing nothing.
+                //
+                // Sex has no such value on purpose: a third value there would be a unisex rate,
+                // which is a different actuarial object needing its own table and its own
+                // sign-off. So an unrecorded sex still refuses below.
                 life.smokerStatus() != null
-                    ? tz.co.nlolo.lifeplatform.product.api.SmokerStatus.valueOf(life.smokerStatus().name()) : null)
+                    ? tz.co.nlolo.lifeplatform.product.api.SmokerStatus.valueOf(life.smokerStatus().name())
+                    : tz.co.nlolo.lifeplatform.product.api.SmokerStatus.UNKNOWN)
             .orElseThrow(() -> new IllegalStateException("Product version "
                 + decidedCase.productVersionId() + " has no base rate for age " + ageAtEntry
-                + ", sex " + life.sex() + ", smoker status " + life.smokerStatus()
+                + ", sex " + life.sex() + ", smoker status "
+                + (life.smokerStatus() != null ? life.smokerStatus().name() : "UNKNOWN (never recorded)")
                 + ". The rate table does not cover this life, so there is no price to charge —"
-                + " either the table has a gap, or the client's sex and smoker status were never"
-                + " recorded. Both are fixable; guessing a rate is not."));
+                + " either the table has a gap, the client's sex was never recorded, or this"
+                + " product does not price the undeclared smoker case. All three are fixable;"
+                + " guessing a rate is not."));
     }
 
     /**

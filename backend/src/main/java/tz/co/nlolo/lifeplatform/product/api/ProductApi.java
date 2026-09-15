@@ -278,8 +278,12 @@ public interface ProductApi {
      * costed. Callers on an unpriced version should ask {@link #isPriced} first rather than
      * reading an empty here as "no table".
      *
-     * @param sex null when unrecorded, which matches no cell — a priced product needs the fact.
-     * @param smokerStatus null when unrecorded, same.
+     * @param sex null when unrecorded, which matches no cell — a priced product needs the fact,
+     *            and there is deliberately no neutral value to fall back to.
+     * @param smokerStatus never null from the issuance path, which maps an unrecorded status onto
+     *                     {@link SmokerStatus#UNKNOWN} so a product that priced the undeclared
+     *                     case is actually used. Null still matches no cell, for a caller that
+     *                     genuinely has nothing to assert.
      */
     Optional<BigDecimal> resolveBaseRatePerMille(UUID productVersionId, int ageAtEntry,
                                                   Sex sex, SmokerStatus smokerStatus);

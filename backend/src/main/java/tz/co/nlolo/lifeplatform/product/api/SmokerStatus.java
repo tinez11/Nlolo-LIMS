@@ -13,7 +13,14 @@ package tz.co.nlolo.lifeplatform.product.api;
  * The concept already existed as {@link FactorType#SMOKER_STATUS} — a rating
  * factor with no enumerated values. This names the values.
  *
- * Like {@link Sex}, no party record carries it, so a quote asserts it.
+ * <p>Reachable from BOTH paths. A quote asserts it, and automatic issuance maps a life whose
+ * smoker status was never recorded onto {@code UNKNOWN} — so a product that deliberately priced
+ * the undeclared case gets used, and one that did not still refuses, naming the reason.
+ *
+ * <p>It was unreachable from issuance until then: an unrecorded status was passed as null, and
+ * {@code resolveBaseRatePerMille} returns empty for a null, so the cell could be authored, shown
+ * on the product screen, and price nothing. Unlike {@link Sex}, which keeps refusing when
+ * unrecorded because a neutral sex would be a unisex rate — a different actuarial object.
  */
 public enum SmokerStatus {
     SMOKER,

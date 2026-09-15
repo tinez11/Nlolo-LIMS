@@ -643,6 +643,88 @@ class PolicyApiIntegrationTest {
         assertThat(decided.issuanceFailedAt()).isNotNull();
     }
 
+    /**
+     * SmokerStatus.UNKNOWN is documented as "a real, ratable value rather than a null stand-in:
+     * a product may price undeclared smoker status deliberately". It was unreachable from the
+     * only path that issues a contract: issuance passed null for an unrecorded status, and
+     * resolveBaseRatePerMille returns empty for a null. So an actuary could author that cell,
+     * see it on the product screen, and watch it price nothing -- the same shape V5 and V9
+     * removed for AGE and SUM_ASSURED_BAND.
+     */
+    @Test
+    void automaticIssuancePricesAnUnrecordedSmokerStatusFromTheProductsUnknownCell() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-UNK-01", "Prices the undeclared case",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 78, Sex.FEMALE, SmokerStatus.UNKNOWN, new BigDecimal("12.0000")),
+                    new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.UNKNOWN, new BigDecimal("14.0000"))),
+            new EligibilityBounds(18, 78, null, null, null, null), "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        PolicyView issued = issueFromProposal(tenantId,
+            new Fixture(lifeWithNoSmokerStatus(tenantId, 40, "5003"), product.productId(), versionId),
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()));
+
+        assertThat(issued.premiumAmount())
+            .as("priced from the product's own UNKNOWN cell -- 12.0 per mille on 1,000,000, monthly")
+            .isEqualByComparingTo(new BigDecimal("1000.00"));
+    }
+
+    /**
+     * And a product that did NOT price the undeclared case still refuses, saying which of the
+     * three fixable things is wrong rather than reading like a rate-table gap alone.
+     */
+    @Test
+    void aProductThatDoesNotPriceTheUndeclaredCaseRefusesAndSaysSo() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-UNK-02", "Demands a declaration",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            // NON_SMOKER only: a real stance, and one UNKNOWN cannot satisfy.
+            List.of(new ProductApi.BaseRateInput(18, 78, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000")),
+                    new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("14.0000"))),
+            new EligibilityBounds(18, 78, null, null, null, null), "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        UUID applicantId = lifeWithNoSmokerStatus(tenantId, 40, "5004");
+        UnderwritingCaseView opened = underwritingApi.openCase(applicantId, product.productId(), versionId,
+            new BigDecimal("1000000"), "TZS", null,
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()), "agent1");
+        underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard",
+            new BigDecimal("10"), "uw");
+        underwritingApi.decide(opened.caseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw", false);
+
+        TenantContext.set(tenantId);
+        assertThat(policyApi.searchPolicies(applicantId, null, null, null, null, PageRequest.of(0, 10)).getContent())
+            .isEmpty();
+        assertThat(underwritingApi.getCase(opened.caseId()).issuanceFailureReason())
+            .as("names the undeclared status rather than printing a bare null")
+            .contains("UNKNOWN (never recorded)");
+    }
+
+    /** A life with a sex and a date of birth but NO recorded smoker status. */
+    private UUID lifeWithNoSmokerStatus(UUID tenantId, int years, String phoneSuffix) {
+        TenantContext.set(tenantId);
+        return partyApi.registerIndividual(new IndividualRegistration(
+            "Undeclared Smoker " + years + phoneSuffix,
+            LocalDate.now().minusYears(years).minusDays(1),
+            "+25571302" + phoneSuffix, null,
+            tz.co.nlolo.lifeplatform.party.api.Sex.FEMALE, null,
+            null, null, null, null, null, null), "test-agent").partyId();
+    }
+
     /** A life a rate table can actually be keyed on: an age, a sex and a smoker status. */
     private UUID pricedLife(UUID tenantId, int years, String phoneSuffix) {
         return pricedLife(tenantId, years, phoneSuffix, Sex.MALE, SmokerStatus.NON_SMOKER);
