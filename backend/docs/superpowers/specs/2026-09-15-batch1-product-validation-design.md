@@ -283,11 +283,30 @@ the break in unchanged tests Maven never recompiles.
 
 ### Verification scope
 
-The full suite is not run for this batch. The affected areas were determined by
-tracing what actually changes rather than by keyword, and the answer is narrow:
-`publishVersion`'s **signature does not change**, so the twenty-odd test classes
+**Corrected after planning.** An earlier draft of this section claimed the whole
+batch could be verified against five backend classes. That is true of the
+application-logic half and false of the migration, and the reason is a coupling
+that is easy to miss: every integration test class passes an **explicit list of
+migration files** to `MigrationTestSupport.applyMigration`, and **46 classes list
+the product schema**. `ifrs_measurement_model` is `NOT NULL` on
+`product_version`, Hibernate puts it in every insert and select, and `ddl-auto`
+is `none` — so a class that does not list V10 fails at its first product-version
+query with `column "ifrs_measurement_model" does not exist`, not at boot.
+
+So the work splits by whether a migration is involved, and so does its
+verification:
+
+**Phase A — application logic only** (the two publish rules and the smoker
+mapping). No schema change, no entity change. Verified against the narrow scope
+below. `publishVersion`'s signature does not change, so the twenty-odd classes
 that merely pass an `IfrsMeasurementModel` through it are untouched, and no test
 calls `activateWithMeasurementModel` or `getIfrsMeasurementModel` directly.
+
+**Phase B — the migration.** Requires V10 in all 46 migration lists, a
+`clean test-compile` because `ProductVersion`'s constructor gains a parameter,
+and **the full backend suite**. There is no honest way to narrow this one: the
+migration list is a global coupling, and a scoped run would prove only that the
+classes it named still load.
 
 Backend — the only classes that supply base rates, exercise the issuance
 listener, or assert on schema grants and row-level security, all of which V10
