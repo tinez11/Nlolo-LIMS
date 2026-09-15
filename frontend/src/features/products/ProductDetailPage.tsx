@@ -352,6 +352,24 @@ function RatingBasis({
   const factors = rating.data.ratingFactors ?? [];
   const benefits = rating.data.benefitSchedule ?? [];
 
+  // What paying in instalments costs. Part of the rating basis an actuary reviews, so it reads
+  // here beside the multipliers rather than only on a quote. Zero rows are dropped: a loading of
+  // nothing is what every version published before V11 carries, and printing "+ 0%" twice would
+  // dress that up as an answer.
+  const loadingRows = (
+    [
+      ['Monthly', rating.data.frequencyLoading?.monthlyPercent],
+      ['Quarterly', rating.data.frequencyLoading?.quarterlyPercent],
+    ] as const
+  )
+    .filter(([, percent]) => Number(percent ?? 0) > 0)
+    .map(([label, percent]) => ({
+      key: label,
+      label,
+      note: null,
+      value: `+ ${percent}%`,
+    }));
+
   /*
     Bounded sections first, the unbounded grid last.
 
@@ -385,6 +403,20 @@ function RatingBasis({
           value: b.calculationMethod ? humanizeStatus(b.calculationMethod) : '—',
         }))}
       />
+
+      {/*
+        Shown only when something is actually loaded. Two rows reading "+ 0%" would take up
+        the same space as a real answer while saying nothing, and every version published
+        before V11 is unloaded -- so on most products this section is simply absent, which is
+        the honest rendering of "this product charges every frequency the same".
+      */}
+      {loadingRows.length > 0 && (
+        <FactorSection
+          title="Instalment loading"
+          empty="This version charges every frequency the same."
+          rows={loadingRows}
+        />
+      )}
 
       <section>
         <SectionHeading>Base rates</SectionHeading>

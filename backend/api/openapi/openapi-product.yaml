@@ -300,6 +300,17 @@ components:
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
         eligibility: { $ref: '#/components/schemas/EligibilityBounds' }
+        frequencyLoading:
+          description: >-
+            What this version charges for paying in instalments rather than once a year.
+            Optional: an absent block, or absent percentages, mean a monthly payer is charged
+            the same total as an annual one -- a real pricing decision, and what every version
+            published before this field existed does. Applied to the ANNUAL premium before it
+            is divided into instalments.
+          type: object
+          properties:
+            monthlyPercent: { type: number, minimum: 0, maximum: 100 }
+            quarterlyPercent: { type: number, minimum: 0, maximum: 100 }
         ratingTable:
           description: >-
             Multipliers applied on top of the base rate. For factorType AGE, ageFrom and ageTo

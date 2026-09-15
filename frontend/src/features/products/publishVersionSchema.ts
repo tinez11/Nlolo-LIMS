@@ -232,6 +232,21 @@ const optionalAmount = (label: string) =>
     .refine((v) => v === '' || AMOUNT_PATTERN.test(v), `${label} must be a decimal amount`)
     .refine((v) => v === '' || Number(v) > 0, `${label} must be greater than zero`);
 
+/**
+ * An optional percentage, 0-100, kept as a string. Mirrors product_version_frequency_loading_sane.
+ *
+ * Blank stays blank rather than coercing to 0, for the reason the file header gives about
+ * `z.coerce.number()` -- except here 0 is itself a real answer ("charge the same whatever the
+ * frequency"), so conflating the two would erase a deliberate pricing decision.
+ */
+const percentZeroToHundred = (label: string) =>
+  z
+    .string()
+    .trim()
+    .refine((v) => v === '' || /^\d+(\.\d{1,2})?$/.test(v), `${label} must be a percentage`)
+    .refine((v) => v === '' || Number(v) >= 0, `${label} cannot be negative`)
+    .refine((v) => v === '' || Number(v) <= 100, `${label} cannot exceed 100`);
+
 /** Both blank, or max at or above min. Mirrors EligibilityBounds and the DB CHECKs. */
 function requireOrdered(
   ctx: z.RefinementCtx,
@@ -339,6 +354,13 @@ export function publishVersionFormSchema(category: ProductCategory) {
     maxTermMonths: wholeNumber('Maximum term', 1),
     minSumAssured: optionalAmount('Minimum sum assured'),
     maxSumAssured: optionalAmount('Maximum sum assured'),
+
+    // What this version charges for paying in instalments. A monthly payer costs an insurer more
+    // -- the annual payer's premium is investable on day one, twelve collections cost more than
+    // one, and monthly business lapses part-paid -- so charging both the same total is a decision,
+    // and so is charging more. Blank means no loading.
+    monthlyLoadingPercent: percentZeroToHundred('Monthly loading'),
+    quarterlyLoadingPercent: percentZeroToHundred('Quarterly loading'),
 
     benefitSchedule: z.array(benefitRowSchema), // no minimum coverage required
     fundDefinitions: z.array(fundRowSchema).superRefine((rows, ctx) => {
@@ -483,6 +505,8 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     maxTermMonths: '',
     minSumAssured: '',
     maxSumAssured: '',
+    monthlyLoadingPercent: '',
+    quarterlyLoadingPercent: '',
   };
 }
 
@@ -579,6 +603,15 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
     // Omitted entirely when nothing is bounded, rather than sent as an object of nulls.
     // An absent block and a block of nulls mean the same thing to the backend, but the
     // absent one says "unbounded" without asking a reader to check six fields.
+    // Omitted entirely when nothing is loaded, rather than sent as a block of zeroes. An absent
+    // block and a block of zeroes mean the same thing to the backend; the absent one says "this
+    // version does not load instalment payment" without asking a reader to check two fields.
+    ...((values.monthlyLoadingPercent || values.quarterlyLoadingPercent) && {
+      frequencyLoading: {
+        ...(values.monthlyLoadingPercent && { monthlyPercent: Number(values.monthlyLoadingPercent) }),
+        ...(values.quarterlyLoadingPercent && { quarterlyPercent: Number(values.quarterlyLoadingPercent) }),
+      },
+    }),
     ...(hasAnyBound(values) && {
       eligibility: {
         ...(values.minEntryAge && { minEntryAge: Number(values.minEntryAge) }),

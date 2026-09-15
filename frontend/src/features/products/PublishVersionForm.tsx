@@ -94,6 +94,8 @@ export function PublishVersionForm({
       maxTermMonths: '',
       minSumAssured: '',
       maxSumAssured: '',
+      monthlyLoadingPercent: '',
+      quarterlyLoadingPercent: '',
     },
   });
 
@@ -218,6 +220,23 @@ export function PublishVersionForm({
               inputSize="sm"
               placeholder="300000000.00"
               {...register('maxSumAssured')}
+            />
+          </FormField>
+
+          <FormField label="Monthly loading %" error={errors.monthlyLoadingPercent?.message}>
+            <Input
+              inputMode="decimal"
+              inputSize="sm"
+              placeholder="8"
+              {...register('monthlyLoadingPercent')}
+            />
+          </FormField>
+          <FormField label="Quarterly loading %" error={errors.quarterlyLoadingPercent?.message}>
+            <Input
+              inputMode="decimal"
+              inputSize="sm"
+              placeholder="3"
+              {...register('quarterlyLoadingPercent')}
             />
           </FormField>
         </div>

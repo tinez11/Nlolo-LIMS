@@ -362,6 +362,33 @@ describe('publishVersionFormSchema', () => {
     });
   });
 
+  describe('frequency loading', () => {
+    it('sends no frequencyLoading block when both loadings are blank', () => {
+      const result = termLife.safeParse(valid());
+      expect(result.success).toBe(true);
+      expect(toApiRequest(result.data!)).not.toHaveProperty('frequencyLoading');
+    });
+
+    it('sends the loadings an actuary typed', () => {
+      const result = termLife.safeParse({
+        ...valid(),
+        monthlyLoadingPercent: '8',
+        quarterlyLoadingPercent: '3',
+      });
+      expect(result.success).toBe(true);
+      expect(toApiRequest(result.data!).frequencyLoading).toEqual({
+        monthlyPercent: 8,
+        quarterlyPercent: 3,
+      });
+    });
+
+    it('refuses a loading outside 0 to 100', () => {
+      expect(termLife.safeParse({ ...valid(), monthlyLoadingPercent: '-1' }).success).toBe(false);
+      expect(termLife.safeParse({ ...valid(), monthlyLoadingPercent: '101' }).success).toBe(false);
+      expect(termLife.safeParse({ ...valid(), quarterlyLoadingPercent: 'abc' }).success).toBe(false);
+    });
+  });
+
   it('accepts an empty benefit schedule -- no minimum coverage required', () => {
     expect(termLife.safeParse({ ...valid(), benefitSchedule: [] }).success).toBe(true);
   });
