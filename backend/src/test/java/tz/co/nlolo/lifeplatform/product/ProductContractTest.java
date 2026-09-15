@@ -60,7 +60,8 @@ class ProductContractTest {
             "db-migrations/product/V4__rating_table_unique_band.sql",
             "db-migrations/product/V5__rating_table_age_bounds.sql",
             "db-migrations/product/V6__eligibility_bounds.sql",
-            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql");
+            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
+            "db-migrations/product/V10__ifrs_measurement_model_on_version.sql");
     }
 
     @AfterEach
