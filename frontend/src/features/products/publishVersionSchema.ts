@@ -386,6 +386,63 @@ export function publishVersionFormSchema(category: ProductCategory) {
           });
         }
       });
+
+      // Mirrors ProductApiImpl.rejectPricedVersionWithoutEntryAgeBounds. Without a declared
+      // range the rate table's own span silently becomes the product's selling range, and
+      // nothing can tell a deliberate range from an incomplete one.
+      if (!values.minEntryAge || !values.maxEntryAge) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [values.minEntryAge ? 'maxEntryAge' : 'minEntryAge'],
+          message:
+            'A priced product must say what entry age it sells to — otherwise the rate table’s own span becomes the answer by accident',
+        });
+      } else {
+        /*
+          Mirrors ProductApiImpl.rejectUncoveredEntryAges. Checked per (sex, smoker status)
+          rather than over age alone, because a table can span the whole declared range in
+          aggregate and still price nobody in half of it -- a real published version covers
+          18-78 between its rows while pricing no woman under 56.
+
+          Both sexes are required; the smoker statuses required are exactly those the table
+          prices somewhere, so a product may decline to price UNKNOWN and demand a declaration.
+        */
+        const min = Number(values.minEntryAge);
+        const max = Number(values.maxEntryAge);
+        const cells = values.baseRates.flatMap((row) =>
+          pricedCells(row).map((c) => ({
+            sex: row.sex,
+            smokerStatus: c.smokerStatus,
+            from: Number(row.ageFrom),
+            to: Number(row.ageTo),
+          })),
+        );
+        const statuses = [...new Set(cells.map((c) => c.smokerStatus))];
+
+        for (const sex of ['FEMALE', 'MALE'] as const) {
+          for (const status of statuses) {
+            const series = cells
+              .filter((c) => c.sex === sex && c.smokerStatus === status)
+              .sort((a, b) => a.from - b.from);
+
+            let coveredTo = min - 1;
+            for (const c of series) {
+              if (c.from > coveredTo + 1) break;
+              coveredTo = Math.max(coveredTo, c.to);
+            }
+            if (coveredTo >= max) continue;
+
+            const gapFrom = coveredTo + 1;
+            const laterStarts = series.filter((c) => c.from > gapFrom).map((c) => c.from - 1);
+            const gapTo = Math.min(laterStarts.length ? Math.min(...laterStarts) : max, max);
+            ctx.addIssue({
+              code: 'custom',
+              path: ['baseRates'],
+              message: `Base rates do not price ${sex}/${status} for ages ${gapFrom}-${gapTo}, but this version accepts entry ages ${min}-${max}`,
+            });
+          }
+        }
+      }
     } else if (!covered.has('AGE') || !covered.has('SUM_ASSURED_BAND')) {
       ctx.addIssue({
         code: 'custom',

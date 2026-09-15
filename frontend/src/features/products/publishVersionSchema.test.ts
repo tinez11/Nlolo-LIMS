@@ -187,27 +187,81 @@ describe('publishVersionFormSchema', () => {
       ...over,
     });
 
+    /**
+     * A COMPLETE priced form: both sexes, and the entry-age range the version accepts.
+     *
+     * A priced version must now declare that range, and its table must be able to price every
+     * life inside it -- so a one-sex fixture, which is what most of these tests used to build,
+     * is no longer a publishable version. UNKNOWN is left unpriced on both rows, which is a
+     * product demanding a smoker declaration and is deliberately still allowed.
+     */
+    const pricedValid = (over: Record<string, unknown> = {}) => ({
+      ...valid(),
+      ratingTable: [sumRow],
+      minEntryAge: '18',
+      maxEntryAge: '30',
+      baseRates: [band(), band({ sex: 'MALE' })],
+      ...over,
+    });
+
+    it('requires entry age bounds once any base rate is priced', () => {
+      const result = termLife.safeParse(pricedValid({ minEntryAge: '', maxEntryAge: '' }));
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain('entry age');
+    });
+
+    it('rejects a priced table with a hole inside the ages it accepts', () => {
+      // The shape of a real published version: no woman under 56 can be priced.
+      const result = termLife.safeParse(
+        pricedValid({
+          minEntryAge: '18',
+          maxEntryAge: '78',
+          baseRates: [
+            band({ ageFrom: '56', ageTo: '78', smoker: '' }),
+            band({ sex: 'MALE', ageFrom: '18', ageTo: '78', smoker: '' }),
+          ],
+        }),
+      );
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain('18-55');
+    });
+
+    it('accepts a priced table that covers its whole declared range', () => {
+      expect(termLife.safeParse(pricedValid()).success).toBe(true);
+    });
+
     it('expands one form row into one wire cell per priced smoker status, and drops blanks', () => {
-      const result = termLife.safeParse({
-        ...valid(),
-        // Priced, so AGE must NOT be a multiplier -- only SUM_ASSURED_BAND.
-        ratingTable: [sumRow],
-        baseRates: [band(), band({ sex: 'MALE', nonSmoker: '0.837', smoker: '2.0088', unknown: '1.2' })],
-      });
+      /*
+        Two bands, because a blank can no longer be asymmetric INSIDE the declared range: if
+        one sex prices UNKNOWN and the other does not, the version cannot price every life it
+        accepts and is refused. So the 18-30 band prices all three statuses for both sexes --
+        which is what proves a single form row expands into three wire cells -- and the 31-40
+        band, deliberately outside the declared 18-30, carries the blanks that must be dropped.
+      */
+      const result = termLife.safeParse(
+        pricedValid({
+          baseRates: [
+            band({ unknown: '1.2' }),
+            band({ sex: 'MALE', nonSmoker: '0.837', smoker: '2.0088', unknown: '1.5' }),
+            band({ ageFrom: '31', ageTo: '40', nonSmoker: '0.9', smoker: '2.1', unknown: '' }),
+            band({ ageFrom: '31', ageTo: '40', sex: 'MALE', nonSmoker: '1.1', smoker: '2.6', unknown: '' }),
+          ],
+        }),
+      );
       expect(result.success).toBe(true);
 
       const wire = toApiRequest(result.data!).baseRates!;
-      // 2 priced on the female row + 3 on the male row. The blank female UNKNOWN is
+      // 3 per row on the 18-30 pair, 2 per row on the 31-40 pair. The blank UNKNOWN cells are
       // dropped rather than sent as 0, which the database CHECK would refuse anyway.
-      expect(wire).toHaveLength(5);
+      expect(wire).toHaveLength(10);
       expect(wire).toEqual(
         expect.arrayContaining([
           { ageFrom: 18, ageTo: 30, sex: 'FEMALE', smokerStatus: 'NON_SMOKER', ratePerMille: 0.62 },
           { ageFrom: 18, ageTo: 30, sex: 'FEMALE', smokerStatus: 'SMOKER', ratePerMille: 1.488 },
-          { ageFrom: 18, ageTo: 30, sex: 'MALE', smokerStatus: 'UNKNOWN', ratePerMille: 1.2 },
+          { ageFrom: 18, ageTo: 30, sex: 'MALE', smokerStatus: 'UNKNOWN', ratePerMille: 1.5 },
         ]),
       );
-      expect(wire.some((c) => c.sex === 'FEMALE' && c.smokerStatus === 'UNKNOWN')).toBe(false);
+      expect(wire.some((c) => c.ageFrom === 31 && c.smokerStatus === 'UNKNOWN')).toBe(false);
     });
 
     it('omits baseRates entirely when nothing is priced, rather than sending an empty array', () => {
@@ -231,7 +285,7 @@ describe('publishVersionFormSchema', () => {
 
     it('requires only SUM_ASSURED_BAND when priced -- AGE is the rate table key', () => {
       // Exactly the table that the OLD schema rejected and the server accepts.
-      const result = termLife.safeParse({ ...valid(), ratingTable: [sumRow], baseRates: [band()] });
+      const result = termLife.safeParse(pricedValid());
       expect(result.success).toBe(true);
     });
 
@@ -285,23 +339,25 @@ describe('publishVersionFormSchema', () => {
     it('allows the same band twice when the two rows price different smoker statuses', () => {
       // Splitting one band across two lines is legitimate: no age resolves to two
       // rates, because no (sex, smokerStatus) is priced twice.
-      const result = termLife.safeParse({
-        ...valid(),
-        ratingTable: [sumRow],
-        baseRates: [
-          band({ nonSmoker: '0.62', smoker: '', unknown: '' }),
-          band({ nonSmoker: '', smoker: '1.488', unknown: '' }),
-        ],
-      });
+      // The MALE half is present for the same reason it is everywhere else now: a priced
+      // version must be able to price every life it accepts. The subject is still the split.
+      const result = termLife.safeParse(
+        pricedValid({
+          baseRates: [
+            band({ nonSmoker: '0.62', smoker: '', unknown: '' }),
+            band({ nonSmoker: '', smoker: '1.488', unknown: '' }),
+            band({ sex: 'MALE', nonSmoker: '0.837', smoker: '', unknown: '' }),
+            band({ sex: 'MALE', nonSmoker: '', smoker: '2.0088', unknown: '' }),
+          ],
+        }),
+      );
       expect(result.success).toBe(true);
     });
 
     it('allows the same band for both sexes -- which is what "add age band" produces', () => {
-      const result = termLife.safeParse({
-        ...valid(),
-        ratingTable: [sumRow],
-        baseRates: [band(), band({ sex: 'MALE' })],
-      });
+      // pricedValid()'s own shape is exactly this pair; it adds only the declared entry-age
+      // range, which a priced version must now carry.
+      const result = termLife.safeParse(pricedValid());
       expect(result.success).toBe(true);
     });
   });
