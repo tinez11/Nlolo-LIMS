@@ -470,6 +470,14 @@ components:
           properties:
             monthlyPercent: { type: number }
             quarterlyPercent: { type: number }
+        tiraFiling:
+          description: >-
+            The filing that authorises this version, or absent for one published before
+            filings were required. Absent is a real answer, not missing data.
+          type: object
+          properties:
+            reference: { type: string }
+            approvalDate: { type: string, format: date }
         baseRates:
           type: array
           items: { $ref: '#/components/schemas/BaseRate' }

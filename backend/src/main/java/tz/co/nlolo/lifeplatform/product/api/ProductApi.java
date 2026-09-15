@@ -271,7 +271,13 @@ public interface ProductApi {
                               * actuary reviews, so it belongs on this read rather than only on a
                               * quote. {@link FrequencyLoading#none()} when nothing is loaded.
                               */
-                             FrequencyLoading frequencyLoading) {}
+                             FrequencyLoading frequencyLoading,
+                             /**
+                              * The filing that authorises this version, or null for one published
+                              * before V12. Part of what a reviewer checks, so it reads back here
+                              * beside the rating basis and the frequency loading.
+                              */
+                             TiraFiling tiraFiling) {}
 
     VersionRatingView getVersionRating(UUID productId, UUID versionId);
 

@@ -393,7 +393,7 @@ public class ProductApiImpl implements ProductApi {
             .toList();
 
         return new VersionRatingView(productId, versionId, version.getEffectiveDate(), rates, factors, benefits,
-            version.getFrequencyLoading());
+            version.getFrequencyLoading(), version.getTiraFiling());
     }
 
     /**

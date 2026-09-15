@@ -323,6 +323,89 @@ class ProductContractTest {
     }
 
     /** Publishes one version effective on the given date, which is what makes a product ACTIVE. */
+    /**
+     * The filing has to cross the wire and come back, which is the seam a service-level test
+     * cannot see: {@code ProductApiIntegrationTest} constructs {@code TiraFiling} in Java and
+     * never touches {@code ProductVersionSpec}. Batch 2a shipped {@code frequencyLoading} present
+     * on both response schemas and absent from the REQUEST schema, with every backend test green
+     * — the console typecheck was the only thing that caught it.
+     *
+     * <p>Asserted on the READ, not on the 201: a publish that silently discards half its body
+     * still returns 201.
+     */
+    @Test
+    void tiraFilingSurvivesAPublishOverHttpAndIsReadableBack() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String createResponse = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"TIRA-WIRE-01","productName":"Filed Over Http","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String productId = JsonPath.read(createResponse, "$.productId");
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/LIFE/2026/0777","approvalDate":"2026-01-15"},
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
+                                    {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        String snapshot = mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String versionId = JsonPath.read(snapshot, "$.productVersionId");
+
+        mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/rating")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.tiraFiling.reference").value("TIRA/LIFE/2026/0777"))
+            .andExpect(jsonPath("$.tiraFiling.approvalDate").value("2026-01-15"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /** And a publish with no filing at all is refused at the edge, not deep in the service. */
+    @Test
+    void aPublishWithNoTiraFilingIsRefusedOverHttp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String createResponse = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"TIRA-WIRE-02","productName":"Unfiled Over Http","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String productId = JsonPath.read(createResponse, "$.productId");
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
+                                    {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
+                    """))
+            .andExpect(status().isBadRequest());
+    }
+
     private void publishVersionEffective(UUID tenantId, UUID productId, LocalDate effectiveDate)
             throws Exception {
         mockMvc.perform(post("/products/" + productId + "/versions")
