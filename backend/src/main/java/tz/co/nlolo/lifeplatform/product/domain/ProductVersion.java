@@ -39,6 +39,20 @@ public class ProductVersion {
     @Column(name = "max_loan_to_value_percent")
     private BigDecimal maxLoanToValuePercent;
 
+    /**
+     * GMM or PAA, decided per version (V10).
+     *
+     * <p>It lived on {@code product_definition}, where {@code publishVersion}'s unconditional
+     * activation rewrote it on every republish — silently changing the measurement basis of every
+     * contract already issued under the product. Here it cannot: a policy pins a
+     * {@code productVersionId}, so a new version carries a new model and the old one keeps its own.
+     *
+     * <p>It also belongs next to its own evidence. PAA eligibility turns on the coverage period,
+     * and {@code minTermMonths}/{@code maxTermMonths} are on this row.
+     */
+    @Column(name = "ifrs_measurement_model", nullable = false)
+    private String ifrsMeasurementModel;
+
     // What this version will accept (V6). All nullable -- an unbounded dimension is a
     // real product design, not a gap. Consumed by Build 4's issueGates, where entry age
     // and term are hard refusals and sum assured is a soft flag; the severities live in
@@ -77,13 +91,15 @@ public class ProductVersion {
     protected ProductVersion() {}
 
     public ProductVersion(UUID tenantId, UUID productId, LocalDate effectiveDate, LocalDate retirementDate,
-                           int gracePeriodDays, BigDecimal maxLoanToValuePercent, String createdBy) {
+                           int gracePeriodDays, BigDecimal maxLoanToValuePercent,
+                           String ifrsMeasurementModel, String createdBy) {
         this.tenantId = tenantId;
         this.productId = productId;
         this.effectiveDate = effectiveDate;
         this.retirementDate = retirementDate;
         this.gracePeriodDays = gracePeriodDays;
         this.maxLoanToValuePercent = maxLoanToValuePercent;
+        this.ifrsMeasurementModel = ifrsMeasurementModel;
         this.createdBy = createdBy;
     }
 
@@ -95,6 +111,7 @@ public class ProductVersion {
     public boolean isActiveForNewBusiness() { return activeForNewBusiness; }
     public int getGracePeriodDays() { return gracePeriodDays; }
     public BigDecimal getMaxLoanToValuePercent() { return maxLoanToValuePercent; }
+    public String getIfrsMeasurementModel() { return ifrsMeasurementModel; }
 
     /**
      * Record what this version will accept.

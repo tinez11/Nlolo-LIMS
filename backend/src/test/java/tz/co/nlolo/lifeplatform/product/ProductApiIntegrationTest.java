@@ -59,7 +59,8 @@ class ProductApiIntegrationTest {
             // constraint it adds -- a backstop nothing tests is one a future migration drops
             // without anyone noticing.
             "db-migrations/product/V8__rating_table_multiplier_positive.sql",
-            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql");
+            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
+            "db-migrations/product/V10__ifrs_measurement_model_on_version.sql");
     }
 
     @BeforeEach
@@ -337,6 +338,38 @@ class ProductApiIntegrationTest {
 
         assertThat(productApi.listActiveProducts(ProductCategory.TERM_LIFE))
             .anyMatch(p -> p.productCode().equals("TERM-B1-R2C"));
+    }
+
+    /**
+     * The defect V10 removes: publishVersion called activateWithMeasurementModel unconditionally
+     * and the column lived on product_definition, so a republish rewrote the measurement basis of
+     * every contract already issued under the product, retroactively and silently.
+     */
+    @Test
+    void republishingWithADifferentMeasurementModelLeavesTheEarlierVersionAlone() {
+        ProductSummaryView product = productApi.createProduct("TERM-B1-IFRS", "Two models",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA,
+            LocalDate.now().minusYears(2), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        UUID firstVersionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM,
+            LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+
+        assertThat(productApi.getSnapshotByVersionId(firstVersionId).ifrsMeasurementModel())
+            .as("a policy pinned to the first version keeps the basis it was issued on")
+            .isEqualTo(IfrsMeasurementModel.PAA);
+        assertThat(productApi.getActiveSnapshot(product.productId(), LocalDate.now()).ifrsMeasurementModel())
+            .isEqualTo(IfrsMeasurementModel.GMM);
     }
 
     /**

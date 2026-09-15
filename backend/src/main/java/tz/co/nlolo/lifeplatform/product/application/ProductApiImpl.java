@@ -192,7 +192,8 @@ public class ProductApiImpl implements ProductApi {
         }
 
         int gracePeriodDays = 30; // Deliverable 3 doesn't specify a grace-period source yet at this layer -- see Global Constraints; this is a fixed, flagged default, not read from an OpenAPI field (ProductVersionSpec has no gracePeriodDays field).
-        ProductVersion version = new ProductVersion(tenantId, productId, effectiveDate, retirementDate, gracePeriodDays, null, publishedBy);
+        ProductVersion version = new ProductVersion(tenantId, productId, effectiveDate, retirementDate, gracePeriodDays, null,
+            ifrsMeasurementModel.name(), publishedBy);
         // What this version will accept. Never null -- callers that state nothing pass
         // EligibilityBounds.none(), because an unbounded version is a real design.
         version.applyEligibilityBounds(bounds != null ? bounds : EligibilityBounds.none());
@@ -219,7 +220,7 @@ public class ProductApiImpl implements ProductApi {
             }
         }
 
-        product.activateWithMeasurementModel(ifrsMeasurementModel.name());
+        product.activate();
         productDefinitionRepository.save(product);
     }
 
@@ -253,7 +254,7 @@ public class ProductApiImpl implements ProductApi {
                     .map(ProductVersion::getEffectiveDate)
                     .orElse(null)));
         return new ProductSnapshotView(productId, version.getProductVersionId(), version.getEffectiveDate(),
-            IfrsMeasurementModel.valueOf(definition.getIfrsMeasurementModel()),
+            IfrsMeasurementModel.valueOf(version.getIfrsMeasurementModel()),
             version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
             ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson(),
             version.getEligibilityBounds());
@@ -751,7 +752,7 @@ public class ProductApiImpl implements ProductApi {
         ProductDefinition definition = productDefinitionRepository.findById(version.getProductId())
             .orElseThrow(() -> new ProductNotFoundException(version.getProductId()));
         return new ProductSnapshotView(version.getProductId(), productVersionId, version.getEffectiveDate(),
-            IfrsMeasurementModel.valueOf(definition.getIfrsMeasurementModel()), version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
+            IfrsMeasurementModel.valueOf(version.getIfrsMeasurementModel()), version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
             ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson(),
             // The by-version-id lookup carries the bounds too. It is what
             // PolicyController.manualIssue resolves, so omitting them here would leave the
