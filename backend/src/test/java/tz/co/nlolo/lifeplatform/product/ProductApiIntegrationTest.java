@@ -884,7 +884,59 @@ class ProductApiIntegrationTest {
 
     private ProductApi.PremiumQuoteInput quoteFor(UUID productId, LocalDate dateOfBirth, PremiumFrequency frequency) {
         return new ProductApi.PremiumQuoteInput(productId, new BigDecimal("10000000.00"), "TZS",
-            dateOfBirth, Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", "LOW", frequency, LocalDate.now());
+            dateOfBirth, Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", frequency, LocalDate.now());
+    }
+
+    /**
+     * The quote resolved the sum-assured factor by matching a caller-asserted band STRING -- V9's
+     * defect, still live on the illustration path after it was removed from issuance. A product
+     * author's band '5000000' could never match what a caller typed, so an illustration and the
+     * policy it became were priced by two different mechanisms.
+     */
+    @Test
+    void quotePremiumResolvesTheSumAssuredBandByRangeNotByItsLabel() {
+        ProductSummaryView product = productApi.createProduct("TERM-B2A-RANGE", "Range-resolved",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
+            // A band whose LABEL is nothing a caller would type, carrying a real multiplier.
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "5000000",
+                        new BigDecimal("1.5000"), null, null,
+                        new BigDecimal("0"), new BigDecimal("20000000")),
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("10.0000")),
+                    new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000"))),
+            new EligibilityBounds(18, 25, null, null, null, null), "actuary@nlolo.co.tz");
+
+        // 10,000,000 / 1000 * 10.0 = 100,000 annual, x 1.5 sum-assured band = 150,000, / 12.
+        ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now()));
+
+        assertThat(quote.instalmentAmount()).isEqualByComparingTo(new BigDecimal("12500.00"));
+        assertThat(quote.appliedFactors())
+            .anySatisfy(f -> {
+                assertThat(f.factorType()).isEqualTo(FactorType.SUM_ASSURED_BAND);
+                assertThat(f.band()).isEqualTo("5000000");
+                assertThat(f.multiplier()).isEqualByComparingTo(new BigDecimal("1.5000"));
+            });
+    }
+
+    /** An amount no band covers is neutral, matching issuance -- above retention is a soft flag. */
+    @Test
+    void quotePremiumPricesAnAmountNoBandCoversAtTheNeutralMultiplier() {
+        UUID productId = pricedProduct("TERM-B2A-UNCOVERED", new BigDecimal("15.2000"));
+
+        ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.ANNUALLY, LocalDate.now()));
+
+        // pricedProduct's SUM_ASSURED_BAND row carries no amount bounds, so it covers nothing and
+        // resolves neutral. 10,000,000 / 1000 * 15.2 = 152,000, unchanged.
+        assertThat(quote.instalmentAmount()).isEqualByComparingTo(new BigDecimal("152000.00"));
+        assertThat(quote.appliedFactors())
+            .noneMatch(f -> f.factorType() == FactorType.SUM_ASSURED_BAND);
     }
 
     /**
@@ -905,7 +957,15 @@ class ProductApiIntegrationTest {
         assertEquals(0, new BigDecimal("12666.67").compareTo(quote.instalmentAmount()));
         assertEquals(12, quote.instalmentsPerYear());
         // The derivation is returned so no caller has to recompute it.
-        assertEquals(2, quote.appliedFactors().size());
+        //
+        // ONE factor, not two. OCCUPATION_CLASS applies; the SUM_ASSURED_BAND row on
+        // pricedProduct carries no amount bounds, so now that the quote resolves that factor by
+        // RANGE rather than by matching the band label, it covers no amount and contributes
+        // nothing. It never should have: V9 established that a row without bounds rates nobody,
+        // and the label match that used to make it appear here is the defect being removed.
+        assertThat(quote.appliedFactors())
+            .singleElement()
+            .satisfies(f -> assertEquals(FactorType.OCCUPATION_CLASS, f.factorType()));
     }
 
     /** Rounding happens ONCE at the end; 152,000 / 4 and / 1 are exact. */
@@ -942,7 +1002,7 @@ class ProductApiIntegrationTest {
 
         ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             product.productId(), new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
-            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_3", "LOW", PremiumFrequency.MONTHLY, LocalDate.now()));
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_3", PremiumFrequency.MONTHLY, LocalDate.now()));
 
         assertEquals(0, new BigDecimal("200000.00").compareTo(quote.annualBase()));
         assertEquals(0, new BigDecimal("250000.00").compareTo(quote.annualAfterFactors()));
@@ -976,19 +1036,18 @@ class ProductApiIntegrationTest {
             .toList());
         assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
-            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", "LOW", PremiumFrequency.MONTHLY, LocalDate.now())));
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now())));
         // smoker status with no cell
         assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
-            Sex.FEMALE, SmokerStatus.SMOKER, "CLASS_1", "LOW", PremiumFrequency.MONTHLY, LocalDate.now())));
+            Sex.FEMALE, SmokerStatus.SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now())));
         // occupation class with no multiplier
         assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
-            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_9", "LOW", PremiumFrequency.MONTHLY, LocalDate.now())));
-        // sum-assured band with no multiplier
-        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
-            productId, new BigDecimal("10000000.00"), "TZS", LocalDate.now().minusYears(20),
-            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", "HIGH", PremiumFrequency.MONTHLY, LocalDate.now())));
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_9", PremiumFrequency.MONTHLY, LocalDate.now())));
+        // The "sum-assured band with no multiplier" case is gone: the band is no longer an input.
+        // An amount no band covers now resolves neutral, which is what issuance does and what
+        // quotePremiumPricesAnAmountNoBandCoversAtTheNeutralMultiplier asserts.
     }
 
     /** An unpriced version is a real state, and says so instead of guessing. */

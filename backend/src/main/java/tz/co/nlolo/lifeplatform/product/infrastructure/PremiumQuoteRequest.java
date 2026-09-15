@@ -29,6 +29,5 @@ public record PremiumQuoteRequest(
     @NotNull Sex sex,
     @NotNull SmokerStatus smokerStatus,
     @NotNull String occupationClass,
-    @NotNull String sumAssuredBand,
     @NotNull PremiumFrequency frequency,
     LocalDate asOf) {}

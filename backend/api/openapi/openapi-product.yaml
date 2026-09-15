@@ -383,8 +383,13 @@ components:
         mispriced policy turns on, so it is derived where the rate table lives.
         `occupationClass` and `smokerStatus` are ASSERTED by the caller -- no party
         record carries either.
+
+        There is deliberately no `sumAssuredBand`: it was asserted by the caller and
+        matched by string equality against rating_table.band, which is the defect V9
+        removed from the issuance path. `sumAssuredAmount` determines the band, and
+        the multiplier is resolved from it by range.
       type: object
-      required: [sumAssuredAmount, sumAssuredCurrency, dateOfBirth, sex, smokerStatus, occupationClass, sumAssuredBand, frequency]
+      required: [sumAssuredAmount, sumAssuredCurrency, dateOfBirth, sex, smokerStatus, occupationClass, frequency]
       properties:
         sumAssuredAmount: { type: number, exclusiveMinimum: 0 }
         sumAssuredCurrency: { type: string, example: TZS }
@@ -392,7 +397,6 @@ components:
         sex: { type: string, enum: [FEMALE, MALE] }
         smokerStatus: { type: string, enum: [SMOKER, NON_SMOKER, UNKNOWN] }
         occupationClass: { type: string }
-        sumAssuredBand: { type: string }
         frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
         asOf:
           description: Selects the product version. Defaults to today.

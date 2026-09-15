@@ -154,7 +154,7 @@ public class ProductController {
                                                                     @Valid @RequestBody PremiumQuoteRequest request) {
         return ResponseEntity.ok(productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             productId, request.sumAssuredAmount(), request.sumAssuredCurrency(), request.dateOfBirth(),
-            request.sex(), request.smokerStatus(), request.occupationClass(), request.sumAssuredBand(),
+            request.sex(), request.smokerStatus(), request.occupationClass(),
             request.frequency(), request.asOf())));
     }
 

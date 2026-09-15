@@ -321,7 +321,17 @@ public class ProductApiImpl implements ProductApi {
         List<AppliedFactor> applied = new java.util.ArrayList<>();
         BigDecimal annual = annualBase;
         annual = annual.multiply(strictMultiplier(versionId, FactorType.OCCUPATION_CLASS, input.occupationClass(), applied));
-        annual = annual.multiply(strictMultiplier(versionId, FactorType.SUM_ASSURED_BAND, input.sumAssuredBand(), applied));
+        // By RANGE, through the same lookup the issuance path makes. A neutral 1.0 when no band
+        // covers the amount is correct here and matches issuance: a sum assured above every band is
+        // already treated platform-wide as a SOFT flag, because above-retention business is what
+        // the reinsurance treaties exist to absorb. Nothing is recorded in the breakdown when no
+        // band applied, because no factor did.
+        annual = annual.multiply(findSumAssuredBand(versionId, input.sumAssuredAmount())
+            .map(row -> {
+                applied.add(new AppliedFactor(FactorType.SUM_ASSURED_BAND, row.getBand(), row.getMultiplier()));
+                return row.getMultiplier();
+            })
+            .orElse(BigDecimal.ONE));
 
         int instalments = input.frequency().instalmentsPerYear();
         BigDecimal instalment = annual
@@ -656,6 +666,10 @@ public class ProductApiImpl implements ProductApi {
      * That method's neutral-1.0 is correct for underwriting risk scoring; on a
      * premium it would quietly price a real contract as if the factor did not
      * apply.
+     *
+     * <p>Only OCCUPATION_CLASS now. The sum-assured factor resolves by range instead, because the
+     * amount determines the band; an occupation class is a code the same organisation chose on both
+     * sides of the match, so a caller's typo should fail loudly rather than price at 1.0.
      */
     private BigDecimal strictMultiplier(UUID versionId, FactorType factorType, String band, List<AppliedFactor> applied) {
         if (band == null || band.isBlank()) {
@@ -713,8 +727,27 @@ public class ProductApiImpl implements ProductApi {
      */
     @Override
     public BigDecimal resolveSumAssuredMultiplier(UUID productVersionId, BigDecimal sumAssuredAmount) {
+        return findSumAssuredBand(productVersionId, sumAssuredAmount)
+            .map(RatingFactor::getMultiplier)
+            .orElse(BigDecimal.ONE);
+    }
+
+    /**
+     * The SUM_ASSURED_BAND row covering this amount, if any.
+     *
+     * <p>Shared by {@link #resolveSumAssuredMultiplier} and {@code quotePremium} so the underwriting
+     * path and the illustration path cannot resolve the same amount differently. They did: the quote
+     * matched a caller-asserted band string while issuance matched by range, so an illustration and
+     * the policy it became were priced by two mechanisms and only one of them worked.
+     *
+     * <p>Inspects the whole list rather than taking {@code findFirst()} because publish-time
+     * validation refuses overlapping bands but a version published before that rule could still
+     * hold them, and silently taking one of two is the scan-order mispricing this platform has now
+     * found five times.
+     */
+    private Optional<RatingFactor> findSumAssuredBand(UUID productVersionId, BigDecimal sumAssuredAmount) {
         if (sumAssuredAmount == null) {
-            return BigDecimal.ONE;
+            return Optional.empty();
         }
         List<RatingFactor> covering = ratingFactorRepository
             .findByProductVersionIdAndFactorType(productVersionId, FactorType.SUM_ASSURED_BAND.name())
@@ -729,7 +762,7 @@ public class ProductApiImpl implements ProductApi {
                 + sumAssuredAmount.toPlainString()
                 + " -- which multiplier applies would depend on row order");
         }
-        return covering.isEmpty() ? BigDecimal.ONE : covering.get(0).getMultiplier();
+        return covering.stream().findFirst();
     }
 
     @Override

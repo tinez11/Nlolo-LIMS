@@ -63,13 +63,21 @@ public interface ProductApi {
      *
      * Takes {@code dateOfBirth} and {@code asOf}, never a precomputed age: entry age
      * is the input a mispriced policy turns on, and it is derived where the rate
-     * table lives. {@code occupationClass} and {@code smokerStatus} are ASSERTED by
-     * the caller -- no party record carries either, which is recorded as an open item
-     * in the M13 design spec.
+     * table lives.
+     *
+     * <p><b>There is deliberately no {@code sumAssuredBand}.</b> It used to be asserted by the
+     * caller and matched by string equality against {@code rating_table.band} — V9's defect,
+     * removed from the issuance path and left live here because this endpoint had no frontend
+     * caller. A band string a caller invents cannot be validated against anything, and
+     * {@code sumAssuredAmount} determines the band by definition, so asking for both only invited
+     * them to disagree — and they did.
+     *
+     * <p>{@code occupationClass} and {@code smokerStatus} are still ASSERTED by the caller: no
+     * party record is read on this path.
      */
     record PremiumQuoteInput(UUID productId, BigDecimal sumAssuredAmount, String sumAssuredCurrency,
                              LocalDate dateOfBirth, Sex sex, SmokerStatus smokerStatus,
-                             String occupationClass, String sumAssuredBand,
+                             String occupationClass,
                              PremiumFrequency frequency, LocalDate asOf) {}
 
     /** One multiplier that was applied, in the order it was applied. */
