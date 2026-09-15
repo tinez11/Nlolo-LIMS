@@ -281,6 +281,58 @@ Frontend: `publishVersionSchema.test.ts` cases for R1 and R2.
 `clean test-compile` before `clean test`. Scoped runs will stay green and hide
 the break in unchanged tests Maven never recompiles.
 
+### Verification scope
+
+The full suite is not run for this batch. The affected areas were determined by
+tracing what actually changes rather than by keyword, and the answer is narrow:
+`publishVersion`'s **signature does not change**, so the twenty-odd test classes
+that merely pass an `IfrsMeasurementModel` through it are untouched, and no test
+calls `activateWithMeasurementModel` or `getIfrsMeasurementModel` directly.
+
+Backend — the only classes that supply base rates, exercise the issuance
+listener, or assert on schema grants and row-level security, all of which V10
+touches:
+
+- `ProductApiIntegrationTest`, `ProductContractTest`
+- `PolicyApiIntegrationTest`
+- `AppRolePrivilegesIntegrationTest`
+- `RowLevelSecurityIntegrationTest`
+
+Frontend unit — `src/features/products`, `src/store/productStore.test.ts`,
+`src/components/ProductName.test.tsx`.
+
+End-to-end — `staff-products.spec.ts` (the only spec that publishes a priced
+version), plus `staff-issue-policy.spec.ts` and `staff-underwriting.spec.ts`,
+because §3 changes what issuance does with an unrecorded smoker status.
+
+Sequencing constraints, each of which has produced a failure that was not code:
+
+- Never run `vitest` while Playwright is running; it fails the heaviest e2e
+  specs.
+- Never run two Maven builds concurrently.
+- Stop the dev backend before any `clean` target.
+- A run spanning a machine sleep produces failures that are not real.
+
+**Baseline recorded 2026-09-15, before implementation, all green:**
+
+| Suite | Tests |
+|---|---|
+| `AppRolePrivilegesIntegrationTest` | 16 |
+| `PolicyApiIntegrationTest` | 45 |
+| `ProductApiIntegrationTest` | 52 |
+| `ProductContractTest` | 13 |
+| `RowLevelSecurityIntegrationTest` | 12 |
+| Backend total | **138** |
+| Frontend product units (7 files) | **84** |
+
+Taken deliberately before any code changed, so that a failure appearing later is
+attributable to this batch rather than argued about. A pre-existing failure is
+still a real bug — it gets recorded and attributed, not waved through.
+
+End-to-end specs were **not** baselined, on purpose: all three exercise
+behaviour this batch changes, so a green run beforehand would only confirm the
+behaviour being replaced.
+
 ## Rollout
 
 V10 must be applied by hand to the dev database and the backend restarted before
