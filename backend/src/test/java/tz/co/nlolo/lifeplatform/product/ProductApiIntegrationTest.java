@@ -129,6 +129,57 @@ class ProductApiIntegrationTest {
             });
     }
 
+    /**
+     * The shape rule refuses the publish, and it is the APPLICATION that refuses it.
+     *
+     * <p>Until publishVersion built a {@link BenefitDefinition}, the only check on the write path
+     * was {@code benefit_schedule_amount_shape} at the database — so an author who declared a
+     * percentage benefit and gave no percentage got a DataIntegrityViolationException, which is a
+     * 500 and names nothing they could act on. Each case below is a malformed benefit an actuary
+     * can plausibly author, and each must come back as a refusal that says what is wrong.
+     */
+    @Test
+    void aBenefitCarryingTheWrongAmountIsRefusedAtPublish() {
+        ProductSummaryView product = productApi.createProduct("TERM-B2B-SHAPE", "Bad shapes",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        record Case(String name, ProductApi.BenefitInput benefit, String expected) {}
+        List<Case> cases = List.of(
+            new Case("a percentage benefit with no percentage",
+                new ProductApi.BenefitInput(BenefitType.CRITICAL_ILLNESS,
+                    BenefitCalculationMethod.PERCENTAGE_OF_SUM_ASSURED, null, null),
+                "needs a percentage"),
+            new Case("a flat benefit with no amount",
+                new ProductApi.BenefitInput(BenefitType.DISABILITY,
+                    BenefitCalculationMethod.FLAT_AMOUNT, null, null),
+                "needs a flat amount"),
+            new Case("a whole-cover benefit carrying an amount it does not use",
+                new ProductApi.BenefitInput(BenefitType.DEATH,
+                    BenefitCalculationMethod.SUM_ASSURED, null, new BigDecimal("500000")),
+                "neither a percentage nor a flat amount"),
+            new Case("a percentage over 100",
+                new ProductApi.BenefitInput(BenefitType.CRITICAL_ILLNESS,
+                    BenefitCalculationMethod.PERCENTAGE_OF_SUM_ASSURED, new BigDecimal("150"), null),
+                "no more than 100"),
+            // A benefit that pays nothing is not a benefit -- and zero is what an empty numeric
+            // field coerces to, so it is the shape a form is most likely to send.
+            new Case("a flat benefit paying zero",
+                new ProductApi.BenefitInput(BenefitType.DISABILITY,
+                    BenefitCalculationMethod.FLAT_AMOUNT, null, BigDecimal.ZERO),
+                "greater than zero"));
+
+        for (Case c : cases) {
+            InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
+                productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                    List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                            new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                    List.of(c.benefit()),
+                    null, ANY_FILING, "actuary@nlolo.co.tz"),
+                c.name() + " should be refused at publish");
+            assertThat(thrown.getMessage()).as(c.name()).contains(c.expected());
+        }
+    }
+
     // ---- Batch 3: the TIRA filing that authorises a version ---------------------
 
     @Test

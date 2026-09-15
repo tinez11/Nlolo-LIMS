@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -163,6 +164,22 @@ public class ProductApiImpl implements ProductApi {
                     + " nothing cannot be sold, and nothing downstream could value a claim on it");
         }
 
+        // The shape rule is enforced by BUILDING the benefit, not by restating it here. Without
+        // this the only check on the WRITE path was benefit_schedule_amount_shape at the
+        // database, which surfaces an author's mistake -- a percentage benefit with no
+        // percentage -- as a DataIntegrityViolationException, so a 500 rather than the 422 it
+        // is. The read path already goes through BenefitDefinition; this makes both ends the
+        // same one place.
+        List<BenefitDefinition> benefits = new ArrayList<>();
+        for (BenefitInput input : benefitSchedule) {
+            try {
+                benefits.add(new BenefitDefinition(input.benefitType(), input.calculationMethod(),
+                    input.percent(), input.flatAmount()));
+            } catch (IllegalArgumentException e) {
+                throw new InvalidProductVersionException(e.getMessage());
+            }
+        }
+
         // Deliverable 3 invariant: fund definitions restricted to UNIT_LINKED products.
         if (fundDefinitions != null && !fundDefinitions.isEmpty() && !"UNIT_LINKED".equals(product.getCategory())) {
             throw new InvalidProductVersionException("Fund definitions are only valid for UNIT_LINKED products");
@@ -246,9 +263,12 @@ public class ProductApiImpl implements ProductApi {
                     input.ratePerMille()));
             }
         }
-        for (BenefitInput input : benefitSchedule) {
+        // Written from the validated definitions above, not from the raw inputs -- so a row can
+        // only reach the table in a shape BenefitDefinition accepts.
+        for (BenefitDefinition benefit : benefits) {
             benefitScheduleEntryRepository.save(new BenefitScheduleEntry(tenantId, version.getProductVersionId(),
-                input.benefitType().name(), input.calculationMethod().name(), input.percent(), input.flatAmount()));
+                benefit.benefitType().name(), benefit.calculationMethod().name(),
+                benefit.percent(), benefit.flatAmount()));
         }
         if (fundDefinitions != null) {
             for (FundInput input : fundDefinitions) {

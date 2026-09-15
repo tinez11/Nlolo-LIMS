@@ -518,11 +518,18 @@ class ProductContractTest {
                         new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
+                // A WELL-FORMED body, so the 403 can only be the authorisation gate.
+                //
+                // This sent invented field names -- ageBandStart, basis, factor, none of which
+                // exist on the wire records -- and passed because nothing validated them. Once
+                // benefitSchedule gained @Valid the body came back 400, and a gate test that a
+                // malformed body can answer was never proving the gate.
                 .content("""
                     {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
                      "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
-                     "ratingTable":[{"ageBandStart":18,"ageBandEnd":65,"gender":"ANY","ratePerMille":"3.50"}],
-                     "benefitSchedule":[{"benefitType":"DEATH","basis":"MULTIPLE_OF_SUM_ASSURED","factor":"1.0"}]}
+                     "ratingTable":[{"factorType":"AGE","band":"18-65","multiplier":"1.00","ageFrom":18,"ageTo":65},
+                                    {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":"1.00"}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
                     """))
             .andExpect(status().isForbidden());
     }

@@ -16,7 +16,13 @@ public record PublishVersionRequest(
     @NotNull LocalDate effectiveDate,
     LocalDate retirementDate,
     @NotNull List<RatingFactorRequest> ratingTable,
-    @NotNull List<BenefitRequest> benefitSchedule,
+    /**
+     * What this version covers. REQUIRED and non-empty -- see {@code publishVersion}. `@Valid`
+     * for the reason given on {@code baseRates} below: without it the constraints on
+     * BenefitRequest are never evaluated, and a benefit with no calculation method reaches the
+     * service as a null.
+     */
+    @NotNull @Valid List<BenefitRequest> benefitSchedule,
     List<FundDefinitionRequest> fundDefinitions,
     /**
      * The rates this version is priced from. Optional: a version without them is
