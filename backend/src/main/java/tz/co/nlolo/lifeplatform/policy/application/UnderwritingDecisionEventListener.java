@@ -8,6 +8,8 @@ import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
 import tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
+import tz.co.nlolo.lifeplatform.product.api.PremiumFrequency;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
@@ -350,7 +352,19 @@ public class UnderwritingDecisionEventListener {
                 // ignoring it.
                 String premiumFrequency = decidedCase.premiumFrequency() != null
                     ? decidedCase.premiumFrequency() : "MONTHLY";
-                BigDecimal instalmentPremium = annualPremium.divide(
+
+                // What the product charges for paying in instalments, applied exactly as
+                // quotePremium applies it -- through FrequencyLoading.applyTo, which is the one
+                // place this arithmetic lives. Dividing the annual premium exactly, as this did,
+                // charged a monthly payer the same total as an annual one, which no real life
+                // insurer does. An illustration and the first invoice for the same life must be
+                // one number, and they were not.
+                FrequencyLoading frequencyLoading =
+                    productApi.resolveFrequencyLoading(decidedCase.productVersionId());
+                BigDecimal loadedAnnualPremium = frequencyLoading.applyTo(
+                    annualPremium, PremiumFrequency.valueOf(premiumFrequency));
+
+                BigDecimal instalmentPremium = loadedAnnualPremium.divide(
                     BigDecimal.valueOf(instalmentsPerYear(premiumFrequency)), 2, RoundingMode.HALF_UP);
 
                 // THE FORMULA CHECKS ITS OWN OUTPUT, because one of its inputs was nil and the

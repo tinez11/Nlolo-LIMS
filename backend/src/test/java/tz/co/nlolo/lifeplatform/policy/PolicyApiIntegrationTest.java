@@ -716,6 +716,59 @@ class PolicyApiIntegrationTest {
             .contains("UNKNOWN (never recorded)");
     }
 
+    /**
+     * ONE PRICE FOR ONE LIFE. The same product, the same life, the same frequency: the illustration
+     * a customer is shown and the premium they are actually billed must be the same number.
+     *
+     * <p>They were not. The quote resolved the sum-assured factor by matching a band string while
+     * issuance matched by range, and neither applied a frequency loading at all.
+     */
+    @Test
+    void aQuoteAndTheIssuedPolicyChargeTheSameInstalment() throws InterruptedException {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-AGREE-01", "One price",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "0-20m",
+                        new BigDecimal("1.2000"), null, null,
+                        new BigDecimal("0"), new BigDecimal("20000000")),
+                    // Required by the QUOTE path, which resolves occupation strictly and refuses a
+                    // class it cannot find. Issuance resolves the same factor neutrally from the
+                    // party record, which carries no occupation class -- so both arrive at 1.0 and
+                    // the two paths still agree. That asymmetry is deliberate: the quote will not
+                    // guess a multiplier a caller typed, and issuance will not reject a case an
+                    // underwriter has already decided.
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 78, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000")),
+                    new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000"))),
+            new EligibilityBounds(18, 78, null, null, null, null),
+            new FrequencyLoading(new BigDecimal("8"), new BigDecimal("3")), "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        // The illustration.
+        ProductApi.PremiumQuoteView quote = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000"), "TZS",
+            LocalDate.now().minusYears(40).minusDays(1),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now()));
+
+        // The contract, for the same life, through the real decision-to-issuance path. The
+        // applicant has no OCCUPATION_CLASS recorded, which resolves neutral there and is asserted
+        // as CLASS_1 above -- the product carries no occupation multiplier, so both are 1.0.
+        PolicyView issued = issueFromProposal(tenantId,
+            new Fixture(pricedLife(tenantId, 40, "6001"), product.productId(), versionId),
+            new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()));
+
+        assertThat(issued.premiumAmount())
+            .as("the illustration and the first invoice must be one number")
+            .isEqualByComparingTo(quote.instalmentAmount());
+        // 1,000,000 / 1000 * 12.0 = 12,000, x 1.2 band = 14,400, x 1.08 monthly = 15,552, / 12.
+        assertThat(issued.premiumAmount()).isEqualByComparingTo(new BigDecimal("1296.00"));
+    }
+
     /** A life with a sex and a date of birth but NO recorded smoker status. */
     private UUID lifeWithNoSmokerStatus(UUID tenantId, int years, String phoneSuffix) {
         TenantContext.set(tenantId);
