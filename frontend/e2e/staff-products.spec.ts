@@ -237,6 +237,17 @@ test.describe('staff products', () => {
     ).toHaveCount(0);
 
     await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
+
+    // A priced version must say what ages it sells to, and the form refuses the submit until
+    // it does. Asserted before filling them in, because this is the rule that stops a rate
+    // table's own span from silently becoming the product's selling range -- which is how a
+    // real product came to accept 18-78 while pricing no woman under 56.
+    await page.getByRole('button', { name: 'Publish version' }).click();
+    await expect(page.getByText(/A priced product must say what entry age it sells to/)).toBeVisible();
+    await expect(page).toHaveURL(/\/staff\/products\/new$/);
+
+    await page.getByLabel('Minimum entry age').fill('18');
+    await page.getByLabel('Maximum entry age').fill('30');
     await page.getByRole('button', { name: 'Publish version' }).click();
 
     // A real 201 and a navigation to the product's own page.
