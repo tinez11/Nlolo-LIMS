@@ -418,6 +418,34 @@ function RatingBasis({
         />
       )}
 
+      {/*
+        Rendered ALWAYS, unlike the instalment loading above. An absent filing is a fact worth
+        stating rather than a blank to skip past: it means the version predates the requirement,
+        and the empty copy says so instead of leaving a reader to guess.
+      */}
+      <FactorSection
+        title="TIRA filing"
+        empty="No filing on record — this version was published before filings were required."
+        rows={
+          rating.data.tiraFiling
+            ? [
+                {
+                  key: 'reference',
+                  label: 'Reference',
+                  note: null,
+                  value: rating.data.tiraFiling.reference ?? '—',
+                },
+                {
+                  key: 'approved',
+                  label: 'Approved',
+                  note: null,
+                  value: rating.data.tiraFiling.approvalDate ?? '—',
+                },
+              ]
+            : []
+        }
+      />
+
       <section>
         <SectionHeading>Base rates</SectionHeading>
         {baseRates.length === 0 ? (

@@ -362,6 +362,20 @@ export function publishVersionFormSchema(category: ProductCategory) {
     monthlyLoadingPercent: percentZeroToHundred('Monthly loading'),
     quarterlyLoadingPercent: percentZeroToHundred('Quarterly loading'),
 
+    // The TIRA filing that authorises this version. REQUIRED, mirroring the server: in Tanzania
+    // a product and its rates must be filed with and approved by TIRA before sale, and an
+    // optional compliance field is one nobody fills in.
+    tiraReference: z.string().trim().min(1, 'A TIRA filing reference is required'),
+    tiraApprovalDate: z
+      .string()
+      .trim()
+      .min(1, 'A TIRA approval date is required')
+      .refine((v) => v === '' || ISO_DATE_PATTERN.test(v), 'Not a valid date')
+      .refine(
+        (v) => v === '' || v <= new Date().toISOString().slice(0, 10),
+        'An approval that has not happened cannot authorise a product',
+      ),
+
     benefitSchedule: z.array(benefitRowSchema), // no minimum coverage required
     fundDefinitions: z.array(fundRowSchema).superRefine((rows, ctx) => {
       // ProductApiImpl.publishVersion: rejected outright for any category other
@@ -507,6 +521,8 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     maxSumAssured: '',
     monthlyLoadingPercent: '',
     quarterlyLoadingPercent: '',
+    tiraReference: '',
+    tiraApprovalDate: '',
   };
 }
 
@@ -598,6 +614,12 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
       );
       return cells.length > 0 ? { baseRates: cells } : {};
     })(),
+    // Required, so no omit-when-blank branch: a version may not exist without the filing that
+    // authorises it, and the schema above refuses a blank one before this runs.
+    tiraFiling: {
+      reference: values.tiraReference,
+      approvalDate: values.tiraApprovalDate,
+    },
     benefitSchedule: values.benefitSchedule,
     fundDefinitions: values.fundDefinitions,
     // Omitted entirely when nothing is bounded, rather than sent as an object of nulls.

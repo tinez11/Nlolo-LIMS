@@ -96,6 +96,8 @@ export function PublishVersionForm({
       maxSumAssured: '',
       monthlyLoadingPercent: '',
       quarterlyLoadingPercent: '',
+      tiraReference: '',
+      tiraApprovalDate: '',
     },
   });
 
@@ -230,6 +232,12 @@ export function PublishVersionForm({
               placeholder="8"
               {...register('monthlyLoadingPercent')}
             />
+          </FormField>
+          <FormField label="TIRA filing reference" error={errors.tiraReference?.message}>
+            <Input inputSize="sm" placeholder="TIRA/LIFE/2026/0001" {...register('tiraReference')} />
+          </FormField>
+          <FormField label="TIRA approval date" error={errors.tiraApprovalDate?.message}>
+            <Input type="date" inputSize="sm" {...register('tiraApprovalDate')} />
           </FormField>
           <FormField label="Quarterly loading %" error={errors.quarterlyLoadingPercent?.message}>
             <Input

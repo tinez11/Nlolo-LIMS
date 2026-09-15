@@ -30,6 +30,10 @@ const valid = () => ({
   ratingTable: [ageRow, sumRow],
   benefitSchedule: [],
   fundDefinitions: [],
+  // Required as of V12: a version may not exist without the filing that authorises it, so
+  // every fixture carries one or nothing parses.
+  tiraReference: 'TIRA/LIFE/2026/0001',
+  tiraApprovalDate: '2026-01-15',
 });
 
 describe('publishVersionFormSchema', () => {
@@ -386,6 +390,28 @@ describe('publishVersionFormSchema', () => {
       expect(termLife.safeParse({ ...valid(), monthlyLoadingPercent: '-1' }).success).toBe(false);
       expect(termLife.safeParse({ ...valid(), monthlyLoadingPercent: '101' }).success).toBe(false);
       expect(termLife.safeParse({ ...valid(), quarterlyLoadingPercent: 'abc' }).success).toBe(false);
+    });
+  });
+
+  describe('TIRA filing', () => {
+    it('refuses a publish with no filing reference', () => {
+      const result = termLife.safeParse({ ...valid(), tiraReference: '' });
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain('TIRA');
+    });
+
+    it('refuses an approval date in the future', () => {
+      const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+      expect(termLife.safeParse({ ...valid(), tiraApprovalDate: tomorrow }).success).toBe(false);
+    });
+
+    it('sends the filing an actuary recorded', () => {
+      const result = termLife.safeParse(valid());
+      expect(result.success).toBe(true);
+      expect(toApiRequest(result.data!).tiraFiling).toEqual({
+        reference: 'TIRA/LIFE/2026/0001',
+        approvalDate: '2026-01-15',
+      });
     });
   });
 
