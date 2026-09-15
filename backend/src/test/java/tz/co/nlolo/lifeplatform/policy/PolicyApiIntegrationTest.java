@@ -56,6 +56,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
@@ -753,6 +754,49 @@ class PolicyApiIntegrationTest {
             .filteredOn(c -> c.benefitType() == BenefitType.DEATH)
             .singleElement()
             .satisfies(d -> assertThat(d.sumAssuredAmount()).isEqualByComparingTo(new BigDecimal("1000000")));
+    }
+
+    /**
+     * A critical-illness claim was valued at the FULL DEATH SUM ASSURED, because claimableCover
+     * took no claim type and returned the policy's single sum assured for everything. A survivable
+     * condition paid the whole cover, on a rider nobody had costed.
+     */
+    @Test
+    void claimableCoverValuesEachBenefitAtItsOwnAmount() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        ProductSummaryView product = productApi.createProduct("POLICY-B2B-CLAIM", "Death plus CI",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED),
+                    new ProductApi.BenefitInput(BenefitType.CRITICAL_ILLNESS,
+                        BenefitCalculationMethod.PERCENTAGE_OF_SUM_ASSURED, new BigDecimal("25.00"), null)),
+            null, ANY_FILING, "actuary");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        String policyNumber = issueDirectly(tenantId,
+            new Fixture(pricedLife(tenantId, 35, "7002"), product.productId(), versionId), List.of());
+
+        assertThat(policyApi.claimableCover(policyNumber, null, LocalDate.now(), "DEATH").amount())
+            .isEqualByComparingTo(new BigDecimal("1000000"));
+        assertThat(policyApi.claimableCover(policyNumber, null, LocalDate.now(), "CRITICAL_ILLNESS").amount())
+            .as("a quarter of the cover, not all of it")
+            .isEqualByComparingTo(new BigDecimal("250000.00"));
+    }
+
+    @Test
+    void claimableCoverRefusesABenefitTheProductDoesNotCover() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "POLICY-B2B-DEATHONLY");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+
+        assertThatThrownBy(() ->
+            policyApi.claimableCover(policyNumber, null, LocalDate.now(), "CRITICAL_ILLNESS"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("CRITICAL_ILLNESS");
     }
 
     /**

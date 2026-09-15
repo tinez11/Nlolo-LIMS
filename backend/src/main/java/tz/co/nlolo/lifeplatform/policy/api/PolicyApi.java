@@ -356,7 +356,23 @@ public interface PolicyApi {
      *     belong, not a member of this scheme, or was not covered on {@code asOf}
      * @throws PolicyNotFoundException if no such policy exists in this tenant
      */
-    ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, LocalDate asOf);
+    /**
+     * The cover a claim of this benefit type can be valued at.
+     *
+     * <p>{@code benefitType} is a {@code String} because claims may not reference
+     * {@code product.api.BenefitType} without failing {@code ModularityTests} — the same reason
+     * {@code PolicyView.productCategory} is one, and the reason this view exists at all. Callers
+     * pass {@code claimType.name()}; the four {@code ClaimType} values map one-to-one onto benefit
+     * types.
+     *
+     * <p><b>Before this parameter existed the method returned the policy's single sum assured for
+     * every claim</b>, so a critical-illness claim was valued at the full death benefit — a
+     * survivable condition paying the whole cover, on a rider nobody had costed.
+     *
+     * @throws InvalidPolicyStateException if the policy has no active coverage for that benefit
+     */
+    ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, LocalDate asOf,
+                                       String benefitType);
 
     /**
      * A DEATH/DISABILITY/CRITICAL_ILLNESS claim settled: cover is discharged.

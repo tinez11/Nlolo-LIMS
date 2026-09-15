@@ -171,7 +171,10 @@ public class ClaimsApiImpl implements ClaimsApi {
         //    must have been covered on the date) raise InvalidPolicyStateException from there
         //    and propagate as-is, exactly as PolicyNotFoundException already does.
         ClaimableCoverView claimable = policyApi.claimableCover(
-            request.policyNumber(), request.policyMemberId(), request.dateOfEvent());
+            request.policyNumber(), request.policyMemberId(), request.dateOfEvent(),
+            // The benefit this claim is FOR. Passed as a name because claims may not reference
+            // product.api.BenefitType without failing ModularityTests.
+            request.claimType().name());
         if (claimable.amount() == null || claimable.amount().signum() <= 0) {
             throw new ClaimValidationException("Policy " + request.policyNumber()
                 + " has no positive cover to claim against on " + request.dateOfEvent());
@@ -369,7 +372,8 @@ public class ClaimsApiImpl implements ClaimsApi {
             // for the scheme's 2.5bn total; on individual business it is the sum assured, which
             // was equally unbounded before.
             ClaimableCoverView claimable = policyApi.claimableCover(
-                claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent());
+                claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
+                claim.getClaimType().name());
             claim.approve(approvedAmount, approvedCurrency, claimable.amount());
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId,
                 Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),

@@ -43,6 +43,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
+import tz.co.nlolo.lifeplatform.claims.api.CriticalIllnessClaimDetails;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Task 4: registration's full validation chain, run under REAL {@code app_role}
@@ -139,7 +141,15 @@ class ClaimsApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                        // Every benefit this class registers a claim against. All at SUM_ASSURED, so each
+            // claim is valued at the policy sum assured exactly as it was before benefits drove
+            // coverage -- no existing amount assertion moves. Before this, a MATURITY or
+            // DISABILITY claim was valued at the death benefit because claimableCover took no
+            // claim type at all.
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED),
+                    new ProductApi.BenefitInput(BenefitType.DISABILITY, BenefitCalculationMethod.SUM_ASSURED),
+                    new ProductApi.BenefitInput(BenefitType.CRITICAL_ILLNESS, BenefitCalculationMethod.SUM_ASSURED),
+                    new ProductApi.BenefitInput(BenefitType.MATURITY, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         return new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());
@@ -201,6 +211,46 @@ class ClaimsApiIntegrationTest {
         Claim claim = claimRepository.findByClaimIdAndTenantId(claimId, tenantId).orElseThrow();
         claim.beginAssessment();
         claimRepository.save(claim);
+    }
+
+    /**
+     * Registering a critical-illness claim on a death-only product is refused rather than valued
+     * at the death benefit.
+     *
+     * <p>This is the defect the batch exists for: {@code claimableCover} took no claim type and
+     * returned the policy's single sum assured for every claim, so a survivable condition paid the
+     * whole cover on a rider nobody had costed. Paying a benefit nobody authored is how a product
+     * pays for cover it never priced.
+     *
+     * <p>Uses its own product rather than {@code buildFixture}'s, which now authors all four
+     * benefit types because this class claims against all four.
+     */
+    @Test
+    void refusesACriticalIllnessClaimOnAProductThatOnlyCoversDeath() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+
+        PartyView applicant = partyApi.registerIndividual("Claims IT CI Applicant",
+            LocalDate.of(1985, 3, 1), "+255715009901", null, "test-agent");
+        ProductSummaryView product = productApi.createProduct("CLAIMS-IT-CI-01", "Death only",
+            ProductCategory.TERM_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId,
+            new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId()));
+        LocalDate dateOfEvent = LocalDate.now().minusDays(1);
+
+        ClaimsApi.RegisterClaimRequest request = new ClaimsApi.RegisterClaimRequest(
+            policyNumber, null, applicant.partyId(), ClaimType.CRITICAL_ILLNESS, dateOfEvent,
+            new CriticalIllnessClaimDetails("Myocardial infarction", dateOfEvent, "I21"));
+
+        assertThatThrownBy(() -> claimsApi.registerClaim(request, "reg-idem-ci-01", "claims-staff"))
+            .hasMessageContaining("CRITICAL_ILLNESS");
     }
 
     @Test

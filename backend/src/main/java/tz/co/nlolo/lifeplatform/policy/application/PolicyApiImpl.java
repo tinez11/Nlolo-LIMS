@@ -753,7 +753,8 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     @Transactional(readOnly = true)
-    public ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, LocalDate asOf) {
+    public ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, LocalDate asOf,
+                                              String benefitType) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
 
@@ -769,9 +770,21 @@ public class PolicyApiImpl implements PolicyApi {
                 throw new InvalidPolicyStateException("Policy " + policyNumber
                     + " is not a group scheme, so a claim on it cannot name a member");
             }
-            return new ClaimableCoverView(policy.getSumAssuredAmount(),
-                policy.getSumAssuredCurrency(), null);
+            // The coverage for THIS benefit, not the policy's single sum assured. Returning the
+            // latter is how a critical-illness claim came to be valued at the full death benefit.
+            return coverageRepository.findByPolicyNumberAndActiveTrue(policyNumber).stream()
+                .filter(c -> c.getBenefitType().equals(benefitType))
+                .findFirst()
+                .map(c -> new ClaimableCoverView(c.getSumAssuredAmount(), c.getSumAssuredCurrency(), null))
+                .orElseThrow(() -> new InvalidPolicyStateException("Policy " + policyNumber
+                    + " has no active " + benefitType + " cover to claim against. The product this"
+                    + " policy was issued on does not cover it, so there is no amount to pay --"
+                    + " paying one anyway is how a product pays for cover it never priced."));
         }
+        // The scheme branch below values from the MEMBER SCHEDULE, not from coverage rows, so a
+        // non-DEATH claim on a scheme is valued at the member's cover. That is a known limitation
+        // carried from before this change rather than a considered design -- group products on
+        // this platform author only DEATH.
         if (policyMemberId == null) {
             throw new InvalidPolicyStateException("Scheme " + policyNumber
                 + " insures many lives, so a claim on it names a member");
