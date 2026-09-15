@@ -375,7 +375,9 @@ components:
             type: object
             properties:
               benefitType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY, SURRENDER] }
-              calculationMethod: { type: string }
+              calculationMethod: { type: string, enum: [SUM_ASSURED, PERCENTAGE_OF_SUM_ASSURED, FLAT_AMOUNT] }
+              percent: { type: [number, "null"], description: Set for PERCENTAGE_OF_SUM_ASSURED and null otherwise. }
+              flatAmount: { type: [number, "null"], description: Set for FLAT_AMOUNT and null otherwise. }
         fundDefinitions:
           type: [array, "null"]
           description: Only valid when category = UNIT_LINKED.
@@ -504,7 +506,9 @@ components:
             type: object
             properties:
               benefitType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY, SURRENDER] }
-              calculationMethod: { type: string }
+              calculationMethod: { type: string, enum: [SUM_ASSURED, PERCENTAGE_OF_SUM_ASSURED, FLAT_AMOUNT] }
+              percent: { type: [number, "null"], description: Set for PERCENTAGE_OF_SUM_ASSURED and null otherwise. }
+              flatAmount: { type: [number, "null"], description: Set for FLAT_AMOUNT and null otherwise. }
     ProductSnapshot:
       type: object
       properties:

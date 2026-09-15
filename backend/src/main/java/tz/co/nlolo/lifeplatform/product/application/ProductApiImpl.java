@@ -152,6 +152,17 @@ public class ProductApiImpl implements ProductApi {
             .filter(p -> p.getTenantId().equals(tenantId))
             .orElseThrow(() -> new ProductNotFoundException(productId));
 
+        // A product that covers nothing is not a product. Refused going forward; the 143 versions
+        // that already have no benefits are grandfathered at ISSUANCE, not here -- see
+        // PolicyApiImpl. Making this a publish rule is what CLOSES that population: it can only
+        // shrink from here, which is the difference between a migration path and a permanent
+        // default.
+        if (benefitSchedule == null || benefitSchedule.isEmpty()) {
+            throw new InvalidProductVersionException(
+                "A product version must cover at least one benefit -- a version that covers"
+                    + " nothing cannot be sold, and nothing downstream could value a claim on it");
+        }
+
         // Deliverable 3 invariant: fund definitions restricted to UNIT_LINKED products.
         if (fundDefinitions != null && !fundDefinitions.isEmpty() && !"UNIT_LINKED".equals(product.getCategory())) {
             throw new InvalidProductVersionException("Fund definitions are only valid for UNIT_LINKED products");
@@ -236,7 +247,8 @@ public class ProductApiImpl implements ProductApi {
             }
         }
         for (BenefitInput input : benefitSchedule) {
-            benefitScheduleEntryRepository.save(new BenefitScheduleEntry(tenantId, version.getProductVersionId(), input.benefitType().name(), input.calculationMethod()));
+            benefitScheduleEntryRepository.save(new BenefitScheduleEntry(tenantId, version.getProductVersionId(),
+                input.benefitType().name(), input.calculationMethod().name(), input.percent(), input.flatAmount()));
         }
         if (fundDefinitions != null) {
             for (FundInput input : fundDefinitions) {
@@ -389,7 +401,8 @@ public class ProductApiImpl implements ProductApi {
                 f.getSumAssuredFrom(), f.getSumAssuredTo()))
             .toList();
         List<BenefitInput> benefits = benefitScheduleEntryRepository.findByProductVersionId(versionId).stream()
-            .map(b -> new BenefitInput(BenefitType.valueOf(b.getBenefitType()), b.getCalculationMethod()))
+            .map(b -> new BenefitInput(BenefitType.valueOf(b.getBenefitType()),
+                BenefitCalculationMethod.valueOf(b.getCalculationMethod()), b.getBenefitPercent(), b.getFlatAmount()))
             .toList();
 
         return new VersionRatingView(productId, versionId, version.getEffectiveDate(), rates, factors, benefits,
@@ -796,6 +809,15 @@ public class ProductApiImpl implements ProductApi {
             .filter(v -> v.getTenantId().equals(TenantContext.get()))
             .map(ProductVersion::getFrequencyLoading)
             .orElseThrow(() -> new ProductNotFoundException(productVersionId));
+    }
+
+    @Override
+    public List<BenefitDefinition> resolveBenefitSchedule(UUID productVersionId) {
+        return benefitScheduleEntryRepository.findByProductVersionId(productVersionId).stream()
+            .map(b -> new BenefitDefinition(BenefitType.valueOf(b.getBenefitType()),
+                BenefitCalculationMethod.valueOf(b.getCalculationMethod()),
+                b.getBenefitPercent(), b.getFlatAmount()))
+            .toList();
     }
 
     @Override

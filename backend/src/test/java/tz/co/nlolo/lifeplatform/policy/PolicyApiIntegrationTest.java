@@ -89,6 +89,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
+            "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -154,7 +155,7 @@ class PolicyApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         return new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());
@@ -416,7 +417,7 @@ class PolicyApiIntegrationTest {
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.AGE, "50-59", new BigDecimal("1.6"), 50, 59),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
@@ -452,7 +453,7 @@ class PolicyApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "50-59", new BigDecimal("1.6"), 50, 59),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
@@ -567,7 +568,7 @@ class PolicyApiIntegrationTest {
             // multiplier for either would charge the same fact twice -- publishVersion refuses
             // them on a priced version for that reason.
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000")),
                     // Priced but never issued against here -- the life below is male. Present
@@ -605,7 +606,7 @@ class PolicyApiIntegrationTest {
             ProductCategory.TERM_LIFE, "TZS", "actuary");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             // NON_SMOKER only, both sexes. "We never priced smokers" is a real state of a real
             // rate table, and the applicant below is one -- this is the hole, authored
@@ -664,7 +665,7 @@ class PolicyApiIntegrationTest {
             ProductCategory.TERM_LIFE, "TZS", "actuary");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 78, Sex.FEMALE, SmokerStatus.UNKNOWN, new BigDecimal("12.0000")),
                     new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.UNKNOWN, new BigDecimal("14.0000"))),
@@ -693,7 +694,7 @@ class PolicyApiIntegrationTest {
             ProductCategory.TERM_LIFE, "TZS", "actuary");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             // NON_SMOKER only: a real stance, and one UNKNOWN cannot satisfy.
             List.of(new ProductApi.BaseRateInput(18, 78, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000")),
@@ -743,7 +744,7 @@ class PolicyApiIntegrationTest {
                     // guess a multiplier a caller typed, and issuance will not reject a case an
                     // underwriter has already decided.
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 78, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000")),
                     new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000"))),
@@ -874,7 +875,7 @@ class PolicyApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, ANY_FILING, "actuary");
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)), null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         Fixture fixture = new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());
         String policyNumber = issueDirectly(tenantId, fixture, List.of());
@@ -1488,7 +1489,7 @@ class PolicyApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, ANY_FILING, "actuary");
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)), null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         Fixture fixture = new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());
         String policyNumber = issueDirectly(tenantId, fixture, List.of());

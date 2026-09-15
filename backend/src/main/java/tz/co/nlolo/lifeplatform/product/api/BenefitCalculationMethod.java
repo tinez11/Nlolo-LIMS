@@ -10,7 +10,7 @@ package tz.co.nlolo.lifeplatform.product.api;
  * <p>{@code SUM_ASSURED} keeps its name deliberately: it is already correct in 105 Java call
  * sites, 12 JSON bodies and the real database rows, so renaming it would be churn for no reader.
  *
- * <p>There is no {@code SUM_ASSURED_PLUS_BONUS}. It appeared in one contract test and nowhere in
+ * <p>There is no {@code SUM_ASSURED_PLUS_BONUS}. It appeared in five JSON bodies of one contract test and nowhere in
  * real data, and this platform has no bonus mechanism to compute it — no reversionary bonus and no
  * cash value. Admitting a method nothing can calculate would recreate the defect being removed:
  * a value that looks authoritative and resolves to nothing.

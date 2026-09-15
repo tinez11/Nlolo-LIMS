@@ -71,6 +71,7 @@ class ClaimControllerValidationContractTest {
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
+            "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",

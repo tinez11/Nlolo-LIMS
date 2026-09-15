@@ -39,7 +39,19 @@ public interface ProductApi {
             this(factorType, band, multiplier, ageFrom, ageTo, null, null);
         }
     }
-    record BenefitInput(BenefitType benefitType, String calculationMethod) {}
+    /**
+     * One benefit at authoring time.
+     *
+     * <p>{@code calculationMethod} is an ENUM, not a String, and there is deliberately no String
+     * overload: a stringly-typed door here is how {@code calculation_method} came to hold
+     * {@code untill death} on two of the three rows that existed.
+     */
+    record BenefitInput(BenefitType benefitType, BenefitCalculationMethod calculationMethod,
+                        BigDecimal percent, BigDecimal flatAmount) {
+        public BenefitInput(BenefitType benefitType, BenefitCalculationMethod calculationMethod) {
+            this(benefitType, calculationMethod, null, null);
+        }
+    }
     record FundInput(String fundCode, BigDecimal currentNav) {}
 
     /**
@@ -234,6 +246,21 @@ public interface ProductApi {
      * @throws ProductNotFoundException if no such version exists for this tenant
      */
     FrequencyLoading resolveFrequencyLoading(UUID productVersionId);
+
+    /**
+     * What this version covers, and what each benefit pays.
+     *
+     * <p>Internal-only, not part of {@code openapi-product.yaml} — the same convention as
+     * {@link #isPriced} and {@link #resolveFrequencyLoading}. Consumed by policy at issuance so a
+     * contract's coverage is what its product actually authored, rather than a hardcoded
+     * {@code DEATH} row.
+     *
+     * <p><b>Empty for the 143 versions published before an authored benefit was required.</b>
+     * Callers must read empty as "this version predates the rule", never as "this product covers
+     * nothing" — {@code publishVersion} now refuses an empty schedule, so that population can only
+     * shrink.
+     */
+    List<BenefitDefinition> resolveBenefitSchedule(UUID productVersionId);
 
     ProductSnapshotView getActiveSnapshot(UUID productId, LocalDate asOfDate);
 

@@ -134,6 +134,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
+            "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -327,7 +328,7 @@ class AppRolePrivilegesIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, java.time.LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", java.math.BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", java.math.BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
@@ -353,7 +354,7 @@ class AppRolePrivilegesIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, java.time.LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", java.math.BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", java.math.BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
 
@@ -392,7 +393,7 @@ class AppRolePrivilegesIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, java.time.LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", java.math.BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", java.math.BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
         UnderwritingCaseView opened = underwritingApi.openCase(policyholder.partyId(), product.productId(), snapshot.productVersionId(),
@@ -428,7 +429,7 @@ class AppRolePrivilegesIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, java.time.LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", java.math.BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", java.math.BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, ANY_FILING, "actuary@nlolo.co.tz");
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)), null, ANY_FILING, "actuary@nlolo.co.tz");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), java.time.LocalDate.now());
         PolicyView issued = policyApi.issuePolicy(UUID.randomUUID(),
             new PolicyApi.IssueRequest(policyholder.partyId(), product.productId(), snapshot.productVersionId(),

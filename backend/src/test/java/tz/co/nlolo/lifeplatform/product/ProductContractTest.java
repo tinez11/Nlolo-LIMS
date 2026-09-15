@@ -63,7 +63,8 @@ class ProductContractTest {
             "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
-            "db-migrations/product/V12__tira_filing.sql");
+            "db-migrations/product/V12__tira_filing.sql",
+            "db-migrations/product/V13__benefit_calculation_method.sql");
     }
 
     @AfterEach
@@ -118,7 +119,7 @@ class ProductContractTest {
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
                      "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
-                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
+                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}]}
                     """))
             .andExpect(status().isCreated());
 
@@ -175,7 +176,7 @@ class ProductContractTest {
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
                      "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
-                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
+                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}]}
                     """))
             .andExpect(status().isForbidden());
     }
@@ -203,7 +204,7 @@ class ProductContractTest {
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
                      "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
-                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
+                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}]}
                     """))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
@@ -416,7 +417,7 @@ class ProductContractTest {
                     + "\"tiraFiling\":{\"reference\":\"TIRA/CONTRACT/0002\",\"approvalDate\":\"2026-01-15\"},"
                     + "\"ratingTable\":[{\"factorType\":\"AGE\",\"band\":\"30-39\",\"multiplier\":1.0,\"ageFrom\":30,\"ageTo\":39},"
                     + "{\"factorType\":\"SUM_ASSURED_BAND\",\"band\":\"LOW\",\"multiplier\":1.0}],"
-                    + "\"benefitSchedule\":[{\"benefitType\":\"MATURITY\",\"calculationMethod\":\"SUM_ASSURED_PLUS_BONUS\"}]}"))
+                    + "\"benefitSchedule\":[{\"benefitType\":\"MATURITY\",\"calculationMethod\":\"SUM_ASSURED\"}]}"))
             .andExpect(status().isCreated());
     }
 
@@ -443,7 +444,7 @@ class ProductContractTest {
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
                      "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39}],
-                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
+                     "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}]}
                     """))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.errorCode").value("INVALID_PRODUCT_VERSION"));

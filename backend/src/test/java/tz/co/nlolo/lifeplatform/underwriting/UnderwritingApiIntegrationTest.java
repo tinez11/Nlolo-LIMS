@@ -54,6 +54,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
+            "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -93,7 +94,7 @@ class UnderwritingApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         var snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         return underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(), sumAssured, "TZS", null, "agent1").caseId();
@@ -117,7 +118,7 @@ class UnderwritingApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, null,
             new EligibilityBounds(null, null, minTermMonths, maxTermMonths, null, null),
             ANY_FILING, "actuary");
@@ -445,7 +446,7 @@ class UnderwritingApiIntegrationTest {
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-39", BigDecimal.ONE, 18, 39),
                     new ProductApi.RatingFactorInput(FactorType.AGE, "60-99", new BigDecimal("3.0"), 60, 99),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         return product.productId();
     }
@@ -495,7 +496,7 @@ class UnderwritingApiIntegrationTest {
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "PROF_1", BigDecimal.ONE),
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "HAZ_4", new BigDecimal("3.0"))),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         return product.productId();
     }

@@ -63,7 +63,8 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
-            "db-migrations/product/V12__tira_filing.sql");
+            "db-migrations/product/V12__tira_filing.sql",
+            "db-migrations/product/V13__benefit_calculation_method.sql");
     }
 
     @BeforeEach
@@ -88,6 +89,46 @@ class ProductApiIntegrationTest {
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    // ---- Batch 2b: a version says what it covers, and what each benefit pays ----
+
+    @Test
+    void publishVersionRefusesAVersionThatCoversNothing() {
+        ProductSummaryView product = productApi.createProduct("TERM-B2B-NOBEN", "Covers nothing",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(),
+                null, ANY_FILING, "actuary@nlolo.co.tz"));
+
+        assertThat(thrown.getMessage()).contains("at least one benefit");
+    }
+
+    @Test
+    void aPercentageBenefitRoundTripsOntoTheRatingRead() {
+        ProductSummaryView product = productApi.createProduct("TERM-B2B-PCT", "With a CI rider",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED),
+                    new ProductApi.BenefitInput(BenefitType.CRITICAL_ILLNESS,
+                        BenefitCalculationMethod.PERCENTAGE_OF_SUM_ASSURED, new BigDecimal("25.00"), null)),
+            null, ANY_FILING, "actuary@nlolo.co.tz");
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+
+        assertThat(productApi.resolveBenefitSchedule(versionId))
+            .filteredOn(b -> b.benefitType() == BenefitType.CRITICAL_ILLNESS)
+            .singleElement()
+            .satisfies(ci -> {
+                assertThat(ci.calculationMethod()).isEqualTo(BenefitCalculationMethod.PERCENTAGE_OF_SUM_ASSURED);
+                assertThat(ci.amountFor(new BigDecimal("10000000")))
+                    .isEqualByComparingTo(new BigDecimal("2500000.00"));
+            });
+    }
+
     // ---- Batch 3: the TIRA filing that authorises a version ---------------------
 
     @Test
@@ -99,7 +140,7 @@ class ProductApiIntegrationTest {
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, null, "actuary@nlolo.co.tz"));
 
         assertThat(thrown.getMessage()).contains("TIRA filing");
@@ -112,7 +153,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, new TiraFiling("TIRA/LIFE/2026/0099", LocalDate.of(2026, 2, 1)), "actuary@nlolo.co.tz");
         UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
@@ -137,7 +178,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
@@ -212,7 +253,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         assertTrue(productApi.listDraftProducts().stream().noneMatch(p -> p.productCode().equals("TERM-DRAFT-02")),
@@ -270,7 +311,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         List<ProductSummaryView> active = productApi.listActiveProducts(ProductCategory.TERM_LIFE);
@@ -284,7 +325,7 @@ class ProductApiIntegrationTest {
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 List.of(new ProductApi.FundInput("FUND-A", BigDecimal.TEN)),
                 ANY_FILING, "actuary@nlolo.co.tz"));
     }
@@ -304,7 +345,7 @@ class ProductApiIntegrationTest {
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 List.of(new ProductApi.BaseRateInput(30, 39, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4000"))),
                 ANY_FILING, "actuary@nlolo.co.tz"));
@@ -317,7 +358,7 @@ class ProductApiIntegrationTest {
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.SMOKER_STATUS, "SMOKER", new BigDecimal("1.5")),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 List.of(new ProductApi.BaseRateInput(30, 39, Sex.MALE, SmokerStatus.SMOKER, new BigDecimal("22.1000"))),
                 ANY_FILING, "actuary@nlolo.co.tz"));
@@ -333,7 +374,7 @@ class ProductApiIntegrationTest {
         InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 List.of(new ProductApi.BaseRateInput(18, 65, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.5000")),
                         new ProductApi.BaseRateInput(18, 65, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.0000"))),
@@ -350,7 +391,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             ANY_FILING, "actuary@nlolo.co.tz");
 
@@ -371,7 +412,7 @@ class ProductApiIntegrationTest {
         InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 List.of(new ProductApi.BaseRateInput(56, 78, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.1000")),
                         new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.7000"))),
@@ -393,7 +434,7 @@ class ProductApiIntegrationTest {
         InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 List.of(new ProductApi.BaseRateInput(18, 65, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.5000")),
                         new ProductApi.BaseRateInput(18, 65, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.0000")),
@@ -412,7 +453,7 @@ class ProductApiIntegrationTest {
 
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 45, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.6000")),
                     new ProductApi.BaseRateInput(46, 79, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.4000")),
@@ -431,7 +472,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(loaded.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, List.of(), EligibilityBounds.none(),
             new FrequencyLoading(new BigDecimal("8.00"), new BigDecimal("3.00")), ANY_FILING, "actuary@nlolo.co.tz");
         UUID loadedVersionId = productApi.getActiveSnapshot(loaded.productId(), LocalDate.now()).productVersionId();
@@ -447,7 +488,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(plain.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         UUID plainVersionId = productApi.getActiveSnapshot(plain.productId(), LocalDate.now()).productVersionId();
 
@@ -469,7 +510,7 @@ class ProductApiIntegrationTest {
             LocalDate.now().minusYears(2), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         UUID firstVersionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
@@ -477,7 +518,7 @@ class ProductApiIntegrationTest {
             LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         assertThat(productApi.getSnapshotByVersionId(firstVersionId).ifrsMeasurementModel())
@@ -498,7 +539,7 @@ class ProductApiIntegrationTest {
         ProductSummaryView product = productApi.createProduct("TERM-M13-C", "Priced term life", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
                     new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8000"))),
@@ -524,7 +565,7 @@ class ProductApiIntegrationTest {
         assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000"))),
                 ANY_FILING, "actuary@nlolo.co.tz"));
@@ -542,7 +583,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-65", BigDecimal.ONE, 18, 65),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         UUID versionId = productVersionRepository
@@ -569,7 +610,7 @@ class ProductApiIntegrationTest {
         InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2000")),
                         new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("99.9000"))),
@@ -606,7 +647,7 @@ class ProductApiIntegrationTest {
         assertThrows(DataIntegrityViolationException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 // The MALE row is valid and is here only so the publish reaches the database:
                 // Batch 1's coverage rule refuses a table that cannot price every life the
@@ -637,7 +678,7 @@ class ProductApiIntegrationTest {
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("2.5000"), 30, 39),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
         // The message must name the offending band -- a bare constraint violation would leave an
         // actuary to find which of forty rows was the duplicate.
@@ -669,7 +710,7 @@ class ProductApiIntegrationTest {
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-78", BigDecimal.ZERO, 18, 78),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
         // Names the band, like every other rating-table refusal here: an actuary should not have
         // to find which of forty rows carried the nil.
@@ -699,7 +740,7 @@ class ProductApiIntegrationTest {
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "Over 5m",
                         new BigDecimal("1.5000"), null, null,
                         new BigDecimal("5000000.01"), new BigDecimal("100000000"))),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
@@ -732,7 +773,7 @@ class ProductApiIntegrationTest {
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-78", BigDecimal.ONE, 18, 78),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "5000000",
                             new BigDecimal("1.5000"))),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
         assertTrue(ex.getMessage().contains("5000000"));
     }
@@ -751,7 +792,7 @@ class ProductApiIntegrationTest {
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "B",
                             new BigDecimal("1.5000"), null, null,
                             new BigDecimal("4000000"), new BigDecimal("9000000"))),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
     }
 
@@ -764,7 +805,7 @@ class ProductApiIntegrationTest {
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-78", BigDecimal.ONE, 18, 78),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", new BigDecimal("-1.0000"))),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
     }
 
@@ -780,7 +821,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         UUID tenantId = TenantContext.get();
@@ -805,7 +846,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         UUID tenantId = TenantContext.get();
@@ -836,7 +877,7 @@ class ProductApiIntegrationTest {
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
         assertTrue(ex.getMessage().contains("30-39"), "the message must name the offending band");
     }
@@ -850,7 +891,7 @@ class ProductApiIntegrationTest {
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-30", BigDecimal.ONE, 18, 30),
                         new ProductApi.RatingFactorInput(FactorType.AGE, "25-40", new BigDecimal("2.0"), 25, 40),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
         assertTrue(ex.getMessage().contains("overlap"));
     }
@@ -862,7 +903,7 @@ class ProductApiIntegrationTest {
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "40-30", BigDecimal.ONE, 40, 30),
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
     }
 
@@ -873,7 +914,7 @@ class ProductApiIntegrationTest {
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-39", BigDecimal.ONE, 18, 39),
                     new ProductApi.RatingFactorInput(FactorType.AGE, "60-99", new BigDecimal("3.0"), 60, 99),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         UUID versionId = productVersionRepository
             .findByTenantIdAndProductIdAndActiveForNewBusinessTrue(TenantContext.get(), product.productId())
@@ -908,7 +949,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-39", BigDecimal.ONE, 18, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         UUID tenantId = TenantContext.get();
         UUID versionId = productVersionRepository
@@ -928,7 +969,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-39", BigDecimal.ONE, 18, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         UUID tenantId = TenantContext.get();
         UUID versionId = productVersionRepository
@@ -956,7 +997,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, ratePerMille),
                     new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, ratePerMille)),
@@ -986,7 +1027,7 @@ class ProductApiIntegrationTest {
                         new BigDecimal("1.5000"), null, null,
                         new BigDecimal("0"), new BigDecimal("20000000")),
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("10.0000")),
                     new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000"))),
@@ -1058,7 +1099,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.2000")),
                     new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.4000"))),
@@ -1117,7 +1158,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
                     new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_3", new BigDecimal("1.25"))),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("20.0000")),
                     // Priced but never quoted here -- the quote below asks for FEMALE. Present so
@@ -1183,7 +1224,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-25", BigDecimal.ONE, 18, 25),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         PremiumNotQuotableException ex = assertThrows(PremiumNotQuotableException.class, () ->
@@ -1212,7 +1253,7 @@ class ProductApiIntegrationTest {
         InvalidProductVersionException ex = assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null,
                 List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2")),
                         new ProductApi.BaseRateInput(20, 30, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4"))),
@@ -1226,7 +1267,7 @@ class ProductApiIntegrationTest {
         ProductSummaryView product = productApi.createProduct("TERM-Q8", "Adjacent", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2")),
                     new ProductApi.BaseRateInput(26, 30, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("17.4")),
@@ -1250,7 +1291,7 @@ class ProductApiIntegrationTest {
         ProductSummaryView product = productApi.createProduct("TERM-Q9", "Both sexes", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null,
             List.of(new ProductApi.BaseRateInput(18, 25, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("15.2")),
                     new ProductApi.BaseRateInput(18, 25, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("16.8"))),
@@ -1300,7 +1341,7 @@ class ProductApiIntegrationTest {
         assertThrows(InvalidProductVersionException.class, () ->
             productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
                 List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39)), // missing SUM_ASSURED_BAND
-                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, ANY_FILING, "actuary@nlolo.co.tz"));
     }
 
@@ -1310,7 +1351,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now().minusDays(1), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
@@ -1323,7 +1364,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("1.5"), 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
 
@@ -1337,7 +1378,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         // Prove the negative result under tenant B isn't just "nothing is ever active": the
@@ -1362,7 +1403,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(2), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
         ProductSnapshotView firstSnapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         UUID firstVersionId = firstSnapshot.productVersionId();
@@ -1371,7 +1412,7 @@ class ProductApiIntegrationTest {
         assertDoesNotThrow(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", new BigDecimal("1.25"), 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz"));
 
         List<ProductVersion> versions = productVersionRepository.findByTenantIdAndProductIdOrderByEffectiveDateDesc(TenantContext.get(), product.productId());
@@ -1393,7 +1434,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, List.of(),
             new EligibilityBounds(18, 65, 60, 360, new BigDecimal("500000.00"), new BigDecimal("300000000.00")),
             ANY_FILING, "actuary@nlolo.co.tz");
@@ -1419,7 +1460,7 @@ class ProductApiIntegrationTest {
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary@nlolo.co.tz");
 
         EligibilityBounds bounds = productVersionRepository

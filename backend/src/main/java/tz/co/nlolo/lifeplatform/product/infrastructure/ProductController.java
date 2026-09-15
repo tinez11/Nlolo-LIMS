@@ -91,7 +91,8 @@ public class ProductController {
         productApi.publishVersion(productId, request.ifrsMeasurementModel(), request.effectiveDate(), request.retirementDate(),
             request.ratingTable().stream().map(r -> new ProductApi.RatingFactorInput(r.factorType(), r.band(), r.multiplier(),
                 r.ageFrom(), r.ageTo(), r.sumAssuredFrom(), r.sumAssuredTo())).collect(Collectors.toList()),
-            request.benefitSchedule().stream().map(b -> new ProductApi.BenefitInput(b.benefitType(), b.calculationMethod())).collect(Collectors.toList()),
+            request.benefitSchedule().stream().map(b -> new ProductApi.BenefitInput(b.benefitType(),
+                b.calculationMethod(), b.percent(), b.flatAmount())).collect(Collectors.toList()),
             request.fundDefinitions() != null
                 ? request.fundDefinitions().stream().map(f -> new ProductApi.FundInput(f.fundCode(), f.currentNav())).collect(Collectors.toList())
                 : null,
