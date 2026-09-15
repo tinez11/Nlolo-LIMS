@@ -198,6 +198,28 @@ public interface ProductApi {
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                          List<BaseRateInput> baseRates, EligibilityBounds bounds, String publishedBy);
 
+    /**
+     * Publish a version that states what it will accept AND what instalment payment costs.
+     *
+     * <p>The fullest form; every other overload delegates here. {@code bounds} may be
+     * {@link EligibilityBounds#none()} and {@code frequencyLoading} may be
+     * {@link FrequencyLoading#none()} — an unbounded, unloaded version is a real product design.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, String publishedBy);
+
+    /**
+     * What this version charges for instalment payment.
+     *
+     * <p>Internal-only, not part of {@code openapi-product.yaml} — the same convention as
+     * {@link #isPriced} and {@link #resolveBaseRatePerMille}. Consumed by policy's issuance
+     * listener so an issued premium and a quoted one are loaded identically.
+     *
+     * @throws ProductNotFoundException if no such version exists for this tenant
+     */
+    FrequencyLoading resolveFrequencyLoading(UUID productVersionId);
+
     ProductSnapshotView getActiveSnapshot(UUID productId, LocalDate asOfDate);
 
     /**

@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.product.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
+import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -75,6 +76,15 @@ public class ProductVersion {
     @Column(name = "max_sum_assured")
     private BigDecimal maxSumAssured;
 
+    // What this version charges for paying in instalments (V11). Defaulted to ZERO in the field
+    // initialiser as well as the column default, so a version built in memory is unloaded rather
+    // than null -- the entity is constructed before Hibernate ever sees the DEFAULT.
+    @Column(name = "monthly_loading_percent", nullable = false)
+    private BigDecimal monthlyLoadingPercent = BigDecimal.ZERO;
+
+    @Column(name = "quarterly_loading_percent", nullable = false)
+    private BigDecimal quarterlyLoadingPercent = BigDecimal.ZERO;
+
     @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     @Column(name = "surrender_charge_schedule", columnDefinition = "jsonb")
     private String surrenderChargeScheduleJson;
@@ -132,6 +142,22 @@ public class ProductVersion {
     public EligibilityBounds getEligibilityBounds() {
         return new EligibilityBounds(minEntryAge, maxEntryAge, minTermMonths, maxTermMonths,
             minSumAssured, maxSumAssured);
+    }
+
+    /**
+     * Record what this version charges for instalment payment.
+     *
+     * <p>Bounds (0-100) are validated by {@link FrequencyLoading} itself, so a caller cannot
+     * construct an out-of-range pair to pass here; {@code product_version_frequency_loading_sane}
+     * enforces the same at the database.
+     */
+    public void applyFrequencyLoading(FrequencyLoading loading) {
+        this.monthlyLoadingPercent = loading.monthlyPercent();
+        this.quarterlyLoadingPercent = loading.quarterlyPercent();
+    }
+
+    public FrequencyLoading getFrequencyLoading() {
+        return new FrequencyLoading(monthlyLoadingPercent, quarterlyLoadingPercent);
     }
 
     /**

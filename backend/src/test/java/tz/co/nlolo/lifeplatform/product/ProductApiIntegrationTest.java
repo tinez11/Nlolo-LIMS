@@ -60,7 +60,8 @@ class ProductApiIntegrationTest {
             // without anyone noticing.
             "db-migrations/product/V8__rating_table_multiplier_positive.sql",
             "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
-            "db-migrations/product/V10__ifrs_measurement_model_on_version.sql");
+            "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
+            "db-migrations/product/V11__frequency_loading.sql");
     }
 
     @BeforeEach
@@ -338,6 +339,37 @@ class ProductApiIntegrationTest {
 
         assertThat(productApi.listActiveProducts(ProductCategory.TERM_LIFE))
             .anyMatch(p -> p.productCode().equals("TERM-B1-R2C"));
+    }
+
+    @Test
+    void aPublishedVersionCarriesItsFrequencyLoadingAndDefaultsToUnloaded() {
+        ProductSummaryView loaded = productApi.createProduct("TERM-B2A-LOAD", "Loaded",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(loaded.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, List.of(), EligibilityBounds.none(),
+            new FrequencyLoading(new BigDecimal("8.00"), new BigDecimal("3.00")), "actuary@nlolo.co.tz");
+        UUID loadedVersionId = productApi.getActiveSnapshot(loaded.productId(), LocalDate.now()).productVersionId();
+
+        FrequencyLoading readBack = productApi.resolveFrequencyLoading(loadedVersionId);
+        assertThat(readBack.monthlyPercent()).isEqualByComparingTo(new BigDecimal("8.00"));
+        assertThat(readBack.quarterlyPercent()).isEqualByComparingTo(new BigDecimal("3.00"));
+
+        // A version published through any older overload is unloaded, which is what keeps every
+        // existing product pricing exactly as it does today.
+        ProductSummaryView plain = productApi.createProduct("TERM-B2A-PLAIN", "Unloaded",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(plain.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null, "actuary@nlolo.co.tz");
+        UUID plainVersionId = productApi.getActiveSnapshot(plain.productId(), LocalDate.now()).productVersionId();
+
+        assertThat(productApi.resolveFrequencyLoading(plainVersionId).monthlyPercent())
+            .isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     /**
@@ -1253,7 +1285,7 @@ class ProductApiIntegrationTest {
         List<Method> declared = Arrays.stream(ProductApi.class.getMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(3, declared.size(), "expected three publishVersion overloads");
+        assertEquals(4, declared.size(), "expected four publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1261,7 +1293,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(3, implementations.size(), "every overload must be implemented here");
+        assertEquals(4, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));

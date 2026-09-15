@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
+import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
@@ -99,6 +100,12 @@ public class ProductController {
             // Never null downstream: an omitted block means an unbounded version, which is
             // a real design rather than a missing answer.
             request.eligibility() != null ? request.eligibility().toBounds() : EligibilityBounds.none(),
+            // Same rule: an omitted block means a version that charges every frequency the same,
+            // which is a real pricing decision and what every version published before V11 does.
+            request.frequencyLoading() != null
+                ? new FrequencyLoading(request.frequencyLoading().monthlyPercent(),
+                                        request.frequencyLoading().quarterlyPercent())
+                : FrequencyLoading.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

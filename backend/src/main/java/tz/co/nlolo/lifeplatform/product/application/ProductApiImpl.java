@@ -129,6 +129,15 @@ public class ProductApiImpl implements ProductApi {
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                                 List<BaseRateInput> baseRates, EligibilityBounds bounds, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, FrequencyLoading.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, String publishedBy) {
         UUID tenantId = TenantContext.get();
         ProductDefinition product = productDefinitionRepository.findById(productId)
             .filter(p -> p.getTenantId().equals(tenantId))
@@ -197,6 +206,9 @@ public class ProductApiImpl implements ProductApi {
         // What this version will accept. Never null -- callers that state nothing pass
         // EligibilityBounds.none(), because an unbounded version is a real design.
         version.applyEligibilityBounds(bounds != null ? bounds : EligibilityBounds.none());
+        // What instalment payment costs. Never null -- callers that load nothing pass
+        // FrequencyLoading.none(), because charging every frequency the same is a real decision.
+        version.applyFrequencyLoading(frequencyLoading != null ? frequencyLoading : FrequencyLoading.none());
         productVersionRepository.save(version);
 
         for (RatingFactorInput input : ratingTable) {
@@ -718,6 +730,14 @@ public class ProductApiImpl implements ProductApi {
                 + " -- which multiplier applies would depend on row order");
         }
         return covering.isEmpty() ? BigDecimal.ONE : covering.get(0).getMultiplier();
+    }
+
+    @Override
+    public FrequencyLoading resolveFrequencyLoading(UUID productVersionId) {
+        return productVersionRepository.findById(productVersionId)
+            .filter(v -> v.getTenantId().equals(TenantContext.get()))
+            .map(ProductVersion::getFrequencyLoading)
+            .orElseThrow(() -> new ProductNotFoundException(productVersionId));
     }
 
     @Override

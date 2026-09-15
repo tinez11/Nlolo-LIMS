@@ -32,4 +32,11 @@ public record PublishVersionRequest(
      * design. See {@link tz.co.nlolo.lifeplatform.product.api.EligibilityBounds} for why
      * entry age and term are hard refusals while sum assured is a soft flag.
      */
-    @Valid EligibilityBoundsRequest eligibility) {}
+    @Valid EligibilityBoundsRequest eligibility,
+
+    /**
+     * What this version charges for instalment payment. Optional -- an unloaded version charges a
+     * monthly payer the same total as an annual one, which is a real pricing decision and is what
+     * every version published before this field existed does.
+     */
+    @Valid FrequencyLoadingRequest frequencyLoading) {}
