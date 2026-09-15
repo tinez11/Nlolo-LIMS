@@ -38,6 +38,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
  * HTTP-level coverage for the agents-realm "browse my book of business" scoping added to
@@ -97,6 +98,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
+            "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -159,7 +161,7 @@ class AgentBookOfBusinessScopingTest {
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
-            null, "actuary");
+            null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         TenantContext.clear();
         return new Fixture(applicant.partyId(), product.productId(), snapshot.productVersionId());

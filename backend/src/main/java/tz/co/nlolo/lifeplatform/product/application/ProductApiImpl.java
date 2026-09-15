@@ -110,34 +110,43 @@ public class ProductApiImpl implements ProductApi {
     @Transactional
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule,
-                                List<FundInput> fundDefinitions, String publishedBy) {
+                                List<FundInput> fundDefinitions, TiraFiling tiraFiling, String publishedBy) {
         publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
-            fundDefinitions, List.of(), EligibilityBounds.none(), publishedBy);
+            fundDefinitions, List.of(), EligibilityBounds.none(), tiraFiling, publishedBy);
     }
 
     @Override
     @Transactional
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule,
-                                List<FundInput> fundDefinitions, List<BaseRateInput> baseRates, String publishedBy) {
+                                List<FundInput> fundDefinitions, List<BaseRateInput> baseRates, TiraFiling tiraFiling, String publishedBy) {
         publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
-            fundDefinitions, baseRates, EligibilityBounds.none(), publishedBy);
+            fundDefinitions, baseRates, EligibilityBounds.none(), tiraFiling, publishedBy);
     }
 
     @Override
     @Transactional
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
-                                List<BaseRateInput> baseRates, EligibilityBounds bounds, String publishedBy) {
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, TiraFiling tiraFiling, String publishedBy) {
         publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
-            fundDefinitions, baseRates, bounds, FrequencyLoading.none(), publishedBy);
+            fundDefinitions, baseRates, bounds, FrequencyLoading.none(), tiraFiling, publishedBy);
     }
 
     @Override
     @Transactional
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
-                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, String publishedBy) {
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, TiraFiling tiraFiling, String publishedBy) {
+        // First, so the message is about the filing rather than about a rating table the caller
+        // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
+        // object to its own absence.
+        if (tiraFiling == null) {
+            throw new InvalidProductVersionException(
+                "A TIRA filing reference and approval date are required to publish a product"
+                    + " version -- a version may not exist without the filing that authorises it");
+        }
+
         UUID tenantId = TenantContext.get();
         ProductDefinition product = productDefinitionRepository.findById(productId)
             .filter(p -> p.getTenantId().equals(tenantId))
@@ -209,6 +218,9 @@ public class ProductApiImpl implements ProductApi {
         // What instalment payment costs. Never null -- callers that load nothing pass
         // FrequencyLoading.none(), because charging every frequency the same is a real decision.
         version.applyFrequencyLoading(frequencyLoading != null ? frequencyLoading : FrequencyLoading.none());
+        // Never null: refused at the top of this method. There is no FrequencyLoading.none()
+        // equivalent here on purpose -- an absent filing is not a kind of filing.
+        version.applyTiraFiling(tiraFiling);
         productVersionRepository.save(version);
 
         for (RatingFactorInput input : ratingTable) {

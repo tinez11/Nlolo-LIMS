@@ -294,12 +294,24 @@ components:
         maxSumAssured: { type: [number, "null"], exclusiveMinimum: 0 }
     ProductVersionSpec:
       type: object
-      required: [ifrsMeasurementModel, effectiveDate, ratingTable, benefitSchedule]
+      required: [ifrsMeasurementModel, effectiveDate, ratingTable, benefitSchedule, tiraFiling]
       properties:
         ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
         eligibility: { $ref: '#/components/schemas/EligibilityBounds' }
+        tiraFiling:
+          description: >-
+            The TIRA filing that authorises this version. Required: in Tanzania a product and
+            its rates must be filed with and approved by TIRA before sale, and a version may
+            not exist without it. NOT verified against TIRA -- this records what a human
+            asserts, and it does NOT introduce a second approver: one ADMIN can still publish
+            alone, now with a reference they typed themselves.
+          type: object
+          required: [reference, approvalDate]
+          properties:
+            reference: { type: string, maxLength: 60 }
+            approvalDate: { type: string, format: date }
         frequencyLoading:
           description: >-
             What this version charges for paying in instalments rather than once a year.

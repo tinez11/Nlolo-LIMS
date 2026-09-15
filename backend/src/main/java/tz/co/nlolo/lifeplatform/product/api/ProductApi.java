@@ -186,7 +186,7 @@ public interface ProductApi {
      * Build 1 §9.1, where the mechanism was proven empirically.
      */
     void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
-                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions, String publishedBy);
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions, TiraFiling tiraFiling, String publishedBy);
 
     /**
      * Publish a version, optionally with the base rate table it is priced from.
@@ -200,7 +200,7 @@ public interface ProductApi {
      */
     void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
-                         List<BaseRateInput> baseRates, String publishedBy);
+                         List<BaseRateInput> baseRates, TiraFiling tiraFiling, String publishedBy);
 
     /**
      * Publish a version that states what it will accept.
@@ -211,7 +211,7 @@ public interface ProductApi {
      */
     void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
-                         List<BaseRateInput> baseRates, EligibilityBounds bounds, String publishedBy);
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, TiraFiling tiraFiling, String publishedBy);
 
     /**
      * Publish a version that states what it will accept AND what instalment payment costs.
@@ -222,7 +222,7 @@ public interface ProductApi {
      */
     void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
-                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, String publishedBy);
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, TiraFiling tiraFiling, String publishedBy);
 
     /**
      * What this version charges for instalment payment.

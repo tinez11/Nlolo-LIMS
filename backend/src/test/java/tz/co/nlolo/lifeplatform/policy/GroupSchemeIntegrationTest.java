@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
  * Group business, slice 1: one master policy carrying many insured lives.
@@ -70,6 +71,7 @@ class GroupSchemeIntegrationTest {
             "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
+            "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -120,7 +122,7 @@ class GroupSchemeIntegrationTest {
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
-            null, "actuary");
+            null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         return new GroupProduct(product.productId(), snapshot.productVersionId());
     }
@@ -276,7 +278,7 @@ class GroupSchemeIntegrationTest {
         productApi.publishVersion(termLife.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
             List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
                     new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
-            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, "actuary");
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")), null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(termLife.productId(), LocalDate.now());
         UUID employer = person("Wrong Category Co");
 

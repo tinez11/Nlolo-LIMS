@@ -62,7 +62,8 @@ class ProductContractTest {
             "db-migrations/product/V6__eligibility_bounds.sql",
             "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
-            "db-migrations/product/V11__frequency_loading.sql");
+            "db-migrations/product/V11__frequency_loading.sql",
+            "db-migrations/product/V12__tira_filing.sql");
     }
 
     @AfterEach
@@ -115,6 +116,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
                      "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
                     """))
@@ -171,6 +173,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
                      "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
                     """))
@@ -198,6 +201,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
                      "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
                     """))
@@ -326,6 +330,7 @@ class ProductContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"ifrsMeasurementModel\":\"PAA\",\"effectiveDate\":\"" + effectiveDate + "\","
+                    + "\"tiraFiling\":{\"reference\":\"TIRA/CONTRACT/0002\",\"approvalDate\":\"2026-01-15\"},"
                     + "\"ratingTable\":[{\"factorType\":\"AGE\",\"band\":\"30-39\",\"multiplier\":1.0,\"ageFrom\":30,\"ageTo\":39},"
                     + "{\"factorType\":\"SUM_ASSURED_BAND\",\"band\":\"LOW\",\"multiplier\":1.0}],"
                     + "\"benefitSchedule\":[{\"benefitType\":\"MATURITY\",\"calculationMethod\":\"SUM_ASSURED_PLUS_BONUS\"}]}"))
@@ -353,6 +358,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39}],
                      "benefitSchedule":[{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED_PLUS_BONUS"}]}
                     """))
@@ -430,6 +436,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"ageBandStart":18,"ageBandEnd":65,"gender":"ANY","ratePerMille":"3.50"}],
                      "benefitSchedule":[{"benefitType":"DEATH","basis":"MULTIPLE_OF_SUM_ASSURED","factor":"1.0"}]}
                     """))
@@ -476,6 +483,7 @@ class ProductContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
                                     {"factorType":"SUM_ASSURED_BAND","band":"Up to 5m","multiplier":1.25,
                                      "sumAssuredFrom":0,"sumAssuredTo":5000000}],

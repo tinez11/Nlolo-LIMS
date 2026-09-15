@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.product.infrastructure;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.TiraFiling;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import tz.co.nlolo.lifeplatform.product.api.ProductSummaryView;
@@ -106,6 +107,10 @@ public class ProductController {
                 ? new FrequencyLoading(request.frequencyLoading().monthlyPercent(),
                                         request.frequencyLoading().quarterlyPercent())
                 : FrequencyLoading.none(),
+            // Required, with no fallback: a version may not exist without the filing that
+            // authorises it. @NotNull on the request rejects an absent block at the edge, so
+            // this dereference is safe.
+            new TiraFiling(request.tiraFiling().reference(), request.tiraFiling().approvalDate()),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

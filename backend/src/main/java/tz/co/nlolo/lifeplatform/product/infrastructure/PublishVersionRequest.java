@@ -39,4 +39,11 @@ public record PublishVersionRequest(
      * monthly payer the same total as an annual one, which is a real pricing decision and is what
      * every version published before this field existed does.
      */
-    @Valid FrequencyLoadingRequest frequencyLoading) {}
+    @Valid FrequencyLoadingRequest frequencyLoading,
+
+    /**
+     * The TIRA filing that authorises this version. REQUIRED -- in Tanzania a product and its
+     * rates must be filed with and approved by TIRA before sale, and a version may not exist
+     * without the filing that authorises it. There is deliberately no default.
+     */
+    @NotNull @Valid TiraFilingRequest tiraFiling) {}

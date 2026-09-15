@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
+import tz.co.nlolo.lifeplatform.product.api.TiraFiling;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -85,6 +86,14 @@ public class ProductVersion {
     @Column(name = "quarterly_loading_percent", nullable = false)
     private BigDecimal quarterlyLoadingPercent = BigDecimal.ZERO;
 
+    // The TIRA filing that authorises this version (V12). Nullable ONLY for the versions that
+    // predate the rule; publishVersion refuses a null for anything new.
+    @Column(name = "tira_filing_reference")
+    private String tiraFilingReference;
+
+    @Column(name = "tira_approval_date")
+    private LocalDate tiraApprovalDate;
+
     @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     @Column(name = "surrender_charge_schedule", columnDefinition = "jsonb")
     private String surrenderChargeScheduleJson;
@@ -158,6 +167,23 @@ public class ProductVersion {
 
     public FrequencyLoading getFrequencyLoading() {
         return new FrequencyLoading(monthlyLoadingPercent, quarterlyLoadingPercent);
+    }
+
+    public void applyTiraFiling(TiraFiling filing) {
+        this.tiraFilingReference = filing.reference();
+        this.tiraApprovalDate = filing.approvalDate();
+    }
+
+    /**
+     * The filing, or NULL for a version published before V12.
+     *
+     * <p>Null rather than an empty {@link TiraFiling}: there is no such thing as a filing that is
+     * present and empty, and the record's own constructor would refuse to build one.
+     */
+    public TiraFiling getTiraFiling() {
+        return tiraFilingReference == null || tiraApprovalDate == null
+            ? null
+            : new TiraFiling(tiraFilingReference, tiraApprovalDate);
     }
 
     /**
