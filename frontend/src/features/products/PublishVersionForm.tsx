@@ -237,7 +237,21 @@ export function PublishVersionForm({
             <Input inputSize="sm" placeholder="TIRA/LIFE/2026/0001" {...register('tiraReference')} />
           </FormField>
           <FormField label="TIRA approval date" error={errors.tiraApprovalDate?.message}>
-            <Input type="date" inputSize="sm" {...register('tiraApprovalDate')} />
+            {/*
+              DatePicker, not a raw type="date" input: every other date on this form uses it, it
+              holds ISO while displaying dd/mm/yyyy, and a native date input would be the only
+              control on the screen that takes a different format.
+            */}
+            <Controller
+              control={control}
+              name="tiraApprovalDate"
+              render={({ field }) => (
+                <DatePicker
+                  value={field.value || null}
+                  onChange={(iso) => field.onChange(iso ?? '')}
+                />
+              )}
+            />
           </FormField>
           <FormField label="Quarterly loading %" error={errors.quarterlyLoadingPercent?.message}>
             <Input
