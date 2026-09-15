@@ -104,3 +104,64 @@ describe('PublishVersionForm base rate double-count guard', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+/**
+ * The benefit schedule, which is now the thing a claim is valued against.
+ *
+ * An array-level `.min(1)` raises its error at the array rather than on any field, which is
+ * exactly the shape that produced the silent refusal this file was written about: the rule
+ * refuses the submit and nothing on screen says so. So the message is rendered above the
+ * rows, and asserted here rather than assumed.
+ */
+describe('PublishVersionForm benefit schedule', () => {
+  it('starts with one benefit row rather than an empty panel', () => {
+    renderForm();
+    expect(screen.getByLabelText('Benefit 1 type')).toHaveValue('DEATH');
+    expect(screen.getByLabelText('Benefit 1 calculation method')).toHaveValue('SUM_ASSURED');
+  });
+
+  it('shows the amount input the selected method needs, and only that one', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    // A full sum assured benefit takes no amount at all -- the shape rule refuses one.
+    expect(screen.queryByLabelText('Benefit 1 percentage')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Benefit 1 flat amount')).not.toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByLabelText('Benefit 1 calculation method'),
+      'PERCENTAGE_OF_SUM_ASSURED',
+    );
+    expect(screen.getByLabelText('Benefit 1 percentage')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Benefit 1 flat amount')).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Benefit 1 calculation method'), 'FLAT_AMOUNT');
+    expect(screen.getByLabelText('Benefit 1 flat amount')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Benefit 1 percentage')).not.toBeInTheDocument();
+  });
+
+  it('says why the submit was refused when every benefit has been removed', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'Remove benefit' }));
+    expect(screen.queryByLabelText('Benefit 1 type')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Publish version' }));
+
+    expect(await screen.findByText('A product must cover at least one benefit')).toBeInTheDocument();
+  });
+
+  it('says a percentage benefit needs its percentage', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.selectOptions(
+      screen.getByLabelText('Benefit 1 calculation method'),
+      'PERCENTAGE_OF_SUM_ASSURED',
+    );
+    await user.click(screen.getByRole('button', { name: 'Publish version' }));
+
+    expect(await screen.findByText('A percentage benefit needs a percentage')).toBeInTheDocument();
+  });
+});
