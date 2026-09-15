@@ -565,8 +565,11 @@ class PolicyApiIntegrationTest {
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null,
-            List.of(new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000"))),
-            EligibilityBounds.none(), "actuary");
+            List.of(new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000")),
+                    // Priced but never issued against here -- the life below is male. Present
+                    // because a priced version must be able to price every life it accepts.
+                    new ProductApi.BaseRateInput(18, 78, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("9.0000"))),
+            new EligibilityBounds(18, 78, null, null, null, null), "actuary");
         UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
         PolicyView issued = issueFromProposal(tenantId,
@@ -600,13 +603,21 @@ class PolicyApiIntegrationTest {
             List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
             null,
-            // MALE only. "We never priced women" is a real state of a real rate table, and the
-            // applicant below is one -- this is the hole, authored deliberately.
-            List.of(new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000"))),
-            EligibilityBounds.none(), "actuary");
+            // NON_SMOKER only, both sexes. "We never priced smokers" is a real state of a real
+            // rate table, and the applicant below is one -- this is the hole, authored
+            // deliberately.
+            //
+            // It used to be a SEX-shaped hole ("we never priced women"), which is no longer
+            // publishable: a priced version must cover both sexes across the ages it accepts. A
+            // smoker-status hole is the same defect in the shape the rules still permit, because
+            // demanding a declaration is a real underwriting stance -- and it exercises exactly
+            // that decision. The assertions below are unchanged; none of them was about sex.
+            List.of(new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("12.0000")),
+                    new ProductApi.BaseRateInput(18, 78, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("9.0000"))),
+            new EligibilityBounds(18, 78, null, null, null, null), "actuary");
         UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
-        UUID applicantId = pricedLife(tenantId, 40, "5002", Sex.FEMALE, SmokerStatus.NON_SMOKER);
+        UUID applicantId = pricedLife(tenantId, 40, "5002", Sex.FEMALE, SmokerStatus.SMOKER);
         UnderwritingCaseView opened = underwritingApi.openCase(applicantId, product.productId(), versionId,
             new BigDecimal("1000000"), "TZS", null,
             new ProposalDetails(null, null, null, null, null, null, "MONTHLY", List.of()), "agent1");

@@ -274,6 +274,72 @@ class ProductApiIntegrationTest {
     }
 
     /**
+     * The shape of a real published version: women priced only from 56, men only to 56, on a
+     * product declaring it accepts 18-78. Six cells, six distinct (sex, smoker) combinations and a
+     * span of 18 to 78 in aggregate -- it looks complete and prices nobody in half its range.
+     */
+    @Test
+    void publishVersionRejectsABaseRateTableWithAHoleInsideTheAgesItAccepts() {
+        ProductSummaryView product = productApi.createProduct("TERM-B1-R2", "Coverage hole",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput(56, 78, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.1000")),
+                        new ProductApi.BaseRateInput(18, 78, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.7000"))),
+                new EligibilityBounds(18, 78, null, null, null, null),
+                "actuary@nlolo.co.tz"));
+
+        assertThat(thrown.getMessage())
+            .contains("FEMALE/NON_SMOKER")
+            .contains("18-55")
+            .contains("18-78");
+    }
+
+    /** A combination absent entirely covers nothing, which is the asymmetric-table case. */
+    @Test
+    void publishVersionRejectsASmokerStatusPricedForOneSexOnly() {
+        ProductSummaryView product = productApi.createProduct("TERM-B1-R2B", "Asymmetric table",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+                null,
+                List.of(new ProductApi.BaseRateInput(18, 65, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.5000")),
+                        new ProductApi.BaseRateInput(18, 65, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.0000")),
+                        new ProductApi.BaseRateInput(18, 65, Sex.FEMALE, SmokerStatus.SMOKER, new BigDecimal("3.0000"))),
+                new EligibilityBounds(18, 65, null, null, null, null),
+                "actuary@nlolo.co.tz"));
+
+        assertThat(thrown.getMessage()).contains("MALE/SMOKER").contains("18-65");
+    }
+
+    /** Bands may run past the declared range; only holes inside it are faults. */
+    @Test
+    void publishVersionAcceptsATableThatCoversTheWholeDeclaredRange() {
+        ProductSummaryView product = productApi.createProduct("TERM-B1-R2C", "Complete table",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, "SUM_ASSURED")),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 45, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("1.6000")),
+                    new ProductApi.BaseRateInput(46, 79, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.4000")),
+                    new ProductApi.BaseRateInput(18, 79, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("2.5000"))),
+            new EligibilityBounds(18, 40, null, null, null, null),
+            "actuary@nlolo.co.tz");
+
+        assertThat(productApi.listActiveProducts(ProductCategory.TERM_LIFE))
+            .anyMatch(p -> p.productCode().equals("TERM-B1-R2C"));
+    }
+
+    /**
      * A priced version does NOT need an AGE multiplier -- age is rated by the base
      * rate table's own key. Requiring one while the guard above forbids it would
      * make base rates unpublishable, which is exactly the contradiction the two

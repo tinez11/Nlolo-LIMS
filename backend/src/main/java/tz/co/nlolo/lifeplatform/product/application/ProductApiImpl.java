@@ -166,6 +166,7 @@ public class ProductApiImpl implements ProductApi {
             }
             rejectOverlappingAgeBands(baseRates);
             rejectPricedVersionWithoutEntryAgeBounds(bounds);
+            rejectUncoveredEntryAges(baseRates, bounds);
         } else if (!coveredFactorTypes.containsAll(List.of(FactorType.AGE, FactorType.SUM_ASSURED_BAND))) {
             // Unpriced version: unchanged from M2. Age is rated by multiplier alone.
             throw new InvalidProductVersionException("Rating table must cover at least AGE and SUM_ASSURED_BAND factor types");
@@ -552,6 +553,71 @@ public class ProductApiImpl implements ProductApi {
                     + " entry age. Without them the rate table's own span silently becomes the"
                     + " product's selling range, and nothing can tell a deliberate range from an"
                     + " incomplete one.");
+        }
+    }
+
+    /**
+     * A priced version must be able to price every life it says it will accept.
+     *
+     * <p>Ranges over the cross-product of sex and smoker status, not over age alone, because age
+     * alone does not catch the defect. A real version's bands span its full declared 18-78 in
+     * aggregate while pricing women only from 56 and men only to 56 — an age-only rule reads that
+     * table as complete, and an aggregate query over it looks healthy.
+     *
+     * <p>Both sexes are required. The smoker statuses required are exactly those the table prices
+     * somewhere: a product may decline to price {@link SmokerStatus#UNKNOWN} and demand a
+     * declaration, which is a real underwriting stance, but pricing {@code SMOKER} for women and
+     * not for men is an asymmetry with no product meaning. A combination absent entirely covers
+     * nothing and fails here.
+     *
+     * <p>Application-level only. The SQL equivalent needs {@code EXCLUDE ... USING gist} over an
+     * {@code int4range} and therefore {@code btree_gist} on every environment — the same reasoning
+     * recorded on {@link #rejectOverlappingAgeBands}.
+     *
+     * <p>Package-private (not private) solely so {@code ProductCoverageRuleTest} can exercise this
+     * premium-affecting range walk directly, without a Spring context — the same arrangement, for
+     * the same reason, as {@code PolicyApiImpl.resolveSurrenderChargePercent}.
+     */
+    static void rejectUncoveredEntryAges(List<BaseRateInput> baseRates, EligibilityBounds bounds) {
+        int min = bounds.minEntryAge();
+        int max = bounds.maxEntryAge();
+
+        java.util.Set<SmokerStatus> pricedSmokerStatuses = baseRates.stream()
+            .map(BaseRateInput::smokerStatus)
+            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+
+        for (Sex sex : Sex.values()) {
+            for (SmokerStatus smokerStatus : pricedSmokerStatuses) {
+                List<BaseRateInput> cells = baseRates.stream()
+                    .filter(r -> r.sex() == sex && r.smokerStatus() == smokerStatus)
+                    .sorted(java.util.Comparator.comparingInt(BaseRateInput::ageFrom))
+                    .toList();
+
+                // Walk the sorted bands, extending coverage through any band that starts at or
+                // before the first still-uncovered age. Tolerates overlaps and bands running past
+                // the declared range; stops at the first gap.
+                int covered = min - 1;
+                for (BaseRateInput cell : cells) {
+                    if (cell.ageFrom() > covered + 1) {
+                        break;
+                    }
+                    covered = Math.max(covered, cell.ageTo());
+                }
+                if (covered >= max) {
+                    continue;
+                }
+
+                int gapFrom = covered + 1;
+                int gapTo = cells.stream()
+                    .filter(c -> c.ageFrom() > gapFrom)
+                    .mapToInt(c -> c.ageFrom() - 1)
+                    .min()
+                    .orElse(max);
+                throw new InvalidProductVersionException("Base rate table does not price "
+                    + sex + "/" + smokerStatus + " for ages " + gapFrom + "-" + Math.min(gapTo, max)
+                    + ", but this version accepts entry ages " + min + "-" + max
+                    + ". A priced version must be able to price every life it says it will accept.");
+            }
         }
     }
 
