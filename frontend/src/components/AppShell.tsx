@@ -1,5 +1,5 @@
-import { LogOut, Moon, Sun } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { LogOut, Menu, Moon, Sun, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { avatarHue, displayName, initials, readIdentity } from '@/auth/claims';
@@ -25,6 +25,35 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const groups = navFor(realm, identity);
   const badges = useNavBadges(realm, identity);
 
+  // Below `md` the sidebar is an overlay drawer rather than a column: at 224px
+  // fixed it would otherwise eat half a phone screen. Desktop is the designed
+  // scene (PRODUCT.md), so the drawer is the narrow-width accommodation, not a
+  // second layout to maintain -- the same markup, repositioned.
+  const [navOpen, setNavOpen] = useState(false);
+  const openButton = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!navOpen) return;
+    // Move focus into the drawer on open, and hand it back to the trigger on
+    // close. Both halves are needed: without the first, Tab from the hamburger
+    // walks into an inert page; without the second, dismissing the drawer drops
+    // a keyboard user back at the top of the document with no idea where.
+    closeButton.current?.focus();
+    // Captured now rather than read in the cleanup: the trigger is the same
+    // node throughout this effect's life, but reading a ref after teardown is
+    // the bug the lint rule exists to catch, and it is right to insist.
+    const trigger = openButton.current;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setNavOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      trigger?.focus();
+    };
+  }, [navOpen]);
+
   return (
     <div className="flex h-full">
       {/*
@@ -44,13 +73,95 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         Skip to content
       </a>
 
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface-muted">
-        <div className="px-4 py-4">
-          <p className="text-sm font-semibold tracking-tight">Life Platform</p>
-          <p className="text-xs text-muted-foreground">{config.label} console</p>
+      {/* Dismiss layer. Pointer only -- Escape and the close button carry the
+          keyboard path, so this is aria-hidden rather than a fake button. */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-foreground/25 md:hidden"
+          onClick={() => setNavOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      <aside
+        id="sidebar"
+        className={cn(
+          'fixed inset-y-0 left-0 z-40 flex w-56 shrink-0 flex-col border-r border-border bg-surface-muted transition-[transform,visibility] duration-200 ease-out',
+          // From `md` up it is an ordinary flex column again and the transform
+          // is neutralised, so the desktop scene keeps exactly its old layout.
+          'md:visible md:static md:translate-x-0',
+          // `invisible` rather than transform alone: an off-screen drawer is
+          // still in the tab order, so a phone user would otherwise Tab through
+          // twenty-two hidden destinations before reaching the page. Visibility
+          // is in the transition so it holds until the slide-out finishes, and
+          // unlike `inert` it can be lifted at a breakpoint.
+          navOpen ? 'visible translate-x-0' : 'invisible -translate-x-full',
+        )}
+      >
+        <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-4">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold tracking-tight">Life Platform</p>
+            <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
+          </div>
+          <Button
+            ref={closeButton}
+            size="icon"
+            variant="ghost"
+            className="-mr-1 md:hidden"
+            aria-label="Close navigation"
+            onClick={() => setNavOpen(false)}
+          >
+            <X />
+          </Button>
         </div>
 
-        <nav className="flex-1 space-y-5 px-2 py-2" aria-label="Main">
+        {/*
+          `min-h-0` is the load-bearing half of this pair, and it is not
+          decoration: a flex child defaults to `min-height: auto`, which refuses
+          to shrink below its content. A full-access staff user carries eight
+          nav groups and twenty-two items -- taller than a laptop viewport -- so
+          without it the nav cannot shrink, the aside is forced past the bottom
+          of the screen, and the UserBlock below (theme toggle and SIGN OUT)
+          goes off-screen with no way to reach it. The whole page then scrolls
+          instead of `main`, which is what dragged the sidebar along with it.
+
+          `overscroll-contain` stops a scroll that reaches the end of the nav
+          from chaining into the content column behind it.
+        */}
+        <nav
+          className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-2 py-2"
+          aria-label="Main"
+          // Tapping a destination dismisses the drawer. Delegated from the nav
+          // rather than wired onto every NavLink, and a no-op on desktop where
+          // navOpen is never true.
+          onClick={() => setNavOpen(false)}
+          style={{
+            /*
+              Scroll shadows, pure CSS. The first two gradients are painted
+              `local` so they scroll with the content; the last two are `scroll`
+              so they stay pinned to the visible edges. At the top of the list
+              the local cover sits exactly over the pinned shadow and hides it,
+              and it slides away as you scroll -- so an edge shadow appears only
+              when there is genuinely more nav in that direction, and vanishes
+              at either end. No JS and no state, which is what keeps it honest:
+              it cannot get out of step with the real scroll position.
+
+              This is what the clipped row at the seam with the user block was
+              missing -- the overlay scrollbar only paints while scrolling, so
+              until now nothing said the list continued.
+            */
+            backgroundImage: [
+              'linear-gradient(to bottom, var(--color-surface-muted), transparent)',
+              'linear-gradient(to top, var(--color-surface-muted), transparent)',
+              'linear-gradient(to bottom, var(--color-border), transparent)',
+              'linear-gradient(to top, var(--color-border), transparent)',
+            ].join(', '),
+            backgroundPosition: 'top, bottom, top, bottom',
+            backgroundSize: '100% 20px, 100% 20px, 100% 8px, 100% 8px',
+            backgroundRepeat: 'no-repeat',
+            backgroundAttachment: 'local, local, scroll, scroll',
+          }}
+        >
           {groups.map((group) => (
             <div key={group.label}>
               <p className="px-2 pb-1.5 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
@@ -95,12 +206,37 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         <UserBlock identity={identity} />
       </aside>
 
-      {/* tabIndex={-1} so the skip link's target can actually take focus --
-          without it the browser scrolls but leaves focus behind in the sidebar,
-          and the next Tab carries on through the nav as if nothing happened. */}
-      <main id="main" tabIndex={-1} className="min-w-0 flex-1 overflow-y-auto focus:outline-none">
-        {children}
-      </main>
+      {/* `inert` while the drawer is open so Tab cannot walk out of the overlay
+          into the page behind it. Cheaper and harder to get wrong than a
+          hand-rolled focus trap, and it also hides the content from assistive
+          tech, which a visual backdrop alone does not. */}
+      <div className="flex min-w-0 flex-1 flex-col" inert={navOpen || undefined}>
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 md:hidden">
+          <Button
+            ref={openButton}
+            size="icon"
+            variant="ghost"
+            aria-label="Open navigation"
+            aria-expanded={navOpen}
+            aria-controls="sidebar"
+            onClick={() => setNavOpen(true)}
+          >
+            <Menu />
+          </Button>
+          <p className="truncate text-sm font-semibold tracking-tight">{config.label} console</p>
+        </div>
+
+        {/* tabIndex={-1} so the skip link's target can actually take focus --
+            without it the browser scrolls but leaves focus behind in the sidebar,
+            and the next Tab carries on through the nav as if nothing happened. */}
+        <main
+          id="main"
+          tabIndex={-1}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto focus:outline-none"
+        >
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
@@ -115,7 +251,7 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
   const seed = identity.preferredUsername ?? name;
 
   return (
-    <div className="border-t border-border px-3 py-3">
+    <div className="shrink-0 border-t border-border px-3 py-3">
       <div className="flex items-center gap-2.5">
         <span
           className="grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold"
