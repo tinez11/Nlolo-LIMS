@@ -144,7 +144,15 @@ public class PartyApiImpl implements PartyApi {
             // to execute synchronously, right here, so a real unique-constraint violation is actually caught.
             party = partyRepository.saveAndFlush(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy, registeredByAgentPartyId));
         } catch (DataIntegrityViolationException e) {
-            throw new DuplicateRegistrationNumberException(registrationNumber);
+            // ONLY ux_party_corporate_regno means a duplicate. Reporting every integrity
+            // violation as one sends the reader hunting for a corporate party that does
+            // not exist -- a value-too-long on the registered name would have been
+            // announced as "registration number already in use". Same bug class as M7's
+            // onboardAgent and, on this branch, createProduct.
+            if (violatesConstraint(e, "ux_party_corporate_regno")) {
+                throw new DuplicateRegistrationNumberException(registrationNumber);
+            }
+            throw e;
         }
         publishRegistered(party);
         return toView(party);
@@ -304,6 +312,22 @@ public class PartyApiImpl implements PartyApi {
         eventPublisher.publishEvent(DomainEventEnvelope.of("party.PartyDetailsAmended", party.getTenantId(),
             Map.of("partyId", party.getPartyId(), "partyType", party.getPartyType().name(),
                    "amendedBy", amendedBy)));
+    }
+
+    /**
+     * Whether an integrity violation was caused by the named constraint.
+     *
+     * <p>Walks the cause chain because the constraint name is on the Postgres-level
+     * cause, not on Spring's wrapper.
+     */
+    private static boolean violatesConstraint(DataIntegrityViolationException e, String constraintName) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(constraintName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void publishRegistered(Party party) {

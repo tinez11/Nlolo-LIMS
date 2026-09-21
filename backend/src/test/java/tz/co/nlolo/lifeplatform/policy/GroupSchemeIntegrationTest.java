@@ -834,6 +834,46 @@ class GroupSchemeIntegrationTest {
     }
 
     @Test
+    void aBorrowerClaimIsValuedAtTheirOwnLoanAndNotTheWholeBook() {
+        // claimableCover keyed its scheme branch on "GROUP_LIFE".equals(category), so a
+        // CREDIT_LIFE scheme fell through to the individual-policy path. Two failures,
+        // both silent: a claim naming the borrower was REFUSED outright, and a claim
+        // naming nobody was valued from the policy's own coverage row -- the total of
+        // every loan on the scheme. One borrower dying would have paid out the book.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-CLAIMCOVER");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Claim Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"), borrower("LN-2026-00418"))), "staff-1");
+
+        assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("20800000.00");
+
+        UUID memberId = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0).policyMemberId();
+
+        ClaimableCoverView cover = policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.of(2026, 7, 15), BenefitType.DEATH.name());
+
+        assertThat(cover.amount()).isEqualByComparingTo("10400000.00");
+        assertThat(cover.policyMemberId()).isEqualTo(memberId);
+    }
+
+    @Test
+    void aCreditLifeClaimMustNameTheBorrower() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOMEMBER");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Nameless Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"))), "staff-1");
+
+        // Without naming the life, the only figure available is the scheme total.
+        assertThatThrownBy(() -> policyApi.claimableCover(scheme.policyNumber(), null,
+            LocalDate.of(2026, 7, 15), BenefitType.DEATH.name()))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("names a member");
+    }
+
+    @Test
     void anOrdinaryGroupMemberMayNotCarryALoan() {
         TenantContext.set(UUID.randomUUID());
         GroupProduct product = groupProduct("GRP-STRAYLOAN");

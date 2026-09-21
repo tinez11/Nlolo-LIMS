@@ -759,10 +759,15 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
 
-        // Keyed on the scheme ROW, for the same reason terminateForSettledClaim is: a GROUP_LIFE
-        // policy issued through the ordinary path has no schedule under it, and a contract with
-        // no members is valued from its own sum assured like any other.
-        Optional<GroupScheme> scheme = "GROUP_LIFE".equals(policy.getProductCategory())
+        // Keyed on the scheme ROW, behind a category pre-filter -- see isSchemeCategory
+        // for why the pre-filter cannot simply be dropped.
+        //
+        // The pre-filter used to name GROUP_LIFE alone, which silently excluded
+        // CREDIT_LIFE: a credit-life claim fell through to the individual branch, where
+        // naming the borrower was REFUSED outright and naming nobody valued the claim
+        // from the policy's own coverage row -- which on a scheme is the total of every
+        // loan on it. One borrower dying would have paid out the whole book.
+        Optional<GroupScheme> scheme = isSchemeCategory(policy.getProductCategory())
             ? groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
             : Optional.empty();
 
@@ -862,7 +867,7 @@ public class PolicyApiImpl implements PolicyApi {
         // claims never apply policy/V9 -- for them the table does not exist, and an unconditional
         // query throws inside an AFTER_COMMIT listener whose only response is to raise
         // POLICY_CLOSURE_FAILED and leave a settled claim's policy open. Found exactly that way.
-        Optional<GroupScheme> scheme = "GROUP_LIFE".equals(policy.getProductCategory())
+        Optional<GroupScheme> scheme = isSchemeCategory(policy.getProductCategory())
             ? groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
             : Optional.empty();
         if (scheme.isPresent()) {
@@ -1388,6 +1393,27 @@ public class PolicyApiImpl implements PolicyApi {
                 throw new InvalidPolicyStateException("A member named on the schedule must have a name");
             }
         }
+    }
+
+    /**
+     * Whether a category can have a member schedule under it.
+     *
+     * <p>One predicate, because the two callers that need it -- claimableCover and
+     * dischargeForSettledClaim -- must never disagree about what a scheme is. When they
+     * did, a credit-life claim was refused by one and surrendered the whole master
+     * contract by the other.
+     *
+     * <p><b>This pre-filter cannot simply be dropped in favour of querying for the scheme
+     * row.</b> The lookup would answer correctly, but ClaimsApiImpl calls claimableCover
+     * on EVERY claim registration and thirty-odd test classes register claims without
+     * ever applying policy/V9 -- for them policy.group_scheme does not exist, and an
+     * unconditional query throws. In dischargeForSettledClaim that throw lands inside an
+     * AFTER_COMMIT listener whose only response is POLICY_CLOSURE_FAILED, leaving a
+     * settled claim's policy open with the money already paid. That failure has been
+     * found here once already.
+     */
+    private static boolean isSchemeCategory(String productCategory) {
+        return "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory);
     }
 
     /**
