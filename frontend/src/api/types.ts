@@ -336,6 +336,7 @@ export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   'UNIT_LINKED',
   'GROUP_LIFE',
   'EDUCATION_SAVINGS',
+  'CREDIT_LIFE',
 ];
 
 export const RATING_FACTOR_TYPES: readonly RatingFactorType[] = [

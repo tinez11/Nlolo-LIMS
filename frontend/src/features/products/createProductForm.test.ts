@@ -22,6 +22,7 @@ describe('createProductFormSchema', () => {
       'UNIT_LINKED',
       'GROUP_LIFE',
       'EDUCATION_SAVINGS',
+      'CREDIT_LIFE',
     ] as const) {
       expect(createProductFormSchema.safeParse({ ...valid(), category }).success).toBe(true);
     }

@@ -20,7 +20,7 @@ paths:
       parameters:
         - name: category
           in: query
-          schema: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
+          schema: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE] }
       responses:
         '200':
           description: OK
@@ -266,7 +266,7 @@ components:
       properties:
         productCode: { type: string }
         productName: { type: string }
-        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
+        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE] }
         defaultCurrency: { type: string, example: TZS }
     EligibilityBounds:
       description: >-
@@ -518,7 +518,7 @@ components:
         ifrsMeasurementModel: { type: string, enum: [GMM, PAA] }
         gracePeriodDays: { type: integer }
         maxLoanToValuePercent: { type: number }
-        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS] }
+        category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE] }
         surrenderChargeScheduleJson: { type: [string, "null"], description: Raw JSON surrender-charge schedule from product_version.surrender_charge_schedule; null until a future milestone adds a way to author it. }
         eligibility:
           description: >-

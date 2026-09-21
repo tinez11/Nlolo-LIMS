@@ -749,7 +749,7 @@ components:
             deliberately null rather than merely missing — and it is the one kind of policy
             that also answers on /group-schemes/{policyNumber}.
           type: [string, "null"]
-          enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, null]
+          enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, null]
     IssueGroupSchemeRequest:
       description: >-
         No sumAssured field, deliberately: a scheme's sum assured is the total of its members'

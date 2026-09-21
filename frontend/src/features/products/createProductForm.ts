@@ -14,6 +14,7 @@ export const createProductFormSchema = z.object({
     'UNIT_LINKED',
     'GROUP_LIFE',
     'EDUCATION_SAVINGS',
+    'CREDIT_LIFE',
   ]),
   defaultCurrency: z.string().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS'),
 });
