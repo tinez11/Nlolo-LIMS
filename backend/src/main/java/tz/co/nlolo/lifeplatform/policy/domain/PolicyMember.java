@@ -165,6 +165,31 @@ public class PolicyMember {
         this.leftOn = leftOn;
     }
 
+    /**
+     * Give a freeform life a real identity.
+     *
+     * <p>Only for a member who has to be underwritten. Freeform exists to keep the KYC
+     * queue clear of people nobody needs to identify; somebody over the free cover limit
+     * is precisely somebody you do, and an underwriting case cannot be opened without a
+     * party to open it against.
+     *
+     * <p>The name is cleared because the party record now holds it. Keeping both would
+     * be two copies of one fact, free to disagree --
+     * {@code chk_policy_member_exactly_one_designation} refuses the row anyway.
+     */
+    public void promoteToParty(UUID partyId) {
+        if (partyId == null) {
+            throw new IllegalArgumentException("Promoting a member needs the party to promote them to");
+        }
+        if (memberType == MemberType.PARTY) {
+            throw new IllegalStateException("This member already names a registered party");
+        }
+        this.memberType = MemberType.PARTY;
+        this.memberPartyId = partyId;
+        this.memberName = null;
+        this.memberDateOfBirth = null;
+    }
+
     /** Link the underwriting case opened because this benefit exceeds the free cover limit. */
     public void referForEvidence(UUID underwritingCaseId) {
         this.underwritingCaseId = underwritingCaseId;

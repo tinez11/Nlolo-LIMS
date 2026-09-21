@@ -4,6 +4,8 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.*;
@@ -62,6 +64,7 @@ public class PolicyApiImpl implements PolicyApi {
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
     private final DistributionApi distributionApi;
+    private final UnderwritingApi underwritingApi;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -71,7 +74,7 @@ public class PolicyApiImpl implements PolicyApi {
                           GroupSchemeRepository groupSchemeRepository, GroupSchemeGradeRepository groupSchemeGradeRepository,
                           PolicyMemberRepository policyMemberRepository, PolicyMemberBenefitRepository policyMemberBenefitRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
-                          DistributionApi distributionApi,
+                          DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
         this.policyAccountRepository = policyAccountRepository;
@@ -87,6 +90,7 @@ public class PolicyApiImpl implements PolicyApi {
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
         this.distributionApi = distributionApi;
+        this.underwritingApi = underwritingApi;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
     }
@@ -1375,11 +1379,10 @@ public class PolicyApiImpl implements PolicyApi {
             if (member.memberPartyId() == null) {
                 throw new InvalidPolicyStateException("A member must name a person");
             }
-            if (member.loanTerms() != null || member.loanAccountNumber() != null) {
-                throw new InvalidPolicyStateException(
-                    "A registered party cannot be enrolled as a borrower; a credit-life "
-                        + "member is a loan, named on the lender's schedule");
-            }
+            // A PARTY member MAY carry a loan: a lender's schedule will sometimes name
+            // somebody the insurer already holds a record for, and refusing that would
+            // force a duplicate identity. It is also the shape promotion produces when a
+            // borrower goes over the free cover limit.
             if (member.memberName() != null || member.memberDateOfBirth() != null) {
                 throw new InvalidPolicyStateException(
                     "A member naming a registered party must not also carry a loose name or date of birth");
@@ -1598,6 +1601,28 @@ public class PolicyApiImpl implements PolicyApi {
         if (input.loanTerms() != null) {
             toSave.withLoan(input.loanAccountNumber(), input.loanTerms());
         }
+        // A member over the free cover limit is referred for evidence, which needs an
+        // identity: underwriting_case.applicant_party_id is NOT NULL and ProposalDetails
+        // carries a party id, not a name. So a freeform life is promoted HERE and only
+        // here. That is not a hole in the freeform rule -- freeform exists to keep the
+        // KYC queue clear of people nobody needs to identify, and somebody borrowing
+        // over the limit is precisely somebody you do.
+        //
+        // Before this, PolicyMember.referForEvidence(UUID) had no caller anywhere: a
+        // member's cover was capped and no case was ever opened, so the excess could not
+        // be granted even when the evidence turned up.
+        if (valuation.underwritingStatus() == MemberUnderwritingStatus.EVIDENCE_REQUIRED
+                && toSave.getMemberType() == MemberType.FREEFORM) {
+            if (toSave.getMemberDateOfBirth() == null) {
+                throw new InvalidPolicyStateException("Member " + describe(input)
+                    + " is over the free cover limit and must be underwritten, which needs "
+                    + "a date of birth to register them against");
+            }
+            toSave.promoteToParty(partyApi.registerIndividual(
+                toSave.getMemberName(), toSave.getMemberDateOfBirth(), null, null, createdBy)
+                .partyId());
+        }
+
         PolicyMember member;
         try {
             // saveAndFlush, not save: ux_policy_member_active_loan is the guarantee that a
@@ -1617,6 +1642,21 @@ public class PolicyApiImpl implements PolicyApi {
         // person joined, and a claim in between is paid on this row.
         policyMemberBenefitRepository.save(new PolicyMemberBenefit(tenantId, member.getPolicyMemberId(),
             joinedOn, input.salaryAmount(), valuation.benefitAmount(), valuation.coveredAmount(), createdBy));
+
+        // Opened AFTER the member row exists, so a case can never point at a member that
+        // was never written. The case is opened for the EXCESS -- the benefit, not the
+        // capped cover -- because that is the amount an underwriter is being asked to
+        // grant. referForEvidence finally has the caller it was written for in build 5.
+        if (valuation.underwritingStatus() == MemberUnderwritingStatus.EVIDENCE_REQUIRED
+                && member.getUnderwritingCaseId() == null) {
+            Policy schemePolicy = findPolicyOrThrow(policyNumber, tenantId);
+            UnderwritingCaseView evidenceCase = underwritingApi.openCase(
+                member.getMemberPartyId(), schemePolicy.getProductId(),
+                schemePolicy.getProductVersionId(), valuation.benefitAmount(),
+                schemePolicy.getSumAssuredCurrency(), schemePolicy.getAgentOfRecordId(),
+                createdBy);
+            member.referForEvidence(evidenceCase.caseId());
+        }
         return member;
     }
 

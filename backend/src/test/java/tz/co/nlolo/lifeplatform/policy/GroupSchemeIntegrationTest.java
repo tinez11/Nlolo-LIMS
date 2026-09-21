@@ -795,20 +795,77 @@ class GroupSchemeIntegrationTest {
     }
 
     @Test
-    void aRegisteredPartyCannotBeEnrolledAsABorrower() {
+    void anAlreadyRegisteredClientMayBorrowToo() {
+        // A lender's schedule will sometimes name somebody the insurer already holds a
+        // party record for. Refusing that would force a duplicate identity, and it is
+        // also the shape promotion produces for an above-FCL borrower.
         TenantContext.set(UUID.randomUUID());
         GroupProduct product = creditLifeProduct("CL-PARTYLOAN");
         GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
             person("Party Lender"), InterestMethod.FLAT_RATE,
             List.of(borrower("LN-OPENING"))), "staff-1");
 
-        PolicyApi.MemberInput partyWithLoan = new PolicyApi.MemberInput(MemberType.PARTY,
-            person("Registered Borrower"), null, null, null, null, null,
-            "LN-2026-00999", lolcLoan());
+        UUID known = person("Registered Borrower");
+        PolicyMemberView member = policyApi.addMember(scheme.policyNumber(),
+            new PolicyApi.MemberInput(MemberType.PARTY, known, null, null, null, null, null,
+                "LN-2026-00999", lolcLoan()), "staff-1");
 
-        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), partyWithLoan, "staff-1"))
-            .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("cannot be enrolled as a borrower");
+        assertThat(member.memberPartyId()).isEqualTo(known);
+        assertThat(member.loanAccountNumber()).isEqualTo("LN-2026-00999");
+        assertThat(member.coveredAmount()).isEqualByComparingTo("10400000.00");
+    }
+
+    @Test
+    void anAboveFclBorrowerIsPromotedToAPartyAndReferredForEvidence() {
+        // PolicyMember.referForEvidence(UUID) has existed since build 5 with ZERO callers:
+        // a member over the limit had their cover capped and nothing was ever opened, so
+        // the excess could not be granted even if the evidence arrived.
+        //
+        // Opening a case needs an identity -- underwriting_case.applicant_party_id is NOT
+        // NULL and ProposalDetails carries a party id, not a name. So an above-FCL
+        // borrower is promoted at enrolment. That is not a hole in the freeform rule:
+        // freeform exists to keep the KYC queue clear of people nobody needs to identify,
+        // and somebody borrowing over the free cover limit is precisely somebody you do.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-REFER");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Refer Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyMemberView big = policyApi.addMember(scheme.policyNumber(),
+            PolicyApi.MemberInput.borrower("Peter Massawe", LocalDate.of(1980, 7, 19),
+                "LN-2026-00424",
+                new LoanTerms(new BigDecimal("30000000.00"), new BigDecimal("17.00"), 72,
+                    RepaymentFrequency.MONTHLY,
+                    LocalDate.of(2026, 8, 13), LocalDate.of(2026, 9, 13))), "staff-1");
+
+        assertThat(big.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.EVIDENCE_REQUIRED);
+        assertThat(big.underwritingCaseId())
+            .as("an above-FCL member with no case is a referral nobody will ever action")
+            .isNotNull();
+        assertThat(big.memberType()).isEqualTo(MemberType.PARTY);
+        assertThat(big.memberPartyId()).isNotNull();
+        // Cover is still capped while the evidence is outstanding.
+        assertThat(big.coveredAmount()).isEqualByComparingTo("25000000.00");
+        assertThat(big.benefitAmount()).isEqualByComparingTo("30000000.00");
+    }
+
+    @Test
+    void aWithinFclBorrowerOpensNoCaseAndStaysFreeform() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOREFER");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("No Refer Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyMemberView ordinary = policyApi.addMember(scheme.policyNumber(),
+            borrower("LN-2026-00417"), "staff-1");
+
+        assertThat(ordinary.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.WITHIN_FCL);
+        assertThat(ordinary.underwritingCaseId()).isNull();
+        // The other 399 stay off the KYC queue entirely, which is the whole point.
+        assertThat(ordinary.memberType()).isEqualTo(MemberType.FREEFORM);
+        assertThat(ordinary.memberPartyId()).isNull();
     }
 
     @Test
