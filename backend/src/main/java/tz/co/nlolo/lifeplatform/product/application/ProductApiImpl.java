@@ -58,9 +58,40 @@ public class ProductApiImpl implements ProductApi {
             // a real unique-constraint violation is actually caught. Mirrors PartyApiImpl.registerCorporate.
             productDefinitionRepository.saveAndFlush(product);
         } catch (DataIntegrityViolationException e) {
-            throw new DuplicateProductCodeException(productCode);
+            // ONLY ux_product_code means a duplicate. This catch used to claim every
+            // integrity violation was one, so a CHECK violation on category surfaced as
+            // "a product with code X already exists" against a code that did not exist --
+            // observed for real while adding CREDIT_LIFE, and it cost real diagnosis time.
+            // Same bug class as M7's onboardAgent, which reported a value-too-long as a
+            // duplicate licence.
+            //
+            // Anything else is rethrown unchanged. A 500 carrying Postgres's own message
+            // is worth far more than a confident, wrong 409: the first sends you to the
+            // constraint that actually failed, the second sends you hunting for a row that
+            // is not there. Proven by ProductIntegrityViolationTest, which runs against a
+            // schema that predates the CREDIT_LIFE category.
+            if (violatesConstraint(e, "ux_product_code")) {
+                throw new DuplicateProductCodeException(productCode);
+            }
+            throw e;
         }
         return toSummaryView(product);
+    }
+
+    /**
+     * Whether an integrity violation was caused by the named constraint.
+     *
+     * <p>Walks the cause chain because the constraint name appears on the Postgres-level
+     * cause, not on Spring's wrapper.
+     */
+    private static boolean violatesConstraint(DataIntegrityViolationException e, String constraintName) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(constraintName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
