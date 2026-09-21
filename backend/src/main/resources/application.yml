@@ -12,6 +12,14 @@ spring:
   # See this plan's Architecture note and Task 8/9.
   flyway:
     enabled: false
+  servlet:
+    multipart:
+      # Unset means Spring's 1MB default, which a 400-borrower credit-life schedule can
+      # exceed and a 5,000-row one certainly does. Capped rather than raised without
+      # limit: this endpoint is reachable by a counterparty, and the file is read whole
+      # into memory to be both stored and parsed.
+      max-file-size: 10MB
+      max-request-size: 12MB
   jpa:
     open-in-view: false
     hibernate:

@@ -19,7 +19,7 @@
 - **Rounding is `HALF_UP` to 2 decimal places.**
 - **Run Maven on the host** (`./mvnw`), never in Docker — it breaks Testcontainers networking.
 - **Stop the dev backend before any `clean test`**, and re-run `clean test-compile` after any signature change.
-- **`NoClassDefFoundError` or "cannot access <some class>" from a build is stale `target/`, not your code.** Seen three times on Plan 1. `clean test-compile` clears it; do not debug it as a failure.
+- **A build failure naming `target/` is a Windows file lock, not your code.** Two shapes, same cause: `Failed to clean project: Failed to delete ...\target\classes\...` from the clean plugin, and `NoClassDefFoundError` / `cannot access <some class>` when a half-deleted `target/` is then compiled against. Seen four times across Plans 1 and 2. **Re-run the same command** — it succeeds. Do not investigate it as a test failure, and do not "fix" code that compiled a minute earlier.
 
 ## Two open questions this plan is shaped around
 

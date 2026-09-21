@@ -35,7 +35,12 @@ import java.util.Set;
 public final class AllowedDocumentContentTypes {
 
     public static final Set<String> ALLOWED =
-        Set.of("image/jpeg", "image/png", "application/pdf", "application/octet-stream");
+        Set.of("image/jpeg", "image/png", "application/pdf", "application/octet-stream",
+            // A lender's credit-life enrolment schedule. Unlike every other entry this
+            // one is PARSED rather than stored opaquely, which is why the parser treats
+            // every cell as untrusted input rather than relying on this allowlist for
+            // anything beyond "the bytes are meant to be text".
+            "text/csv");
 
     /** Sorted for a deterministic error message; {@link #ALLOWED} is the authority. */
     public static final String ALLOWED_DISPLAY =

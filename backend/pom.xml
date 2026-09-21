@@ -178,6 +178,16 @@
       <version>3.5.4</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- Reads a lender's credit-life enrolment schedule. Chosen over hand-rolling because
+         a borrower's name containing a comma, or a reason string containing a quote, must
+         round-trip exactly: this library both parses the incoming file and prints the
+         rejection report that goes back to the lender. -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-csv</artifactId>
+      <version>1.11.0</version>
+    </dependency>
   </dependencies>
 
   <build>
