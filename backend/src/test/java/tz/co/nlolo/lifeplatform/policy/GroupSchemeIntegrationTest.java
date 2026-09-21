@@ -96,6 +96,7 @@ class GroupSchemeIntegrationTest {
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V8__group_policies_have_no_single_life_assured.sql",
             "db-migrations/policy/V9__group_scheme_and_members.sql",
+            "db-migrations/policy/V13__freeform_members.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -479,6 +480,131 @@ class GroupSchemeIntegrationTest {
             "staff-1"))
             .isInstanceOf(InvalidPolicyStateException.class)
             .hasMessageContaining("future join date");
+    }
+
+    // ---- Freeform members: a life may be a name rather than a registered party ----
+
+    private PolicyApi.MemberInput freeform(String name) {
+        return new PolicyApi.MemberInput(MemberType.FREEFORM, null, name,
+            LocalDate.of(1990, 4, 5), null, null, null);
+    }
+
+    @Test
+    void aFreeformMemberIsCoveredWithoutBeingRegisteredAsAParty() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-FREEFORM");
+        UUID employer = person("Freeform Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Registered One"), null, null, null))), "staff-1");
+
+        PolicyMemberView member = policyApi.addMember(scheme.policyNumber(),
+            freeform("Amina Hassan Mwinyi"), "staff-1");
+
+        assertThat(member.memberType()).isEqualTo(MemberType.FREEFORM);
+        assertThat(member.memberName()).isEqualTo("Amina Hassan Mwinyi");
+        assertThat(member.memberPartyId()).isNull();
+        // Valued and covered exactly like anyone else -- the scheme's basis does not care
+        // whether the insurer holds a KYC file on the life it is insuring.
+        assertThat(member.coveredAmount()).isEqualByComparingTo("1000000.00");
+        assertThat(policyApi.getGroupScheme(scheme.policyNumber()).totalCoveredAmount())
+            .isEqualByComparingTo("2000000.00");
+    }
+
+    @Test
+    void aPartyMemberStillCarriesItsPartyIdAndNoLooseName() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-STILLPARTY");
+        UUID employer = person("Still Party Co");
+        UUID registered = person("Registered Two");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(registered, null, null, null))), "staff-1");
+
+        PolicyMemberView member = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0);
+
+        assertThat(member.memberType()).isEqualTo(MemberType.PARTY);
+        assertThat(member.memberPartyId()).isEqualTo(registered);
+        assertThat(member.memberName()).isNull();
+    }
+
+    @Test
+    void aMemberNamingBothAPartyAndALooseNameIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-BOTH");
+        UUID employer = person("Both Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(),
+            new PolicyApi.MemberInput(MemberType.PARTY, person("Confused"), "Also A Name",
+                LocalDate.of(1990, 4, 5), null, null, null), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("must not also carry a loose name");
+    }
+
+    @Test
+    void aFreeformMemberWithNoNameIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-NONAME");
+        UUID employer = person("No Name Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), freeform("   "), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("must have a name");
+    }
+
+    @Test
+    void twoFreeformMembersMayShareAName() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-SAMENAME");
+        UUID employer = person("Same Name Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        // A father and a son, or two dependants of the same household. A name is not an
+        // identity, and refusing the second would leave a real life uninsured to enforce
+        // a uniqueness the data cannot support.
+        policyApi.addMember(scheme.policyNumber(), freeform("Juma Juma"), "staff-1");
+        policyApi.addMember(scheme.policyNumber(), freeform("Juma Juma"), "staff-1");
+
+        assertThat(policyApi.getGroupScheme(scheme.policyNumber()).activeMemberCount()).isEqualTo(3);
+    }
+
+    @Test
+    void nameSearchFindsFreeformMembersAsWellAsRegisteredOnes() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-SEARCH");
+        UUID employer = person("Search Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Amina Registered"), null, null, null))), "staff-1");
+        policyApi.addMember(scheme.policyNumber(), freeform("Amina Freeform"), "staff-1");
+        policyApi.addMember(scheme.policyNumber(), freeform("Someone Else"), "staff-1");
+
+        // Without the freeform half of the query a credit-life roll -- where EVERY member
+        // is freeform -- would be unsearchable: 400 borrowers and no way to find one.
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, "Amina",
+            PageRequest.of(0, 20)).getTotalElements()).isEqualTo(2);
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, "Freeform",
+            PageRequest.of(0, 20)).getTotalElements()).isEqualTo(1);
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, "Nobody",
+            PageRequest.of(0, 20)).getTotalElements()).isZero();
+        // No search still means the whole schedule.
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 20)).getTotalElements()).isEqualTo(3);
     }
 
     @Test

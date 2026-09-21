@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.policy.domain;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
+import tz.co.nlolo.lifeplatform.policy.api.MemberType;
 import tz.co.nlolo.lifeplatform.policy.api.MemberUnderwritingStatus;
 
 import java.time.Instant;
@@ -32,8 +33,19 @@ public class PolicyMember {
     @Column(name = "policy_number", nullable = false)
     private String policyNumber;
 
-    @Column(name = "member_party_id", nullable = false)
+    /** Null on a FREEFORM member -- the name below is the designation instead. */
+    @Column(name = "member_party_id")
     private UUID memberPartyId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "member_type", nullable = false)
+    private MemberType memberType;
+
+    @Column(name = "member_name")
+    private String memberName;
+
+    @Column(name = "member_date_of_birth")
+    private LocalDate memberDateOfBirth;
 
     @Column(name = "grade_code")
     private String gradeCode;
@@ -62,10 +74,15 @@ public class PolicyMember {
 
     protected PolicyMember() {}
 
+    /** A member who is a registered party. */
     public PolicyMember(UUID tenantId, String policyNumber, UUID memberPartyId, String gradeCode,
                          LocalDate joinedOn, MemberUnderwritingStatus underwritingStatus, String createdBy) {
+        if (memberPartyId == null) {
+            throw new IllegalArgumentException("A PARTY member must name a party");
+        }
         this.tenantId = tenantId;
         this.policyNumber = policyNumber;
+        this.memberType = MemberType.PARTY;
         this.memberPartyId = memberPartyId;
         this.gradeCode = gradeCode;
         this.joinedOn = joinedOn;
@@ -73,6 +90,36 @@ public class PolicyMember {
         this.underwritingStatus = underwritingStatus;
         this.createdAt = Instant.now();
         this.createdBy = createdBy;
+    }
+
+    /**
+     * A member named on a schedule who is not a registered party.
+     *
+     * <p>A static factory rather than a second constructor: the two differ only in which
+     * designation they carry, and two constructors of the same arity would let a caller
+     * pass a name where a party id belonged and never hear about it.
+     */
+    public static PolicyMember freeform(UUID tenantId, String policyNumber, String memberName,
+                                         LocalDate memberDateOfBirth, String gradeCode,
+                                         LocalDate joinedOn,
+                                         MemberUnderwritingStatus underwritingStatus,
+                                         String createdBy) {
+        if (memberName == null || memberName.isBlank()) {
+            throw new IllegalArgumentException("A FREEFORM member must have a name");
+        }
+        PolicyMember member = new PolicyMember();
+        member.tenantId = tenantId;
+        member.policyNumber = policyNumber;
+        member.memberType = MemberType.FREEFORM;
+        member.memberName = memberName.trim();
+        member.memberDateOfBirth = memberDateOfBirth;
+        member.gradeCode = gradeCode;
+        member.joinedOn = joinedOn;
+        member.status = "ACTIVE";
+        member.underwritingStatus = underwritingStatus;
+        member.createdAt = Instant.now();
+        member.createdBy = createdBy;
+        return member;
     }
 
     /**
@@ -111,6 +158,9 @@ public class PolicyMember {
     public UUID getTenantId() { return tenantId; }
     public String getPolicyNumber() { return policyNumber; }
     public UUID getMemberPartyId() { return memberPartyId; }
+    public MemberType getMemberType() { return memberType; }
+    public String getMemberName() { return memberName; }
+    public LocalDate getMemberDateOfBirth() { return memberDateOfBirth; }
     public String getGradeCode() { return gradeCode; }
     public LocalDate getJoinedOn() { return joinedOn; }
     public LocalDate getLeftOn() { return leftOn; }

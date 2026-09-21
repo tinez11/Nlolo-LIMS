@@ -1199,16 +1199,26 @@ public class PolicyApiImpl implements PolicyApi {
          * opposite ("no name filter") and return the entire schedule for a search that
          * matched nobody. Same hazard the benefit lookup below already guards.
          */
+        // Lower-cased and %-wrapped HERE, not in the query: a null parameter inside a
+        // lower() or concat() is untypeable by Postgres and fails every listing, not just
+        // the searches. See PolicyMemberRepository.findMembers.
+        String nameQuery = (q != null && !q.isBlank())
+            ? "%" + q.trim().toLowerCase() + "%" : null;
         Set<UUID> nameMatches = null;
-        if (q != null && !q.isBlank()) {
-            nameMatches = partyApi.partyIdsMatchingName(q);
+        if (nameQuery != null) {
+            nameMatches = partyApi.partyIdsMatchingName(q.trim());
             if (nameMatches.isEmpty()) {
-                return Page.empty(pageable);
+                // Deliberately NOT an early empty page any more. "No party has that name"
+                // no longer means "no member matches": a freeform member holds its own
+                // name and no party module knows it exists. Null instead, so the query's
+                // party half is skipped and the freeform half still runs.
+                nameMatches = null;
             }
         }
 
         Page<PolicyMember> members = policyMemberRepository.findMembers(
-            tenantId, policyNumber, status != null ? status.name() : null, nameMatches, pageable);
+            tenantId, policyNumber, status != null ? status.name() : null, nameMatches,
+            nameQuery, pageable);
         if (members.isEmpty()) {
             // Short-circuit rather than pass an empty list to an IN clause, which is a
             // Postgres syntax error rather than an empty result.
@@ -1238,14 +1248,20 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException("Scheme " + policyNumber
                 + " must be in force to add a member (current: " + policy.getStatus() + ")");
         }
-        if (member.memberPartyId() == null) {
-            throw new InvalidPolicyStateException("A member must name a person");
+        requireValidDesignation(member);
+        if (member.memberType() == MemberType.PARTY) {
+            partyApi.getParty(member.memberPartyId());
+            if (policyMemberRepository.existsByTenantIdAndPolicyNumberAndMemberPartyIdAndStatus(
+                    tenantId, policyNumber, member.memberPartyId(), MemberStatus.ACTIVE.name())) {
+                throw new InvalidPolicyStateException("That person is already an active member of scheme " + policyNumber);
+            }
         }
-        partyApi.getParty(member.memberPartyId());
-        if (policyMemberRepository.existsByTenantIdAndPolicyNumberAndMemberPartyIdAndStatus(
-                tenantId, policyNumber, member.memberPartyId(), MemberStatus.ACTIVE.name())) {
-            throw new InvalidPolicyStateException("That person is already an active member of scheme " + policyNumber);
-        }
+        // A FREEFORM member gets no duplicate check, deliberately. A name is not an
+        // identity: a scheme legitimately covers a father and a son who share one, and a
+        // household of dependants may share a surname and a birth year. Refusing the
+        // second would leave a real life uninsured to enforce a uniqueness the data
+        // cannot support. Credit life gives its members a real key -- the loan account
+        // number -- and enforces that instead.
 
         LocalDate today = LocalDate.now();
         LocalDate joinedOn = member.joinedOn() != null ? member.joinedOn() : today;
@@ -1272,17 +1288,55 @@ public class PolicyApiImpl implements PolicyApi {
         policyMemberBenefitRepository.flush();
         BigDecimal total = restateSchemeTotal(policy, tenantId, today);
 
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, Map.of(
-            "policyNumber", policyNumber,
-            "memberPartyId", member.memberPartyId(),
-            "joinedOn", joinedOn.toString(),
-            "coveredAmount", Map.of("amount", valuation.coveredAmount().toPlainString(),
-                "currencyCode", scheme.getCurrency()),
-            "underwritingStatus", valuation.underwritingStatus().name(),
-            "schemeTotalCovered", Map.of("amount", total.toPlainString(),
-                "currencyCode", scheme.getCurrency()))));
+        // LinkedHashMap, not Map.of: a FREEFORM member has no party id, and Map.of throws
+        // on a null value. The key is carried as an explicit null rather than omitted, so
+        // a consumer can tell "this life is not a party" from "this producer forgot".
+        Map<String, Object> memberAdded = new LinkedHashMap<>();
+        memberAdded.put("policyNumber", policyNumber);
+        memberAdded.put("memberPartyId", member.memberPartyId());
+        memberAdded.put("memberType", member.memberType().name());
+        memberAdded.put("memberName", member.memberName());
+        memberAdded.put("joinedOn", joinedOn.toString());
+        memberAdded.put("coveredAmount", Map.of("amount", valuation.coveredAmount().toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        memberAdded.put("underwritingStatus", valuation.underwritingStatus().name());
+        memberAdded.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        eventPublisher.publishEvent(
+            DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, memberAdded));
 
         return toMemberView(saved, valuation, member.salaryAmount(), scheme.getCurrency(), joinedOn);
+    }
+
+    /**
+     * A member names a party or a person, never both and never neither.
+     *
+     * <p>Checked here as well as by {@code chk_policy_member_exactly_one_designation}
+     * because the constraint is the guarantee and this is the readable error. Mirrors the
+     * beneficiary designation rule.
+     */
+    private void requireValidDesignation(MemberInput member) {
+        MemberType type = member.memberType();
+        if (type == null) {
+            throw new InvalidPolicyStateException("A member must say whether it names a party or a person");
+        }
+        if (type == MemberType.PARTY) {
+            if (member.memberPartyId() == null) {
+                throw new InvalidPolicyStateException("A member must name a person");
+            }
+            if (member.memberName() != null || member.memberDateOfBirth() != null) {
+                throw new InvalidPolicyStateException(
+                    "A member naming a registered party must not also carry a loose name or date of birth");
+            }
+        } else {
+            if (member.memberPartyId() != null) {
+                throw new InvalidPolicyStateException(
+                    "A member named on the schedule must not also name a registered party");
+            }
+            if (member.memberName() == null || member.memberName().isBlank()) {
+                throw new InvalidPolicyStateException("A member named on the schedule must have a name");
+            }
+        }
     }
 
     /** One opening-schedule row and what the scheme's basis makes of it. */
@@ -1378,8 +1432,13 @@ public class PolicyApiImpl implements PolicyApi {
     private PolicyMember persistMember(UUID tenantId, String policyNumber, MemberInput input,
                                         GroupBenefitCalculator.Valuation valuation, LocalDate joinedOn,
                                         String createdBy) {
-        PolicyMember member = policyMemberRepository.save(new PolicyMember(tenantId, policyNumber,
-            input.memberPartyId(), input.gradeCode(), joinedOn, valuation.underwritingStatus(), createdBy));
+        PolicyMember member = policyMemberRepository.save(
+            input.memberType() == MemberType.FREEFORM
+                ? PolicyMember.freeform(tenantId, policyNumber, input.memberName(),
+                    input.memberDateOfBirth(), input.gradeCode(), joinedOn,
+                    valuation.underwritingStatus(), createdBy)
+                : new PolicyMember(tenantId, policyNumber, input.memberPartyId(),
+                    input.gradeCode(), joinedOn, valuation.underwritingStatus(), createdBy));
         // The benefit is effective from the day cover starts for this member, not from
         // today: a schedule that arrives late still describes cover that began when the
         // person joined, and a claim in between is paid on this row.
@@ -1416,7 +1475,8 @@ public class PolicyApiImpl implements PolicyApi {
 
     private PolicyMemberView toMemberView(PolicyMember m, GroupBenefitCalculator.Valuation valuation,
                                            BigDecimal salaryAmount, String currency, LocalDate effectiveFrom) {
-        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(), m.getGradeCode(),
+        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
+            m.getMemberType(), m.getMemberName(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
             valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom);
@@ -1424,7 +1484,8 @@ public class PolicyApiImpl implements PolicyApi {
 
     private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
                                            String currency) {
-        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(), m.getGradeCode(),
+        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
+            m.getMemberType(), m.getMemberName(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(),
             // Null across the money fields means a member whose cover has not started yet
