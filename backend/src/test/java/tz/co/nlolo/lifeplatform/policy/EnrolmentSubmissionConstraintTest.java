@@ -1,0 +1,186 @@
+package tz.co.nlolo.lifeplatform.policy;
+
+import tz.co.nlolo.lifeplatform.Application;
+import tz.co.nlolo.lifeplatform.MigrationTestSupport;
+import tz.co.nlolo.lifeplatform.TenantContext;
+import org.junit.jupiter.api.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * V15's constraints, asserted by name.
+ *
+ * <p>A migration that merely applies proves nothing about whether its constraints refuse
+ * anything, and these three are the difference between a controlled intake and a
+ * counterparty writing cover unattended.
+ *
+ * <p>Written against JDBC rather than the API because the service does not exist until
+ * the next task, and because these are database guarantees rather than service rules --
+ * the service's own checks are the readable errors in front of them.
+ */
+@Testcontainers
+@SpringBootTest(classes = Application.class)
+class EnrolmentSubmissionConstraintTest {
+
+    @Container
+    static PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
+
+    @DynamicPropertySource
+    static void datasourceProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+    }
+
+    @BeforeAll
+    static void applyMigrations() throws Exception {
+        MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
+            "db-migrations/policy/V1__create_policy_schema.sql",
+            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
+            "db-migrations/policy/V3__premium_fields.sql",
+            "db-migrations/policy/V4__underwriting_case_id.sql",
+            "db-migrations/policy/V5__beneficiary_party_index.sql",
+            "db-migrations/policy/V6__policy_term.sql",
+            "db-migrations/policy/V7__life_assured.sql",
+            "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
+            "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V8__group_policies_have_no_single_life_assured.sql",
+            "db-migrations/policy/V9__group_scheme_and_members.sql",
+            "db-migrations/policy/V13__freeform_members.sql",
+            "db-migrations/policy/V14__credit_life_scheme.sql",
+            "db-migrations/policy/V15__enrolment_submission.sql");
+    }
+
+    @Autowired private JdbcTemplate jdbcTemplate;
+
+    private UUID tenantId;
+    private String policyNumber;
+
+    @BeforeEach
+    void seedScheme() {
+        tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        policyNumber = "GRP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+
+        // A scheme row is all these constraints need; the policy row behind it is a plain
+        // FK target. Inserted directly because PolicyApi is not the subject here.
+        jdbcTemplate.update("""
+            insert into policy.policy
+                (policy_number, tenant_id, policyholder_party_id, product_id, product_version_id,
+                 product_category, sum_assured_amount, sum_assured_currency, premium_amount,
+                 premium_currency, premium_frequency, status)
+            values (?, ?, ?, ?, ?, 'CREDIT_LIFE', 1000000.00, 'TZS', 5000.00, 'TZS', 'ANNUALLY', 'ACTIVE')
+            """, policyNumber, tenantId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        jdbcTemplate.update("""
+            insert into policy.group_scheme
+                (policy_number, tenant_id, benefit_basis, currency, interest_method, repayment_frequency)
+            values (?, ?, 'AMORTISING_LOAN', 'TZS', 'FLAT_RATE', 'MONTHLY')
+            """, policyNumber, tenantId);
+    }
+
+    @AfterEach
+    void clearTenant() { TenantContext.clear(); }
+
+    private UUID insertPendingSubmission(String submittedBy) {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update("""
+            insert into policy.enrolment_submission
+                (submission_id, tenant_id, policy_number, document_ref, file_name,
+                 row_count, submitted_by)
+            values (?, ?, ?, ?, 'june.csv', 3, ?)
+            """, id, tenantId, policyNumber, "doc-" + id, submittedBy);
+        return id;
+    }
+
+    @Test
+    void onlyOneSubmissionMayBeInFlightPerScheme() {
+        insertPendingSubmission("staff.one");
+
+        // Two files in flight can enrol the same loan twice, and propose-then-accept
+        // widens the window between reading the schedule and writing to it.
+        assertThatThrownBy(() -> insertPendingSubmission("staff.two"))
+            .hasMessageContaining("ux_enrolment_submission_in_flight");
+    }
+
+    @Test
+    void anAcceptedSubmissionFreesTheSchemeForNextMonth() {
+        UUID first = insertPendingSubmission("staff.one");
+        jdbcTemplate.update("update policy.enrolment_submission set status='ACCEPTED', "
+            + "accepted_by='staff.two', accepted_at=now() where submission_id=?", first);
+
+        // The index is partial on PENDING, so history never blocks the next file.
+        assertThatCode(() -> insertPendingSubmission("staff.three")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aWithdrawnSubmissionAlsoFreesTheScheme() {
+        UUID first = insertPendingSubmission("staff.one");
+        jdbcTemplate.update("update policy.enrolment_submission set status='WITHDRAWN' "
+            + "where submission_id=?", first);
+
+        assertThatCode(() -> insertPendingSubmission("staff.one")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void theSamePersonCannotAcceptWhatTheySubmitted() {
+        UUID id = insertPendingSubmission("staff.one");
+
+        // One user who can upload a file and then accept it has an audit trail and no
+        // control.
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "update policy.enrolment_submission set status='ACCEPTED', accepted_by='staff.one', "
+                + "accepted_at=now() where submission_id=?", id))
+            .hasMessageContaining("chk_enrolment_submission_two_person");
+    }
+
+    @Test
+    void anAcceptedSubmissionMustSayWhoAcceptedItAndWhen() {
+        UUID id = insertPendingSubmission("staff.one");
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "update policy.enrolment_submission set status='ACCEPTED' where submission_id=?", id))
+            .hasMessageContaining("chk_enrolment_submission_accepted_complete");
+    }
+
+    @Test
+    void aRejectedRowMustCarryAReason() {
+        UUID submissionId = insertPendingSubmission("staff.one");
+
+        // The reason is the entire product of this feature; a rejection without one is a
+        // row nobody can act on.
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+            insert into policy.enrolment_submission_row
+                (tenant_id, submission_id, line_number, loan_account_number, outcome)
+            values (?, ?, 2, 'LN-1', 'REJECTED')
+            """, tenantId, submissionId))
+            .hasMessageContaining("chk_enrolment_row_rejection_has_reason");
+    }
+
+    @Test
+    void oneLineOfTheLendersFileAppearsOnceInASubmission() {
+        UUID submissionId = insertPendingSubmission("staff.one");
+        jdbcTemplate.update("""
+            insert into policy.enrolment_submission_row
+                (tenant_id, submission_id, line_number, loan_account_number, outcome)
+            values (?, ?, 2, 'LN-1', 'ENROLLED')
+            """, tenantId, submissionId);
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+            insert into policy.enrolment_submission_row
+                (tenant_id, submission_id, line_number, loan_account_number, outcome)
+            values (?, ?, 2, 'LN-2', 'ENROLLED')
+            """, tenantId, submissionId))
+            .hasMessageContaining("enrolment_submission_row_submission_id_line_number_key");
+    }
+}
