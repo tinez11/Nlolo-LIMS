@@ -16,22 +16,31 @@ expensive to change after we build it.
 
 ---
 
-## Start here: ten real loans
+## Start here: we need one new column, and that is all
 
-**Attached: `credit-life-enrolment-sample.csv`.**
+We have now seen two of your real schedules — LOLC's June file and the BUMACO August
+template. They already carry almost everything we need.
 
-This is the form in which banks will send us their borrowers. Please fill in **ten real
-loans** from an actual book — names removed if you prefer, but everything else real.
+**Attached: `credit-life-enrolment-sample.csv`**, the format we will ask lenders to send.
+It is nine columns, and your existing sheets already have eight of them: the client's
+name, gender, date of birth, the disbursed amount, the term and the disbursement date.
 
-It takes minutes and it settles four separate questions we would otherwise have to ask you
-one at a time:
+**The one thing missing is a loan account number.** Your core banking system holds one for
+every loan; your schedule does not currently include it. We need it because it is how we
+tell one loan from another — how a resubmitted file is recognised as the same loans rather
+than a second set, and how a claim is matched to the right borrowing. Two loans to the
+same person are two separate covers, and a name cannot distinguish them.
 
-- Whether a loan account number exists on your schedule, and what it looks like
-- Whether you record a term in months or a maturity date
-- Whether you record a date of birth or an age
-- Whether the interest rate you quote is the flat rate or the effective rate
+We originally expected to ask for four new columns. Having seen your files, we removed
+three of them from the format instead:
 
-If any column is one you do not hold, leave it blank and say so — that is an answer too.
+- **Interest rate** — not needed for the way we intend to value cover.
+- **Repayment frequency** — we will agree this once per lender, not per loan.
+- **First repayment date** — we will calculate it.
+
+Please send **ten real loans** in this format, names removed if you prefer. It takes
+minutes and it confirms in one go that the account number is available and that the rest
+of the columns match what you hold.
 
 ---
 
@@ -122,6 +131,12 @@ differently.
 **Does the book contain any of these?** If you are not sure, the ten real loans above will
 show us.
 
+This matters more than it did a week ago. We removed the "first repayment date" column
+from the format, which means we now assume every loan starts repaying one period after it
+is paid out. That is right for an ordinary loan and wrong for one with a three-month
+holiday. **If your book contains payment holidays, tell us and the column comes back** —
+it is a small change now and an awkward one later.
+
 ## 9. §6 of the requirements table
 
 Still outstanding since 3 September, and requested five times. We do not know what it
@@ -130,19 +145,33 @@ and we will proceed on what we have.
 
 ---
 
-## One question we have withdrawn
+## The one answer that is holding everything up
 
-We previously asked whether your loans use **reducing-balance or flat-rate interest**. This
-was the single question blocking the whole product.
+**Does the amount insured go down as the loan is repaid — and if so, how?**
 
-**You no longer need to answer it.** We have added one column to the file — the monthly
-instalment, which every loan already has — and the system works out the method for itself by
-checking which one produces that instalment. The two differ by 16% to 30%, so there is no
-ambiguity.
+This is the single question we cannot proceed past, and we want to be plain about why we
+are asking it rather than assuming.
 
-It also gives us a free accuracy check: if the instalment matches neither method, something
-in that row is wrong, and we reject it with a reason instead of quietly insuring the wrong
-amount.
+We were told the cover pays whatever is still owed. But neither of your real schedules
+carries an outstanding balance at all, and both charge the premium on the **full disbursed
+amount** for the whole term. Those two things do not sit together: a policy whose cover
+falls month by month is not usually priced on the amount at the start.
+
+So, one of three:
+
+1. **Cover falls in a straight line** from the disbursed amount to zero across the term.
+   This is a standard credit-life design and it is what we have built for.
+2. **Cover follows the actual loan balance**, which falls more slowly at first because
+   early instalments are mostly interest. This needs the interest rate on every loan,
+   which would add a column back to the file.
+3. **Cover stays at the disbursed amount** for the whole term, which is what your current
+   premium basis implies and what your spreadsheets actually describe today.
+
+They are materially different. On a 10,400,000 loan halfway through an 18-month term,
+option 1 pays 5,200,000 and option 3 pays 10,400,000 — double.
+
+A worked example of one real claim you have paid would answer this faster than a
+description.
 
 ---
 

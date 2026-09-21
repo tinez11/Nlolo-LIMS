@@ -5,9 +5,10 @@ row_number,loan_account_number,borrower_full_name,outcome,reason_code,reason
 5,LN-2026-00420,Salum Juma Rashid,ENROLLED,,
 6,LN-2026-00421,Neema Kileo,ENROLLED,,
 7,LN-2026-00422,Emmanuel Lyimo,ENROLLED,,
-8,LN-2026-00423,Fatuma Abdallah,REJECTED,INSTALMENT_MATCHES_NO_KNOWN_METHOD,"instalment_amount 175000.00 matches neither a reducing-balance instalment (160085.05) nor a flat-rate instalment (181333.33) for a principal of 2400000.00 at 24.00% over 18 months. Check the principal, rate, term or instalment. THIS BORROWER IS NOT COVERED."
+8,LN-2026-00423,Fatuma Abdallah,ENROLLED,,
 9,LN-2026-00424,Peter Massawe,ENROLLED_CAPPED,ABOVE_FREE_COVER_LIMIT,"Cover limited to the free cover limit of 25000000.00 TZS against a loan of 30000000.00 TZS. The excess of 5000000.00 TZS is NOT covered. An underwriting referral has been opened; cover may be extended if medical evidence is supplied."
-10,LN-2026-00425,Hamisi Nyerere,REJECTED,ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS,"Age at entry is 68 and age at maturity would be 88. The product accepts entry ages 18-65 and maturity ages up to 70. THIS BORROWER IS NOT COVERED."
+10,LN-2026-00425,Hamisi Nyerere,REJECTED,ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS,"Age at entry is 68 and age at maturity would be 88. This product accepts entry ages 18-65 and maturity ages up to 70. THIS BORROWER IS NOT COVERED."
 11,LN-2026-00426,,REJECTED,MISSING_REQUIRED_FIELD,"borrower_full_name is blank. THIS BORROWER IS NOT COVERED."
-12,LN-2026-00417,Amina Hassan Mwinyi,REJECTED,DUPLICATE_LOAN_ACCOUNT_NUMBER,"loan_account_number LN-2026-00417 already appears at row 2 of this file. THIS BORROWER IS NOT COVERED."
-13,LN-2026-00428,Zainabu Ally,REJECTED,DISBURSEMENT_DATE_IN_FUTURE,"disbursement_date 2026-10-15 is after the submission date 2026-09-21. Cover cannot commence in the future. THIS BORROWER IS NOT COVERED."
+12,LN-2026-00417,Amina Hassan Mwinyi,REJECTED,DUPLICATE_LOAN_ACCOUNT_NUMBER,"loan_account_number LN-2026-00417 already appears at line 2 of this file. THIS BORROWER IS NOT COVERED."
+13,LN-2026-00428,Zainabu Ally,REJECTED,DISBURSEMENT_DATE_IN_FUTURE,"disbursement_date 2026-10-15 is after the submission date 2026-09-21. Cover cannot commence before the loan exists. THIS BORROWER IS NOT COVERED."
+14,LN-2026-00429,Mariam Said,REJECTED,MALFORMED_VALUE,"borrower_date_of_birth ""34237"" is not a date in YYYY-MM-DD form. A number here is an Excel date serial; format the column as a date before exporting. THIS BORROWER IS NOT COVERED."

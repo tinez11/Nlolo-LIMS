@@ -256,7 +256,8 @@ type-coercion faults (doubles read back as `8499999.999999999`, numeric account 
 rendered as `4.17E+11`, dates as serial numbers) are avoided entirely. An unexpected XLSX is
 rejected with a clear message rather than parsed by a library nobody needed.
 
-Thirteen columns — see `credit-life-enrolment-sample.csv` alongside this spec:
+**Nine columns**, cut from thirteen on 2026-09-21 once the real client files arrived — see
+`credit-life-enrolment-sample.csv` alongside this spec:
 
 | Column | Req | Why |
 |---|---|---|
@@ -267,16 +268,32 @@ Thirteen columns — see `credit-life-enrolment-sample.csv` alongside this spec:
 | `borrower_national_id` | — | Optional; eases the §2.2 promotion |
 | `borrower_phone` | — | Optional |
 | `loan_principal_amount` | ✓ | Premium base and schedule origin |
-| `annual_interest_rate_percent` | ✓ | Schedule input |
 | `loan_term_months` | ✓ | Schedule input; term hard gate |
-| `repayment_frequency` | ✓ | Schedule input |
-| `instalment_amount` | ✓ | Infers the interest method (§2.5) |
 | `disbursement_date` | ✓ | **Cover start** (§2.6) |
-| `first_repayment_date` | ✓ | Schedule input — and how a moratorium expresses itself |
+
+**Four columns were removed rather than made optional**, because neither real lender file
+carries any of them and a column nobody fills is a column that rots:
+
+| Removed | Where it went |
+|---|---|
+| `annual_interest_rate_percent` | Nowhere. Straight-line decline never reads a rate |
+| `repayment_frequency` | The **scheme**, beside `interest_method`. A lender's product repays on one cadence |
+| `instalment_amount` | Gone with the withdrawn method inference |
+| `first_repayment_date` | Derived as disbursement plus one period |
+
+**That is one genuinely new column for the lenders, not four.** BUMACO's August sheet
+already carries name, gender, date of birth, disbursed date, disbursed amount and term;
+only the loan account number is missing.
+
+**A moratorium can no longer be expressed.** `first_repayment_date` was the only way to
+state a payment holiday, and every loan is now assumed to begin repaying one period after
+disbursement. Client question 8 asks whether their book contains any; if it does, that
+column returns. So does the rate, if the answer to the cover-decline question is
+reducing-balance.
 
 **No rating inputs.** Premium is an agreed percent, not rated through the base-rate table,
 so credit life never touches the path where issuance *refuses* on an unrecorded sex. Interest
-method and currency are scheme-level and are not columns.
+method, repayment cadence and currency are all scheme-level and are not columns.
 
 **Partial accept.** Good rows enrol; bad rows return in a report
 (`credit-life-rejection-report-sample.csv`) whose reason text says, per row, **THIS BORROWER
