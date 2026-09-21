@@ -2,7 +2,43 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make a group scheme a fixed-headcount contract whose lives can be substituted but never added to, whose members may be named without registering them as parties, whose employer is told when the scheme goes live and when the schedule changes, and whose invoices are visible on the scheme page.
+> ## ⚠ AMENDED 2026-09-21 — READ BEFORE EXECUTING
+>
+> Credit life landed while this plan sat unimplemented, and it changes two of its
+> premises. See `2026-09-21-credit-life-design.md` and
+> `2026-09-21-credit-life-1-STATUS.md`.
+>
+> **1. Task 3 (freeform members) IS ALREADY BUILT. Do not execute it.**
+> Credit life needed it first and shipped it, under this plan's own intended filename:
+> `db-migrations/policy/V13__freeform_members.sql` exists on `main`. So do
+> `policy/api/MemberType.java`, `PolicyMember.freeform(...)`, the `member_type` /
+> `member_name` / `member_date_of_birth` columns, `chk_policy_member_exactly_one_designation`,
+> and the replacement of `ux_policy_member_active` with
+> `ux_policy_member_active_party`. Executing Task 3 would collide with all of it.
+>
+> Two details differ from what Task 3 specifies, deliberately:
+> - `MemberInput` kept a 4-argument convenience constructor delegating to `PARTY`, so none
+>   of the 37 existing call sites changed. Task 3 assumed they all would.
+> - Name search ORs the party-id filter with a `member_name` match in
+>   `PolicyMemberRepository.findMembers`. The pattern is lower-cased and `%`-wrapped in
+>   Java; passing a null parameter through `lower()`/`concat()` is untypeable by Postgres
+>   and fails every listing with `function lower(bytea) does not exist`.
+>
+> **2. Fixed headcount is a PER-SCHEME property, not a global rule, and `addMember` STAYS.**
+> It was never a truth about group schemes — it was a truth about *employer* schemes,
+> written here as a global constraint. A credit-life scheme is open-ended by definition:
+> the lender writes new loans every month and each monthly file adds borrowers to the
+> existing scheme. Task 4 as written removes `POST /group-schemes/{n}/members` outright,
+> which would make credit life unable to enrol anybody after issuance.
+>
+> Task 4 should therefore ADD `replaceMember` beside `addMember` rather than in place of
+> it, and gate the no-add rule on the scheme rather than on the codebase. `GroupSchemeIntegrationTest`
+> carries `aCreditLifeSchemeHasNoHeadcountCap` as the regression guard, but a guard in one
+> plan cannot stop a change made in another — hence this note.
+>
+> Everything else in this plan stands: Tasks 1, 2, 5, 6 and 7 are untouched by credit life.
+
+**Goal:** Make an *employer* group scheme a fixed-headcount contract whose lives can be substituted but never added to, whose members may be named without registering them as parties, whose employer is told when the scheme goes live and when the schedule changes, and whose invoices are visible on the scheme page.
 
 **Architecture:** Five independent deliverables against the existing `policy` group-scheme model. Members gain a `PARTY`/`FREEFORM` designation mirroring `policy.beneficiary` exactly, so a 500-life schedule does not force 500 party registrations into the KYC queue. `addMember` is retired and replaced by a substitution that exits the outgoing life and admits the incoming one in a single transaction, which leaves headcount and premium untouched. Two new employer-facing templates hang off two enriched domain events, consumed by `communication` (which may not depend on `policy`, so everything the message needs travels in the payload). `party.group_membership` — a second, unused member model with zero rows — is deleted.
 
@@ -10,7 +46,7 @@
 
 ## Global Constraints
 
-- **A scheme's headcount is fixed at issuance.** No life may be added after the scheme is issued. The only movement is substitution: one life out, one life in, same instant, same count.
+- **An EMPLOYER scheme's headcount is fixed at issuance.** No life may be added to one after it is issued; the only movement is substitution — one life out, one life in, same instant, same count. **Amended 2026-09-21: this is a property of the scheme, not of the platform.** A credit-life scheme is open-ended, because a lender writes new loans every month and each monthly file adds borrowers to the scheme it already has. `addMember` therefore stays and `replaceMember` joins it; see the amendment note at the top.
 - **Substitution does not change the premium.** `premiumAmount` is agreed for the period and is not re-rated by member movement. The scheme's *sum assured* may move if the substitute's grade or salary differs — that is correct, because the contract total is the sum of the schedule.
 - **Only the employer (the policyholder) is notified.** Members are never messaged. This is a business decision, not an implementation limit — do not add member messaging "while you are in there".
 - **Premium-due and premium-overdue messaging is explicitly OUT of scope**, deferred to a later build that will also carry a staff approval surface for automatic sending. No template, listener or flag for it in this plan.
@@ -253,7 +289,14 @@ git commit -m "refactor(party): delete the unused second group-membership model"
 
 ---
 
-## Task 3: Members may be named without being registered
+## Task 3: Members may be named without being registered — ✅ ALREADY BUILT, DO NOT EXECUTE
+
+**Shipped 2026-09-21 by the credit-life branch, under this task's own intended filename
+`db-migrations/policy/V13__freeform_members.sql`.** Executing it would collide with `main`.
+See the amendment note at the top of this plan for the two deliberate differences (the
+`MemberInput` convenience constructor, and how the freeform half of the name search is
+written). Retained below as the record of why it was specified.
+
 
 A member becomes `PARTY` (a real person in the register) or `FREEFORM` (a name on the schedule), exactly as `policy.beneficiary` already is. The reason is concrete: registering 500 employees puts 500 rows at `kyc_status = 'PENDING'` into the Clients screen, which is built as the KYC review queue with a nav badge. Group premium is not individually rated — `issueGroupScheme` takes `premiumAmount` from the caller and a member's benefit comes from the scheme basis — so a name plus a salary-or-grade values a member completely.
 
@@ -756,9 +799,22 @@ git commit -m "feat(policy): let a scheme name a life without registering them a
 
 ---
 
-## Task 4: Substitution replaces addition
+## Task 4: Substitution joins addition — ⚠ AMENDED, DO NOT REMOVE `addMember`
 
-The scheme is a fixed-headcount contract. `POST /group-schemes/{n}/members` is removed, not deprecated: leaving an add endpoint on a contract that cannot grow is an invitation to write an unpriced life onto it.
+**As originally written this task removed `POST /group-schemes/{n}/members` outright. Do
+not.** A credit-life scheme is open-ended: the lender writes new loans every month and
+each monthly file adds borrowers to the scheme it already has. Removing the add endpoint
+would leave credit life unable to enrol anybody after issuance, and `addMember` now
+carries loan terms, the disbursement-derived cover start and the above-FCL referral.
+
+Build `replaceMember` **beside** `addMember`, and make the no-add rule a property of the
+scheme rather than of the platform — an employer scheme refuses an add, a credit-life
+scheme accepts one. The two steps below that assert `doesNotContain("addMember")` must be
+inverted accordingly.
+
+The reasoning for the original rule still holds *for an employer scheme*, and is worth
+keeping: leaving an add endpoint on a contract that cannot grow is an invitation to write
+an unpriced life onto it.
 
 **Files:**
 - Modify: `policy/api/PolicyApi.java`, `policy/application/PolicyApiImpl.java`, `policy/infrastructure/PolicyController.java`, `backend/api/openapi/openapi-policy.yaml`, `backend/api/asyncapi-events.yaml`
