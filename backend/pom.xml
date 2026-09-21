@@ -188,6 +188,19 @@
       <artifactId>commons-csv</artifactId>
       <version>1.11.0</version>
     </dependency>
+
+    <!-- Converts a lender's XLSX to CSV at the edge, so validation, the report and every
+         test downstream see exactly one shape.
+
+         Added reluctantly and only because BOTH real client schedules are .xlsx: LOLC's
+         June file and the BUMACO August template. The template is ours and could mandate
+         CSV, but rejecting a counterparty's file on format is a weekly argument, and a
+         conversion we control is safer than an export they hand-roll. -->
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>5.3.0</version>
+    </dependency>
   </dependencies>
 
   <build>

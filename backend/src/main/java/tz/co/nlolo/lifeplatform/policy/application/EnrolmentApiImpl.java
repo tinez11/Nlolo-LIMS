@@ -11,6 +11,7 @@ import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentReportRenderer;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentSubmission;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentSubmissionRow;
 import tz.co.nlolo.lifeplatform.policy.domain.GroupScheme;
+import tz.co.nlolo.lifeplatform.policy.domain.XlsxToCsv;
 import tz.co.nlolo.lifeplatform.policy.domain.Policy;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.EnrolmentSubmissionRepository;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.EnrolmentSubmissionRowRepository;
@@ -23,7 +24,6 @@ import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -100,10 +100,19 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         // consumed twice.
         byte[] bytes = readFully(file);
 
+        // Detected from the file's own bytes rather than its declared content type: a
+        // browser posting a .xlsx routinely sends application/octet-stream, and a
+        // lender's mail client is worse.
+        boolean workbook = looksLikeXlsx(bytes);
+
         EnrolmentCsvParser.ParsedSchedule parsed;
         try {
-            parsed = EnrolmentCsvParser.parse(
-                new InputStreamReader(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8));
+            // Converted ONCE, here, so validation, judging, the report and every test
+            // downstream see exactly one shape.
+            String csv = workbook
+                ? XlsxToCsv.convert(new ByteArrayInputStream(bytes))
+                : new String(bytes, StandardCharsets.UTF_8);
+            parsed = EnrolmentCsvParser.parse(new java.io.StringReader(csv));
         } catch (EnrolmentCsvParser.MalformedScheduleException e) {
             // A FILE problem. Nothing is written and nothing is stored: there would be
             // nothing to accept, and a pending row would block the corrected file the
@@ -121,7 +130,13 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         // rather than estimated, per document/V2's own note.
         submission.recordDocument(documentApi.upload("submission:" + submissionId,
             DocumentType.ENROLMENT_SCHEDULE, submittedBy,
-            new ByteArrayInputStream(bytes), bytes.length, "text/csv", fileName));
+            new ByteArrayInputStream(bytes), bytes.length,
+            // What they actually sent, not what we converted it to. The stored file is
+            // the evidence in a dispute, and evidence labelled as something it is not is
+            // worth less than no label.
+            workbook ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                     : "text/csv",
+            fileName));
 
         Judge judge = new Judge(policy, scheme, tenantId, policyNumber);
         List<EnrolmentSubmissionRow> rows = new ArrayList<>();
@@ -362,6 +377,19 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     }
 
     // ---- plumbing ------------------------------------------------------------
+
+    /**
+     * An XLSX is a ZIP: it begins {@code PK\003\004}.
+     *
+     * <p>Sniffed from the bytes rather than trusted from the declared content type,
+     * because a browser posting a .xlsx routinely sends application/octet-stream and a
+     * lender's mail client is worse. Getting this wrong in the safe direction just means
+     * the parser reports an unreadable header.
+     */
+    private static boolean looksLikeXlsx(byte[] bytes) {
+        return bytes.length > 4 && bytes[0] == 'P' && bytes[1] == 'K'
+            && bytes[2] == 3 && bytes[3] == 4;
+    }
 
     private static byte[] readFully(InputStream file) {
         try {

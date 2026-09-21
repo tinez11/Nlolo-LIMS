@@ -604,8 +604,243 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
         '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
+
+  /credit-life-schemes/{policyNumber}/enrolments:
+    post:
+      summary: Submit a lender's enrolment schedule. Enrols nobody.
+      description: >-
+        A lender's monthly file of borrowers. Every row is parsed, judged and recorded with
+        its outcome, and NOBODY is put on risk: a second staff user must accept the
+        submission before any cover exists.
+
+
+        One submission may be in flight per scheme at a time. A file missing a required
+        column is refused whole and no submission is created -- every row would fail
+        identically, and a pending submission would block the corrected file.
+
+
+        STAFF ONLY in this build. The lender-facing upload additionally needs a public PKCE
+        client on the customers realm, CORS, and a party_id that can name a corporate party.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The schedule as CSV, in the nine-column template.
+      responses:
+        '201':
+          description: Judged. Nobody is enrolled until this submission is accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnrolmentSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >-
+            Not a credit-life scheme, a submission is already awaiting acceptance, or the
+            file is unreadable as a whole.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+
+  /credit-life-schemes/{policyNumber}/enrolments/{submissionId}:
+    get:
+      summary: One submission and where it stands
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The submission.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnrolmentSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
+  /credit-life-schemes/{policyNumber}/enrolments/{submissionId}/rows:
+    get:
+      summary: Every line of the file and what happened to it
+      description: >-
+        In the lender's own line order, so the answer reads beside the spreadsheet that
+        produced it. Line 1 is the header; data starts at 2.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: One entry per non-blank line of the file.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EnrolmentRowView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
+  /credit-life-schemes/{policyNumber}/enrolments/{submissionId}/acceptance:
+    post:
+      summary: A second person turns the acceptable rows into cover
+      description: >-
+        The accepter MUST NOT be the person who submitted the file. One user who can upload
+        a schedule and then accept it has an audit trail and no control.
+
+
+        Both identities come from the bearer token, never from a request body.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Accepted. The acceptable rows are now members.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnrolmentSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Already accepted or withdrawn, or the accepter uploaded it.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+
+  /credit-life-schemes/{policyNumber}/enrolments/{submissionId}/withdrawal:
+    post:
+      summary: Abandon a pending submission without enrolling anybody
+      description: >-
+        The submitter may withdraw their own file: the two-person rule exists to stop cover
+        being created unattended, not to stop it being declined.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Withdrawn. Nobody was enrolled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnrolmentSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Not pending.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+
+  /credit-life-schemes/{policyNumber}/enrolments/{submissionId}/report:
+    get:
+      summary: The rejection report that goes back to the lender
+      description: >-
+        CSV, as a download, because it is read in the spreadsheet the file came from. Every
+        rejected row's reason ends with the sentence THIS BORROWER IS NOT COVERED.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: One line per row of the submitted file.
+          content:
+            text/csv:
+              schema: { type: string }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
 components:
   schemas:
+    EnrolmentSubmissionView:
+      description: >-
+        A lender's submitted schedule. enrolledCount is zero until the submission is
+        accepted -- rowCount minus rejectedCount is what WOULD be enrolled, which is the
+        distinction this whole flow exists to make.
+      type: object
+      required: [submissionId, policyNumber, status, rowCount, enrolledCount, rejectedCount, submittedBy, submittedAt]
+      properties:
+        submissionId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        status: { type: string, enum: [PENDING, ACCEPTED, WITHDRAWN] }
+        fileName: { type: string, nullable: true }
+        rowCount: { type: integer }
+        enrolledCount: { type: integer }
+        rejectedCount: { type: integer }
+        submittedBy: { type: string }
+        submittedAt: { type: string, format: date-time }
+        acceptedBy: { type: string, nullable: true }
+        acceptedAt: { type: string, format: date-time, nullable: true }
+
+    EnrolmentRowView:
+      description: >-
+        One line of the lender's file and its outcome. ENROLLED_CAPPED is COVER, not a
+        refusal: the borrower is insured up to the free cover limit with a referral open
+        for the excess. reasonCode names refusals only.
+      type: object
+      required: [lineNumber, outcome]
+      properties:
+        lineNumber:
+          type: integer
+          description: The line in the lender's own file. 1 is the header.
+        loanAccountNumber: { type: string, nullable: true }
+        borrowerFullName: { type: string, nullable: true }
+        outcome: { type: string, enum: [ENROLLED, ENROLLED_CAPPED, REJECTED] }
+        reasonCode:
+          type: string
+          nullable: true
+          enum: [MISSING_REQUIRED_FIELD, MALFORMED_VALUE, DUPLICATE_LOAN_ACCOUNT_NUMBER,
+                 DISBURSEMENT_DATE_IN_FUTURE, ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS,
+                 LOAN_BEFORE_SCHEME_COMMENCED, ALREADY_ENROLLED, null]
+        reason: { type: string, nullable: true }
+        policyMemberId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The member this row became, written at acceptance.
+
     BeneficiaryOfView:
       description: >-
         One policy naming this party. policyStatus is carried because the share is meaningless

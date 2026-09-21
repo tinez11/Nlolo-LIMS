@@ -376,6 +376,50 @@ class EnrolmentIntegrationTest {
     }
 
     @Test
+    void aLendersWorkbookEnrolsBorrowersJustAsACsvDoes() throws Exception {
+        // BOTH real client schedules are .xlsx. The conversion happens at the edge, so
+        // everything downstream sees one shape -- this asserts the seam actually joins.
+        byte[] xlsx;
+        try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+             var out = new java.io.ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("Sheet1");
+            var dateStyle = workbook.createCellStyle();
+            dateStyle.setDataFormat(workbook.getCreationHelper()
+                .createDataFormat().getFormat("dd/mm/yyyy"));
+
+            String[] header = HEADER.strip().split(",");
+            var headerRow = sheet.createRow(0);
+            for (int i = 0; i < header.length; i++) headerRow.createCell(i).setCellValue(header[i]);
+
+            var data = sheet.createRow(1);
+            data.createCell(0).setCellValue("LN-XLSX-001");
+            data.createCell(1).setCellValue("Amina Hassan Mwinyi");
+            var dob = data.createCell(2);
+            dob.setCellValue(java.sql.Date.valueOf(LocalDate.of(1988, 3, 14)));
+            dob.setCellStyle(dateStyle);
+            data.createCell(3).setCellValue("F");
+            data.createCell(6).setCellValue(8500000.00);
+            data.createCell(7).setCellValue(48);
+            var disbursed = data.createCell(8);
+            disbursed.setCellValue(java.sql.Date.valueOf(LocalDate.of(2026, 6, 30)));
+            disbursed.setCellStyle(dateStyle);
+
+            workbook.write(out);
+            xlsx = out.toByteArray();
+        }
+
+        var submission = enrolmentApi.submit(creditLifeScheme, new ByteArrayInputStream(xlsx),
+            "june.xlsx", "staff.one");
+
+        assertThat(submission.rejectedCount()).isZero();
+        assertThat(enrolmentApi.listRows(submission.submissionId()).get(0).outcome())
+            .isEqualTo(RowOutcome.ENROLLED);
+
+        enrolmentApi.accept(submission.submissionId(), "staff.two");
+        assertThat(policyApi.getGroupScheme(creditLifeScheme).activeMemberCount()).isEqualTo(2);
+    }
+
+    @Test
     void theReportCarriesEveryRowInTheLendersOwnLineOrder() {
         var submission = enrolmentApi.submit(creditLifeScheme, csv(
             "LN-A,Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-06-30\n"

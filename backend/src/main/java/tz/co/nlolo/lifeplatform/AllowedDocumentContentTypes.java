@@ -40,7 +40,11 @@ public final class AllowedDocumentContentTypes {
             // one is PARSED rather than stored opaquely, which is why the parser treats
             // every cell as untrusted input rather than relying on this allowlist for
             // anything beyond "the bytes are meant to be text".
-            "text/csv");
+            "text/csv",
+            // The same schedule as a workbook, which is what both real lenders actually
+            // send. Converted to CSV at the edge by XlsxToCsv so nothing downstream ever
+            // sees two shapes.
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     /** Sorted for a deterministic error message; {@link #ALLOWED} is the authority. */
     public static final String ALLOWED_DISPLAY =

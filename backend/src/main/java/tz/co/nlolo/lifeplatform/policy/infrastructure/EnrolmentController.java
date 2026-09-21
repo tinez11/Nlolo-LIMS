@@ -36,6 +36,9 @@ import java.util.UUID;
 @RestController
 public class EnrolmentController {
 
+    private static final String XLSX =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
     private final EnrolmentApi enrolmentApi;
 
     public EnrolmentController(EnrolmentApi enrolmentApi) {
@@ -54,11 +57,15 @@ public class EnrolmentController {
         } catch (IllegalArgumentException e) {
             throw new InvalidPolicyStateException(e.getMessage());
         }
-        if (!"text/csv".equals(contentType) && !"application/octet-stream".equals(contentType)) {
-            // octet-stream is tolerated because a browser posting a .csv often sends it;
-            // anything else is a lender sending a format the template does not define.
-            throw new InvalidPolicyStateException("An enrolment schedule must be a CSV in the"
-                + " template at credit-life-enrolment-sample.csv; this file is " + contentType);
+        if (!"text/csv".equals(contentType)
+                && !XLSX.equals(contentType)
+                && !"application/octet-stream".equals(contentType)) {
+            // octet-stream is tolerated because a browser posting either format often
+            // sends it, and the service sniffs the real shape from the bytes anyway.
+            // Anything else is a format the template does not define.
+            throw new InvalidPolicyStateException("An enrolment schedule must be a CSV or an"
+                + " XLSX in the template at credit-life-enrolment-sample.csv; this file is "
+                + contentType);
         }
         try {
             return ResponseEntity.status(HttpStatus.CREATED).body(enrolmentApi.submit(
