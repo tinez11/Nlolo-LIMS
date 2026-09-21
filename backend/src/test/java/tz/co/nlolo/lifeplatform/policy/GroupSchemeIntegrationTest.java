@@ -630,28 +630,221 @@ class GroupSchemeIntegrationTest {
     private PolicyApi.IssueGroupSchemeRequest loanScheme(GroupProduct product, UUID lender,
                                                           BenefitBasis basis, BigDecimal flatBenefit,
                                                           InterestMethod interestMethod) {
+        return loanSchemeRequest(product, lender, basis, flatBenefit, interestMethod,
+            List.of(new PolicyApi.MemberInput(MemberType.FREEFORM, null, "Amina Hassan Mwinyi",
+                LocalDate.of(1988, 3, 14), null, null, null)));
+    }
+
+    private PolicyApi.IssueGroupSchemeRequest loanSchemeWith(GroupProduct product, UUID lender,
+                                                              InterestMethod interestMethod,
+                                                              List<PolicyApi.MemberInput> borrowers) {
+        return loanSchemeRequest(product, lender, BenefitBasis.AMORTISING_LOAN, null,
+            interestMethod, borrowers);
+    }
+
+    private PolicyApi.IssueGroupSchemeRequest loanSchemeRequest(GroupProduct product, UUID lender,
+                                                                 BenefitBasis basis, BigDecimal flatBenefit,
+                                                                 InterestMethod interestMethod,
+                                                                 List<PolicyApi.MemberInput> members) {
         return new PolicyApi.IssueGroupSchemeRequest(lender, product.productId(),
             product.productVersionId(), null, basis, flatBenefit, null,
-            new BigDecimal("25000000.00"), "TZS", null,
-            List.of(new PolicyApi.MemberInput(MemberType.FREEFORM, null, "Amina Hassan Mwinyi",
-                LocalDate.of(1988, 3, 14), null, null, null)),
-            new BigDecimal("52000.00"), "TZS", "ANNUALLY", LocalDate.now(), null,
+            new BigDecimal("25000000.00"), "TZS", null, members,
+            new BigDecimal("52000.00"), "TZS", "ANNUALLY",
+            // Commences BEFORE the loans it covers. A lender scheme is signed first and
+            // then fed monthly files of loans disbursed under it; a loan paid out before
+            // commencement belongs to whatever arrangement preceded this contract.
+            LocalDate.of(2026, 6, 1), null,
             "credit life onboarding", IssuanceBasis.MIGRATION, interestMethod);
     }
 
-    @Test
-    void aCreditLifeProductIsNoLongerRefusedForItsCategory() {
-        TenantContext.set(UUID.randomUUID());
-        GroupProduct product = creditLifeProduct("CL-CATEGORY");
+    /** LOLC's real shape: 10,400,000 over 18 months, disbursed 2026-06-30, no rate given. */
+    private static LoanTerms lolcLoan() {
+        return new LoanTerms(new BigDecimal("10400000.00"), BigDecimal.ZERO, 18,
+            RepaymentFrequency.MONTHLY, LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 30));
+    }
 
-        // It still fails -- MemberInput cannot carry a loan until task 6 -- but it must
-        // fail on the MEMBER, not on the product. That is the whole of this task.
-        assertThatThrownBy(() -> policyApi.issueGroupScheme(
-            loanScheme(product, person("Lender Co"), BenefitBasis.AMORTISING_LOAN, null,
-                InterestMethod.FLAT_RATE), "staff-1"))
+    private static PolicyApi.MemberInput borrower(String loanAccountNumber) {
+        return PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14),
+            loanAccountNumber, lolcLoan());
+    }
+
+    @Test
+    void aCreditLifeSchemeIsIssuedWithItsBorrowers() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-HAPPY");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Lender Co"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"), borrower("LN-2026-00418"))), "staff-1");
+
+        assertThat(scheme.benefitBasis()).isEqualTo(BenefitBasis.AMORTISING_LOAN);
+        assertThat(scheme.activeMemberCount()).isEqualTo(2);
+        // Each borrower is covered for their own principal at inception, so the scheme
+        // total is the sum of the loans it insures -- not a flat amount per head.
+        assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("20800000.00");
+    }
+
+    @Test
+    void coverStartsOnTheDayTheLoanWasDisbursed() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-DISBURSED");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Disburse Co"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"))), "staff-1");
+
+        PolicyMemberView member = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0);
+
+        // Backdated to the disbursement date, not the day the schedule arrived. The gap
+        // between the two is the window a lender argues about after a death.
+        assertThat(member.joinedOn()).isEqualTo(LocalDate.of(2026, 6, 30));
+        assertThat(member.loanAccountNumber()).isEqualTo("LN-2026-00417");
+        assertThat(member.coveredAmount()).isEqualByComparingTo("10400000.00");
+    }
+
+    @Test
+    void aJoinedOnThatContradictsTheDisbursementDateIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-CONTRADICT");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Contradict Co"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyApi.MemberInput contradictory = new PolicyApi.MemberInput(MemberType.FREEFORM, null,
+            "Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14), null, null,
+            LocalDate.of(2026, 9, 1), "LN-2026-00417", lolcLoan());
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), contradictory, "staff-1"))
             .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("principal of their own loan")
-            .hasMessageNotContaining("GROUP_LIFE product");
+            .hasMessageContaining("starts on the disbursement date");
+    }
+
+    @Test
+    void aLoanDisbursedInTheFutureIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-FUTURE");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Future Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyApi.MemberInput future = PolicyApi.MemberInput.borrower("Zainabu Ally",
+            LocalDate.of(1987, 10, 30), "LN-2026-00428",
+            new LoanTerms(new BigDecimal("9000000.00"), new BigDecimal("18.00"), 36,
+                RepaymentFrequency.MONTHLY,
+                LocalDate.now().plusDays(7), LocalDate.now().plusMonths(1).plusDays(7)));
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), future, "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("is in the future");
+    }
+
+    @Test
+    void theSameLoanCannotBeEnrolledTwiceWhileActive() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-DUPLOAN");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Dup Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"))), "staff-1");
+
+        // What makes a resubmitted enrolment file idempotent rather than doubling cover.
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(),
+            borrower("LN-2026-00417"), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("already an active member");
+    }
+
+    @Test
+    void aBorrowerWithoutALoanAccountNumberIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOKEY");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Keyless Co"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        // Neither real client file carries one yet; both lenders have been asked to add
+        // it. Our template requires it, so a row without one is refused rather than
+        // silently enrolled with no identity at all.
+        PolicyApi.MemberInput unkeyed = PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi",
+            LocalDate.of(1988, 3, 14), null, lolcLoan());
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), unkeyed, "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("loan account number");
+    }
+
+    @Test
+    void aBorrowerAboveTheFreeCoverLimitIsEnrolledCapped() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-FCL");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("FCL Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        // 30m loan against the scheme's 25m free cover limit. Rejecting the row would
+        // make the LARGEST exposures systematically the uninsured ones.
+        PolicyMemberView big = policyApi.addMember(scheme.policyNumber(),
+            PolicyApi.MemberInput.borrower("Peter Massawe", LocalDate.of(1980, 7, 19),
+                "LN-2026-00424",
+                new LoanTerms(new BigDecimal("30000000.00"), new BigDecimal("17.00"), 72,
+                    RepaymentFrequency.MONTHLY,
+                    LocalDate.of(2026, 8, 13), LocalDate.of(2026, 9, 13))), "staff-1");
+
+        assertThat(big.benefitAmount()).isEqualByComparingTo("30000000.00");
+        assertThat(big.coveredAmount()).isEqualByComparingTo("25000000.00");
+        assertThat(big.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.EVIDENCE_REQUIRED);
+    }
+
+    @Test
+    void aRegisteredPartyCannotBeEnrolledAsABorrower() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-PARTYLOAN");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Party Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyApi.MemberInput partyWithLoan = new PolicyApi.MemberInput(MemberType.PARTY,
+            person("Registered Borrower"), null, null, null, null, null,
+            "LN-2026-00999", lolcLoan());
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), partyWithLoan, "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("cannot be enrolled as a borrower");
+    }
+
+    @Test
+    void aLoanDisbursedBeforeTheSchemeCommencedIsRefusedOnTheOpeningSchedule() {
+        // addMember always refused a pre-commencement join; the opening schedule never
+        // did, because joinedOn used to default to commencement so the case could not
+        // arise. A credit-life file carries real disbursement dates, and a loan paid out
+        // before this contract existed is risk it never priced.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-PRECOMMENCE");
+
+        PolicyApi.MemberInput tooEarly = PolicyApi.MemberInput.borrower("Early Borrower",
+            LocalDate.of(1988, 3, 14), "LN-TOO-EARLY",
+            new LoanTerms(new BigDecimal("5000000.00"), BigDecimal.ZERO, 12,
+                RepaymentFrequency.MONTHLY,
+                LocalDate.of(2026, 5, 1), LocalDate.of(2026, 6, 1)));
+
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Early Lender"), InterestMethod.FLAT_RATE, List.of(tooEarly)), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("before the scheme commenced")
+            .hasMessageContaining("LN-TOO-EARLY");
+    }
+
+    @Test
+    void anOrdinaryGroupMemberMayNotCarryALoan() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-STRAYLOAN");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Stray Loan Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(),
+            borrower("LN-STRAY"), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("only on a credit-life scheme");
     }
 
     @Test

@@ -28,7 +28,7 @@ import java.util.UUID;
  *     ends up rendered as the wrong money somewhere down the line.
  */
 public record PolicyMemberView(UUID policyMemberId, UUID memberPartyId,
-                                MemberType memberType, String memberName, String gradeCode,
+                                MemberType memberType, String memberName, String loanAccountNumber, String gradeCode,
                                 LocalDate joinedOn, LocalDate leftOn, MemberStatus status,
                                 MemberUnderwritingStatus underwritingStatus, UUID underwritingCaseId,
                                 BigDecimal salaryAmount, BigDecimal benefitAmount,

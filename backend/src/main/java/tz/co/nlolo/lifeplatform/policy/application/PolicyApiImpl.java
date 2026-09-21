@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -1138,10 +1139,22 @@ public class PolicyApiImpl implements PolicyApi {
         }
 
         for (ValuedMember v : valued) {
-            LocalDate joinedOn = v.input().joinedOn() != null ? v.input().joinedOn() : commencement;
+            // On a loan basis the cover start is the disbursement date and is NOT the
+            // caller's to choose; on every other basis it defaults to commencement.
+            LocalDate joinedOn = requireLoanMatchesBasis(
+                request.benefitBasis(), v.input(), commencement, today);
             if (joinedOn.isAfter(today)) {
                 throw new InvalidPolicyStateException(
-                    "Member " + v.input().memberPartyId() + " cannot join in the future");
+                    "Member " + describe(v.input()) + " cannot join in the future");
+            }
+            // addMember has always refused this; the opening schedule never did. The gap
+            // did not matter while joinedOn defaulted to commencement, and matters now:
+            // a credit-life file carries real disbursement dates, and a loan paid out
+            // before this scheme existed is risk the contract never priced.
+            if (joinedOn.isBefore(commencement)) {
+                throw new InvalidPolicyStateException("Member " + describe(v.input())
+                    + " cannot join on " + joinedOn + ", before the scheme commenced on "
+                    + commencement);
             }
             persistMember(tenantId, policyNumber, v.input(), v.valuation(), joinedOn, issuedBy);
         }
@@ -1297,7 +1310,7 @@ public class PolicyApiImpl implements PolicyApi {
         // number -- and enforces that instead.
 
         LocalDate today = LocalDate.now();
-        LocalDate joinedOn = member.joinedOn() != null ? member.joinedOn() : today;
+        LocalDate joinedOn = requireLoanMatchesBasis(scheme.getBenefitBasis(), member, today, today);
         if (joinedOn.isAfter(today)) {
             // Backdating is normal -- a schedule reaches the insurer weeks after somebody
             // started. Forward-dating is not supported until the scheme total is date-aware.
@@ -1357,6 +1370,11 @@ public class PolicyApiImpl implements PolicyApi {
             if (member.memberPartyId() == null) {
                 throw new InvalidPolicyStateException("A member must name a person");
             }
+            if (member.loanTerms() != null || member.loanAccountNumber() != null) {
+                throw new InvalidPolicyStateException(
+                    "A registered party cannot be enrolled as a borrower; a credit-life "
+                        + "member is a loan, named on the lender's schedule");
+            }
             if (member.memberName() != null || member.memberDateOfBirth() != null) {
                 throw new InvalidPolicyStateException(
                     "A member naming a registered party must not also carry a loose name or date of birth");
@@ -1370,6 +1388,81 @@ public class PolicyApiImpl implements PolicyApi {
                 throw new InvalidPolicyStateException("A member named on the schedule must have a name");
             }
         }
+    }
+
+    /**
+     * How to name a member in an error, whichever designation they carry.
+     *
+     * <p>A party id is meaningless to whoever is fixing a lender's schedule, and a
+     * freeform member has none at all -- an error reading "Member null" is how a real
+     * row goes unfound.
+     */
+    private static String describe(MemberInput member) {
+        if (member.loanAccountNumber() != null) return "loan " + member.loanAccountNumber();
+        if (member.memberName() != null) return member.memberName();
+        return String.valueOf(member.memberPartyId());
+    }
+
+    /**
+     * Whether an integrity violation was caused by the named constraint.
+     *
+     * <p>Walks the cause chain because the constraint name is on the Postgres-level
+     * cause, not on Spring's wrapper. Narrow on purpose: reporting every violation as
+     * the one you expected is how a CHECK failure gets announced as a duplicate.
+     */
+    private static boolean violatesConstraint(DataIntegrityViolationException e, String constraintName) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(constraintName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A credit-life member carries a loan; nobody else may.
+     *
+     * @return the date cover starts, which on a loan basis is NOT the caller's to choose.
+     */
+    private LocalDate requireLoanMatchesBasis(BenefitBasis basis, MemberInput member,
+                                               LocalDate schemeDefault, LocalDate today) {
+        if (basis != BenefitBasis.AMORTISING_LOAN) {
+            if (member.loanTerms() != null || member.loanAccountNumber() != null) {
+                throw new InvalidPolicyStateException(
+                    "Loan terms belong only on a credit-life scheme");
+            }
+            return member.joinedOn() != null ? member.joinedOn() : schemeDefault;
+        }
+
+        if (member.loanAccountNumber() == null || member.loanAccountNumber().isBlank()) {
+            throw new InvalidPolicyStateException(
+                "A credit-life member must carry a loan account number: it is the member key, "
+                    + "and a borrower named on a schedule has no other identity");
+        }
+        if (member.loanTerms() == null) {
+            throw new InvalidPolicyStateException(
+                "A credit-life member must carry the terms of their loan");
+        }
+
+        // Cover starts when the money left the bank, not when the schedule reached the
+        // insurer. It is the only choice with no uninsured gap between the loan and the
+        // cover -- which is precisely the window a lender will argue about after a death.
+        LocalDate disbursed = member.loanTerms().disbursementDate();
+        if (disbursed.isAfter(today)) {
+            throw new InvalidPolicyStateException(
+                "A loan disbursed on " + disbursed + " is in the future; cover cannot commence "
+                    + "before the loan exists");
+        }
+        // Refused rather than silently overridden. A caller who supplies a joinedOn
+        // believes something about this contract, and quietly ignoring them is how a
+        // lender ends up thinking cover started a month later than it did.
+        if (member.joinedOn() != null && !member.joinedOn().equals(disbursed)) {
+            throw new InvalidPolicyStateException(
+                "A credit-life member's cover starts on the disbursement date " + disbursed
+                    + ", not " + member.joinedOn());
+        }
+        return disbursed;
     }
 
     /** One opening-schedule row and what the scheme's basis makes of it. */
@@ -1417,7 +1510,8 @@ public class PolicyApiImpl implements PolicyApi {
             // correct: the columns exist but nothing can populate them yet, and valuing
             // a borrower at zero would be worse than refusing them.
             BigDecimal benefit = GroupBenefitCalculator.benefitFor(
-                basis, flatBenefitAmount, salaryMultiple, member.salaryAmount(), gradeBenefit, null);
+                basis, flatBenefitAmount, salaryMultiple, member.salaryAmount(), gradeBenefit,
+                member.loanTerms() != null ? member.loanTerms().principalAmount() : null);
             return GroupBenefitCalculator.evaluate(benefit, fclAmount);
         } catch (IllegalArgumentException e) {
             // The calculator speaks in domain terms already; re-wrapped so a bad request
@@ -1469,13 +1563,29 @@ public class PolicyApiImpl implements PolicyApi {
     private PolicyMember persistMember(UUID tenantId, String policyNumber, MemberInput input,
                                         GroupBenefitCalculator.Valuation valuation, LocalDate joinedOn,
                                         String createdBy) {
-        PolicyMember member = policyMemberRepository.save(
-            input.memberType() == MemberType.FREEFORM
-                ? PolicyMember.freeform(tenantId, policyNumber, input.memberName(),
-                    input.memberDateOfBirth(), input.gradeCode(), joinedOn,
-                    valuation.underwritingStatus(), createdBy)
-                : new PolicyMember(tenantId, policyNumber, input.memberPartyId(),
-                    input.gradeCode(), joinedOn, valuation.underwritingStatus(), createdBy));
+        PolicyMember toSave = input.memberType() == MemberType.FREEFORM
+            ? PolicyMember.freeform(tenantId, policyNumber, input.memberName(),
+                input.memberDateOfBirth(), input.gradeCode(), joinedOn,
+                valuation.underwritingStatus(), createdBy)
+            : new PolicyMember(tenantId, policyNumber, input.memberPartyId(),
+                input.gradeCode(), joinedOn, valuation.underwritingStatus(), createdBy);
+        if (input.loanTerms() != null) {
+            toSave.withLoan(input.loanAccountNumber(), input.loanTerms());
+        }
+        PolicyMember member;
+        try {
+            // saveAndFlush, not save: ux_policy_member_active_loan is the guarantee that a
+            // resubmitted enrolment file does not enrol the same loan twice, and a plain
+            // save would queue the insert until after this method returned, putting the
+            // violation somewhere nobody can attribute it.
+            member = policyMemberRepository.saveAndFlush(toSave);
+        } catch (DataIntegrityViolationException e) {
+            if (violatesConstraint(e, "ux_policy_member_active_loan")) {
+                throw new InvalidPolicyStateException("Loan " + input.loanAccountNumber()
+                    + " is already an active member of scheme " + policyNumber);
+            }
+            throw e;
+        }
         // The benefit is effective from the day cover starts for this member, not from
         // today: a schedule that arrives late still describes cover that began when the
         // person joined, and a claim in between is paid on this row.
@@ -1513,7 +1623,7 @@ public class PolicyApiImpl implements PolicyApi {
     private PolicyMemberView toMemberView(PolicyMember m, GroupBenefitCalculator.Valuation valuation,
                                            BigDecimal salaryAmount, String currency, LocalDate effectiveFrom) {
         return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
-            m.getMemberType(), m.getMemberName(), m.getGradeCode(),
+            m.getMemberType(), m.getMemberName(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
             valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom);
@@ -1522,7 +1632,7 @@ public class PolicyApiImpl implements PolicyApi {
     private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
                                            String currency) {
         return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
-            m.getMemberType(), m.getMemberName(), m.getGradeCode(),
+            m.getMemberType(), m.getMemberName(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(),
             // Null across the money fields means a member whose cover has not started yet

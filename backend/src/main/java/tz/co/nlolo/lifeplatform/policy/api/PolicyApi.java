@@ -134,7 +134,22 @@ public interface PolicyApi {
      */
     record MemberInput(MemberType memberType, UUID memberPartyId, String memberName,
                         LocalDate memberDateOfBirth, String gradeCode,
-                        BigDecimal salaryAmount, LocalDate joinedOn) {
+                        BigDecimal salaryAmount, LocalDate joinedOn,
+                        /**
+                         * The member key on an AMORTISING_LOAN scheme, and the only stable
+                         * identity a freeform borrower has. Rejected on any other basis.
+                         */
+                        String loanAccountNumber,
+                        /** Required on an AMORTISING_LOAN scheme, rejected on any other. */
+                        LoanTerms loanTerms) {
+
+        /** A member of any scheme but credit life, whose members are loans. */
+        public MemberInput(MemberType memberType, UUID memberPartyId, String memberName,
+                            LocalDate memberDateOfBirth, String gradeCode,
+                            BigDecimal salaryAmount, LocalDate joinedOn) {
+            this(memberType, memberPartyId, memberName, memberDateOfBirth, gradeCode,
+                salaryAmount, joinedOn, null, null);
+        }
 
         /**
          * A member who is a registered party -- the only kind that existed before
@@ -147,7 +162,15 @@ public interface PolicyApi {
          */
         public MemberInput(UUID memberPartyId, String gradeCode, BigDecimal salaryAmount,
                             LocalDate joinedOn) {
-            this(MemberType.PARTY, memberPartyId, null, null, gradeCode, salaryAmount, joinedOn);
+            this(MemberType.PARTY, memberPartyId, null, null, gradeCode, salaryAmount, joinedOn,
+                null, null);
+        }
+
+        /** A borrower: a name on a lender's schedule, and the loan that insures them. */
+        public static MemberInput borrower(String memberName, LocalDate memberDateOfBirth,
+                                            String loanAccountNumber, LoanTerms loanTerms) {
+            return new MemberInput(MemberType.FREEFORM, null, memberName, memberDateOfBirth,
+                null, null, null, loanAccountNumber, loanTerms);
         }
     }
 
