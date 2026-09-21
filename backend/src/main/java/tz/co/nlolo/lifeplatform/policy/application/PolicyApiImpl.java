@@ -4,6 +4,8 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.*;
@@ -20,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -61,6 +64,7 @@ public class PolicyApiImpl implements PolicyApi {
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
     private final DistributionApi distributionApi;
+    private final UnderwritingApi underwritingApi;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
 
@@ -70,7 +74,7 @@ public class PolicyApiImpl implements PolicyApi {
                           GroupSchemeRepository groupSchemeRepository, GroupSchemeGradeRepository groupSchemeGradeRepository,
                           PolicyMemberRepository policyMemberRepository, PolicyMemberBenefitRepository policyMemberBenefitRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
-                          DistributionApi distributionApi,
+                          DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
         this.policyAccountRepository = policyAccountRepository;
@@ -86,6 +90,7 @@ public class PolicyApiImpl implements PolicyApi {
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
         this.distributionApi = distributionApi;
+        this.underwritingApi = underwritingApi;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
     }
@@ -758,10 +763,15 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
 
-        // Keyed on the scheme ROW, for the same reason terminateForSettledClaim is: a GROUP_LIFE
-        // policy issued through the ordinary path has no schedule under it, and a contract with
-        // no members is valued from its own sum assured like any other.
-        Optional<GroupScheme> scheme = "GROUP_LIFE".equals(policy.getProductCategory())
+        // Keyed on the scheme ROW, behind a category pre-filter -- see isSchemeCategory
+        // for why the pre-filter cannot simply be dropped.
+        //
+        // The pre-filter used to name GROUP_LIFE alone, which silently excluded
+        // CREDIT_LIFE: a credit-life claim fell through to the individual branch, where
+        // naming the borrower was REFUSED outright and naming nobody valued the claim
+        // from the policy's own coverage row -- which on a scheme is the total of every
+        // loan on it. One borrower dying would have paid out the whole book.
+        Optional<GroupScheme> scheme = isSchemeCategory(policy.getProductCategory())
             ? groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
             : Optional.empty();
 
@@ -861,7 +871,7 @@ public class PolicyApiImpl implements PolicyApi {
         // claims never apply policy/V9 -- for them the table does not exist, and an unconditional
         // query throws inside an AFTER_COMMIT listener whose only response is to raise
         // POLICY_CLOSURE_FAILED and leave a settled claim's policy open. Found exactly that way.
-        Optional<GroupScheme> scheme = "GROUP_LIFE".equals(policy.getProductCategory())
+        Optional<GroupScheme> scheme = isSchemeCategory(policy.getProductCategory())
             ? groupSchemeRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId)
             : Optional.empty();
         if (scheme.isPresent()) {
@@ -1005,12 +1015,44 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         partyApi.getParty(request.policyholderPartyId()); // the employer must exist
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
-        if (snapshot.category() != ProductCategory.GROUP_LIFE) {
-            // Without this a scheme could be hung off a term-life product, and every
-            // reader downstream that branches on category -- reserving, reporting,
-            // commission -- would treat 500 lives as one.
+        // Without a category check a scheme could be hung off a term-life product, and
+        // every reader downstream that branches on category -- reserving, reporting,
+        // commission -- would treat 500 lives as one.
+        //
+        // The category and the basis must also AGREE, in both directions. They are two
+        // statements about the same contract: the category is what the product was
+        // priced and filed as, the basis is how each member is valued. A credit-life
+        // product on a flat basis would insure every borrower for the same amount
+        // regardless of what they borrowed; a loan basis on an employer product would be
+        // loan cover nobody priced.
+        ProductCategory category = snapshot.category();
+        boolean loanBasis = request.benefitBasis() == BenefitBasis.AMORTISING_LOAN;
+
+        if (category != ProductCategory.GROUP_LIFE && category != ProductCategory.CREDIT_LIFE) {
             throw new InvalidPolicyStateException(
-                "A group scheme needs a GROUP_LIFE product; this one is " + snapshot.category());
+                "A group scheme needs a GROUP_LIFE or CREDIT_LIFE product; this one is " + category);
+        }
+        if (category == ProductCategory.CREDIT_LIFE && !loanBasis) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme must use the AMORTISING_LOAN basis; its members are loans, "
+                    + "and " + request.benefitBasis() + " would value them from the scheme instead");
+        }
+        if (category == ProductCategory.GROUP_LIFE && loanBasis) {
+            throw new InvalidPolicyStateException(
+                "The AMORTISING_LOAN basis needs a CREDIT_LIFE product; loan cover on an "
+                    + "employer product is cover nobody priced");
+        }
+        // Checked HERE rather than left to the GroupScheme constructor, which runs after
+        // the whole opening schedule has been valued. A scheme missing its interest
+        // method would otherwise be reported as whatever its first member happened to be
+        // wrong about, which sends the reader to the wrong row entirely.
+        if (loanBasis && request.interestMethod() == null) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme must state how its lender's loans repay principal");
+        }
+        if (!loanBasis && request.interestMethod() != null) {
+            throw new InvalidPolicyStateException(
+                "An interest method belongs only on a credit-life scheme");
         }
 
         LocalDate today = LocalDate.now();
@@ -1037,10 +1079,11 @@ public class PolicyApiImpl implements PolicyApi {
         List<ValuedMember> valued = new ArrayList<>(schedule.size());
         Set<UUID> seen = new HashSet<>();
         for (MemberInput input : schedule) {
-            if (input.memberPartyId() == null) {
-                throw new InvalidPolicyStateException("Every row of the opening schedule must name a person");
-            }
-            if (!seen.add(input.memberPartyId())) {
+            requireValidDesignation(input);
+            // Only PARTY rows can collide by party id. Two FREEFORM rows may legitimately
+            // share a name -- a father and a son, or two dependants of one household --
+            // and credit life keys its members on the loan account number instead.
+            if (input.memberType() == MemberType.PARTY && !seen.add(input.memberPartyId())) {
                 // ux_policy_member_active would catch this as a constraint violation. Here
                 // it arrives as a sentence naming the duplicate, which is what somebody
                 // fixing a spreadsheet needs.
@@ -1098,17 +1141,29 @@ public class PolicyApiImpl implements PolicyApi {
 
         groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),
             request.flatBenefitAmount(), request.salaryMultiple(), request.fclAmount(),
-            request.currency(), issuedBy));
+            request.currency(), request.interestMethod(), issuedBy));
         if (request.benefitBasis() == BenefitBasis.GRADED) {
             request.grades().forEach(g -> groupSchemeGradeRepository.save(
                 new GroupSchemeGrade(tenantId, policyNumber, g.gradeCode(), g.benefitAmount())));
         }
 
         for (ValuedMember v : valued) {
-            LocalDate joinedOn = v.input().joinedOn() != null ? v.input().joinedOn() : commencement;
+            // On a loan basis the cover start is the disbursement date and is NOT the
+            // caller's to choose; on every other basis it defaults to commencement.
+            LocalDate joinedOn = requireLoanMatchesBasis(
+                request.benefitBasis(), v.input(), commencement, today);
             if (joinedOn.isAfter(today)) {
                 throw new InvalidPolicyStateException(
-                    "Member " + v.input().memberPartyId() + " cannot join in the future");
+                    "Member " + describe(v.input()) + " cannot join in the future");
+            }
+            // addMember has always refused this; the opening schedule never did. The gap
+            // did not matter while joinedOn defaulted to commencement, and matters now:
+            // a credit-life file carries real disbursement dates, and a loan paid out
+            // before this scheme existed is risk the contract never priced.
+            if (joinedOn.isBefore(commencement)) {
+                throw new InvalidPolicyStateException("Member " + describe(v.input())
+                    + " cannot join on " + joinedOn + ", before the scheme commenced on "
+                    + commencement);
             }
             persistMember(tenantId, policyNumber, v.input(), v.valuation(), joinedOn, issuedBy);
         }
@@ -1199,16 +1254,26 @@ public class PolicyApiImpl implements PolicyApi {
          * opposite ("no name filter") and return the entire schedule for a search that
          * matched nobody. Same hazard the benefit lookup below already guards.
          */
+        // Lower-cased and %-wrapped HERE, not in the query: a null parameter inside a
+        // lower() or concat() is untypeable by Postgres and fails every listing, not just
+        // the searches. See PolicyMemberRepository.findMembers.
+        String nameQuery = (q != null && !q.isBlank())
+            ? "%" + q.trim().toLowerCase() + "%" : null;
         Set<UUID> nameMatches = null;
-        if (q != null && !q.isBlank()) {
-            nameMatches = partyApi.partyIdsMatchingName(q);
+        if (nameQuery != null) {
+            nameMatches = partyApi.partyIdsMatchingName(q.trim());
             if (nameMatches.isEmpty()) {
-                return Page.empty(pageable);
+                // Deliberately NOT an early empty page any more. "No party has that name"
+                // no longer means "no member matches": a freeform member holds its own
+                // name and no party module knows it exists. Null instead, so the query's
+                // party half is skipped and the freeform half still runs.
+                nameMatches = null;
             }
         }
 
         Page<PolicyMember> members = policyMemberRepository.findMembers(
-            tenantId, policyNumber, status != null ? status.name() : null, nameMatches, pageable);
+            tenantId, policyNumber, status != null ? status.name() : null, nameMatches,
+            nameQuery, pageable);
         if (members.isEmpty()) {
             // Short-circuit rather than pass an empty list to an IN clause, which is a
             // Postgres syntax error rather than an empty result.
@@ -1238,17 +1303,23 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException("Scheme " + policyNumber
                 + " must be in force to add a member (current: " + policy.getStatus() + ")");
         }
-        if (member.memberPartyId() == null) {
-            throw new InvalidPolicyStateException("A member must name a person");
+        requireValidDesignation(member);
+        if (member.memberType() == MemberType.PARTY) {
+            partyApi.getParty(member.memberPartyId());
+            if (policyMemberRepository.existsByTenantIdAndPolicyNumberAndMemberPartyIdAndStatus(
+                    tenantId, policyNumber, member.memberPartyId(), MemberStatus.ACTIVE.name())) {
+                throw new InvalidPolicyStateException("That person is already an active member of scheme " + policyNumber);
+            }
         }
-        partyApi.getParty(member.memberPartyId());
-        if (policyMemberRepository.existsByTenantIdAndPolicyNumberAndMemberPartyIdAndStatus(
-                tenantId, policyNumber, member.memberPartyId(), MemberStatus.ACTIVE.name())) {
-            throw new InvalidPolicyStateException("That person is already an active member of scheme " + policyNumber);
-        }
+        // A FREEFORM member gets no duplicate check, deliberately. A name is not an
+        // identity: a scheme legitimately covers a father and a son who share one, and a
+        // household of dependants may share a surname and a birth year. Refusing the
+        // second would leave a real life uninsured to enforce a uniqueness the data
+        // cannot support. Credit life gives its members a real key -- the loan account
+        // number -- and enforces that instead.
 
         LocalDate today = LocalDate.now();
-        LocalDate joinedOn = member.joinedOn() != null ? member.joinedOn() : today;
+        LocalDate joinedOn = requireLoanMatchesBasis(scheme.getBenefitBasis(), member, today, today);
         if (joinedOn.isAfter(today)) {
             // Backdating is normal -- a schedule reaches the insurer weeks after somebody
             // started. Forward-dating is not supported until the scheme total is date-aware.
@@ -1272,17 +1343,155 @@ public class PolicyApiImpl implements PolicyApi {
         policyMemberBenefitRepository.flush();
         BigDecimal total = restateSchemeTotal(policy, tenantId, today);
 
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, Map.of(
-            "policyNumber", policyNumber,
-            "memberPartyId", member.memberPartyId(),
-            "joinedOn", joinedOn.toString(),
-            "coveredAmount", Map.of("amount", valuation.coveredAmount().toPlainString(),
-                "currencyCode", scheme.getCurrency()),
-            "underwritingStatus", valuation.underwritingStatus().name(),
-            "schemeTotalCovered", Map.of("amount", total.toPlainString(),
-                "currencyCode", scheme.getCurrency()))));
+        // LinkedHashMap, not Map.of: a FREEFORM member has no party id, and Map.of throws
+        // on a null value. The key is carried as an explicit null rather than omitted, so
+        // a consumer can tell "this life is not a party" from "this producer forgot".
+        Map<String, Object> memberAdded = new LinkedHashMap<>();
+        memberAdded.put("policyNumber", policyNumber);
+        memberAdded.put("memberPartyId", member.memberPartyId());
+        memberAdded.put("memberType", member.memberType().name());
+        memberAdded.put("memberName", member.memberName());
+        memberAdded.put("joinedOn", joinedOn.toString());
+        memberAdded.put("coveredAmount", Map.of("amount", valuation.coveredAmount().toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        memberAdded.put("underwritingStatus", valuation.underwritingStatus().name());
+        memberAdded.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        eventPublisher.publishEvent(
+            DomainEventEnvelope.of("policy.GroupMemberAdded", tenantId, memberAdded));
 
         return toMemberView(saved, valuation, member.salaryAmount(), scheme.getCurrency(), joinedOn);
+    }
+
+    /**
+     * A member names a party or a person, never both and never neither.
+     *
+     * <p>Checked here as well as by {@code chk_policy_member_exactly_one_designation}
+     * because the constraint is the guarantee and this is the readable error. Mirrors the
+     * beneficiary designation rule.
+     */
+    private void requireValidDesignation(MemberInput member) {
+        MemberType type = member.memberType();
+        if (type == null) {
+            throw new InvalidPolicyStateException("A member must say whether it names a party or a person");
+        }
+        if (type == MemberType.PARTY) {
+            if (member.memberPartyId() == null) {
+                throw new InvalidPolicyStateException("A member must name a person");
+            }
+            // A PARTY member MAY carry a loan: a lender's schedule will sometimes name
+            // somebody the insurer already holds a record for, and refusing that would
+            // force a duplicate identity. It is also the shape promotion produces when a
+            // borrower goes over the free cover limit.
+            if (member.memberName() != null || member.memberDateOfBirth() != null) {
+                throw new InvalidPolicyStateException(
+                    "A member naming a registered party must not also carry a loose name or date of birth");
+            }
+        } else {
+            if (member.memberPartyId() != null) {
+                throw new InvalidPolicyStateException(
+                    "A member named on the schedule must not also name a registered party");
+            }
+            if (member.memberName() == null || member.memberName().isBlank()) {
+                throw new InvalidPolicyStateException("A member named on the schedule must have a name");
+            }
+        }
+    }
+
+    /**
+     * Whether a category can have a member schedule under it.
+     *
+     * <p>One predicate, because the two callers that need it -- claimableCover and
+     * dischargeForSettledClaim -- must never disagree about what a scheme is. When they
+     * did, a credit-life claim was refused by one and surrendered the whole master
+     * contract by the other.
+     *
+     * <p><b>This pre-filter cannot simply be dropped in favour of querying for the scheme
+     * row.</b> The lookup would answer correctly, but ClaimsApiImpl calls claimableCover
+     * on EVERY claim registration and thirty-odd test classes register claims without
+     * ever applying policy/V9 -- for them policy.group_scheme does not exist, and an
+     * unconditional query throws. In dischargeForSettledClaim that throw lands inside an
+     * AFTER_COMMIT listener whose only response is POLICY_CLOSURE_FAILED, leaving a
+     * settled claim's policy open with the money already paid. That failure has been
+     * found here once already.
+     */
+    private static boolean isSchemeCategory(String productCategory) {
+        return "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory);
+    }
+
+    /**
+     * How to name a member in an error, whichever designation they carry.
+     *
+     * <p>A party id is meaningless to whoever is fixing a lender's schedule, and a
+     * freeform member has none at all -- an error reading "Member null" is how a real
+     * row goes unfound.
+     */
+    private static String describe(MemberInput member) {
+        if (member.loanAccountNumber() != null) return "loan " + member.loanAccountNumber();
+        if (member.memberName() != null) return member.memberName();
+        return String.valueOf(member.memberPartyId());
+    }
+
+    /**
+     * Whether an integrity violation was caused by the named constraint.
+     *
+     * <p>Walks the cause chain because the constraint name is on the Postgres-level
+     * cause, not on Spring's wrapper. Narrow on purpose: reporting every violation as
+     * the one you expected is how a CHECK failure gets announced as a duplicate.
+     */
+    private static boolean violatesConstraint(DataIntegrityViolationException e, String constraintName) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(constraintName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A credit-life member carries a loan; nobody else may.
+     *
+     * @return the date cover starts, which on a loan basis is NOT the caller's to choose.
+     */
+    private LocalDate requireLoanMatchesBasis(BenefitBasis basis, MemberInput member,
+                                               LocalDate schemeDefault, LocalDate today) {
+        if (basis != BenefitBasis.AMORTISING_LOAN) {
+            if (member.loanTerms() != null || member.loanAccountNumber() != null) {
+                throw new InvalidPolicyStateException(
+                    "Loan terms belong only on a credit-life scheme");
+            }
+            return member.joinedOn() != null ? member.joinedOn() : schemeDefault;
+        }
+
+        if (member.loanAccountNumber() == null || member.loanAccountNumber().isBlank()) {
+            throw new InvalidPolicyStateException(
+                "A credit-life member must carry a loan account number: it is the member key, "
+                    + "and a borrower named on a schedule has no other identity");
+        }
+        if (member.loanTerms() == null) {
+            throw new InvalidPolicyStateException(
+                "A credit-life member must carry the terms of their loan");
+        }
+
+        // Cover starts when the money left the bank, not when the schedule reached the
+        // insurer. It is the only choice with no uninsured gap between the loan and the
+        // cover -- which is precisely the window a lender will argue about after a death.
+        LocalDate disbursed = member.loanTerms().disbursementDate();
+        if (disbursed.isAfter(today)) {
+            throw new InvalidPolicyStateException(
+                "A loan disbursed on " + disbursed + " is in the future; cover cannot commence "
+                    + "before the loan exists");
+        }
+        // Refused rather than silently overridden. A caller who supplies a joinedOn
+        // believes something about this contract, and quietly ignoring them is how a
+        // lender ends up thinking cover started a month later than it did.
+        if (member.joinedOn() != null && !member.joinedOn().equals(disbursed)) {
+            throw new InvalidPolicyStateException(
+                "A credit-life member's cover starts on the disbursement date " + disbursed
+                    + ", not " + member.joinedOn());
+        }
+        return disbursed;
     }
 
     /** One opening-schedule row and what the scheme's basis makes of it. */
@@ -1325,8 +1534,13 @@ public class PolicyApiImpl implements PolicyApi {
             }
         }
         try {
+            // Loan principal is null until task 6 puts LoanTerms on MemberInput. An
+            // AMORTISING_LOAN scheme therefore refuses every member for now, which is
+            // correct: the columns exist but nothing can populate them yet, and valuing
+            // a borrower at zero would be worse than refusing them.
             BigDecimal benefit = GroupBenefitCalculator.benefitFor(
-                basis, flatBenefitAmount, salaryMultiple, member.salaryAmount(), gradeBenefit);
+                basis, flatBenefitAmount, salaryMultiple, member.salaryAmount(), gradeBenefit,
+                member.loanTerms() != null ? member.loanTerms().principalAmount() : null);
             return GroupBenefitCalculator.evaluate(benefit, fclAmount);
         } catch (IllegalArgumentException e) {
             // The calculator speaks in domain terms already; re-wrapped so a bad request
@@ -1378,13 +1592,71 @@ public class PolicyApiImpl implements PolicyApi {
     private PolicyMember persistMember(UUID tenantId, String policyNumber, MemberInput input,
                                         GroupBenefitCalculator.Valuation valuation, LocalDate joinedOn,
                                         String createdBy) {
-        PolicyMember member = policyMemberRepository.save(new PolicyMember(tenantId, policyNumber,
-            input.memberPartyId(), input.gradeCode(), joinedOn, valuation.underwritingStatus(), createdBy));
+        PolicyMember toSave = input.memberType() == MemberType.FREEFORM
+            ? PolicyMember.freeform(tenantId, policyNumber, input.memberName(),
+                input.memberDateOfBirth(), input.gradeCode(), joinedOn,
+                valuation.underwritingStatus(), createdBy)
+            : new PolicyMember(tenantId, policyNumber, input.memberPartyId(),
+                input.gradeCode(), joinedOn, valuation.underwritingStatus(), createdBy);
+        if (input.loanTerms() != null) {
+            toSave.withLoan(input.loanAccountNumber(), input.loanTerms());
+        }
+        // A member over the free cover limit is referred for evidence, which needs an
+        // identity: underwriting_case.applicant_party_id is NOT NULL and ProposalDetails
+        // carries a party id, not a name. So a freeform life is promoted HERE and only
+        // here. That is not a hole in the freeform rule -- freeform exists to keep the
+        // KYC queue clear of people nobody needs to identify, and somebody borrowing
+        // over the limit is precisely somebody you do.
+        //
+        // Before this, PolicyMember.referForEvidence(UUID) had no caller anywhere: a
+        // member's cover was capped and no case was ever opened, so the excess could not
+        // be granted even when the evidence turned up.
+        if (valuation.underwritingStatus() == MemberUnderwritingStatus.EVIDENCE_REQUIRED
+                && toSave.getMemberType() == MemberType.FREEFORM) {
+            if (toSave.getMemberDateOfBirth() == null) {
+                throw new InvalidPolicyStateException("Member " + describe(input)
+                    + " is over the free cover limit and must be underwritten, which needs "
+                    + "a date of birth to register them against");
+            }
+            toSave.promoteToParty(partyApi.registerIndividual(
+                toSave.getMemberName(), toSave.getMemberDateOfBirth(), null, null, createdBy)
+                .partyId());
+        }
+
+        PolicyMember member;
+        try {
+            // saveAndFlush, not save: ux_policy_member_active_loan is the guarantee that a
+            // resubmitted enrolment file does not enrol the same loan twice, and a plain
+            // save would queue the insert until after this method returned, putting the
+            // violation somewhere nobody can attribute it.
+            member = policyMemberRepository.saveAndFlush(toSave);
+        } catch (DataIntegrityViolationException e) {
+            if (violatesConstraint(e, "ux_policy_member_active_loan")) {
+                throw new InvalidPolicyStateException("Loan " + input.loanAccountNumber()
+                    + " is already an active member of scheme " + policyNumber);
+            }
+            throw e;
+        }
         // The benefit is effective from the day cover starts for this member, not from
         // today: a schedule that arrives late still describes cover that began when the
         // person joined, and a claim in between is paid on this row.
         policyMemberBenefitRepository.save(new PolicyMemberBenefit(tenantId, member.getPolicyMemberId(),
             joinedOn, input.salaryAmount(), valuation.benefitAmount(), valuation.coveredAmount(), createdBy));
+
+        // Opened AFTER the member row exists, so a case can never point at a member that
+        // was never written. The case is opened for the EXCESS -- the benefit, not the
+        // capped cover -- because that is the amount an underwriter is being asked to
+        // grant. referForEvidence finally has the caller it was written for in build 5.
+        if (valuation.underwritingStatus() == MemberUnderwritingStatus.EVIDENCE_REQUIRED
+                && member.getUnderwritingCaseId() == null) {
+            Policy schemePolicy = findPolicyOrThrow(policyNumber, tenantId);
+            UnderwritingCaseView evidenceCase = underwritingApi.openCase(
+                member.getMemberPartyId(), schemePolicy.getProductId(),
+                schemePolicy.getProductVersionId(), valuation.benefitAmount(),
+                schemePolicy.getSumAssuredCurrency(), schemePolicy.getAgentOfRecordId(),
+                createdBy);
+            member.referForEvidence(evidenceCase.caseId());
+        }
         return member;
     }
 
@@ -1416,7 +1688,8 @@ public class PolicyApiImpl implements PolicyApi {
 
     private PolicyMemberView toMemberView(PolicyMember m, GroupBenefitCalculator.Valuation valuation,
                                            BigDecimal salaryAmount, String currency, LocalDate effectiveFrom) {
-        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(), m.getGradeCode(),
+        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
+            m.getMemberType(), m.getMemberName(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
             valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom);
@@ -1424,7 +1697,8 @@ public class PolicyApiImpl implements PolicyApi {
 
     private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
                                            String currency) {
-        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(), m.getGradeCode(),
+        return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
+            m.getMemberType(), m.getMemberName(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(),
             // Null across the money fields means a member whose cover has not started yet

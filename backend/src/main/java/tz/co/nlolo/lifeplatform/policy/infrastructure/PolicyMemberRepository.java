@@ -36,16 +36,36 @@ public interface PolicyMemberRepository extends JpaRepository<PolicyMember, UUID
      * (`in ()`) and the opposite of what it looks like. See {@code PolicyApiImpl.listMembers},
      * which short-circuits to an empty page instead.
      */
+    /*
+     * The name filter now has TWO halves, and a member matches on either.
+     *
+     * A PARTY member holds no name, so the party module resolves the search to ids. A
+     * FREEFORM member holds nothing BUT a name, and no party module knows it exists.
+     * Matching only the first half would make a credit-life roll -- where every member is
+     * freeform -- completely unsearchable: 400 borrowers and no way to find one by name.
+     *
+     * Both halves are governed by the same `:nameQuery is null` guard so that "no search"
+     * still means "the whole schedule".
+     *
+     * `:nameQuery` arrives already lower-cased and already wrapped in % signs. It must
+     * NOT be passed through lower() or concat() here: when the parameter is null Postgres
+     * cannot infer its type inside a function call and fails the whole statement with
+     * "function lower(bytea) does not exist" -- which takes down every listing on this
+     * repository, not only the searches.
+     */
     @Query("""
         select m from PolicyMember m
          where m.tenantId = :tenantId and m.policyNumber = :policyNumber
            and (:status is null or m.status = :status)
-           and (:memberPartyIds is null or m.memberPartyId in :memberPartyIds)
+           and (:nameQuery is null
+                or (:memberPartyIds is not null and m.memberPartyId in :memberPartyIds)
+                or (m.memberName is not null and lower(m.memberName) like :nameQuery))
         """)
     Page<PolicyMember> findMembers(@Param("tenantId") UUID tenantId,
                                     @Param("policyNumber") String policyNumber,
                                     @Param("status") String status,
                                     @Param("memberPartyIds") Collection<UUID> memberPartyIds,
+                                    @Param("nameQuery") String nameQuery,
                                     Pageable pageable);
 
     Optional<PolicyMember> findByPolicyMemberIdAndTenantId(UUID policyMemberId, UUID tenantId);

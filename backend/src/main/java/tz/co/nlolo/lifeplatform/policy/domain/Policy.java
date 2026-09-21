@@ -197,15 +197,18 @@ public class Policy {
      * list, wrong on a reinsurance return, and wrong in exactly the direction that
      * understates exposure.
      *
-     * <p>Refused on anything but a GROUP_LIFE policy, deliberately. Without that guard
-     * this is a public "set the sum assured" method on the aggregate, and an individual
-     * policy's sum assured may only move by endorsement -- a rule this would quietly
-     * route around.
+     * <p>Refused on anything but a scheme, deliberately. Without that guard this is a
+     * public "set the sum assured" method on the aggregate, and an individual policy's
+     * sum assured may only move by endorsement -- a rule this would quietly route around.
+     *
+     * <p>CREDIT_LIFE is a scheme too. Its total is the sum of the loans it insures, and
+     * it moves every time a borrower is enrolled; without this the first monthly file
+     * would leave a lender's contract stating the total it was issued with.
      */
     public void restateSumAssured(BigDecimal total) {
-        if (!"GROUP_LIFE".equals(productCategory)) {
+        if (!"GROUP_LIFE".equals(productCategory) && !"CREDIT_LIFE".equals(productCategory)) {
             throw new InvalidPolicyStateException(
-                "Only a group scheme's sum assured is restated from its members; policy "
+                "Only a scheme's sum assured is restated from its members; policy "
                     + policyNumber + " is " + productCategory + " and changes by endorsement");
         }
         if (total == null || total.signum() <= 0) {

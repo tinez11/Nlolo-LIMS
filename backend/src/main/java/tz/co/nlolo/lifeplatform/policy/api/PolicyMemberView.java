@@ -12,6 +12,11 @@ import java.util.UUID;
  *     the free cover limit while evidence is outstanding or after a decline. This is the
  *     figure a claim pays, and the only one on this record that should ever be quoted to
  *     a member as "your cover".
+ * @param memberType whether this life is a registered party or a name on a schedule.
+ * @param memberName the life's name on a FREEFORM member, and null on a PARTY one, whose
+ *     name lives on the party record. A reader wanting one name for every member has to
+ *     resolve the party ids; that asymmetry is deliberate, because copying a party's name
+ *     onto the member row would create a second copy free to drift from the first.
  * @param benefitEffectiveFrom the date the in-force benefit row took effect. Present so a
  *     reader can tell a benefit set at inception from one restated at renewal without
  *     opening the history.
@@ -22,7 +27,8 @@ import java.util.UUID;
  *     a different one -- but an amount travelling without its currency is how a figure
  *     ends up rendered as the wrong money somewhere down the line.
  */
-public record PolicyMemberView(UUID policyMemberId, UUID memberPartyId, String gradeCode,
+public record PolicyMemberView(UUID policyMemberId, UUID memberPartyId,
+                                MemberType memberType, String memberName, String loanAccountNumber, String gradeCode,
                                 LocalDate joinedOn, LocalDate leftOn, MemberStatus status,
                                 MemberUnderwritingStatus underwritingStatus, UUID underwritingCaseId,
                                 BigDecimal salaryAmount, BigDecimal benefitAmount,

@@ -374,8 +374,16 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         try {
             chartOfAccountRepository.saveAndFlush(account);
         } catch (DataIntegrityViolationException e) {
-            throw new DuplicateAccountCodeException(
-                "Account code '" + accountCode + "' already exists in this tenant");
+            // ONLY the primary key means a duplicate code. Reporting every integrity
+            // violation as one would announce a value-too-long account name, or a
+            // violated account-code FK, as a code clash that is not there. Same bug
+            // class as M7's onboardAgent and, on this branch, createProduct and
+            // registerCorporate.
+            if (violatesConstraint(e, "chart_of_account_pkey")) {
+                throw new DuplicateAccountCodeException(
+                    "Account code '" + accountCode + "' already exists in this tenant");
+            }
+            throw e;
         }
         return toView(account);
     }
@@ -459,6 +467,22 @@ public class FinaccountingApiImpl implements FinaccountingApi {
         return new GlPostingView(posting.getPostingId(), posting.getJournalEntryId(), posting.getAccountCode(),
             posting.getDirection(), posting.getAmount(), posting.getCurrency(), posting.getPeriod(),
             posting.getPolicyNumber(), posting.getSourceEvent(), posting.getSourceRef());
+    }
+
+    /**
+     * Whether an integrity violation was caused by the named constraint.
+     *
+     * <p>Walks the cause chain because the constraint name is on the Postgres-level
+     * cause, not on Spring's wrapper.
+     */
+    private static boolean violatesConstraint(DataIntegrityViolationException e, String constraintName) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null && message.contains(constraintName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ChartOfAccountView toView(ChartOfAccount account) {

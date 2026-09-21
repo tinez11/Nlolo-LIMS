@@ -73,6 +73,10 @@ class GroupSchemeIntegrationTest {
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
+            // Admits CREDIT_LIFE. Without it creditLifeProduct() fails on
+            // product_definition_category_check, which is the honest error only because
+            // createProduct stopped reporting every integrity violation as a duplicate code.
+            "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -96,6 +100,8 @@ class GroupSchemeIntegrationTest {
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V8__group_policies_have_no_single_life_assured.sql",
             "db-migrations/policy/V9__group_scheme_and_members.sql",
+            "db-migrations/policy/V13__freeform_members.sql",
+            "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -103,6 +109,8 @@ class GroupSchemeIntegrationTest {
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
     @Autowired private PolicyMemberBenefitRepository benefitRepository;
+    /** Only for proving V14's constraints bite: no API can write these columns until task 6. */
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     /** Keeps the generated phone numbers unique across every party this class registers. */
     private static final AtomicInteger PHONE_SEQ = new AtomicInteger(1000);
@@ -479,6 +487,629 @@ class GroupSchemeIntegrationTest {
             "staff-1"))
             .isInstanceOf(InvalidPolicyStateException.class)
             .hasMessageContaining("future join date");
+    }
+
+    // ---- Freeform members: a life may be a name rather than a registered party ----
+
+    private PolicyApi.MemberInput freeform(String name) {
+        return new PolicyApi.MemberInput(MemberType.FREEFORM, null, name,
+            LocalDate.of(1990, 4, 5), null, null, null);
+    }
+
+    @Test
+    void aFreeformMemberIsCoveredWithoutBeingRegisteredAsAParty() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-FREEFORM");
+        UUID employer = person("Freeform Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Registered One"), null, null, null))), "staff-1");
+
+        PolicyMemberView member = policyApi.addMember(scheme.policyNumber(),
+            freeform("Amina Hassan Mwinyi"), "staff-1");
+
+        assertThat(member.memberType()).isEqualTo(MemberType.FREEFORM);
+        assertThat(member.memberName()).isEqualTo("Amina Hassan Mwinyi");
+        assertThat(member.memberPartyId()).isNull();
+        // Valued and covered exactly like anyone else -- the scheme's basis does not care
+        // whether the insurer holds a KYC file on the life it is insuring.
+        assertThat(member.coveredAmount()).isEqualByComparingTo("1000000.00");
+        assertThat(policyApi.getGroupScheme(scheme.policyNumber()).totalCoveredAmount())
+            .isEqualByComparingTo("2000000.00");
+    }
+
+    @Test
+    void anOpeningScheduleMayCarryFreeformMembers() {
+        // The opening schedule had its OWN designation check, separate from addMember's,
+        // and it rejected every freeform row -- so a scheme could gain a freeform member
+        // only after issuance. Credit life enrols its whole first batch at issuance.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-OPENFREE");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Opening Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(freeform("Schedule One"), freeform("Schedule Two"),
+                new PolicyApi.MemberInput(person("Registered Three"), null, null, null))), "staff-1");
+
+        assertThat(scheme.activeMemberCount()).isEqualTo(3);
+        assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("3000000.00");
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, "Schedule",
+            PageRequest.of(0, 10)).getTotalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void aPartyMemberStillCarriesItsPartyIdAndNoLooseName() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-STILLPARTY");
+        UUID employer = person("Still Party Co");
+        UUID registered = person("Registered Two");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(registered, null, null, null))), "staff-1");
+
+        PolicyMemberView member = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0);
+
+        assertThat(member.memberType()).isEqualTo(MemberType.PARTY);
+        assertThat(member.memberPartyId()).isEqualTo(registered);
+        assertThat(member.memberName()).isNull();
+    }
+
+    @Test
+    void aMemberNamingBothAPartyAndALooseNameIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-BOTH");
+        UUID employer = person("Both Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(),
+            new PolicyApi.MemberInput(MemberType.PARTY, person("Confused"), "Also A Name",
+                LocalDate.of(1990, 4, 5), null, null, null), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("must not also carry a loose name");
+    }
+
+    @Test
+    void aFreeformMemberWithNoNameIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-NONAME");
+        UUID employer = person("No Name Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), freeform("   "), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("must have a name");
+    }
+
+    @Test
+    void twoFreeformMembersMayShareAName() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-SAMENAME");
+        UUID employer = person("Same Name Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        // A father and a son, or two dependants of the same household. A name is not an
+        // identity, and refusing the second would leave a real life uninsured to enforce
+        // a uniqueness the data cannot support.
+        policyApi.addMember(scheme.policyNumber(), freeform("Juma Juma"), "staff-1");
+        policyApi.addMember(scheme.policyNumber(), freeform("Juma Juma"), "staff-1");
+
+        assertThat(policyApi.getGroupScheme(scheme.policyNumber()).activeMemberCount()).isEqualTo(3);
+    }
+
+    // ---- Task 5: a credit-life product may be issued as a scheme ----
+    //
+    // Every assertion below checks the MESSAGE, not just the exception type. Three of
+    // these four cases already threw InvalidPolicyStateException before the guard
+    // existed -- for entirely the wrong reason -- so asserting the type alone would pass
+    // against code that does nothing.
+
+    private GroupProduct creditLifeProduct(String code) {
+        ProductSummaryView product = productApi.createProduct(code, "Credit Life " + code,
+            ProductCategory.CREDIT_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        return new GroupProduct(product.productId(), snapshot.productVersionId());
+    }
+
+    private PolicyApi.IssueGroupSchemeRequest loanScheme(GroupProduct product, UUID lender,
+                                                          BenefitBasis basis, BigDecimal flatBenefit,
+                                                          InterestMethod interestMethod) {
+        return loanSchemeRequest(product, lender, basis, flatBenefit, interestMethod,
+            List.of(new PolicyApi.MemberInput(MemberType.FREEFORM, null, "Amina Hassan Mwinyi",
+                LocalDate.of(1988, 3, 14), null, null, null)));
+    }
+
+    private PolicyApi.IssueGroupSchemeRequest loanSchemeWith(GroupProduct product, UUID lender,
+                                                              InterestMethod interestMethod,
+                                                              List<PolicyApi.MemberInput> borrowers) {
+        return loanSchemeRequest(product, lender, BenefitBasis.AMORTISING_LOAN, null,
+            interestMethod, borrowers);
+    }
+
+    private PolicyApi.IssueGroupSchemeRequest loanSchemeRequest(GroupProduct product, UUID lender,
+                                                                 BenefitBasis basis, BigDecimal flatBenefit,
+                                                                 InterestMethod interestMethod,
+                                                                 List<PolicyApi.MemberInput> members) {
+        return new PolicyApi.IssueGroupSchemeRequest(lender, product.productId(),
+            product.productVersionId(), null, basis, flatBenefit, null,
+            new BigDecimal("25000000.00"), "TZS", null, members,
+            new BigDecimal("52000.00"), "TZS", "ANNUALLY",
+            // Commences BEFORE the loans it covers. A lender scheme is signed first and
+            // then fed monthly files of loans disbursed under it; a loan paid out before
+            // commencement belongs to whatever arrangement preceded this contract.
+            LocalDate.of(2026, 6, 1), null,
+            "credit life onboarding", IssuanceBasis.MIGRATION, interestMethod);
+    }
+
+    /** LOLC's real shape: 10,400,000 over 18 months, disbursed 2026-06-30, no rate given. */
+    private static LoanTerms lolcLoan() {
+        return new LoanTerms(new BigDecimal("10400000.00"), BigDecimal.ZERO, 18,
+            RepaymentFrequency.MONTHLY, LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 30));
+    }
+
+    private static PolicyApi.MemberInput borrower(String loanAccountNumber) {
+        return PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14),
+            loanAccountNumber, lolcLoan());
+    }
+
+    @Test
+    void aCreditLifeSchemeIsIssuedWithItsBorrowers() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-HAPPY");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Lender Co"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"), borrower("LN-2026-00418"))), "staff-1");
+
+        assertThat(scheme.benefitBasis()).isEqualTo(BenefitBasis.AMORTISING_LOAN);
+        assertThat(scheme.activeMemberCount()).isEqualTo(2);
+        // Each borrower is covered for their own principal at inception, so the scheme
+        // total is the sum of the loans it insures -- not a flat amount per head.
+        assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("20800000.00");
+    }
+
+    @Test
+    void coverStartsOnTheDayTheLoanWasDisbursed() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-DISBURSED");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Disburse Co"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"))), "staff-1");
+
+        PolicyMemberView member = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0);
+
+        // Backdated to the disbursement date, not the day the schedule arrived. The gap
+        // between the two is the window a lender argues about after a death.
+        assertThat(member.joinedOn()).isEqualTo(LocalDate.of(2026, 6, 30));
+        assertThat(member.loanAccountNumber()).isEqualTo("LN-2026-00417");
+        assertThat(member.coveredAmount()).isEqualByComparingTo("10400000.00");
+    }
+
+    @Test
+    void aJoinedOnThatContradictsTheDisbursementDateIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-CONTRADICT");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Contradict Co"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyApi.MemberInput contradictory = new PolicyApi.MemberInput(MemberType.FREEFORM, null,
+            "Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14), null, null,
+            LocalDate.of(2026, 9, 1), "LN-2026-00417", lolcLoan());
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), contradictory, "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("starts on the disbursement date");
+    }
+
+    @Test
+    void aLoanDisbursedInTheFutureIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-FUTURE");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Future Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyApi.MemberInput future = PolicyApi.MemberInput.borrower("Zainabu Ally",
+            LocalDate.of(1987, 10, 30), "LN-2026-00428",
+            new LoanTerms(new BigDecimal("9000000.00"), new BigDecimal("18.00"), 36,
+                RepaymentFrequency.MONTHLY,
+                LocalDate.now().plusDays(7), LocalDate.now().plusMonths(1).plusDays(7)));
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), future, "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("is in the future");
+    }
+
+    @Test
+    void theSameLoanCannotBeEnrolledTwiceWhileActive() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-DUPLOAN");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Dup Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"))), "staff-1");
+
+        // What makes a resubmitted enrolment file idempotent rather than doubling cover.
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(),
+            borrower("LN-2026-00417"), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("already an active member");
+    }
+
+    @Test
+    void aBorrowerWithoutALoanAccountNumberIsRefused() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOKEY");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Keyless Co"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        // Neither real client file carries one yet; both lenders have been asked to add
+        // it. Our template requires it, so a row without one is refused rather than
+        // silently enrolled with no identity at all.
+        PolicyApi.MemberInput unkeyed = PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi",
+            LocalDate.of(1988, 3, 14), null, lolcLoan());
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), unkeyed, "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("loan account number");
+    }
+
+    @Test
+    void aBorrowerAboveTheFreeCoverLimitIsEnrolledCapped() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-FCL");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("FCL Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        // 30m loan against the scheme's 25m free cover limit. Rejecting the row would
+        // make the LARGEST exposures systematically the uninsured ones.
+        PolicyMemberView big = policyApi.addMember(scheme.policyNumber(),
+            PolicyApi.MemberInput.borrower("Peter Massawe", LocalDate.of(1980, 7, 19),
+                "LN-2026-00424",
+                new LoanTerms(new BigDecimal("30000000.00"), new BigDecimal("17.00"), 72,
+                    RepaymentFrequency.MONTHLY,
+                    LocalDate.of(2026, 8, 13), LocalDate.of(2026, 9, 13))), "staff-1");
+
+        assertThat(big.benefitAmount()).isEqualByComparingTo("30000000.00");
+        assertThat(big.coveredAmount()).isEqualByComparingTo("25000000.00");
+        assertThat(big.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.EVIDENCE_REQUIRED);
+    }
+
+    @Test
+    void anAlreadyRegisteredClientMayBorrowToo() {
+        // A lender's schedule will sometimes name somebody the insurer already holds a
+        // party record for. Refusing that would force a duplicate identity, and it is
+        // also the shape promotion produces for an above-FCL borrower.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-PARTYLOAN");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Party Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        UUID known = person("Registered Borrower");
+        PolicyMemberView member = policyApi.addMember(scheme.policyNumber(),
+            new PolicyApi.MemberInput(MemberType.PARTY, known, null, null, null, null, null,
+                "LN-2026-00999", lolcLoan()), "staff-1");
+
+        assertThat(member.memberPartyId()).isEqualTo(known);
+        assertThat(member.loanAccountNumber()).isEqualTo("LN-2026-00999");
+        assertThat(member.coveredAmount()).isEqualByComparingTo("10400000.00");
+    }
+
+    @Test
+    void anAboveFclBorrowerIsPromotedToAPartyAndReferredForEvidence() {
+        // PolicyMember.referForEvidence(UUID) has existed since build 5 with ZERO callers:
+        // a member over the limit had their cover capped and nothing was ever opened, so
+        // the excess could not be granted even if the evidence arrived.
+        //
+        // Opening a case needs an identity -- underwriting_case.applicant_party_id is NOT
+        // NULL and ProposalDetails carries a party id, not a name. So an above-FCL
+        // borrower is promoted at enrolment. That is not a hole in the freeform rule:
+        // freeform exists to keep the KYC queue clear of people nobody needs to identify,
+        // and somebody borrowing over the free cover limit is precisely somebody you do.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-REFER");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Refer Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyMemberView big = policyApi.addMember(scheme.policyNumber(),
+            PolicyApi.MemberInput.borrower("Peter Massawe", LocalDate.of(1980, 7, 19),
+                "LN-2026-00424",
+                new LoanTerms(new BigDecimal("30000000.00"), new BigDecimal("17.00"), 72,
+                    RepaymentFrequency.MONTHLY,
+                    LocalDate.of(2026, 8, 13), LocalDate.of(2026, 9, 13))), "staff-1");
+
+        assertThat(big.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.EVIDENCE_REQUIRED);
+        assertThat(big.underwritingCaseId())
+            .as("an above-FCL member with no case is a referral nobody will ever action")
+            .isNotNull();
+        assertThat(big.memberType()).isEqualTo(MemberType.PARTY);
+        assertThat(big.memberPartyId()).isNotNull();
+        // Cover is still capped while the evidence is outstanding.
+        assertThat(big.coveredAmount()).isEqualByComparingTo("25000000.00");
+        assertThat(big.benefitAmount()).isEqualByComparingTo("30000000.00");
+    }
+
+    @Test
+    void aWithinFclBorrowerOpensNoCaseAndStaysFreeform() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOREFER");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("No Refer Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-OPENING"))), "staff-1");
+
+        PolicyMemberView ordinary = policyApi.addMember(scheme.policyNumber(),
+            borrower("LN-2026-00417"), "staff-1");
+
+        assertThat(ordinary.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.WITHIN_FCL);
+        assertThat(ordinary.underwritingCaseId()).isNull();
+        // The other 399 stay off the KYC queue entirely, which is the whole point.
+        assertThat(ordinary.memberType()).isEqualTo(MemberType.FREEFORM);
+        assertThat(ordinary.memberPartyId()).isNull();
+    }
+
+    @Test
+    void aLoanDisbursedBeforeTheSchemeCommencedIsRefusedOnTheOpeningSchedule() {
+        // addMember always refused a pre-commencement join; the opening schedule never
+        // did, because joinedOn used to default to commencement so the case could not
+        // arise. A credit-life file carries real disbursement dates, and a loan paid out
+        // before this contract existed is risk it never priced.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-PRECOMMENCE");
+
+        PolicyApi.MemberInput tooEarly = PolicyApi.MemberInput.borrower("Early Borrower",
+            LocalDate.of(1988, 3, 14), "LN-TOO-EARLY",
+            new LoanTerms(new BigDecimal("5000000.00"), BigDecimal.ZERO, 12,
+                RepaymentFrequency.MONTHLY,
+                LocalDate.of(2026, 5, 1), LocalDate.of(2026, 6, 1)));
+
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Early Lender"), InterestMethod.FLAT_RATE, List.of(tooEarly)), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("before the scheme commenced")
+            .hasMessageContaining("LN-TOO-EARLY");
+    }
+
+    @Test
+    void aBorrowerClaimIsValuedAtTheirOwnLoanAndNotTheWholeBook() {
+        // claimableCover keyed its scheme branch on "GROUP_LIFE".equals(category), so a
+        // CREDIT_LIFE scheme fell through to the individual-policy path. Two failures,
+        // both silent: a claim naming the borrower was REFUSED outright, and a claim
+        // naming nobody was valued from the policy's own coverage row -- the total of
+        // every loan on the scheme. One borrower dying would have paid out the book.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-CLAIMCOVER");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Claim Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"), borrower("LN-2026-00418"))), "staff-1");
+
+        assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("20800000.00");
+
+        UUID memberId = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0).policyMemberId();
+
+        ClaimableCoverView cover = policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.of(2026, 7, 15), BenefitType.DEATH.name());
+
+        assertThat(cover.amount()).isEqualByComparingTo("10400000.00");
+        assertThat(cover.policyMemberId()).isEqualTo(memberId);
+    }
+
+    @Test
+    void aCreditLifeClaimMustNameTheBorrower() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOMEMBER");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Nameless Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower("LN-2026-00417"))), "staff-1");
+
+        // Without naming the life, the only figure available is the scheme total.
+        assertThatThrownBy(() -> policyApi.claimableCover(scheme.policyNumber(), null,
+            LocalDate.of(2026, 7, 15), BenefitType.DEATH.name()))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("names a member");
+    }
+
+    @Test
+    void anOrdinaryGroupMemberMayNotCarryALoan() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-STRAYLOAN");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Stray Loan Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(),
+            borrower("LN-STRAY"), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("only on a credit-life scheme");
+    }
+
+    @Test
+    void anAmortisingLoanBasisNeedsACreditLifeProduct() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct employerProduct = groupProduct("GRP-WRONGBASIS");
+
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(employerProduct, person("Employer Co"), BenefitBasis.AMORTISING_LOAN, null,
+                InterestMethod.FLAT_RATE), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("CREDIT_LIFE product");
+    }
+
+    @Test
+    void aCreditLifeProductNeedsTheLoanBasis() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-WRONGBASIS");
+
+        // A flat benefit on a lender scheme would insure every borrower for the same
+        // amount regardless of what they borrowed.
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(product, person("Flat Lender"), BenefitBasis.FLAT,
+                new BigDecimal("1000000.00"), null), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("AMORTISING_LOAN");
+    }
+
+    @Test
+    void aCreditLifeSchemeMustStateHowItsLoansRepay() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOMETHOD");
+
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(product, person("Methodless Co"), BenefitBasis.AMORTISING_LOAN, null, null),
+            "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("repay principal");
+    }
+
+    @Test
+    void anEmployerSchemeStillRefusesAnInterestMethod() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-STRAYMETHOD");
+
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(product, person("Stray Co"), BenefitBasis.FLAT,
+                new BigDecimal("1000000.00"), InterestMethod.REDUCING_BALANCE), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("only on a credit-life scheme");
+    }
+
+    // ---- V14: the loan columns, and the constraints that keep them honest ----
+    //
+    // Written against JDBC rather than the API because nothing can populate these columns
+    // until task 6 wires LoanTerms through MemberInput. A migration that merely applies
+    // proves nothing about whether its constraints actually refuse anything, and these
+    // three are the difference between a schedule the platform can trust and one it
+    // cannot.
+
+    /** Insert a bare freeform member row and return its id, for loading with loan columns. */
+    private UUID insertFreeformMemberRow(UUID tenantId, String policyNumber) {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update("""
+            insert into policy.policy_member
+                (policy_member_id, tenant_id, policy_number, member_type, member_name,
+                 joined_on, status, underwriting_status)
+            values (?, ?, ?, 'FREEFORM', 'Loan Borrower', current_date, 'ACTIVE', 'WITHIN_FCL')
+            """, id, tenantId, policyNumber);
+        return id;
+    }
+
+    @Test
+    void aHalfFilledLoanIsRefusedByTheDatabase() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        GroupProduct product = groupProduct("GRP-LOANHALF");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Half Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+        UUID memberId = insertFreeformMemberRow(tenantId, scheme.policyNumber());
+
+        // A principal with no term is a schedule the application would have to guess at.
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "update policy.policy_member set loan_account_number = ?, loan_principal_amount = ? "
+                + "where policy_member_id = ?",
+            "LN-HALF-1", new BigDecimal("8500000.00"), memberId))
+            .hasMessageContaining("chk_policy_member_loan_complete");
+    }
+
+    @Test
+    void theSameLoanAccountNumberCannotBeActiveTwiceOnOneScheme() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        GroupProduct product = groupProduct("GRP-LOANDUP");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Dup Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        loadLoan(insertFreeformMemberRow(tenantId, scheme.policyNumber()), "LN-2026-00417");
+
+        // V13 deliberately lets two freeform members share a NAME, because a name is not
+        // an identity. A loan account number is, and this is the index that makes a
+        // resubmitted enrolment file idempotent.
+        assertThatThrownBy(() ->
+            loadLoan(insertFreeformMemberRow(tenantId, scheme.policyNumber()), "LN-2026-00417"))
+            .hasMessageContaining("ux_policy_member_active_loan");
+    }
+
+    private void loadLoan(UUID memberId, String accountNumber) {
+        jdbcTemplate.update("""
+            update policy.policy_member
+               set loan_account_number = ?, loan_principal_amount = ?,
+                   loan_annual_rate_percent = ?, loan_term_months = ?,
+                   loan_repayment_frequency = 'MONTHLY',
+                   loan_disbursement_date = current_date,
+                   loan_first_repayment_date = current_date + 30
+             where policy_member_id = ?
+            """, accountNumber, new BigDecimal("8500000.00"), new BigDecimal("18.500"), 48, memberId);
+    }
+
+    @Test
+    void aCreditLifeSchemeCarriesNoSchemeLevelAmountAndAnInterestMethod() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        GroupProduct product = groupProduct("GRP-LOANBASIS");
+        GroupSchemeView flat = policyApi.issueGroupScheme(flatScheme(product, person("Basis Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        // The widened group_scheme_basis_parameter_present must still admit the new basis
+        // with no scheme-level amount -- and the interest_method check must admit a real
+        // value and refuse a fictional one.
+        jdbcTemplate.update("update policy.group_scheme set interest_method = 'FLAT_RATE' "
+            + "where policy_number = ?", flat.policyNumber());
+        assertThat(jdbcTemplate.queryForObject(
+            "select interest_method from policy.group_scheme where policy_number = ?",
+            String.class, flat.policyNumber())).isEqualTo("FLAT_RATE");
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "update policy.group_scheme set interest_method = 'SIMPLE' where policy_number = ?",
+            flat.policyNumber()))
+            .hasMessageContaining("interest_method");
+    }
+
+    @Test
+    void nameSearchFindsFreeformMembersAsWellAsRegisteredOnes() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-SEARCH");
+        UUID employer = person("Search Co");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, employer,
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Amina Registered"), null, null, null))), "staff-1");
+        policyApi.addMember(scheme.policyNumber(), freeform("Amina Freeform"), "staff-1");
+        policyApi.addMember(scheme.policyNumber(), freeform("Someone Else"), "staff-1");
+
+        // Without the freeform half of the query a credit-life roll -- where EVERY member
+        // is freeform -- would be unsearchable: 400 borrowers and no way to find one.
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, "Amina",
+            PageRequest.of(0, 20)).getTotalElements()).isEqualTo(2);
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, "Freeform",
+            PageRequest.of(0, 20)).getTotalElements()).isEqualTo(1);
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, "Nobody",
+            PageRequest.of(0, 20)).getTotalElements()).isZero();
+        // No search still means the whole schedule.
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 20)).getTotalElements()).isEqualTo(3);
     }
 
     @Test

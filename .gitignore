@@ -35,3 +35,10 @@ frontend/**/.env.local
 frontend/**/coverage/
 frontend/**/test-results/
 frontend/**/playwright-report/
+
+# Real client data. The credit-life schedules (LOLC -> BUMACO, and the BUMACO August
+# template) carry ~345 real borrowers' names, dates of birth, gender and loan amounts.
+# Personal data does not belong in a git history, where deleting it later does not
+# actually remove it. Synthetic equivalents live in
+# backend/docs/superpowers/specs/credit-life-*-sample.csv and are committed instead.
+sample data/

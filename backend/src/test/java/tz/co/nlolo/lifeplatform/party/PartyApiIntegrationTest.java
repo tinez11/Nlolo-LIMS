@@ -109,6 +109,24 @@ class PartyApiIntegrationTest {
             () -> partyApi.registerCorporate("Acme SACCO Duplicate", "REG-001", "+255712345001", "acme2@example.tz", "test-agent"));
     }
 
+    /**
+     * registerCorporate reported EVERY integrity violation as a duplicate registration
+     * number, so a value-too-long on the registered name announced a clash on a number
+     * that was never used -- sending the reader to look for a corporate party that does
+     * not exist. Same bug class as M7's onboardAgent.
+     */
+    @Test
+    void anOverlongNameIsNotReportedAsADuplicateRegistrationNumber() {
+        String tooLong = "A".repeat(300); // display_name is VARCHAR(255)
+
+        Throwable thrown = Assertions.assertThrows(Throwable.class,
+            () -> partyApi.registerCorporate(tooLong, "REG-LONGNAME", "+255712345900",
+                "long@example.tz", "test-agent"));
+
+        Assertions.assertFalse(thrown instanceof DuplicateRegistrationNumberException,
+            "a value-too-long was reported as a duplicate registration number: " + thrown.getMessage());
+    }
+
     @Test
     void thePersonRecordRoundTripsThroughRegistrationAndDetailRead() {
         var registered = partyApi.registerIndividual(new IndividualRegistration(

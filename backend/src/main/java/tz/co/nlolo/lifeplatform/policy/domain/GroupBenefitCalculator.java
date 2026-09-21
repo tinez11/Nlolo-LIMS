@@ -40,7 +40,8 @@ public final class GroupBenefitCalculator {
      */
     public static BigDecimal benefitFor(BenefitBasis basis, BigDecimal flatBenefitAmount,
                                          BigDecimal salaryMultiple, BigDecimal memberSalary,
-                                         BigDecimal gradeBenefitAmount) {
+                                         BigDecimal gradeBenefitAmount,
+                                         BigDecimal loanPrincipalAmount) {
         return switch (basis) {
             case FLAT -> require(flatBenefitAmount, "This scheme is flat-benefit but carries no amount");
             case SALARY_MULTIPLE -> {
@@ -53,6 +54,11 @@ public final class GroupBenefitCalculator {
             }
             case GRADED -> require(gradeBenefitAmount,
                 "This member's grade is not on the scheme's grade table");
+            // Cover AT INCEPTION. The decline is not decided here: AmortisationCalculator
+            // recomputes it as at the date of event, capped by whatever this produces
+            // once evaluate() has applied the free cover limit.
+            case AMORTISING_LOAN -> require(loanPrincipalAmount,
+                "A credit-life member needs the principal of their own loan");
         };
     }
 

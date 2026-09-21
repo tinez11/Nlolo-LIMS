@@ -118,6 +118,13 @@ public interface PolicyApi {
     /**
      * One life, on the opening schedule or joining later.
      *
+     * @param memberType PARTY names a registered party; FREEFORM names a person who is
+     *     not one. Exactly one designation may be supplied -- see
+     *     {@code chk_policy_member_exactly_one_designation}.
+     * @param memberName required on FREEFORM, rejected on PARTY.
+     * @param memberDateOfBirth optional even on FREEFORM: a group scheme does not rate on
+     *     age, so a name and the scheme's basis already value the member. Credit life
+     *     requires it separately, because it tests entry age against product bounds.
      * @param gradeCode required on a GRADED scheme, and rejected on any other -- a grade
      *     on a flat scheme is a caller who believes something about the contract that is
      *     not true.
@@ -125,7 +132,47 @@ public interface PolicyApi {
      * @param joinedOn when cover starts for this member. Null means the scheme's
      *     commencement date, which is what an opening-schedule row means.
      */
-    record MemberInput(UUID memberPartyId, String gradeCode, BigDecimal salaryAmount, LocalDate joinedOn) {}
+    record MemberInput(MemberType memberType, UUID memberPartyId, String memberName,
+                        LocalDate memberDateOfBirth, String gradeCode,
+                        BigDecimal salaryAmount, LocalDate joinedOn,
+                        /**
+                         * The member key on an AMORTISING_LOAN scheme, and the only stable
+                         * identity a freeform borrower has. Rejected on any other basis.
+                         */
+                        String loanAccountNumber,
+                        /** Required on an AMORTISING_LOAN scheme, rejected on any other. */
+                        LoanTerms loanTerms) {
+
+        /** A member of any scheme but credit life, whose members are loans. */
+        public MemberInput(MemberType memberType, UUID memberPartyId, String memberName,
+                            LocalDate memberDateOfBirth, String gradeCode,
+                            BigDecimal salaryAmount, LocalDate joinedOn) {
+            this(memberType, memberPartyId, memberName, memberDateOfBirth, gradeCode,
+                salaryAmount, joinedOn, null, null);
+        }
+
+        /**
+         * A member who is a registered party -- the only kind that existed before
+         * freeform members, and still the default reading of a bare party id.
+         *
+         * <p>Kept so that adding FREEFORM did not mean rewriting thirty-odd call sites to
+         * say PARTY, which is what every one of them already meant. A caller that names a
+         * party and nothing else is unambiguous, and spelling that out adds no
+         * information.
+         */
+        public MemberInput(UUID memberPartyId, String gradeCode, BigDecimal salaryAmount,
+                            LocalDate joinedOn) {
+            this(MemberType.PARTY, memberPartyId, null, null, gradeCode, salaryAmount, joinedOn,
+                null, null);
+        }
+
+        /** A borrower: a name on a lender's schedule, and the loan that insures them. */
+        public static MemberInput borrower(String memberName, LocalDate memberDateOfBirth,
+                                            String loanAccountNumber, LoanTerms loanTerms) {
+            return new MemberInput(MemberType.FREEFORM, null, memberName, memberDateOfBirth,
+                null, null, null, loanAccountNumber, loanTerms);
+        }
+    }
 
     /**
      * Issue a master group policy together with its scheme, grades and opening schedule.
@@ -170,7 +217,28 @@ public interface PolicyApi {
                                      * reason it does on an individual policy: the contract is in
                                      * force somewhere else already.
                                      */
-                                    IssuanceBasis issuanceBasis) {}
+                                    IssuanceBasis issuanceBasis,
+                                    /**
+                                     * How this lender's loans repay principal. Required on
+                                     * AMORTISING_LOAN and rejected on every other basis.
+                                     */
+                                    InterestMethod interestMethod) {
+
+        /** Any scheme but credit life, which is the only basis that has an interest method. */
+        public IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
+                                        UUID agentOfRecordId,
+                                        BenefitBasis benefitBasis, BigDecimal flatBenefitAmount,
+                                        BigDecimal salaryMultiple, BigDecimal fclAmount, String currency,
+                                        List<GradeInput> grades, List<MemberInput> openingSchedule,
+                                        BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                                        LocalDate commencementDate, Integer policyTermMonths,
+                                        String reasonForManualIssue, IssuanceBasis issuanceBasis) {
+            this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
+                flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
+                premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
+                reasonForManualIssue, issuanceBasis, null);
+        }
+    }
 
     /**
      * Issue a scheme. The product must be a GROUP_LIFE product, and the opening schedule

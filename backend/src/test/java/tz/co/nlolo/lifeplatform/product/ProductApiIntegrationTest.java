@@ -64,7 +64,12 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
-            "db-migrations/product/V13__benefit_calculation_method.sql");
+            "db-migrations/product/V13__benefit_calculation_method.sql",
+            // V14 widens product_definition_category_check to admit CREDIT_LIFE.
+            // aCreditLifeProductCanBeCreatedAndReadBack fails without it -- and fails
+            // as "duplicate product code", because createProduct reports every
+            // DataIntegrityViolationException that way. See the note on that test.
+            "db-migrations/product/V14__credit_life_category.sql");
     }
 
     @BeforeEach
@@ -88,6 +93,27 @@ class ProductApiIntegrationTest {
     /** Only for reproducing a pre-V12 row, which the API can no longer produce. */
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    // ---- Credit life: §4 of the client's underwriting requirements table ----
+
+    /**
+     * The Java enum and product_definition_category_check are two copies of one list, and
+     * ProductCategoryMigrationTest can only assert the Java half. This asserts the other
+     * half against real Postgres: without V14 the row is rejected by the CHECK, and the
+     * migration merely parsing would prove nothing.
+     */
+    @Test
+    void aCreditLifeProductCanBeCreatedAndReadBack() {
+        ProductSummaryView product = productApi.createProduct("CREDIT-LIFE-01",
+            "Credit life", ProductCategory.CREDIT_LIFE, "TZS", "actuary@nlolo.co.tz");
+
+        assertEquals(ProductCategory.CREDIT_LIFE, product.category());
+        assertEquals(ProductCategory.CREDIT_LIFE,
+            productApi.getProduct(product.productId()).category());
+        assertEquals("CREDIT_LIFE", jdbcTemplate.queryForObject(
+            "SELECT category FROM product.product_definition WHERE product_id = ?",
+            String.class, product.productId()));
+    }
 
     // ---- Batch 2b: a version says what it covers, and what each benefit pays ----
 
