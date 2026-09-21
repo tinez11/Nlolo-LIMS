@@ -3,9 +3,12 @@ package tz.co.nlolo.lifeplatform.policy.domain;
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentRejection;
+import tz.co.nlolo.lifeplatform.policy.api.EnrolmentRow;
 import tz.co.nlolo.lifeplatform.policy.api.RowOutcome;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 /**
@@ -41,6 +44,26 @@ public class EnrolmentSubmissionRow {
     @Column(name = "borrower_full_name")
     private String borrowerFullName;
 
+    /**
+     * The loan AS JUDGED.
+     *
+     * <p>Carried here rather than re-read from the stored file at acceptance: re-parsing
+     * would risk the schedule and the report disagreeing about what was approved, and it
+     * is these values a second person is being asked to accept. Null on a row that
+     * failed at parse, which by definition has no usable values.
+     */
+    @Column(name = "borrower_date_of_birth")
+    private LocalDate borrowerDateOfBirth;
+
+    @Column(name = "loan_principal_amount")
+    private BigDecimal loanPrincipalAmount;
+
+    @Column(name = "loan_term_months")
+    private Integer loanTermMonths;
+
+    @Column(name = "disbursement_date")
+    private LocalDate disbursementDate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "outcome", nullable = false)
     private RowOutcome outcome;
@@ -75,11 +98,21 @@ public class EnrolmentSubmissionRow {
         this.createdAt = Instant.now();
     }
 
+    /** Copy the judged loan onto a row that will become cover. */
+    private EnrolmentSubmissionRow withLoan(EnrolmentRow source) {
+        this.borrowerDateOfBirth = source.borrowerDateOfBirth();
+        this.loanPrincipalAmount = source.loanPrincipalAmount();
+        this.loanTermMonths = source.loanTermMonths();
+        this.disbursementDate = source.disbursementDate();
+        return this;
+    }
+
     /** A row that will become cover when the submission is accepted. */
-    public static EnrolmentSubmissionRow accepted(UUID tenantId, UUID submissionId, int lineNumber,
-                                                   String loanAccountNumber, String borrowerFullName) {
-        return new EnrolmentSubmissionRow(tenantId, submissionId, lineNumber, loanAccountNumber,
-            borrowerFullName, RowOutcome.ENROLLED, null, null);
+    public static EnrolmentSubmissionRow accepted(UUID tenantId, UUID submissionId,
+                                                   EnrolmentRow source) {
+        return new EnrolmentSubmissionRow(tenantId, submissionId, source.lineNumber(),
+            source.loanAccountNumber(), source.borrowerFullName(),
+            RowOutcome.ENROLLED, null, null).withLoan(source);
     }
 
     /**
@@ -89,11 +122,11 @@ public class EnrolmentSubmissionRow {
      * outcome column already says what happened. The prose carries the limit, the excess
      * and the fact that a referral is open.
      */
-    public static EnrolmentSubmissionRow capped(UUID tenantId, UUID submissionId, int lineNumber,
-                                                 String loanAccountNumber, String borrowerFullName,
-                                                 String reason) {
-        return new EnrolmentSubmissionRow(tenantId, submissionId, lineNumber, loanAccountNumber,
-            borrowerFullName, RowOutcome.ENROLLED_CAPPED, null, reason);
+    public static EnrolmentSubmissionRow capped(UUID tenantId, UUID submissionId,
+                                                 EnrolmentRow source, String reason) {
+        return new EnrolmentSubmissionRow(tenantId, submissionId, source.lineNumber(),
+            source.loanAccountNumber(), source.borrowerFullName(),
+            RowOutcome.ENROLLED_CAPPED, null, reason).withLoan(source);
     }
 
     /** Not covered, and the reason says so in those words. */
@@ -112,6 +145,17 @@ public class EnrolmentSubmissionRow {
     public void becameMember(UUID policyMemberId) {
         this.policyMemberId = policyMemberId;
     }
+
+    /** The loan this row was judged on, or null if it never parsed. */
+    public LoanTermsSource getJudgedLoan() {
+        if (loanPrincipalAmount == null) return null;
+        return new LoanTermsSource(borrowerDateOfBirth, loanPrincipalAmount, loanTermMonths,
+            disbursementDate);
+    }
+
+    /** The four judged values acceptance needs to build a {@code LoanTerms}. */
+    public record LoanTermsSource(LocalDate borrowerDateOfBirth, BigDecimal loanPrincipalAmount,
+                                   Integer loanTermMonths, LocalDate disbursementDate) {}
 
     public UUID getSubmissionRowId() { return submissionRowId; }
     public UUID getSubmissionId() { return submissionId; }

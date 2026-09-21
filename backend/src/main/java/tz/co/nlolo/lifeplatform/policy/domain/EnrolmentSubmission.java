@@ -80,24 +80,49 @@ public class EnrolmentSubmission {
     }
 
     /**
-     * A second person turns this into cover.
+     * The lender's own file, once it has been stored.
      *
-     * @throws IllegalStateException if it is not PENDING, or if the accepter is the
-     *     person who uploaded it. {@code chk_enrolment_submission_two_person} is the
-     *     guarantee; this is the readable error in front of it.
+     * <p>Set after the row is saved because the object key is the submission id, and the
+     * id is not known until then.
      */
-    public void accept(String acceptedBy, int enrolledCount) {
+    public void recordDocument(String documentRef) {
+        this.documentRef = documentRef;
+    }
+
+    /** The tallies, once every row has been judged. */
+    public void recordJudgement(int rowCount, int rejectedCount) {
+        this.rowCount = rowCount;
+        this.rejectedCount = rejectedCount;
+    }
+
+    /**
+     * Whether this person may accept this submission -- asked BEFORE anybody is enrolled.
+     *
+     * <p>Separate from {@link #accept} so a refusal costs nothing: acceptance walks the
+     * whole file creating members, and discovering half-way through that the accepter is
+     * the uploader would mean relying on a rollback to undo real cover.
+     *
+     * @throws IllegalStateException if it is not PENDING, or if the accepter uploaded it.
+     *     {@code chk_enrolment_submission_two_person} is the guarantee; this is the
+     *     readable error in front of it.
+     */
+    public void requireAcceptableBy(String acceptedBy) {
         if (status != SubmissionStatus.PENDING) {
-            throw new IllegalStateException("This submission is already " + status.name().toLowerCase()
-                + " and cannot be accepted again");
+            throw new IllegalStateException("This submission is already "
+                + status.name().toLowerCase() + " and cannot be accepted again");
         }
         if (acceptedBy == null || acceptedBy.isBlank()) {
             throw new IllegalArgumentException("Accepting a submission needs the accepter's identity");
         }
         if (acceptedBy.equals(submittedBy)) {
-            throw new IllegalStateException(acceptedBy
-                + " cannot accept a submission they uploaded themselves; a second person must review it");
+            throw new IllegalStateException(acceptedBy + " cannot accept a submission they"
+                + " uploaded themselves; a second person must review it");
         }
+    }
+
+    /** A second person turns this into cover. Call {@link #requireAcceptableBy} first. */
+    public void accept(String acceptedBy, int enrolledCount) {
+        requireAcceptableBy(acceptedBy);
         this.status = SubmissionStatus.ACCEPTED;
         this.acceptedBy = acceptedBy;
         this.acceptedAt = Instant.now();

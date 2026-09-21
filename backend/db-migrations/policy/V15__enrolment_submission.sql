@@ -81,10 +81,31 @@ CREATE TABLE policy.enrolment_submission_row (
     loan_account_number VARCHAR(50),
     borrower_full_name  VARCHAR(200),
 
+    -- The loan AS JUDGED, carried on the row rather than re-read from the stored file at
+    -- acceptance. Re-parsing would risk the schedule and the report disagreeing about
+    -- what was approved -- the worst outcome this feature can produce -- and it is the
+    -- judged values that a second person is being asked to accept.
+    --
+    -- Null on a row that failed at parse, which by definition has no usable values.
+    borrower_date_of_birth DATE,
+    loan_principal_amount  NUMERIC(19,2)
+        CHECK (loan_principal_amount IS NULL OR loan_principal_amount > 0),
+    loan_term_months       INTEGER
+        CHECK (loan_term_months IS NULL OR loan_term_months > 0),
+    disbursement_date      DATE,
+
     outcome             VARCHAR(20) NOT NULL
         CHECK (outcome IN ('ENROLLED','ENROLLED_CAPPED','REJECTED')),
     reason_code         VARCHAR(40),
     reason              VARCHAR(500),
+
+    -- A row that will become cover must carry everything needed to create it. Without
+    -- this, acceptance could reach a row it cannot enrol, half-way through a file.
+    CONSTRAINT chk_enrolment_row_enrollable_is_complete CHECK (
+        outcome = 'REJECTED'
+        OR (loan_account_number IS NOT NULL AND borrower_full_name IS NOT NULL
+            AND borrower_date_of_birth IS NOT NULL AND loan_principal_amount IS NOT NULL
+            AND loan_term_months IS NOT NULL AND disbursement_date IS NOT NULL)),
 
     -- Written at acceptance, so a report can still answer "which member did this row
     -- become?" six months later.

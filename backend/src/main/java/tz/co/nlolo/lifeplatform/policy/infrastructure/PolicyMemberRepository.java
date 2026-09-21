@@ -70,9 +70,19 @@ public interface PolicyMemberRepository extends JpaRepository<PolicyMember, UUID
 
     Optional<PolicyMember> findByPolicyMemberIdAndTenantId(UUID policyMemberId, UUID tenantId);
 
-    /** Backs the "already on this scheme" check behind ux_policy_member_active. */
+    /** Backs the "already on this scheme" check behind ux_policy_member_active_party. */
     boolean existsByTenantIdAndPolicyNumberAndMemberPartyIdAndStatus(
         UUID tenantId, String policyNumber, UUID memberPartyId, String status);
+
+    /**
+     * The credit-life equivalent, behind {@code ux_policy_member_active_loan}.
+     *
+     * <p>Lets bulk enrolment judge a row as ALREADY_ENROLLED at submit rather than
+     * discovering it as a constraint violation half-way through acceptance -- by which
+     * point the lender has been told the row was acceptable.
+     */
+    boolean existsByTenantIdAndPolicyNumberAndLoanAccountNumberAndStatus(
+        UUID tenantId, String policyNumber, String loanAccountNumber, String status);
 
     long countByTenantIdAndPolicyNumberAndStatus(UUID tenantId, String policyNumber, String status);
 

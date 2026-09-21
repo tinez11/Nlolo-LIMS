@@ -167,20 +167,50 @@ class EnrolmentSubmissionConstraintTest {
             .hasMessageContaining("chk_enrolment_row_rejection_has_reason");
     }
 
+    /** An enrollable row must carry everything needed to create the cover. */
+    private void insertEnrollableRow(UUID submissionId, int lineNumber, String accountNumber) {
+        jdbcTemplate.update("""
+            insert into policy.enrolment_submission_row
+                (tenant_id, submission_id, line_number, loan_account_number, borrower_full_name,
+                 borrower_date_of_birth, loan_principal_amount, loan_term_months,
+                 disbursement_date, outcome)
+            values (?, ?, ?, ?, 'Amina Hassan Mwinyi', DATE '1988-03-14', 8500000.00, 48,
+                    DATE '2026-06-30', 'ENROLLED')
+            """, tenantId, submissionId, lineNumber, accountNumber);
+    }
+
     @Test
     void oneLineOfTheLendersFileAppearsOnceInASubmission() {
         UUID submissionId = insertPendingSubmission("staff.one");
-        jdbcTemplate.update("""
-            insert into policy.enrolment_submission_row
-                (tenant_id, submission_id, line_number, loan_account_number, outcome)
-            values (?, ?, 2, 'LN-1', 'ENROLLED')
-            """, tenantId, submissionId);
+        insertEnrollableRow(submissionId, 2, "LN-1");
 
+        assertThatThrownBy(() -> insertEnrollableRow(submissionId, 2, "LN-2"))
+            .hasMessageContaining("enrolment_submission_row_submission_id_line_number_key");
+    }
+
+    @Test
+    void anEnrollableRowMissingItsLoanIsRefused() {
+        UUID submissionId = insertPendingSubmission("staff.one");
+
+        // Without this, acceptance could reach a row it cannot enrol, half-way through a
+        // file, having already put earlier borrowers on risk.
         assertThatThrownBy(() -> jdbcTemplate.update("""
             insert into policy.enrolment_submission_row
                 (tenant_id, submission_id, line_number, loan_account_number, outcome)
-            values (?, ?, 2, 'LN-2', 'ENROLLED')
+            values (?, ?, 2, 'LN-INCOMPLETE', 'ENROLLED')
             """, tenantId, submissionId))
-            .hasMessageContaining("enrolment_submission_row_submission_id_line_number_key");
+            .hasMessageContaining("chk_enrolment_row_enrollable_is_complete");
+    }
+
+    @Test
+    void aRejectedRowNeedsNoLoanAtAll() {
+        UUID submissionId = insertPendingSubmission("staff.one");
+
+        // A row that failed at parse has no usable values by definition.
+        assertThatCode(() -> jdbcTemplate.update("""
+            insert into policy.enrolment_submission_row
+                (tenant_id, submission_id, line_number, outcome, reason_code, reason)
+            values (?, ?, 2, 'REJECTED', 'MALFORMED_VALUE', 'not a date. NOT COVERED.')
+            """, tenantId, submissionId)).doesNotThrowAnyException();
     }
 }
