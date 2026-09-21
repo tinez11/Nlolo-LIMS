@@ -1379,8 +1379,12 @@ public class PolicyApiImpl implements PolicyApi {
             }
         }
         try {
+            // Loan principal is null until task 6 puts LoanTerms on MemberInput. An
+            // AMORTISING_LOAN scheme therefore refuses every member for now, which is
+            // correct: the columns exist but nothing can populate them yet, and valuing
+            // a borrower at zero would be worse than refusing them.
             BigDecimal benefit = GroupBenefitCalculator.benefitFor(
-                basis, flatBenefitAmount, salaryMultiple, member.salaryAmount(), gradeBenefit);
+                basis, flatBenefitAmount, salaryMultiple, member.salaryAmount(), gradeBenefit, null);
             return GroupBenefitCalculator.evaluate(benefit, fclAmount);
         } catch (IllegalArgumentException e) {
             // The calculator speaks in domain terms already; re-wrapped so a bad request

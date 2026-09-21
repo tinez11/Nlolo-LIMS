@@ -24,7 +24,7 @@ class GroupBenefitCalculatorTest {
     @Test
     void flatSchemeGivesEveryMemberTheSchemeAmount() {
         BigDecimal benefit = GroupBenefitCalculator.benefitFor(
-            BenefitBasis.FLAT, money("5000000.00"), null, null, null);
+            BenefitBasis.FLAT, money("5000000.00"), null, null, null, null);
         assertEquals(0, money("5000000.00").compareTo(benefit));
     }
 
@@ -32,7 +32,7 @@ class GroupBenefitCalculatorTest {
     void salaryMultipleGivesSalaryTimesTheMultiple() {
         // The client's own example: 5x annual salary.
         BigDecimal benefit = GroupBenefitCalculator.benefitFor(
-            BenefitBasis.SALARY_MULTIPLE, null, money("5"), money("30000000.00"), null);
+            BenefitBasis.SALARY_MULTIPLE, null, money("5"), money("30000000.00"), null, null);
         assertEquals(0, money("150000000.00").compareTo(benefit));
     }
 
@@ -44,14 +44,14 @@ class GroupBenefitCalculatorTest {
     @Test
     void salaryMultipleRoundsOnceToTwoPlaces() {
         BigDecimal benefit = GroupBenefitCalculator.benefitFor(
-            BenefitBasis.SALARY_MULTIPLE, null, money("3.5"), money("1234567.89"), null);
+            BenefitBasis.SALARY_MULTIPLE, null, money("3.5"), money("1234567.89"), null, null);
         assertEquals(0, money("4320987.62").compareTo(benefit), "expected 1234567.89 * 3.5 rounded HALF_UP");
     }
 
     @Test
     void gradedSchemeTakesTheGradeAmount() {
         BigDecimal benefit = GroupBenefitCalculator.benefitFor(
-            BenefitBasis.GRADED, null, null, null, money("20000000.00"));
+            BenefitBasis.GRADED, null, null, null, money("20000000.00"), null);
         assertEquals(0, money("20000000.00").compareTo(benefit));
     }
 
@@ -62,13 +62,13 @@ class GroupBenefitCalculatorTest {
     @Test
     void aBasisWithoutItsInputRefusesRatherThanGuessing() {
         assertThrows(IllegalArgumentException.class, () -> GroupBenefitCalculator.benefitFor(
-            BenefitBasis.FLAT, null, null, null, null));
+            BenefitBasis.FLAT, null, null, null, null, null));
         assertThrows(IllegalArgumentException.class, () -> GroupBenefitCalculator.benefitFor(
-            BenefitBasis.SALARY_MULTIPLE, null, money("5"), null, null), "no salary");
+            BenefitBasis.SALARY_MULTIPLE, null, money("5"), null, null, null), "no salary");
         assertThrows(IllegalArgumentException.class, () -> GroupBenefitCalculator.benefitFor(
-            BenefitBasis.SALARY_MULTIPLE, null, null, money("30000000.00"), null), "no multiple");
+            BenefitBasis.SALARY_MULTIPLE, null, null, money("30000000.00"), null, null), "no multiple");
         assertThrows(IllegalArgumentException.class, () -> GroupBenefitCalculator.benefitFor(
-            BenefitBasis.GRADED, null, null, null, null), "grade not on the scheme table");
+            BenefitBasis.GRADED, null, null, null, null, null), "grade not on the scheme table");
     }
 
     // ---- evaluate (the free cover limit) ------------------------------------
@@ -138,5 +138,51 @@ class GroupBenefitCalculatorTest {
         BigDecimal covered = GroupBenefitCalculator.coveredAfterDecision(
             money("150000000.00"), money("100000000.00"), false);
         assertEquals(0, money("100000000.00").compareTo(covered));
+    }
+
+    // ---- AMORTISING_LOAN: the member's benefit comes from their own loan -------
+
+    /**
+     * Cover at INCEPTION, which is the whole principal. The decline is not this class's
+     * business -- AmortisationCalculator recomputes it as at the date of event, capped by
+     * the figure this returns.
+     */
+    @Test
+    void anAmortisingLoanMemberIsWorthTheirPrincipalAtInception() {
+        BigDecimal benefit = GroupBenefitCalculator.benefitFor(
+            BenefitBasis.AMORTISING_LOAN, null, null, null, null, money("8500000.00"));
+        assertEquals(0, money("8500000.00").compareTo(benefit));
+    }
+
+    @Test
+    void anAmortisingLoanMemberWithNoPrincipalCannotBeValued() {
+        // Same rule as a salary-multiple scheme with no salary: guessing would put a
+        // fabricated death benefit on a real contract.
+        assertThrows(IllegalArgumentException.class, () -> GroupBenefitCalculator.benefitFor(
+            BenefitBasis.AMORTISING_LOAN, null, null, null, null, null));
+    }
+
+    @Test
+    void theSchemeLevelAmountsAreIgnoredOnALoanBasis() {
+        // A flat amount on a loan scheme must not win: the member's own loan decides.
+        BigDecimal benefit = GroupBenefitCalculator.benefitFor(
+            BenefitBasis.AMORTISING_LOAN, money("999.00"), money("7.00"), money("5000.00"),
+            money("4444.00"), money("8500000.00"));
+        assertEquals(0, money("8500000.00").compareTo(benefit));
+    }
+
+    /**
+     * Spec 2.7: a 30m loan against a 25m free cover limit is 25m of real cover from day
+     * one -- not zero, and not 30m. The rule already existed; this pins it for the
+     * product whose largest exposures would otherwise be the uninsured ones.
+     */
+    @Test
+    void aLoanAboveTheFreeCoverLimitIsCappedAtIt() {
+        GroupBenefitCalculator.Valuation valuation =
+            GroupBenefitCalculator.evaluate(money("30000000.00"), money("25000000.00"));
+
+        assertEquals(0, money("30000000.00").compareTo(valuation.benefitAmount()));
+        assertEquals(0, money("25000000.00").compareTo(valuation.coveredAmount()));
+        assertEquals(MemberUnderwritingStatus.EVIDENCE_REQUIRED, valuation.underwritingStatus());
     }
 }

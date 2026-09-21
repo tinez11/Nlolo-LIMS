@@ -2,9 +2,12 @@ package tz.co.nlolo.lifeplatform.policy.domain;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
+import tz.co.nlolo.lifeplatform.policy.api.LoanTerms;
 import tz.co.nlolo.lifeplatform.policy.api.MemberType;
 import tz.co.nlolo.lifeplatform.policy.api.MemberUnderwritingStatus;
+import tz.co.nlolo.lifeplatform.policy.api.RepaymentFrequency;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -65,6 +68,32 @@ public class PolicyMember {
 
     @Column(name = "underwriting_case_id")
     private UUID underwritingCaseId;
+
+    // ---- The loan this member's cover is measured against. -------------------
+    // All null on an ordinary group member, all present together on a credit-life one --
+    // chk_policy_member_loan_complete is the guarantee. A member with a principal but no
+    // term would produce a schedule the application has to guess at.
+
+    @Column(name = "loan_account_number")
+    private String loanAccountNumber;
+
+    @Column(name = "loan_principal_amount")
+    private BigDecimal loanPrincipalAmount;
+
+    @Column(name = "loan_annual_rate_percent")
+    private BigDecimal loanAnnualRatePercent;
+
+    @Column(name = "loan_term_months")
+    private Integer loanTermMonths;
+
+    @Column(name = "loan_repayment_frequency")
+    private String loanRepaymentFrequency;
+
+    @Column(name = "loan_disbursement_date")
+    private LocalDate loanDisbursementDate;
+
+    @Column(name = "loan_first_repayment_date")
+    private LocalDate loanFirstRepaymentDate;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -158,6 +187,42 @@ public class PolicyMember {
     public UUID getTenantId() { return tenantId; }
     public String getPolicyNumber() { return policyNumber; }
     public UUID getMemberPartyId() { return memberPartyId; }
+    /**
+     * Attach the loan this member's cover is measured against. Returns this, so it
+     * chains off whichever designation factory built the member.
+     */
+    public PolicyMember withLoan(String loanAccountNumber, LoanTerms terms) {
+        if (loanAccountNumber == null || loanAccountNumber.isBlank()) {
+            throw new IllegalArgumentException("A credit-life member needs a loan account number");
+        }
+        if (terms == null) {
+            throw new IllegalArgumentException("A credit-life member needs the terms of their loan");
+        }
+        this.loanAccountNumber = loanAccountNumber.trim();
+        this.loanPrincipalAmount = terms.principalAmount();
+        this.loanAnnualRatePercent = terms.annualInterestRatePercent();
+        this.loanTermMonths = terms.termMonths();
+        this.loanRepaymentFrequency = terms.repaymentFrequency().name();
+        this.loanDisbursementDate = terms.disbursementDate();
+        this.loanFirstRepaymentDate = terms.firstRepaymentDate();
+        return this;
+    }
+
+    /**
+     * This member's loan, or null on an ordinary group member.
+     *
+     * <p>Rebuilt from the columns rather than stored as an object, so the record's own
+     * invariants are re-asserted on every read: a row that somehow lost its term would
+     * fail here rather than quietly produce a schedule.
+     */
+    public LoanTerms getLoanTerms() {
+        if (loanAccountNumber == null) return null;
+        return new LoanTerms(loanPrincipalAmount, loanAnnualRatePercent, loanTermMonths,
+            RepaymentFrequency.valueOf(loanRepaymentFrequency),
+            loanDisbursementDate, loanFirstRepaymentDate);
+    }
+
+    public String getLoanAccountNumber() { return loanAccountNumber; }
     public MemberType getMemberType() { return memberType; }
     public String getMemberName() { return memberName; }
     public LocalDate getMemberDateOfBirth() { return memberDateOfBirth; }

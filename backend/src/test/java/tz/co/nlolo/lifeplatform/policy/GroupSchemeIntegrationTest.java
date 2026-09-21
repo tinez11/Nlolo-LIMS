@@ -97,6 +97,7 @@ class GroupSchemeIntegrationTest {
             "db-migrations/policy/V8__group_policies_have_no_single_life_assured.sql",
             "db-migrations/policy/V9__group_scheme_and_members.sql",
             "db-migrations/policy/V13__freeform_members.sql",
+            "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -104,6 +105,8 @@ class GroupSchemeIntegrationTest {
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
     @Autowired private PolicyMemberBenefitRepository benefitRepository;
+    /** Only for proving V14's constraints bite: no API can write these columns until task 6. */
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     /** Keeps the generated phone numbers unique across every party this class registers. */
     private static final AtomicInteger PHONE_SEQ = new AtomicInteger(1000);
@@ -580,6 +583,99 @@ class GroupSchemeIntegrationTest {
         policyApi.addMember(scheme.policyNumber(), freeform("Juma Juma"), "staff-1");
 
         assertThat(policyApi.getGroupScheme(scheme.policyNumber()).activeMemberCount()).isEqualTo(3);
+    }
+
+    // ---- V14: the loan columns, and the constraints that keep them honest ----
+    //
+    // Written against JDBC rather than the API because nothing can populate these columns
+    // until task 6 wires LoanTerms through MemberInput. A migration that merely applies
+    // proves nothing about whether its constraints actually refuse anything, and these
+    // three are the difference between a schedule the platform can trust and one it
+    // cannot.
+
+    /** Insert a bare freeform member row and return its id, for loading with loan columns. */
+    private UUID insertFreeformMemberRow(UUID tenantId, String policyNumber) {
+        UUID id = UUID.randomUUID();
+        jdbcTemplate.update("""
+            insert into policy.policy_member
+                (policy_member_id, tenant_id, policy_number, member_type, member_name,
+                 joined_on, status, underwriting_status)
+            values (?, ?, ?, 'FREEFORM', 'Loan Borrower', current_date, 'ACTIVE', 'WITHIN_FCL')
+            """, id, tenantId, policyNumber);
+        return id;
+    }
+
+    @Test
+    void aHalfFilledLoanIsRefusedByTheDatabase() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        GroupProduct product = groupProduct("GRP-LOANHALF");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Half Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+        UUID memberId = insertFreeformMemberRow(tenantId, scheme.policyNumber());
+
+        // A principal with no term is a schedule the application would have to guess at.
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "update policy.policy_member set loan_account_number = ?, loan_principal_amount = ? "
+                + "where policy_member_id = ?",
+            "LN-HALF-1", new BigDecimal("8500000.00"), memberId))
+            .hasMessageContaining("chk_policy_member_loan_complete");
+    }
+
+    @Test
+    void theSameLoanAccountNumberCannotBeActiveTwiceOnOneScheme() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        GroupProduct product = groupProduct("GRP-LOANDUP");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Dup Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        loadLoan(insertFreeformMemberRow(tenantId, scheme.policyNumber()), "LN-2026-00417");
+
+        // V13 deliberately lets two freeform members share a NAME, because a name is not
+        // an identity. A loan account number is, and this is the index that makes a
+        // resubmitted enrolment file idempotent.
+        assertThatThrownBy(() ->
+            loadLoan(insertFreeformMemberRow(tenantId, scheme.policyNumber()), "LN-2026-00417"))
+            .hasMessageContaining("ux_policy_member_active_loan");
+    }
+
+    private void loadLoan(UUID memberId, String accountNumber) {
+        jdbcTemplate.update("""
+            update policy.policy_member
+               set loan_account_number = ?, loan_principal_amount = ?,
+                   loan_annual_rate_percent = ?, loan_term_months = ?,
+                   loan_repayment_frequency = 'MONTHLY',
+                   loan_disbursement_date = current_date,
+                   loan_first_repayment_date = current_date + 30
+             where policy_member_id = ?
+            """, accountNumber, new BigDecimal("8500000.00"), new BigDecimal("18.500"), 48, memberId);
+    }
+
+    @Test
+    void aCreditLifeSchemeCarriesNoSchemeLevelAmountAndAnInterestMethod() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        GroupProduct product = groupProduct("GRP-LOANBASIS");
+        GroupSchemeView flat = policyApi.issueGroupScheme(flatScheme(product, person("Basis Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+
+        // The widened group_scheme_basis_parameter_present must still admit the new basis
+        // with no scheme-level amount -- and the interest_method check must admit a real
+        // value and refuse a fictional one.
+        jdbcTemplate.update("update policy.group_scheme set interest_method = 'FLAT_RATE' "
+            + "where policy_number = ?", flat.policyNumber());
+        assertThat(jdbcTemplate.queryForObject(
+            "select interest_method from policy.group_scheme where policy_number = ?",
+            String.class, flat.policyNumber())).isEqualTo("FLAT_RATE");
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "update policy.group_scheme set interest_method = 'SIMPLE' where policy_number = ?",
+            flat.policyNumber()))
+            .hasMessageContaining("interest_method");
     }
 
     @Test
