@@ -73,6 +73,10 @@ class GroupSchemeIntegrationTest {
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
+            // Admits CREDIT_LIFE. Without it creditLifeProduct() fails on
+            // product_definition_category_check, which is the honest error only because
+            // createProduct stopped reporting every integrity violation as a duplicate code.
+            "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -516,6 +520,25 @@ class GroupSchemeIntegrationTest {
     }
 
     @Test
+    void anOpeningScheduleMayCarryFreeformMembers() {
+        // The opening schedule had its OWN designation check, separate from addMember's,
+        // and it rejected every freeform row -- so a scheme could gain a freeform member
+        // only after issuance. Credit life enrols its whole first batch at issuance.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-OPENFREE");
+
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Opening Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(freeform("Schedule One"), freeform("Schedule Two"),
+                new PolicyApi.MemberInput(person("Registered Three"), null, null, null))), "staff-1");
+
+        assertThat(scheme.activeMemberCount()).isEqualTo(3);
+        assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("3000000.00");
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, "Schedule",
+            PageRequest.of(0, 10)).getTotalElements()).isEqualTo(2);
+    }
+
+    @Test
     void aPartyMemberStillCarriesItsPartyIdAndNoLooseName() {
         TenantContext.set(UUID.randomUUID());
         GroupProduct product = groupProduct("GRP-STILLPARTY");
@@ -583,6 +606,102 @@ class GroupSchemeIntegrationTest {
         policyApi.addMember(scheme.policyNumber(), freeform("Juma Juma"), "staff-1");
 
         assertThat(policyApi.getGroupScheme(scheme.policyNumber()).activeMemberCount()).isEqualTo(3);
+    }
+
+    // ---- Task 5: a credit-life product may be issued as a scheme ----
+    //
+    // Every assertion below checks the MESSAGE, not just the exception type. Three of
+    // these four cases already threw InvalidPolicyStateException before the guard
+    // existed -- for entirely the wrong reason -- so asserting the type alone would pass
+    // against code that does nothing.
+
+    private GroupProduct creditLifeProduct(String code) {
+        ProductSummaryView product = productApi.createProduct(code, "Credit Life " + code,
+            ProductCategory.CREDIT_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        return new GroupProduct(product.productId(), snapshot.productVersionId());
+    }
+
+    private PolicyApi.IssueGroupSchemeRequest loanScheme(GroupProduct product, UUID lender,
+                                                          BenefitBasis basis, BigDecimal flatBenefit,
+                                                          InterestMethod interestMethod) {
+        return new PolicyApi.IssueGroupSchemeRequest(lender, product.productId(),
+            product.productVersionId(), null, basis, flatBenefit, null,
+            new BigDecimal("25000000.00"), "TZS", null,
+            List.of(new PolicyApi.MemberInput(MemberType.FREEFORM, null, "Amina Hassan Mwinyi",
+                LocalDate.of(1988, 3, 14), null, null, null)),
+            new BigDecimal("52000.00"), "TZS", "ANNUALLY", LocalDate.now(), null,
+            "credit life onboarding", IssuanceBasis.MIGRATION, interestMethod);
+    }
+
+    @Test
+    void aCreditLifeProductIsNoLongerRefusedForItsCategory() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-CATEGORY");
+
+        // It still fails -- MemberInput cannot carry a loan until task 6 -- but it must
+        // fail on the MEMBER, not on the product. That is the whole of this task.
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(product, person("Lender Co"), BenefitBasis.AMORTISING_LOAN, null,
+                InterestMethod.FLAT_RATE), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("principal of their own loan")
+            .hasMessageNotContaining("GROUP_LIFE product");
+    }
+
+    @Test
+    void anAmortisingLoanBasisNeedsACreditLifeProduct() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct employerProduct = groupProduct("GRP-WRONGBASIS");
+
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(employerProduct, person("Employer Co"), BenefitBasis.AMORTISING_LOAN, null,
+                InterestMethod.FLAT_RATE), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("CREDIT_LIFE product");
+    }
+
+    @Test
+    void aCreditLifeProductNeedsTheLoanBasis() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-WRONGBASIS");
+
+        // A flat benefit on a lender scheme would insure every borrower for the same
+        // amount regardless of what they borrowed.
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(product, person("Flat Lender"), BenefitBasis.FLAT,
+                new BigDecimal("1000000.00"), null), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("AMORTISING_LOAN");
+    }
+
+    @Test
+    void aCreditLifeSchemeMustStateHowItsLoansRepay() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOMETHOD");
+
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(product, person("Methodless Co"), BenefitBasis.AMORTISING_LOAN, null, null),
+            "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("repay principal");
+    }
+
+    @Test
+    void anEmployerSchemeStillRefusesAnInterestMethod() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-STRAYMETHOD");
+
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(
+            loanScheme(product, person("Stray Co"), BenefitBasis.FLAT,
+                new BigDecimal("1000000.00"), InterestMethod.REDUCING_BALANCE), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("only on a credit-life scheme");
     }
 
     // ---- V14: the loan columns, and the constraints that keep them honest ----

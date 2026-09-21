@@ -194,7 +194,28 @@ public interface PolicyApi {
                                      * reason it does on an individual policy: the contract is in
                                      * force somewhere else already.
                                      */
-                                    IssuanceBasis issuanceBasis) {}
+                                    IssuanceBasis issuanceBasis,
+                                    /**
+                                     * How this lender's loans repay principal. Required on
+                                     * AMORTISING_LOAN and rejected on every other basis.
+                                     */
+                                    InterestMethod interestMethod) {
+
+        /** Any scheme but credit life, which is the only basis that has an interest method. */
+        public IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
+                                        UUID agentOfRecordId,
+                                        BenefitBasis benefitBasis, BigDecimal flatBenefitAmount,
+                                        BigDecimal salaryMultiple, BigDecimal fclAmount, String currency,
+                                        List<GradeInput> grades, List<MemberInput> openingSchedule,
+                                        BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                                        LocalDate commencementDate, Integer policyTermMonths,
+                                        String reasonForManualIssue, IssuanceBasis issuanceBasis) {
+            this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
+                flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
+                premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
+                reasonForManualIssue, issuanceBasis, null);
+        }
+    }
 
     /**
      * Issue a scheme. The product must be a GROUP_LIFE product, and the opening schedule

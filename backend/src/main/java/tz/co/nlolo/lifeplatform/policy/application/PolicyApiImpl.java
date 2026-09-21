@@ -1005,12 +1005,44 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         partyApi.getParty(request.policyholderPartyId()); // the employer must exist
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
-        if (snapshot.category() != ProductCategory.GROUP_LIFE) {
-            // Without this a scheme could be hung off a term-life product, and every
-            // reader downstream that branches on category -- reserving, reporting,
-            // commission -- would treat 500 lives as one.
+        // Without a category check a scheme could be hung off a term-life product, and
+        // every reader downstream that branches on category -- reserving, reporting,
+        // commission -- would treat 500 lives as one.
+        //
+        // The category and the basis must also AGREE, in both directions. They are two
+        // statements about the same contract: the category is what the product was
+        // priced and filed as, the basis is how each member is valued. A credit-life
+        // product on a flat basis would insure every borrower for the same amount
+        // regardless of what they borrowed; a loan basis on an employer product would be
+        // loan cover nobody priced.
+        ProductCategory category = snapshot.category();
+        boolean loanBasis = request.benefitBasis() == BenefitBasis.AMORTISING_LOAN;
+
+        if (category != ProductCategory.GROUP_LIFE && category != ProductCategory.CREDIT_LIFE) {
             throw new InvalidPolicyStateException(
-                "A group scheme needs a GROUP_LIFE product; this one is " + snapshot.category());
+                "A group scheme needs a GROUP_LIFE or CREDIT_LIFE product; this one is " + category);
+        }
+        if (category == ProductCategory.CREDIT_LIFE && !loanBasis) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme must use the AMORTISING_LOAN basis; its members are loans, "
+                    + "and " + request.benefitBasis() + " would value them from the scheme instead");
+        }
+        if (category == ProductCategory.GROUP_LIFE && loanBasis) {
+            throw new InvalidPolicyStateException(
+                "The AMORTISING_LOAN basis needs a CREDIT_LIFE product; loan cover on an "
+                    + "employer product is cover nobody priced");
+        }
+        // Checked HERE rather than left to the GroupScheme constructor, which runs after
+        // the whole opening schedule has been valued. A scheme missing its interest
+        // method would otherwise be reported as whatever its first member happened to be
+        // wrong about, which sends the reader to the wrong row entirely.
+        if (loanBasis && request.interestMethod() == null) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme must state how its lender's loans repay principal");
+        }
+        if (!loanBasis && request.interestMethod() != null) {
+            throw new InvalidPolicyStateException(
+                "An interest method belongs only on a credit-life scheme");
         }
 
         LocalDate today = LocalDate.now();
@@ -1037,10 +1069,11 @@ public class PolicyApiImpl implements PolicyApi {
         List<ValuedMember> valued = new ArrayList<>(schedule.size());
         Set<UUID> seen = new HashSet<>();
         for (MemberInput input : schedule) {
-            if (input.memberPartyId() == null) {
-                throw new InvalidPolicyStateException("Every row of the opening schedule must name a person");
-            }
-            if (!seen.add(input.memberPartyId())) {
+            requireValidDesignation(input);
+            // Only PARTY rows can collide by party id. Two FREEFORM rows may legitimately
+            // share a name -- a father and a son, or two dependants of one household --
+            // and credit life keys its members on the loan account number instead.
+            if (input.memberType() == MemberType.PARTY && !seen.add(input.memberPartyId())) {
                 // ux_policy_member_active would catch this as a constraint violation. Here
                 // it arrives as a sentence naming the duplicate, which is what somebody
                 // fixing a spreadsheet needs.
@@ -1098,7 +1131,7 @@ public class PolicyApiImpl implements PolicyApi {
 
         groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),
             request.flatBenefitAmount(), request.salaryMultiple(), request.fclAmount(),
-            request.currency(), issuedBy));
+            request.currency(), request.interestMethod(), issuedBy));
         if (request.benefitBasis() == BenefitBasis.GRADED) {
             request.grades().forEach(g -> groupSchemeGradeRepository.save(
                 new GroupSchemeGrade(tenantId, policyNumber, g.gradeCode(), g.benefitAmount())));
