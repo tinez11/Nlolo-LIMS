@@ -93,6 +93,7 @@ class PolicyClaimClosureTest {
             "db-migrations/policy/V9__group_scheme_and_members.sql",
             "db-migrations/policy/V13__freeform_members.sql",
             "db-migrations/policy/V14__credit_life_scheme.sql",
+            "db-migrations/policy/V15__enrolment_submission.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",

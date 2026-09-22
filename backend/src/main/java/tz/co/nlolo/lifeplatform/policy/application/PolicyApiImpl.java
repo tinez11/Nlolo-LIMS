@@ -1050,9 +1050,13 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException(
                 "A credit-life scheme must state how its lender's loans repay principal");
         }
-        if (!loanBasis && request.interestMethod() != null) {
+        if (loanBasis && request.repaymentFrequency() == null) {
             throw new InvalidPolicyStateException(
-                "An interest method belongs only on a credit-life scheme");
+                "A credit-life scheme must state how often its lender's loans repay");
+        }
+        if (!loanBasis && (request.interestMethod() != null || request.repaymentFrequency() != null)) {
+            throw new InvalidPolicyStateException(
+                "An interest method and a repayment cadence belong only on a credit-life scheme");
         }
 
         LocalDate today = LocalDate.now();
@@ -1141,7 +1145,7 @@ public class PolicyApiImpl implements PolicyApi {
 
         groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),
             request.flatBenefitAmount(), request.salaryMultiple(), request.fclAmount(),
-            request.currency(), request.interestMethod(), issuedBy));
+            request.currency(), request.interestMethod(), request.repaymentFrequency(), issuedBy));
         if (request.benefitBasis() == BenefitBasis.GRADED) {
             request.grades().forEach(g -> groupSchemeGradeRepository.save(
                 new GroupSchemeGrade(tenantId, policyNumber, g.gradeCode(), g.benefitAmount())));

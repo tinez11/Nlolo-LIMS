@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
 import tz.co.nlolo.lifeplatform.policy.api.InterestMethod;
+import tz.co.nlolo.lifeplatform.policy.api.RepaymentFrequency;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -59,6 +60,19 @@ public class GroupScheme {
     @Column(name = "interest_method")
     private InterestMethod interestMethod;
 
+    /**
+     * How often this lender's loans repay. Null on every basis but AMORTISING_LOAN.
+     *
+     * <p>On the scheme rather than on each member because a lender's product repays on
+     * one cadence: asking for it on all 400 rows of a monthly file is 400 chances for
+     * that file to disagree with itself. No setter, for the reason interestMethod has
+     * none -- every member already on the roll had their schedule counted in periods of
+     * the old answer.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "repayment_frequency")
+    private RepaymentFrequency repaymentFrequency;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -77,13 +91,14 @@ public class GroupScheme {
                         BigDecimal flatBenefitAmount, BigDecimal salaryMultiple,
                         BigDecimal fclAmount, String currency, String createdBy) {
         this(policyNumber, tenantId, benefitBasis, flatBenefitAmount, salaryMultiple,
-            fclAmount, currency, null, createdBy);
+            fclAmount, currency, null, null, createdBy);
     }
 
     public GroupScheme(String policyNumber, UUID tenantId, BenefitBasis benefitBasis,
                         BigDecimal flatBenefitAmount, BigDecimal salaryMultiple,
                         BigDecimal fclAmount, String currency,
-                        InterestMethod interestMethod, String createdBy) {
+                        InterestMethod interestMethod, RepaymentFrequency repaymentFrequency,
+                        String createdBy) {
         // Mirrors group_scheme_basis_parameter_present. The database is the guarantee;
         // this exists so a violation arrives as a domain error naming the problem rather
         // than as a constraint violation from three layers down.
@@ -107,11 +122,16 @@ public class GroupScheme {
                     throw new IllegalArgumentException(
                         "A credit-life scheme must state how its lender's loans repay principal");
                 }
+                if (repaymentFrequency == null) {
+                    throw new IllegalArgumentException(
+                        "A credit-life scheme must state how often its lender's loans repay");
+                }
             }
         }
-        if (benefitBasis != BenefitBasis.AMORTISING_LOAN && interestMethod != null) {
+        if (benefitBasis != BenefitBasis.AMORTISING_LOAN
+                && (interestMethod != null || repaymentFrequency != null)) {
             throw new IllegalArgumentException(
-                "An interest method belongs only on a credit-life scheme");
+                "An interest method and a repayment cadence belong only on a credit-life scheme");
         }
         if (fclAmount != null && fclAmount.signum() <= 0) {
             // Zero would send every member to underwriting, which is not what anybody
@@ -128,6 +148,7 @@ public class GroupScheme {
         this.fclAmount = fclAmount;
         this.currency = currency;
         this.interestMethod = interestMethod;
+        this.repaymentFrequency = repaymentFrequency;
         this.createdAt = Instant.now();
         this.createdBy = createdBy;
     }
@@ -148,6 +169,7 @@ public class GroupScheme {
     public BigDecimal getFclAmount() { return fclAmount; }
     public String getCurrency() { return currency; }
     public InterestMethod getInterestMethod() { return interestMethod; }
+    public RepaymentFrequency getRepaymentFrequency() { return repaymentFrequency; }
     public Instant getCreatedAt() { return createdAt; }
     public String getCreatedBy() { return createdBy; }
 }

@@ -222,7 +222,31 @@ public interface PolicyApi {
                                      * How this lender's loans repay principal. Required on
                                      * AMORTISING_LOAN and rejected on every other basis.
                                      */
-                                    InterestMethod interestMethod) {
+                                    InterestMethod interestMethod,
+                                    /**
+                                     * How often this lender's loans repay. Required on
+                                     * AMORTISING_LOAN and rejected on every other basis.
+                                     * On the scheme because a lender's product repays on
+                                     * one cadence.
+                                     */
+                                    RepaymentFrequency repaymentFrequency) {
+
+        /** A credit-life scheme, which states both how and how often its loans repay. */
+        public IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
+                                        UUID agentOfRecordId,
+                                        BenefitBasis benefitBasis, BigDecimal flatBenefitAmount,
+                                        BigDecimal salaryMultiple, BigDecimal fclAmount, String currency,
+                                        List<GradeInput> grades, List<MemberInput> openingSchedule,
+                                        BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
+                                        LocalDate commencementDate, Integer policyTermMonths,
+                                        String reasonForManualIssue, IssuanceBasis issuanceBasis,
+                                        InterestMethod interestMethod) {
+            this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
+                flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
+                premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
+                reasonForManualIssue, issuanceBasis, interestMethod,
+                interestMethod == null ? null : RepaymentFrequency.MONTHLY);
+        }
 
         /** Any scheme but credit life, which is the only basis that has an interest method. */
         public IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
@@ -236,7 +260,7 @@ public interface PolicyApi {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
-                reasonForManualIssue, issuanceBasis, null);
+                reasonForManualIssue, issuanceBasis, null, null);
         }
     }
 
