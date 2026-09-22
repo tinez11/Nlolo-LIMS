@@ -29,6 +29,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
@@ -103,6 +104,7 @@ class GroupSchemeIntegrationTest {
             "db-migrations/policy/V13__freeform_members.sql",
             "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/policy/V15__enrolment_submission.sql",
+            "db-migrations/policy/V16__insurer_issued_member_reference.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -664,6 +666,20 @@ class GroupSchemeIntegrationTest {
             RepaymentFrequency.MONTHLY, LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 30));
     }
 
+    /**
+     * A borrower who is nobody else on the scheme.
+     *
+     * <p>Used wherever a scheme just needs an opening member: since the lender supplies
+     * no identifier, two rows with the same name, birth date, disbursement date and
+     * principal ARE the same loan as far as the platform can tell, so fixture members
+     * have to differ in one of those.
+     */
+    private static PolicyApi.MemberInput openingBorrower() {
+        return PolicyApi.MemberInput.borrower("Opening Borrower", LocalDate.of(1980, 1, 1), null,
+            new LoanTerms(new BigDecimal("1000000.00"), BigDecimal.ZERO, 12,
+                RepaymentFrequency.MONTHLY, LocalDate.of(2026, 6, 5), LocalDate.of(2026, 7, 5)));
+    }
+
     private static PolicyApi.MemberInput borrower(String loanAccountNumber) {
         return PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14),
             loanAccountNumber, lolcLoan());
@@ -709,7 +725,7 @@ class GroupSchemeIntegrationTest {
         GroupProduct product = creditLifeProduct("CL-CONTRADICT");
         GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
             person("Contradict Co"), InterestMethod.FLAT_RATE,
-            List.of(borrower("LN-OPENING"))), "staff-1");
+            List.of(openingBorrower())), "staff-1");
 
         PolicyApi.MemberInput contradictory = new PolicyApi.MemberInput(MemberType.FREEFORM, null,
             "Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14), null, null,
@@ -726,7 +742,7 @@ class GroupSchemeIntegrationTest {
         GroupProduct product = creditLifeProduct("CL-FUTURE");
         GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
             person("Future Lender"), InterestMethod.FLAT_RATE,
-            List.of(borrower("LN-OPENING"))), "staff-1");
+            List.of(openingBorrower())), "staff-1");
 
         PolicyApi.MemberInput future = PolicyApi.MemberInput.borrower("Zainabu Ally",
             LocalDate.of(1987, 10, 30), "LN-2026-00428",
@@ -748,29 +764,59 @@ class GroupSchemeIntegrationTest {
             List.of(borrower("LN-2026-00417"))), "staff-1");
 
         // What makes a resubmitted enrolment file idempotent rather than doubling cover.
+        // The lender supplies no identifier, so the LOAN is the identity: who, born when,
+        // borrowed how much, on what day.
         assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(),
             borrower("LN-2026-00417"), "staff-1"))
             .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("already an active member");
+            .hasMessageContaining("already has an active loan");
     }
 
     @Test
-    void aBorrowerWithoutALoanAccountNumberIsRefused() {
+    void aGenuinelySecondLoanToTheSamePersonIsRefusedUntilTheyQuoteTheReference() {
+        // The honest limit of a composite key. A second loan to one borrower on a
+        // DIFFERENT day or for a different amount goes through; same day, same amount is
+        // indistinguishable from a resubmission, so it is refused with the way out named.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-SECONDLOAN");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Second Loan Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower(null))), "staff-1");
+
+        PolicyApi.MemberInput differentDay = PolicyApi.MemberInput.borrower(
+            "Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14), null,
+            new LoanTerms(new BigDecimal("8500000.00"), BigDecimal.ZERO, 48,
+                RepaymentFrequency.MONTHLY,
+                LocalDate.of(2026, 7, 15), LocalDate.of(2026, 8, 15)));
+
+        assertThatCode(() -> policyApi.addMember(scheme.policyNumber(), differentDay, "staff-1"))
+            .doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), borrower(null), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("quote the existing member's reference");
+    }
+
+    @Test
+    void aBorrowerNeedsNoLoanAccountNumberBecauseTheLenderHasNone() {
         TenantContext.set(UUID.randomUUID());
         GroupProduct product = creditLifeProduct("CL-NOKEY");
         GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
             person("Keyless Co"), InterestMethod.FLAT_RATE,
-            List.of(borrower("LN-OPENING"))), "staff-1");
+            List.of(borrower(null))), "staff-1");
 
-        // Neither real client file carries one yet; both lenders have been asked to add
-        // it. Our template requires it, so a row without one is refused rather than
-        // silently enrolled with no identity at all.
-        PolicyApi.MemberInput unkeyed = PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi",
-            LocalDate.of(1988, 3, 14), null, lolcLoan());
+        // Reversed by the client on 2026-09-22: neither lender holds a per-loan
+        // identifier, so requiring one would have rejected every real file. The insurer
+        // issues the reference instead, and the account number is kept only when a lender
+        // does happen to send one.
+        PolicyMemberView member = policyApi.addMember(scheme.policyNumber(),
+            PolicyApi.MemberInput.borrower("Joseph Mkenda", LocalDate.of(1975, 11, 2), null,
+                new LoanTerms(new BigDecimal("2400000.00"), BigDecimal.ZERO, 24,
+                    RepaymentFrequency.MONTHLY,
+                    LocalDate.of(2026, 7, 10), LocalDate.of(2026, 8, 10))), "staff-1");
 
-        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(), unkeyed, "staff-1"))
-            .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("loan account number");
+        assertThat(member.loanAccountNumber()).isNull();
+        assertThat(member.memberReference()).isNotNull().startsWith("CL-");
     }
 
     @Test
@@ -779,7 +825,7 @@ class GroupSchemeIntegrationTest {
         GroupProduct product = creditLifeProduct("CL-FCL");
         GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
             person("FCL Lender"), InterestMethod.FLAT_RATE,
-            List.of(borrower("LN-OPENING"))), "staff-1");
+            List.of(openingBorrower())), "staff-1");
 
         // 30m loan against the scheme's 25m free cover limit. Rejecting the row would
         // make the LARGEST exposures systematically the uninsured ones.
@@ -804,7 +850,7 @@ class GroupSchemeIntegrationTest {
         GroupProduct product = creditLifeProduct("CL-PARTYLOAN");
         GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
             person("Party Lender"), InterestMethod.FLAT_RATE,
-            List.of(borrower("LN-OPENING"))), "staff-1");
+            List.of(openingBorrower())), "staff-1");
 
         UUID known = person("Registered Borrower");
         PolicyMemberView member = policyApi.addMember(scheme.policyNumber(),
@@ -831,7 +877,7 @@ class GroupSchemeIntegrationTest {
         GroupProduct product = creditLifeProduct("CL-REFER");
         GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
             person("Refer Lender"), InterestMethod.FLAT_RATE,
-            List.of(borrower("LN-OPENING"))), "staff-1");
+            List.of(openingBorrower())), "staff-1");
 
         PolicyMemberView big = policyApi.addMember(scheme.policyNumber(),
             PolicyApi.MemberInput.borrower("Peter Massawe", LocalDate.of(1980, 7, 19),
@@ -857,7 +903,7 @@ class GroupSchemeIntegrationTest {
         GroupProduct product = creditLifeProduct("CL-NOREFER");
         GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
             person("No Refer Lender"), InterestMethod.FLAT_RATE,
-            List.of(borrower("LN-OPENING"))), "staff-1");
+            List.of(openingBorrower())), "staff-1");
 
         PolicyMemberView ordinary = policyApi.addMember(scheme.policyNumber(),
             borrower("LN-2026-00417"), "staff-1");
@@ -914,6 +960,57 @@ class GroupSchemeIntegrationTest {
 
         assertThat(cover.amount()).isEqualByComparingTo("10400000.00");
         assertThat(cover.policyMemberId()).isEqualTo(memberId);
+    }
+
+    @Test
+    void theInsurerIssuesTheReferenceTheLenderWillQuoteBack() {
+        // Client answer, 2026-09-22: the lender has no per-loan identifier to give us --
+        // one policy number goes to the bank and sheets come back. So we mint one.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-REFERENCE");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Reference Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower(null))), "staff-1");
+
+        PolicyMemberView member = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0);
+
+        assertThat(member.memberReference())
+            .as("a borrower with no reference is one the lender can never name again")
+            .isNotNull()
+            .startsWith("CL-")
+            // Scheme-qualified, so a human reading it knows which contract it belongs to.
+            .contains(scheme.policyNumber().substring(4));
+    }
+
+    @Test
+    void everyBorrowerGetsADistinctReference() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-DISTINCT");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Distinct Lender"), InterestMethod.FLAT_RATE,
+            List.of(borrower(null), borrower(null), borrower(null))), "staff-1");
+
+        var references = policyApi.listMembers(scheme.policyNumber(), null, null,
+                PageRequest.of(0, 10)).getContent().stream()
+            .map(PolicyMemberView::memberReference)
+            .toList();
+
+        // Three borrowers who share a name and a loan shape still get three references:
+        // the sequence, not anything about the row, is what makes them distinct.
+        assertThat(references).hasSize(3).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void anOrdinaryGroupMemberGetsNoReference() {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-NOREF");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("No Ref Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Employee"), null, null, null))), "staff-1");
+
+        assertThat(policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0).memberReference()).isNull();
     }
 
     @Test
@@ -1100,7 +1197,7 @@ class GroupSchemeIntegrationTest {
     }
 
     @Test
-    void theSameLoanAccountNumberCannotBeActiveTwiceOnOneScheme() {
+    void aMemberReferenceIsNeverIssuedTwice() {
         UUID tenantId = UUID.randomUUID();
         TenantContext.set(tenantId);
         GroupProduct product = groupProduct("GRP-LOANDUP");
@@ -1108,26 +1205,47 @@ class GroupSchemeIntegrationTest {
             new BigDecimal("1000000.00"), null,
             List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
 
-        loadLoan(insertFreeformMemberRow(tenantId, scheme.policyNumber()), "LN-2026-00417");
+        loadLoan(insertFreeformMemberRow(tenantId, scheme.policyNumber()), "CL-TEST-000001");
 
-        // V13 deliberately lets two freeform members share a NAME, because a name is not
-        // an identity. A loan account number is, and this is the index that makes a
-        // resubmitted enrolment file idempotent.
+        // The sequence cannot collide, so this guards against a reference minted by some
+        // other route -- and it is what makes a reference safe for a lender to quote.
         assertThatThrownBy(() ->
-            loadLoan(insertFreeformMemberRow(tenantId, scheme.policyNumber()), "LN-2026-00417"))
-            .hasMessageContaining("ux_policy_member_active_loan");
+            loadLoan(insertFreeformMemberRow(tenantId, scheme.policyNumber()), "CL-TEST-000001"))
+            .hasMessageContaining("ux_policy_member_reference");
     }
 
-    private void loadLoan(UUID memberId, String accountNumber) {
+    @Test
+    void aMemberCarryingALoanMustCarryAReference() {
+        UUID tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
+        GroupProduct product = groupProduct("GRP-NOREFLOAN");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("No Ref Co"),
+            new BigDecimal("1000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Opening"), null, null, null))), "staff-1");
+        UUID memberId = insertFreeformMemberRow(tenantId, scheme.policyNumber());
+
+        // A borrower the lender can never name again is the whole problem V16 exists for.
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+            update policy.policy_member
+               set loan_principal_amount = 8500000.00, loan_annual_rate_percent = 0,
+                   loan_term_months = 48, loan_repayment_frequency = 'MONTHLY',
+                   loan_disbursement_date = current_date,
+                   loan_first_repayment_date = current_date + 30
+             where policy_member_id = ?
+            """, memberId))
+            .hasMessageContaining("chk_policy_member_loan_has_reference");
+    }
+
+    private void loadLoan(UUID memberId, String memberReference) {
         jdbcTemplate.update("""
             update policy.policy_member
-               set loan_account_number = ?, loan_principal_amount = ?,
+               set member_reference = ?, loan_principal_amount = ?,
                    loan_annual_rate_percent = ?, loan_term_months = ?,
                    loan_repayment_frequency = 'MONTHLY',
                    loan_disbursement_date = current_date,
                    loan_first_repayment_date = current_date + 30
              where policy_member_id = ?
-            """, accountNumber, new BigDecimal("8500000.00"), new BigDecimal("18.500"), 48, memberId);
+            """, memberReference, new BigDecimal("8500000.00"), new BigDecimal("18.500"), 48, memberId);
     }
 
     @Test

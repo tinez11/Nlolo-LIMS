@@ -74,6 +74,21 @@ public class PolicyMember {
     // chk_policy_member_loan_complete is the guarantee. A member with a principal but no
     // term would produce a schedule the application has to guess at.
 
+    /**
+     * What the LENDER quotes back at us. Issued by the insurer, because the lender has
+     * none of their own to give: one policy number goes to the bank and sheets come back,
+     * with nothing on them distinguishing one borrower from another.
+     *
+     * <p>Null on an ordinary group member; required on any member carrying a loan, which
+     * {@code chk_policy_member_loan_has_reference} enforces.
+     */
+    @Column(name = "member_reference")
+    private String memberReference;
+
+    /**
+     * The lender's own identifier for the loan, when they have one. Optional and, on both
+     * real lenders' files today, absent -- which is why it is not the key.
+     */
     @Column(name = "loan_account_number")
     private String loanAccountNumber;
 
@@ -216,14 +231,19 @@ public class PolicyMember {
      * Attach the loan this member's cover is measured against. Returns this, so it
      * chains off whichever designation factory built the member.
      */
-    public PolicyMember withLoan(String loanAccountNumber, LoanTerms terms) {
-        if (loanAccountNumber == null || loanAccountNumber.isBlank()) {
-            throw new IllegalArgumentException("A credit-life member needs a loan account number");
+    public PolicyMember withLoan(String memberReference, String loanAccountNumber, LoanTerms terms) {
+        if (memberReference == null || memberReference.isBlank()) {
+            throw new IllegalArgumentException(
+                "A credit-life member needs a member reference; it is how the lender names "
+                    + "them afterwards, and they have no identifier of their own to give");
         }
         if (terms == null) {
             throw new IllegalArgumentException("A credit-life member needs the terms of their loan");
         }
-        this.loanAccountNumber = loanAccountNumber.trim();
+        this.memberReference = memberReference.trim();
+        // Optional: kept when a lender does send one, never relied on.
+        this.loanAccountNumber = loanAccountNumber == null || loanAccountNumber.isBlank()
+            ? null : loanAccountNumber.trim();
         this.loanPrincipalAmount = terms.principalAmount();
         this.loanAnnualRatePercent = terms.annualInterestRatePercent();
         this.loanTermMonths = terms.termMonths();
@@ -248,6 +268,7 @@ public class PolicyMember {
     }
 
     public String getLoanAccountNumber() { return loanAccountNumber; }
+    public String getMemberReference() { return memberReference; }
     public MemberType getMemberType() { return memberType; }
     public String getMemberName() { return memberName; }
     public LocalDate getMemberDateOfBirth() { return memberDateOfBirth; }

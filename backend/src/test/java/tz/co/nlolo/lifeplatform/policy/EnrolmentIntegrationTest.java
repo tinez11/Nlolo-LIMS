@@ -109,6 +109,7 @@ class EnrolmentIntegrationTest {
             "db-migrations/policy/V13__freeform_members.sql",
             "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/policy/V15__enrolment_submission.sql",
+            "db-migrations/policy/V16__insurer_issued_member_reference.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V3__enrolment_schedule_document_type.sql",

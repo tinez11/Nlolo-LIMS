@@ -84,6 +84,43 @@ public interface PolicyMemberRepository extends JpaRepository<PolicyMember, UUID
     boolean existsByTenantIdAndPolicyNumberAndLoanAccountNumberAndStatus(
         UUID tenantId, String policyNumber, String loanAccountNumber, String status);
 
+    /**
+     * The next member reference number.
+     *
+     * <p>A sequence rather than a counter column on the scheme: a counter would be a
+     * read-modify-write, and two members added at once would both read the same value and
+     * one reference would silently be lost. {@code nextval} cannot be raced.
+     */
+    @Query(value = "select nextval('policy.member_reference_seq')", nativeQuery = true)
+    long nextMemberReferenceNumber();
+
+    /**
+     * Whether this scheme already covers this borrower for this loan.
+     *
+     * <p>The composite that replaces the lender-supplied key. A lender has no identifier
+     * to give on a first file, so a resubmission is recognised by the facts of the loan
+     * itself. Two loans to one person on the same day for the same amount are
+     * indistinguishable here -- possible but rare, and it fails in the safe direction: a
+     * rejection the lender can overturn, never silent double cover.
+     */
+    @Query("""
+        select count(m) > 0 from PolicyMember m
+         where m.tenantId = :tenantId and m.policyNumber = :policyNumber
+           and m.status = 'ACTIVE'
+           and lower(m.memberName) = lower(:memberName)
+           and m.memberDateOfBirth = :dateOfBirth
+           and m.loanDisbursementDate = :disbursementDate
+           and m.loanPrincipalAmount = :principalAmount
+        """)
+    boolean existsMatchingLoan(@Param("tenantId") UUID tenantId,
+                                @Param("policyNumber") String policyNumber,
+                                @Param("memberName") String memberName,
+                                @Param("dateOfBirth") java.time.LocalDate dateOfBirth,
+                                @Param("disbursementDate") java.time.LocalDate disbursementDate,
+                                @Param("principalAmount") java.math.BigDecimal principalAmount);
+
+    Optional<PolicyMember> findByTenantIdAndMemberReference(UUID tenantId, String memberReference);
+
     long countByTenantIdAndPolicyNumberAndStatus(UUID tenantId, String policyNumber, String status);
 
     /**
