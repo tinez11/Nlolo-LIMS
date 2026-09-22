@@ -60,6 +60,12 @@ public class PolicyApiImpl implements PolicyApi {
     private final GroupSchemeGradeRepository groupSchemeGradeRepository;
     private final PolicyMemberRepository policyMemberRepository;
     private final PolicyMemberBenefitRepository policyMemberBenefitRepository;
+
+    /**
+     * Only for the refund detail on an exit: what a departing borrower was actually charged,
+     * and which file charged them. Read-only here -- EnrolmentApiImpl owns writing these rows.
+     */
+    private final EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository;
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
@@ -73,6 +79,7 @@ public class PolicyApiImpl implements PolicyApi {
                           CoverageRepository coverageRepository, LoanValueReservationRepository loanValueReservationRepository,
                           GroupSchemeRepository groupSchemeRepository, GroupSchemeGradeRepository groupSchemeGradeRepository,
                           PolicyMemberRepository policyMemberRepository, PolicyMemberBenefitRepository policyMemberBenefitRepository,
+                          EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
@@ -86,6 +93,7 @@ public class PolicyApiImpl implements PolicyApi {
         this.groupSchemeGradeRepository = groupSchemeGradeRepository;
         this.policyMemberRepository = policyMemberRepository;
         this.policyMemberBenefitRepository = policyMemberBenefitRepository;
+        this.enrolmentSubmissionRowRepository = enrolmentSubmissionRowRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
@@ -1044,6 +1052,8 @@ public class PolicyApiImpl implements PolicyApi {
                 "amount", outstandingBalanceAtExit.toPlainString(),
                 "currencyCode", scheme.getCurrency()));
         }
+        addRefundDetail(payload, member, scheme, reason, dateOfEvent, tenantId);
+
         eventPublisher.publishEvent(
             DomainEventEnvelope.of("policy.GroupMemberExited", tenantId, Map.copyOf(payload)));
 
@@ -1056,6 +1066,56 @@ public class PolicyApiImpl implements PolicyApi {
             closeAsSurrendered(policy, claimId, tenantId);
         }
         return Optional.of(member);
+    }
+
+    /**
+     * What this borrower is owed back, and which file charged them, on the exit event itself.
+     *
+     * <p>Computed HERE rather than by billing, because only this module can. The unearned share
+     * is a function of the loan's term and the premium that loan was actually charged, and both
+     * live on the enrolment row that created the member. Billing would have to reach across a
+     * module boundary for two values it has no other use for.
+     *
+     * <p>Absent — not zero — in three cases, each of which means something different and none
+     * of which is an error:
+     * <ul>
+     *   <li><b>A settled claim.</b> The premium was fully earned the moment the insurer paid.
+     *       Refunding would pay the claim and give back the money that funded it.</li>
+     *   <li><b>No enrolment row.</b> An opening-schedule member joined at issuance, before any
+     *       file existed, so nothing ever charged them. Assuming the lookup succeeds is how a
+     *       refund path throws inside an AFTER_COMMIT listener.</li>
+     *   <li><b>Nothing unexpired.</b> A loan that ran its full term owes nothing back, and a
+     *       zero credit would fail {@code chk} on amount anyway.</li>
+     * </ul>
+     */
+    private void addRefundDetail(Map<String, Object> payload, PolicyMember member,
+                                  GroupScheme scheme, ExitReason reason, LocalDate exitDate,
+                                  UUID tenantId) {
+        if (reason == ExitReason.CLAIM_SETTLED) {
+            return;
+        }
+        LoanTerms terms = member.getLoanTerms();
+        if (terms == null) {
+            return; // not a credit-life member; nothing was charged per loan
+        }
+        var enrolmentRow = enrolmentSubmissionRowRepository
+            .findByTenantIdAndPolicyMemberId(tenantId, member.getPolicyMemberId());
+        if (enrolmentRow.isEmpty() || enrolmentRow.get().getPremiumAmount() == null) {
+            return;
+        }
+
+        BigDecimal unearned = CreditLifePremium.unearnedAt(
+            enrolmentRow.get().getPremiumAmount(), terms.termMonths(),
+            terms.disbursementDate(), exitDate);
+        if (unearned.signum() <= 0) {
+            return;
+        }
+
+        payload.put("premiumUnearned", Map.of("amount", unearned.toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        // Which FILE charged them, so billing can find the one invoice of eleven that this
+        // credit belongs against without guessing by date.
+        payload.put("enrolmentSubmissionId", enrolmentRow.get().getSubmissionId());
     }
 
     @Override

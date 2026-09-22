@@ -8,10 +8,12 @@ import tz.co.nlolo.lifeplatform.billing.api.*;
 import tz.co.nlolo.lifeplatform.billing.domain.ArrearsCase;
 import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
 import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
+import tz.co.nlolo.lifeplatform.billing.domain.PremiumCredit;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.ArrearsCaseRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.FieldReceiptRepository;
+import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumCreditRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -56,6 +58,8 @@ public class BillingApiImpl implements BillingApi {
 
     private final BillingScheduleRepository billingScheduleRepository;
     private final PremiumInvoiceRepository premiumInvoiceRepository;
+    /** Premium given back when a loan ends before its term. See creditUnearnedPremium. */
+    private final PremiumCreditRepository premiumCreditRepository;
     private final ArrearsCaseRepository arrearsCaseRepository;
     private final FieldReceiptRepository fieldReceiptRepository;
     private final ProductApi productApi;
@@ -71,12 +75,14 @@ public class BillingApiImpl implements BillingApi {
     private final ArrearsNotificationSweep arrearsNotificationSweep;
 
     public BillingApiImpl(BillingScheduleRepository billingScheduleRepository, PremiumInvoiceRepository premiumInvoiceRepository,
+                           PremiumCreditRepository premiumCreditRepository,
                            ArrearsCaseRepository arrearsCaseRepository, FieldReceiptRepository fieldReceiptRepository,
                            ProductApi productApi, PolicyApi policyApi,
                            ApplicationEventPublisher eventPublisher,
                            ArrearsNotificationSweep arrearsNotificationSweep) {
         this.billingScheduleRepository = billingScheduleRepository;
         this.premiumInvoiceRepository = premiumInvoiceRepository;
+        this.premiumCreditRepository = premiumCreditRepository;
         this.arrearsCaseRepository = arrearsCaseRepository;
         this.fieldReceiptRepository = fieldReceiptRepository;
         this.productApi = productApi;
@@ -494,6 +500,64 @@ public class BillingApiImpl implements BillingApi {
         log.info("Raised single-premium invoice {} of {} {} for enrolment submission {} on policy {}",
             invoice.getInvoiceId(), amount.toPlainString(), currency, enrolmentSubmissionId, policyNumber);
         return invoice.getInvoiceId();
+    }
+
+    /**
+     * Give back the premium a departing borrower paid for cover they never got.
+     *
+     * <p>A NEW row, never a reduction of the invoice it reverses. The invoice says what was
+     * charged and goes on saying it; the credit says what came back off it. Netting them into a
+     * single figure destroys the only trail that can settle an argument with a lender about a
+     * month's charges — the same reasoning {@code CommissionAccrual} records for a clawback.
+     *
+     * <p>Idempotent, and checked BEFORE the insert for the reason
+     * {@link #raiseSinglePremiumInvoice} is: a failed statement poisons the whole Postgres
+     * transaction, so nothing can be read back after a constraint fires.
+     * {@code ux_premium_credit_per_member} remains the guarantee against two simultaneous exits.
+     *
+     * @param enrolmentSubmissionId the file that charged this borrower, which is how the one
+     *     invoice of eleven that this credit belongs against is found
+     */
+    @Transactional
+    void creditUnearnedPremium(UUID tenantId, String policyNumber, UUID policyMemberId,
+                                UUID enrolmentSubmissionId, BigDecimal amount, String currency,
+                                String exitReason, LocalDate exitDate) {
+        if (!premiumCreditRepository.findByTenantIdAndPolicyMemberId(tenantId, policyMemberId).isEmpty()) {
+            log.info("Member {} on policy {} has already been credited -- redelivered exit, "
+                + "not refunding twice", policyMemberId, policyNumber);
+            return;
+        }
+
+        Optional<PremiumInvoice> invoice = premiumInvoiceRepository
+            .findByTenantIdAndEnrolmentSubmissionId(tenantId, enrolmentSubmissionId);
+        if (invoice.isEmpty()) {
+            // The file enrolled this borrower but raised no invoice, which happens when every
+            // OTHER row of it was rejected and the total came to nothing -- so there is nothing
+            // to credit against. Logged rather than thrown: an AFTER_COMMIT listener that
+            // throws retries for ever.
+            log.warn("Member {} on policy {} is owed {} {} but enrolment submission {} raised no "
+                + "invoice -- no credit recorded", policyMemberId, policyNumber,
+                amount.toPlainString(), currency, enrolmentSubmissionId);
+            return;
+        }
+
+        PremiumCredit credit = premiumCreditRepository.save(new PremiumCredit(tenantId,
+            policyNumber, policyMemberId, invoice.get().getInvoiceId(), amount, currency,
+            exitReason, exitDate));
+
+        // The ONLY input to the commission clawback. A refund and its clawback must not be
+        // separable: without the matching reversal the insurer returns the premium while the
+        // bank keeps commission on money that was given back -- a loss on every early
+        // settlement, on a product whose settlement volume the bank controls.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundDue", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "policyMemberId", policyMemberId,
+                   "originalInvoiceId", invoice.get().getInvoiceId(),
+                   "exitReason", exitReason,
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
+
+        log.info("Credited {} {} to policy {} for member {} leaving on {} ({})",
+            amount.toPlainString(), currency, policyNumber, policyMemberId, exitDate, exitReason);
     }
 
     private void generateInvoicesAhead(UUID tenantId, BillingSchedule schedule, UUID productVersionId, LocalDate fromDate) {

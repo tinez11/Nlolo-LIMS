@@ -7,8 +7,10 @@ package tz.co.nlolo.lifeplatform.billing.application;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.billing.domain.PremiumCredit;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
+import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumCreditRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
@@ -135,7 +137,8 @@ class SinglePremiumIntegrationTest {
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
-            "db-migrations/billing/V5__single_premium_invoice.sql");
+            "db-migrations/billing/V5__single_premium_invoice.sql",
+            "db-migrations/billing/V6__premium_credit.sql");
 
         // The container never runs compose's minio-init job, so the buckets are made here.
         MinioClient minio = MinioClient.builder()
@@ -154,6 +157,7 @@ class SinglePremiumIntegrationTest {
     @Autowired private EnrolmentApi enrolmentApi;
     @Autowired private BillingScheduleRepository billingScheduleRepository;
     @Autowired private PremiumInvoiceRepository premiumInvoiceRepository;
+    @Autowired private PremiumCreditRepository premiumCreditRepository;
     /** Only for the redelivery test, which calls the consumer directly rather than re-firing an event. */
     @Autowired private BillingApiImpl billingApiImpl;
 
@@ -418,8 +422,183 @@ class SinglePremiumIntegrationTest {
     }
 
     // ---------------------------------------------------------------------------------
+    // Early settlement gives the premium back
+    // ---------------------------------------------------------------------------------
+
+    @Test
+    void aLoanSettledHalfwayThroughItsTermRefundsHalfItsPremium() {
+        // Amina: 2,400,000 over 18 months at 0.5% = 18,000 charged. Disbursed 2026-08-03,
+        // settled nine months later, so nine of eighteen months are unexpired: 9,000 back.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        PolicyMemberView amina = memberNamed(scheme.policyNumber(), "Amina Hassan Mwinyi");
+
+        policyApi.exitMember(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2027, 5, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        assertThat(creditFor(amina.policyMemberId()).getAmount()).isEqualByComparingTo("9000.00");
+    }
+
+    @Test
+    void aLoanThatRanItsFullTermRefundsNothing() {
+        // And specifically does not refund a NEGATIVE amount, which would be a further charge
+        // dressed up as a credit.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        PolicyMemberView amina = memberNamed(scheme.policyNumber(), "Amina Hassan Mwinyi");
+
+        policyApi.exitMember(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2028, 2, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        assertThat(creditsFor(amina.policyMemberId())).isEmpty();
+    }
+
+    @Test
+    void aSettledClaimRefundsNothingBecauseTheCoverWasUsed() {
+        // The distinction exit_reason exists for. The insurer paid out, so the premium was
+        // fully earned the moment it did -- refunding here would pay the claim AND give back
+        // the money that funded it.
+        //
+        // Driven through the CLAIM path because exitMember refuses CLAIM_SETTLED outright,
+        // which is itself the first line of this defence.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        PolicyMemberView amina = memberNamed(scheme.policyNumber(), "Amina Hassan Mwinyi");
+
+        policyApi.dischargeForSettledClaim(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2027, 5, 3), UUID.randomUUID(), "claims.officer");
+
+        assertThat(creditsFor(amina.policyMemberId())).isEmpty();
+    }
+
+    @Test
+    void aWrittenOffLoanStillRefundsTheUnexpiredTerm() {
+        // Confirmed with the client, 2026-09-22. The lender's credit loss is not the insurer's
+        // premium to keep: cover ended, so the unexpired premium goes back. Stated as its own
+        // test because the instinct is to treat a write-off like a claim, and it is not one --
+        // nothing was paid out.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        PolicyMemberView amina = memberNamed(scheme.policyNumber(), "Amina Hassan Mwinyi");
+
+        policyApi.exitMember(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2027, 5, 3), ExitReason.WRITTEN_OFF, new BigDecimal("900000.00"),
+            "staff.one");
+
+        assertThat(creditFor(amina.policyMemberId()).getAmount()).isEqualByComparingTo("9000.00");
+    }
+
+    @Test
+    void theRefundIsCreditedAgainstTheInvoiceThatActuallyChargedIt() {
+        // enrolment_submission_id is what makes this answerable. Without it, "which of the
+        // eleven monthly invoices charged this borrower" is a date guess -- and a borrower who
+        // enrolled eight files ago is exactly the one who settles early.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        UUID firstFile = submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        submitAndAccept(scheme.policyNumber(),
+            ",Salum Juma Rashid,1969-01-30,M,,,3600000.00,12,2026-09-02\n");
+        PolicyMemberView amina = memberNamed(scheme.policyNumber(), "Amina Hassan Mwinyi");
+
+        policyApi.exitMember(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2027, 5, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        UUID invoiceOfFirstFile = premiumInvoiceRepository
+            .findByTenantIdAndEnrolmentSubmissionId(tenantId, firstFile).orElseThrow()
+            .getInvoiceId();
+        assertThat(creditFor(amina.policyMemberId()).getOriginalInvoiceId())
+            .isEqualTo(invoiceOfFirstFile);
+    }
+
+    @Test
+    void creditsAcrossEveryExitNeverExceedWhatTheFileCharged() {
+        // The property that has to hold once four hundred borrowers exit one at a time. Every
+        // credit is rounded to the cent on its own, so the total must be checked rather than
+        // assumed -- and exiting everybody on the day of disbursement is the worst case,
+        // because nothing was earned and the whole invoice should come back.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        UUID submissionId = submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        BigDecimal invoiced = premiumInvoiceRepository
+            .findByTenantIdAndEnrolmentSubmissionId(tenantId, submissionId).orElseThrow()
+            .getAmount();
+
+        for (PolicyMemberView member : policyApi.listMembers(scheme.policyNumber(), null, null,
+                org.springframework.data.domain.PageRequest.of(0, 10)).getContent()) {
+            policyApi.exitMember(scheme.policyNumber(), member.policyMemberId(),
+                member.joinedOn(), ExitReason.CANCELLED, BigDecimal.ZERO, "staff.one");
+        }
+
+        BigDecimal credited = premiumCreditRepository
+            .findByTenantIdAndPolicyNumber(tenantId, scheme.policyNumber()).stream()
+            .map(PremiumCredit::getAmount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        assertThat(credited).isEqualByComparingTo(invoiced);
+    }
+
+    @Test
+    void aMemberWhoWasNeverChargedIsNeverCredited() {
+        // An opening-schedule member joined at issuance, before any enrolment file existed, so
+        // no row records a premium for them. They must produce no credit rather than a zero
+        // one -- and certainly not a NullPointerException in an AFTER_COMMIT listener, which
+        // is how this would fail if the lookup were assumed to succeed.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        PolicyMemberView opening = policyApi.listMembers(scheme.policyNumber(), null, null,
+            org.springframework.data.domain.PageRequest.of(0, 10)).getContent().get(0);
+
+        policyApi.exitMember(scheme.policyNumber(), opening.policyMemberId(),
+            LocalDate.of(2026, 10, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        assertThat(creditsFor(opening.policyMemberId())).isEmpty();
+    }
+
+    @Test
+    void aRedeliveredExitDoesNotCreditTheLenderTwice() {
+        // AFTER_COMMIT listeners get redelivered, and a member can also be exited twice by a
+        // resent exits file. One member refunds once.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        PolicyMemberView amina = memberNamed(scheme.policyNumber(), "Amina Hassan Mwinyi");
+
+        policyApi.exitMember(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2027, 5, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+        policyApi.exitMember(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2027, 5, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.two");
+
+        assertThat(creditsFor(amina.policyMemberId())).hasSize(1);
+    }
+
+    // ---------------------------------------------------------------------------------
     // Fixtures
     // ---------------------------------------------------------------------------------
+
+    /**
+     * The one member of this scheme with that name.
+     *
+     * <p>Asserts there is exactly one rather than taking the first. Two members sharing a name
+     * is legitimate in production — a scheme may genuinely insure two people called the same
+     * thing — but in a FIXTURE it means the test is reaching for one member and getting
+     * another, which is how four refund tests here passed their exit call and then asserted
+     * against a borrower who was never charged.
+     */
+    private PolicyMemberView memberNamed(String policyNumber, String name) {
+        List<PolicyMemberView> matches = policyApi.listMembers(policyNumber, null, null,
+                org.springframework.data.domain.PageRequest.of(0, 20)).getContent().stream()
+            .filter(m -> name.equals(m.memberName())).toList();
+        assertThat(matches)
+            .as("exactly one member of %s named %s", policyNumber, name)
+            .hasSize(1);
+        return matches.get(0);
+    }
+
+    private List<PremiumCredit> creditsFor(UUID policyMemberId) {
+        return premiumCreditRepository.findByTenantIdAndPolicyMemberId(tenantId, policyMemberId);
+    }
+
+    private PremiumCredit creditFor(UUID policyMemberId) {
+        List<PremiumCredit> credits = creditsFor(policyMemberId);
+        assertThat(credits).hasSize(1);
+        return credits.get(0);
+    }
 
     private static final String CSV_HEADER =
         "member_reference,borrower_full_name,borrower_date_of_birth,borrower_sex,"
@@ -464,8 +643,18 @@ class SinglePremiumIntegrationTest {
             "group onboarding", IssuanceBasis.MIGRATION), "staff-1");
     }
 
+    /**
+     * The scheme's opening schedule — a borrower who came from no enrolment file.
+     *
+     * <p>Every scheme must be issued with at least one member, so this borrower exists on every
+     * scheme in this class and was never charged a per-file premium. Their name says so, and it
+     * must stay distinct from every name in {@link #THREE_BORROWERS}: it used to be "Amina
+     * Hassan Mwinyi" as well, so {@code memberNamed} returned THIS member instead of the
+     * enrolled one, and four refund tests quietly asserted against somebody who correctly has
+     * no credit at all.
+     */
     private List<PolicyApi.MemberInput> oneBorrower() {
-        return List.of(PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi",
+        return List.of(PolicyApi.MemberInput.borrower("Opening Schedule Borrower",
             LocalDate.of(1988, 3, 14), null,
             new LoanTerms(new BigDecimal("8500000.00"), BigDecimal.ZERO, 48,
                 RepaymentFrequency.MONTHLY, LocalDate.of(2026, 8, 3), LocalDate.of(2026, 9, 3))));

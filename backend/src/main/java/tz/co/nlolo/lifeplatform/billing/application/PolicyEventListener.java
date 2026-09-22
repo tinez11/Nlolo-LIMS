@@ -51,6 +51,7 @@ public class PolicyEventListener {
             case "policy.PolicySuspended" -> withTenant(envelope, this::handlePolicySuspended);
             case "policy.PolicyResumed" -> withTenant(envelope, this::handlePolicyResumed);
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
+            case "policy.GroupMemberExited" -> withTenant(envelope, this::handleGroupMemberExited);
             default -> { /* not billing-relevant */ }
         }
     }
@@ -151,6 +152,35 @@ public class PolicyEventListener {
 
         billingApiImpl.raiseSinglePremiumInvoice(TenantContext.get(), policyNumber, submissionId,
             amount, (String) premium.get("currencyCode"), acceptedOn);
+    }
+
+    /**
+     * A loan ended early, so the premium it was charged for cover it never got comes back.
+     *
+     * <p>Billing does no arithmetic here, deliberately. The unearned share is a function of the
+     * loan's term and what that loan was actually charged, both of which live in {@code policy}
+     * — so policy computes it and puts it on the event, and this raises the credit.
+     *
+     * <p>Every decision about WHETHER to refund is therefore made upstream too, and shows up
+     * here as the simple absence of {@code premiumUnearned}: a settled claim earned its premium
+     * in full, an opening-schedule member was never charged, and a loan that ran its full term
+     * owes nothing back. All three are ordinary, none is an error, and none produces a zero
+     * credit — {@code chk} on amount would refuse one anyway.
+     */
+    private void handleGroupMemberExited(Map<String, Object> payload) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unearned = (Map<String, Object>) payload.get("premiumUnearned");
+        if (unearned == null) {
+            return;
+        }
+        billingApiImpl.creditUnearnedPremium(TenantContext.get(),
+            (String) payload.get("policyNumber"),
+            (UUID) payload.get("policyMemberId"),
+            (UUID) payload.get("enrolmentSubmissionId"),
+            new BigDecimal((String) unearned.get("amount")),
+            (String) unearned.get("currencyCode"),
+            (String) payload.get("reason"),
+            LocalDate.parse((String) payload.get("leftOn")));
     }
 
     private void handlePolicyResumed(Map<String, Object> payload) {
