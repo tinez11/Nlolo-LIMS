@@ -252,15 +252,18 @@ constraint. That plan is uncommitted, so this is nearly free today and a migrati
 
 Monthly enrolment files add members and say nothing about loans that ended, so without a
 second channel no refund or clawback can ever fire. The bank sends an **exits file**
-(`loan_account_number`, `exit_date`, `exit_reason`, `outstanding_balance_at_exit`), with a
-**quarterly full reconciliation** as the audit.
+(`member_reference`, `exit_date`, `exit_reason`, `outstanding_balance_at_exit`), with a
+**quarterly full reconciliation** as the audit. The reference is the one the insurer minted
+and the enrolment report returned (§2.1a) — an exits file is by definition about a loan we
+already cover, so there is no new-borrower case here and the reference is required.
 
 A reconciliation-only design is dangerous as the primary mechanism: one bank-side export
 glitch drops fifty rows and fifty people silently lose cover. An exits file makes termination
 a stated act.
 
 A restructure, refinance or top-up is **always exit-and-re-enrol**, never an in-place
-amendment — even when the loan account number is unchanged. Both halves are already being
+amendment. The re-enrolled loan is a new row with a blank `member_reference` and earns a new
+one; the old reference stays attached to the exited member. Both halves are already being
 built, and a restructured loan is a different risk over a different term that should be
 priced as one.
 
@@ -304,12 +307,13 @@ type-coercion faults (doubles read back as `8499999.999999999`, numeric account 
 rendered as `4.17E+11`, dates as serial numbers) are avoided entirely. An unexpected XLSX is
 rejected with a clear message rather than parsed by a library nobody needed.
 
-**Nine columns**, cut from thirteen on 2026-09-21 once the real client files arrived — see
-`credit-life-enrolment-sample.csv` alongside this spec:
+**Nine columns**, cut from thirteen on 2026-09-21 once the real client files arrived, and
+re-keyed on 2026-09-22 once the client confirmed neither lender holds a loan account number
+they could give us — see `credit-life-enrolment-sample.csv` alongside this spec:
 
 | Column | Req | Why |
 |---|---|---|
-| `loan_account_number` | ✓ | Member key (§2.1); duplicates reject |
+| `member_reference` | — | **Blank for a new borrower.** The insurer mints it at acceptance (§2.1a) and returns it on the report. The lender quotes it back on any later file about that same loan |
 | `borrower_full_name` | ✓ | Freeform member (§2.2) |
 | `borrower_date_of_birth` | ✓ | Entry-age hard gate; identity at promotion |
 | `borrower_sex` | — | Not priced on. Kept for TIRA reporting |
@@ -319,19 +323,26 @@ rejected with a clear message rather than parsed by a library nobody needed.
 | `loan_term_months` | ✓ | Schedule input; term hard gate |
 | `disbursement_date` | ✓ | **Cover start** (§2.6) |
 
-**Four columns were removed rather than made optional**, because neither real lender file
+**Five columns were removed rather than made optional**, because no real lender file
 carries any of them and a column nobody fills is a column that rots:
 
 | Removed | Where it went |
 |---|---|
-| `annual_interest_rate_percent` | Nowhere. Straight-line decline never reads a rate |
+| `annual_interest_rate_percent` | Nowhere. Straight-line decline never reads a rate (client answer 1) |
 | `repayment_frequency` | The **scheme**, beside `interest_method`. A lender's product repays on one cadence |
 | `instalment_amount` | Gone with the withdrawn method inference |
 | `first_repayment_date` | Derived as disbursement plus one period |
+| `loan_account_number` | Still *read* if present, and echoed on the report, but no longer required and no longer the key. Client answer 2: the lenders hold no such identifier to give |
 
-**That is one genuinely new column for the lenders, not four.** BUMACO's August sheet
-already carries name, gender, date of birth, disbursed date, disbursed amount and term;
-only the loan account number is missing.
+**That is zero genuinely new columns for the lenders.** BUMACO's August sheet already
+carries name, gender, date of birth, disbursed date, disbursed amount and term — which is
+every required column. `member_reference` is the one column they gain, and on a first file
+it is blank; they fill it only from a report we sent them.
+
+**A borrower with no reference is identified by their loan.** Name, date of birth,
+disbursement date and principal together. A row repeating all four of an already-enrolled
+loan is rejected as `DUPLICATE_LOAN` rather than insuring the same person twice — see §2.1a
+for why that composite is the rule for *new* rows only.
 
 **A moratorium can no longer be expressed.** `first_repayment_date` was the only way to
 state a payment holiday, and every loan is now assumed to begin repaying one period after
@@ -346,8 +357,12 @@ method, repayment cadence and currency are all scheme-level and are not columns.
 **Partial accept.** Good rows enrol; bad rows return in a report
 (`credit-life-rejection-report-sample.csv`) whose reason text says, per row, **THIS BORROWER
 IS NOT COVERED**. Six outcomes today: `ENROLLED`, `ENROLLED_CAPPED`, and rejections for
-`MISSING_REQUIRED_FIELD`, `DUPLICATE_LOAN_ACCOUNT_NUMBER`, `DISBURSEMENT_DATE_IN_FUTURE`,
-`ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS`, `INSTALMENT_MATCHES_NO_KNOWN_METHOD`.
+`MISSING_REQUIRED_FIELD`, `DUPLICATE_LOAN`, `DISBURSEMENT_DATE_IN_FUTURE`,
+`ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS`, `MALFORMED_VALUE`.
+
+The report's first data column is `member_reference`. On an accepted row it carries the
+reference the insurer minted; that column is the only place the lender ever learns it, which
+is why the report is a deliverable and not a courtesy.
 
 This departs from `issueGroupScheme`, which is deliberately atomic — *"a failure part-way
 through the schedule leaves no half-populated scheme."* The departure is intentional: a

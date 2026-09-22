@@ -110,6 +110,7 @@ class EnrolmentIntegrationTest {
             "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/policy/V15__enrolment_submission.sql",
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
+            "db-migrations/policy/V17__enrolment_row_member_reference.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V3__enrolment_schedule_document_type.sql",
@@ -255,14 +256,36 @@ class EnrolmentIntegrationTest {
     }
 
     @Test
-    void aFileWithNoLoanAccountNumberColumnIsRefusedWhole() {
+    void aFileMissingARequiredColumnIsRefusedWhole() {
         assertThatThrownBy(() -> enrolmentApi.submit(creditLifeScheme,
                 new ByteArrayInputStream(
                     "borrower_full_name,loan_principal_amount\nAmina,8500000.00\n"
                         .getBytes(StandardCharsets.UTF_8)),
                 "wrong.csv", "staff.one"))
             .isInstanceOf(InvalidPolicyStateException.class)
-            .hasMessageContaining("loan_account_number");
+            .hasMessageContaining("borrower_date_of_birth");
+    }
+
+    @Test
+    void aFileWithNoLoanAccountNumberIsPerfectlyFine() {
+        // Reversed by the client on 2026-09-22: neither lender holds a per-loan
+        // identifier, so requiring one would have rejected every real file. The insurer
+        // issues the reference instead, and the report carries it back.
+        String noAccountColumn =
+            "borrower_full_name,borrower_date_of_birth,borrower_sex,borrower_national_id,"
+            + "borrower_phone,loan_principal_amount,loan_term_months,disbursement_date\n"
+            + "Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-06-30\n";
+
+        var submission = enrolmentApi.submit(creditLifeScheme,
+            new ByteArrayInputStream(noAccountColumn.getBytes(StandardCharsets.UTF_8)),
+            "no-account-numbers.csv", "staff.one");
+
+        assertThat(submission.rejectedCount()).isZero();
+        enrolmentApi.accept(submission.submissionId(), "staff.two");
+
+        assertThat(enrolmentApi.listRows(submission.submissionId()).get(0).memberReference())
+            .as("the lender learns the reference from the report, and quotes it afterwards")
+            .isNotNull().startsWith("CL-");
     }
 
     @Test
@@ -430,8 +453,9 @@ class EnrolmentIntegrationTest {
         String report = enrolmentApi.renderReport(submission.submissionId());
 
         assertThat(report.lines().findFirst().orElseThrow())
-            .isEqualTo("row_number,loan_account_number,borrower_full_name,outcome,reason_code,reason");
-        assertThat(report).contains("2,LN-A,Amina Hassan Mwinyi,ENROLLED");
+            .isEqualTo("row_number,member_reference,loan_account_number,borrower_full_name,"
+                + "outcome,reason_code,reason");
+        assertThat(report).contains("Amina Hassan Mwinyi,ENROLLED");
         assertThat(report).contains("MISSING_REQUIRED_FIELD");
         assertThat(report).contains("THIS BORROWER IS NOT COVERED.");
     }

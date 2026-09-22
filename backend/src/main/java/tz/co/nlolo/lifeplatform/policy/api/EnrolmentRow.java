@@ -25,12 +25,15 @@ import java.time.LocalDate;
  *
  * @param lineNumber the line in the lender's OWN file, so a report can be read beside the
  *     spreadsheet that produced it. 1 is the header; data starts at 2.
+ * @param memberReference OURS, issued at enrolment. Blank on a new borrower; quoted back
+ *     by the lender to name an existing one. The lender has no identifier of their own.
  * @param borrowerSex carried for regulatory reporting; nothing prices on it.
  * @param borrowerNationalId optional, and absent in both real lender files -- which is
  *     why party de-duplication cannot fire on a borrower and the loan account number
  *     keys the member instead.
  */
 public record EnrolmentRow(int lineNumber,
+                            String memberReference,
                             String loanAccountNumber,
                             String borrowerFullName,
                             LocalDate borrowerDateOfBirth,

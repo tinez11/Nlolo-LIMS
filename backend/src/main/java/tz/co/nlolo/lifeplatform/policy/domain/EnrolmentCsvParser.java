@@ -52,16 +52,23 @@ public final class EnrolmentCsvParser {
     public static final String LOAN_TERM_MONTHS = "loan_term_months";
     public static final String DISBURSEMENT_DATE = "disbursement_date";
 
+    /** Ours, not theirs: blank on a new borrower, quoted back for an existing one. */
+    public static final String MEMBER_REFERENCE = "member_reference";
+
     /**
-     * The six a lender must send.
+     * The five a lender must send.
      *
-     * <p>Sex, national ID and phone are optional; anything else in the file is IGNORED
-     * rather than refused. Both real exports carry columns we do not use -- S/N, AGE,
-     * premium per policy year -- and refusing a file for carrying more than we asked for
-     * would reject every real export on day one.
+     * <p>Sex, national ID, phone, the lender's own loan account number and our member
+     * reference are all optional; anything else in the file is IGNORED rather than
+     * refused. Both real exports carry columns we do not use -- S/N, AGE, premium per
+     * policy year -- and refusing a file for carrying more than we asked for would reject
+     * every real export on day one.
+     *
+     * <p>The loan account number was required until 2026-09-22, when the client confirmed
+     * neither lender holds one. Requiring it would have rejected every real file.
      */
     private static final List<String> REQUIRED_COLUMNS = List.of(
-        LOAN_ACCOUNT_NUMBER, BORROWER_FULL_NAME, BORROWER_DATE_OF_BIRTH,
+        BORROWER_FULL_NAME, BORROWER_DATE_OF_BIRTH,
         LOAN_PRINCIPAL_AMOUNT, LOAN_TERM_MONTHS, DISBURSEMENT_DATE);
 
     private EnrolmentCsvParser() {}
@@ -140,13 +147,6 @@ public final class EnrolmentCsvParser {
             }
         }
 
-        if (firstSeenAt.containsKey(accountNumber)) {
-            return RowResult.refused(new RowError(lineNumber, accountNumber, fullName,
-                EnrolmentRejection.DUPLICATE_LOAN_ACCOUNT_NUMBER,
-                "loan_account_number " + accountNumber + " already appears at line "
-                    + firstSeenAt.get(accountNumber) + " of this file."));
-        }
-
         LocalDate dateOfBirth;
         BigDecimal principal;
         int termMonths;
@@ -161,8 +161,23 @@ public final class EnrolmentCsvParser {
                 EnrolmentRejection.MALFORMED_VALUE, e.getMessage()));
         }
 
-        firstSeenAt.put(accountNumber, lineNumber);
-        return RowResult.read(new EnrolmentRow(lineNumber, accountNumber, fullName, dateOfBirth,
+        // Two identical rows in ONE file, caught by the loan itself because the lender has
+        // no identifier to give: who, born when, borrowed how much, on what day. The same
+        // composite the scheme is checked against, applied within the file first so a
+        // lender who pasted a block twice hears about it against their own line numbers.
+        String loanKey = fullName.toLowerCase(Locale.ROOT) + "|" + dateOfBirth + "|"
+            + disbursedOn + "|" + principal.stripTrailingZeros().toPlainString();
+        Integer earlier = firstSeenAt.get(loanKey);
+        if (earlier != null) {
+            return RowResult.refused(new RowError(lineNumber, accountNumber, fullName,
+                EnrolmentRejection.DUPLICATE_LOAN,
+                fullName + " with the same date of birth, disbursement date and amount"
+                    + " already appears at line " + earlier + " of this file."));
+        }
+
+        firstSeenAt.put(loanKey, lineNumber);
+        return RowResult.read(new EnrolmentRow(lineNumber,
+            cell(record, headers, MEMBER_REFERENCE), accountNumber, fullName, dateOfBirth,
             cell(record, headers, BORROWER_SEX),
             cell(record, headers, BORROWER_NATIONAL_ID),
             cell(record, headers, BORROWER_PHONE),
