@@ -96,6 +96,7 @@ class GroupPipelineEndToEndTest {
             "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/policy/V15__enrolment_submission.sql",
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
+            "db-migrations/policy/V18__scheme_premium_rate.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");

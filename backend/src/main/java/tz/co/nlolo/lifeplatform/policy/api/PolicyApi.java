@@ -229,7 +229,20 @@ public interface PolicyApi {
                                      * On the scheme because a lender's product repays on
                                      * one cadence.
                                      */
-                                    RepaymentFrequency repaymentFrequency) {
+                                    RepaymentFrequency repaymentFrequency,
+                                    /**
+                                     * Percent PER ANNUM of each borrower's original principal,
+                                     * charged once at enrolment. 0.5000 means 0.5%.
+                                     *
+                                     * <p>On the SCHEME rather than the product because the rate
+                                     * is negotiated per lender -- 0.4% for one, 0.5% for another,
+                                     * on the same filed product. A product-level rate would force
+                                     * a duplicate product, and its own TIRA filing, per lender.
+                                     *
+                                     * <p>Required on AMORTISING_LOAN and rejected on every other
+                                     * basis, like {@code interestMethod} above it.
+                                     */
+                                    BigDecimal premiumRatePercent) {
 
         /** A credit-life scheme, which states both how and how often its loans repay. */
         public IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
@@ -240,12 +253,13 @@ public interface PolicyApi {
                                         BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
                                         LocalDate commencementDate, Integer policyTermMonths,
                                         String reasonForManualIssue, IssuanceBasis issuanceBasis,
-                                        InterestMethod interestMethod) {
+                                        InterestMethod interestMethod, BigDecimal premiumRatePercent) {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
                 reasonForManualIssue, issuanceBasis, interestMethod,
-                interestMethod == null ? null : RepaymentFrequency.MONTHLY);
+                interestMethod == null ? null : RepaymentFrequency.MONTHLY,
+                premiumRatePercent);
         }
 
         /** Any scheme but credit life, which is the only basis that has an interest method. */
@@ -260,7 +274,7 @@ public interface PolicyApi {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
-                reasonForManualIssue, issuanceBasis, null, null);
+                reasonForManualIssue, issuanceBasis, null, null, null);
         }
     }
 

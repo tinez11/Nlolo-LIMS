@@ -441,6 +441,12 @@ public class BillingApiImpl implements BillingApi {
             case "MONTHLY" -> Period.ofMonths(1);
             case "QUARTERLY" -> Period.ofMonths(3);
             case "ANNUALLY" -> Period.ofYears(1);
+            // Reaching here means something tried to schedule a contract that has no next
+            // period. Named rather than silently stepping a year, because the symptom of
+            // getting this wrong is a lender being dunned for premium nobody agreed.
+            case "SINGLE" -> throw new IllegalArgumentException(
+                "A SINGLE premium has no next period; this policy should never have been given a "
+                    + "billing schedule (see billing.PolicyEventListener.handlePolicyIssued)");
             default -> throw new IllegalArgumentException("Unknown premium frequency: " + frequency);
         };
         return from.plus(step);

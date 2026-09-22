@@ -61,7 +61,8 @@ class EnrolmentSubmissionConstraintTest {
             "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/policy/V15__enrolment_submission.sql",
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
-            "db-migrations/policy/V17__enrolment_row_member_reference.sql");
+            "db-migrations/policy/V17__enrolment_row_member_reference.sql",
+            "db-migrations/policy/V18__scheme_premium_rate.sql");
     }
 
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -84,10 +85,15 @@ class EnrolmentSubmissionConstraintTest {
                  premium_currency, premium_frequency, status)
             values (?, ?, ?, ?, ?, 'CREDIT_LIFE', 1000000.00, 'TZS', 5000.00, 'TZS', 'ANNUALLY', 'ACTIVE')
             """, policyNumber, tenantId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        // premium_rate_percent is not optional on a loan basis -- V18's
+        // chk_group_scheme_rate_iff_loan_basis refuses a credit-life scheme without the rate
+        // its lender agreed, because a scheme that reached its first accepted file without one
+        // could not price a single member.
         jdbcTemplate.update("""
             insert into policy.group_scheme
-                (policy_number, tenant_id, benefit_basis, currency, interest_method, repayment_frequency)
-            values (?, ?, 'AMORTISING_LOAN', 'TZS', 'FLAT_RATE', 'MONTHLY')
+                (policy_number, tenant_id, benefit_basis, currency, interest_method,
+                 repayment_frequency, premium_rate_percent)
+            values (?, ?, 'AMORTISING_LOAN', 'TZS', 'FLAT_RATE', 'MONTHLY', 0.5000)
             """, policyNumber, tenantId);
     }
 

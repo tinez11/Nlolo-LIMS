@@ -111,9 +111,10 @@ class EnrolmentIntegrationTest {
             "db-migrations/policy/V15__enrolment_submission.sql",
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
             "db-migrations/policy/V17__enrolment_row_member_reference.sql",
+            "db-migrations/policy/V18__scheme_premium_rate.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
-            "db-migrations/document/V3__enrolment_schedule_document_type.sql",
+            "db-migrations/document/V4__enrolment_schedule_document_type.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
 
         // The container never runs compose's minio-init job, so the buckets are made here.
@@ -182,10 +183,14 @@ class EnrolmentIntegrationTest {
             person("Lender " + code), product.productId(), snapshot.productVersionId(), null,
             basis, loan ? null : new BigDecimal("1000000.00"), null,
             new BigDecimal("25000000.00"), "TZS", null, List.of(opening),
-            new BigDecimal("52000.00"), "TZS", "ANNUALLY", LocalDate.of(2026, 6, 1), null,
+            new BigDecimal("52000.00"), "TZS",
+            // A credit-life scheme is paid once per accepted file, so it is never on a cycle.
+            loan ? "SINGLE" : "ANNUALLY",
+            LocalDate.of(2026, 6, 1), null,
             "onboarding", IssuanceBasis.MIGRATION,
             loan ? InterestMethod.FLAT_RATE : null,
-            loan ? RepaymentFrequency.MONTHLY : null), "staff-setup").policyNumber();
+            loan ? RepaymentFrequency.MONTHLY : null,
+            loan ? new BigDecimal("0.5000") : null), "staff-setup").policyNumber();
     }
 
     private UUID person(String name) {

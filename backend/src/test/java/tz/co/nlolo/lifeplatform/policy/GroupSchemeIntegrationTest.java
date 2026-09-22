@@ -105,6 +105,7 @@ class GroupSchemeIntegrationTest {
             "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/policy/V15__enrolment_submission.sql",
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
+            "db-migrations/policy/V18__scheme_premium_rate.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -652,12 +653,17 @@ class GroupSchemeIntegrationTest {
         return new PolicyApi.IssueGroupSchemeRequest(lender, product.productId(),
             product.productVersionId(), null, basis, flatBenefit, null,
             new BigDecimal("25000000.00"), "TZS", null, members,
-            new BigDecimal("52000.00"), "TZS", "ANNUALLY",
+            new BigDecimal("52000.00"), "TZS",
+            // SINGLE on a loan basis, a cycle on anything else. A credit-life scheme is paid
+            // once per accepted file; issuing one ANNUALLY -- which this fixture used to do --
+            // had billing raise a year of invoices against the master policy.
+            basis == BenefitBasis.AMORTISING_LOAN ? "SINGLE" : "ANNUALLY",
             // Commences BEFORE the loans it covers. A lender scheme is signed first and
             // then fed monthly files of loans disbursed under it; a loan paid out before
             // commencement belongs to whatever arrangement preceded this contract.
             LocalDate.of(2026, 6, 1), null,
-            "credit life onboarding", IssuanceBasis.MIGRATION, interestMethod);
+            "credit life onboarding", IssuanceBasis.MIGRATION, interestMethod,
+            basis == BenefitBasis.AMORTISING_LOAN ? new BigDecimal("0.5000") : null);
     }
 
     /** LOLC's real shape: 10,400,000 over 18 months, disbursed 2026-06-30, no rate given. */

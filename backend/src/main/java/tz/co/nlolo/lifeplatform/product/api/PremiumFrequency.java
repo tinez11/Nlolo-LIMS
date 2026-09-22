@@ -14,7 +14,23 @@ package tz.co.nlolo.lifeplatform.product.api;
 public enum PremiumFrequency {
     MONTHLY(12),
     QUARTERLY(4),
-    ANNUALLY(1);
+    ANNUALLY(1),
+
+    /**
+     * Charged once, when cover is written, and never again.
+     *
+     * <p>{@code instalmentsPerYear} is 0 rather than 1 on purpose. There is no recurring
+     * period at all here, and a 1 would read as "annually" to any arithmetic that divides an
+     * annual premium by it -- which is precisely the mistake that would put a single-premium
+     * contract back onto a billing cycle. Dividing by this value throws, which is the correct
+     * outcome: a caller reaching for a per-instalment figure on a contract that has no
+     * instalments has already gone wrong.
+     *
+     * <p>Every caller that schedules by frequency must branch on SINGLE explicitly. See
+     * {@code billing.PolicyEventListener.handlePolicyIssued}, which returns without building a
+     * schedule, and {@code BillingApiImpl.nextPeriodStart}, which throws by name.
+     */
+    SINGLE(0);
 
     private final int instalmentsPerYear;
 

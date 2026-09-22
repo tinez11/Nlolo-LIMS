@@ -79,6 +79,25 @@ public class PolicyEventListener {
         BigDecimal premiumAmount = new BigDecimal((String) premium.get("amount"));
         String premiumCurrency = (String) premium.get("currencyCode");
         String premiumFrequency = (String) payload.get("premiumFrequency");
+
+        // A single-premium contract is not billed on a cycle, so it gets no schedule and no
+        // invoices generated ahead of it.
+        //
+        // Without this guard a credit-life master policy produced a BillingSchedule and twelve
+        // PremiumInvoice rows for whatever premium figure the caller of issueGroupScheme
+        // happened to type. Those then fell due, aged into arrears, and dunned the lender for
+        // money the contract never asked for. Its real premium arrives per accepted enrolment
+        // file -- see the policy.EnrolmentAccepted branch below.
+        //
+        // Keyed on the FREQUENCY and not on the product category, deliberately. Billing has no
+        // business knowing what credit life is, and a category test would miss the next
+        // single-premium product while this catches it.
+        if ("SINGLE".equals(premiumFrequency)) {
+            log.info("Policy {} is single-premium -- no billing schedule; its premium is raised "
+                + "when there is something to charge for", policyNumber);
+            return;
+        }
+
         billingApiImpl.generateScheduleForNewPolicy(TenantContext.get(), policyNumber, productVersionId,
             issueDate, premiumAmount, premiumCurrency, premiumFrequency);
     }

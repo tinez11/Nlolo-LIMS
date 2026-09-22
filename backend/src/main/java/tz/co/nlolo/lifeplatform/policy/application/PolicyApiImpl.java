@@ -1079,9 +1079,31 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException(
                 "A credit-life scheme must state how often its lender's loans repay");
         }
-        if (!loanBasis && (request.interestMethod() != null || request.repaymentFrequency() != null)) {
+        if (!loanBasis && (request.interestMethod() != null || request.repaymentFrequency() != null
+                || request.premiumRatePercent() != null)) {
             throw new InvalidPolicyStateException(
-                "An interest method and a repayment cadence belong only on a credit-life scheme");
+                "An interest method, a repayment cadence and a premium rate belong only on a "
+                    + "credit-life scheme");
+        }
+        // The rate a lender agreed, and there is no default: client answer 3.1 is that it is
+        // negotiated per lender (0.4% for one, 0.5% for another). A scheme that reached its
+        // first accepted file without one could not price a single member, and the failure
+        // would surface as a whole lender's month bouncing rather than as a setup mistake.
+        if (loanBasis && request.premiumRatePercent() == null) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme must state the premium rate its lender agreed; the rate is "
+                    + "negotiated per lender, so there is no default to fall back on");
+        }
+        // Checked here and not only in the GroupScheme constructor because the consequence is
+        // in a different module: billing reacts to PolicyIssued by generating a schedule and a
+        // year of invoices from whatever frequency the policy carries. A credit-life scheme
+        // issued ANNUALLY -- which every fixture used to pass -- billed the lender for a premium
+        // nobody agreed, on top of the per-file premium they actually owe.
+        if (loanBasis && !"SINGLE".equals(request.premiumFrequency())) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme is paid by a single premium per accepted enrolment file, not "
+                    + request.premiumFrequency() + "; a cycle here would bill the master policy for "
+                    + "premium the contract never asked for");
         }
 
         LocalDate today = LocalDate.now();
@@ -1170,7 +1192,8 @@ public class PolicyApiImpl implements PolicyApi {
 
         groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),
             request.flatBenefitAmount(), request.salaryMultiple(), request.fclAmount(),
-            request.currency(), request.interestMethod(), request.repaymentFrequency(), issuedBy));
+            request.currency(), request.interestMethod(), request.repaymentFrequency(),
+            request.premiumRatePercent(), issuedBy));
         if (request.benefitBasis() == BenefitBasis.GRADED) {
             request.grades().forEach(g -> groupSchemeGradeRepository.save(
                 new GroupSchemeGrade(tenantId, policyNumber, g.gradeCode(), g.benefitAmount())));
