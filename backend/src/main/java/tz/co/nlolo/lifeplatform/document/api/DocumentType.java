@@ -14,5 +14,15 @@ public enum DocumentType {
      * overlooked -- a schedule belongs to a policy, and a bucket of its own would buy
      * nothing the tenant-prefixed object key does not already give.
      */
-    ENROLMENT_SCHEDULE
+    ENROLMENT_SCHEDULE,
+
+    /**
+     * A lender's monthly exits file: which loans ended, when and why.
+     *
+     * <p>Distinct from ENROLMENT_SCHEDULE although both are CSVs from the same lender in the
+     * same shape of spreadsheet. The two say opposite things — one puts borrowers on risk, the
+     * other takes them off — and a stored file labelled as the wrong one is evidence that
+     * argues against itself in exactly the dispute it exists to settle.
+     */
+    EXITS_FILE
 }
