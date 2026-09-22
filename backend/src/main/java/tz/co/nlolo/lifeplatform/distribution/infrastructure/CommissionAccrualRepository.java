@@ -16,9 +16,18 @@ public interface CommissionAccrualRepository extends JpaRepository<CommissionAcc
         UUID tenantId, String policyNumber, TierType tierType);
     boolean existsByTenantIdAndAgentIdAndTierTypeAndSourceRefAndReversesAccrualIdIsNull(
         UUID tenantId, UUID agentId, TierType tierType, String sourceRef);
-    /** Task 6's clawback idempotency pre-check: {@code ux_commission_accrual_single_reversal}'s
-     * own application-layer mirror, so a redelivered {@code PolicyLapsed} does not even attempt a
-     * second reversal row for the same original accrual (the unique index is the real backstop
-     * under concurrent delivery). */
-    boolean existsByTenantIdAndReversesAccrualId(UUID tenantId, UUID reversesAccrualId);
+    /**
+     * The clawback idempotency pre-check: {@code ux_commission_accrual_single_reversal_per_source}'s
+     * own application-layer mirror, so a redelivered event does not even attempt a second reversal
+     * row for the same original accrual from the same source (the unique index is the real
+     * backstop under concurrent delivery).
+     *
+     * <p>Keyed on the source as well as the accrual because one accrual may now be reversed in
+     * PARTS. A lapse reverses the whole thing and passes the accrual's own id as the source, so
+     * it still gets exactly one reversal; a credit-life refund reverses one borrower's share and
+     * passes that member's id, so four hundred borrowers settling early produce four hundred
+     * distinct partial reversals of the one accrual their file earned.
+     */
+    boolean existsByTenantIdAndReversesAccrualIdAndSourceRef(
+        UUID tenantId, UUID reversesAccrualId, String sourceRef);
 }

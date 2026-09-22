@@ -491,7 +491,12 @@ public class DistributionApiImpl implements DistributionApi {
         boolean alreadyAccrued = reversesAccrualId == null
             ? commissionAccrualRepository.existsByTenantIdAndAgentIdAndTierTypeAndSourceRefAndReversesAccrualIdIsNull(
                   tenantId, agentId, tierType, sourceRef)
-            : commissionAccrualRepository.existsByTenantIdAndReversesAccrualId(tenantId, reversesAccrualId);
+            // Keyed on the SOURCE as well as the accrual: one accrual may be reversed in parts.
+            // A lapse passes the accrual's own id and still gets exactly one reversal; a
+            // credit-life refund passes the departing member's id, so each borrower's share
+            // reverses once and a redelivered exit finds it already booked.
+            : commissionAccrualRepository.existsByTenantIdAndReversesAccrualIdAndSourceRef(
+                  tenantId, reversesAccrualId, sourceRef);
         if (alreadyAccrued) {
             return Optional.empty();
         }

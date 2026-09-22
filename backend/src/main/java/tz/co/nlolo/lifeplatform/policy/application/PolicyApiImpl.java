@@ -1399,6 +1399,22 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("status", policy.getStatus());
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
+        // Both events together for an immediate-cover issuance, exactly as issuePolicy does.
+        //
+        // THIS WAS MISSING. issueGroupScheme called policy.activate() above and published only
+        // PolicyIssued, so a scheme whose basis starts cover went ACTIVE in silence. Nothing
+        // downstream that keys off activation ever heard about it -- and distribution keys its
+        // whole existence off PolicyActivated, so NO GROUP SCHEME HAS EVER ACCRUED COMMISSION
+        // for its agent of record. Employer schemes as much as credit-life ones: the projection
+        // row was never written, so handlePolicyLapsed also logged "pre-M7 policy, nothing to
+        // claw back" and meant it.
+        //
+        // It survived because no test asked what an agent earned on a group scheme. The
+        // individual path has had this line since M7.
+        if (startsCoverNow) {
+            publishPolicyActivated(policyNumber, tenantId, policy);
+        }
+
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupSchemeIssued", tenantId, Map.of(
             "policyNumber", policyNumber,
             "benefitBasis", request.benefitBasis().name(),

@@ -553,6 +553,12 @@ public class BillingApiImpl implements BillingApi {
             Map.of("policyNumber", policyNumber,
                    "policyMemberId", policyMemberId,
                    "originalInvoiceId", invoice.get().getInvoiceId(),
+                   // WHICH file this borrower was on, and what that whole file was charged.
+                   // Distribution needs both: the accrual to reverse is the one booked for this
+                   // file (a scheme has one a month for years), and the reversal is that accrual
+                   // scaled by the share of the file's premium coming back.
+                   "enrolmentSubmissionId", enrolmentSubmissionId,
+                   "filePremiumTotal", invoice.get().getAmount().toPlainString(),
                    "exitReason", exitReason,
                    "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
 
