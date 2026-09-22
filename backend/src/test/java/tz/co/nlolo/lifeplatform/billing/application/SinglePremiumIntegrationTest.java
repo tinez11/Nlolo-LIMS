@@ -128,6 +128,7 @@ class SinglePremiumIntegrationTest {
             "db-migrations/policy/V17__enrolment_row_member_reference.sql",
             "db-migrations/policy/V18__scheme_premium_rate.sql",
             "db-migrations/policy/V19__enrolment_premium.sql",
+            "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",

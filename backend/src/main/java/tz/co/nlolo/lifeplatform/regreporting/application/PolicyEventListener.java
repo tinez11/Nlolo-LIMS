@@ -162,12 +162,31 @@ public class PolicyEventListener {
         applyTerminationMovement(policyNumber, period, "policy.PolicyMatured", PolicyMovement::applyMatured);
     }
 
-    /** Fires for a settled DEATH/DISABILITY/CRITICAL_ILLNESS claim, not a policyholder surrender --
-     * see class javadoc -- so it applies {@code applyClaimTerminated}. */
+    /**
+     * Usually fires for a settled DEATH/DISABILITY/CRITICAL_ILLNESS claim rather than a
+     * policyholder surrender — see the class javadoc — but no longer always.
+     *
+     * <p>Since {@code PolicyApi.exitMember} existed, a credit-life scheme also closes when its
+     * LAST borrower simply repays, refinances or is written off. No claim was paid, and
+     * counting that as a claim termination would inflate the claims line of a TIRA return with
+     * loans that were merely settled — a regulatory misstatement, not a cosmetic one.
+     *
+     * <p>The producer distinguishes them by OMITTING {@code claimId} when no claim was
+     * involved, so the two are told apart here without a new event type.
+     *
+     * <p><b>{@code applyMatured} is an interim classification, not the right answer.</b>
+     * {@code PolicyMovement} offers only lapsed, matured and claim-terminated, and a loan
+     * repaid early is none of the three. Matured is the least wrong of them — the contract
+     * reached the end of the population it insured — and, decisively, it is not a claim. A
+     * movement type that actually says "the debt ended" is reporting work (spec 2.14) and
+     * belongs with the rest of it.
+     */
     private void handlePolicySurrendered(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
         String period = ProjectionSupport.quarterOfInstant((String) payload.get("surrenderedAt"));
-        applyTerminationMovement(policyNumber, period, "policy.PolicySurrendered", PolicyMovement::applyClaimTerminated);
+        boolean aClaimWasPaid = payload.get("claimId") != null;
+        applyTerminationMovement(policyNumber, period, "policy.PolicySurrendered",
+            aClaimWasPaid ? PolicyMovement::applyClaimTerminated : PolicyMovement::applyMatured);
     }
 
     private void handlePolicyReinstated(Map<String, Object> payload) {

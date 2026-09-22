@@ -34,4 +34,17 @@ public record PolicyMemberView(UUID policyMemberId, UUID memberPartyId,
                                 MemberUnderwritingStatus underwritingStatus, UUID underwritingCaseId,
                                 BigDecimal salaryAmount, BigDecimal benefitAmount,
                                 BigDecimal coveredAmount, String currency,
-                                LocalDate benefitEffectiveFrom) {}
+                                LocalDate benefitEffectiveFrom,
+                                /**
+                                 * Why this member left. Null while ACTIVE.
+                                 *
+                                 * <p>A refund and a commission clawback both branch on it: a
+                                 * settled claim earns its premium in full, a repaid loan does not.
+                                 */
+                                ExitReason exitReason,
+                                /**
+                                 * What the LENDER said was still owed at the exit. Recorded,
+                                 * not trusted -- our own declining schedule is what values a
+                                 * claim. Null on a member with no loan.
+                                 */
+                                BigDecimal outstandingBalanceAtExit) {}

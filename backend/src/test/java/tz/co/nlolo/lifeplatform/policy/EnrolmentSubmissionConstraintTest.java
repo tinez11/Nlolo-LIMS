@@ -63,7 +63,8 @@ class EnrolmentSubmissionConstraintTest {
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
             "db-migrations/policy/V17__enrolment_row_member_reference.sql",
             "db-migrations/policy/V18__scheme_premium_rate.sql",
-            "db-migrations/policy/V19__enrolment_premium.sql");
+            "db-migrations/policy/V19__enrolment_premium.sql",
+            "db-migrations/policy/V20__member_exit_reason.sql");
     }
 
     @Autowired private JdbcTemplate jdbcTemplate;

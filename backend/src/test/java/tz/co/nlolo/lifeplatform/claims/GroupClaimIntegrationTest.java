@@ -23,6 +23,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tz.co.nlolo.lifeplatform.policy.api.ExitReason;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
@@ -123,6 +124,7 @@ class GroupClaimIntegrationTest {
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
             "db-migrations/policy/V18__scheme_premium_rate.sql",
             "db-migrations/policy/V19__enrolment_premium.sql",
+            "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
@@ -256,13 +258,19 @@ class GroupClaimIntegrationTest {
             ClaimType.DEATH, dateOfEvent, deathDetails());
     }
 
-    /** No exit API exists and this plan adds none, so the test drives the entity directly. */
-    private void exitMemberDirectly(UUID policyMemberId, LocalDate leftOn) {
+    /**
+     * Take a member off the scheme the way anything real does.
+     *
+     * <p>This used to drive the entity directly, because no exit API existed. One does now
+     * ({@code PolicyApi.exitMember}), and going through it matters here: a real exit also
+     * restates the scheme's total, which is exactly the state a claim registered afterwards
+     * has to be evaluated against. Poking the entity produced a scheme that no code path
+     * could actually have created.
+     */
+    private void exitMemberDirectly(String policyNumber, UUID policyMemberId, LocalDate leftOn) {
         TenantContext.set(tenantId);
-        PolicyMember member = policyMemberRepository
-            .findByPolicyMemberIdAndTenantId(policyMemberId, tenantId).orElseThrow();
-        member.exit(leftOn);
-        policyMemberRepository.save(member);
+        policyApi.exitMember(policyNumber, policyMemberId, leftOn, ExitReason.CANCELLED, null,
+            "test-staff");
     }
 
     // ---------------------------------------------------------------------------------
@@ -329,7 +337,7 @@ class GroupClaimIntegrationTest {
         // whether they are covered today.
         GroupFixture scheme = flatSchemeOfTwo("GRP-CLAIM-05", "Juma Deceased", "Asha Living");
         UUID memberId = scheme.memberIdNamed("Juma Deceased");
-        exitMemberDirectly(memberId, LocalDate.now().minusMonths(1));
+        exitMemberDirectly(scheme.policyNumber(), memberId, LocalDate.now().minusMonths(1));
 
         TenantContext.set(tenantId);
         ClaimView claim = claimsApi.registerClaim(
