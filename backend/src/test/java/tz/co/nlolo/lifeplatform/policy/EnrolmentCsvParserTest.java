@@ -113,16 +113,16 @@ class EnrolmentCsvParserTest {
     }
 
     @Test
-    void aDuplicateLoanAccountNumberWithinOneFileIsCaughtHere() {
-        // The database index catches it across files; within one file the second row must
-        // be named, because "already an active member" would be a confusing answer to a
-        // row the lender sent twice by mistake.
-        var parsed = parse("LN-DUP,First,1990-01-01,F,,,1000000.00,12,2026-08-01\n"
-            + "LN-DUP,Second,1991-01-01,M,,,2000000.00,12,2026-08-01\n");
+    void aDuplicateLoanWithinOneFileIsCaughtHere() {
+        // The lender supplies no identifier of their own, so the LOAN is the identity:
+        // who, born when, borrowed how much, on what day. Caught within the file first, so
+        // a lender who pasted a block twice hears about it against their own line numbers.
+        var parsed = parse("LN-DUP,Amina Hassan Mwinyi,1990-01-01,F,,,1000000.00,12,2026-08-01\n"
+            + "LN-DUP,Amina Hassan Mwinyi,1990-01-01,M,,,1000000.00,12,2026-08-01\n");
 
         assertThat(parsed.rows()).hasSize(1);
         assertThat(parsed.errors().get(0).reason())
-            .isEqualTo(EnrolmentRejection.DUPLICATE_LOAN_ACCOUNT_NUMBER);
+            .isEqualTo(EnrolmentRejection.DUPLICATE_LOAN);
         assertThat(parsed.errors().get(0).detail()).contains("line 2");
     }
 
@@ -195,7 +195,33 @@ class EnrolmentCsvParserTest {
         assertThatThrownBy(() -> EnrolmentCsvParser.parse(new StringReader(
             "borrower_full_name,loan_principal_amount\nAmina,8500000.00\n")))
             .isInstanceOf(EnrolmentCsvParser.MalformedScheduleException.class)
-            .hasMessageContaining("loan_account_number");
+            .hasMessageContaining("borrower_date_of_birth");
+    }
+
+    @Test
+    void aFileWithNoLoanAccountNumberColumnIsFine() {
+        // Required until 2026-09-22, when the client confirmed neither lender holds one.
+        // Requiring it would have rejected every real file.
+        var parsed = EnrolmentCsvParser.parse(new StringReader(
+            "borrower_full_name,borrower_date_of_birth,borrower_sex,borrower_national_id,"
+            + "borrower_phone,loan_principal_amount,loan_term_months,disbursement_date\n"
+            + "Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-08-03\n"));
+
+        assertThat(parsed.errors()).isEmpty();
+        assertThat(parsed.rows().get(0).loanAccountNumber()).isNull();
+        assertThat(parsed.rows().get(0).memberReference()).isNull();
+    }
+
+    @Test
+    void aReferenceQuotedBackByTheLenderIsRead() {
+        var parsed = EnrolmentCsvParser.parse(new StringReader(
+            "member_reference,borrower_full_name,borrower_date_of_birth,borrower_sex,"
+            + "borrower_national_id,borrower_phone,loan_principal_amount,loan_term_months,"
+            + "disbursement_date\n"
+            + "CL-4F8DF58B-000417,Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-08-03\n"));
+
+        assertThat(parsed.errors()).isEmpty();
+        assertThat(parsed.rows().get(0).memberReference()).isEqualTo("CL-4F8DF58B-000417");
     }
 
     @Test

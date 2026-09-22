@@ -187,7 +187,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                     judged.borrowerDateOfBirth(), row.getLoanAccountNumber(),
                     loanTermsFor(judged, scheme)),
                 acceptedBy);
-            row.becameMember(member.policyMemberId());
+            row.becameMember(member.policyMemberId(), member.memberReference());
             enrolled++;
         }
 
@@ -222,7 +222,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             .stream()
             .map(row -> new EnrolmentRowView(row.getLineNumber(), row.getLoanAccountNumber(),
                 row.getBorrowerFullName(), row.getOutcome(), row.getReasonCode(), row.getReason(),
-                row.getPolicyMemberId()))
+                row.getPolicyMemberId(), row.getMemberReference()))
             .toList();
     }
 
@@ -313,11 +313,19 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             if (ageOrTerm != null) {
                 return refused(EnrolmentRejection.ENTRY_AGE_OR_TERM_OUT_OF_BOUNDS, ageOrTerm);
             }
-            if (policyMemberRepository.existsByTenantIdAndPolicyNumberAndLoanAccountNumberAndStatus(
-                    tenantId, policyNumber, row.loanAccountNumber(), MemberStatus.ACTIVE.name())) {
+            // The lender supplies no identifier, so the LOAN is the identity: who, born
+            // when, borrowed how much, on what day. Judged HERE rather than discovered as
+            // a failure part-way through acceptance, by which point the lender has
+            // already been told the row was acceptable.
+            if (policyMemberRepository.existsMatchingLoan(tenantId, policyNumber,
+                    row.borrowerFullName(), row.borrowerDateOfBirth(),
+                    row.disbursementDate(), row.loanPrincipalAmount())) {
                 return refused(EnrolmentRejection.ALREADY_ENROLLED,
-                    "loan_account_number " + row.loanAccountNumber() + " is already an active"
-                        + " member of this scheme from an earlier file.");
+                    row.borrowerFullName() + " already has an active loan of "
+                        + row.loanPrincipalAmount().toPlainString() + " disbursed on "
+                        + row.disbursementDate() + " on this scheme, from an earlier file."
+                        + " If this is a genuinely separate loan, quote the existing"
+                        + " member's reference in the member_reference column.");
             }
             // LoanTerms carries its own invariants -- a term that does not divide into
             // whole periods throws from the record's constructor. Caught HERE rather

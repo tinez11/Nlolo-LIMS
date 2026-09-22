@@ -21,7 +21,7 @@ public enum EnrolmentRejection {
     MALFORMED_VALUE,
 
     /** The same loan appears twice in one file, or is already on the scheme. */
-    DUPLICATE_LOAN_ACCOUNT_NUMBER,
+    DUPLICATE_LOAN,
 
     /** Cover cannot start before the loan exists. */
     DISBURSEMENT_DATE_IN_FUTURE,

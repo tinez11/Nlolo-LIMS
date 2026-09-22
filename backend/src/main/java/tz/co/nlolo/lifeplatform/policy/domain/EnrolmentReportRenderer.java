@@ -28,7 +28,8 @@ public final class EnrolmentReportRenderer {
     public static final String NOT_COVERED = "THIS BORROWER IS NOT COVERED.";
 
     private static final String[] HEADER = {
-        "row_number", "loan_account_number", "borrower_full_name", "outcome", "reason_code", "reason"
+        "row_number", "member_reference", "loan_account_number", "borrower_full_name",
+        "outcome", "reason_code", "reason"
     };
 
     private EnrolmentReportRenderer() {}
@@ -40,6 +41,10 @@ public final class EnrolmentReportRenderer {
             for (EnrolmentRowView row : rows) {
                 printer.printRecord(
                     row.lineNumber(),
+                    // The reference we issued. This column IS how the lender names a
+                    // borrower on any later file, because they have no identifier of
+                    // their own to quote.
+                    row.memberReference() == null ? "" : row.memberReference(),
                     row.loanAccountNumber(),
                     row.borrowerFullName(),
                     row.outcome(),

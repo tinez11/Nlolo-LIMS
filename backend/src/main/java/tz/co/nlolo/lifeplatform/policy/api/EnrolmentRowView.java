@@ -20,4 +20,5 @@ public record EnrolmentRowView(int lineNumber,
                                 RowOutcome outcome,
                                 EnrolmentRejection reasonCode,
                                 String reason,
-                                UUID policyMemberId) {}
+                                UUID policyMemberId,
+                                String memberReference) {}

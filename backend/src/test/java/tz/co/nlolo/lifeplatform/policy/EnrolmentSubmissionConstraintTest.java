@@ -59,7 +59,9 @@ class EnrolmentSubmissionConstraintTest {
             "db-migrations/policy/V9__group_scheme_and_members.sql",
             "db-migrations/policy/V13__freeform_members.sql",
             "db-migrations/policy/V14__credit_life_scheme.sql",
-            "db-migrations/policy/V15__enrolment_submission.sql");
+            "db-migrations/policy/V15__enrolment_submission.sql",
+            "db-migrations/policy/V16__insurer_issued_member_reference.sql",
+            "db-migrations/policy/V17__enrolment_row_member_reference.sql");
     }
 
     @Autowired private JdbcTemplate jdbcTemplate;

@@ -833,6 +833,31 @@ public class PolicyApiImpl implements PolicyApi {
             .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
                 + " has no benefit in force on " + asOf));
 
+        // Credit life, and credit life only: what the lender has LOST is what the borrower
+        // still owed on the day, not what they borrowed. Confirmed by the client on
+        // 2026-09-22 -- cover falls in a straight line, their example being 1,000,000 over
+        // 12 months reducing by 83,333.33 a month.
+        //
+        // Recomputed here rather than stored: materialising one row per repayment date
+        // would be tens of thousands of rows per enrolment file, on a table built for
+        // occasional restatement.
+        //
+        // min, not replace. The stored covered amount is the ceiling -- it already carries
+        // the free cover limit where that bit -- and the schedule is the other ceiling.
+        // Cover is whichever binds. The lender's own declared balance is a third ceiling
+        // and is applied at claim registration, not here.
+        if (scheme.get().getBenefitBasis() == BenefitBasis.AMORTISING_LOAN) {
+            LoanTerms terms = member.getLoanTerms();
+            if (terms == null || scheme.get().getInterestMethod() == null) {
+                throw new IllegalStateException("Member " + policyMemberId + " is on an "
+                    + "AMORTISING_LOAN scheme with no loan terms; "
+                    + "chk_policy_member_loan_complete should have made this impossible");
+            }
+            covered = AmortisationCalculator
+                .outstandingPrincipalAt(terms, scheme.get().getInterestMethod(), asOf)
+                .min(covered);
+        }
+
         return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId);
     }
 
@@ -1315,12 +1340,33 @@ public class PolicyApiImpl implements PolicyApi {
                 throw new InvalidPolicyStateException("That person is already an active member of scheme " + policyNumber);
             }
         }
-        // A FREEFORM member gets no duplicate check, deliberately. A name is not an
-        // identity: a scheme legitimately covers a father and a son who share one, and a
-        // household of dependants may share a surname and a birth year. Refusing the
-        // second would leave a real life uninsured to enforce a uniqueness the data
-        // cannot support. Credit life gives its members a real key -- the loan account
-        // number -- and enforces that instead.
+        // A FREEFORM member on an EMPLOYER scheme gets no duplicate check, deliberately.
+        // A name is not an identity: a scheme legitimately covers a father and a son who
+        // share one, and a household of dependants may share a surname and a birth year.
+        // Refusing the second would leave a real life uninsured to enforce a uniqueness
+        // the data cannot support.
+        //
+        // A credit-life member is different, and has to be: the lender supplies no
+        // identifier, so a resubmitted file would otherwise enrol everybody twice. The
+        // loan itself is the identity -- who, born when, borrowed how much, on what day.
+        // Two loans to one person on the same day for the same amount are indistinguishable
+        // under it, which is possible but rare, and it fails in the safe direction: a
+        // refusal the lender can query, never silent double cover.
+        if (scheme.getBenefitBasis() == BenefitBasis.AMORTISING_LOAN
+                && member.memberType() == MemberType.FREEFORM
+                && member.loanTerms() != null
+                && policyMemberRepository.existsMatchingLoan(tenantId, policyNumber,
+                    member.memberName(), member.memberDateOfBirth(),
+                    member.loanTerms().disbursementDate(),
+                    member.loanTerms().principalAmount())) {
+            throw new InvalidPolicyStateException(member.memberName()
+                + " already has an active loan of "
+                + member.loanTerms().principalAmount().toPlainString()
+                + " disbursed on " + member.loanTerms().disbursementDate()
+                + " on scheme " + policyNumber
+                + ". If this is a genuinely separate loan, quote the existing member's"
+                + " reference so the two can be told apart.");
+        }
 
         LocalDate today = LocalDate.now();
         LocalDate joinedOn = requireLoanMatchesBasis(scheme.getBenefitBasis(), member, today, today);
@@ -1424,6 +1470,22 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     /**
+     * The reference a lender will quote back at us.
+     *
+     * <p>Scheme-qualified so a human reading it knows which contract it belongs to, and
+     * numbered from a sequence so it cannot be raced. The numbers are not contiguous
+     * within a scheme -- the sequence is global -- which is cosmetic: nobody counts them,
+     * they quote them.
+     */
+    private String mintMemberReference(String policyNumber) {
+        // GRP-4F8DF58B -> 4F8DF58B, so the reference reads CL-4F8DF58B-000417.
+        String schemeSuffix = policyNumber.startsWith("GRP-")
+            ? policyNumber.substring(4) : policyNumber;
+        return "CL-" + schemeSuffix + "-"
+            + String.format("%06d", policyMemberRepository.nextMemberReferenceNumber());
+    }
+
+    /**
      * How to name a member in an error, whichever designation they carry.
      *
      * <p>A party id is meaningless to whoever is fixing a lender's schedule, and a
@@ -1468,11 +1530,10 @@ public class PolicyApiImpl implements PolicyApi {
             return member.joinedOn() != null ? member.joinedOn() : schemeDefault;
         }
 
-        if (member.loanAccountNumber() == null || member.loanAccountNumber().isBlank()) {
-            throw new InvalidPolicyStateException(
-                "A credit-life member must carry a loan account number: it is the member key, "
-                    + "and a borrower named on a schedule has no other identity");
-        }
+        // No loan account number is required. The lender has none to give -- one policy
+        // number goes to the bank and sheets come back -- so the INSURER issues the
+        // reference instead, and the account number is kept only when a lender does
+        // happen to send one.
         if (member.loanTerms() == null) {
             throw new InvalidPolicyStateException(
                 "A credit-life member must carry the terms of their loan");
@@ -1603,7 +1664,10 @@ public class PolicyApiImpl implements PolicyApi {
             : new PolicyMember(tenantId, policyNumber, input.memberPartyId(),
                 input.gradeCode(), joinedOn, valuation.underwritingStatus(), createdBy);
         if (input.loanTerms() != null) {
-            toSave.withLoan(input.loanAccountNumber(), input.loanTerms());
+            // Minted here, and only here: a credit-life member without a reference is a
+            // borrower the lender can never name again.
+            toSave.withLoan(mintMemberReference(policyNumber), input.loanAccountNumber(),
+                input.loanTerms());
         }
         // A member over the free cover limit is referred for evidence, which needs an
         // identity: underwriting_case.applicant_party_id is NOT NULL and ProposalDetails
@@ -1629,15 +1693,19 @@ public class PolicyApiImpl implements PolicyApi {
 
         PolicyMember member;
         try {
-            // saveAndFlush, not save: ux_policy_member_active_loan is the guarantee that a
-            // resubmitted enrolment file does not enrol the same loan twice, and a plain
-            // save would queue the insert until after this method returned, putting the
-            // violation somewhere nobody can attribute it.
+            // saveAndFlush, not save: a plain save would queue the insert until after
+            // this method returned, putting any violation somewhere nobody can attribute
+            // it. ux_policy_member_reference is the guarantee that a reference is never
+            // issued twice.
             member = policyMemberRepository.saveAndFlush(toSave);
         } catch (DataIntegrityViolationException e) {
-            if (violatesConstraint(e, "ux_policy_member_active_loan")) {
-                throw new InvalidPolicyStateException("Loan " + input.loanAccountNumber()
-                    + " is already an active member of scheme " + policyNumber);
+            if (violatesConstraint(e, "ux_policy_member_reference")) {
+                // The sequence cannot collide, so this means something minted a reference
+                // by another route. Worth failing loudly rather than reporting it as a
+                // duplicate borrower, which it is not.
+                throw new IllegalStateException("Member reference "
+                    + toSave.getMemberReference() + " is already in use; references come "
+                    + "from policy.member_reference_seq and cannot collide", e);
             }
             throw e;
         }
@@ -1693,7 +1761,7 @@ public class PolicyApiImpl implements PolicyApi {
     private PolicyMemberView toMemberView(PolicyMember m, GroupBenefitCalculator.Valuation valuation,
                                            BigDecimal salaryAmount, String currency, LocalDate effectiveFrom) {
         return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
-            m.getMemberType(), m.getMemberName(), m.getLoanAccountNumber(), m.getGradeCode(),
+            m.getMemberType(), m.getMemberName(), m.getMemberReference(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
             valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom);
@@ -1702,7 +1770,7 @@ public class PolicyApiImpl implements PolicyApi {
     private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
                                            String currency) {
         return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
-            m.getMemberType(), m.getMemberName(), m.getLoanAccountNumber(), m.getGradeCode(),
+            m.getMemberType(), m.getMemberName(), m.getMemberReference(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(),
             // Null across the money fields means a member whose cover has not started yet

@@ -78,6 +78,10 @@ public class EnrolmentSubmissionRow {
     @Column(name = "policy_member_id")
     private UUID policyMemberId;
 
+    /** The reference we issued, so the report can tell the lender what to quote back. */
+    @Column(name = "member_reference")
+    private String memberReference;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -142,8 +146,9 @@ public class EnrolmentSubmissionRow {
     }
 
     /** Called at acceptance, once the row is genuinely a member. */
-    public void becameMember(UUID policyMemberId) {
+    public void becameMember(UUID policyMemberId, String memberReference) {
         this.policyMemberId = policyMemberId;
+        this.memberReference = memberReference;
     }
 
     /** The loan this row was judged on, or null if it never parsed. */
@@ -166,4 +171,5 @@ public class EnrolmentSubmissionRow {
     public EnrolmentRejection getReasonCode() { return reasonCode; }
     public String getReason() { return reason; }
     public UUID getPolicyMemberId() { return policyMemberId; }
+    public String getMemberReference() { return memberReference; }
 }
