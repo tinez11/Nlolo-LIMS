@@ -13,7 +13,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 
@@ -48,6 +50,7 @@ public class PolicyEventListener {
             case "policy.PolicyEndorsed" -> withTenant(envelope, this::handlePolicyEndorsed);
             case "policy.PolicySuspended" -> withTenant(envelope, this::handlePolicySuspended);
             case "policy.PolicyResumed" -> withTenant(envelope, this::handlePolicyResumed);
+            case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
             default -> { /* not billing-relevant */ }
         }
     }
@@ -113,6 +116,41 @@ public class PolicyEventListener {
     private void handlePolicySuspended(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
         billingApiImpl.pauseScheduleForSuspension(TenantContext.get(), policyNumber);
+    }
+
+    /**
+     * One accepted enrolment file, one invoice, for the sum of the borrowers it enrolled.
+     *
+     * <p>This is the whole money side of credit life. The master policy is never billed (see
+     * the SINGLE guard in {@code handlePolicyIssued}); its premium arrives file by file, and
+     * the file-to-invoice correspondence is what a reconciliation argument with a lender is
+     * actually about.
+     */
+    private void handleEnrolmentAccepted(Map<String, Object> payload) {
+        UUID submissionId = (UUID) payload.get("submissionId");
+        String policyNumber = (String) payload.get("policyNumber");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> premium = (Map<String, Object>) payload.get("premium");
+        BigDecimal amount = new BigDecimal((String) premium.get("amount"));
+
+        // A file whose every row was rejected enrols nobody and earns nothing. It must not
+        // raise a zero invoice: chk_premium_invoice_amount_positive would refuse it, and a
+        // zero charge is not a thing to send a lender in any case.
+        if (amount.signum() == 0) {
+            log.info("Enrolment submission {} on policy {} enrolled nobody -- no invoice raised",
+                submissionId, policyNumber);
+            return;
+        }
+
+        // Derived from the submission's OWN acceptance instant, never from this consumer's
+        // clock. ux_premium_invoice_per_submission must include due_date because
+        // premium_invoice is partitioned on it, so the guarantee against double-charging on a
+        // redelivered event holds only if a redelivery recomputes the identical date.
+        LocalDate acceptedOn = Instant.parse((String) payload.get("acceptedAt"))
+            .atZone(ZoneOffset.UTC).toLocalDate();
+
+        billingApiImpl.raiseSinglePremiumInvoice(TenantContext.get(), policyNumber, submissionId,
+            amount, (String) premium.get("currencyCode"), acceptedOn);
     }
 
     private void handlePolicyResumed(Map<String, Object> payload) {

@@ -1,13 +1,20 @@
-package tz.co.nlolo.lifeplatform.billing;
+// In billing.application rather than billing, so the redelivery test can call
+// BillingApiImpl.raiseSinglePremiumInvoice -- package-private, like every other listener entry
+// point on that class. Simulating a redelivered AFTER_COMMIT event any other way would mean
+// driving a TransactionTemplate just to reach a method this package can already see.
+package tz.co.nlolo.lifeplatform.billing.application;
 
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
+import io.minio.MakeBucketArgs;
+import io.minio.MinioClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,11 +23,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -50,11 +60,23 @@ class SinglePremiumIntegrationTest {
     @Container
     static PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
+    /*
+     * Its OWN MinIO: submit() stores the lender's file through DocumentApi. Without this the
+     * class silently uses whatever object store the dev compose stack happens to be running,
+     * which passes on a developer machine and fails in CI -- the same trap EnrolmentIntegrationTest
+     * and ClaimEvidenceIntegrationTest already carry the fix for.
+     */
+    @Container
+    static MinIOContainer MINIO = new MinIOContainer("minio/minio:latest");
+
     @DynamicPropertySource
     static void datasourceProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("minio.endpoint", MINIO::getS3URL);
+        registry.add("minio.access-key", MINIO::getUserName);
+        registry.add("minio.secret-key", MINIO::getPassword);
     }
 
     @BeforeAll
@@ -105,16 +127,34 @@ class SinglePremiumIntegrationTest {
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
             "db-migrations/policy/V17__enrolment_row_member_reference.sql",
             "db-migrations/policy/V18__scheme_premium_rate.sql",
+            "db-migrations/policy/V19__enrolment_premium.sql",
+            "db-migrations/document/V1__create_document_schema.sql",
+            "db-migrations/document/V2__add_content_type_and_file_name.sql",
+            "db-migrations/document/V4__enrolment_schedule_document_type.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
-            "db-migrations/billing/V3__amount_paid.sql");
+            "db-migrations/billing/V3__amount_paid.sql",
+            "db-migrations/billing/V5__single_premium_invoice.sql");
+
+        // The container never runs compose's minio-init job, so the buckets are made here.
+        MinioClient minio = MinioClient.builder()
+            .endpoint(MINIO.getS3URL())
+            .credentials(MINIO.getUserName(), MINIO.getPassword())
+            .build();
+        for (String bucket : new String[] {"policy-documents", "kyc-evidence",
+                "underwriting-evidence", "claim-evidence"}) {
+            minio.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
+        }
     }
 
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
+    @Autowired private EnrolmentApi enrolmentApi;
     @Autowired private BillingScheduleRepository billingScheduleRepository;
     @Autowired private PremiumInvoiceRepository premiumInvoiceRepository;
+    /** Only for the redelivery test, which calls the consumer directly rather than re-firing an event. */
+    @Autowired private BillingApiImpl billingApiImpl;
 
     private static final AtomicInteger PHONE_SEQ = new AtomicInteger(7000);
     private static final AtomicInteger CODE_SEQ = new AtomicInteger(1);
@@ -209,8 +249,190 @@ class SinglePremiumIntegrationTest {
     }
 
     // ---------------------------------------------------------------------------------
+    // One invoice per accepted file
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Three borrowers at 0.5% per annum on the original principal:
+     * <pre>
+     *   2,400,000 x 0.005 x (18/12) =  18,000.00
+     *   1,200,000 x 0.005 x (12/12) =   6,000.00
+     *   6,000,000 x 0.005 x (24/12) =  60,000.00
+     *                                  ---------
+     *                                  84,000.00
+     * </pre>
+     */
+    private static final String THREE_BORROWERS =
+        ",Amina Hassan Mwinyi,1988-03-14,F,,,2400000.00,18,2026-08-03\n"
+        + ",Joseph Mkenda,1975-11-02,M,,,1200000.00,12,2026-08-05\n"
+        + ",Grace Shirima,1992-06-21,F,,,6000000.00,24,2026-08-06\n";
+
+    private static final BigDecimal THREE_BORROWER_TOTAL = new BigDecimal("84000.00");
+
+    @Test
+    void anAcceptedFileRaisesExactlyOneInvoiceForTheSumOfItsMembers() {
+        // "One file, one invoice" (spec 2.8). Three borrowers, one charge -- which is what a
+        // reconciliation argument with a lender is actually about.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        UUID submissionId = submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+
+        List<PremiumInvoice> invoices = premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId);
+
+        assertThat(invoices).hasSize(1);
+        assertThat(invoices.get(0).getAmount()).isEqualByComparingTo(THREE_BORROWER_TOTAL);
+        assertThat(invoices.get(0).getEnrolmentSubmissionId()).isEqualTo(submissionId);
+        // Not on a schedule: chk_premium_invoice_has_exactly_one_origin says exactly one of
+        // the two, and this one belongs to a file.
+        assertThat(invoices.get(0).getBillingScheduleId()).isNull();
+    }
+
+    @Test
+    void thePremiumIsChargedAtTheSchemesOwnRateSoTwoLendersPayDifferently() {
+        // Client answer 3.1: the rate is negotiated per lender. Same three loans, 0.4% instead
+        // of 0.5%, so four fifths of the premium.
+        GroupSchemeView cheaper = issueCreditLifeScheme(new BigDecimal("0.4000"));
+        submitAndAccept(cheaper.policyNumber(), THREE_BORROWERS);
+
+        assertThat(premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(cheaper.policyNumber(), tenantId).get(0)
+            .getAmount()).isEqualByComparingTo("67200.00");
+    }
+
+    @Test
+    void aSecondFileRaisesASecondInvoiceAndDoesNotAmendTheFirst() {
+        // Monthly files, monthly charges. An implementation that "topped up" a running invoice
+        // would destroy the file-to-invoice correspondence the whole design rests on.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        submitAndAccept(scheme.policyNumber(),
+            ",Salum Juma Rashid,1969-01-30,M,,,3600000.00,12,2026-09-02\n");
+
+        List<PremiumInvoice> invoices = premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId);
+
+        assertThat(invoices).hasSize(2);
+        assertThat(invoices).extracting(PremiumInvoice::getAmount)
+            .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
+            .containsExactlyInAnyOrder(THREE_BORROWER_TOTAL, new BigDecimal("18000.00"));
+        // Two files, two distinct origins. Neither invoice may claim the other's submission.
+        assertThat(invoices).extracting(PremiumInvoice::getEnrolmentSubmissionId)
+            .doesNotHaveDuplicates();
+    }
+
+    @Test
+    void everyEnrolledRowRecordsWhatThatBorrowerWasCharged() {
+        // Per row, not merely as a file total: a refund is computed against what THIS loan
+        // paid, and a share of the file total would be the wrong number as soon as a lender
+        // renegotiates their rate between files.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        UUID submissionId = submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+
+        List<EnrolmentRowView> rows = enrolmentApi.listRows(submissionId);
+        assertThat(rows).extracting(EnrolmentRowView::premiumAmount)
+            .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
+            .containsExactly(new BigDecimal("18000.00"), new BigDecimal("6000.00"),
+                             new BigDecimal("60000.00"));
+    }
+
+    @Test
+    void theRowPremiumsSumToTheInvoiceExactly() {
+        // The property that has to hold across four hundred borrowers: every row is rounded to
+        // the cent on its own, so the total must be checked rather than assumed.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.4500"));
+        UUID submissionId = submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+
+        BigDecimal rowSum = enrolmentApi.listRows(submissionId).stream()
+            .map(EnrolmentRowView::premiumAmount)
+            .filter(java.util.Objects::nonNull)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        assertThat(premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId).get(0)
+            .getAmount()).isEqualByComparingTo(rowSum);
+    }
+
+    /**
+     * A row that is always rejected, whatever the product is configured to allow.
+     *
+     * <p>Deliberately NOT an out-of-bounds age: {@link #publish} creates its versions with no
+     * eligibility bounds, so an eighty-year-old borrower enrols perfectly happily here. A
+     * disbursement date in the future is refused by the judge itself -- cover cannot commence
+     * before the loan exists -- and so does not depend on how the fixture product is set up.
+     */
+    private static final String ONE_ROW_ALWAYS_REJECTED =
+        ",Zainabu Ally,1987-10-30,F,,,1500000.00,12," + LocalDate.now().plusMonths(1) + "\n";
+
+    @Test
+    void aFileThatEnrolledNobodyRaisesNoInvoice() {
+        // Every row rejected: nothing was insured, so nothing is owed. A zero invoice would
+        // fail chk_premium_invoice_amount_positive anyway, and is not a thing to send a lender.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), ONE_ROW_ALWAYS_REJECTED);
+
+        assertThat(premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId)).isEmpty();
+    }
+
+    @Test
+    void aRejectedRowIsNeverCharged() {
+        // One good borrower, one refused. The invoice is for the good one alone.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        UUID submissionId = submitAndAccept(scheme.policyNumber(),
+            ",Amina Hassan Mwinyi,1988-03-14,F,,,2400000.00,18,2026-08-03\n"
+            + ONE_ROW_ALWAYS_REJECTED);
+
+        assertThat(premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId).get(0)
+            .getAmount()).isEqualByComparingTo("18000.00");
+
+        List<EnrolmentRowView> rows = enrolmentApi.listRows(submissionId);
+        assertThat(rows).filteredOn(r -> r.outcome() == RowOutcome.REJECTED)
+            .allSatisfy(r -> assertThat(r.premiumAmount()).isNull());
+    }
+
+    @Test
+    void aRedeliveredAcceptanceDoesNotChargeTheLenderTwice() {
+        // policy.EnrolmentAccepted is consumed AFTER_COMMIT, and AFTER_COMMIT listeners get
+        // redelivered. A second delivery must return the invoice already raised rather than
+        // charging the lender again -- and must do it WITHOUT letting the insert fail first,
+        // because a failed statement poisons the whole Postgres transaction and nothing can be
+        // read back after it. Hence the pre-check in raiseSinglePremiumInvoice, which this
+        // test is the reason for.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        UUID submissionId = submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        UUID firstInvoiceId = premiumInvoiceRepository
+            .findByTenantIdAndEnrolmentSubmissionId(tenantId, submissionId).orElseThrow()
+            .getInvoiceId();
+
+        UUID redelivered = billingApiImpl.raiseSinglePremiumInvoice(tenantId, scheme.policyNumber(),
+            submissionId, THREE_BORROWER_TOTAL, "TZS",
+            // The same acceptance date the event carried. A clock-derived due date would land
+            // in a different partition row and slip past the index.
+            LocalDate.now());
+
+        assertThat(redelivered).isEqualTo(firstInvoiceId);
+        assertThat(premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId)).hasSize(1);
+    }
+
+    // ---------------------------------------------------------------------------------
     // Fixtures
     // ---------------------------------------------------------------------------------
+
+    private static final String CSV_HEADER =
+        "member_reference,borrower_full_name,borrower_date_of_birth,borrower_sex,"
+        + "borrower_national_id,borrower_phone,loan_principal_amount,"
+        + "loan_term_months,disbursement_date\n";
+
+    /** Submit a file and have a DIFFERENT staff user accept it, which is the only way cover exists. */
+    private UUID submitAndAccept(String policyNumber, String rows) {
+        EnrolmentSubmissionView submitted = enrolmentApi.submit(policyNumber,
+            new ByteArrayInputStream((CSV_HEADER + rows).getBytes(StandardCharsets.UTF_8)),
+            "lender-file.csv", "staff.proposer");
+        enrolmentApi.accept(submitted.submissionId(), "staff.accepter");
+        return submitted.submissionId();
+    }
 
     private record GroupProduct(UUID productId, UUID productVersionId) {}
 

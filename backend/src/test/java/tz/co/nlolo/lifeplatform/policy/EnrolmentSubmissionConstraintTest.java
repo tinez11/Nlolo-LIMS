@@ -62,7 +62,8 @@ class EnrolmentSubmissionConstraintTest {
             "db-migrations/policy/V15__enrolment_submission.sql",
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
             "db-migrations/policy/V17__enrolment_row_member_reference.sql",
-            "db-migrations/policy/V18__scheme_premium_rate.sql");
+            "db-migrations/policy/V18__scheme_premium_rate.sql",
+            "db-migrations/policy/V19__enrolment_premium.sql");
     }
 
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -125,7 +126,8 @@ class EnrolmentSubmissionConstraintTest {
     void anAcceptedSubmissionFreesTheSchemeForNextMonth() {
         UUID first = insertPendingSubmission("staff.one");
         jdbcTemplate.update("update policy.enrolment_submission set status='ACCEPTED', "
-            + "accepted_by='staff.two', accepted_at=now() where submission_id=?", first);
+            + "accepted_by='staff.two', accepted_at=now(), premium_total=84000.00 "
+            + "where submission_id=?", first);
 
         // The index is partial on PENDING, so history never blocks the next file.
         assertThatCode(() -> insertPendingSubmission("staff.three")).doesNotThrowAnyException();
@@ -148,7 +150,7 @@ class EnrolmentSubmissionConstraintTest {
         // control.
         assertThatThrownBy(() -> jdbcTemplate.update(
             "update policy.enrolment_submission set status='ACCEPTED', accepted_by='staff.one', "
-                + "accepted_at=now() where submission_id=?", id))
+                + "accepted_at=now(), premium_total=84000.00 where submission_id=?", id))
             .hasMessageContaining("chk_enrolment_submission_two_person");
     }
 
@@ -159,6 +161,27 @@ class EnrolmentSubmissionConstraintTest {
         assertThatThrownBy(() -> jdbcTemplate.update(
             "update policy.enrolment_submission set status='ACCEPTED' where submission_id=?", id))
             .hasMessageContaining("chk_enrolment_submission_accepted_complete");
+    }
+
+    @Test
+    void anAcceptedSubmissionMustAlsoSayWhatItCost() {
+        UUID id = insertPendingSubmission("staff.one");
+
+        // The same constraint, widened by V19 rather than joined by a second one. A file is
+        // accepted and the premium it earned is knowable at that instant; an acceptance that
+        // did not record it would leave an invoice with nothing to be raised from.
+        //
+        // Zero is legal -- a file whose every row was rejected enrols nobody and earns
+        // nothing -- so it is the NULL that is refused, not the amount.
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "update policy.enrolment_submission set status='ACCEPTED', accepted_by='staff.two', "
+                + "accepted_at=now() where submission_id=?", id))
+            .hasMessageContaining("chk_enrolment_submission_accepted_complete");
+
+        assertThatCode(() -> jdbcTemplate.update(
+            "update policy.enrolment_submission set status='ACCEPTED', accepted_by='staff.two', "
+                + "accepted_at=now(), premium_total=0.00 where submission_id=?", id))
+            .doesNotThrowAnyException();
     }
 
     @Test

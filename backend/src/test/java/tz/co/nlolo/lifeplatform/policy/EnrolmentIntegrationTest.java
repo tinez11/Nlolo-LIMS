@@ -112,6 +112,7 @@ class EnrolmentIntegrationTest {
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
             "db-migrations/policy/V17__enrolment_row_member_reference.sql",
             "db-migrations/policy/V18__scheme_premium_rate.sql",
+            "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -459,7 +460,7 @@ class EnrolmentIntegrationTest {
 
         assertThat(report.lines().findFirst().orElseThrow())
             .isEqualTo("row_number,member_reference,loan_account_number,borrower_full_name,"
-                + "outcome,reason_code,reason");
+                + "outcome,premium_amount,reason_code,reason");
         assertThat(report).contains("Amina Hassan Mwinyi,ENROLLED");
         assertThat(report).contains("MISSING_REQUIRED_FIELD");
         assertThat(report).contains("THIS BORROWER IS NOT COVERED.");

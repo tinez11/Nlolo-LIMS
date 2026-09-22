@@ -82,6 +82,17 @@ public class EnrolmentSubmissionRow {
     @Column(name = "member_reference")
     private String memberReference;
 
+    /**
+     * What THIS borrower was charged, set at acceptance.
+     *
+     * <p>Per row rather than only as a file total, so a refund is computed against what this
+     * loan actually paid rather than against a share of the file. The two differ as soon as a
+     * lender renegotiates their rate between files, and the refund has to follow the money
+     * that was taken.
+     */
+    @Column(name = "premium_amount")
+    private BigDecimal premiumAmount;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -146,9 +157,19 @@ public class EnrolmentSubmissionRow {
     }
 
     /** Called at acceptance, once the row is genuinely a member. */
-    public void becameMember(UUID policyMemberId, String memberReference) {
+    /**
+     * @param premiumAmount what this borrower was charged. Never null and never zero here:
+     *     this method is only reached for a row that became cover, and cover that cost
+     *     nothing is cover nobody was paid for.
+     */
+    public void becameMember(UUID policyMemberId, String memberReference, BigDecimal premiumAmount) {
+        if (premiumAmount == null || premiumAmount.signum() <= 0) {
+            throw new IllegalArgumentException(
+                "An enrolled borrower must have been charged something, got: " + premiumAmount);
+        }
         this.policyMemberId = policyMemberId;
         this.memberReference = memberReference;
+        this.premiumAmount = premiumAmount;
     }
 
     /** The loan this row was judged on, or null if it never parsed. */
@@ -172,4 +193,5 @@ public class EnrolmentSubmissionRow {
     public String getReason() { return reason; }
     public UUID getPolicyMemberId() { return policyMemberId; }
     public String getMemberReference() { return memberReference; }
+    public BigDecimal getPremiumAmount() { return premiumAmount; }
 }

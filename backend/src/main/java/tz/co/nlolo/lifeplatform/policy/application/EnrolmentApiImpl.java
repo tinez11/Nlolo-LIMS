@@ -1,11 +1,14 @@
 package tz.co.nlolo.lifeplatform.policy.application;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.policy.api.*;
+import tz.co.nlolo.lifeplatform.policy.domain.CreditLifePremium;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentCsvParser;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentReportRenderer;
 import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentSubmission;
@@ -31,6 +34,7 @@ import java.time.LocalDate;
 import java.time.Period;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -54,13 +58,15 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     private final PolicyApi policyApi;
     private final ProductApi productApi;
     private final DocumentApi documentApi;
+    private final ApplicationEventPublisher eventPublisher;
 
     public EnrolmentApiImpl(EnrolmentSubmissionRepository submissionRepository,
                              EnrolmentSubmissionRowRepository rowRepository,
                              GroupSchemeRepository groupSchemeRepository,
                              PolicyRepository policyRepository,
                              PolicyMemberRepository policyMemberRepository,
-                             PolicyApi policyApi, ProductApi productApi, DocumentApi documentApi) {
+                             PolicyApi policyApi, ProductApi productApi, DocumentApi documentApi,
+                             ApplicationEventPublisher eventPublisher) {
         this.submissionRepository = submissionRepository;
         this.rowRepository = rowRepository;
         this.groupSchemeRepository = groupSchemeRepository;
@@ -69,6 +75,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         this.policyApi = policyApi;
         this.productApi = productApi;
         this.documentApi = documentApi;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -174,6 +181,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         }
 
         int enrolled = 0;
+        BigDecimal premiumTotal = BigDecimal.ZERO;
         for (EnrolmentSubmissionRow row :
                 rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)) {
             // ENROLLED_CAPPED is cover, not a refusal: a capped borrower is insured up
@@ -187,11 +195,40 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                     judged.borrowerDateOfBirth(), row.getLoanAccountNumber(),
                     loanTermsFor(judged, scheme)),
                 acceptedBy);
-            row.becameMember(member.policyMemberId(), member.memberReference());
+
+            // Priced from this borrower's OWN loan against the scheme's own rate, and summed
+            // here rather than re-derived later: a total recomputed from the members would
+            // drift the moment one of them exits.
+            //
+            // On the full principal even for a CAPPED borrower. Capping limits what the
+            // insurer will PAY, not what the lender borrowed, and the rate they negotiated is
+            // a rate on the loan. Charging the capped amount would quietly discount exactly
+            // the borrowers whose excess risk sent them to underwriting.
+            BigDecimal memberPremium = CreditLifePremium.forLoan(
+                judged.loanPrincipalAmount(), judged.loanTermMonths(), scheme.getPremiumRatePercent());
+            row.becameMember(member.policyMemberId(), member.memberReference(), memberPremium);
+            premiumTotal = premiumTotal.add(memberPremium);
             enrolled++;
         }
 
-        submission.accept(acceptedBy, enrolled);
+        submission.accept(acceptedBy, enrolled, premiumTotal);
+
+        // Acceptance published NOTHING before this. So no other module could learn that a file
+        // had been accepted, and the premium it earned was charged to nobody -- the master
+        // policy's own schedule was billing a hand-typed figure instead (see
+        // billing.PolicyEventListener, and the SINGLE guard that stopped it).
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.EnrolmentAccepted", tenantId,
+            Map.of("submissionId", submission.getSubmissionId(),
+                   "policyNumber", submission.getPolicyNumber(),
+                   "enrolledCount", enrolled,
+                   // The invoice's due date is derived from this, NOT from the consumer's
+                   // clock: ux_premium_invoice_per_submission has to include due_date (the
+                   // partition key), so a redelivery must recompute the identical date or the
+                   // lender is charged twice.
+                   "acceptedAt", submission.getAcceptedAt().toString(),
+                   "premium", Map.of("amount", premiumTotal.toPlainString(),
+                                     "currencyCode", scheme.getCurrency()))));
+
         return toView(submission);
     }
 
@@ -222,7 +259,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             .stream()
             .map(row -> new EnrolmentRowView(row.getLineNumber(), row.getLoanAccountNumber(),
                 row.getBorrowerFullName(), row.getOutcome(), row.getReasonCode(), row.getReason(),
-                row.getPolicyMemberId(), row.getMemberReference()))
+                row.getPolicyMemberId(), row.getMemberReference(), row.getPremiumAmount()))
             .toList();
     }
 

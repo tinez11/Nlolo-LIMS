@@ -29,7 +29,7 @@ public final class EnrolmentReportRenderer {
 
     private static final String[] HEADER = {
         "row_number", "member_reference", "loan_account_number", "borrower_full_name",
-        "outcome", "reason_code", "reason"
+        "outcome", "premium_amount", "reason_code", "reason"
     };
 
     private EnrolmentReportRenderer() {}
@@ -48,6 +48,11 @@ public final class EnrolmentReportRenderer {
                     row.loanAccountNumber(),
                     row.borrowerFullName(),
                     row.outcome(),
+                    // What this borrower cost. The invoice for this file is the sum of this
+                    // column, which is the whole point of sending it: a lender reconciling one
+                    // charge against four hundred names needs the breakdown, not just a total.
+                    // Blank on a rejected row, which is charged nothing.
+                    row.premiumAmount() == null ? "" : row.premiumAmount().toPlainString(),
                     row.reasonCode() == null ? "" : row.reasonCode().name(),
                     row.reason() == null ? "" : row.reason());
             }
