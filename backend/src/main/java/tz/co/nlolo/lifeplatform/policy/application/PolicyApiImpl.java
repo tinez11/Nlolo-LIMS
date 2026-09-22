@@ -833,6 +833,31 @@ public class PolicyApiImpl implements PolicyApi {
             .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
                 + " has no benefit in force on " + asOf));
 
+        // Credit life, and credit life only: what the lender has LOST is what the borrower
+        // still owed on the day, not what they borrowed. Confirmed by the client on
+        // 2026-09-22 -- cover falls in a straight line, their example being 1,000,000 over
+        // 12 months reducing by 83,333.33 a month.
+        //
+        // Recomputed here rather than stored: materialising one row per repayment date
+        // would be tens of thousands of rows per enrolment file, on a table built for
+        // occasional restatement.
+        //
+        // min, not replace. The stored covered amount is the ceiling -- it already carries
+        // the free cover limit where that bit -- and the schedule is the other ceiling.
+        // Cover is whichever binds. The lender's own declared balance is a third ceiling
+        // and is applied at claim registration, not here.
+        if (scheme.get().getBenefitBasis() == BenefitBasis.AMORTISING_LOAN) {
+            LoanTerms terms = member.getLoanTerms();
+            if (terms == null || scheme.get().getInterestMethod() == null) {
+                throw new IllegalStateException("Member " + policyMemberId + " is on an "
+                    + "AMORTISING_LOAN scheme with no loan terms; "
+                    + "chk_policy_member_loan_complete should have made this impossible");
+            }
+            covered = AmortisationCalculator
+                .outstandingPrincipalAt(terms, scheme.get().getInterestMethod(), asOf)
+                .min(covered);
+        }
+
         return new ClaimableCoverView(covered, scheme.get().getCurrency(), policyMemberId);
     }
 

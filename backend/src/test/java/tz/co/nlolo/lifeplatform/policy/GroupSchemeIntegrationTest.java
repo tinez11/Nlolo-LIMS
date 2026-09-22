@@ -917,6 +917,72 @@ class GroupSchemeIntegrationTest {
     }
 
     @Test
+    void coverFallsInAStraightLineAsTheLoanIsRepaid() {
+        // The client's own example, 2026-09-22: "1M, 12 months, 1000000/12 = 83,333.333,
+        // so every month we reduce by that". Straight-line is what FLAT_RATE already
+        // computes -- principal x (n-k)/n -- and it reads no interest rate, which is why
+        // dropping that column from the template was safe.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-STRAIGHTLINE");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Straight Lender"), InterestMethod.FLAT_RATE,
+            List.of(PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi",
+                LocalDate.of(1988, 3, 14), "LN-STRAIGHT",
+                new LoanTerms(new BigDecimal("1000000.00"), BigDecimal.ZERO, 12,
+                    RepaymentFrequency.MONTHLY,
+                    LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 30))))), "staff-1");
+
+        UUID memberId = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0).policyMemberId();
+
+        // Day of disbursement: nothing repaid, the whole loan is insured.
+        assertThat(policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.of(2026, 6, 30), BenefitType.DEATH.name()).amount())
+            .isEqualByComparingTo("1000000.00");
+
+        // After one instalment: 1,000,000 x 11/12.
+        assertThat(policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.of(2026, 7, 30), BenefitType.DEATH.name()).amount())
+            .isEqualByComparingTo("916666.67");
+
+        // Six of twelve paid: exactly half. That is 2026-12-30, not 2027-01-30 -- the
+        // first instalment falls due ON 2026-07-30, so six have been paid six months
+        // later, not seven. Worth stating because the off-by-one is the whole difference
+        // between paying a claim 500,000 and paying it 416,666.67.
+        assertThat(policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.of(2026, 12, 30), BenefitType.DEATH.name()).amount())
+            .isEqualByComparingTo("500000.00");
+
+        // And the month after, one instalment further down.
+        assertThat(policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.of(2027, 1, 30), BenefitType.DEATH.name()).amount())
+            .isEqualByComparingTo("416666.67");
+
+        // Fully repaid: nothing left to insure, and never a negative.
+        assertThat(policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.of(2027, 6, 30), BenefitType.DEATH.name()).amount())
+            .isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void anEmployerSchemesCoverDoesNotFall() {
+        // The decline is credit life's alone. A flat employer scheme pays what it always
+        // paid, whenever the death happened.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = groupProduct("GRP-NODECLINE");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(flatScheme(product, person("Flat Co"),
+            new BigDecimal("5000000.00"), null,
+            List.of(new PolicyApi.MemberInput(person("Employee"), null, null, null))), "staff-1");
+
+        UUID memberId = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0).policyMemberId();
+
+        assertThat(policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.now().plusYears(2), BenefitType.DEATH.name()).amount())
+            .isEqualByComparingTo("5000000.00");
+    }
+
+    @Test
     void aCreditLifeClaimMustNameTheBorrower() {
         TenantContext.set(UUID.randomUUID());
         GroupProduct product = creditLifeProduct("CL-NOMEMBER");

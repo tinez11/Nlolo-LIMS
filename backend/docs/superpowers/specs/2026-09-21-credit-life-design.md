@@ -2,8 +2,30 @@
 
 **Date:** 2026-09-21
 **Requirement:** §4 of the client's underwriting requirements table.
-**Status:** designed, not built. Every decision below is settled with the client-side owner;
-nine facts are still owed by the client and are listed in §6.
+**Status:** plans 1 and 2 built and merged. Eight of the nine client questions were
+answered on 2026-09-22 — see §0. §6 of the requirements table is still outstanding.
+
+---
+
+## 0. Client answers, 2026-09-22
+
+Recorded verbatim in effect, with what each one changed. These supersede the assumptions
+they replace wherever the two disagree.
+
+| # | Answer | Effect |
+|---|---|---|
+| 1 | **Cover declines STRAIGHT-LINE.** Their example: 1,000,000 over 12 months reduces by 1,000,000 ÷ 12 = 83,333.33 each month | Unblocks plan 1 task 7. `AmortisationCalculator`'s `FLAT_RATE` branch already computes exactly this — `principal × (n−k)/n` — and reads no interest rate |
+| 2 | **The lender has NO per-loan identifier.** One policy number is issued to the bank and it returns sheets; nothing distinguishes one borrower from another. **The insurer must issue the id** | Reverses §2.1. See §2.1a |
+| 3.1 | **Rate is per annum and ADJUSTABLE per lender** — 0.4% for some, 0.5% for others | Confirms per annum. Makes the rate a scheme-level field rather than a constant |
+| 3.2 | **The lender accepts pro-rata clawback** | Unblocks plan 3's last task |
+| 3.3 | **Free cover limit is 600,000,000 TZS** | Config. Note LOLC's loans are ~10M and BUMACO's up to 20M, so in practice **no borrower will reach it** — the capped-cover and referral path is correct and will essentially never fire |
+| 3.4 | **Exclusions confirmed**: 12-month suicide, 12-month pre-existing, no general waiting period | Unblocks plan 4 |
+| 3.5 | **Exits are reported MONTHLY** | Unblocks plan 3's exits file |
+| 3.6 | **The borrower is never told.** The insurer deals only with the lender | Removes the borrower-notification path from plan 5 entirely |
+| 3.7 | **TIRA class is "Credit Life"**, and a valid filing reference is required before publish | As the platform already enforces at `publishVersion` |
+
+**Still outstanding: §6 of the requirements table**, first requested 2026-09-03 and asked
+for six times.
 
 ---
 
@@ -38,8 +60,11 @@ On the individual path both would have to be invented.
 
 ### 2.1 A member is a LOAN, not a person
 
-The member key is `loan_account_number` + lender. Two loans to the same borrower are two
-members, which is correct — each covers its own debt.
+**Superseded in part by client answer 2 — read §2.1a with this.** A member is still a
+loan; what changed is who names it.
+
+The member key was to be `loan_account_number` + lender. Two loans to the same borrower are
+two members, which is correct — each covers its own debt.
 
 This deliberately sidesteps person-matching, which does not work here. Party de-duplication
 fires only when an identity document is present (`PartyApiImpl:89`, backed by a partial
@@ -48,7 +73,30 @@ of birth but no national ID would create a brand-new person, silently, on every 
 The loan account number is the only identifier the bank is guaranteed to hold and keep
 stable.
 
-### 2.2 Members are freeform; a party is created at claim, not at enrolment
+### 2.1a The INSURER issues the member reference
+
+Client answer 2: the lender holds no per-loan identifier to give us. Today one policy
+number goes to the bank and sheets come back, with nothing distinguishing one borrower
+from another. Automating that means we must issue the id.
+
+**A member reference is minted at enrolment** — `CL-<scheme>-<sequence>` — and printed on
+the report that goes back with the file. From then on the lender can quote it for an exit
+or a correction.
+
+That loses what the lender-supplied key gave for free: protection against a resubmitted
+file enrolling everybody twice. On the first file the lender has nothing to quote back.
+So:
+
+- **A row with no reference is a NEW borrower**, and we mint one.
+- **A row carrying a reference names an existing member.**
+- **New rows are de-duplicated on a composite** of borrower name, date of birth,
+  disbursement date and principal. Two loans to one person on the same day for the same
+  amount are indistinguishable under it — possible but rare, and it fails in the safe
+  direction: a rejection the lender can overturn by confirming, rather than silent double
+  cover.
+
+The composite is a *rejection rule*, not a database key. `ux_policy_member_active_loan`
+becomes an index on the issued reference, which is unique because we generate it.
 
 `policy_member.member_party_id` is `NOT NULL` today. The freeform-member design specified in
 `plans/2026-09-10-group-scheme-substitution-and-notices.md:256` — `member_type`,
