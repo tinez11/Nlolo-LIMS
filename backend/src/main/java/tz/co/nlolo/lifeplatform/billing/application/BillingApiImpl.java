@@ -8,10 +8,12 @@ import tz.co.nlolo.lifeplatform.billing.api.*;
 import tz.co.nlolo.lifeplatform.billing.domain.ArrearsCase;
 import tz.co.nlolo.lifeplatform.billing.domain.BillingSchedule;
 import tz.co.nlolo.lifeplatform.billing.domain.FieldReceipt;
+import tz.co.nlolo.lifeplatform.billing.domain.PremiumCredit;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.ArrearsCaseRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.FieldReceiptRepository;
+import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumCreditRepository;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.PremiumInvoiceRepository;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -29,6 +31,7 @@ import java.time.Period;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -44,8 +47,19 @@ public class BillingApiImpl implements BillingApi {
     // full ANNUALLY cycle and 12x/4x a MONTHLY/QUARTERLY one.
     private static final int SCHEDULE_HORIZON_MONTHS = 12;
 
+    /**
+     * How long a lender has to settle an accepted file's premium.
+     *
+     * <p>Thirty days from acceptance, which is the ordinary commercial term and, more to the
+     * point, is DERIVABLE: the due date has to be a pure function of the submission so a
+     * redelivered acceptance event lands on the identical date.
+     */
+    private static final int SINGLE_PREMIUM_PAYMENT_TERM_DAYS = 30;
+
     private final BillingScheduleRepository billingScheduleRepository;
     private final PremiumInvoiceRepository premiumInvoiceRepository;
+    /** Premium given back when a loan ends before its term. See creditUnearnedPremium. */
+    private final PremiumCreditRepository premiumCreditRepository;
     private final ArrearsCaseRepository arrearsCaseRepository;
     private final FieldReceiptRepository fieldReceiptRepository;
     private final ProductApi productApi;
@@ -61,12 +75,14 @@ public class BillingApiImpl implements BillingApi {
     private final ArrearsNotificationSweep arrearsNotificationSweep;
 
     public BillingApiImpl(BillingScheduleRepository billingScheduleRepository, PremiumInvoiceRepository premiumInvoiceRepository,
+                           PremiumCreditRepository premiumCreditRepository,
                            ArrearsCaseRepository arrearsCaseRepository, FieldReceiptRepository fieldReceiptRepository,
                            ProductApi productApi, PolicyApi policyApi,
                            ApplicationEventPublisher eventPublisher,
                            ArrearsNotificationSweep arrearsNotificationSweep) {
         this.billingScheduleRepository = billingScheduleRepository;
         this.premiumInvoiceRepository = premiumInvoiceRepository;
+        this.premiumCreditRepository = premiumCreditRepository;
         this.arrearsCaseRepository = arrearsCaseRepository;
         this.fieldReceiptRepository = fieldReceiptRepository;
         this.productApi = productApi;
@@ -415,6 +431,141 @@ public class BillingApiImpl implements BillingApi {
             });
     }
 
+    /**
+     * One invoice for one accepted enrolment file.
+     *
+     * <p>Not scheduled, because a single premium has no cycle to sit on: this is the whole
+     * charge for the borrowers that file enrolled, and the next file raises its own.
+     *
+     * <p><b>Idempotent on redelivery.</b> {@code policy.EnrolmentAccepted} is consumed by an
+     * AFTER_COMMIT listener and AFTER_COMMIT listeners get redelivered, so a second delivery
+     * must not charge the lender twice. {@code ux_premium_invoice_per_submission} is the
+     * guarantee; this catches the violation and returns the existing invoice rather than
+     * throwing, because a listener that throws on redelivery is a listener that retries for
+     * ever.
+     *
+     * @param acceptedOn the date the FILE was accepted, from the event. The due date is
+     *     derived from it rather than from this machine's clock: the unique index has to
+     *     include due_date (premium_invoice is partitioned on it), so a redelivery that
+     *     computed a different date would slip past the index and double-charge.
+     */
+    @Transactional
+    UUID raiseSinglePremiumInvoice(UUID tenantId, String policyNumber, UUID enrolmentSubmissionId,
+                                    BigDecimal amount, String currency, LocalDate acceptedOn) {
+        LocalDate dueDate = acceptedOn.plusDays(SINGLE_PREMIUM_PAYMENT_TERM_DAYS);
+
+        // The grace period comes from the product for a scheduled invoice, read off the version
+        // the policy was issued on. There is no such lookup here on purpose: a single premium
+        // that goes unpaid is a collections matter with one lender, not a lapse affecting four
+        // hundred borrowers, so the grace window is the payment term itself.
+        LocalDate graceEnd = dueDate;
+
+        // ASKED BEFORE INSERTING, not recovered afterwards.
+        //
+        // The obvious shape -- insert, catch the unique violation, look up what is already
+        // there -- cannot work here, and the reason is worth writing down. A failed statement
+        // poisons the whole Postgres transaction ("current transaction is aborted, commands
+        // ignored until end of transaction block"), so the recovery query inside the catch
+        // block fails too. Nothing can be read back until this transaction rolls back.
+        //
+        // Matching the constraint by name would not have helped either, and would have been a
+        // second bug: premium_invoice is PARTITIONED, so Postgres reports the violation against
+        // the PARTITION's auto-generated index -- premium_invoice_2026_tenant_id_enrolment_
+        // submission_id_due__idx -- never against ux_premium_invoice_per_submission. A guard
+        // matching the parent's name silently never fires.
+        Optional<PremiumInvoice> alreadyRaised = premiumInvoiceRepository
+            .findByTenantIdAndEnrolmentSubmissionId(tenantId, enrolmentSubmissionId);
+        if (alreadyRaised.isPresent()) {
+            UUID existing = alreadyRaised.get().getInvoiceId();
+            log.info("Enrolment submission {} was already invoiced as {} -- redelivered event, "
+                + "not charging policy {} again", enrolmentSubmissionId, existing, policyNumber);
+            return existing;
+        }
+
+        // ux_premium_invoice_per_submission remains the guarantee, and it is a real one rather
+        // than decoration: two SIMULTANEOUS deliveries can both pass the check above, and the
+        // loser's insert fails, aborting its own REQUIRES_NEW transaction. The listener logs
+        // that and moves on. The lender is charged once either way, which is the property that
+        // actually matters -- pretending to recover from the race would be the thing that
+        // risked charging them twice.
+        PremiumInvoice invoice = premiumInvoiceRepository.save(
+            PremiumInvoice.forEnrolmentFile(tenantId, enrolmentSubmissionId, policyNumber,
+                dueDate, amount, currency, graceEnd));
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceGenerated", tenantId,
+            Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", policyNumber,
+                   "dueDate", dueDate.toString(),
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
+
+        log.info("Raised single-premium invoice {} of {} {} for enrolment submission {} on policy {}",
+            invoice.getInvoiceId(), amount.toPlainString(), currency, enrolmentSubmissionId, policyNumber);
+        return invoice.getInvoiceId();
+    }
+
+    /**
+     * Give back the premium a departing borrower paid for cover they never got.
+     *
+     * <p>A NEW row, never a reduction of the invoice it reverses. The invoice says what was
+     * charged and goes on saying it; the credit says what came back off it. Netting them into a
+     * single figure destroys the only trail that can settle an argument with a lender about a
+     * month's charges — the same reasoning {@code CommissionAccrual} records for a clawback.
+     *
+     * <p>Idempotent, and checked BEFORE the insert for the reason
+     * {@link #raiseSinglePremiumInvoice} is: a failed statement poisons the whole Postgres
+     * transaction, so nothing can be read back after a constraint fires.
+     * {@code ux_premium_credit_per_member} remains the guarantee against two simultaneous exits.
+     *
+     * @param enrolmentSubmissionId the file that charged this borrower, which is how the one
+     *     invoice of eleven that this credit belongs against is found
+     */
+    @Transactional
+    void creditUnearnedPremium(UUID tenantId, String policyNumber, UUID policyMemberId,
+                                UUID enrolmentSubmissionId, BigDecimal amount, String currency,
+                                String exitReason, LocalDate exitDate) {
+        if (!premiumCreditRepository.findByTenantIdAndPolicyMemberId(tenantId, policyMemberId).isEmpty()) {
+            log.info("Member {} on policy {} has already been credited -- redelivered exit, "
+                + "not refunding twice", policyMemberId, policyNumber);
+            return;
+        }
+
+        Optional<PremiumInvoice> invoice = premiumInvoiceRepository
+            .findByTenantIdAndEnrolmentSubmissionId(tenantId, enrolmentSubmissionId);
+        if (invoice.isEmpty()) {
+            // The file enrolled this borrower but raised no invoice, which happens when every
+            // OTHER row of it was rejected and the total came to nothing -- so there is nothing
+            // to credit against. Logged rather than thrown: an AFTER_COMMIT listener that
+            // throws retries for ever.
+            log.warn("Member {} on policy {} is owed {} {} but enrolment submission {} raised no "
+                + "invoice -- no credit recorded", policyMemberId, policyNumber,
+                amount.toPlainString(), currency, enrolmentSubmissionId);
+            return;
+        }
+
+        PremiumCredit credit = premiumCreditRepository.save(new PremiumCredit(tenantId,
+            policyNumber, policyMemberId, invoice.get().getInvoiceId(), amount, currency,
+            exitReason, exitDate));
+
+        // The ONLY input to the commission clawback. A refund and its clawback must not be
+        // separable: without the matching reversal the insurer returns the premium while the
+        // bank keeps commission on money that was given back -- a loss on every early
+        // settlement, on a product whose settlement volume the bank controls.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundDue", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "policyMemberId", policyMemberId,
+                   "originalInvoiceId", invoice.get().getInvoiceId(),
+                   // WHICH file this borrower was on, and what that whole file was charged.
+                   // Distribution needs both: the accrual to reverse is the one booked for this
+                   // file (a scheme has one a month for years), and the reversal is that accrual
+                   // scaled by the share of the file's premium coming back.
+                   "enrolmentSubmissionId", enrolmentSubmissionId,
+                   "filePremiumTotal", invoice.get().getAmount().toPlainString(),
+                   "exitReason", exitReason,
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
+
+        log.info("Credited {} {} to policy {} for member {} leaving on {} ({})",
+            amount.toPlainString(), currency, policyNumber, policyMemberId, exitDate, exitReason);
+    }
+
     private void generateInvoicesAhead(UUID tenantId, BillingSchedule schedule, UUID productVersionId, LocalDate fromDate) {
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(productVersionId);
         LocalDate cursor = schedule.getNextDueDate();
@@ -441,6 +592,12 @@ public class BillingApiImpl implements BillingApi {
             case "MONTHLY" -> Period.ofMonths(1);
             case "QUARTERLY" -> Period.ofMonths(3);
             case "ANNUALLY" -> Period.ofYears(1);
+            // Reaching here means something tried to schedule a contract that has no next
+            // period. Named rather than silently stepping a year, because the symptom of
+            // getting this wrong is a lender being dunned for premium nobody agreed.
+            case "SINGLE" -> throw new IllegalArgumentException(
+                "A SINGLE premium has no next period; this policy should never have been given a "
+                    + "billing schedule (see billing.PolicyEventListener.handlePolicyIssued)");
             default -> throw new IllegalArgumentException("Unknown premium frequency: " + frequency);
         };
         return from.plus(step);

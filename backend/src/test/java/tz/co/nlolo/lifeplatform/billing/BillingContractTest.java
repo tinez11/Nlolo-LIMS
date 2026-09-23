@@ -110,6 +110,7 @@ class BillingContractTest {
             // for this class's own fixtures would otherwise fail against a table missing this
             // column.
             "db-migrations/billing/V3__amount_paid.sql",
+            "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

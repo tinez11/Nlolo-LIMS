@@ -55,8 +55,19 @@ public class PremiumInvoice {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /**
+     * The accepted enrolment file this charge is for. Null on every scheduled invoice.
+     *
+     * <p>Exactly one of this and {@link #billingScheduleId} is set —
+     * {@code chk_premium_invoice_has_exactly_one_origin}. An invoice with neither belongs to
+     * nothing and nobody can say why it exists; one with both claims two origins for one charge.
+     */
+    @Column(name = "enrolment_submission_id")
+    private UUID enrolmentSubmissionId;
+
     protected PremiumInvoice() {}
 
+    /** A scheduled invoice: one period of a recurring premium. */
     public PremiumInvoice(UUID tenantId, UUID billingScheduleId, String policyNumber,
                            LocalDate dueDate, BigDecimal amount, String currency, LocalDate gracePeriodEndsAt) {
         this.tenantId = tenantId;
@@ -66,6 +77,28 @@ public class PremiumInvoice {
         this.amount = amount;
         this.currency = currency;
         this.gracePeriodEndsAt = gracePeriodEndsAt;
+    }
+
+    /**
+     * A single-premium invoice: one charge for one accepted enrolment file.
+     *
+     * <p>A separate factory rather than a null {@code billingScheduleId} on the constructor
+     * above, so that neither kind can be created by accident: the two differ in what they
+     * MEAN, not merely in which field happens to be populated.
+     */
+    public static PremiumInvoice forEnrolmentFile(UUID tenantId, UUID enrolmentSubmissionId,
+                                                   String policyNumber, LocalDate dueDate,
+                                                   BigDecimal amount, String currency,
+                                                   LocalDate gracePeriodEndsAt) {
+        PremiumInvoice invoice = new PremiumInvoice();
+        invoice.tenantId = tenantId;
+        invoice.enrolmentSubmissionId = enrolmentSubmissionId;
+        invoice.policyNumber = policyNumber;
+        invoice.dueDate = dueDate;
+        invoice.amount = amount;
+        invoice.currency = currency;
+        invoice.gracePeriodEndsAt = gracePeriodEndsAt;
+        return invoice;
     }
 
     // No markOverdue()/markInGrace() here -- unlike waive() (the REST-triggered staff action
@@ -99,6 +132,7 @@ public class PremiumInvoice {
     public LocalDate getDueDate() { return dueDate; }
     public UUID getTenantId() { return tenantId; }
     public UUID getBillingScheduleId() { return billingScheduleId; }
+    public UUID getEnrolmentSubmissionId() { return enrolmentSubmissionId; }
     public String getPolicyNumber() { return policyNumber; }
     public BigDecimal getAmount() { return amount; }
     public String getCurrency() { return currency; }

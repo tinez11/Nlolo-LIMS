@@ -73,6 +73,22 @@ public class GroupScheme {
     @Column(name = "repayment_frequency")
     private RepaymentFrequency repaymentFrequency;
 
+    /**
+     * Percent per annum of a borrower's original principal. Null on every basis but
+     * AMORTISING_LOAN; 0.5000 means 0.5%.
+     *
+     * <p>Here rather than on the product because the rate is what a lender negotiated: two
+     * lenders writing business on the same filed credit-life product pay different rates, and
+     * a product-level rate would force a duplicate product, and a duplicate TIRA filing, per
+     * lender.
+     *
+     * <p>No setter, for the same reason interestMethod has none, and with more force: every
+     * member already on the roll was CHARGED against the old rate and their refund will be
+     * computed from what they paid. A rate change is a new scheme.
+     */
+    @Column(name = "premium_rate_percent")
+    private BigDecimal premiumRatePercent;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -91,14 +107,14 @@ public class GroupScheme {
                         BigDecimal flatBenefitAmount, BigDecimal salaryMultiple,
                         BigDecimal fclAmount, String currency, String createdBy) {
         this(policyNumber, tenantId, benefitBasis, flatBenefitAmount, salaryMultiple,
-            fclAmount, currency, null, null, createdBy);
+            fclAmount, currency, null, null, null, createdBy);
     }
 
     public GroupScheme(String policyNumber, UUID tenantId, BenefitBasis benefitBasis,
                         BigDecimal flatBenefitAmount, BigDecimal salaryMultiple,
                         BigDecimal fclAmount, String currency,
                         InterestMethod interestMethod, RepaymentFrequency repaymentFrequency,
-                        String createdBy) {
+                        BigDecimal premiumRatePercent, String createdBy) {
         // Mirrors group_scheme_basis_parameter_present. The database is the guarantee;
         // this exists so a violation arrives as a domain error naming the problem rather
         // than as a constraint violation from three layers down.
@@ -126,12 +142,18 @@ public class GroupScheme {
                     throw new IllegalArgumentException(
                         "A credit-life scheme must state how often its lender's loans repay");
                 }
+                if (premiumRatePercent == null || premiumRatePercent.signum() <= 0) {
+                    throw new IllegalArgumentException(
+                        "A credit-life scheme must state the premium rate its lender agreed");
+                }
             }
         }
         if (benefitBasis != BenefitBasis.AMORTISING_LOAN
-                && (interestMethod != null || repaymentFrequency != null)) {
+                && (interestMethod != null || repaymentFrequency != null
+                    || premiumRatePercent != null)) {
             throw new IllegalArgumentException(
-                "An interest method and a repayment cadence belong only on a credit-life scheme");
+                "An interest method, a repayment cadence and a premium rate belong only on a "
+                    + "credit-life scheme");
         }
         if (fclAmount != null && fclAmount.signum() <= 0) {
             // Zero would send every member to underwriting, which is not what anybody
@@ -149,6 +171,7 @@ public class GroupScheme {
         this.currency = currency;
         this.interestMethod = interestMethod;
         this.repaymentFrequency = repaymentFrequency;
+        this.premiumRatePercent = premiumRatePercent;
         this.createdAt = Instant.now();
         this.createdBy = createdBy;
     }
@@ -170,6 +193,7 @@ public class GroupScheme {
     public String getCurrency() { return currency; }
     public InterestMethod getInterestMethod() { return interestMethod; }
     public RepaymentFrequency getRepaymentFrequency() { return repaymentFrequency; }
+    public BigDecimal getPremiumRatePercent() { return premiumRatePercent; }
     public Instant getCreatedAt() { return createdAt; }
     public String getCreatedBy() { return createdBy; }
 }

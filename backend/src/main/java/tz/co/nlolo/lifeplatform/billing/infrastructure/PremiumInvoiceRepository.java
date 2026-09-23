@@ -23,4 +23,12 @@ public interface PremiumInvoiceRepository extends JpaRepository<PremiumInvoice, 
      */
     List<PremiumInvoice> findByTenantIdAndInvoiceIdIn(UUID tenantId, Collection<UUID> invoiceIds);
     List<PremiumInvoice> findByBillingScheduleIdAndTenantIdOrderByDueDateDesc(UUID billingScheduleId, UUID tenantId);
+
+    /**
+     * The single-premium invoice raised for one accepted enrolment file.
+     *
+     * <p>Optional rather than List because ux_premium_invoice_per_submission makes it at most
+     * one -- and the redelivery path in raiseSinglePremiumInvoice depends on that being true.
+     */
+    Optional<PremiumInvoice> findByTenantIdAndEnrolmentSubmissionId(UUID tenantId, UUID enrolmentSubmissionId);
 }

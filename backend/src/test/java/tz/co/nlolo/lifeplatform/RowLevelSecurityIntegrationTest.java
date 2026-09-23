@@ -136,6 +136,7 @@ class RowLevelSecurityIntegrationTest {
             // class's own auto-issued policies trigger (via billing's PolicyEventListener ->
             // generateInvoicesAhead) would otherwise fail against a table missing this column.
             "db-migrations/billing/V3__amount_paid.sql",
+            "db-migrations/billing/V5__single_premium_invoice.sql",
             // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.

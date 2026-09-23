@@ -22,6 +22,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
@@ -120,6 +121,10 @@ public class PolicyEventListener {
             // back off them when the offer expires.
             case "policy.PolicyActivated" -> withTenant(envelope, this::handlePolicyActivated);
             case "policy.PolicyLapsed" -> withTenant(envelope, this::handlePolicyLapsed);
+            // Credit life: commission follows the money that actually came in, file by file,
+            // and goes back when any of it is refunded.
+            case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
+            case "billing.PremiumRefundDue" -> withTenant(envelope, this::handlePremiumRefundDue);
             default -> { /* not distribution-relevant */ }
         }
     }
@@ -171,6 +176,20 @@ public class PolicyEventListener {
         if (policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).isEmpty()) {
             policyProjectionRepository.save(new PolicyProjection(tenantId, policyNumber, agentOfRecordId,
                 productId, premiumAmount, premiumCurrency, issueDate));
+        }
+
+        // A SINGLE-premium policy accrues nothing here, and this is the second half of a fact
+        // billing already states: the premium on a credit-life master policy is a placeholder
+        // that nobody agreed and nobody will ever pay. Billing refuses to invoice it; paying
+        // commission on it would be worse, because that money leaves the business.
+        //
+        // The real premium arrives per accepted enrolment file -- see handleEnrolmentAccepted,
+        // which is where a credit-life scheme's commission is actually earned. The projection
+        // row above is still written, because the clawback path needs the agent of record.
+        if ("SINGLE".equals(payload.get("premiumFrequency"))) {
+            log.info("Policy {} is single-premium -- no commission at activation; it accrues per "
+                + "accepted enrolment file", policyNumber);
+            return;
         }
         // A redelivered PolicyActivated for a policy number already projected has nothing further to
         // update at issuance time (premium/issueDate/agent never change after issuance), so no
@@ -292,6 +311,154 @@ public class PolicyEventListener {
                     log.info("Clawed back {} {} of FIRST_YEAR commission from agent {} for policy {} (lapsed {} month(s) "
                         + "after issue, within the {}-month window)", reversal.getAmount().abs(), reversal.getCurrency(),
                         reversal.getAgentId(), policyNumber, monthsSinceIssue, windowMonths);
+                });
+        }
+    }
+
+    /**
+     * A lender's file was accepted, so the premium it earned is real production.
+     *
+     * <p>This is where a credit-life scheme's commission is actually earned. The master policy
+     * accrues nothing at activation (see {@link #handlePolicyActivated}) because its premium is a
+     * placeholder; the money comes in file by file, every month, for the life of the scheme.
+     *
+     * <p>FIRST_YEAR on every file, and RENEWAL never. A single premium has no renewal — each
+     * file is a fresh batch of borrowers being written for the first time, not the same cover
+     * being paid for again. Treating the second file as a renewal would pay the lower tier on
+     * new business.
+     *
+     * <p>{@code sourceRef} is the submission id, so a redelivered acceptance finds the accrual
+     * already booked: {@code persistAccrual}'s own guard does the rest.
+     */
+    private void handleEnrolmentAccepted(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String policyNumber = (String) payload.get("policyNumber");
+        UUID submissionId = (UUID) payload.get("submissionId");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> premium = (Map<String, Object>) payload.get("premium");
+        BigDecimal premiumAmount = new BigDecimal((String) premium.get("amount"));
+        String currency = (String) premium.get("currencyCode");
+
+        if (premiumAmount.signum() == 0) {
+            log.info("Enrolment submission {} enrolled nobody -- no commission to accrue", submissionId);
+            return;
+        }
+
+        Optional<PolicyProjection> maybeProjection =
+            policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
+        if (maybeProjection.isEmpty()) {
+            log.info("Enrolment accepted on policy {} which has no distribution projection row "
+                + "-- no commission accrued", policyNumber);
+            return;
+        }
+        UUID agentId = maybeProjection.get().getAgentId();
+        if (agentId == null) {
+            log.info("Scheme {} was sold direct (no agent of record) -- no commission on its files",
+                policyNumber);
+            return;
+        }
+
+        CommissionCalculator.AgentWithPlan seller = distributionApiImpl.resolveAgentWithPlan(
+            tenantId, agentId, maybeProjection.get().getProductId());
+        if (seller == null) {
+            log.info("Scheme {}'s agent {} does not resolve to an agent with a plan -- no "
+                + "commission accrued on submission {}", policyNumber, agentId, submissionId);
+            return;
+        }
+
+        // No ancestors: overrides on a bancassurance scheme wait for the broker/bancassurance
+        // discriminator M7 deferred, and one corporate agent does not justify it (spec 2.8).
+        List<CommissionCalculator.Accrual> accruals = CommissionCalculator.calculate(
+            seller, List.of(), TierType.FIRST_YEAR, premiumAmount, currency);
+
+        for (CommissionCalculator.Accrual accrual : accruals) {
+            distributionApiImpl.persistAccrual(tenantId, accrual.agentId(), policyNumber,
+                    accrual.tierType(), accrual.amount(), accrual.currency(), currentPeriod(),
+                    submissionId.toString(), null, "system:policy.EnrolmentAccepted")
+                .ifPresent(booked -> log.info("Accrued {} {} of {} commission to agent {} for "
+                    + "enrolment submission {} on scheme {}", booked.getAmount(), booked.getCurrency(),
+                    booked.getTierType(), booked.getAgentId(), submissionId, policyNumber));
+        }
+    }
+
+    /**
+     * The insurer gave premium back, so the commission paid on it comes back too.
+     *
+     * <p><b>Pro rata, not the whole accrual.</b> One borrower of four hundred settled early;
+     * the rest are still on cover and the bank keeps what it earned on them. The reversal is
+     * the accrual scaled by the share of that file's premium being refunded.
+     *
+     * <p><b>Deliberately NOT subject to {@code TZ_COMMISSION_CLAWBACK_MONTHS}.</b> That window
+     * gates the LAPSE path and is right there: a policy that lapses in year four keeps its
+     * first-year commission, because the insurer kept the premium. A refund is different in
+     * kind — the money physically went back, in month forty as much as in month two — so
+     * applying the window here would let the bank keep commission on premium the insurer no
+     * longer has. This is why the clawback is not simply a second caller of
+     * {@link #handlePolicyLapsed}.
+     */
+    private void handlePremiumRefundDue(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String policyNumber = (String) payload.get("policyNumber");
+        UUID policyMemberId = (UUID) payload.get("policyMemberId");
+        UUID submissionId = (UUID) payload.get("enrolmentSubmissionId");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> refund = (Map<String, Object>) payload.get("amount");
+        BigDecimal refunded = new BigDecimal((String) refund.get("amount"));
+        BigDecimal filePremium = new BigDecimal((String) payload.get("filePremiumTotal"));
+        log.info("Refund of {} on policy {} for submission {} (file total {}) -- looking for the "
+            + "accrual to reverse", refunded.toPlainString(), policyNumber, submissionId,
+            filePremium.toPlainString());
+
+        // The accrual to reverse is the one booked for THAT file, found by the submission id it
+        // was sourced from. Not "the policy's FIRST_YEAR accrual": a scheme has one per month,
+        // for years, and reversing the wrong one would claw back against borrowers who are
+        // still on cover.
+        List<CommissionAccrual> forThisFile = commissionAccrualRepository
+            .findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(
+                tenantId, policyNumber, TierType.FIRST_YEAR)
+            .stream().filter(a -> submissionId.toString().equals(a.getSourceRef())).toList();
+
+        if (forThisFile.isEmpty()) {
+            log.info("Premium of {} refunded on policy {} but enrolment submission {} accrued no "
+                + "commission -- nothing to claw back", refunded.toPlainString(), policyNumber,
+                submissionId);
+            return;
+        }
+
+        String currentPeriod = currentPeriod();
+        for (CommissionAccrual original : forThisFile) {
+            // Scaled by the refunded SHARE of that file's premium. Rounded once, at the end, and
+            // capped at the accrual: rounding across four hundred borrowers must never reverse
+            // more than was ever booked, or a statement goes negative and is paid as a debt owed
+            // BY the bank.
+            BigDecimal share = refunded.divide(filePremium, 10, RoundingMode.HALF_UP);
+            BigDecimal reversal = original.getAmount().multiply(share)
+                .setScale(2, RoundingMode.HALF_UP)
+                .min(original.getAmount());
+
+            if (reversal.signum() <= 0) {
+                // A refund so small that a cent of commission does not round out of it. Logged
+                // rather than skipped in silence: "no reversal appeared" must never be a state
+                // with no explanation anywhere.
+                log.info("Refund of {} against submission {} on policy {} rounds to no commission "
+                    + "reversal of accrual {} -- nothing clawed back", refunded.toPlainString(),
+                    submissionId, policyNumber, original.getAccrualId());
+                continue;
+            }
+            // sourceRef is the departing MEMBER, not the accrual being reversed. One file's
+            // accrual is reversed once per borrower who settles early, so the member is what
+            // makes each partial reversal distinct -- and what makes a redelivered exit find
+            // its own reversal already booked rather than the first borrower's.
+            distributionApiImpl.persistAccrual(tenantId, original.getAgentId(), policyNumber,
+                    TierType.FIRST_YEAR, reversal.negate(), original.getCurrency(), currentPeriod,
+                    policyMemberId.toString(), original.getAccrualId(),
+                    "system:billing.PremiumRefundDue")
+                .ifPresent(booked -> {
+                    meterRegistry.counter(CLAWBACK_COUNTER).increment();
+                    log.info("Clawed back {} {} of FIRST_YEAR commission from agent {} on scheme {}: "
+                        + "{} of submission {}'s {} premium was refunded", booked.getAmount().abs(),
+                        booked.getCurrency(), booked.getAgentId(), policyNumber,
+                        refunded.toPlainString(), submissionId, filePremium.toPlainString());
                 });
         }
     }

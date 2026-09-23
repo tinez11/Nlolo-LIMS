@@ -55,6 +55,16 @@ public record FrequencyLoading(BigDecimal monthlyPercent, BigDecimal quarterlyPe
             case MONTHLY -> monthlyPercent;
             case QUARTERLY -> quarterlyPercent;
             case ANNUALLY -> BigDecimal.ZERO;
+            // A loading prices the cost of spreading payment across the year. A single
+            // premium spreads nothing -- the whole amount is held from day one, which is
+            // better for the insurer than annually, not worse -- so there is nothing to load.
+            //
+            // This branch exists because the switch is exhaustive and SINGLE was added for
+            // credit life, which never reaches the rating path at all: its premium is an
+            // agreed percent of principal, not a rated figure. Returning ZERO rather than
+            // throwing because zero is the arithmetically right answer for any single-premium
+            // product that does rate, and an exception here would be a landmine for the next one.
+            case SINGLE -> BigDecimal.ZERO;
         };
     }
 

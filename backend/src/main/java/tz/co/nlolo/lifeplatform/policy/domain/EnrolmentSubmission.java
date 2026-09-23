@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
 import tz.co.nlolo.lifeplatform.policy.api.SubmissionStatus;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -61,6 +62,19 @@ public class EnrolmentSubmission {
 
     @Column(name = "accepted_at")
     private Instant acceptedAt;
+
+    /**
+     * What this file cost: the sum of its own priced rows, set at acceptance.
+     *
+     * <p>Recorded rather than re-derived from the members later, which would drift the moment
+     * one of them exits and their loan stops being part of the roll. The invoice raised for
+     * this file, and every refund computed against it afterwards, are the same arithmetic.
+     *
+     * <p>Zero is meaningful: a file where every row was rejected enrols nobody and earns
+     * nothing. That is a legitimate outcome, not a missing figure.
+     */
+    @Column(name = "premium_total")
+    private BigDecimal premiumTotal;
 
     protected EnrolmentSubmission() {}
 
@@ -121,12 +135,23 @@ public class EnrolmentSubmission {
     }
 
     /** A second person turns this into cover. Call {@link #requireAcceptableBy} first. */
-    public void accept(String acceptedBy, int enrolledCount) {
+    /**
+     * @param premiumTotal what this file cost, summed from its own priced rows. Zero when
+     *     every row was rejected -- a file that enrolled nobody earns nothing, and that is a
+     *     legitimate outcome rather than a missing figure, which is why it is recorded rather
+     *     than left null.
+     */
+    public void accept(String acceptedBy, int enrolledCount, BigDecimal premiumTotal) {
         requireAcceptableBy(acceptedBy);
+        if (premiumTotal == null || premiumTotal.signum() < 0) {
+            throw new IllegalArgumentException(
+                "An accepted file must state what it cost, and it cannot be negative: " + premiumTotal);
+        }
         this.status = SubmissionStatus.ACCEPTED;
         this.acceptedBy = acceptedBy;
         this.acceptedAt = Instant.now();
         this.enrolledCount = enrolledCount;
+        this.premiumTotal = premiumTotal;
     }
 
     /**
@@ -157,4 +182,5 @@ public class EnrolmentSubmission {
     public Instant getSubmittedAt() { return submittedAt; }
     public String getAcceptedBy() { return acceptedBy; }
     public Instant getAcceptedAt() { return acceptedAt; }
+    public BigDecimal getPremiumTotal() { return premiumTotal; }
 }

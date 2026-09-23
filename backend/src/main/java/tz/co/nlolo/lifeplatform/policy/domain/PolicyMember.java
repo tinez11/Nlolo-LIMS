@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.policy.domain;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.UuidGenerator;
+import tz.co.nlolo.lifeplatform.policy.api.ExitReason;
 import tz.co.nlolo.lifeplatform.policy.api.LoanTerms;
 import tz.co.nlolo.lifeplatform.policy.api.MemberType;
 import tz.co.nlolo.lifeplatform.policy.api.MemberUnderwritingStatus;
@@ -110,6 +111,24 @@ public class PolicyMember {
     @Column(name = "loan_first_repayment_date")
     private LocalDate loanFirstRepaymentDate;
 
+    /**
+     * Why this member stopped being covered. Null while ACTIVE, required once EXITED —
+     * {@code chk_policy_member_exit_reason_iff_exited} enforces both directions.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "exit_reason")
+    private ExitReason exitReason;
+
+    /**
+     * What the lender said was still owed when the loan ended.
+     *
+     * <p>Recorded, not trusted: our own declining schedule is what values a claim. This is kept
+     * so the two can be reconciled, and so a systematic divergence shows up as data rather than
+     * as an argument.
+     */
+    @Column(name = "outstanding_balance_at_exit")
+    private BigDecimal outstandingBalanceAtExit;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -171,13 +190,24 @@ public class PolicyMember {
      *
      * <p>The row is kept rather than deleted: a claim can arrive after someone leaves, and
      * "were they covered on the date of event" needs the dates to still exist.
+     *
+     * @param reason why this member stopped being covered. Required: a refund and a clawback
+     *     both branch on it, and chk_policy_member_exit_reason_iff_exited refuses an exit
+     *     without one.
+     * @param outstandingBalanceAtExit the LENDER's figure, recorded and not trusted. Null on
+     *     an employer scheme's member, who has no loan.
      */
-    public void exit(LocalDate leftOn) {
+    public void exit(LocalDate leftOn, ExitReason reason, BigDecimal outstandingBalanceAtExit) {
         if (leftOn == null || leftOn.isBefore(joinedOn)) {
             throw new IllegalArgumentException("A member cannot leave before they joined");
         }
+        if (reason == null) {
+            throw new IllegalArgumentException("An exit must say why the member stopped being covered");
+        }
         this.status = "EXITED";
         this.leftOn = leftOn;
+        this.exitReason = reason;
+        this.outstandingBalanceAtExit = outstandingBalanceAtExit;
     }
 
     /**
@@ -260,8 +290,27 @@ public class PolicyMember {
      * invariants are re-asserted on every read: a row that somehow lost its term would
      * fail here rather than quietly produce a schedule.
      */
+    /**
+     * The loan this member's cover is measured against, or null for a member who has none.
+     *
+     * <p><b>Keyed on the principal, not on the loan account number.</b> It used to be the
+     * account number, back when that was the member key and was mandatory. V16 made it
+     * optional — the insurer issues the reference now, precisely because neither real lender
+     * has an account number to give — and this guard was not moved with it.
+     *
+     * <p>The consequence was severe and entirely silent: every borrower enrolled from a real
+     * lender's file has a null account number, so this returned null for all of them, so
+     * {@code claimableCover} threw {@code IllegalStateException} for every one. Credit-life
+     * cover could not be valued at all on the only intake path that exists. Nothing caught it
+     * because the tests that call {@code claimableCover} build their borrowers by hand WITH an
+     * account number, and the tests that enrol from a file never ask what anyone is covered for.
+     *
+     * <p>{@code chk_policy_member_loan_complete} makes the six loan columns all-or-nothing, so
+     * any one of them answers the question; the principal is used because it is the one a
+     * reader will recognise as "is there a loan here".
+     */
     public LoanTerms getLoanTerms() {
-        if (loanAccountNumber == null) return null;
+        if (loanPrincipalAmount == null) return null;
         return new LoanTerms(loanPrincipalAmount, loanAnnualRatePercent, loanTermMonths,
             RepaymentFrequency.valueOf(loanRepaymentFrequency),
             loanDisbursementDate, loanFirstRepaymentDate);
@@ -275,6 +324,8 @@ public class PolicyMember {
     public String getGradeCode() { return gradeCode; }
     public LocalDate getJoinedOn() { return joinedOn; }
     public LocalDate getLeftOn() { return leftOn; }
+    public ExitReason getExitReason() { return exitReason; }
+    public BigDecimal getOutstandingBalanceAtExit() { return outstandingBalanceAtExit; }
     public String getStatus() { return status; }
     public MemberUnderwritingStatus getUnderwritingStatus() { return underwritingStatus; }
     public UUID getUnderwritingCaseId() { return underwritingCaseId; }

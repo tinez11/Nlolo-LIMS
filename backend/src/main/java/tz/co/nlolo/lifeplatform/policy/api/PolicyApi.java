@@ -229,7 +229,20 @@ public interface PolicyApi {
                                      * On the scheme because a lender's product repays on
                                      * one cadence.
                                      */
-                                    RepaymentFrequency repaymentFrequency) {
+                                    RepaymentFrequency repaymentFrequency,
+                                    /**
+                                     * Percent PER ANNUM of each borrower's original principal,
+                                     * charged once at enrolment. 0.5000 means 0.5%.
+                                     *
+                                     * <p>On the SCHEME rather than the product because the rate
+                                     * is negotiated per lender -- 0.4% for one, 0.5% for another,
+                                     * on the same filed product. A product-level rate would force
+                                     * a duplicate product, and its own TIRA filing, per lender.
+                                     *
+                                     * <p>Required on AMORTISING_LOAN and rejected on every other
+                                     * basis, like {@code interestMethod} above it.
+                                     */
+                                    BigDecimal premiumRatePercent) {
 
         /** A credit-life scheme, which states both how and how often its loans repay. */
         public IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
@@ -240,12 +253,13 @@ public interface PolicyApi {
                                         BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
                                         LocalDate commencementDate, Integer policyTermMonths,
                                         String reasonForManualIssue, IssuanceBasis issuanceBasis,
-                                        InterestMethod interestMethod) {
+                                        InterestMethod interestMethod, BigDecimal premiumRatePercent) {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
                 reasonForManualIssue, issuanceBasis, interestMethod,
-                interestMethod == null ? null : RepaymentFrequency.MONTHLY);
+                interestMethod == null ? null : RepaymentFrequency.MONTHLY,
+                premiumRatePercent);
         }
 
         /** Any scheme but credit life, which is the only basis that has an interest method. */
@@ -260,7 +274,7 @@ public interface PolicyApi {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
-                reasonForManualIssue, issuanceBasis, null, null);
+                reasonForManualIssue, issuanceBasis, null, null, null);
         }
     }
 
@@ -314,6 +328,41 @@ public interface PolicyApi {
      *     policy is not in force, or the input does not match the scheme's basis
      */
     PolicyMemberView addMember(String policyNumber, MemberInput member, String addedBy);
+
+    /**
+     * Take one life off a scheme, for a reason other than a claim the insurer paid.
+     *
+     * <p>Until credit life, the only way off a scheme was
+     * {@link #dischargeForSettledClaim}: the insurer paid and the life left. Most loans that
+     * end early end because they were settled, refinanced, cancelled or written off — and
+     * without this, a repaid borrower stays insured for a debt that no longer exists, and no
+     * refund or clawback can ever fire because nothing tells the platform anything happened.
+     *
+     * <p>Shares its mechanics with the claim path exactly: the same exit, the same restatement
+     * of the scheme total, the same {@code policy.GroupMemberExited} event, and the same
+     * closure of a scheme whose last life has gone. Exiting is one operation with several
+     * reasons, not several operations.
+     *
+     * <p><b>Dated to the EVENT, not to the processing run.</b> A loan settled in March and
+     * reported in June stopped being covered in March; a late exits file is entirely ordinary,
+     * and dating the exit to when we heard about it would keep a repaid borrower in the
+     * scheme's sum assured for three months.
+     *
+     * <p><b>Idempotent.</b> Exiting an already-exited member changes nothing and does not
+     * throw: a lender can legitimately resend a corrected exits file, and a second exit that
+     * subtracted the cover again would understate the scheme by a whole borrower. The first
+     * exit stands — a repeat never overwrites when or why they left.
+     *
+     * @param exitDate when cover ended. May not precede the member joining.
+     * @param reason required; a refund and a clawback both branch on it
+     * @param outstandingBalanceAtExit the lender's own figure, recorded and not trusted. Null
+     *     for a member with no loan.
+     * @throws InvalidPolicyStateException if the member is not on this scheme, the reason is
+     *     absent, or the date precedes the member joining
+     */
+    PolicyMemberView exitMember(String policyNumber, UUID policyMemberId, LocalDate exitDate,
+                                 ExitReason reason, BigDecimal outstandingBalanceAtExit,
+                                 String exitedBy);
 
     PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy);
     PolicyView applyEndorsement(String policyNumber, EndorsementInput request, String appliedBy);

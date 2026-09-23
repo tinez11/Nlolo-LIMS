@@ -6,6 +6,8 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
 import tz.co.nlolo.lifeplatform.product.api.FactorType;
@@ -113,6 +115,7 @@ class CessionEndToEndTest {
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
+            "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -131,6 +134,16 @@ class CessionEndToEndTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V8__group_policies_have_no_single_life_assured.sql",
+            "db-migrations/policy/V9__group_scheme_and_members.sql",
+            "db-migrations/policy/V13__freeform_members.sql",
+            "db-migrations/policy/V14__credit_life_scheme.sql",
+            "db-migrations/policy/V15__enrolment_submission.sql",
+            "db-migrations/policy/V16__insurer_issued_member_reference.sql",
+            "db-migrations/policy/V17__enrolment_row_member_reference.sql",
+            "db-migrations/policy/V18__scheme_premium_rate.sql",
+            "db-migrations/policy/V19__enrolment_premium.sql",
+            "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql");
         try (Connection connection = DriverManager.getConnection(
@@ -229,6 +242,74 @@ class CessionEndToEndTest {
         return reinsuranceApi.createTreaty(new ReinsuranceApi.CreateTreatyRequest(
             "Africa Re", type, retention, CURRENCY, cessionPercent, LocalDate.now().minusMonths(1), null),
             "finance-officer");
+    }
+
+    @Test
+    void aGroupSchemeIsNotCededBecauseItsSumAssuredIsManyLivesNotOne() {
+        // A scheme's sumAssured is the TOTAL of a member schedule. Everything in this module
+        // treats that figure as one life's cover and tests it against the treaty's retention,
+        // so ceding a scheme would cede a whole book against a retention meant for one person
+        // -- here, 10,000,000 of total cover ceded as though one borrower were insured for it,
+        // against a retention of 1,000,000. A surplus treaty retains and cedes PER LIFE, and
+        // nothing in this module knows how to do that.
+        //
+        // Schemes reached this listener for the first time on 2026-09-22: issueGroupScheme used
+        // to activate a policy WITHOUT publishing PolicyActivated, which is the defect that also
+        // meant no group scheme ever accrued commission.
+        //
+        // The client answered the treaty question the same day, and the answer keeps this test
+        // as it is. A treaty states which CLASSES OF BUSINESS it covers and may carry special
+        // provisions for group schemes -- free cover limits, automatic acceptance limits, a
+        // maximum exposure per scheme, aggregation rules. ReinsuranceTreaty has none of those
+        // concepts, so there is nothing to evaluate a scheme against. And where a treaty cedes a
+        // proportion, the ceded amount follows the INSURED amount, which on credit life declines
+        // monthly -- something a single immutable Cession row written at activation cannot do.
+        //
+        // So this is not a placeholder awaiting an answer; the answer is in, and it says the
+        // treaty model has to grow before a scheme can be ceded at all. When it does, this test
+        // is where the new behaviour gets stated.
+        UUID tenantId = UUID.randomUUID();
+        // Null cession percent: a SURPLUS treaty cedes by retention limit and refuses to carry
+        // one. The retention is deliberately well below the scheme total, so this test would
+        // see a cession if the guard were removed.
+        createTreaty(tenantId, TreatyType.SURPLUS, new BigDecimal("1000000.00"), null);
+        eventRecorder.clear();
+
+        String schemePolicyNumber = issueGroupScheme(tenantId, "CESSION-E2E-GROUP");
+
+        assertThat(cessionRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(
+            tenantId, schemePolicyNumber)).isEmpty();
+    }
+
+    /** Two lives of 5,000,000 each: a 10,000,000 scheme total that is not one 10,000,000 risk. */
+    private String issueGroupScheme(UUID tenantId, String productCode) {
+        TenantContext.set(tenantId);
+        PartyView employer = partyApi.registerIndividual("Cession E2E Employer " + productCode,
+            LocalDate.of(1980, 1, 1),
+            "+25571800" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
+        ProductSummaryView product = productApi.createProduct(productCode, "Cession E2E Group Product",
+            ProductCategory.GROUP_LIFE, CURRENCY, "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+
+        PartyView memberOne = partyApi.registerIndividual("Scheme Member One " + productCode,
+            LocalDate.of(1988, 4, 1),
+            "+25571900" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
+        PartyView memberTwo = partyApi.registerIndividual("Scheme Member Two " + productCode,
+            LocalDate.of(1990, 5, 2),
+            "+25572000" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
+
+        return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            employer.partyId(), product.productId(), snapshot.productVersionId(), null,
+            BenefitBasis.FLAT, new BigDecimal("5000000.00"), null, null, CURRENCY, null,
+            List.of(new PolicyApi.MemberInput(memberOne.partyId(), null, null, null),
+                    new PolicyApi.MemberInput(memberTwo.partyId(), null, null, null)),
+            new BigDecimal("120000.00"), CURRENCY, "ANNUALLY", LocalDate.now(), null,
+            "cession e2e group", IssuanceBasis.MIGRATION), "test-staff").policyNumber();
     }
 
     @Test

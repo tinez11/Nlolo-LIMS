@@ -60,6 +60,12 @@ public class PolicyApiImpl implements PolicyApi {
     private final GroupSchemeGradeRepository groupSchemeGradeRepository;
     private final PolicyMemberRepository policyMemberRepository;
     private final PolicyMemberBenefitRepository policyMemberBenefitRepository;
+
+    /**
+     * Only for the refund detail on an exit: what a departing borrower was actually charged,
+     * and which file charged them. Read-only here -- EnrolmentApiImpl owns writing these rows.
+     */
+    private final EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository;
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
@@ -73,6 +79,7 @@ public class PolicyApiImpl implements PolicyApi {
                           CoverageRepository coverageRepository, LoanValueReservationRepository loanValueReservationRepository,
                           GroupSchemeRepository groupSchemeRepository, GroupSchemeGradeRepository groupSchemeGradeRepository,
                           PolicyMemberRepository policyMemberRepository, PolicyMemberBenefitRepository policyMemberBenefitRepository,
+                          EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
@@ -86,6 +93,7 @@ public class PolicyApiImpl implements PolicyApi {
         this.groupSchemeGradeRepository = groupSchemeGradeRepository;
         this.policyMemberRepository = policyMemberRepository;
         this.policyMemberBenefitRepository = policyMemberBenefitRepository;
+        this.enrolmentSubmissionRowRepository = enrolmentSubmissionRowRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
@@ -355,6 +363,11 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("issueDate", policy.getIssueDate().toString());
         payload.put("agentOfRecordId", policy.getAgentOfRecordId()); // nullable -- a direct sale
         payload.put("activatedAt", LocalDate.now().toString());
+        // What KIND of contract this is, so a consumer can tell one life from many without
+        // reading policy back. GROUP_LIFE and CREDIT_LIFE are the two that insure a schedule of
+        // members, and for those the sumAssured above is the TOTAL of that schedule rather than
+        // one person's cover -- a difference reinsurance in particular must not miss.
+        payload.put("productCategory", policy.getProductCategory());
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload));
     }
 
@@ -913,6 +926,11 @@ public class PolicyApiImpl implements PolicyApi {
      * policy whose one life died, or a scheme whose LAST life did. Note the difference from the
      * bug this whole change exists to fix: that closed a scheme when ONE OF MANY members died.
      * Closing when the last one does is the mirror of it, not a repeat.
+     *
+     * @param claimId the claim that discharged the last life, or <b>null</b> when the last loan
+     *     simply ended — settled, refinanced, cancelled or written off. Null became possible the
+     *     moment {@code exitMember} existed, and the event payload has to be built accordingly:
+     *     {@code Map.of} rejects a null value outright.
      */
     private void closeAsSurrendered(Policy policy, UUID claimId, UUID tenantId) {
         // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning
@@ -923,10 +941,17 @@ public class PolicyApiImpl implements PolicyApi {
         if (alreadyClosed) {
             return; // idempotent on repeat -- no second event
         }
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,
-            Map.of("policyNumber", policy.getPolicyNumber(),
-                   "claimId", claimId,
-                   "surrenderedAt", Instant.now().toString())));
+        // claimId is OMITTED rather than sent as null when the last loan merely ended. A
+        // consumer reading a null claimId would have to guess whether a claim was paid; an
+        // absent key says plainly that none was.
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("policyNumber", policy.getPolicyNumber());
+        payload.put("surrenderedAt", Instant.now().toString());
+        if (claimId != null) {
+            payload.put("claimId", claimId);
+        }
+        eventPublisher.publishEvent(
+            DomainEventEnvelope.of("policy.PolicySurrendered", tenantId, Map.copyOf(payload)));
     }
 
     /**
@@ -939,12 +964,35 @@ public class PolicyApiImpl implements PolicyApi {
      */
     private void dischargeMember(Policy policy, GroupScheme scheme, UUID policyMemberId,
                                   LocalDate dateOfEvent, UUID claimId, UUID tenantId) {
+        exitOneMember(policy, scheme, policyMemberId, dateOfEvent, ExitReason.CLAIM_SETTLED,
+            null, claimId, tenantId);
+    }
+
+    /**
+     * One life leaves, the contract stays -- for any reason, not only a settled claim.
+     *
+     * <p>The single implementation behind both {@link #dischargeForSettledClaim} and
+     * {@link #exitMember}. They differ in who calls them and in the reason recorded; everything
+     * that actually happens to the scheme is identical, and two copies of it would be two
+     * chances for a scheme's total to disagree with its members.
+     *
+     * @param claimId null for every reason but CLAIM_SETTLED
+     * @return the exited member, or empty when they had already left
+     */
+    private Optional<PolicyMember> exitOneMember(Policy policy, GroupScheme scheme, UUID policyMemberId,
+                                                  LocalDate dateOfEvent, ExitReason reason,
+                                                  BigDecimal outstandingBalanceAtExit, UUID claimId,
+                                                  UUID tenantId) {
         if (policyMemberId == null) {
             // Cannot happen through the claims path -- registration refuses a memberless claim on
             // a scheme -- but this is a published API and a silent no-op would leave a paid claim
             // with nobody discharged and no trace of why.
             throw new InvalidPolicyStateException("Scheme " + policy.getPolicyNumber()
-                + " insures many lives, so discharging a settled claim on it names a member");
+                + " insures many lives, so taking a life off it names a member");
+        }
+        if (reason == null) {
+            throw new InvalidPolicyStateException(
+                "An exit must say why the member stopped being covered");
         }
         PolicyMember member = policyMemberRepository
             .findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
@@ -953,10 +1001,18 @@ public class PolicyApiImpl implements PolicyApi {
                 + " is not a member of scheme " + policy.getPolicyNumber()));
 
         if (MemberStatus.EXITED.name().equals(member.getStatus())) {
-            return; // idempotent on redelivery, mirroring the alreadyClosed flag on the other branch
+            // Idempotent on redelivery, and equally on a lender resending a corrected exits
+            // file. The FIRST exit stands: a repeat must not overwrite when or why they left,
+            // and must not subtract their cover from the scheme a second time.
+            return Optional.empty();
         }
 
-        member.exit(dateOfEvent);
+        try {
+            member.exit(dateOfEvent, reason, outstandingBalanceAtExit);
+        } catch (IllegalArgumentException e) {
+            // A domain guard reported as a domain error, not as a 500.
+            throw new InvalidPolicyStateException(e.getMessage());
+        }
         policyMemberRepository.save(member);
         // Flush before restating so the total sees the exit. Both inside this transaction: a
         // scheme must never be readable with the member gone and the total still counting them.
@@ -981,25 +1037,127 @@ public class PolicyApiImpl implements PolicyApi {
             ? BigDecimal.ZERO
             : restateSchemeTotal(policy, tenantId, LocalDate.now());
 
-        // No consumer yet, and that is a known gap rather than a new one: regreporting does not
-        // listen to policy.GroupMemberAdded either, so policy_dimension's sum assured already
-        // goes stale on a joiner. This adds a second route to the same staleness.
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupMemberExited", tenantId,
-            Map.of("policyNumber", policy.getPolicyNumber(),
-                   "policyMemberId", policyMemberId,
-                   "leftOn", dateOfEvent.toString(),
-                   "reason", "CLAIM_SETTLED",
-                   "schemeTotalCovered", Map.of("amount", total.toPlainString(),
-                       "currencyCode", scheme.getCurrency()))));
+        // regreporting still does not listen to this, nor to policy.GroupMemberAdded, so
+        // policy_dimension's sum assured goes stale on a joiner and on a leaver alike. A known
+        // gap (spec 2.14), not one this method introduced.
+        //
+        // The payload carries what a refund needs to be computed WITHOUT reading policy back:
+        // the reason (a settled claim earns its premium in full; a repaid loan does not) and
+        // the unearned premium itself, which only this module can work out because only this
+        // module knows the loan's term and what it was charged.
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("policyNumber", policy.getPolicyNumber());
+        payload.put("policyMemberId", policyMemberId);
+        payload.put("leftOn", dateOfEvent.toString());
+        payload.put("reason", reason.name());
+        payload.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        if (outstandingBalanceAtExit != null) {
+            payload.put("outstandingBalanceAtExit", Map.of(
+                "amount", outstandingBalanceAtExit.toPlainString(),
+                "currencyCode", scheme.getCurrency()));
+        }
+        addRefundDetail(payload, member, scheme, reason, dateOfEvent, tenantId);
+
+        eventPublisher.publishEvent(
+            DomainEventEnvelope.of("policy.GroupMemberExited", tenantId, Map.copyOf(payload)));
 
         // Published AFTER the exit, and in addition to it, because two things happened: this
         // member left, and the contract then had nobody left to insure. A consumer tracking
         // membership needs the first; billing needs the second.
         if (noLivesRemain) {
-            log.info("Scheme {} has no covered lives left after member {} was discharged -- closing it",
-                policy.getPolicyNumber(), policyMemberId);
+            log.info("Scheme {} has no covered lives left after member {} left ({}) -- closing it",
+                policy.getPolicyNumber(), policyMemberId, reason);
             closeAsSurrendered(policy, claimId, tenantId);
         }
+        return Optional.of(member);
+    }
+
+    /**
+     * What this borrower is owed back, and which file charged them, on the exit event itself.
+     *
+     * <p>Computed HERE rather than by billing, because only this module can. The unearned share
+     * is a function of the loan's term and the premium that loan was actually charged, and both
+     * live on the enrolment row that created the member. Billing would have to reach across a
+     * module boundary for two values it has no other use for.
+     *
+     * <p>Absent — not zero — in three cases, each of which means something different and none
+     * of which is an error:
+     * <ul>
+     *   <li><b>A settled claim.</b> The premium was fully earned the moment the insurer paid.
+     *       Refunding would pay the claim and give back the money that funded it.</li>
+     *   <li><b>No enrolment row.</b> An opening-schedule member joined at issuance, before any
+     *       file existed, so nothing ever charged them. Assuming the lookup succeeds is how a
+     *       refund path throws inside an AFTER_COMMIT listener.</li>
+     *   <li><b>Nothing unexpired.</b> A loan that ran its full term owes nothing back, and a
+     *       zero credit would fail {@code chk} on amount anyway.</li>
+     * </ul>
+     */
+    private void addRefundDetail(Map<String, Object> payload, PolicyMember member,
+                                  GroupScheme scheme, ExitReason reason, LocalDate exitDate,
+                                  UUID tenantId) {
+        if (reason == ExitReason.CLAIM_SETTLED) {
+            return;
+        }
+        LoanTerms terms = member.getLoanTerms();
+        if (terms == null) {
+            return; // not a credit-life member; nothing was charged per loan
+        }
+        var enrolmentRow = enrolmentSubmissionRowRepository
+            .findByTenantIdAndPolicyMemberId(tenantId, member.getPolicyMemberId());
+        if (enrolmentRow.isEmpty() || enrolmentRow.get().getPremiumAmount() == null) {
+            return;
+        }
+
+        BigDecimal unearned = CreditLifePremium.unearnedAt(
+            enrolmentRow.get().getPremiumAmount(), terms.termMonths(),
+            terms.disbursementDate(), exitDate);
+        if (unearned.signum() <= 0) {
+            return;
+        }
+
+        payload.put("premiumUnearned", Map.of("amount", unearned.toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        // Which FILE charged them, so billing can find the one invoice of eleven that this
+        // credit belongs against without guessing by date.
+        payload.put("enrolmentSubmissionId", enrolmentRow.get().getSubmissionId());
+    }
+
+    @Override
+    @Transactional
+    public PolicyMemberView exitMember(String policyNumber, UUID policyMemberId, LocalDate exitDate,
+                                        ExitReason reason, BigDecimal outstandingBalanceAtExit,
+                                        String exitedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        GroupScheme scheme = groupSchemeRepository
+            .findByPolicyNumberAndTenantId(policyNumber, tenantId)
+            .orElseThrow(() -> new InvalidPolicyStateException("Policy " + policyNumber
+                + " is not a scheme, so it has no members to take off it"));
+
+        // CLAIM_SETTLED is written by dischargeForSettledClaim alone. Allowing it here would
+        // let an exits file assert that the insurer paid out -- which suppresses the refund
+        // (task 5) and the clawback (task 6) on a loan that was merely repaid.
+        if (reason == ExitReason.CLAIM_SETTLED) {
+            throw new InvalidPolicyStateException(
+                "A member leaves as CLAIM_SETTLED only when a claim is actually settled; use "
+                    + "the claim path, or state the reason the loan really ended");
+        }
+
+        Optional<PolicyMember> exited = exitOneMember(policy, scheme, policyMemberId, exitDate,
+            reason, outstandingBalanceAtExit, null, tenantId);
+
+        // Already gone: return them as they are rather than as they would have been. The
+        // caller asked for this member to be off the scheme, and they are.
+        PolicyMember member = exited.orElseGet(() -> policyMemberRepository
+            .findByPolicyMemberIdAndTenantId(policyMemberId, tenantId).orElseThrow());
+
+        log.info("Member {} left scheme {} on {} ({}), recorded by {}",
+            policyMemberId, policyNumber, exitDate, reason, exitedBy);
+        // Valued as at the exit date, not as at today: an exited member's cover is what it was
+        // when they left, and a caller reading this view back is asking what ended, not what
+        // the schedule would say now.
+        return toMemberView(member, null, scheme.getCurrency());
     }
 
     private List<Beneficiary> validateAndBuildBeneficiaries(UUID tenantId, String policyNumber, List<BeneficiaryInput> inputs) {
@@ -1079,9 +1237,31 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException(
                 "A credit-life scheme must state how often its lender's loans repay");
         }
-        if (!loanBasis && (request.interestMethod() != null || request.repaymentFrequency() != null)) {
+        if (!loanBasis && (request.interestMethod() != null || request.repaymentFrequency() != null
+                || request.premiumRatePercent() != null)) {
             throw new InvalidPolicyStateException(
-                "An interest method and a repayment cadence belong only on a credit-life scheme");
+                "An interest method, a repayment cadence and a premium rate belong only on a "
+                    + "credit-life scheme");
+        }
+        // The rate a lender agreed, and there is no default: client answer 3.1 is that it is
+        // negotiated per lender (0.4% for one, 0.5% for another). A scheme that reached its
+        // first accepted file without one could not price a single member, and the failure
+        // would surface as a whole lender's month bouncing rather than as a setup mistake.
+        if (loanBasis && request.premiumRatePercent() == null) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme must state the premium rate its lender agreed; the rate is "
+                    + "negotiated per lender, so there is no default to fall back on");
+        }
+        // Checked here and not only in the GroupScheme constructor because the consequence is
+        // in a different module: billing reacts to PolicyIssued by generating a schedule and a
+        // year of invoices from whatever frequency the policy carries. A credit-life scheme
+        // issued ANNUALLY -- which every fixture used to pass -- billed the lender for a premium
+        // nobody agreed, on top of the per-file premium they actually owe.
+        if (loanBasis && !"SINGLE".equals(request.premiumFrequency())) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme is paid by a single premium per accepted enrolment file, not "
+                    + request.premiumFrequency() + "; a cycle here would bill the master policy for "
+                    + "premium the contract never asked for");
         }
 
         LocalDate today = LocalDate.now();
@@ -1170,7 +1350,8 @@ public class PolicyApiImpl implements PolicyApi {
 
         groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),
             request.flatBenefitAmount(), request.salaryMultiple(), request.fclAmount(),
-            request.currency(), request.interestMethod(), request.repaymentFrequency(), issuedBy));
+            request.currency(), request.interestMethod(), request.repaymentFrequency(),
+            request.premiumRatePercent(), issuedBy));
         if (request.benefitBasis() == BenefitBasis.GRADED) {
             request.grades().forEach(g -> groupSchemeGradeRepository.save(
                 new GroupSchemeGrade(tenantId, policyNumber, g.gradeCode(), g.benefitAmount())));
@@ -1222,6 +1403,22 @@ public class PolicyApiImpl implements PolicyApi {
         // an employer now receives the offer message and its deadline. That is the point.
         payload.put("status", policy.getStatus());
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
+
+        // Both events together for an immediate-cover issuance, exactly as issuePolicy does.
+        //
+        // THIS WAS MISSING. issueGroupScheme called policy.activate() above and published only
+        // PolicyIssued, so a scheme whose basis starts cover went ACTIVE in silence. Nothing
+        // downstream that keys off activation ever heard about it -- and distribution keys its
+        // whole existence off PolicyActivated, so NO GROUP SCHEME HAS EVER ACCRUED COMMISSION
+        // for its agent of record. Employer schemes as much as credit-life ones: the projection
+        // row was never written, so handlePolicyLapsed also logged "pre-M7 policy, nothing to
+        // claw back" and meant it.
+        //
+        // It survived because no test asked what an agent earned on a group scheme. The
+        // individual path has had this line since M7.
+        if (startsCoverNow) {
+            publishPolicyActivated(policyNumber, tenantId, policy);
+        }
 
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.GroupSchemeIssued", tenantId, Map.of(
             "policyNumber", policyNumber,
@@ -1764,7 +1961,8 @@ public class PolicyApiImpl implements PolicyApi {
             m.getMemberType(), m.getMemberName(), m.getMemberReference(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
-            valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom);
+            valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom,
+            m.getExitReason(), m.getOutstandingBalanceAtExit());
     }
 
     private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
@@ -1780,7 +1978,8 @@ public class PolicyApiImpl implements PolicyApi {
             benefit != null ? benefit.getBenefitAmount() : null,
             benefit != null ? benefit.getCoveredAmount() : null,
             currency,
-            benefit != null ? benefit.getEffectiveFrom() : null);
+            benefit != null ? benefit.getEffectiveFrom() : null,
+            m.getExitReason(), m.getOutstandingBalanceAtExit());
     }
 
     private Policy findPolicyOrThrow(String policyNumber, UUID tenantId) {

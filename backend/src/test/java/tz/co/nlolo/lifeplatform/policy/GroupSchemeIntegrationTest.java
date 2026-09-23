@@ -105,6 +105,9 @@ class GroupSchemeIntegrationTest {
             "db-migrations/policy/V14__credit_life_scheme.sql",
             "db-migrations/policy/V15__enrolment_submission.sql",
             "db-migrations/policy/V16__insurer_issued_member_reference.sql",
+            "db-migrations/policy/V18__scheme_premium_rate.sql",
+            "db-migrations/policy/V19__enrolment_premium.sql",
+            "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -652,12 +655,17 @@ class GroupSchemeIntegrationTest {
         return new PolicyApi.IssueGroupSchemeRequest(lender, product.productId(),
             product.productVersionId(), null, basis, flatBenefit, null,
             new BigDecimal("25000000.00"), "TZS", null, members,
-            new BigDecimal("52000.00"), "TZS", "ANNUALLY",
+            new BigDecimal("52000.00"), "TZS",
+            // SINGLE on a loan basis, a cycle on anything else. A credit-life scheme is paid
+            // once per accepted file; issuing one ANNUALLY -- which this fixture used to do --
+            // had billing raise a year of invoices against the master policy.
+            basis == BenefitBasis.AMORTISING_LOAN ? "SINGLE" : "ANNUALLY",
             // Commences BEFORE the loans it covers. A lender scheme is signed first and
             // then fed monthly files of loans disbursed under it; a loan paid out before
             // commencement belongs to whatever arrangement preceded this contract.
             LocalDate.of(2026, 6, 1), null,
-            "credit life onboarding", IssuanceBasis.MIGRATION, interestMethod);
+            "credit life onboarding", IssuanceBasis.MIGRATION, interestMethod,
+            basis == BenefitBasis.AMORTISING_LOAN ? new BigDecimal("0.5000") : null);
     }
 
     /** LOLC's real shape: 10,400,000 over 18 months, disbursed 2026-06-30, no rate given. */
@@ -1011,6 +1019,40 @@ class GroupSchemeIntegrationTest {
 
         assertThat(policyApi.listMembers(scheme.policyNumber(), null, null,
             PageRequest.of(0, 10)).getContent().get(0).memberReference()).isNull();
+    }
+
+    @Test
+    void aBorrowerWithNoLoanAccountNumberIsStillCovered() {
+        // THE REGRESSION THIS EXISTS FOR. PolicyMember.getLoanTerms() keyed on
+        // loan_account_number, from back when that was the member key and was mandatory. V16
+        // made it optional -- the insurer issues the reference now, precisely because neither
+        // real lender has an account number to give -- and the guard was not moved with it.
+        //
+        // So every borrower enrolled from a real lender's file returned null loan terms, and
+        // claimableCover threw IllegalStateException for all of them: credit-life cover could
+        // not be valued at all on the only intake path that exists.
+        //
+        // It survived because of where the two test suites stop. Every other test here builds
+        // its borrower by hand WITH an account number; EnrolmentIntegrationTest enrols from a
+        // real file, with none, and never asks what anybody is covered for. The bug lived in
+        // the gap between them, which is why this test passes null explicitly.
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct("CL-NOACCOUNTNO");
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person("Referenceless Lender"), InterestMethod.FLAT_RATE,
+            List.of(PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi",
+                LocalDate.of(1988, 3, 14), null,
+                new LoanTerms(new BigDecimal("1000000.00"), BigDecimal.ZERO, 12,
+                    RepaymentFrequency.MONTHLY,
+                    LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 30))))), "staff-1");
+
+        UUID memberId = policyApi.listMembers(scheme.policyNumber(), null, null,
+            PageRequest.of(0, 10)).getContent().get(0).policyMemberId();
+
+        // Halfway through: six of twelve months repaid, so half the loan is still insured.
+        assertThat(policyApi.claimableCover(scheme.policyNumber(), memberId,
+            LocalDate.of(2026, 12, 30), BenefitType.DEATH.name()).amount())
+            .isEqualByComparingTo("500000.00");
     }
 
     @Test
