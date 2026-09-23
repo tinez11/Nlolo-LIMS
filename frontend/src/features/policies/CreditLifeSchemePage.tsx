@@ -49,14 +49,32 @@ import { SubmissionsPanel, type SubmissionRow } from './SubmissionsPanel';
  */
 export function CreditLifeSchemePage() {
   const { policyNumber = '' } = useParams<{ policyNumber: string }>();
-  const [openEnrolment, setOpenEnrolment] = useState<string | null>(null);
-  const [openExits, setOpenExits] = useState<string | null>(null);
+  const [chosenEnrolment, setChosenEnrolment] = useState<string | null | undefined>(undefined);
+  const [chosenExits, setChosenExits] = useState<string | null | undefined>(undefined);
 
   const scheme = usePolicyStore(selectScheme(policyNumber));
   const loadScheme = usePolicyStore((s) => s.loadScheme);
 
   const enrolments = useCreditLifeStore(selectEnrolments(policyNumber));
   const exits = useCreditLifeStore(selectExits(policyNumber));
+
+  /**
+   * Which submission is open, DERIVED rather than stored.
+   *
+   * `undefined` means nobody has chosen yet and the newest file opens by itself; `null` means
+   * somebody collapsed it on purpose. The distinction is what lets the default exist without a
+   * `setState` inside a `useEffect`, which this console's lint bans outright — and the rule is
+   * right: a stored copy of "the newest one" goes stale the moment a file is uploaded.
+   *
+   * The newest opens because somebody arriving here came to find out what happened to the last
+   * file they sent, and the most important thing on it — WHY rows were refused — was previously
+   * a click away behind a count.
+   */
+  const newestEnrolmentId = enrolments.data?.[0]?.submissionId ?? null;
+  const newestExitId = exits.data?.[0]?.submissionId ?? null;
+  const openEnrolment = chosenEnrolment !== undefined ? chosenEnrolment : newestEnrolmentId;
+  const openExits = chosenExits !== undefined ? chosenExits : newestExitId;
+
   const enrolmentRows = useCreditLifeStore(selectEnrolmentRows(openEnrolment));
   const exitRows = useCreditLifeStore(selectExitRows(openExits));
   const enrolmentUpload = useCreditLifeStore(selectUploading(policyNumber, 'enrolment'));
@@ -222,7 +240,7 @@ export function CreditLifeSchemePage() {
           error={enrolments.error}
           onRetry={() => void store.loadEnrolments(policyNumber)}
           selectedId={openEnrolment}
-          onSelect={setOpenEnrolment}
+          onSelect={setChosenEnrolment}
           onUpload={(file) => void store.uploadEnrolment(policyNumber, file)}
           uploading={enrolmentUpload.status === 'loading'}
           uploadError={enrolmentUpload.error}
@@ -248,7 +266,7 @@ export function CreditLifeSchemePage() {
           error={exits.error}
           onRetry={() => void store.loadExits(policyNumber)}
           selectedId={openExits}
-          onSelect={setOpenExits}
+          onSelect={setChosenExits}
           onUpload={(file) => void store.uploadExits(policyNumber, file)}
           uploading={exitsUpload.status === 'loading'}
           uploadError={exitsUpload.error}

@@ -230,6 +230,19 @@ export function SubmissionsPanel({
                       {s.rejectedCount > 0 && (
                         <AlertTriangle className="size-3.5 text-status-danger-fg" aria-hidden />
                       )}
+                      {/* A count on its own does not tell anybody anything they can act on. The
+                          reasons are per row and live in the table below, so when a file with
+                          refusals is collapsed this says so and opens it -- rather than leaving
+                          somebody to discover that the number was clickable. */}
+                      {s.rejectedCount > 0 && !selected && (
+                        <button
+                          type="button"
+                          className="text-xs text-status-danger-fg underline underline-offset-2"
+                          onClick={() => onSelect(s.submissionId)}
+                        >
+                          See why
+                        </button>
+                      )}
                     </div>
                     <div className="flex items-baseline gap-1.5">
                       <dt className="text-xs text-muted-foreground">
