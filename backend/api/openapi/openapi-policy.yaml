@@ -1344,6 +1344,31 @@ components:
             ordinary case is an offer, and omitting it says exactly that.
           type: [string, "null"]
           enum: [NEW_BUSINESS, MIGRATION, CONVERSION, REINSTATEMENT, UNDERWRITING_OVERRIDE, null]
+        interestMethod:
+          description: >-
+            This and the two fields below belong to AMORTISING_LOAN and no other benefit basis,
+            and all three were absent from this request entirely until 2026-09-23 -- which made
+            credit life unreachable over HTTP however complete the domain behind it was.
+
+
+            FLAT_RATE is the answer for both real lender files. Cover declines straight-line, so
+            the method is never read to value a claim, but the scheme records what it was
+            written on.
+          type: [string, "null"]
+          enum: [FLAT_RATE, REDUCING_BALANCE, null]
+        repaymentFrequency:
+          description: How often the borrower repays -- the schedule the declining cover follows.
+          type: [string, "null"]
+          enum: [MONTHLY, QUARTERLY, SEMI_ANNUALLY, ANNUALLY, null]
+        premiumRatePercent:
+          description: >-
+            Per-lender and negotiable; 0.4% and 0.5% are the two quoted. Charged once per
+            borrower on the amount they borrowed, not on the declining balance.
+          type: [number, "null"]
+          minimum: 0.0001
+      # The three above are not in this list for the same reason flatBenefitAmount and
+      # salaryMultiple are not: which fields a scheme requires depends on its benefitBasis,
+      # OpenAPI cannot express that here, and the service refuses with a message naming the basis.
       required: [policyholderPartyId, productVersionId, benefitBasis, currency, openingSchedule, premium]
     GroupSchemeGradeInput:
       type: object
@@ -1381,7 +1406,58 @@ components:
             commencement date. Backdating is allowed; a future date is refused.
           type: [string, "null"]
           format: date
-      required: [memberPartyId]
+        memberType:
+          description: >-
+            PARTY for a person the platform already knows, FREEFORM for a name on a lender's
+            schedule. Absent means PARTY, which is what every caller before credit life meant.
+          type: [string, "null"]
+          enum: [PARTY, FREEFORM, null]
+        memberName:
+          description: Required on a FREEFORM member and ignored on a PARTY one.
+          type: [string, "null"]
+          maxLength: 200
+        memberDateOfBirth: { type: [string, "null"], format: date }
+        loanAccountNumber:
+          description: >-
+            The lender's own reference, optional since policy/V16 -- neither real lender holds
+            one, which is why the insurer mints the member reference instead.
+          type: [string, "null"]
+          maxLength: 50
+        loanTerms:
+          description: >-
+            Required on an AMORTISING_LOAN scheme and rejected on any other. Optional here
+            because the condition belongs to the scheme, and the service answers it.
+          allOf: [{ $ref: '#/components/schemas/LoanTermsInput' }]
+      # NO required LIST, deliberately. memberPartyId used to be the only entry, required
+      # unconditionally, and that made a whole product unreachable over HTTP: a credit-life
+      # member is a LOAN, carried FREEFORM with a name and a date of birth and no party row at
+      # all, because a lender's file of several hundred borrowers cannot mint a party per row.
+      # The real rule -- a PARTY member needs an id, a FREEFORM member needs a name -- is
+      # conditional on memberType, like every other conditional rule on this request, and the
+      # service answers it.
+    LoanTermsInput:
+      description: >-
+        The loan a credit-life member IS. On this product a member is not a person with a loan
+        attached; the member is the loan, and the amount insured is derived from these terms,
+        declining straight-line over the term.
+      type: object
+      required: [principalAmount, annualInterestRatePercent, termMonths, repaymentFrequency, disbursementDate, firstRepaymentDate]
+      properties:
+        principalAmount:
+          description: A bare decimal string. What the borrower borrowed, not what they still owe.
+          type: string
+          pattern: '^(?!0+(\.0{1,2})?$)\d+(\.\d{1,2})?$'
+        annualInterestRatePercent:
+          description: >-
+            Zero is the normal case and a true statement rather than a missing value: cover
+            declines straight-line, so no rate is ever read to value a claim, and both real
+            lender files charge premium on the disbursed amount.
+          type: number
+          minimum: 0
+        termMonths: { type: integer, minimum: 1 }
+        repaymentFrequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUALLY, ANNUALLY] }
+        disbursementDate: { type: string, format: date }
+        firstRepaymentDate: { type: string, format: date }
     GroupSchemeView:
       type: object
       properties:
