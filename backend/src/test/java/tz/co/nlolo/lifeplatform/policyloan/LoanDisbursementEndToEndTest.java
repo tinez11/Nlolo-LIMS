@@ -127,7 +127,8 @@ class LoanDisbursementEndToEndTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
-            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V6__disbursement_method.sql");
     }
 
     @AfterAll

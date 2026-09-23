@@ -141,7 +141,8 @@ class BillingApiIntegrationTest {
             // payment schema must match production's -- without V4 an indeterminate collection
             // outcome would fail the CHECK here while working in a real deployment.
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
-            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql");
     }
 
     @AfterAll

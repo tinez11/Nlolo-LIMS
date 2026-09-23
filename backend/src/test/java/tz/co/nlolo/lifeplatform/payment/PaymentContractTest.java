@@ -104,7 +104,8 @@ class PaymentContractTest {
             // Needed for the webhook tests: the SECURITY DEFINER tenant-resolution functions
             // PaymentApiImpl.applyGatewayCallback calls to bootstrap TenantContext from a callback
             // that carries no bearer token at all.
-            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql");
+            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            "db-migrations/payment/V6__disbursement_method.sql");
     }
 
     @Autowired private MockMvc mockMvc;

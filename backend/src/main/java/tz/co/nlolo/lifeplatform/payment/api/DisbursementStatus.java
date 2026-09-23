@@ -8,4 +8,19 @@ package tz.co.nlolo.lifeplatform.payment.api;
  * {@code DisbursementStatus.valueOf(d.getStatus())}, so a stored status with no enum constant
  * would make the read endpoints throw for exactly the rows an operator most needs to look at.
  */
-public enum DisbursementStatus { PENDING, IN_DOUBT, COMPLETED, FAILED }
+public enum DisbursementStatus {
+
+    /** Handed to the rail, awaiting its callback. */
+    PENDING,
+
+    /**
+     * Recorded and posted; waiting for a person to move the money.
+     *
+     * <p>Deliberately NOT reusing PENDING. A payout sitting on a finance officer desk must be
+     * distinguishable from one the gateway is already working -- otherwise nobody chases it,
+     * because it looks in flight.
+     */
+    AWAITING_EXECUTION,
+
+    IN_DOUBT, COMPLETED, FAILED
+}

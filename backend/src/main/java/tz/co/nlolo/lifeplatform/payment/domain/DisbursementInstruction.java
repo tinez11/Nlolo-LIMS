@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.payment.domain;
 
+import tz.co.nlolo.lifeplatform.payment.api.DisbursementMethod;
+
 import jakarta.persistence.*;
 
 import java.io.Serializable;
@@ -75,13 +77,40 @@ public class DisbursementInstruction {
     @Column(name = "source_ref", nullable = false)
     private String sourceRef;
 
+    /** Which rail. Stored as the enum's name rather than as an {@code @Enumerated} so the column
+     * stays a plain VARCHAR under a CHECK constraint, which is how {@code status} and
+     * {@code purpose} are already modelled on this table. */
+    @Column(nullable = false)
+    private String method = DisbursementMethod.MOBILE_MONEY.name();
+
+    @Column(name = "executed_by")
+    private String executedBy;
+
+    @Column(name = "executed_at")
+    private Instant executedAt;
+
     @Version
     private long version;
 
     protected DisbursementInstruction() {}
 
+    /** Mobile money — every disbursement this platform made before credit life. */
     public DisbursementInstruction(UUID tenantId, String idempotencyKey, String payeeRef, BigDecimal amount,
                                    String currency, String purpose, String sourceRef) {
+        this(tenantId, idempotencyKey, payeeRef, amount, currency, purpose, sourceRef,
+            DisbursementMethod.MOBILE_MONEY);
+    }
+
+    /**
+     * An EFT is born AWAITING_EXECUTION rather than PENDING, and the difference is load-bearing.
+     * PENDING means "handed to a rail, waiting to hear back" — a state a timeout sweep may
+     * legitimately retry or mark IN_DOUBT. AWAITING_EXECUTION means "nothing has been handed to
+     * anything; a person still has to move this money". Collapsing the two would let machinery
+     * built for a gateway act on a row no gateway has ever seen.
+     */
+    public DisbursementInstruction(UUID tenantId, String idempotencyKey, String payeeRef, BigDecimal amount,
+                                   String currency, String purpose, String sourceRef,
+                                   DisbursementMethod method) {
         this.tenantId = tenantId;
         this.idempotencyKey = idempotencyKey;
         this.payeeRef = payeeRef;
@@ -89,6 +118,10 @@ public class DisbursementInstruction {
         this.currency = currency;
         this.purpose = purpose;
         this.sourceRef = sourceRef;
+        this.method = method.name();
+        if (method == DisbursementMethod.EFT) {
+            this.status = "AWAITING_EXECUTION";
+        }
     }
 
     public void markCompleted(String gatewayReference) {
@@ -163,6 +196,45 @@ public class DisbursementInstruction {
     public String getCurrency() { return currency; }
     public String getPurpose() { return purpose; }
     public String getStatus() { return status; }
+    public String getMethod() { return method; }
+    public String getExecutedBy() { return executedBy; }
+    public java.time.Instant getExecutedAt() { return executedAt; }
+
+    /**
+     * Finance moved the money in the bank portal and is recording that they did.
+     *
+     * <p>The bank reference goes in gatewayReference -- the same column a gateway callback
+     * fills -- because it answers the same question: what does the OTHER side call this
+     * transfer. Reconciliation asks that question without caring which rail answered.
+     */
+    public void markEftExecuted(String bankReference, String executedBy) {
+        // The rail check comes FIRST, before the idempotent short-circuit. Caught by
+        // EftDisbursementIntegrationTest: with the order reversed, a COMPLETED mobile-money
+        // payout -- whose status is already COMPLETED -- was silently accepted as "confirming
+        // twice" and returned quietly, so a person could claim to have executed a transfer the
+        // gateway had made. Idempotency is only ever a property of the SAME operation repeated.
+        if (!DisbursementMethod.EFT.name().equals(method)) {
+            throw new IllegalStateException("Disbursement " + disbursementId + " is a " + method
+                + " payout, which is not awaiting execution by anybody -- the rail completes it");
+        }
+        if ("COMPLETED".equals(status)) {
+            return; // idempotent: confirming the same EFT twice is not an error
+        }
+        if (!"AWAITING_EXECUTION".equals(status)) {
+            throw new IllegalStateException("Disbursement " + disbursementId + " is " + status
+                + ", not awaiting execution");
+        }
+        if (bankReference == null || bankReference.isBlank()) {
+            throw new IllegalArgumentException("Recording an executed transfer needs the bank reference for it");
+        }
+        if (executedBy == null || executedBy.isBlank()) {
+            throw new IllegalArgumentException("Recording an executed transfer needs who executed it");
+        }
+        this.status = "COMPLETED";
+        this.gatewayReference = bankReference;
+        this.executedBy = executedBy;
+        this.executedAt = java.time.Instant.now();
+    }
     public String getGatewayReference() { return gatewayReference; }
     public UUID getBatchId() { return batchId; }
     public String getSourceRef() { return sourceRef; }

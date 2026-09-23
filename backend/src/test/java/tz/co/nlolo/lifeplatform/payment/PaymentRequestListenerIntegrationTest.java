@@ -143,7 +143,8 @@ class PaymentRequestListenerIntegrationTest {
             // M5 final-review fix wave (C2): V4 widens both ledgers' status CHECK to admit
             // IN_DOUBT. Load-bearing for the two indeterminate-outcome tests below -- without it
             // they fail with a check-constraint violation rather than passing.
-            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql");
     }
 
     @AfterAll

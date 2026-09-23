@@ -153,7 +153,8 @@ class ReinsuranceContractTest {
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
-            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql");
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V6__disbursement_method.sql");
     }
 
     @AfterAll

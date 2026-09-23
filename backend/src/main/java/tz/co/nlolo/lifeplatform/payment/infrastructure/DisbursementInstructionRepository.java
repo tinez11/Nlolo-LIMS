@@ -16,6 +16,10 @@ public interface DisbursementInstructionRepository
     Optional<DisbursementInstruction> findByGatewayReferenceAndTenantId(String gatewayReference, UUID tenantId);
     List<DisbursementInstruction> findByBatchIdAndTenantId(UUID batchId, UUID tenantId);
 
+    /** Finance's work queue for the EFT rail. Ordered oldest-first because the oldest unpaid
+     * lender payout is the one that matters most. */
+    List<DisbursementInstruction> findByTenantIdAndStatusOrderByCreatedAtAsc(UUID tenantId, String status);
+
     /**
      * Task 8's inbound callback bootstrap: resolves ONLY the owning tenant_id for a given
      * gateway reference, before any TenantContext exists to scope an ordinary query with. Calls

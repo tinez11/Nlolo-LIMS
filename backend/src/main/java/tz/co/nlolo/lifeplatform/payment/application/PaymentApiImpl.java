@@ -5,6 +5,8 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.payment.api.*;
 import tz.co.nlolo.lifeplatform.payment.domain.*;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -25,6 +27,8 @@ public class PaymentApiImpl implements PaymentApi {
     private final DisbursementInstructionRepository disbursementRepository;
     private final PayoutBatchRepository payoutBatchRepository;
     private final PaymentIdempotencyRepository paymentIdempotencyRepository;
+    private static final Logger log = LoggerFactory.getLogger(PaymentApiImpl.class);
+
     private final DisbursementIdempotencyRepository disbursementIdempotencyRepository;
     private final ApplicationEventPublisher eventPublisher;
     // Task 8 (review fix, Critical 3): a fresh PROPAGATION_REQUIRES_NEW transaction for
@@ -110,8 +114,21 @@ public class PaymentApiImpl implements PaymentApi {
     @Transactional
     Optional<UUID> recordDisbursementRequest(UUID tenantId, String idempotencyKey, String payeeRef,
                                               BigDecimal amount, String currency, String purpose, String sourceRef) {
-        DisbursementInstruction instruction =
-            new DisbursementInstruction(tenantId, idempotencyKey, payeeRef, amount, currency, purpose, sourceRef);
+        return recordDisbursementRequest(tenantId, idempotencyKey, payeeRef, amount, currency,
+            purpose, sourceRef, DisbursementMethod.MOBILE_MONEY);
+    }
+
+    /**
+     * @param method MOBILE_MONEY goes to the gateway, as every disbursement on this platform
+     *     always has. EFT is recorded AWAITING_EXECUTION and never handed to a rail at all —
+     *     finance moves it in the bank's own portal and confirms it afterwards.
+     */
+    @Transactional
+    Optional<UUID> recordDisbursementRequest(UUID tenantId, String idempotencyKey, String payeeRef,
+                                              BigDecimal amount, String currency, String purpose,
+                                              String sourceRef, DisbursementMethod method) {
+        DisbursementInstruction instruction = new DisbursementInstruction(
+            tenantId, idempotencyKey, payeeRef, amount, currency, purpose, sourceRef, method);
         // Claim FIRST, and let the affected-row count decide. An INSERT ... ON CONFLICT DO
         // NOTHING returning 0 is the only race-free way to answer "did I already process this?"
         // -- a findBy...isPresent() check before inserting has a real TOCTOU window that two
@@ -122,6 +139,20 @@ public class PaymentApiImpl implements PaymentApi {
             return Optional.empty();
         }
         disbursementRepository.save(instruction);
+        if (method == DisbursementMethod.EFT) {
+            // An EFT sits unpaid for days while a person finds time to visit the bank. That window
+            // is the whole reason this event exists: for the mobile-money rail the gap between
+            // "approved" and "paid" is milliseconds and the books lose nothing by recognising the
+            // expense only on payment, but a multi-million-shilling obligation that is invisible in
+            // the general ledger for a week is a real misstatement. finaccounting books
+            // DR Claims Expense / CR Claims Payable here and reverses it on execution, where the
+            // existing claims.ClaimSettled rule then books the expense against cash.
+            eventPublisher.publishEvent(DomainEventEnvelope.of("payment.EftDisbursementAwaitingExecution", tenantId,
+                Map.of("disbursementId", instruction.getDisbursementId(),
+                       "purpose", purpose,
+                       "sourceRef", sourceRef,
+                       "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
+        }
         return Optional.of(instruction.getDisbursementId());
     }
 
@@ -160,6 +191,79 @@ public class PaymentApiImpl implements PaymentApi {
                    "sourceRef", instruction.getSourceRef(),
                    "purpose", instruction.getPurpose(),
                    "gatewayReference", gatewayReference,
+                   "amount", Map.of("amount", instruction.getAmount().toPlainString(),
+                                    "currencyCode", instruction.getCurrency()),
+                   "completedAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DisbursementStatusView> listAwaitingEftExecution() {
+        return disbursementRepository
+            .findByTenantIdAndStatusOrderByCreatedAtAsc(TenantContext.get(), "AWAITING_EXECUTION")
+            .stream().map(PaymentApiImpl::toView).toList();
+    }
+
+    /**
+     * The EFT rail's completion, and the only one it has. There is no callback and no gateway to
+     * hear from: a person in finance moved the money in the bank's portal and is recording that
+     * they did, with the bank's own reference.
+     *
+     * <p><b>Public, unlike every other write on this class</b>, for the same reason
+     * {@code applyGatewayCallback} is: the trigger is external to the platform. A mobile-money
+     * transfer is confirmed by the aggregator calling {@code MobileMoneyCallbackController}; an
+     * EFT is confirmed by a finance officer calling {@link
+     * tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementController}. Both reach this
+     * class from payment's own infrastructure package, never from another module — payment's
+     * published {@link tz.co.nlolo.lifeplatform.payment.api.PaymentApi} stays read-only.
+     *
+     * <p>It publishes {@code payment.DisbursementCompleted} with the identical payload shape
+     * {@link #completeDisbursement} publishes, deliberately: every downstream consumer
+     * (claims, distribution, policyloan, finaccounting) then treats an executed EFT exactly as it
+     * treats a completed mobile-money payout, with no rail-awareness anywhere but here. The bank
+     * reference travels in {@code gatewayReference} because it answers the same reconciliation
+     * question.
+     *
+     * @throws PaymentNotFoundException if no such disbursement exists for this tenant
+     * @throws IllegalStateException if the row is not AWAITING_EXECUTION — which is what a
+     *         mobile-money row is not, so this also refuses to let anyone hand-complete a payout
+     *         that belongs to the gateway
+     */
+    @Transactional
+    public void markEftExecuted(UUID disbursementId, String bankReference, String executedBy) {
+        UUID tenantId = TenantContext.get();
+        DisbursementInstruction instruction = disbursementRepository
+            .findByDisbursementIdAndTenantId(disbursementId, tenantId)
+            .orElseThrow(() -> new PaymentNotFoundException("Disbursement " + disbursementId + " not found"));
+        boolean alreadyCompleted = "COMPLETED".equals(instruction.getStatus());
+        instruction.markEftExecuted(bankReference, executedBy);
+        if (alreadyCompleted) {
+            // markEftExecuted is idempotent on a COMPLETED row, and so is this method: republishing
+            // DisbursementCompleted would drive a second ClaimSettled downstream. Claims guards
+            // that itself, but relying on a consumer's guard to make a producer safe is how the
+            // duplicate-settlement bug documented in claims.PaymentEventListener happened.
+            log.info("Disbursement {} is already COMPLETED -- treating the repeat EFT confirmation as "
+                + "a no-op and publishing nothing", disbursementId);
+            return;
+        }
+        disbursementRepository.save(instruction);
+        recomputeBatchStatusIfBatched(tenantId, instruction);
+        // Reverses the accrual raised when this EFT was instructed, so the expense is recognised
+        // exactly once: the DisbursementCompleted below drives claims.ClaimSettled, whose existing
+        // rule books DR Claims Expense / CR Cash. Published BEFORE it only for readability -- both
+        // are AFTER_COMMIT and finaccounting posts each as its own independent entry.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("payment.EftDisbursementExecuted", tenantId,
+            Map.of("disbursementId", disbursementId,
+                   "purpose", instruction.getPurpose(),
+                   "sourceRef", instruction.getSourceRef(),
+                   "amount", Map.of("amount", instruction.getAmount().toPlainString(),
+                                    "currencyCode", instruction.getCurrency()))));
+        eventPublisher.publishEvent(DomainEventEnvelope.of("payment.DisbursementCompleted", tenantId,
+            Map.of("disbursementId", disbursementId,
+                   "idempotencyKey", instruction.getIdempotencyKey(),
+                   "sourceRef", instruction.getSourceRef(),
+                   "purpose", instruction.getPurpose(),
+                   "gatewayReference", bankReference,
                    "amount", Map.of("amount", instruction.getAmount().toPlainString(),
                                     "currencyCode", instruction.getCurrency()),
                    "completedAt", Instant.now().toString())));

@@ -60,7 +60,8 @@ class PaymentApiIntegrationTest {
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
-            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql");
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql");
     }
 
     @Autowired private PaymentApi paymentApi;

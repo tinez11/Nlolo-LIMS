@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.payment.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.payment.api.DisbursementMethod;
 import tz.co.nlolo.lifeplatform.payment.domain.GatewayException;
 import tz.co.nlolo.lifeplatform.payment.domain.PaymentGatewayPort;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -172,10 +173,28 @@ public class PaymentRequestListener {
         UUID claimId = (UUID) payload.get("claimId");
         String payeeRef = (String) payload.get("payeeRef");
         Money money = money(payload);
+        // Which rail, named by the publisher. Absent means MOBILE_MONEY — every publisher
+        // before credit life, whose behaviour is unchanged.
+        DisbursementMethod method = payload.get("disbursementMethod") == null
+            ? DisbursementMethod.MOBILE_MONEY
+            : DisbursementMethod.valueOf((String) payload.get("disbursementMethod"));
+
         Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
-            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), "CLAIM_SETTLEMENT", claimId.toString()));
+            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), "CLAIM_SETTLEMENT",
+            claimId.toString(), method));
         disbursementId.ifPresentOrElse(
-            id -> submitDisbursement(tenantId, id, payeeRef, money),
+            id -> {
+                if (method == DisbursementMethod.EFT) {
+                    // RECORDED, NOT SENT. There is no rail to call: finance moves this in the
+                    // bank's own portal and confirms it here afterwards. Calling the gateway
+                    // would put a multi-million-shilling lender payout through a mock with no
+                    // authentication, which is the entire reason EFT exists.
+                    log.info("Disbursement {} for claim {} is EFT -- recorded awaiting execution, "
+                        + "not submitted to any gateway", id, claimId);
+                    return;
+                }
+                submitDisbursement(tenantId, id, payeeRef, money);
+            },
             () -> log.info("Dropping duplicate ClaimSettlementRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 

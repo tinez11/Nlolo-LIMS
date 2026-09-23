@@ -143,6 +143,7 @@ class RowLevelSecurityIntegrationTest {
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V6__disbursement_method.sql",
             // M7 (Task 10) additions. distribution/V1 enabled RLS on NONE of its four tables and
             // granted app_role nothing; V2 is what adds both, plus commission_accrual and
             // policy_projection with their own policies. Until now no test in this class or

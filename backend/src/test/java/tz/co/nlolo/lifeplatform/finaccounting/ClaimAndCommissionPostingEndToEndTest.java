@@ -190,6 +190,7 @@ class ClaimAndCommissionPostingEndToEndTest {
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",

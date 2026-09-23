@@ -180,6 +180,7 @@ class ProjectionEndToEndTest {
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",

@@ -206,6 +206,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",

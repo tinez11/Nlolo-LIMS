@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.payment.api;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -30,4 +31,15 @@ public interface PaymentApi {
     record IdempotencyLookupResult(PaymentStatusView payment, DisbursementStatusView disbursement) {}
 
     PayoutBatchView getPayoutBatch(UUID batchId);
+
+    /**
+     * Every EFT this tenant has instructed and nobody has yet confirmed moved. Finance needs this
+     * to do their half of the credit-life payout at all: an EFT leaves the platform through a bank
+     * portal, so without a list of what is owed there is nothing to work from, and the
+     * confirmation endpoint would be an entry point nobody could find their way to.
+     *
+     * <p>Read-only, so it belongs on this interface; the confirmation itself does not, and lives
+     * on {@code PaymentApiImpl} reached only from payment's own controller.
+     */
+    List<DisbursementStatusView> listAwaitingEftExecution();
 }

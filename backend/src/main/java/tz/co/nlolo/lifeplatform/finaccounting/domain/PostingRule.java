@@ -57,12 +57,14 @@ public final class PostingRule {
     public static final String PREMIUM_RECEIVABLE = "1210";
     public static final String REINSURANCE_RECOVERABLE = "1240";
     public static final String POLICY_LOAN_RECEIVABLE = "1250";
+    public static final String CLAIMS_PAYABLE = "2110";
     public static final String UNEARNED_PREMIUM = "2140";
     public static final String REINSURANCE_PAYABLE = "2220";
     public static final String CLAIMS_EXPENSE = "5100";
     public static final String COMMISSION_EXPENSE = "5200";
     public static final String REINSURANCE_CEDED_PREMIUM = "5500";
 
+    // Exactly ten pairs -- Map.of's maximum. An eleventh rule must switch this to Map.ofEntries.
     private static final Map<String, AccountPair> RULES = Map.of(
         "billing.PremiumInvoiceGenerated", new AccountPair(PREMIUM_RECEIVABLE, UNEARNED_PREMIUM),
         "billing.PremiumCollected",        new AccountPair(CASH, PREMIUM_RECEIVABLE),
@@ -71,7 +73,9 @@ public final class PostingRule {
         "reinsurance.CessionRecorded",     new AccountPair(REINSURANCE_CEDED_PREMIUM, REINSURANCE_PAYABLE),
         "reinsurance.RecoveryConfirmed",   new AccountPair(REINSURANCE_RECOVERABLE, CLAIMS_EXPENSE),
         "policyloan.LoanDisbursed",        new AccountPair(POLICY_LOAN_RECEIVABLE, CASH),
-        "policyloan.LoanRepaid",           new AccountPair(CASH, POLICY_LOAN_RECEIVABLE));
+        "policyloan.LoanRepaid",           new AccountPair(CASH, POLICY_LOAN_RECEIVABLE),
+        "payment.EftDisbursementAwaitingExecution", new AccountPair(CLAIMS_EXPENSE, CLAIMS_PAYABLE),
+        "payment.EftDisbursementExecuted",  new AccountPair(CLAIMS_PAYABLE, CLAIMS_EXPENSE));
 
     /** Empty for any event with no accounting consequence -- which is most events on this
      * platform, and is a normal outcome rather than an error. */

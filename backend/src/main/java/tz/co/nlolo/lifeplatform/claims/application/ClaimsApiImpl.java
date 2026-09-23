@@ -430,6 +430,17 @@ public class ClaimsApiImpl implements ClaimsApi {
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettlementRequested", tenantId,
                 Map.of("claimId", claimId, "payeeRef", payeeRef,
                        "amount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency),
+                       // A credit-life payout goes to a LENDER and extinguishes a debt. It must
+                       // not go near the mobile-money rail, which in this environment is a mock
+                       // with no authentication (spec §2.9).
+                       //
+                       // Named on the EVENT rather than inferred inside payment: why a payout
+                       // takes a particular rail is a fact about the product, and payment has
+                       // no business knowing what credit life is. Every other publisher omits
+                       // the key and gets MOBILE_MONEY, which is what they have always had.
+                       "disbursementMethod", "CREDIT_LIFE".equals(
+                           policyApi.getPolicy(claim.getPolicyNumber()).productCategory())
+                           ? "EFT" : "MOBILE_MONEY",
                        "idempotencyKey", idempotencyKey)));
         } else {
             settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, false,
