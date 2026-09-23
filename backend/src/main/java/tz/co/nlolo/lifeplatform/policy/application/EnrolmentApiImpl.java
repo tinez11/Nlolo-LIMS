@@ -250,6 +250,20 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         return toView(findSubmission(submissionId, TenantContext.get()));
     }
 
+    /**
+     * The scheme's submission history. Uses the repository's
+     * {@code findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc}, which existed with no caller
+     * until now — the ordering it already declared is the one this needs, so it is used rather
+     * than a second finder added beside it.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<EnrolmentSubmissionView> listSubmissions(String policyNumber) {
+        return submissionRepository
+            .findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc(TenantContext.get(), policyNumber)
+            .stream().map(EnrolmentApiImpl::toView).toList();
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<EnrolmentRowView> listRows(UUID submissionId) {

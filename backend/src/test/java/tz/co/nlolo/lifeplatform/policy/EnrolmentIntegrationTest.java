@@ -23,6 +23,7 @@ import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import tz.co.nlolo.lifeplatform.policy.api.EnrolmentSubmissionView;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -150,6 +151,13 @@ class EnrolmentIntegrationTest {
     private static final String ONE_GOOD_ROW =
         "LN-2026-00417,Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-06-30\n";
 
+
+    /** A DIFFERENT borrower from ONE_GOOD_ROW. The second file in the listing test must not
+     * re-send the first one: once accepted a repeat is ALREADY_ENROLLED (see
+     * aBorrowerAlreadyOnTheSchemeIsRejectedRatherThanDoubled), which would leave the test
+     * asserting a listing built from a file that enrolled nobody. */
+    private static final String ANOTHER_GOOD_ROW =
+        "LN-2026-00512,Juma Rajabu Kimaro,1990-07-02,M,,,3200000.00,24,2026-07-15\n";
     private ByteArrayInputStream csv(String body) {
         return new ByteArrayInputStream((HEADER + body).getBytes(StandardCharsets.UTF_8));
     }
@@ -467,5 +475,44 @@ class EnrolmentIntegrationTest {
         assertThat(report).contains("Amina Hassan Mwinyi,ENROLLED");
         assertThat(report).contains("MISSING_REQUIRED_FIELD");
         assertThat(report).contains("THIS BORROWER IS NOT COVERED.");
+    }
+
+    // ---- the submission history a console page opens on -------------------
+
+    @Test
+    void submissionsAreListedNewestFirstAndScopedToTheirOwnScheme() {
+        // Every other operation on EnrolmentApi takes a submissionId the caller is assumed to
+        // already hold. That is true of the upload flow and false of anybody arriving at a
+        // scheme cold, so without this a page that opens on a scheme has nothing to render.
+        String otherScheme = issueScheme(ProductCategory.CREDIT_LIFE, BenefitBasis.AMORTISING_LOAN);
+
+        UUID first = enrolmentApi.submit(creditLifeScheme, csv(ONE_GOOD_ROW),
+            "august.csv", "staff.one").submissionId();
+        // NOT padding: a scheme allows only ONE submission in flight (see
+        // aSecondFileCannotBeSubmittedWhileOneIsPending), so the second submit below is refused
+        // until this one is resolved. A version of this test that simply submitted twice fails
+        // on the second call and reads as a bug in listSubmissions.
+        enrolmentApi.accept(first, "staff.two");
+        UUID second = enrolmentApi.submit(creditLifeScheme, csv(ANOTHER_GOOD_ROW),
+            "september.csv", "staff.one").submissionId();
+        enrolmentApi.submit(otherScheme, csv(ONE_GOOD_ROW), "other-bank.csv", "staff.one");
+
+        List<EnrolmentSubmissionView> listed = enrolmentApi.listSubmissions(creditLifeScheme);
+
+        assertThat(listed).extracting(EnrolmentSubmissionView::submissionId)
+            .as("newest first -- a lender's latest file is what staff came to look at")
+            .containsExactly(second, first);
+        assertThat(listed).extracting(EnrolmentSubmissionView::fileName)
+            .as("another lender's file is not this scheme's business")
+            .doesNotContain("other-bank.csv");
+    }
+
+    @Test
+    void aSchemeWithNoSubmissionsListsEmptyRatherThanThrowing() {
+        // The normal state of a scheme on its first day. Throwing here would make a page render
+        // an error for a situation that is not one.
+        assertThat(enrolmentApi.listSubmissions(
+            issueScheme(ProductCategory.CREDIT_LIFE, BenefitBasis.AMORTISING_LOAN)))
+            .isEmpty();
     }
 }

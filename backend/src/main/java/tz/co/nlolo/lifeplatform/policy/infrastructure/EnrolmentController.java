@@ -91,6 +91,23 @@ public class EnrolmentController {
         return enrolmentApi.withdraw(submissionId, jwt.getSubject());
     }
 
+    /**
+     * The scheme's submission history, newest first.
+     *
+     * <p>Every other read on this controller needs a {@code submissionId}, which the upload flow
+     * has and a console page opening on a scheme does not. Without this there is no way to reach
+     * the report of a file sent last month.
+     *
+     * <p>{@code REALM_STAFF}, matching every other operation here: running a lender's file is
+     * staff work, and what the lender themselves can see is the portal's problem rather than
+     * this endpoint's.
+     */
+    @GetMapping("/credit-life-schemes/{policyNumber}/enrolments")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public List<EnrolmentSubmissionView> listSubmissions(@PathVariable String policyNumber) {
+        return enrolmentApi.listSubmissions(policyNumber);
+    }
+
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}")
     @PreAuthorize("hasRole('REALM_STAFF')")
     public EnrolmentSubmissionView getSubmission(@PathVariable String policyNumber,

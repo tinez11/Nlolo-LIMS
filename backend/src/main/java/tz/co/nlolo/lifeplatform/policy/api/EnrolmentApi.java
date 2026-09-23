@@ -48,6 +48,23 @@ public interface EnrolmentApi {
     /** Every line of the file and its outcome, in the lender's own line order. */
     List<EnrolmentRowView> listRows(UUID submissionId);
 
+    /**
+     * Every submission this scheme has had, newest first.
+     *
+     * <p>Exists because every other operation on this interface takes a {@code submissionId} the
+     * caller is assumed to already hold. That is true of the upload flow, which has just created
+     * one, and false of anybody arriving at a scheme cold — so without this a console page that
+     * opens on a scheme has nothing to render and no way to reach the reports of files already
+     * sent.
+     *
+     * <p>Newest first because a lender's latest file is what staff came to look at.
+     *
+     * <p>Empty, never an exception, for a scheme that has had none. That is the normal state of a
+     * scheme on its first day rather than an error, and throwing would make a page render a
+     * failure for a situation that is not one.
+     */
+    List<EnrolmentSubmissionView> listSubmissions(String policyNumber);
+
     /** The report that goes back to the lender, as CSV. */
     String renderReport(UUID submissionId);
 }
