@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch, Controller } from 'react-hook-form';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { DEFAULT_MEMBER_PAGE_SIZE } from '@/api/policies';
-import type { GroupSchemeView, MemberStatus, PolicyMemberView } from '@/api/types';
+import type { BenefitBasis, GroupSchemeView, MemberStatus, PolicyMemberView } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
@@ -373,7 +373,7 @@ export function GroupSchemePage() {
     return (
       <>
         <DataTable
-          columns={memberColumns}
+          columns={memberColumnsFor(data?.benefitBasis)}
           rows={rows}
           rowKey={(m) => m.policyMemberId ?? `${m.memberPartyId}`}
           caption="Members of this group scheme"
@@ -390,7 +390,27 @@ export function GroupSchemePage() {
   }
 }
 
-const memberColumns: Column<PolicyMemberView>[] = [
+/**
+ * The roll's columns depend on what kind of scheme it is, because two of them are dead weight on
+ * the other kind.
+ *
+ * A credit-life member has no grade and no salary -- those are how an EMPLOYER scheme decides
+ * what a life is worth, and this product decides it from a loan schedule instead. An employer
+ * member has no member reference, because the insurer only mints one for a borrower a lender will
+ * quote back on a later file.
+ *
+ * Rendering both on both left seven columns where six fit, one of them permanently empty. That is
+ * not a tidiness point: a roll of several hundred borrowers is read by scanning, and a column of
+ * em dashes costs width that the names and references need.
+ */
+const memberColumnsFor = (basis: BenefitBasis | undefined): Column<PolicyMemberView>[] => {
+  const creditLife = basis === 'AMORTISING_LOAN';
+  return baseMemberColumns.filter((c) =>
+    c.key === 'memberReference' ? creditLife : c.key === 'gradeOrSalary' ? !creditLife : true,
+  );
+};
+
+const baseMemberColumns: Column<PolicyMemberView>[] = [
   {
     key: 'member',
     header: 'Member',

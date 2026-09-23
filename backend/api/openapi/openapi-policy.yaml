@@ -1281,7 +1281,7 @@ components:
             SACCO, funeral and credit-linked cover; salary multiple is the standard for formal
             employer schemes; graded splits by staff category.
           type: string
-          enum: [FLAT, SALARY_MULTIPLE, GRADED]
+          enum: [FLAT, SALARY_MULTIPLE, GRADED, AMORTISING_LOAN]
         flatBenefitAmount:
           description: >-
             A bare decimal string against this scheme's `currency`, not a JSON number and not
@@ -1466,7 +1466,10 @@ components:
         status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
-        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }
+        # AMORTISING_LOAN is credit life: the member IS a loan and the amount insured is the
+        # declining balance. It was missing from both enums here while schemes were being issued
+        # with it, so the generated client could not even express the value the server returns.
+        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED, AMORTISING_LOAN] }
         flatBenefit:
           description: Null unless the basis is FLAT.
           allOf:

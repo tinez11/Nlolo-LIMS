@@ -153,6 +153,12 @@ export function previewBenefit(
 
 function benefitFor(scheme: SchemeBasis, member: MemberBasisInput): string | null {
   switch (scheme.benefitBasis) {
+    // A credit-life member's cover is the outstanding balance of a loan, which comes off an
+    // amortisation schedule the enrolment file carries -- not off anything a human types into
+    // the add-member form this preview serves. There is no figure to preview here, and
+    // inventing one from a grade or a salary would be a different product's answer.
+    case 'AMORTISING_LOAN':
+      return null;
     case 'FLAT':
       return normalise(scheme.flatBenefitAmount);
     case 'GRADED': {
