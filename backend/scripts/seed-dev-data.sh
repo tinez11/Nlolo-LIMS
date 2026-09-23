@@ -114,6 +114,40 @@ SNAPSHOT_JSON=$(api "$STAFF_FINANCE_TOKEN" GET "/products/$PRODUCT_ID/active-sna
 PRODUCT_VERSION_ID=$(jsonval "$SNAPSHOT_JSON" productVersionId)
 echo "productVersionId=$PRODUCT_VERSION_ID"
 
+# A CREDIT_LIFE product, and a lender to hold a scheme on it.
+#
+# Neither existed here, and the consequence was not cosmetic: the console's "Credit-life scheme"
+# form filters products to CREDIT_LIFE and parties are picked by search, so on a freshly
+# bootstrapped dev environment that form offered an empty product list and no lender to choose --
+# a screen that looks broken because the data it needs was never seeded. The e2e suite works
+# around the same hole by authoring its own product per run, which is right for a test and no
+# help at all to somebody clicking through a fresh stack.
+#
+# No scheme is seeded on purpose. Setting one up is exactly what the form is for, and seeding one
+# would hide whether that form works.
+echo "=== Step 1b: Credit-life product + a lender (staff.admin) ==="
+CL_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"DEMO-CL-01","productName":"Demo Credit Life","category":"CREDIT_LIFE","defaultCurrency":"TZS"}')
+CL_PRODUCT_ID=$(jsonval "$CL_PRODUCT_JSON" productId)
+echo "creditLifeProductId=$CL_PRODUCT_ID"
+
+# The age band is deliberately wide. A borrower's entry age is checked against it, a lender's file
+# carries whoever the lender lent to, and a narrow demo band would refuse most of a sample file
+# for a reason that has nothing to do with what is being demonstrated.
+CL_VERSION_RESP=$(curl -sfi -X POST "$API/products/$CL_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"PAA","effectiveDate":"2020-01-01",
+    "tiraFiling":{"reference":"TIRA/DEMO/CL/0001","approvalDate":"2020-01-01"},
+    "ratingTable":[{"factorType":"AGE","band":"18-70","multiplier":1.0,"ageFrom":18,"ageTo":70},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]
+  }')
+echo "$CL_VERSION_RESP" | head -1
+
+LENDER_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/parties/corporates" \
+  '{"registeredName":"Demo Microfinance","registrationNumber":"REG-DEMO-0001","contactInfo":{"phoneNumber":"+255712000111","email":"ops@demo-microfinance.example.tz"}}')
+echo "lenderPartyId=$(jsonval "$LENDER_JSON" partyId)"
+
 echo "=== Step 2: Parties (agent.senior -- see the role-gate note above STAFF_FINANCE_TOKEN's mint) ==="
 OWNER_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/parties/individuals" \
   '{"fullName":"Amina Owner","dateOfBirth":"1990-04-12","contactInfo":{"phoneNumber":"+255712345678","email":"customer.owner@example.tz"}}')

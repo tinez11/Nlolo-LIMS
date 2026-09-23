@@ -1318,7 +1318,15 @@ components:
           minItems: 1
           items: { $ref: '#/components/schemas/GroupMemberInput' }
         premium: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        premiumFrequency:
+          description: >-
+            SINGLE is REQUIRED on an AMORTISING_LOAN scheme and refused on every other basis,
+            and its absence here was not cosmetic: a credit-life premium is charged once per
+            borrower when their loan is written, the service refuses any cycle outright
+            ("a cycle here would bill the master policy for..."), and the only value this
+            product accepts could not be expressed by a generated client at all.
+          type: string
+          enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE]
         commencementDate:
           description: >-
             When the scheme's risk starts. Backdating is normal -- a schedule reaches the
@@ -1343,7 +1351,11 @@ components:
             manual-issue path every issuance is an exception that must name itself; here the
             ordinary case is an offer, and omitting it says exactly that.
           type: [string, "null"]
-          enum: [NEW_BUSINESS, MIGRATION, CONVERSION, REINSTATEMENT, UNDERWRITING_OVERRIDE, null]
+          # Matched to policy/api/IssuanceBasis. NEW_BUSINESS was listed here and does not
+          # exist -- a client that sent it got a 400 from a value this contract promised --
+          # and GUARANTEED_ISSUE exists and was missing. Ordinary new business is the NULL
+          # case, which is what made the invented value look plausible.
+          enum: [MIGRATION, CONVERSION, REINSTATEMENT, UNDERWRITING_OVERRIDE, GUARANTEED_ISSUE, null]
         interestMethod:
           description: >-
             This and the two fields below belong to AMORTISING_LOAN and no other benefit basis,
@@ -1357,9 +1369,13 @@ components:
           type: [string, "null"]
           enum: [FLAT_RATE, REDUCING_BALANCE, null]
         repaymentFrequency:
-          description: How often the borrower repays -- the schedule the declining cover follows.
+          description: >-
+            How often the borrower repays -- the schedule the declining cover follows. Only
+            MONTHLY and QUARTERLY exist; SEMI_ANNUALLY and ANNUALLY were listed here and are
+            not values of policy/api/RepaymentFrequency, so a client following this contract
+            would have been refused by the enum converter.
           type: [string, "null"]
-          enum: [MONTHLY, QUARTERLY, SEMI_ANNUALLY, ANNUALLY, null]
+          enum: [MONTHLY, QUARTERLY, null]
         premiumRatePercent:
           description: >-
             Per-lender and negotiable; 0.4% and 0.5% are the two quoted. Charged once per
@@ -1455,7 +1471,8 @@ components:
           type: number
           minimum: 0
         termMonths: { type: integer, minimum: 1 }
-        repaymentFrequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUALLY, ANNUALLY] }
+        # Same correction as the scheme-level field above: RepaymentFrequency has two values.
+        repaymentFrequency: { type: string, enum: [MONTHLY, QUARTERLY] }
         disbursementDate: { type: string, format: date }
         firstRepaymentDate: { type: string, format: date }
     GroupSchemeView:

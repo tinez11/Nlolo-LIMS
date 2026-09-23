@@ -51,8 +51,25 @@ export interface ConfirmActProps {
   /** `danger` for money leaving or a benefit refused; `primary` otherwise. */
   tone?: 'danger' | 'primary';
   busy?: boolean;
+  /**
+   * Holds the confirming button until `children` has what it needs — never as a substitute for
+   * the person having read the consequence. Distinct from `busy`, which means "in flight" and
+   * says so on the button; this one leaves the verb in place, because the act has not been
+   * attempted and the reason it cannot be is stated beside the missing field.
+   */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /**
+   * One fact the confirmation itself needs, rendered between the consequence and the buttons.
+   *
+   * Deliberately narrow. This is not a form slot: a confirmation that collects several fields is
+   * a form and belongs on a page. It exists for the case where the act is only recordable WITH a
+   * fact the person is holding — confirming an EFT requires the bank's own reference, and an
+   * execution recorded without one is a claim marked paid that nobody can trace to a transfer.
+   * Asking for it on a separate screen first would put the confirmation after the commitment.
+   */
+  children?: ReactNode;
 }
 
 export function ConfirmAct({
@@ -62,8 +79,10 @@ export function ConfirmAct({
   confirmLabel,
   tone = 'primary',
   busy = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
+  children,
 }: ConfirmActProps) {
   return (
     <section
@@ -90,6 +109,8 @@ export function ConfirmAct({
         {reversal}
       </p>
 
+      {children && <div className="mt-2.5">{children}</div>}
+
       <div className="mt-3 flex items-center gap-1.5">
         {/* The confirming button carries the VERB, never "Confirm" or "Yes".
             Two identical-looking buttons a click apart is how a second click
@@ -98,7 +119,7 @@ export function ConfirmAct({
           type="button"
           size="sm"
           variant={tone === 'danger' ? 'danger' : 'primary'}
-          disabled={busy}
+          disabled={busy || confirmDisabled}
           onClick={onConfirm}
         >
           {busy ? 'Working…' : confirmLabel}

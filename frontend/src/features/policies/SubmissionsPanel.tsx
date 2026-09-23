@@ -57,7 +57,8 @@ interface Props {
   onAccept: (submissionId: string) => void;
   onWithdraw: (submissionId: string) => void;
   deciding: boolean;
-  reportHref: (submissionId: string) => string;
+  /** Fetches the lender's report and saves it. Rejects if the request fails. */
+  onDownloadReport: (submissionId: string) => Promise<void>;
   /** Rendered under the selected submission: the rows and their reasons. */
   children?: React.ReactNode;
 }
@@ -79,11 +80,15 @@ export function SubmissionsPanel({
   onAccept,
   onWithdraw,
   deciding,
-  reportHref,
+  onDownloadReport,
   children,
 }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  // Which report is in flight, and whether the last one failed. A download that silently does
+  // nothing is the worst available outcome here -- the person assumes they have the file.
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<{ id: string; act: 'accept' | 'withdraw' } | null>(
     null,
   );
@@ -99,6 +104,18 @@ export function SubmissionsPanel({
     }
     setFileError(null);
     onUpload(file);
+  }
+
+  async function downloadReport(submissionId: string) {
+    setReportError(null);
+    setDownloading(submissionId);
+    try {
+      await onDownloadReport(submissionId);
+    } catch {
+      setReportError('That report could not be downloaded. Try again, or reload the page.');
+    } finally {
+      setDownloading(null);
+    }
   }
 
   return (
@@ -138,6 +155,11 @@ export function SubmissionsPanel({
       {fileError && (
         <p role="alert" className="border-b border-border px-4 py-2 text-xs text-status-danger-fg">
           {fileError}
+        </p>
+      )}
+      {reportError && (
+        <p role="alert" className="border-b border-border px-4 py-2 text-xs text-status-danger-fg">
+          {reportError}
         </p>
       )}
       {uploadError && <ErrorPanel error={uploadError} />}
@@ -252,14 +274,20 @@ export function SubmissionsPanel({
                       </dt>
                       <dd className="text-sm font-semibold tabular-nums">{s.appliedCount}</dd>
                     </div>
-                    <a
-                      className="text-xs underline underline-offset-2 hover:text-foreground"
-                      href={reportHref(s.submissionId)}
-                      download
+                    {/* A button, not a link. The report is behind the same bearer token as
+                        everything else on this page, and an anchor carries none -- see
+                        `downloadEnrolmentReport` for what that actually produced. */}
+                    <button
+                      type="button"
+                      className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+                      disabled={downloading === s.submissionId}
+                      onClick={() => void downloadReport(s.submissionId)}
                     >
                       <Download className="mr-1 inline size-3.5" aria-hidden />
-                      Report for the lender
-                    </a>
+                      {downloading === s.submissionId
+                        ? 'Preparing the report…'
+                        : 'Report for the lender'}
+                    </button>
                   </dl>
 
                   {isPending && (

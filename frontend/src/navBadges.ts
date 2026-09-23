@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { DUNNING_LEVELS, LAPSE_RECOMMENDATION_LEVEL, searchArrears, searchFieldReceipts } from '@/api/billing';
 import { searchClaims } from '@/api/claims';
 import { PARTY_AREAS, searchParties } from '@/api/party';
+import { listAwaitingEftExecution } from '@/api/payments';
 import { listCases } from '@/api/underwriting';
 import type { Realm } from '@/auth/realms';
 import { navFor, type BadgeKey } from '@/screens';
@@ -99,6 +100,13 @@ const LOADERS: Record<BadgeKey, { load: () => Promise<number>; title: (n: number
       (await searchFieldReceipts({ status: 'RECONCILIATION_OVERDUE', pageSize: 1 })).page
         .totalElements ?? 0,
     title: (n) => `${plural(n, 'receipt', 'receipts')} past the reconciliation SLA`,
+  },
+  /* Money the insurer owes and has not paid. No count endpoint and none wanted: the queue is
+     what is waiting on a human being, so it is short by construction, and a length is honest
+     where a totalElements from a paged search would not be. */
+  'eft-awaiting': {
+    load: async () => (await listAwaitingEftExecution()).length,
+    title: (n) => `${plural(n, 'bank transfer', 'bank transfers')} nobody has made yet`,
   },
 };
 

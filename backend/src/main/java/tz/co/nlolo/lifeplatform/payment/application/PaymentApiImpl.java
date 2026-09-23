@@ -647,7 +647,8 @@ public class PaymentApiImpl implements PaymentApi {
     private static DisbursementStatusView toView(DisbursementInstruction d) {
         return new DisbursementStatusView(d.getDisbursementId(), d.getIdempotencyKey(),
             DisbursementStatus.valueOf(d.getStatus()), d.getAmount(), d.getCurrency(), d.getPurpose(),
-            d.getGatewayReference(), d.getSourceRef(), d.getBatchId());
+            d.getGatewayReference(), d.getSourceRef(), d.getBatchId(),
+            d.getPayeeRef(), d.getCreatedAt());
     }
 
     private static PaymentStatusView toView(PaymentTransaction p) {

@@ -1,7 +1,12 @@
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { enrolmentReportPath, exitsReportPath } from '@/api/creditLife';
+import {
+  downloadEnrolmentReport,
+  downloadExitsReport,
+  enrolmentReportFileName,
+  exitsReportFileName,
+} from '@/api/creditLife';
 import type { EnrolmentRowView, ExitRowView } from '@/api/types';
 import { DetailLayout } from '@/components/DetailLayout';
 import { Field } from '@/components/Field';
@@ -13,6 +18,7 @@ import { EmptyState, ErrorPanel, LoadingBlock, TableSkeleton } from '@/component
 import type { ApiError } from '@/lib/apiError';
 import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/dates';
+import { saveBlob } from '@/lib/download';
 import { NO_VALUE, formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -257,7 +263,9 @@ export function CreditLifeSchemePage() {
           }
           onWithdraw={(id) => void store.withdrawEnrolment(policyNumber, id)}
           deciding={decidingEnrolment.status === 'loading'}
-          reportHref={(id) => enrolmentReportPath(policyNumber, id)}
+          onDownloadReport={async (id) =>
+            saveBlob(await downloadEnrolmentReport(policyNumber, id), enrolmentReportFileName(id))
+          }
         >
           <EnrolmentRows
             rows={enrolmentRows.data ?? []}
@@ -287,7 +295,9 @@ export function CreditLifeSchemePage() {
           }
           onWithdraw={(id) => void store.withdrawExits(policyNumber, id)}
           deciding={decidingExits.status === 'loading'}
-          reportHref={(id) => exitsReportPath(policyNumber, id)}
+          onDownloadReport={async (id) =>
+            saveBlob(await downloadExitsReport(policyNumber, id), exitsReportFileName(id))
+          }
         >
           <ExitRows rows={exitRows.data ?? []} loading={isInitialLoad(exitRows)} error={exitRows.error} />
         </SubmissionsPanel>

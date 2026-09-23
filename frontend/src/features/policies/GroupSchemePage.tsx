@@ -190,8 +190,18 @@ export function GroupSchemePage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div>
               <h2 className="text-sm font-semibold">Members</h2>
+              {/* Two sentences, because one of them would be a lie on the other kind of scheme.
+                  An employer member's stored cover IS their cover today. A credit-life member's
+                  is their cover on the day they were enrolled: the amount insured is the loan
+                  balance, it falls every month, and the declining figure is recomputed at the
+                  date of event when a claim is registered -- never stored, because materialising
+                  a row per repayment would be tens of thousands of rows per file. So this column
+                  is cover at inception, and saying "today" over it overstates every borrower who
+                  has made a repayment. */}
               <p className="text-xs text-muted-foreground">
-                Each row shows the benefit in force for that person today.
+                {data?.benefitBasis === 'AMORTISING_LOAN'
+                  ? 'Each row shows the cover this borrower was enrolled at. A claim pays what they still owed on the day.'
+                  : 'Each row shows the benefit in force for that person today.'}
               </p>
             </div>
             <div className="flex items-center gap-1">

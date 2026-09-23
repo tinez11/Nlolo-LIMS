@@ -103,7 +103,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/PaymentStatusView' }
+                items: { $ref: '#/components/schemas/AwaitingEftView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /disbursements/{disbursementId}/eft-execution:
     post:
@@ -195,6 +195,35 @@ paths:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    AwaitingEftView:
+      type: object
+      additionalProperties: false
+      description: >
+        One bank transfer somebody has to go and make. Deliberately NOT PaymentStatusView, which
+        answers "what became of this payment" about a payment the caller already knows about.
+        Nothing else on the platform tells a finance officer these exist, so the row carries what
+        the act needs: who is paid, what for, how much, and since when.
+      required: [disbursementId, amount, payeeRef, sourceRef, waitingSince]
+      properties:
+        disbursementId: { type: string, format: uuid }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        payeeRef:
+          type: string
+          description: >
+            The payee as the ordering module recorded them, NOT a resolved name — this platform
+            has no party-name lookup on this path, and a printed reference the claim was settled
+            against beats an invented name.
+        purpose: { type: [string, "null"] }
+        sourceRef:
+          type: string
+          description: What this pays; a claim settlement carries the claim's own reference.
+        waitingSince:
+          type: string
+          format: date-time
+          description: >
+            When the instruction was raised. Not decoration: every row here is money the insurer
+            owes and has not paid, and on a credit-life claim an ageing row is a lender still
+            carrying a dead borrower's loan.
     PaymentStatusView:
       type: object
       additionalProperties: false

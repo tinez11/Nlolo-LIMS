@@ -142,17 +142,47 @@ export function withdrawExitSubmission(
 /* --------------------------------------------------------------------- report */
 
 /**
- * The report path for either file kind.
+ * The report that goes back to the lender, for either file kind.
  *
- * Returned as a URL rather than fetched, because the report is a download the browser handles —
- * and because it is the deliverable rather than a courtesy: `member_reference` is its first data
- * column, and that column is the only place a lender ever learns the reference the insurer
- * minted for each borrower.
+ * <b>This is the deliverable rather than a courtesy.</b> `member_reference` is its first data
+ * column, and that column is the only place a lender ever learns the reference the insurer minted
+ * for each borrower; the refusal reasons beside it are the only place they learn which of their
+ * customers is uninsured.
+ *
+ * <b>Fetched as a blob, not linked to.</b> It was an `<a href download>` pointing straight at the
+ * endpoint, which could not work and did not: this SPA keeps its tokens in memory, so an anchor
+ * is an anonymous request. Prefixed it is a 401; unprefixed — which is how it shipped — the dev
+ * server answers the unknown path with `index.html` and the browser saves the console's own HTML
+ * under the name the person expected. They get a file. It is the wrong file. They forward it to
+ * the lender. `downloadClaimEvidence` established the authenticated-blob pattern; this follows it.
+ *
+ * The file name mirrors the server's own `Content-Disposition`, which an XHR does not surface to
+ * the page.
  */
-export function enrolmentReportPath(policyNumber: string, submissionId: string): string {
-  return `/credit-life-schemes/${encodeURIComponent(policyNumber)}/enrolments/${encodeURIComponent(submissionId)}/report`;
+export function downloadEnrolmentReport(policyNumber: string, submissionId: string): Promise<Blob> {
+  return get<Blob>(
+    `/credit-life-schemes/${encodeURIComponent(policyNumber)}/enrolments/${encodeURIComponent(submissionId)}/report`,
+    // Accept: text/csv OVERRIDES the client's default application/json. The endpoint declares
+    // produces = "text/csv", so Spring answered a plain 406 to every request this console made --
+    // the download failed for a reason that had nothing to do with the report.
+    { responseType: 'blob', headers: { Accept: 'text/csv' } },
+  );
 }
 
-export function exitsReportPath(policyNumber: string, submissionId: string): string {
-  return `/credit-life-schemes/${encodeURIComponent(policyNumber)}/exits/${encodeURIComponent(submissionId)}/report`;
+export function enrolmentReportFileName(submissionId: string): string {
+  return `enrolment-report-${submissionId}.csv`;
+}
+
+export function downloadExitsReport(policyNumber: string, submissionId: string): Promise<Blob> {
+  return get<Blob>(
+    `/credit-life-schemes/${encodeURIComponent(policyNumber)}/exits/${encodeURIComponent(submissionId)}/report`,
+    // Accept: text/csv OVERRIDES the client's default application/json. The endpoint declares
+    // produces = "text/csv", so Spring answered a plain 406 to every request this console made --
+    // the download failed for a reason that had nothing to do with the report.
+    { responseType: 'blob', headers: { Accept: 'text/csv' } },
+  );
+}
+
+export function exitsReportFileName(submissionId: string): string {
+  return `exits-report-${submissionId}.csv`;
 }

@@ -1,9 +1,11 @@
 import {
+  Banknote,
   BookText,
   Building2,
   ClipboardCheck,
   FileText,
   HandCoins,
+  Landmark,
   MessageSquare,
   Package,
   Receipt,
@@ -25,6 +27,7 @@ import { MessagesPage } from '@/features/communications/MessagesPage';
 import { TemplatesPage } from '@/features/communications/TemplatesPage';
 import { ArrearsPage } from '@/features/billing/ArrearsPage';
 import { FieldReceiptsPage } from '@/features/billing/FieldReceiptsPage';
+import { EftExecutionPage } from '@/features/payments/EftExecutionPage';
 import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
 import { ClaimsPage } from '@/features/claims/ClaimsPage';
 import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
@@ -40,6 +43,7 @@ import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
 import { EditClientPage } from '@/features/party/EditClientPage';
 import { PartyDetailPage } from '@/features/party/PartyDetailPage';
 import { CreditLifeSchemePage } from '@/features/policies/CreditLifeSchemePage';
+import { IssueCreditLifeSchemePage } from '@/features/policies/IssueCreditLifeSchemePage';
 import { GroupSchemePage } from '@/features/policies/GroupSchemePage';
 import { IssueGroupSchemePage } from '@/features/policies/IssueGroupSchemePage';
 import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
@@ -106,7 +110,8 @@ export type BadgeKey =
   | 'claims-unassessed'
   | 'claims-settlement-pending'
   | 'arrears-at-lapse'
-  | 'receipts-overdue';
+  | 'receipts-overdue'
+  | 'eft-awaiting';
 
 interface NavPlacement {
   group: NavGroupId;
@@ -214,6 +219,20 @@ const STAFF_SCREENS: Screen[] = [
     path: 'group-schemes/new',
     element: <IssueGroupSchemePage />,
     reach: { group: 'new-business', label: 'Group scheme', icon: Users },
+  },
+  // Its own nav item beside Group scheme rather than a fourth option inside it, because the
+  // two are not the same act on different data. That form proposes an underwriting case about
+  // a schedule of employees; underwriting's own benefit-basis enum has three values and its
+  // member line has no room for a loan, so credit life could not travel that road without
+  // widening four records and first deciding what underwriting a BOOK means. This one agrees
+  // terms with a lender and issues.
+  //
+  // Until it existed, the console could not create a credit-life scheme at all: every one on
+  // this platform was made with curl.
+  {
+    path: 'credit-life-schemes/new',
+    element: <IssueCreditLifeSchemePage />,
+    reach: { group: 'new-business', label: 'Credit-life scheme', icon: Landmark },
   },
   // Drill-in from the policy record, not a nav item. An existing scheme is reached
   // by finding the contract first -- the same way a policy is -- and a sidebar
@@ -381,6 +400,17 @@ const STAFF_SCREENS: Screen[] = [
     path: 'field-receipts',
     element: <FieldReceiptsPage />,
     reach: { group: 'finance', label: 'Field receipts', icon: HandCoins, badge: 'receipts-overdue' },
+  },
+  // The third work queue, and the only one where the platform is the one who owes. Arrears and
+  // field receipts are both about money coming IN and the platform can chase either by itself;
+  // an EFT cannot move without a person, because the rail has no integration and no callback.
+  // Both its endpoints shipped with credit-life plan 4 and NOTHING called them, so a claim could
+  // be approved, valued and instructed and then simply stop, with no screen anywhere admitting
+  // the instruction existed. A queue that could only fill.
+  {
+    path: 'bank-transfers',
+    element: <EftExecutionPage />,
+    reach: { group: 'finance', label: 'Bank transfers', icon: Banknote, badge: 'eft-awaiting' },
   },
   {
     path: 'gl-postings',

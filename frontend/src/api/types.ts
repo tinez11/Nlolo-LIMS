@@ -16,6 +16,7 @@ import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
 import type { components as CommunicationComponents } from '@/types/api/communication';
 import type { components as PartyComponents } from '@/types/api/party';
+import type { components as PaymentComponents } from '@/types/api/payment';
 import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { components as FinaccountingComponents } from '@/types/api/finaccounting';
@@ -57,6 +58,16 @@ export type ExitRowView = PolicyComponents['schemas']['ExitRowView'];
 /** PENDING / ACCEPTED / WITHDRAWN. PENDING is the one that matters: it means NOTHING has happened yet. */
 export type SubmissionStatus = NonNullable<EnrolmentSubmissionView['status']>;
 export type MemberStatus = NonNullable<PolicyMemberView['status']>;
+
+/**
+ * One bank transfer a finance officer has to go and make.
+ *
+ * The console's first reach into the payment spec at all, and it exists because the EFT rail has
+ * no callback: a mobile-money payout completes itself when the aggregator calls back, while a
+ * credit-life claim's millions go by bank transfer and complete only when a person records that
+ * they moved the money.
+ */
+export type AwaitingEftView = PaymentComponents['schemas']['AwaitingEftView'];
 /**
  * Four states, not a boolean. `EVIDENCE_REQUIRED` and `DECLINED` produce the same
  * covered amount and mean opposite things about whether anyone is still waiting.

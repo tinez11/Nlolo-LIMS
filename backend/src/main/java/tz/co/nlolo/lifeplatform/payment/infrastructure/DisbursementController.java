@@ -50,12 +50,19 @@ public class DisbursementController {
         this.paymentApiImpl = paymentApiImpl;
     }
 
-    /** The work queue: what this tenant owes by bank transfer and has not paid yet. */
+    /**
+     * The work queue: what this tenant owes by bank transfer and has not paid yet.
+     *
+     * <p>Answered with {@link AwaitingEftResponseDto} rather than the generic status envelope,
+     * because nothing else on the platform tells a finance officer these exist. A row therefore
+     * has to carry the payee, the purpose and the age, not just an id and an amount — see that
+     * record for why the generic shape made this queue unbuildable.
+     */
     @GetMapping("/disbursements/awaiting-execution")
     @PreAuthorize("hasRole('FINANCE_OFFICER')")
-    public ResponseEntity<List<PaymentStatusResponseDto>> listAwaitingExecution() {
+    public ResponseEntity<List<AwaitingEftResponseDto>> listAwaitingExecution() {
         List<DisbursementStatusView> awaiting = paymentApi.listAwaitingEftExecution();
-        return ResponseEntity.ok(awaiting.stream().map(PaymentStatusResponseDto::from).toList());
+        return ResponseEntity.ok(awaiting.stream().map(AwaitingEftResponseDto::from).toList());
     }
 
     /**

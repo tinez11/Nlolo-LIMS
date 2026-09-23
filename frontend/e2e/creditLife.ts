@@ -7,14 +7,13 @@ import { resolve } from 'node:path';
  * A credit-life scheme with one pending enrolment file, built over the API for the browser to
  * act on.
  *
- * ## Why this one fixture is not built through the console
+ * ## Why this fixture is not built through the console
  *
- * Every other staff fixture in this suite is made by driving the screen a person would use —
- * `issueRealPolicy` fills the manual-issue form, `createGroupProduct` fills the product form. That
- * is the right default and it is not what happens here, for a reason worth writing down: **there
- * is no console form that creates a credit-life scheme.** The page this spec exercises manages a
- * scheme's monthly files; setting one up is still an API-only act. Driving a form that does not
- * exist is not an option, and waiting for one would leave the page with no coverage at all.
+ * The console CAN set one up now — `IssueCreditLifeSchemePage`, and a spec below drives it. This
+ * fixture exists anyway, and deliberately, for the specs that are about what happens to a scheme
+ * rather than about creating one. Going through the form every time would make every assertion
+ * about enrolment depend on the set-up form still working, so one broken field would fail the
+ * lot and none of the failures would name the enrolment behaviour they were meant to check.
  *
  * ## What is still real
  *
@@ -131,65 +130,99 @@ async function postJson(
   return body ? (JSON.parse(body) as Record<string, unknown>) : {};
 }
 
+export interface CreditLifeFixtures {
+  lenderName: string;
+  lenderPartyId: string;
+  productId: string;
+  /** Exactly as the product <select> renders it: "name (code)". */
+  productLabel: string;
+  productVersionId: string;
+}
+
+/**
+ * A lender and a published credit-life product — everything a scheme needs except the scheme.
+ *
+ * Split out from `seedCreditLifeScheme` so a spec can drive the console's own set-up form
+ * against real, freshly authored products rather than asserting it against whatever a shared
+ * dev database happens to hold.
+ */
+export async function seedCreditLifeFixtures(
+  http: APIRequestContext,
+  token: string,
+): Promise<CreditLifeFixtures> {
+  const suffix = Date.now().toString().slice(-8);
+  const lenderName = `E2E Microfinance ${suffix}`;
+
+  const lender = await postJson(http, token, '/parties/corporates', {
+    registeredName: lenderName,
+    registrationNumber: `REG-E2E-${suffix}`,
+    contactInfo: { phoneNumber: '+255712000111', email: `ops-${suffix}@lender.example` },
+  });
+
+  const productName = `E2E Credit Life ${suffix}`;
+  const productCode = `CL-E2E-${suffix}`;
+  const product = await postJson(http, token, '/products', {
+    productCode,
+    productName,
+    category: 'CREDIT_LIFE',
+    defaultCurrency: 'TZS',
+  });
+  const productId = product.productId as string;
+
+  // A version must be PUBLISHED before anything can be issued against it, the rating table must
+  // cover AGE and SUM_ASSURED_BAND, and the TIRA filing is mandatory as of V12 -- the same three
+  // rules the group-scheme spec's product fixture obeys through the form.
+  await postJson(http, token, `/products/${productId}/versions`, {
+    ifrsMeasurementModel: 'PAA',
+    effectiveDate: '2026-01-01',
+    tiraFiling: { reference: `TIRA/E2E/CL/${suffix}`, approvalDate: '2026-01-15' },
+    ratingTable: [
+      { factorType: 'AGE', band: '18-70', multiplier: 1.0, ageFrom: 18, ageTo: 70 },
+      { factorType: 'SUM_ASSURED_BAND', band: 'LOW', multiplier: 1.0 },
+    ],
+    benefitSchedule: [{ benefitType: 'DEATH', calculationMethod: 'SUM_ASSURED' }],
+  });
+
+  const snapshot = await (
+    await http.get(`${API}/products/${productId}/active-snapshot`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  ).json();
+  const productVersionId = snapshot.productVersionId as string;
+
+  const exclusions = await http.put(
+    `${API}/products/${productId}/versions/${productVersionId}/exclusion-periods`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { suicideExclusionMonths: 12, preExistingExclusionMonths: 12 },
+    },
+  );
+  expect(exclusions.ok(), `exclusion-periods -> ${exclusions.status()}`).toBeTruthy();
+
+  return {
+    lenderName,
+    lenderPartyId: lender.partyId as string,
+    productId,
+    productLabel: `${productName} (${productCode})`,
+    productVersionId,
+  };
+}
+
 /**
  * Creates a lender, a CREDIT_LIFE product, a scheme with one opening borrower, and uploads a
  * pending enrolment file against it.
  *
  * Authors its own product rather than looking for a seeded one, the same choice
- * `staff-group-schemes.spec.ts` makes and for the same reason: no CREDIT_LIFE product is in the
- * seed, and a spec that hunted for "some credit-life product" would pass vacuously on a tenant
- * that had none.
+ * `staff-group-schemes.spec.ts` makes and for the same reason: a spec that hunted for "some
+ * credit-life product" would pass vacuously on a tenant that had none.
  */
 export async function seedCreditLifeScheme(): Promise<CreditLifeScheme> {
   const http = await apiRequest.newContext();
   try {
     const token = await staffToken(http, 'staff.admin');
-    const suffix = Date.now().toString().slice(-8);
-    const lenderName = `E2E Microfinance ${suffix}`;
+    const { lenderName, lenderPartyId, productId, productVersionId } =
+      await seedCreditLifeFixtures(http, token);
 
-    const lender = await postJson(http, token, '/parties/corporates', {
-      registeredName: lenderName,
-      registrationNumber: `REG-E2E-${suffix}`,
-      contactInfo: { phoneNumber: '+255712000111', email: `ops-${suffix}@lender.example` },
-    });
-
-    const product = await postJson(http, token, '/products', {
-      productCode: `CL-E2E-${suffix}`,
-      productName: `E2E Credit Life ${suffix}`,
-      category: 'CREDIT_LIFE',
-      defaultCurrency: 'TZS',
-    });
-    const productId = product.productId as string;
-
-    // A version must be PUBLISHED before anything can be issued against it, the rating table must
-    // cover AGE and SUM_ASSURED_BAND, and the TIRA filing is mandatory as of V12 -- the same three
-    // rules the group-scheme spec's product fixture obeys through the form.
-    await postJson(http, token, `/products/${productId}/versions`, {
-      ifrsMeasurementModel: 'PAA',
-      effectiveDate: '2026-01-01',
-      tiraFiling: { reference: `TIRA/E2E/CL/${suffix}`, approvalDate: '2026-01-15' },
-      ratingTable: [
-        { factorType: 'AGE', band: '18-70', multiplier: 1.0, ageFrom: 18, ageTo: 70 },
-        { factorType: 'SUM_ASSURED_BAND', band: 'LOW', multiplier: 1.0 },
-      ],
-      benefitSchedule: [{ benefitType: 'DEATH', calculationMethod: 'SUM_ASSURED' }],
-    });
-
-    const snapshot = await (
-      await http.get(`${API}/products/${productId}/active-snapshot`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    ).json();
-    const productVersionId = snapshot.productVersionId as string;
-
-    const exclusions = await http.put(
-      `${API}/products/${productId}/versions/${productVersionId}/exclusion-periods`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        data: { suicideExclusionMonths: 12, preExistingExclusionMonths: 12 },
-      },
-    );
-    expect(exclusions.ok(), `exclusion-periods -> ${exclusions.status()}`).toBeTruthy();
 
     /*
      * The scheme itself. Two things here are credit-life specific and were unreachable over HTTP
@@ -202,7 +235,7 @@ export async function seedCreditLifeScheme(): Promise<CreditLifeScheme> {
      * needs a scheme IN FORCE, and this console has no action that accepts an offer.
      */
     const scheme = await postJson(http, token, '/group-schemes', {
-      policyholderPartyId: lender.partyId,
+      policyholderPartyId: lenderPartyId,
       productId,
       productVersionId,
       benefitBasis: 'AMORTISING_LOAN',

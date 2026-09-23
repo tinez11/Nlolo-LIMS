@@ -1,5 +1,13 @@
-import { expect, test } from '@playwright/test';
-import { ENROLMENT_PASSING, ENROLMENT_REFUSED, seedCreditLifeScheme } from './creditLife';
+import { expect, request as apiRequest, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import {
+  ENROLMENT_PASSING,
+  ENROLMENT_REFUSED,
+  seedCreditLifeFixtures,
+  seedCreditLifeScheme,
+  staffToken,
+} from './creditLife';
+import { dmy } from './dates';
 
 /**
  * A lender's month on a credit-life scheme, in a browser, against the real stack.
@@ -81,9 +89,21 @@ test.describe('staff credit-life scheme', () => {
     const firstRow = page.getByRole('table').last().locator('tbody tr').first();
     await expect(firstRow).toContainText('borrower_full_name is blank');
 
-    // The report is offered per file, because it is the only place the lender ever learns the
-    // references the insurer minted.
-    await expect(page.getByRole('link', { name: 'Report for the lender' }).first()).toBeVisible();
+    /*
+     * THE REPORT DOWNLOADS, and this asserts the bytes rather than the affordance. It was an
+     * anchor pointing straight at the endpoint, which cannot carry this SPA's in-memory token:
+     * the request went out anonymous, the dev server answered the unknown path with index.html,
+     * and the browser saved the console's own HTML under the name the person expected. A visible
+     * control proved nothing about that; a saved file's first line does.
+     */
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Report for the lender' }).first().click();
+    const saved = await download;
+    expect(saved.suggestedFilename()).toMatch(/^enrolment-report-.*\.csv$/);
+    const reportText = readFileSync(await saved.path(), 'utf8');
+    expect(reportText, 'the report must be CSV, not the console').not.toContain('<!doctype html');
+    // member_reference leads, because it is the only place the lender ever learns them.
+    expect(reportText.split('\n')[0]).toContain('member_reference');
 
     /*
      * NO EMPLOYER-SCHEME FURNITURE. A credit-life scheme has no grades and no salary multiple:
@@ -138,6 +158,82 @@ test.describe('staff credit-life scheme', () => {
      */
     await expect(page.getByRole('columnheader', { name: 'Reference' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Grade / salary' })).toHaveCount(0);
+  });
+
+  test('a credit-life scheme can be set up from the console at all', async ({ page }) => {
+    /*
+     * Until this page existed the answer was no. The group-scheme form offers three bases and
+     * none of them is AMORTISING_LOAN, so every credit-life scheme on this platform — including
+     * the fixtures in this very file — was created with an API call. A product could be authored,
+     * a lender registered, enrolment files parsed and judged, and the one act that starts the
+     * whole thing could only be done by somebody with curl.
+     */
+    test.slow();
+    const http = await apiRequest.newContext();
+    let fixtures;
+    try {
+      fixtures = await seedCreditLifeFixtures(http, await staffToken(http, 'staff.admin'));
+    } finally {
+      await http.dispose();
+    }
+
+    await page.goto('/staff/credit-life-schemes/new');
+    await expect(page.getByRole('heading', { name: 'Set up a credit-life scheme' })).toBeVisible();
+
+    // The lender, by name, through the same picker every other party field on this console uses.
+    await page.getByRole('button', { name: 'Search for the lender by name' }).click();
+    await page.getByPlaceholder('Type a name to search').fill('E2E Microfinance');
+    await page.getByRole('option', { name: fixtures.lenderName }).click();
+
+    // Only CREDIT_LIFE products are offered. A term-life product here would be a 409 after the
+    // form, which is the version of this that wastes somebody's afternoon.
+    await page.getByLabel('Product').selectOption({ label: fixtures.productLabel });
+
+    await page.getByLabel('Premium rate (% of each loan)').fill('0.5');
+    await page.getByLabel('Free cover limit (optional)').fill('600000000.00');
+    await page.getByLabel('Premium on the opening loan').fill('52000.00');
+    // Before the opening borrower's loan. A book being onboarded always has loans older than
+    // today, and a member cannot join a scheme that did not exist yet -- the form asks for this
+    // rather than letting the server refuse the whole submission over a date it never showed.
+    await page.getByLabel('Risk commences').fill(dmy('2026-06-01'));
+
+    // MIGRATION is the default and it is load-bearing: an offer cannot receive an enrolment file
+    // until its first premium clears and nothing in this console accepts an offer, so a scheme
+    // created as one would be unusable. The form says so; this proves the default is the usable
+    // one rather than trusting the sentence.
+    await expect(page.getByLabel('Why this scheme is in force')).toHaveValue('MIGRATION');
+
+    await page.getByLabel("Borrower's full name").fill('Amina Hassan Mwinyi');
+    await page.getByLabel('Date of birth').fill(dmy('1988-03-14'));
+    await page.getByLabel('Amount borrowed').fill('2400000.00');
+    await page.getByLabel('Term (months)').fill('18');
+    await page.getByLabel('Disbursed on').fill(dmy('2026-08-03'));
+    await page.getByLabel('First repayment due').fill(dmy('2026-09-03'));
+
+    await page.getByRole('button', { name: 'Set up the scheme' }).click();
+
+    /*
+     * Lands on the MONTHLY FILES, not on the policy record. The policy record answers "one
+     * contract, one life, total X" — true, and not what somebody who has just onboarded a lender
+     * is about to do. The next act is always the first enrolment file.
+     */
+    await expect(page).toHaveURL(/\/staff\/credit-life-schemes\/GRP-[A-Z0-9]+$/, {
+      timeout: 30_000,
+    });
+    await expect(page.getByText(fixtures.lenderName)).toBeVisible({ timeout: 20_000 });
+    // In force on arrival, and therefore able to take a file — which is the whole point of the
+    // issuance-basis default above.
+    await expect(page.getByText('Active', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Borrowers joining' })).toBeVisible();
+
+    // One life on cover: the opening borrower, and nobody the form invented.
+    const livesOnCover = page
+      .locator('div')
+      .filter({ has: page.locator('dt', { hasText: /^Lives on cover$/ }) })
+      .last()
+      .locator('dd')
+      .first();
+    await expect(livesOnCover).toHaveText('1');
   });
 
   test('an exits file must be a CSV, and is refused before the network', async ({ page }) => {
