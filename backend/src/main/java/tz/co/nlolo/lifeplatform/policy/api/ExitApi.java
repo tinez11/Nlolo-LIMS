@@ -48,6 +48,17 @@ public interface ExitApi {
     /** Every row in the lender's own line order. */
     List<ExitRowView> listRows(UUID submissionId);
 
+    /**
+     * Every exits file this scheme has had, newest first.
+     *
+     * <p>Same reason as the enrolment equivalent: every other operation here takes a
+     * {@code submissionId} the caller is assumed to already hold, which is true of the upload
+     * flow and false of anybody arriving at a scheme cold.
+     *
+     * <p>Empty, never an exception, for a scheme that has had none.
+     */
+    List<ExitSubmissionView> listSubmissions(String policyNumber);
+
     /** The report that goes back to the lender, as CSV. */
     String renderReport(UUID submissionId);
 }

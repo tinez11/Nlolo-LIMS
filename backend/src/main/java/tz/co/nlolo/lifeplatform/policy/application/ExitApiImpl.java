@@ -264,6 +264,19 @@ public class ExitApiImpl implements ExitApi {
         return toView(findSubmission(submissionId, TenantContext.get()));
     }
 
+    /**
+     * The scheme's exits history. Uses the repository's
+     * {@code findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc}, which existed with no caller
+     * until now — the ordering it already declared is the one this needs.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExitSubmissionView> listSubmissions(String policyNumber) {
+        return submissionRepository
+            .findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc(TenantContext.get(), policyNumber)
+            .stream().map(this::toView).toList();
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<ExitRowView> listRows(UUID submissionId) {
