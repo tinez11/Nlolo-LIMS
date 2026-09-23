@@ -3,7 +3,7 @@
 **Date:** 2026-09-21
 **Requirement:** §4 of the client's underwriting requirements table.
 **Status:** plans 1 and 2 built and merged. Eight of the nine client questions were
-answered on 2026-09-22 — see §0. §6 of the requirements table is still outstanding.
+answered on 2026-09-22 — see §0. §6 of the requirements table will NOT be supplied (§0b).
 
 ---
 
@@ -50,9 +50,22 @@ and the same three answers govern them.
 exclusions (R1), per-scheme limits and aggregation (R2), and a cession that can follow a
 changing sum assured (R3). That is a reinsurance build, not a credit-life one.
 
-**Still outstanding: §6 of the requirements table**, first requested 2026-09-03 and asked
-for six times. And **ten real rows in `credit-life-enrolment-sample.csv`** (§6 item 9), which
-would confirm by inspection every assumption the parser and judge were built on.
+### 0b. §6 of the requirements table is NOT COMING — closed 2026-09-23
+
+First requested 2026-09-03 and chased six times. The client has now said it will not be
+supplied, and to proceed on what we have. **It is closed, not outstanding**; stop asking.
+
+What that means in practice: §6 was never seen, so nothing was ever designed against it, and
+nothing is waiting on it. Every build to date was specified from §§1–5 and §7 plus the
+answers in §0 above. If §6 turns out to have contained a requirement this platform does not
+meet, it will surface as a change request against working software rather than as a gap in a
+half-built one — which is the better of the two ways to find out.
+
+**Still worth having, and separate:** ten real rows filled into
+`credit-life-enrolment-sample.csv` (the old §6 list, item 9). Much smaller than the
+requirements section, and it settles by inspection every assumption the parser and judge were
+built on — whether their sheets carry a term or a maturity date, a date of birth or an age,
+and what their disbursement dates actually look like. Not blocking anything.
 
 ---
 
@@ -475,7 +488,7 @@ Nine items. The last one answers four of the others by inspection and should be 
 6. Whether the **borrower** — not only the bank — is told when a row is rejected and they are
    uncovered (§3). Recommended yes.
 7. The **TIRA product class** this files under.
-8. **§6 of the requirements table**, outstanding since 2026-09-03 and requested five times.
+8. ~~**§6 of the requirements table**~~ — CLOSED 2026-09-23: the client confirmed it is not coming and to proceed on what we have. See §0b.
 9. **Ten real rows filled into `credit-life-enrolment-sample.csv`.** A smaller ask than §6,
    and it settles by inspection whether they hold a loan account number, whether they give a
    term or a maturity date, a date of birth or an age, and whether their stated rate is flat
