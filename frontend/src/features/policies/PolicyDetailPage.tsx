@@ -118,6 +118,18 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 </Link>
               </Button>
             )}
+            {/* A credit-life scheme goes to its OWN page rather than the member schedule. The
+                schedule answers "who is on this scheme"; a lender's book is administered one
+                monthly file at a time, and "what happened to this book this month" is the
+                question somebody arriving here actually has. The roll is reachable from there. */}
+            {isStaff && policy?.productCategory === 'CREDIT_LIFE' && (
+              <Button asChild size="sm">
+                <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
+                  <Users />
+                  Monthly files
+                </Link>
+              </Button>
+            )}
             {/* POST /policies/{n}/surrender genuinely returns 501 -- the surrender
                 choreography was deferred with the workflow engine. Rendered disabled
                 rather than as a live button that produces an error. */}

@@ -1033,19 +1033,34 @@ components:
         acceptedAt: { type: [string, 'null'], format: date-time }
     ExitRowView:
       type: object
-      description: One row of an exits file, with what the platform made of it.
+      description: >-
+        One row of an exits file, with what the platform made of it. Field-for-field from
+        policy/api/ExitRowView.java -- the first draft of this schema invented rowNumber,
+        reason-as-the-enum and outstandingBalance, none of which the record has, which is a spec
+        that lies about the API it documents.
       properties:
-        rowNumber: { type: integer }
+        lineNumber:
+          type: integer
+          description: The line in the lender's own file. 1 is the header.
         memberReference: { type: [string, 'null'] }
         exitDate: { type: [string, 'null'], format: date }
-        reason:
+        exitReason:
           type: [string, 'null']
           enum: [SETTLED_EARLY, REFINANCED, WRITTEN_OFF, CANCELLED, null]
-        outstandingBalance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+          description: Why the loan ended. A settled claim never arrives on this file.
+        outstandingBalanceAtExit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         outcome: { type: string, enum: [EXITED, REJECTED] }
         reasonCode:
           type: [string, 'null']
+          enum: [MISSING_REQUIRED_FIELD, MALFORMED_VALUE, UNKNOWN_MEMBER_REFERENCE, DUPLICATE_REFERENCE, ALREADY_EXITED, EXIT_BEFORE_COVER_STARTED, UNKNOWN_EXIT_REASON, null]
           description: Why this row was refused. Absent on a row that will exit.
+        reason:
+          type: [string, 'null']
+          description: The refusal in words, beside the code.
+        policyMemberId:
+          type: [string, 'null']
+          format: uuid
+          description: The member this row exits.
     EnrolmentSubmissionView:
       description: >-
         A lender's submitted schedule. enrolledCount is zero until the submission is

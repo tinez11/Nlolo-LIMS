@@ -39,6 +39,7 @@ import { ClientsPage } from '@/features/party/ClientsPage';
 import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
 import { EditClientPage } from '@/features/party/EditClientPage';
 import { PartyDetailPage } from '@/features/party/PartyDetailPage';
+import { CreditLifeSchemePage } from '@/features/policies/CreditLifeSchemePage';
 import { GroupSchemePage } from '@/features/policies/GroupSchemePage';
 import { IssueGroupSchemePage } from '@/features/policies/IssueGroupSchemePage';
 import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
@@ -219,6 +220,15 @@ const STAFF_SCREENS: Screen[] = [
   // entry would lead to a "paste a policy number" screen, which reads as broken
   // software (PLAN.md §7). The policy page links here when the policy is a scheme.
   { path: 'group-schemes/:policyNumber', element: <GroupSchemePage />, reach: 'drill-in' },
+  // A credit-life scheme gets its OWN page, not a branch inside GroupSchemePage: that page
+  // renders grades and a salary multiple, and this product has neither. Drill-in for the same
+  // reason its sibling above is -- a sidebar entry would lead to a "paste a policy number"
+  // screen. The policy record links here when the category is CREDIT_LIFE.
+  {
+    path: 'credit-life-schemes/:policyNumber',
+    element: <CreditLifeSchemePage />,
+    reach: 'drill-in',
+  },
 
   {
     path: 'claims',

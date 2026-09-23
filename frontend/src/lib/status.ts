@@ -83,6 +83,38 @@ export const STATUS_MAPS = {
   },
 
   // policy/api/MemberStatus.java -- a life on a group scheme.
+  // policy/api/SubmissionStatus.java -- a lender's monthly file, enrolment or exits.
+  //
+  // PENDING is `pending` and not `neutral`, and the distinction is the whole reason this map
+  // exists: a PENDING submission has changed NOTHING. Nobody is on cover, nobody is off it, and
+  // a second staff user has to accept it before either happens. Dressing that as neutral would
+  // let an uploaded file read as a finished one, which is the single most expensive misreading
+  // available on this screen -- borrowers a lender believes are insured and are not.
+  // policy/api/EnrolmentOutcome -- what one row of a lender's schedule became.
+  //
+  // ENROLLED_CAPPED is `warning` and NOT `success`, which is the only interesting decision in
+  // this map. That borrower IS covered -- to the free cover limit -- but not for the whole loan,
+  // and the excess is the lender's own credit risk. Colouring it like a clean enrolment would
+  // hide the one row on the file somebody may want to talk to the lender about.
+  enrolmentOutcome: {
+    ENROLLED: 'success',
+    ENROLLED_CAPPED: 'warning',
+    REJECTED: 'danger', // this borrower is not covered
+  },
+
+  // policy/api/ExitRowView.outcome. EXITED is `neutral` rather than `success`: cover ending is
+  // the file doing its job, not a good outcome for anybody in particular.
+  exitOutcome: {
+    EXITED: 'neutral',
+    REJECTED: 'danger',
+  },
+
+  submission: {
+    PENDING: 'pending',
+    ACCEPTED: 'success',
+    WITHDRAWN: 'neutral', // nothing happened, deliberately; the corrected file is the next one
+  },
+
   member: {
     ACTIVE: 'active',
     EXITED: 'neutral', // left the employer; the row stays, because claims arrive late

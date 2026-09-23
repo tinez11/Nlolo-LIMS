@@ -44,6 +44,18 @@ export type GroupSchemeView = PolicyComponents['schemas']['GroupSchemeView'];
 export type BenefitBasis = NonNullable<GroupSchemeView['benefitBasis']>;
 export type GroupSchemeGrade = PolicyComponents['schemas']['GroupSchemeGrade'];
 export type PolicyMemberView = PolicyComponents['schemas']['PolicyMemberView'];
+
+/**
+ * A lender's monthly files. The two submission views are structurally identical and differ in
+ * exactly one field -- `enrolledCount` where the other has `exitedCount` -- which is what lets one
+ * panel render both. They mean opposite things, so nothing above that panel should merge them.
+ */
+export type EnrolmentSubmissionView = PolicyComponents['schemas']['EnrolmentSubmissionView'];
+export type EnrolmentRowView = PolicyComponents['schemas']['EnrolmentRowView'];
+export type ExitSubmissionView = PolicyComponents['schemas']['ExitSubmissionView'];
+export type ExitRowView = PolicyComponents['schemas']['ExitRowView'];
+/** PENDING / ACCEPTED / WITHDRAWN. PENDING is the one that matters: it means NOTHING has happened yet. */
+export type SubmissionStatus = NonNullable<EnrolmentSubmissionView['status']>;
 export type MemberStatus = NonNullable<PolicyMemberView['status']>;
 /**
  * Four states, not a boolean. `EVIDENCE_REQUIRED` and `DECLINED` produce the same
