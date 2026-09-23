@@ -11,6 +11,7 @@
 ## Global Constraints
 
 - Spec §2.14, verbatim: *"`policy.GroupMemberAdded` and `GroupMemberExited` have **no consumer**, so `regreporting.policy_dimension`'s sum assured goes stale whenever membership changes. On an employer scheme that is occasional drift. Here members are added every month and exited on every settlement, so it is continuous — and it lands in a TIRA return. This is a pre-existing gap being inherited, not created, but credit life is what turns the leak into a running tap. It is in scope."*
+- **Where it lands *today*, stated so nobody over-claims the urgency:** the only return definition on the platform is `regreporting/V2`'s own seeded PLACEHOLDER, whose description says the line codes are invented and which exists under one hardcoded tenant. The real TIRA catalogue is C2-blocked. **That does not make this plan optional**, for one reason: the `policy_movement` rows are the permanent record, and movement that was never captured cannot be reconstructed later from anything. Whatever the final return asks for, it will be computed from rows written now.
 - `regreporting` may not depend on `policy`. It learns everything from event payloads and its own dimension tables (`db-migrations/regreporting/V2` section 5).
 - RLS predicates must use `NULLIF(current_setting('app.current_tenant_id', true), '')::uuid`. A bare cast raises on an unset GUC instead of matching nothing.
 - Every new migration must be added to the migration list of **every** test class that applies the regreporting migrations, or those tests fail on a missing column. Verified 2026-09-23: that is **9 files**, and they do **not** all stop at the same migration — see Task 1 Step 8, which lists them. `regreporting/V4__rls_fail_closed.sql` is applied by **no test at all**, the same pre-existing gap `audit/V2` and `payment/V5` have. Do not add V4 while doing this; it is its own change with its own blast radius.
@@ -49,18 +50,40 @@ delta = schemeTotalCovered − policy_dimension.sum_assured_amount
 
 A redelivered event finds the dimension already equal to the total it carries, computes a delta of zero, and does nothing. **Idempotency falls out of the arithmetic rather than being bolted on**, and the projection self-heals: a dropped event is corrected by the next one rather than leaving permanent drift.
 
-### Decision 2 — new columns, so the fix cannot corrupt a working metric
+### Decision 2 — new columns, because merging them destroys information that cannot be recovered
 
-`sum_assured_issued` feeds two metrics, and only one of them is broken:
+`sum_assured_issued` feeds two metrics:
 
-| Metric | Kind | Computed from | Status today |
+| Metric | Kind | Computed from | Where it stands |
 |---|---|---|---|
-| `SUM_ASSURED_IN_FORCE` | STOCK | `Σ issued − Σ terminated` | **Wrong** on any scheme whose membership has changed |
-| `NEW_BUSINESS_SUM_ASSURED` | FLOW | `Σ issued` | Correct |
+| `SUM_ASSURED_IN_FORCE` | STOCK | `Σ issued − Σ terminated` | **Wrong** on any scheme whose membership has changed — the bug this plan fixes |
+| `NEW_BUSINESS_SUM_ASSURED` | FLOW | `Σ issued` | **Also arguably wrong for credit life** — see below |
 
-Reusing `sum_assured_issued` for joiners would fix the first and change the second. Whether a borrower enrolled onto an existing scheme counts as *new business written* is a real actuarial question, and one this plan is not entitled to answer silently in a number that is filed with TIRA.
+**A correction worth making explicitly, because the first draft of this plan got it wrong.** That
+second row was originally described here as "correct, and filed". Neither is true, and both were
+asserted rather than checked:
 
-So: two new columns, `sum_assured_member_added` and `sum_assured_member_exited`, included in the STOCK metric and excluded from the FLOW metric. If Finance later rules that joiners are new business, that is a one-line change to `sumSumAssuredIssued` — a decision someone makes on purpose, rather than one they inherit.
+- **Not filed.** The only return definition that references `NEW_BUSINESS_SUM_ASSURED` is the one
+  `regreporting/V2` seeds, whose own description reads *"PLACEHOLDER pending the TIRA return
+  catalog (C2). Line codes and labels are invented."* It exists solely under the hardcoded tenant
+  `11111111-1111-1111-1111-111111111111`, and nothing copies it to a real tenant. No return is
+  filed from it today.
+- **Not obviously correct.** Line PL-04 is labelled *"New business sum assured in period"* and
+  counts policy activations only. A credit-life scheme that opens with one borrower and enrols
+  five hundred over the year would report that one borrower's cover as the period's new business.
+  For this product that is a material understatement, not a rounding matter.
+
+So the reason for separate columns is **not** "protect a correct number". It is that **merging
+them throws away a distinction that cannot be reconstructed**. Once member cover is added into
+`sum_assured_issued`, no query can ever again separate *cover from newly written schemes* from
+*cover from new members on existing schemes* — the stored data no longer carries the difference.
+With two columns either definition is computable, and whichever one the real TIRA catalogue turns
+out to ask for is a reporting decision rather than a migration.
+
+This plan therefore leaves `sumSumAssuredIssued` alone **as the status quo, not as an endorsement**.
+It is entirely possible that the right answer for credit life is to include member-added cover in
+new business; that is a question for whoever owns the return catalogue (C2), and including it
+later is one `.add(...)` against a column that will already hold the right number.
 
 ### Decision 3 — the last member out is the close event's business, not ours
 
@@ -203,8 +226,14 @@ Create `backend/db-migrations/regreporting/V5__member_movement_columns.sql`:
 -- that total once, at activation, and nothing has ever updated it: policy.GroupMemberAdded and
 -- policy.GroupMemberExited had no consumer at all. On an employer scheme that is occasional
 -- drift. On credit life, members are added every month in files of several hundred and exited on
--- every settled claim, so SUM_ASSURED_IN_FORCE -- which is filed with TIRA -- drifts
--- continuously and in both directions (design spec 2.14).
+-- every settled claim, so SUM_ASSURED_IN_FORCE drifts continuously and in both directions
+-- (design spec 2.14).
+--
+-- No return is filed from it YET: the only return definition on the platform is the placeholder
+-- this same migration directory seeds, whose own description says its line codes are invented and
+-- which exists under one hardcoded tenant, pending the TIRA catalogue (C2). That is not a reason
+-- to defer this. These movement rows are the permanent record; movement never captured cannot be
+-- reconstructed afterwards from anything, whatever the final return turns out to ask for.
 --
 -- TWO NEW COLUMNS RATHER THAN REUSING sum_assured_issued, and this is a decision, not caution.
 -- That column feeds two metrics: SUM_ASSURED_IN_FORCE (a STOCK figure, issued minus terminated,
@@ -352,9 +381,22 @@ In `MetricReaderRegistry.java`, replace the body of `cumulativeSumAssured`:
 Leave `sumSumAssuredIssued` **exactly as it is**, and add one line of comment above it so the omission reads as a decision:
 
 ```java
-    /** FLOW: NEW_BUSINESS_SUM_ASSURED. Deliberately excludes sum_assured_member_added -- whether a
-     * borrower joining an existing scheme is "new business written" is an actuarial question
-     * nobody has answered, and this figure is filed. See db-migrations/regreporting/V5. */
+    /**
+     * FLOW: NEW_BUSINESS_SUM_ASSURED. Deliberately excludes sum_assured_member_added, and that is
+     * a preserved STATUS QUO rather than a claim that excluding it is right.
+     *
+     * <p>Whether a borrower joining an existing scheme is "new business written" is an actuarial
+     * question nobody has answered. As it stands this figure counts policy activations only, so a
+     * credit-life scheme that opens with one borrower and enrols five hundred over the year
+     * reports that one borrower's cover -- an understatement, if the question is ever answered the
+     * other way. Changing a reporting definition was not Plan 5's job; recording that it looks
+     * wrong is.
+     *
+     * <p>If it is answered the other way, this becomes one {@code .add(m.getSumAssuredMemberAdded())}
+     * -- the column already holds the right number. That is exactly why Plan 5 added separate
+     * columns instead of merging into sum_assured_issued: merged, the distinction could never be
+     * recovered. See db-migrations/regreporting/V5.
+     */
     public static BigDecimal sumSumAssuredIssued(List<PolicyMovement> movements) {
 ```
 
@@ -665,8 +707,8 @@ and the handler:
             policyDimensionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
         if (maybeDimension.isEmpty()) {
             // Same posture as applyTerminationMovement's missing-dimension branch: counted as well
-            // as logged, because a dropped movement is a shilling missing from a filed return and
-            // nothing else would ever show it.
+            // as logged, because a dropped movement is a shilling missing from every figure later
+            // computed off these rows, and nothing else would ever show it.
             log.warn("Member movement on scheme {} has no policy_dimension row -- no productId to "
                 + "attribute it to, so it is dropped", policyNumber);
             meterRegistry.counter(ProjectionSupport.UNATTRIBUTED_MOVEMENT_COUNTER,
@@ -852,8 +894,8 @@ outstanding.
 
 - **A lives-covered metric.** `POLICIES_IN_FORCE` counts *policies*, and a scheme is one policy
   however many borrowers sit on it. Whether TIRA wants lives as well is a question for whoever
-  owns the return definition, and inventing a second count here would put a number in a filed
-  return that nobody asked for.
+  owns the return definition (C2), and inventing a second count here would put a number into a
+  return that nobody has asked for.
 - **De-duplication for the other four handlers.** `regreporting` double-counts a redelivered
   `PolicyLapsed`, `PolicyMatured`, `PolicySurrendered` or `PolicyReinstated` today. Plan 5's
   handler happens not to, because a delta cannot, but fixing the module-wide property is its own
@@ -863,12 +905,22 @@ outstanding.
   next membership change on that scheme; a backfill would need a policy-side reconciliation job,
   which is a different plan.
 
-**One thing a reviewer should push back on if they disagree:** Decision 2 — the two new columns.
-The alternative is to reuse `sum_assured_issued`, which is less code and arguably more correct:
-each credit-life borrower really is a new life covered, so counting them as new business written
-is defensible. The argument for separate columns is not that reuse is wrong, but that
-`NEW_BUSINESS_SUM_ASSURED` is **currently correct and filed**, and this plan exists to fix a
-different number. Changing a working regulatory figure as a side effect of repairing a broken one
-is the kind of change that should be made on purpose by someone entitled to make it. If Finance
-rules that joiners are new business, `sumSumAssuredIssued` gains one `.add(...)` and this plan's
-tests say exactly which assertion to update.
+**One thing a reviewer should push back on if they disagree:** Decision 2 — and specifically the
+*default*, not the columns.
+
+Separate columns are not really arguable: merging member cover into `sum_assured_issued` destroys
+the ability to tell the two kinds of cover apart, permanently and unrecoverably. Keep those.
+
+What is arguable is that this plan leaves `NEW_BUSINESS_SUM_ASSURED` excluding member-added cover.
+An earlier draft justified that by calling the metric "correct and filed"; **both were wrong** —
+the only return definition referencing it is a seeded placeholder that says its own line codes are
+invented, and its PL-04 line would report a five-hundred-borrower year as one borrower's worth of
+new business. So the honest position is: this plan preserves the status quo because changing a
+reporting definition is not its job, while recording plainly that the status quo looks wrong for
+this product. If the reviewer's view is that a credit-life borrower is new business written — a
+defensible and possibly correct view — the change is one `.add(m.getSumAssuredMemberAdded())` in
+`sumSumAssuredIssued`, and `PolicyMovementArithmeticTest` names the two assertions that move.
+
+**An open question this plan surfaces rather than answers**, for whoever owns C2: PL-04 today
+understates new business on any scheme that grows after activation. That is true of employer
+schemes as well as credit life; credit life only makes it loud.
