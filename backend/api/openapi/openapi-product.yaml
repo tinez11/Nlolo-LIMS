@@ -249,6 +249,50 @@ paths:
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { description: "No such version for that product in this tenant" }
+  /products/{productId}/versions/{versionId}/exclusion-periods:
+    put:
+      summary: Set or clear a version's policy-term exclusion windows
+      description: >-
+        How long each exclusion stays open, in months from cover start. Without this operation
+        the windows could only be set by writing SQL, which left the claims exclusion gate inert
+        in any real deployment: a version ships with both null, no window is ever open, and every
+        exclusion decline an assessor tries to record is refused for citing one that is not.
+
+        For credit life that is not a minor gap. Below the free cover limit nobody is
+        underwritten -- and with the limit far above any loan these lenders write, nobody ever is
+        -- so these two windows are the entire anti-selection control the product has. The client
+        confirmed 12 and 12 on 2026-09-22.
+
+        PUT because it is idempotent and replaces both values together. Sending one field alone
+        CLEARS the other, deliberately: these are the version's exclusions as a whole, and a
+        partial update would make "no suicide exclusion" indistinguishable from "I did not
+        mention it". A body of {} is therefore a legitimate request meaning the product excludes
+        neither, not a malformed one.
+
+        Read them back through GET /products/{productId}/active-snapshot, which already carries
+        both fields.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetExclusionPeriodsRequest' }
+      responses:
+        '204': { description: Set }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { description: "No such version in this tenant" }
 components:
   schemas:
     ProductSummary:
@@ -509,6 +553,18 @@ components:
               calculationMethod: { type: string, enum: [SUM_ASSURED, PERCENTAGE_OF_SUM_ASSURED, FLAT_AMOUNT] }
               percent: { type: [number, "null"], description: Set for PERCENTAGE_OF_SUM_ASSURED and null otherwise. }
               flatAmount: { type: [number, "null"], description: Set for FLAT_AMOUNT and null otherwise. }
+    SetExclusionPeriodsRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Both fields nullable, and null clears that window -- a product with no such exclusion is
+        the normal case and has to stay expressible, which is why neither is required. The 120
+        upper bound is not arbitrary: a window longer than a decade is not a policy term, it is a
+        typo, and the cost of accepting one is a claim declined years after any assessor would
+        defend the decision.
+      properties:
+        suicideExclusionMonths: { type: [integer, "null"], minimum: 0, maximum: 120 }
+        preExistingExclusionMonths: { type: [integer, "null"], minimum: 0, maximum: 120 }
     ProductSnapshot:
       type: object
       properties:
@@ -520,6 +576,17 @@ components:
         maxLoanToValuePercent: { type: number }
         category: { type: string, enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE] }
         surrenderChargeScheduleJson: { type: [string, "null"], description: Raw JSON surrender-charge schedule from product_version.surrender_charge_schedule; null until a future milestone adds a way to author it. }
+        suicideExclusionMonths:
+          type: [integer, "null"]
+          description: >-
+            Months from cover start during which an assessor may cite suicide as a decline reason.
+            Null where the product has no such exclusion. An OPEN window is permission to cite a
+            reason, never a bar on settlement -- an ordinary death inside one is paid in full,
+            because this product has no general waiting period.
+        preExistingExclusionMonths:
+          type: [integer, "null"]
+          description: >-
+            The same, for a pre-existing condition. Null where the product has no such exclusion.
         eligibility:
           description: >-
             What this version will accept. Always present; an unbounded version is the object with

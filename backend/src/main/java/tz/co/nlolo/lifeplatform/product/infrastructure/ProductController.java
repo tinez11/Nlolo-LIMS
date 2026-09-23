@@ -178,4 +178,41 @@ public class ProductController {
                                                                          @PathVariable UUID versionId) {
         return ResponseEntity.ok(productApi.getVersionRating(productId, versionId));
     }
+
+    /**
+     * Set (or clear) a version's policy-term exclusion windows.
+     *
+     * <p>Without this the windows could only be set by writing SQL, which made the claims
+     * exclusion gate inert in any real deployment: a product ships with both windows null,
+     * {@code ExclusionWindows.openAt} then returns nothing, and every exclusion decline an
+     * assessor tries to record is refused for citing a window that is not open. For credit life
+     * that is not a minor gap — below the free cover limit nobody is underwritten, so these two
+     * windows are the entire anti-selection control the product has.
+     *
+     * <p>PUT, not POST: setting them is idempotent and replaces both values together. Sending one
+     * field alone clears the other, deliberately — these are the version's exclusions as a whole,
+     * and a partial update would make "no suicide exclusion" indistinguishable from "I did not
+     * mention it".
+     *
+     * <p>ADMIN, matching every other write on this controller. A version's exclusions are a
+     * priced term of the product, and the same separation-of-duties argument that gates
+     * publishVersion applies unchanged.
+     *
+     * <p>Read them back through {@code GET /products/{productId}/active-snapshot}, which returns
+     * {@code ProductSnapshotView} and so already carries both fields.
+     */
+    @PutMapping("/products/{productId}/versions/{versionId}/exclusion-periods")
+    @PreAuthorize("hasRole('REALM_STAFF') and hasRole('ADMIN')")
+    public ResponseEntity<Void> setExclusionPeriods(@PathVariable UUID productId,
+                                                     @PathVariable UUID versionId,
+                                                     @Valid @RequestBody SetExclusionPeriodsRequest request,
+                                                     @AuthenticationPrincipal Jwt jwt) {
+        // productId is in the path for URL consistency with the sibling rating endpoint and is
+        // deliberately not passed down: setExclusionPeriods resolves the version by id and scopes
+        // it by tenant, so accepting productId as a second key would let a caller pass a pair that
+        // disagrees and leave the two checks to argue about which one wins.
+        productApi.setExclusionPeriods(versionId, request.suicideExclusionMonths(),
+            request.preExistingExclusionMonths(), jwt.getSubject());
+        return ResponseEntity.noContent().build();
+    }
 }

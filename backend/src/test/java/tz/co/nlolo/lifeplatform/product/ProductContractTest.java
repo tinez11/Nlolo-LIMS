@@ -65,6 +65,7 @@ class ProductContractTest {
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
+            "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/product/V15__exclusion_periods.sql");
     }
 
@@ -148,6 +149,143 @@ class ProductContractTest {
                     {"productCode":"CONTRACT-FORBIDDEN-01","productName":"Should Be Rejected","category":"TERM_LIFE","defaultCurrency":"TZS"}
                     """))
             .andExpect(status().isForbidden());
+    }
+
+    /**
+     * PUT /products/{productId}/versions/{versionId}/exclusion-periods.
+     *
+     * <p>Until this endpoint existed the windows could only be set by writing SQL, which left the
+     * claims exclusion gate inert in any real deployment: a version ships with both null, no
+     * window is ever open, and every exclusion decline an assessor records is refused for citing
+     * one that is not. Below the free cover limit nobody is underwritten, so on credit life these
+     * two windows are the entire anti-selection control the product has.
+     *
+     * <p>Asserts the round trip through the WIRE, not through ProductApi. ProductSnapshotView
+     * gained both fields in this branch and {@code getActiveSnapshot} returns that record
+     * directly, so a field the view carries but the response does not would show up here and
+     * nowhere else -- the exact shape of a bug this codebase has shipped before.
+     */
+    @Test
+    void exclusionPeriodsRoundTripThroughTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductAndPublishVersion(tenantId, "CONTRACT-EXCL-01", "Contract Exclusions");
+
+        // Null before anything sets them -- the normal case for a product with no exclusions, and
+        // the baseline that makes the assertion after the PUT mean something.
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.suicideExclusionMonths").doesNotExist())
+            .andExpect(jsonPath("$.preExistingExclusionMonths").doesNotExist());
+
+        MvcResult snapshot = mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andReturn();
+        UUID versionId = objectMapper.readTree(snapshot.getResponse().getContentAsString())
+            .path("productVersionId").traverse(objectMapper).readValueAs(UUID.class);
+
+        // 12 and 12 -- what the client confirmed for credit life on 2026-09-22.
+        mockMvc.perform(put("/products/" + productId + "/versions/" + versionId + "/exclusion-periods")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"suicideExclusionMonths":12,"preExistingExclusionMonths":12}
+                    """))
+            .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.suicideExclusionMonths").value(12))
+            .andExpect(jsonPath("$.preExistingExclusionMonths").value(12));
+
+        // Sending one field CLEARS the other, deliberately: these are the version's exclusions as
+        // a whole. Asserting it here because it is the behaviour most likely to be "fixed" into a
+        // partial update by someone who has not read why.
+        mockMvc.perform(put("/products/" + productId + "/versions/" + versionId + "/exclusion-periods")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"suicideExclusionMonths":24}
+                    """))
+            .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.suicideExclusionMonths").value(24))
+            .andExpect(jsonPath("$.preExistingExclusionMonths").doesNotExist());
+    }
+
+    @Test
+    void exclusionPeriodsRejectAnImpossibleWindowAndANonAdminCaller() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductAndPublishVersion(tenantId, "CONTRACT-EXCL-02", "Contract Exclusions Guard");
+        MvcResult snapshot = mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andReturn();
+        UUID versionId = objectMapper.readTree(snapshot.getResponse().getContentAsString())
+            .path("productVersionId").traverse(objectMapper).readValueAs(UUID.class);
+
+        // 600 months is fifty years. Not a policy term -- a typo, whose cost is a claim declined
+        // decades after any assessor would defend the decision.
+        mockMvc.perform(put("/products/" + productId + "/versions/" + versionId + "/exclusion-periods")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"suicideExclusionMonths":600}
+                    """))
+            .andExpect(status().isBadRequest());
+
+        // A version's exclusions are a priced term of the product, so the same ADMIN gate that
+        // protects publishVersion protects this. Staff alone is not enough.
+        mockMvc.perform(put("/products/" + productId + "/versions/" + versionId + "/exclusion-periods")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"suicideExclusionMonths":12,"preExistingExclusionMonths":12}
+                    """))
+            .andExpect(status().isForbidden());
+    }
+
+    /** Create + publish, the two steps every version-level test needs before it can say anything. */
+    private UUID createProductAndPublishVersion(UUID tenantId, String code, String name) throws Exception {
+        MvcResult createResult = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productCode\":\"" + code + "\",\"productName\":\"" + name
+                    + "\",\"category\":\"CREDIT_LIFE\",\"defaultCurrency\":\"TZS\"}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        UUID productId = objectMapper.readValue(
+            createResult.getResponse().getContentAsString(), ProductSummaryView.class).productId();
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/CONTRACT/0001","approvalDate":"2026-01-15"},
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
+                    """))
+            .andExpect(status().isCreated());
+        return productId;
     }
 
     @Test
