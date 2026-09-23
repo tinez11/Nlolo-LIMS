@@ -151,6 +151,7 @@ class RecoveryEndToEndTest {
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
+            "db-migrations/reinsurance/V4__projection_product_category.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -402,6 +403,97 @@ class RecoveryEndToEndTest {
         TenantContext.set(tenantId);
         assertThat(claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId)).isEmpty();
         assertThat(eventRecorder.ofType("reinsurance.RecoveryCalculated")).isEmpty();
+    }
+
+    /**
+     * A SCHEME IS NEITHER CEDED NOR RECOVERED AGAINST, and the second half of that used not to be
+     * true.
+     *
+     * <p>{@code PolicyEventListener} has always refused to cede a group or credit-life scheme --
+     * its sum assured is the total of a member schedule rather than one life, and the treaty model
+     * cannot express classes of business or a cession that follows a declining insured amount. But
+     * it writes the projection row FIRST and unconditionally, and {@code ClaimEventListener} read
+     * "has a projection row" as "was in scope". A scheme always satisfies that, so a settled scheme
+     * claim fell through to the XOL path -- which needs no cession at all -- and recovered against
+     * a treaty nobody agreed covered it. finaccounting would then have booked the recoverable as a
+     * real asset against a real reinsurer.
+     *
+     * <p><b>Unreachable until the credit-life claim chain existed</b>, which is exactly why it
+     * survived review on the cession side: before that, no scheme claim could settle at all.
+     *
+     * <p>The retention here is deliberately the same 1,500,000 as
+     * {@link #anXolTreatyWithRetentionBelowTheSettledAmountRecoversTheExcessWithNoCession}, and the
+     * settled amount the same 2,000,000. That test recovers 500,000 on those numbers; this one
+     * must recover nothing. The ONLY difference between them is the product category, so a
+     * regression that drops the guard cannot hide behind a retention that was never breached.
+     */
+    @Test
+    void aSettledSchemeClaimRecoversNothingEvenUnderAnXolTreatyThatWouldOtherwisePay() {
+        UUID tenantId = UUID.randomUUID();
+        createTreaty(tenantId, TreatyType.XOL, new BigDecimal("1500000.00"), null);
+        UUID claimId = UUID.randomUUID();
+        String schemeNumber = "POL-SCHEME-" + claimId.toString().substring(0, 8).toUpperCase();
+        eventRecorder.clear();
+
+        // The real producer path, not a hand-seeded row: this is what policy publishes when a
+        // credit-life scheme goes on risk, and it is where the category has to survive to.
+        publishInTransaction(tenantId, DomainEventEnvelope.of("policy.PolicyActivated", tenantId, Map.of(
+            "policyNumber", schemeNumber,
+            "productId", UUID.randomUUID(),
+            "productCategory", "CREDIT_LIFE",
+            "issueDate", LocalDate.now().toString(),
+            "sumAssured", Map.of("amount", "240000000.00", "currencyCode", CURRENCY),
+            "premium", Map.of("amount", "5200000.00", "currencyCode", CURRENCY))));
+
+        publishInTransaction(tenantId, DomainEventEnvelope.of("claims.ClaimSettled", tenantId, Map.of(
+            "claimId", claimId,
+            "policyNumber", schemeNumber,
+            "settledAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
+            "settledAt", java.time.Instant.now().toString())));
+
+        TenantContext.set(tenantId);
+        assertThat(claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId)).isEmpty();
+        assertThat(eventRecorder.ofType("reinsurance.RecoveryCalculated")).isEmpty();
+    }
+
+    /**
+     * The other half of the guard, and the one that makes it falsifiable: an ORDINARY policy on
+     * the identical treaty, retention and settled amount still recovers its 500,000. A guard that
+     * refused everything would pass the test above and break every real recovery on the platform.
+     *
+     * <p>Published the same way, so the two differ in exactly one field.
+     */
+    @Test
+    void anOrdinaryPolicyOnTheSameTreatyStillRecoversTheExcess() {
+        UUID tenantId = UUID.randomUUID();
+        createTreaty(tenantId, TreatyType.XOL, new BigDecimal("1500000.00"), null);
+        UUID claimId = UUID.randomUUID();
+        String policyNumber = "POL-ORD-" + claimId.toString().substring(0, 8).toUpperCase();
+        eventRecorder.clear();
+
+        publishInTransaction(tenantId, DomainEventEnvelope.of("policy.PolicyActivated", tenantId, Map.of(
+            "policyNumber", policyNumber,
+            "productId", UUID.randomUUID(),
+            "productCategory", "INDIVIDUAL_LIFE",
+            "issueDate", LocalDate.now().toString(),
+            "sumAssured", Map.of("amount", "5000000.00", "currencyCode", CURRENCY),
+            "premium", Map.of("amount", "120000.00", "currencyCode", CURRENCY))));
+
+        publishInTransaction(tenantId, DomainEventEnvelope.of("claims.ClaimSettled", tenantId, Map.of(
+            "claimId", claimId,
+            "policyNumber", policyNumber,
+            "settledAmount", Map.of("amount", "2000000", "currencyCode", CURRENCY),
+            "settledAt", java.time.Instant.now().toString())));
+
+        TenantContext.set(tenantId);
+        List<ClaimRecovery> recoveries = claimRecoveryRepository.findByTenantIdAndClaimId(tenantId, claimId);
+        assertThat(recoveries).hasSize(1);
+        assertThat(recoveries.get(0).getRecoverableAmount()).isEqualByComparingTo("500000.00");
+    }
+
+    private void publishInTransaction(UUID tenantId, DomainEventEnvelope<?> envelope) {
+        TenantContext.set(tenantId);
+        transactionTemplate().executeWithoutResult(status -> eventPublisher.publishEvent(envelope));
     }
 
     /**

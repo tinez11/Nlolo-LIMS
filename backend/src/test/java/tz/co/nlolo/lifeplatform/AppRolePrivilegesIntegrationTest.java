@@ -225,6 +225,7 @@ class AppRolePrivilegesIntegrationTest {
             // exists to catch); V2 is what grants app_role anything at all here.
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
+            "db-migrations/reinsurance/V4__projection_product_category.sql",
             // M9 (Task 9) additions: finaccounting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap reinsurance had entering
             // M8. finaccounting/V1 has zero GRANT statements and ends with a REVOKE UPDATE, DELETE

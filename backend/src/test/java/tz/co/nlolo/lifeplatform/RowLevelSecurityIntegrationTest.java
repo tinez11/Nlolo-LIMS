@@ -157,6 +157,7 @@ class RowLevelSecurityIntegrationTest {
             // module at all.
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
+            "db-migrations/reinsurance/V4__projection_product_category.sql",
             // M9 (Task 9) additions. finaccounting/V1 enabled RLS on NONE of its five original
             // tables and granted app_role nothing at all (worse: it REVOKEs UPDATE/DELETE on
             // gl_posting from a role that never held anything); V2 is what adds both RLS and the

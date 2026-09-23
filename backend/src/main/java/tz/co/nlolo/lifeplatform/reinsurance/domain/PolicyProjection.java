@@ -57,6 +57,12 @@ public class PolicyProjection {
     @Column(name = "issue_date", nullable = false)
     private LocalDate issueDate;
 
+    /** GROUP_LIFE and CREDIT_LIFE are never ceded and never recovered against. NULL on any row
+     * written before reinsurance/V4 -- which means "not known to be a scheme", not "individual".
+     * See that migration's header for why a backfill would have been dishonest. */
+    @Column(name = "product_category")
+    private String productCategory;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -64,7 +70,9 @@ public class PolicyProjection {
 
     public PolicyProjection(UUID tenantId, String policyNumber, UUID productId,
                              BigDecimal sumAssuredAmount, String sumAssuredCurrency,
-                             BigDecimal premiumAmount, String premiumCurrency, LocalDate issueDate) {
+                             BigDecimal premiumAmount, String premiumCurrency, LocalDate issueDate,
+                             String productCategory) {
+        this.productCategory = productCategory;
         this.tenantId = tenantId;
         this.policyNumber = policyNumber;
         this.productId = productId;
@@ -83,5 +91,24 @@ public class PolicyProjection {
     public BigDecimal getPremiumAmount() { return premiumAmount; }
     public String getPremiumCurrency() { return premiumCurrency; }
     public LocalDate getIssueDate() { return issueDate; }
+    public String getProductCategory() { return productCategory; }
+
+    /**
+     * Whether this policy is a scheme, and therefore outside reinsurance entirely.
+     *
+     * <p>Lives on the entity rather than in either listener because BOTH need it and they reached
+     * the question by different routes: PolicyEventListener asks before ceding, ClaimEventListener
+     * before recovering. Two copies of the category list is how the cession side came to be
+     * guarded while the recovery side was not.
+     *
+     * <p>NULL is false, deliberately. A row written before reinsurance/V4 has no recorded
+     * category, and treating "unknown" as "scheme" would silently stop recoveries on ordinary
+     * individual policies that have always had them.
+     */
+    public boolean isScheme() { return isScheme(productCategory); }
+
+    public static boolean isScheme(String productCategory) {
+        return "GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory);
+    }
     public Instant getCreatedAt() { return createdAt; }
 }

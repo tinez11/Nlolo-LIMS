@@ -83,6 +83,66 @@ paths:
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /disbursements/awaiting-execution:
+    get:
+      summary: Finance's EFT work queue — every payout instructed by bank transfer and not yet confirmed
+      description: >
+        A credit-life claim pays a lender millions of shillings, so it takes the EFT rail rather
+        than the mobile-money gateway (spec §2.9). An EFT has no integration and no callback: it
+        is recorded AWAITING_EXECUTION, and a finance officer moves it in the bank's own portal.
+        This is how they find out what they owe. Without it the confirm endpoint below would be
+        an entry point nobody could navigate to.
+
+        FINANCE_OFFICER, not any staff role — see the confirm endpoint for why.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: OK — oldest first, because the oldest unpaid lender payout matters most
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PaymentStatusView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /disbursements/{disbursementId}/eft-execution:
+    post:
+      summary: Record that finance executed an EFT in the bank, and under which reference
+      description: >
+        The EFT rail's completion, and the only one it has. The transfer already happened, out of
+        band; this call records it and publishes payment.DisbursementCompleted, which settles the
+        claim, takes the borrower off cover and books the claims expense to the general ledger.
+
+        FINANCE_OFFICER only, deliberately narrower than the read endpoints on this file: anyone
+        who can call this can mark money as having moved when it has not.
+
+        200 rather than 202 — nothing here happens later. Repeating it on an already-confirmed
+        EFT is a no-op that publishes nothing, so a finance officer clicking twice does not
+        settle a claim twice.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: disbursementId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarkEftExecutedRequest' }
+      responses:
+        '200': { description: Recorded }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >
+            The instruction is not awaiting execution — most often an attempt to hand-complete a
+            mobile-money payout, which the gateway owns and no person may confirm.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetail' }
   /webhooks/mobile-money-callback:
     post:
       summary: >
@@ -147,7 +207,7 @@ components:
             since that lookup resolves against both ledgers.
         status:
           type: string
-          enum: [PENDING, IN_DOUBT, CONFIRMED, COMPLETED, FAILED]
+          enum: [PENDING, AWAITING_EXECUTION, IN_DOUBT, CONFIRMED, COMPLETED, FAILED]
           description: >
             Union of both ledgers' vocabularies — a payment's success status is CONFIRMED, a
             disbursement's is COMPLETED (see kind to know which applies). PENDING and IN_DOUBT are
@@ -158,7 +218,27 @@ components:
             IN_DOUBT row is not final and can still resolve to CONFIRMED/COMPLETED or FAILED when
             the aggregator's asynchronous notification arrives, so a client must not treat it as a
             failure. Added in M5's final review; see db-migrations/payment/V4.
+
+            AWAITING_EXECUTION is the third non-terminal state and belongs to the EFT rail
+            alone: the instruction is recorded and posted, and NOTHING has been handed to any
+            rail — a person in finance has to move the money in the bank's own portal and
+            confirm it. It is deliberately not PENDING, because a payout sitting on somebody's
+            desk must not look identical to one the gateway is already working; nothing retries
+            it and no callback will ever resolve it. See db-migrations/payment/V6.
         amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+    MarkEftExecutedRequest:
+      type: object
+      additionalProperties: false
+      required: [bankReference]
+      properties:
+        bankReference:
+          type: string
+          minLength: 1
+          description: >
+            The bank's own reference for the transfer — what a reconciliation matches against a
+            statement line, and the only evidence the platform will ever hold that this payout
+            left. Mandatory for exactly that reason: an EFT recorded as executed with nothing to
+            look it up by is a claim marked paid on somebody's word.
     PayoutBatchView:
       type: object
       additionalProperties: false

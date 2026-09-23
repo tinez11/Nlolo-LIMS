@@ -405,6 +405,35 @@ channels:
     description: "Producer: payment. Consumers: policyloan, claims, distribution, policy, communication, audit."
     publish:
       message: { $ref: '#/components/messages/DisbursementFailed' }
+  payment.EftDisbursementAwaitingExecution:
+    description: >-
+      Producer: payment. Consumers: finaccounting, audit.
+
+      The EFT rail has no gateway and no callback: a finance officer moves the money in the
+      bank's own portal. Between instructing the payout and their confirming it, days pass --
+      and for that whole window a real, approved, multi-million-shilling obligation would be
+      invisible in the general ledger. This event is what puts it on the books:
+      finaccounting.PaymentEventListener raises DR 5100 Claims Expense / CR 2110 Claims
+      Payable on it, and reverses that on EftDisbursementExecuted below.
+
+      No equivalent exists for the mobile-money rail, deliberately -- there the gap between
+      approved and paid is milliseconds and there is nothing to accrue.
+    publish:
+      message: { $ref: '#/components/messages/EftDisbursementAwaitingExecution' }
+  payment.EftDisbursementExecuted:
+    description: >-
+      Producer: payment. Consumers: finaccounting, audit.
+
+      Published alongside payment.DisbursementCompleted when finance confirms an EFT, and
+      carrying only what the ledger needs. It reverses the accrual above, so the claims expense
+      is recognised exactly once: DisbursementCompleted then drives claims.ClaimSettled, whose
+      existing rule books DR Claims Expense / CR Cash.
+
+      A SEPARATE event type rather than a flag on DisbursementCompleted, because journal entries
+      are idempotent on (sourceEvent, sourceRef) -- the reversal and the original would collide
+      under one type, and only one of the two would ever post.
+    publish:
+      message: { $ref: '#/components/messages/EftDisbursementExecuted' }
 
   reinsurance.CessionRecorded:
     description: >-
@@ -521,6 +550,8 @@ components:
     PaymentFailed: { messageId: PaymentFailed, name: PaymentFailed, payload: { $ref: '#/components/schemas/PaymentFailedPayload' } }
     DisbursementCompleted: { messageId: DisbursementCompleted, name: DisbursementCompleted, payload: { $ref: '#/components/schemas/DisbursementCompletedPayload' } }
     DisbursementFailed: { messageId: DisbursementFailed, name: DisbursementFailed, payload: { $ref: '#/components/schemas/DisbursementFailedPayload' } }
+    EftDisbursementAwaitingExecution: { messageId: EftDisbursementAwaitingExecution, name: EftDisbursementAwaitingExecution, payload: { $ref: '#/components/schemas/EftDisbursementLedgerPayload' } }
+    EftDisbursementExecuted: { messageId: EftDisbursementExecuted, name: EftDisbursementExecuted, payload: { $ref: '#/components/schemas/EftDisbursementLedgerPayload' } }
     CessionRecorded: { messageId: CessionRecorded, name: CessionRecorded, payload: { $ref: '#/components/schemas/CessionRecordedPayload' } }
     RecoveryCalculated: { messageId: RecoveryCalculated, name: RecoveryCalculated, payload: { $ref: '#/components/schemas/RecoveryCalculatedPayload' } }
     RecoveryConfirmed: { messageId: RecoveryConfirmed, name: RecoveryConfirmed, payload: { $ref: '#/components/schemas/RecoveryConfirmedPayload' } }
@@ -938,6 +969,28 @@ components:
             idempotencyKey: {type: string}
             sourceRef: {type: string}
             reason: {type: string}
+    EftDisbursementLedgerPayload:
+      description: >
+        One shape for both EFT ledger events, because they carry identical facts and differ only
+        in which direction finaccounting posts them. Deliberately NARROWER than
+        DisbursementCompletedPayload: no idempotencyKey and no gatewayReference, because the only
+        consumer is the general ledger and neither is an accounting fact.
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            disbursementId: {type: string, format: uuid}
+            # The ROUTING field, as on DisbursementCompletedPayload. finaccounting posts only
+            # CLAIM_SETTLEMENT: 2110 is a claims account, and an EFT raised for any other purpose
+            # has no business landing in it. Today claims is the only publisher that asks for the
+            # EFT rail, so the guard is unreachable -- it is there so that when a second one
+            # appears the failure is a log line naming the unmapped purpose, not a silently
+            # miscoded liability.
+            purpose: {type: string}
+            # The claimId, and the same sourceRef claims.ClaimSettled posts under -- so the
+            # accrual, its reversal and the cash entry all reconcile to one claim.
+            sourceRef: {type: string}
+            amount: {type: object}
     DisbursementCompletedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

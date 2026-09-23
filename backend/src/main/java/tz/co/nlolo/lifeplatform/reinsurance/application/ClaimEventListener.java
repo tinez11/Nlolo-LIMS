@@ -134,6 +134,31 @@ public class ClaimEventListener {
         }
         PolicyProjection projection = maybeProjection.get();
 
+        // A SCHEME IS NOT RECOVERED AGAINST, FOR THE SAME REASON IT IS NOT CEDED.
+        //
+        // PolicyEventListener already refuses to cede a group or credit-life scheme: its sum
+        // assured is the total of a member schedule rather than one life, and the treaty model
+        // cannot express classes of business, per-scheme provisions, or a cession that follows a
+        // declining insured amount (design spec 0a, client answers of 2026-09-22). That guard was
+        // load-bearing on the cession side and absent here, and PATH 2 below is the hole it left:
+        // XOL recovers the excess of a loss over retention WITHOUT ANY CESSION, so "was never
+        // ceded" is not the disqualifier it looks like. A settled credit-life claim would have
+        // recovered against a treaty nobody agreed covered it, and finaccounting would have
+        // booked the recoverable as a real asset against a real reinsurer.
+        //
+        // Unreachable until the credit-life claim chain existed -- no scheme claim could settle
+        // before it -- which is exactly why it survived review on the cession side.
+        //
+        // The category comes off this module's own projection row (reinsurance/V4), not off the
+        // event: the fact belongs to the policy, and reading it here from a payload would leave
+        // the two listeners deciding the same question from two sources.
+        if (projection.isScheme()) {
+            log.info("Claim {} settled on {} scheme {} -- schemes are neither ceded nor recovered "
+                + "against, so nothing is recoverable. Enabling it needs a per-life treaty basis "
+                + "this module does not have.", claimId, projection.getProductCategory(), policyNumber);
+            return;
+        }
+
         // PATH 1 -- the policy was ceded at issuance (QUOTA_SHARE or SURPLUS): the reinsurer's
         // share of this loss is the same fraction it took of the sum assured.
         // Ordered by createdAt so which row is picked is deterministic rather than dependent on

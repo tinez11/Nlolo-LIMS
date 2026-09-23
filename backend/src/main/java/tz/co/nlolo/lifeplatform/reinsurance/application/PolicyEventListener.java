@@ -124,9 +124,15 @@ public class PolicyEventListener {
         // The projection is written FIRST and unconditionally: it is the only place this module
         // ever learns this policy's sum assured and premium, and recovery (ClaimEventListener)
         // needs it later even if no treaty applies today.
+        String productCategory = (String) payload.get("productCategory");
         if (policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).isEmpty()) {
             policyProjectionRepository.save(new PolicyProjection(tenantId, policyNumber, productId,
-                sumAssuredAmount, sumAssuredCurrency, premiumAmount, premiumCurrency, issueDate));
+                sumAssuredAmount, sumAssuredCurrency, premiumAmount, premiumCurrency, issueDate,
+                // STORED, not merely logged by the guard below. That guard protects this listener
+                // only. ClaimEventListener has its own route to a treaty -- XOL, which needs no
+                // cession -- and treated "has a projection row" as "was in scope", which a scheme
+                // always satisfies. See db-migrations/reinsurance/V4.
+                productCategory));
         }
 
         // A GROUP SCHEME IS NOT ONE RISK, AND MUST NOT BE CEDED AS ONE.
@@ -166,8 +172,7 @@ public class PolicyEventListener {
         // So the hold is the correct behaviour, not a temporary convenience: the platform
         // cannot represent the treaty terms that would govern this cession. Enabling it needs
         // the treaty model extended first.
-        String productCategory = (String) payload.get("productCategory");
-        if ("GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory)) {
+        if (PolicyProjection.isScheme(productCategory)) {
             log.info("Policy {} is a {} scheme -- its sum assured is the total of a member "
                 + "schedule, not one life, so it is NOT ceded. Group cession needs a per-life "
                 + "basis this module does not have.", policyNumber, productCategory);
