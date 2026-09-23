@@ -69,6 +69,42 @@ and what their disbursement dates actually look like. Not blocking anything.
 
 ---
 
+### 0c. Rejection-report notices are DEFERRED — closed 2026-09-23
+
+The spec asks (§3) for the report to reach the bank *"both as a portal download and by email"*,
+with the bank acknowledging it explicitly, because *"a downloadable file nobody opens is not an
+acknowledgement, and 'this borrower is not covered' is the one message in this system that must
+be provably received."* That requirement stands. What does not exist is any way to satisfy it.
+
+**Neither delivery route works today, and both are blocked on infrastructure that is not
+credit-life work:**
+
+| Route | State, verified 2026-09-23 |
+|---|---|
+| Bank portal download | Deferred — items 18–21. Needs a public PKCE client on the `customers` realm, real CORS (there is none anywhere; the SPA works by Vite dev-proxy only) and a same-origin deploy story. |
+| Email | `spring.mail` points at `localhost:1025` — Mailpit, the dev catcher `infra/docker-compose.yml` has carried since M4. No relay is configured, and `communication.from-address` defaults to `no-reply@nlolo.co.tz`, a domain with no SPF/DKIM a bank's mail server would accept. |
+
+Building the template and listener now would dispatch a notification into a local trap. It would
+read as finished and deliver nothing — the exact shape of vacuous verification this project keeps
+finding, and it would be the first one added on purpose.
+
+**What this does NOT block.** The report itself exists and is downloadable through the API as of
+plan 2. A staff user can retrieve it and send it to the lender by whatever means they use today,
+so no borrower is left uninsured and no lender uninformed by this deferral. What is missing is
+*automated* delivery and *proof* of receipt.
+
+**The acknowledgement mechanism was decided rather than left open.** Three options were weighed:
+a tokenised link in the email (the only one genuinely provable without a portal, but it puts an
+unauthenticated endpoint on the internet whose URL reveals which borrowers were rejected), staff
+recording the bank's word (cheap, and fails the requirement's actual point), or deferring it to
+the portal phase where it belongs. **The client chose to defer.** When the portal lands,
+acknowledgement is built there and not as a side door.
+
+**Consequence to state plainly:** until then, "this borrower is not covered" reaches the lender
+only because a person sent it. That is a process control, not a system one.
+
+---
+
 ## 1. The model
 
 A bank lends money. The insurer covers the borrower's **outstanding** loan balance if the
@@ -431,7 +467,9 @@ received. It would be `communication`'s first non-policy template.
 9. Pro-rata refund and matching clawback
 10. EFT disbursement type
 11. `regreporting` consumer for `GroupMemberAdded`/`GroupMemberExited`
-12. Rejection-report email templates and the acknowledgement action
+12. Rejection-report email templates and the acknowledgement action —
+    **DEFERRED 2026-09-23, decided with the client. Not blocked on effort; blocked on having
+    anywhere to send it.** See §0c above.
 13. The credit-life scheme page — a new page sharing the shell, not an extension of
     `GroupSchemePage`, which renders grades and benefit bases this product does not use
 
