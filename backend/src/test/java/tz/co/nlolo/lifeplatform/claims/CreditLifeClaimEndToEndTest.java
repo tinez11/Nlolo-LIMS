@@ -8,6 +8,8 @@ import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.payment.application.PaymentApiImpl;
 import tz.co.nlolo.lifeplatform.payment.domain.DisbursementInstruction;
 import tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementInstructionRepository;
+import tz.co.nlolo.lifeplatform.regreporting.infrastructure.MetricReaderRegistry;
+import tz.co.nlolo.lifeplatform.regreporting.infrastructure.PolicyMovementRepository;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import org.junit.jupiter.api.AfterEach;
@@ -124,7 +126,14 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
-            "db-migrations/payment/V6__disbursement_method.sql");
+            "db-migrations/payment/V6__disbursement_method.sql",
+            // regreporting, so the credit-life chain can be asserted all the way into the
+            // figure a return is computed from. Its module dependencies are { refdata::api }
+            // only, and refdata is already applied above.
+            "db-migrations/regreporting/V1__create_regreporting_schema.sql",
+            "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
+            "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql",
+            "db-migrations/regreporting/V5__member_movement_columns.sql");
     }
 
     @Autowired private PartyApi partyApi;
@@ -133,6 +142,7 @@ class CreditLifeClaimEndToEndTest {
     @Autowired private ClaimsApi claimsApi;
     @Autowired private PaymentApiImpl paymentApiImpl;
     @Autowired private DisbursementInstructionRepository disbursementRepository;
+    @Autowired private PolicyMovementRepository policyMovementRepository;
 
     private static final AtomicInteger SEQ = new AtomicInteger(4000);
 
@@ -275,6 +285,71 @@ class CreditLifeClaimEndToEndTest {
             ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, "bank-account-1", idem(), "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("APPROVED");
+    }
+
+    // ---- and the figure a regulatory return is computed from --------------
+
+    /**
+     * THE SPEC'S OWN CASE (§2.14): <i>"members are added every month and exited on every
+     * settlement, so it is continuous — and it lands in a TIRA return."</i>
+     *
+     * <p>Hand-published events proved the arithmetic in {@code MemberMovementProjectionTest}.
+     * This proves the REAL chain reaches it: a scheme issued through {@code issueGroupScheme}, a
+     * borrower enrolled through {@code addMember}, and a death settled through the whole claim →
+     * EFT → {@code DisbursementCompleted} → {@code dischargeForSettledClaim} path.
+     *
+     * <p>Lives here rather than in {@code ProjectionEndToEndTest}, which the plan named: that
+     * class would need eight more product and policy migrations before it could issue a
+     * credit-life scheme at all, while this one already runs the entire chain and needed only
+     * regreporting's four. The assertion is about the credit-life chain reaching the projection,
+     * so this is also its more honest home.
+     */
+    @Test
+    void aBorrowerJoiningAndThenDyingMovesTheInForceFigureInBothDirections() {
+        // The scheme opens with one 2,400,000 borrower, already covered by seedScheme().
+        assertThat(inForceSumAssured()).isEqualByComparingTo(PRINCIPAL);
+
+        // A second borrower enrolled the way a lender's monthly file enrols one.
+        policyApi.addMember(scheme, PolicyApi.MemberInput.borrower("Juma Rajabu Kimaro",
+            LocalDate.of(1990, 7, 2), null,
+            new LoanTerms(new BigDecimal("1200000.00"), BigDecimal.ZERO, TERM_MONTHS,
+                RepaymentFrequency.MONTHLY, DISBURSED, DISBURSED.plusMonths(1))), "staff-1");
+
+        assertThat(inForceSumAssured())
+            .as("the joiner's cover is in force -- before Plan 5 this stayed at the opening total")
+            .isEqualByComparingTo("3600000.00");
+
+        // And the first borrower dies at month six.
+        //
+        // TWO DIFFERENT NUMBERS HERE, AND BOTH ARE RIGHT -- do not "fix" one into the other.
+        // The claim PAYS 1,600,000: what the borrower still owed on the day they died, which is
+        // what the lender actually lost. The cover REMOVED from the in-force total is the full
+        // 2,400,000, because restateSchemeTotal sums the stored covered_amount of members who are
+        // still active, and a dead borrower is not covered for a reduced amount -- they are not
+        // covered at all. So the scheme falls to the survivor's 1,200,000, not to 2,000,000.
+        UUID claimId = approvedClaimAt(DISBURSED.plusMonths(6), new BigDecimal("1600000.00"));
+        DisbursementInstruction eft = disbursementRepository
+            .findByIdempotencyKeyAndTenantId(settlementKey, TenantContext.get())
+            .orElseThrow(() -> new AssertionError("No disbursement was recorded for the settlement"));
+        paymentApiImpl.markEftExecuted(eft.getDisbursementId(), "FT26092300993", "finance-officer-asha");
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLED);
+
+        assertThat(inForceSumAssured())
+            .as("the exited member's whole covered amount left the scheme; the survivor's stayed")
+            .isEqualByComparingTo("1200000.00");
+    }
+
+    /** SUM_ASSURED_IN_FORCE as the return generator computes it: issued plus member-added, less
+     * terminated and member-exited, over every period up to the one asked for. */
+    private BigDecimal inForceSumAssured() {
+        UUID tenantId = TenantContext.get();
+        String asOf = quarterOf(DISBURSED.plusMonths(6));
+        return MetricReaderRegistry.cumulativeSumAssured(
+            policyMovementRepository.findByTenantIdAndPeriodLessThanEqual(tenantId, asOf), asOf);
+    }
+
+    private static String quarterOf(LocalDate date) {
+        return date.getYear() + "-Q" + ((date.getMonthValue() - 1) / 3 + 1);
     }
 
     // ---- fixtures -----------------------------------------------------------
