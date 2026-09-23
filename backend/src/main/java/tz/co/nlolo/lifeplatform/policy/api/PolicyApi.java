@@ -364,6 +364,36 @@ public interface PolicyApi {
                                  ExitReason reason, BigDecimal outstandingBalanceAtExit,
                                  String exitedBy);
 
+    /**
+     * Turn a freeform member into a real, identified person.
+     *
+     * <p>A credit-life member is enrolled FREEFORM — a name and a date of birth off a lender's
+     * CSV, because no lender sends a national ID and party de-duplication cannot fire without
+     * one (spec §2.2). That is correct for four hundred rows a month, and it stops being
+     * correct at exactly one moment: <b>the claim</b>. The platform is about to pay out against
+     * this person, and "who died" cannot be a string in a spreadsheet cell.
+     *
+     * <p><b>An existing party is reused, never duplicated.</b> The borrower may already bank
+     * with the lender, and two party rows for one national ID is precisely the duplicate-person
+     * problem the party module's identity index exists to prevent.
+     *
+     * <p><b>The loan and the reference survive untouched.</b> Cover is measured against the loan
+     * columns, so a promotion that dropped them would leave a member nobody can value; and the
+     * name the lender used survives too, because their monthly file will keep arriving calling
+     * this borrower the same thing and it is the only document they have.
+     *
+     * <p>Idempotent: a claim is registered, assessed, possibly reopened and settled, and
+     * promoting an already-promoted member returns them unchanged rather than minting a second
+     * person each time somebody touches it.
+     *
+     * @throws InvalidPolicyStateException if the member is not on this scheme, is already a
+     *     registered party rather than a freeform one, or the request carries no identity
+     *     document — promoting without one registers a second unidentified person, which looks
+     *     resolved and is not.
+     */
+    PolicyMemberView promoteMember(String policyNumber, UUID policyMemberId,
+                                    PromoteMemberRequest identity, String promotedBy);
+
     PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy);
     PolicyView applyEndorsement(String policyNumber, EndorsementInput request, String appliedBy);
     void replaceBeneficiaries(String policyNumber, List<BeneficiaryInput> beneficiaries, String changedBy);

@@ -6,6 +6,8 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
+import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.*;
@@ -1157,6 +1159,66 @@ public class PolicyApiImpl implements PolicyApi {
         // Valued as at the exit date, not as at today: an exited member's cover is what it was
         // when they left, and a caller reading this view back is asking what ended, not what
         // the schedule would say now.
+        return toMemberView(member, null, scheme.getCurrency());
+    }
+
+    @Override
+    @Transactional
+    public PolicyMemberView promoteMember(String policyNumber, UUID policyMemberId,
+                                           PromoteMemberRequest identity, String promotedBy) {
+        UUID tenantId = TenantContext.get();
+        GroupScheme scheme = groupSchemeRepository
+            .findByPolicyNumberAndTenantId(policyNumber, tenantId)
+            .orElseThrow(() -> new InvalidPolicyStateException("Policy " + policyNumber
+                + " is not a scheme, so it has no members to promote"));
+
+        PolicyMember member = policyMemberRepository
+            .findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
+            .filter(m -> m.getPolicyNumber().equals(policyNumber))
+            .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
+                + " is not a member of scheme " + policyNumber));
+
+        // Already promoted: return them unchanged. A claim is registered, assessed, possibly
+        // reopened and settled, and each of those may reach for a real party -- minting a
+        // second person every time somebody touches the claim is the failure this prevents.
+        if (member.getMemberType() == MemberType.PARTY) {
+            if (member.getPromotedToPartyAt() != null) {
+                return toMemberView(member, null, scheme.getCurrency());
+            }
+            throw new InvalidPolicyStateException("Member " + policyMemberId + " is already a"
+                + " registered party and was never a freeform name, so there is nothing to promote");
+        }
+
+        if (identity == null || identity.identityDocument() == null
+                || !identity.identityDocument().recorded()) {
+            // Promoting without a document registers a SECOND unidentified person rather than
+            // resolving the one we have -- worse than leaving them freeform, because it looks
+            // resolved and is not.
+            throw new InvalidPolicyStateException("Promoting member " + policyMemberId
+                + " needs an identity document; that is what makes them identifiable, and"
+                + " promoting without one just creates a second nameless person");
+        }
+
+        // REUSE before register. The borrower may already bank with this lender, and two party
+        // rows for one national ID is precisely what ux_party_individual_identity exists to
+        // prevent -- registering blind would throw DuplicateIdentityDocumentException and leave
+        // the claim stuck with no way to find who it collided with.
+        UUID partyId = partyApi.findByIdentityDocument(identity.identityDocument())
+            .map(PartyView::partyId)
+            .orElseGet(() -> partyApi.registerIndividual(new IndividualRegistration(
+                member.getMemberName(), member.getMemberDateOfBirth(), identity.phoneNumber(),
+                null, identity.sex(), null, identity.identityDocument(),
+                null, null, null, null, null), promotedBy).partyId());
+
+        try {
+            member.promoteAtClaim(partyId, promotedBy);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            throw new InvalidPolicyStateException(e.getMessage());
+        }
+        policyMemberRepository.save(member);
+
+        log.info("Member {} on scheme {} promoted to party {} by {}",
+            policyMemberId, policyNumber, partyId, promotedBy);
         return toMemberView(member, null, scheme.getCurrency());
     }
 

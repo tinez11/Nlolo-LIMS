@@ -117,6 +117,7 @@ class ExitFileIntegrationTest {
             "db-migrations/policy/V18__scheme_premium_rate.sql",
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
+            "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V21__exit_submission.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",

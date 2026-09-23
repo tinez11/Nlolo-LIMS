@@ -144,6 +144,7 @@ class CessionEndToEndTest {
             "db-migrations/policy/V18__scheme_premium_rate.sql",
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
+            "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql");
         try (Connection connection = DriverManager.getConnection(

@@ -5,6 +5,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -103,6 +104,24 @@ public interface PartyApi {
     PartyView registerGroup(String displayName, String registeredBy);
 
     PartyView getParty(UUID partyId);
+
+    /**
+     * The person this identity document names, if this tenant already holds one.
+     *
+     * <p>Exists because {@link DuplicateIdentityDocumentException} previously told a caller that
+     * a duplicate existed and gave them no way whatever to find it — a dead end for anybody
+     * trying to attach to the existing person rather than create a second one. The repository
+     * has always had this query; only the module API lacked it.
+     *
+     * <p>The first caller is credit-life member promotion: a borrower enrolled from a lender's
+     * spreadsheet may already bank with that lender, and two party rows for one national ID is
+     * exactly the duplicate-person problem {@code ux_party_individual_identity} exists to
+     * prevent.
+     *
+     * <p>Empty for an {@link IdentityDocument#none()}, rather than throwing — "we hold nobody
+     * with no document" is the honest answer to a meaningless question.
+     */
+    Optional<PartyView> findByIdentityDocument(IdentityDocument identityDocument);
 
     /**
      * The full party record, for the client register's detail screen.

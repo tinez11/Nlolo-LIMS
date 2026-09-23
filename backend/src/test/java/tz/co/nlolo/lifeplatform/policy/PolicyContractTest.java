@@ -104,6 +104,7 @@ class PolicyContractTest {
             "db-migrations/policy/V18__scheme_premium_rate.sql",
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
+            "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

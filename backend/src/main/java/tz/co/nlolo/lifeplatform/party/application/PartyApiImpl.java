@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -170,6 +171,20 @@ public class PartyApiImpl implements PartyApi {
     @Override
     public PartyView getParty(UUID partyId) {
         return toView(findPartyOrThrow(partyId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<PartyView> findByIdentityDocument(IdentityDocument identityDocument) {
+        // Empty rather than a throw for an absent document: "we hold nobody with no document"
+        // is the honest answer to a meaningless question, and a caller resolving an optional
+        // identity should not have to guard the call.
+        if (identityDocument == null || !identityDocument.recorded()) {
+            return Optional.empty();
+        }
+        return partyRepository.findByTenantIdAndIdTypeAndIdNumber(
+                TenantContext.get(), identityDocument.type(), identityDocument.number())
+            .map(PartyApiImpl::toView);
     }
 
     @Override

@@ -1,10 +1,9 @@
-package tz.co.nlolo.lifeplatform.claims;
+package tz.co.nlolo.lifeplatform.policy;
 
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
-import tz.co.nlolo.lifeplatform.claims.api.*;
-import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.*;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import org.junit.jupiter.api.AfterEach;
@@ -31,20 +30,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
- * A borrower dies and the insurer pays the lender what the borrower still owed.
+ * A borrower stops being a name on a spreadsheet.
  *
- * <p>The thing that makes a credit-life claim different from every other claim on this
- * platform: <b>the claimant is the bank.</b> The payout extinguishes a debt, so the money is
- * owed to whoever holds it — which is also the policyholder. Claimant and payee are the same
- * entity, which is exactly why this product needs no payee-redirection concept (spec §2.9).
+ * <p>A credit-life member is enrolled FREEFORM — a name and a date of birth off a lender's
+ * CSV, because no lender sends a national ID and party de-duplication cannot fire without one
+ * (spec §2.2). That is deliberate and correct for four hundred rows a month.
  *
- * <p>The failure that makes it worth asserting: paying a borrower's family for a debt the
- * family does not hold, while the lender's loan stays unpaid and the insurer's books say the
- * claim is settled.
+ * <p>It stops being correct at exactly one moment: the claim. The platform is about to pay out
+ * against this person, and "who died" cannot be a string in a spreadsheet cell. Promotion is
+ * that moment, and it is the only one.
+ *
+ * <p>The thing this must not do is lose the loan. Cover is measured against the loan columns,
+ * and a promotion that dropped them would make the member unvaluable — the exact shape of the
+ * {@code getLoanTerms} defect plan 3 closed, where a member existed but could not be covered.
  */
 @Testcontainers
 @SpringBootTest(classes = Application.class)
-class CreditLifeClaimEndToEndTest {
+class MemberPromotionIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
@@ -59,10 +61,6 @@ class CreditLifeClaimEndToEndTest {
     @BeforeAll
     static void applyMigrations() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
-            "db-migrations/audit/V1__create_audit_schema.sql",
-            "db-migrations/refdata/V1__create_refdata_schema.sql",
-            "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
-            "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
@@ -84,6 +82,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
+            "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
@@ -107,104 +106,148 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
-            "db-migrations/claims/V1__create_claims_schema.sql",
-            "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
-            "db-migrations/claims/V3__registration_idempotency_key.sql",
-            "db-migrations/claims/V5__claim_policy_member.sql");
+            "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
-    @Autowired private ClaimsApi claimsApi;
 
-    private static final AtomicInteger SEQ = new AtomicInteger(4000);
+    private static final AtomicInteger SEQ = new AtomicInteger(7000);
 
-    /** 2,400,000 over 18 months, disbursed 2026-08-03. Cover declines straight-line. */
     private static final BigDecimal PRINCIPAL = new BigDecimal("2400000.00");
-    private static final int TERM_MONTHS = 18;
     private static final LocalDate DISBURSED = LocalDate.of(2026, 8, 3);
+    private static final String NATIONAL_ID = "19880314-12345-00001-14";
 
-    private UUID bankPartyId;
     private String scheme;
-    private UUID borrowerMemberId;
+    private PolicyMemberView borrower;
 
     @BeforeEach
     void seedScheme() {
         TenantContext.set(UUID.randomUUID());
-        bankPartyId = person("Lender Co");
-        scheme = issueCreditLifeScheme(bankPartyId);
-        borrowerMemberId = policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10))
-            .getContent().get(0).policyMemberId();
+        scheme = issueCreditLifeScheme();
+        borrower = policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10))
+            .getContent().get(0);
     }
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }
 
-    // ---- the claimant is the bank -------------------------------------------
+    private PromoteMemberRequest identity() {
+        return new PromoteMemberRequest(
+            new IdentityDocument(IdType.NATIONAL_ID, NATIONAL_ID), "+255712345678", tz.co.nlolo.lifeplatform.party.api.Sex.FEMALE);
+    }
+
+    // ---- the promotion ------------------------------------------------------
 
     @Test
-    void aCreditLifeClaimIsRegisteredWithTheBankAsClaimant() {
-        ClaimView claim = claimsApi.registerClaim(
-            deathRequest(borrowerMemberId, bankPartyId), idem(), "claims.clerk");
+    void promotingAFreeformMemberGivesThemARealPartyWithoutLosingTheirLoan() {
+        assertThat(borrower.memberType()).isEqualTo(MemberType.FREEFORM);
+        BigDecimal coverBefore = policyApi.claimableCover(scheme, borrower.policyMemberId(),
+            DISBURSED.plusMonths(6), BenefitType.DEATH.name()).amount();
 
-        assertThat(claim.claimantPartyId()).isEqualTo(bankPartyId);
+        PolicyMemberView after = policyApi.promoteMember(scheme, borrower.policyMemberId(),
+            identity(), "claims.clerk");
+
+        assertThat(after.memberType()).isEqualTo(MemberType.PARTY);
+        assertThat(after.memberPartyId()).isNotNull();
+        // THE THING THIS MUST NOT BREAK. Cover is measured against the loan columns; a
+        // promotion that dropped them would leave a member nobody can value -- the shape of
+        // the getLoanTerms defect plan 3 closed.
+        assertThat(policyApi.claimableCover(scheme, borrower.policyMemberId(),
+            DISBURSED.plusMonths(6), BenefitType.DEATH.name()).amount())
+            .isEqualByComparingTo(coverBefore);
     }
 
     @Test
-    void aCreditLifeClaimNamingAnyoneButTheLenderIsRefused() {
-        // The money extinguishes a debt the family does not hold. Paying them would leave the
-        // loan outstanding while the insurer's books say the claim is settled -- and nothing
-        // downstream would ever notice.
-        UUID theFamily = person("Next Of Kin");
+    void theNameTheLenderUsedSurvivesPromotion() {
+        // It is how their file reconciles to our roll. A promoted member that answers only to
+        // a party id cannot be matched against the spreadsheet that enrolled them.
+        PolicyMemberView after = policyApi.promoteMember(scheme, borrower.policyMemberId(),
+            identity(), "claims.clerk");
 
-        assertThatThrownBy(() -> claimsApi.registerClaim(
-            deathRequest(borrowerMemberId, theFamily), idem(), "claims.clerk"))
-            .isInstanceOf(ClaimValidationException.class)
-            .hasMessageContaining("policyholder");
+        assertThat(after.memberName()).isEqualTo(borrower.memberName());
+        assertThat(after.memberReference()).isEqualTo(borrower.memberReference());
     }
 
     @Test
-    void anEmployerSchemeClaimStillNamesWhoeverTheSchemeSays() {
-        // The rule is CREDIT_LIFE only. A group-life death benefit is owed to the member's
-        // own beneficiary, not to the employer, and narrowing that would be a serious
-        // regression on a product that already works.
+    void promotingTwiceReturnsTheSamePartyRatherThanRegisteringASecondPerson() {
+        // A claim is registered, assessed, maybe reopened, then settled. Promotion must not
+        // mint a new person every time somebody touches it.
+        UUID first = policyApi.promoteMember(scheme, borrower.policyMemberId(),
+            identity(), "claims.clerk").memberPartyId();
+
+        UUID second = policyApi.promoteMember(scheme, borrower.policyMemberId(),
+            identity(), "another.clerk").memberPartyId();
+
+        assertThat(second).isEqualTo(first);
+    }
+
+    @Test
+    void anExistingPartyIsReusedWhenTheNationalIdAlreadyNamesSomebody() {
+        // The borrower may already be a customer -- they bank with the lender, after all. Two
+        // party rows for one national ID is precisely the duplicate-person problem the party
+        // module's identity index exists to prevent.
+        PartyView alreadyACustomer = partyApi.registerIndividual(
+            new IndividualRegistration("Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14),
+                "+255700000001", null, tz.co.nlolo.lifeplatform.party.api.Sex.FEMALE, null,
+                new IdentityDocument(IdType.NATIONAL_ID, NATIONAL_ID),
+                null, null, null, null, null), "staff-1");
+
+        PolicyMemberView after = policyApi.promoteMember(scheme, borrower.policyMemberId(),
+            identity(), "claims.clerk");
+
+        assertThat(after.memberPartyId()).isEqualTo(alreadyACustomer.partyId());
+    }
+
+    // ---- what is refused ----------------------------------------------------
+
+    @Test
+    void anOrdinaryPartyMemberCannotBePromotedAgain() {
         String employerScheme = issueEmployerScheme();
-        UUID employeeMemberId = policyApi.listMembers(employerScheme, null, null,
-            PageRequest.of(0, 10)).getContent().get(0).policyMemberId();
-        UUID beneficiary = person("Employee Next Of Kin");
+        PolicyMemberView employee = policyApi.listMembers(employerScheme, null, null,
+            PageRequest.of(0, 10)).getContent().get(0);
 
-        ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
-            employerScheme, employeeMemberId, beneficiary, ClaimType.DEATH,
-            LocalDate.now().minusDays(1), deathDetails()), idem(), "claims.clerk");
+        assertThatThrownBy(() -> policyApi.promoteMember(employerScheme,
+            employee.policyMemberId(), identity(), "claims.clerk"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("already");
+    }
 
-        assertThat(claim.claimantPartyId()).isEqualTo(beneficiary);
+    @Test
+    void promotionNeedsAnIdentityDocumentBecauseThatIsTheWholePoint() {
+        // Promoting with no ID produces a second nameless person rather than a identified one,
+        // which is worse than leaving them freeform: it looks resolved and is not.
+        assertThatThrownBy(() -> policyApi.promoteMember(scheme, borrower.policyMemberId(),
+            new PromoteMemberRequest(IdentityDocument.none(), "+255712345678", tz.co.nlolo.lifeplatform.party.api.Sex.FEMALE),
+            "claims.clerk"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("identity document");
+    }
+
+    @Test
+    void aMemberOfAnotherSchemeCannotBePromotedThroughThisOne() {
+        String otherScheme = issueCreditLifeScheme();
+        PolicyMemberView theirs = policyApi.listMembers(otherScheme, null, null,
+            PageRequest.of(0, 10)).getContent().get(0);
+
+        assertThatThrownBy(() -> policyApi.promoteMember(scheme, theirs.policyMemberId(),
+            identity(), "claims.clerk"))
+            .isInstanceOf(InvalidPolicyStateException.class);
     }
 
     // ---- fixtures -----------------------------------------------------------
 
-    private String idem() { return "idem-" + UUID.randomUUID(); }
-
-    private ClaimsApi.RegisterClaimRequest deathRequest(UUID policyMemberId, UUID claimantPartyId) {
-        return new ClaimsApi.RegisterClaimRequest(scheme, policyMemberId, claimantPartyId,
-            ClaimType.DEATH, DISBURSED.plusMonths(6), deathDetails());
-    }
-
-    private ClaimDetails deathDetails() {
-        return new DeathClaimDetails("Natural causes", "Dar es Salaam",
-            DISBURSED.plusMonths(6), "Dr Mwakalinga");
-    }
-
     private record GroupProduct(UUID productId, UUID productVersionId) {}
 
-    private String issueCreditLifeScheme(UUID lender) {
-        GroupProduct product = publish(ProductCategory.CREDIT_LIFE, "CL-CLAIM-" + SEQ.incrementAndGet());
+    private String issueCreditLifeScheme() {
+        GroupProduct product = publish(ProductCategory.CREDIT_LIFE, "CL-PROMO-" + SEQ.incrementAndGet());
         return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
-            lender, product.productId(), product.productVersionId(), null,
+            person("Lender Co"), product.productId(), product.productVersionId(), null,
             BenefitBasis.AMORTISING_LOAN, null, null, new BigDecimal("600000000.00"), "TZS",
             null, List.of(PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi",
                 LocalDate.of(1988, 3, 14), null,
-                new LoanTerms(PRINCIPAL, BigDecimal.ZERO, TERM_MONTHS, RepaymentFrequency.MONTHLY,
+                new LoanTerms(PRINCIPAL, BigDecimal.ZERO, 18, RepaymentFrequency.MONTHLY,
                     DISBURSED, DISBURSED.plusMonths(1)))),
             new BigDecimal("52000.00"), "TZS", "SINGLE",
             LocalDate.of(2026, 6, 1), null, "credit life onboarding", IssuanceBasis.MIGRATION,
@@ -213,12 +256,12 @@ class CreditLifeClaimEndToEndTest {
     }
 
     private String issueEmployerScheme() {
-        GroupProduct product = publish(ProductCategory.GROUP_LIFE, "GRP-CLAIM-" + SEQ.incrementAndGet());
+        GroupProduct product = publish(ProductCategory.GROUP_LIFE, "GRP-PROMO-" + SEQ.incrementAndGet());
         return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
             person("Employer Co"), product.productId(), product.productVersionId(), null,
             BenefitBasis.FLAT, new BigDecimal("5000000.00"), null, null, "TZS", null,
             List.of(new PolicyApi.MemberInput(person("Employee A"), null, null, null)),
-            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now().minusMonths(2), null,
+            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null,
             "group onboarding", IssuanceBasis.MIGRATION), "staff-1").policyNumber();
     }
 

@@ -129,6 +129,19 @@ public class PolicyMember {
     @Column(name = "outstanding_balance_at_exit")
     private BigDecimal outstandingBalanceAtExit;
 
+    /**
+     * When a name on a lender's spreadsheet became a real person, and who did it.
+     *
+     * <p>Null for every member who was never freeform, and for one promoted at enrolment
+     * because they exceeded the free cover limit. Set only by {@link #promoteAtClaim}, which
+     * is the moment the platform is about to pay out against this person.
+     */
+    @Column(name = "promoted_to_party_at")
+    private Instant promotedToPartyAt;
+
+    @Column(name = "promoted_by")
+    private String promotedBy;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -235,6 +248,38 @@ public class PolicyMember {
         this.memberDateOfBirth = null;
     }
 
+    /**
+     * Promote a borrower at CLAIM, keeping the name the lender uses for them.
+     *
+     * <p>Distinct from {@link #promoteToParty} on purpose, and the difference is the name.
+     * That one runs at enrolment for a member over the free cover limit, who has to be
+     * underwritten, and clears the name because the party record becomes the single source of
+     * it. This one runs when a claim is registered, and the lender's monthly files will keep
+     * arriving for the life of the scheme still calling this borrower what they always called
+     * them. Dropping it would leave a promoted member that cannot be reconciled against the
+     * only document the lender has.
+     *
+     * <p>Records who promoted them and when, because it is an act somebody performed on a
+     * claim that may be disputed years later — {@code member_type} alone would say they are a
+     * party today without saying they were ever anything else.
+     */
+    public void promoteAtClaim(UUID partyId, String promotedBy) {
+        if (partyId == null) {
+            throw new IllegalArgumentException("Promoting a member needs the party to promote them to");
+        }
+        if (promotedBy == null || promotedBy.isBlank()) {
+            throw new IllegalArgumentException("Promoting a member records who did it");
+        }
+        if (memberType == MemberType.PARTY) {
+            throw new IllegalStateException("This member already names a registered party");
+        }
+        this.memberType = MemberType.PARTY;
+        this.memberPartyId = partyId;
+        // memberName and memberDateOfBirth deliberately kept -- see the javadoc above.
+        this.promotedToPartyAt = Instant.now();
+        this.promotedBy = promotedBy;
+    }
+
     /** Link the underwriting case opened because this benefit exceeds the free cover limit. */
     public void referForEvidence(UUID underwritingCaseId) {
         this.underwritingCaseId = underwritingCaseId;
@@ -325,6 +370,8 @@ public class PolicyMember {
     public LocalDate getJoinedOn() { return joinedOn; }
     public LocalDate getLeftOn() { return leftOn; }
     public ExitReason getExitReason() { return exitReason; }
+    public Instant getPromotedToPartyAt() { return promotedToPartyAt; }
+    public String getPromotedBy() { return promotedBy; }
     public BigDecimal getOutstandingBalanceAtExit() { return outstandingBalanceAtExit; }
     public String getStatus() { return status; }
     public MemberUnderwritingStatus getUnderwritingStatus() { return underwritingStatus; }
