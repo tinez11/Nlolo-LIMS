@@ -137,6 +137,29 @@ public class ClaimsApiImpl implements ClaimsApi {
                 + " was not in force on " + request.dateOfEvent());
         }
 
+        // 2a. ON CREDIT LIFE, THE CLAIMANT IS THE LENDER -- who is also the policyholder.
+        //
+        // The payout extinguishes a debt, so the money is owed to whoever holds that debt. It
+        // is the reason this product needs no payee-redirection concept at all (spec 2.9):
+        // claimant and payee are the same entity, and the money reaches the lender through the
+        // ordinary settlement path.
+        //
+        // Refused rather than silently corrected. A claim registered for a borrower's family
+        // would pay people who do not hold the debt, leave the lender's loan outstanding, and
+        // close on the insurer's books as settled -- and nothing downstream would ever
+        // question it, because a paid claim looks the same either way.
+        //
+        // CREDIT_LIFE only. A group-life death benefit is owed to the member's own
+        // beneficiary and not to the employer; applying this rule there would be a serious
+        // regression on a product that already works.
+        if ("CREDIT_LIFE".equals(policy.productCategory())
+                && !policy.policyholderPartyId().equals(request.claimantPartyId())) {
+            throw new ClaimValidationException("A credit-life claim is payable to the lender, who is"
+                + " the policyholder of " + request.policyNumber() + " (" + policy.policyholderPartyId()
+                + "); this claim names " + request.claimantPartyId() + ". The payout extinguishes the"
+                + " borrower's debt, so it is owed to whoever holds it.");
+        }
+
         // 3. Coverage consistency (openapi-claims.yaml's 422) -- reduced to a sum-assured check,
         //    for TWO independent reasons, both of which must stay in this comment:
         //
