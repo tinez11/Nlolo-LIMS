@@ -438,7 +438,10 @@ const baseMemberColumns: Column<PolicyMemberView>[] = [
     header: 'Reference',
     render: (m) =>
       m.memberReference ? (
-        <span className="font-mono text-xs">{m.memberReference}</span>
+        // nowrap: a reference is one token and breaks after every hyphen if it is allowed to,
+        // which turned CL-AF8D3D3C-000002 into three stacked lines and took the width away from
+        // the names beside it. It is ~18 characters at this size; it always fits on one.
+        <span className="whitespace-nowrap font-mono text-xs">{m.memberReference}</span>
       ) : (
         <span className="text-subtle-foreground">{NO_VALUE}</span>
       ),
@@ -453,7 +456,7 @@ const baseMemberColumns: Column<PolicyMemberView>[] = [
     render: (m) =>
       m.covered ? (
         <span>
-          <span className="font-medium">{formatMoney(m.covered)}</span>
+          <span className="whitespace-nowrap font-medium">{formatMoney(m.covered)}</span>
           {m.benefit && m.benefit.amount !== m.covered.amount && (
             <span className="block text-[11px] text-subtle-foreground">
               of {formatMoney(m.benefit)}
@@ -508,6 +511,12 @@ function describeBasis(scheme: GroupSchemeView): string {
       return scheme.salaryMultiple ? `${scheme.salaryMultiple}× salary` : 'Salary multiple';
     case 'GRADED':
       return `Graded — ${scheme.grades?.length ?? 0} bands`;
+    case 'AMORTISING_LOAN':
+      // Credit life. There is no figure to quote for the scheme as a whole, because every
+      // borrower is worth a different declining number on a different day -- which is exactly
+      // what this line has to say. Until it was added, the fourth basis fell through to the
+      // default and a live credit-life scheme reported its benefit basis as an em dash.
+      return 'Outstanding loan balance';
     default:
       return NO_VALUE;
   }
