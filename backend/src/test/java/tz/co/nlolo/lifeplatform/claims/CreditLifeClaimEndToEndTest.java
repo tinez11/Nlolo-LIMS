@@ -5,6 +5,9 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.claims.api.*;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.payment.application.PaymentApiImpl;
+import tz.co.nlolo.lifeplatform.payment.domain.DisbursementInstruction;
+import tz.co.nlolo.lifeplatform.payment.infrastructure.DisbursementInstructionRepository;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import org.junit.jupiter.api.AfterEach;
@@ -112,13 +115,24 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
-            "db-migrations/claims/V6__exclusion_decline.sql");
+            "db-migrations/claims/V6__exclusion_decline.sql",
+            // The settlement rail. A credit-life payout takes the EFT rail, which calls no
+            // gateway at all -- so proving the whole chain here needs the payment schema and
+            // nothing else: no WireMock, no aggregator, no stub. That is the rail being what
+            // it claims to be rather than a convenience of the test.
+            "db-migrations/payment/V1__create_payment_schema.sql",
+            "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
+            "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
+            "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
+            "db-migrations/payment/V6__disbursement_method.sql");
     }
 
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
     @Autowired private ClaimsApi claimsApi;
+    @Autowired private PaymentApiImpl paymentApiImpl;
+    @Autowired private DisbursementInstructionRepository disbursementRepository;
 
     private static final AtomicInteger SEQ = new AtomicInteger(4000);
 
@@ -126,6 +140,11 @@ class CreditLifeClaimEndToEndTest {
     private static final BigDecimal PRINCIPAL = new BigDecimal("2400000.00");
     private static final int TERM_MONTHS = 18;
     private static final LocalDate DISBURSED = LocalDate.of(2026, 8, 3);
+    /** The scheme's free cover limit, and a loan that blows straight through it. Nobody
+     * underwrites the excess, so the borrower is covered for the limit and the lender carries
+     * the remaining 200,000,000 as ordinary credit risk. */
+    private static final BigDecimal FCL = new BigDecimal("600000000.00");
+    private static final BigDecimal ABOVE_FCL = new BigDecimal("800000000.00");
 
     private UUID bankPartyId;
     private String scheme;
@@ -261,12 +280,143 @@ class CreditLifeClaimEndToEndTest {
     // ---- fixtures -----------------------------------------------------------
 
     /** A claim on the borrower, dated {@code dateOfEvent}, already under assessment. */
+
+    // ---- what the claim is worth ---------------------------------------------
+
+    @Test
+    void anOrdinaryDeathOnDayOneIsPaidInFull() {
+        // THE TEST THAT PROVES THERE IS NO GENERAL WAITING PERIOD (client answer 3.4). Both
+        // exclusion windows are open on day one, and an ordinary death is still paid: an open
+        // window is permission for an assessor to cite a reason, never a bar on settlement.
+        //
+        // Getting this wrong is the expensive direction. A platform that quietly treated an open
+        // window as "not yet covered" would refuse every early death on a book where nobody is
+        // underwritten -- and the lender would be told their borrower was insured.
+        UUID claimId = approvedClaimAt(DISBURSED, PRINCIPAL);
+
+        ClaimView claim = claimsApi.getClaim(claimId);
+        assertThat(claim.status()).isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
+        assertThat(claim.approvedAmount()).isEqualByComparingTo(PRINCIPAL);
+    }
+
+    @Test
+    void aDeathClaimPaysWhatTheBorrowerStillOwedOnTheDayTheyDied() {
+        // 2,400,000 over 18 months, disbursed 2026-08-03. Death at month 6 leaves twelve of
+        // eighteen months outstanding: 1,600,000 -- not the 2,400,000 they borrowed.
+        UUID claimId = approvedClaimAt(DISBURSED.plusMonths(6), new BigDecimal("1600000.00"));
+
+        assertThat(claimsApi.getClaim(claimId).approvedAmount()).isEqualByComparingTo("1600000.00");
+    }
+
+    @Test
+    void aClaimCannotBeApprovedForMoreThanTheBorrowerStillOwed() {
+        // The ceiling is the claim's own stored facts, never the caller's figure. Without it a
+        // manager could settle a month-six death for the original principal and hand the lender
+        // 800,000 shillings of cover that had already run off.
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
+
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, PRINCIPAL, "TZS",
+            null, "LENDER-ACCT", idem(), "claims.manager"))
+            .isInstanceOf(RuntimeException.class);
+
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
+    }
+
+    @Test
+    void aCappedBorrowerIsPaidTheCapAndTheResidualIsTheLendersCreditRisk() {
+        // Spec 2.7: cover above the free cover limit is capped. The claim pays the cap, closes,
+        // and the member exits -- the shortfall is the lender's, which is the entire purpose of
+        // a free cover limit. The platform must not silently pay the full debt.
+        //
+        // 800,000,000 borrowed against a 600,000,000 limit, and nobody underwrote the excess. The
+        // borrower is covered for 600,000,000 from day one -- not zero, and not the whole loan.
+        String bigScheme = issueCreditLifeScheme(bankPartyId, ABOVE_FCL);
+        UUID member = policyApi.listMembers(bigScheme, null, null, PageRequest.of(0, 10))
+            .getContent().get(0).policyMemberId();
+
+        ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
+            bigScheme, member, bankPartyId, ClaimType.DEATH, DISBURSED,
+            new DeathClaimDetails("Natural causes", "Dar es Salaam", DISBURSED, "Dr Mwakalinga")),
+            idem(), "claims.clerk");
+        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one");
+        claimsApi.decideSettlement(claim.claimId(), true, FCL, "TZS", null,
+            "LENDER-ACCT", idem(), "claims.manager");
+
+        assertThat(claimsApi.getClaim(claim.claimId()).approvedAmount()).isEqualByComparingTo(FCL);
+        // And the 200,000,000 above the limit is uninsured, which is the point -- proved by the
+        // platform refusing to settle for the whole debt rather than by the number above alone.
+        UUID second = assessedClaimOn(bigScheme, member, DISBURSED.plusDays(1));
+        assertThatThrownBy(() -> claimsApi.decideSettlement(second, true, ABOVE_FCL, "TZS",
+            null, "LENDER-ACCT", idem(), "claims.manager"))
+            .isInstanceOf(RuntimeException.class);
+    }
+
+    // ---- and then the loan comes off cover -----------------------------------
+
+    @Test
+    void settlingAClaimTakesTheLoanOffCoverAndRefundsNoPremium() {
+        // The whole chain, with nothing hand-published: approve -> claims.ClaimSettlementRequested
+        // -> payment records an EFT AWAITING_EXECUTION -> finance confirms it ->
+        // payment.DisbursementCompleted -> the claim settles -> the borrower comes off cover.
+        UUID claimId = approvedClaimAt(DISBURSED.plusMonths(6), new BigDecimal("1600000.00"));
+
+        // Nothing is settled yet, and that is the EFT rail working: the money has not moved, so
+        // the claim has not. A mobile-money claim would already be SETTLED by this line.
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
+        assertThat(policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10))
+            .getContent().get(0).status()).isEqualTo(MemberStatus.ACTIVE);
+
+        DisbursementInstruction eft = disbursementRepository
+            .findByIdempotencyKeyAndTenantId(settlementKey, TenantContext.get())
+            .orElseThrow(() -> new AssertionError("No disbursement was recorded for the settlement"));
+        assertThat(eft.getStatus()).isEqualTo("AWAITING_EXECUTION");
+        assertThat(eft.getMethod()).isEqualTo("EFT");
+
+        paymentApiImpl.markEftExecuted(eft.getDisbursementId(), "FT26092300881", "finance-officer-asha");
+
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLED);
+
+        PolicyMemberView exited = policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10))
+            .getContent().get(0);
+        assertThat(exited.status()).isEqualTo(MemberStatus.EXITED);
+        assertThat(exited.leftOn()).isEqualTo(DISBURSED.plusMonths(6));
+        // No refund: the premium was fully earned the moment the insurer paid. Refunding it would
+        // pay the claim and give back the money that funded it. PolicyApiImpl.addRefundDetail
+        // returns before computing anything for a CLAIM_SETTLED exit; MemberExitIntegrationTest
+        // owns the credit-side assertion, which needs billing's schema.
+        assertThat(exited.exitReason()).isEqualTo(ExitReason.CLAIM_SETTLED);
+    }
+
     private UUID assessedClaimAt(LocalDate dateOfEvent) {
         ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
             scheme, borrowerMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
             new DeathClaimDetails("Under investigation", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
             idem(), "claims.clerk");
         claimsApi.submitAssessment(claim.claimId(), "investigating", null, null, false, "assessor.one");
+        return claim.claimId();
+    }
+
+    /** The idempotency key the last approval used, so the test can find the payout it produced.
+     * payment keys the disbursement on it -- that is the handle, not a lookup by claim. */
+    private String settlementKey;
+
+    /** Registers, assesses and approves one death claim, and returns its id. {@code expected} is
+     * what the platform should value it at: passing the figure in rather than reading it back is
+     * what makes the approval itself an assertion -- an approval above cover is REFUSED. */
+    private UUID approvedClaimAt(LocalDate dateOfEvent, BigDecimal expected) {
+        UUID claimId = assessedClaimAt(dateOfEvent);
+        settlementKey = idem();
+        claimsApi.decideSettlement(claimId, true, expected, "TZS", null,
+            "LENDER-ACCT", settlementKey, "claims.manager");
+        return claimId;
+    }
+
+    private UUID assessedClaimOn(String policyNumber, UUID policyMemberId, LocalDate dateOfEvent) {
+        ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
+            policyNumber, policyMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
+            new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
+            idem(), "claims.clerk");
+        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one");
         return claim.claimId();
     }
 
@@ -285,13 +435,17 @@ class CreditLifeClaimEndToEndTest {
     private record GroupProduct(UUID productId, UUID productVersionId) {}
 
     private String issueCreditLifeScheme(UUID lender) {
+        return issueCreditLifeScheme(lender, PRINCIPAL);
+    }
+
+    private String issueCreditLifeScheme(UUID lender, BigDecimal principal) {
         GroupProduct product = publish(ProductCategory.CREDIT_LIFE, "CL-CLAIM-" + SEQ.incrementAndGet());
         return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
             lender, product.productId(), product.productVersionId(), null,
-            BenefitBasis.AMORTISING_LOAN, null, null, new BigDecimal("600000000.00"), "TZS",
+            BenefitBasis.AMORTISING_LOAN, null, null, FCL, "TZS",
             null, List.of(PolicyApi.MemberInput.borrower("Amina Hassan Mwinyi",
                 LocalDate.of(1988, 3, 14), null,
-                new LoanTerms(PRINCIPAL, BigDecimal.ZERO, TERM_MONTHS, RepaymentFrequency.MONTHLY,
+                new LoanTerms(principal, BigDecimal.ZERO, TERM_MONTHS, RepaymentFrequency.MONTHLY,
                     DISBURSED, DISBURSED.plusMonths(1)))),
             new BigDecimal("52000.00"), "TZS", "SINGLE",
             LocalDate.of(2026, 6, 1), null, "credit life onboarding", IssuanceBasis.MIGRATION,
