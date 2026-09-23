@@ -1,9 +1,13 @@
 import { ArrowLeft } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
+  ENROLMENT_TEMPLATE_FILE_NAME,
+  EXITS_TEMPLATE_FILE_NAME,
   downloadEnrolmentReport,
+  downloadEnrolmentTemplate,
   downloadExitsReport,
+  downloadExitsTemplate,
   enrolmentReportFileName,
   exitsReportFileName,
 } from '@/api/creditLife';
@@ -266,6 +270,10 @@ export function CreditLifeSchemePage() {
           onDownloadReport={async (id) =>
             saveBlob(await downloadEnrolmentReport(policyNumber, id), enrolmentReportFileName(id))
           }
+          onDownloadTemplate={async () =>
+            saveBlob(await downloadEnrolmentTemplate(), ENROLMENT_TEMPLATE_FILE_NAME)
+          }
+          columnGuide={<EnrolmentColumns />}
         >
           <EnrolmentRows
             rows={enrolmentRows.data ?? []}
@@ -298,10 +306,126 @@ export function CreditLifeSchemePage() {
           onDownloadReport={async (id) =>
             saveBlob(await downloadExitsReport(policyNumber, id), exitsReportFileName(id))
           }
+          onDownloadTemplate={async () =>
+            saveBlob(await downloadExitsTemplate(), EXITS_TEMPLATE_FILE_NAME)
+          }
+          columnGuide={<ExitColumns />}
         >
           <ExitRows rows={exitRows.data ?? []} loading={isInitialLoad(exitRows)} error={exitRows.error} />
         </SubmissionsPanel>
       </DetailLayout>
+    </>
+  );
+}
+
+/**
+ * What goes in the blank file, in the words somebody repeats to a lender.
+ *
+ * <p>The columns are generated into the template by the parser that reads them, so the file and
+ * the rules cannot drift; what a CSV header cannot carry is which columns are compulsory, what a
+ * date has to look like, and why `member_reference` is blank the first time. That is this table,
+ * and it is what makes the download usable by the person who has to explain it.
+ *
+ * <p>Kept deliberately short of restating the whole judgement. Every rule that rejects a row is
+ * applied server-side and comes back as a reason on that row; duplicating them here would create
+ * a second statement of the rules that goes stale.
+ */
+function EnrolmentColumns() {
+  return (
+    <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
+      <Column name="member_reference" required={false}>
+        Blank for a new borrower — the insurer mints it and returns it on the report. The lender
+        quotes it back on any later file about that same loan.
+      </Column>
+      <Column name="borrower_full_name" required>
+        The person insured. No client record is created for them.
+      </Column>
+      <Column name="borrower_date_of_birth" required>
+        YYYY-MM-DD. The product&rsquo;s entry-age bounds are checked against it.
+      </Column>
+      <Column name="loan_principal_amount" required>
+        What they borrowed, e.g. 1200000.00. The premium is charged on this, and cover starts here
+        and declines.
+      </Column>
+      <Column name="loan_term_months" required>
+        A whole number of months.
+      </Column>
+      <Column name="disbursement_date" required>
+        YYYY-MM-DD, and <strong>cover starts on it</strong> — so it cannot be in the future.
+      </Column>
+      <Column name="borrower_sex" required={false}>
+        M or F. Not priced on; kept for the regulatory return.
+      </Column>
+      <Column name="borrower_national_id" required={false}>
+        Eases identifying them if a claim is ever made.
+      </Column>
+      <Column name="borrower_phone" required={false}>
+        Optional. The insurer never contacts the borrower.
+      </Column>
+      <Column name="loan_account_number" required={false}>
+        Read and echoed back if the lender has one. Neither real lender does, which is why the
+        insurer mints the reference instead.
+      </Column>
+      <p className="sm:col-span-2 mt-1 text-[11px] text-muted-foreground">
+        Extra columns are ignored, not refused — a lender&rsquo;s own export carries plenty we do
+        not use. A row repeating the name, date of birth, disbursement date and principal of a
+        loan already on cover is refused as a duplicate rather than insuring it twice.
+      </p>
+    </dl>
+  );
+}
+
+/** The exits file. Three required columns and a balance the lender may not track. */
+function ExitColumns() {
+  return (
+    <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
+      <Column name="member_reference" required>
+        {/* Required here and optional on an enrolment file, and the asymmetry is the point. */}
+        The reference the insurer minted, from the enrolment report. An exits file is about a loan
+        already on cover, so there is no new-borrower case here.
+      </Column>
+      <Column name="exit_date" required>
+        YYYY-MM-DD. Cover ends on it, and an early settlement refunds premium from it.
+      </Column>
+      <Column name="exit_reason" required>
+        SETTLED_EARLY, REFINANCED, WRITTEN_OFF or CANCELLED. A death is not one of these — a claim
+        takes the borrower off cover, and a lender stating it here would suppress the refund.
+      </Column>
+      <Column name="outstanding_balance_at_exit" required={false}>
+        What was still owed, if the lender tracks it.
+      </Column>
+      <p className="sm:col-span-2 mt-1 text-[11px] text-muted-foreground">
+        A restructure or top-up is an exit and a fresh enrolment, never an amendment: the new loan
+        is a different risk over a different term, and it earns its own reference.
+      </p>
+    </dl>
+  );
+}
+
+function Column({
+  name,
+  required = false,
+  children,
+}: {
+  name: string;
+  required?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <dt className="font-mono text-[11px] whitespace-nowrap">
+        {name}
+        {required ? (
+          <span className="ml-1 text-status-danger-fg" title="Required">
+            *
+          </span>
+        ) : (
+          <span className="ml-1 text-subtle-foreground" title="Optional">
+            ·
+          </span>
+        )}
+      </dt>
+      <dd className="text-muted-foreground">{children}</dd>
     </>
   );
 }

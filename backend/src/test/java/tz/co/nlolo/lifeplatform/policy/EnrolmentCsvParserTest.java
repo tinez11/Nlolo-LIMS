@@ -230,4 +230,47 @@ class EnrolmentCsvParserTest {
             .isInstanceOf(EnrolmentCsvParser.MalformedScheduleException.class)
             .hasMessageContaining("no header");
     }
+
+    // ---- the template the lender is given ----------------------------------
+
+    /**
+     * The blank file we hand a lender must be readable by the parser that judges it.
+     *
+     * <p>This is the whole point of generating the template from the column constants. Three
+     * refusal messages told people to "use the template at credit-life-enrolment-sample.csv", a
+     * file that lived only in the repository, so the format reached a lender by description --
+     * and the HEADER constant at the top of this very test file is a hand-written copy of the
+     * same columns, which is exactly the drift this guards against.
+     */
+    @Test
+    void theTemplateWeGiveTheLenderParses() {
+        String filled = EnrolmentCsvParser.templateCsv()
+            + ",Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-08-03,LN-2026-00417\n";
+
+        var parsed = EnrolmentCsvParser.parse(new StringReader(filled));
+
+        assertThat(parsed.errors()).isEmpty();
+        assertThat(parsed.rows()).hasSize(1);
+        assertThat(parsed.rows().get(0).borrowerFullName()).isEqualTo("Amina Hassan Mwinyi");
+        assertThat(parsed.rows().get(0).loanAccountNumber()).isEqualTo("LN-2026-00417");
+    }
+
+    /** A template missing a required column is a file the lender cannot possibly get right. */
+    @Test
+    void theTemplateCarriesEveryColumnTheParserRequires() {
+        String header = EnrolmentCsvParser.templateCsv().strip();
+        assertThat(EnrolmentCsvParser.requiredColumns())
+            .allSatisfy(column -> assertThat(header).contains(column));
+    }
+
+    /**
+     * No example row, deliberately.
+     *
+     * <p>A template carrying a plausible borrower is one somebody returns with the example still
+     * in it, and that row would enrol a person who does not exist.
+     */
+    @Test
+    void theTemplateIsAHeaderAndNothingElse() {
+        assertThat(EnrolmentCsvParser.templateCsv().strip().lines()).hasSize(1);
+    }
 }

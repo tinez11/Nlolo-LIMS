@@ -71,6 +71,35 @@ public final class EnrolmentCsvParser {
         BORROWER_FULL_NAME, BORROWER_DATE_OF_BIRTH,
         LOAN_PRINCIPAL_AMOUNT, LOAN_TERM_MONTHS, DISBURSEMENT_DATE);
 
+    /**
+     * The blank file a lender is given, header row only.
+     *
+     * <p><b>Generated from the constants above rather than written out</b>, because the
+     * alternative is a copy that drifts. The columns changed twice already — thirteen cut to
+     * nine when the real client files arrived, then re-keyed when the client confirmed neither
+     * lender holds a loan account number — and a hand-maintained template would have gone stale
+     * on the first of those and been quietly wrong on the second.
+     *
+     * <p><b>No example row.</b> A template carrying a plausible borrower is a template somebody
+     * sends back with the example still in it, and that row enrols a person who does not exist.
+     * The console states the formats beside the download instead.
+     *
+     * <p>Required and optional columns are all present, in the order the lender's own exports
+     * tend to read. A file may also carry columns we do not use — both real exports do — and
+     * those are ignored rather than refused.
+     */
+    public static String templateCsv() {
+        return String.join(",",
+            MEMBER_REFERENCE, BORROWER_FULL_NAME, BORROWER_DATE_OF_BIRTH, BORROWER_SEX,
+            BORROWER_NATIONAL_ID, BORROWER_PHONE, LOAN_PRINCIPAL_AMOUNT, LOAN_TERM_MONTHS,
+            DISBURSEMENT_DATE, LOAN_ACCOUNT_NUMBER) + "\n";
+    }
+
+    /** The five a lender must fill, for a console that has to say which they are. */
+    public static List<String> requiredColumns() {
+        return REQUIRED_COLUMNS;
+    }
+
     private EnrolmentCsvParser() {}
 
     public static ParsedSchedule parse(Reader reader) {

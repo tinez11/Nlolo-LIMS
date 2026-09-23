@@ -26,6 +26,14 @@ import { acceptAttribute, submissionUploadSchema, type SubmissionKind } from './
  * changes cover is a confirmation with its consequence spelled out, never a bare button.
  */
 
+/**
+ * The busy key for the blank file, which has no submission id of its own.
+ *
+ * A uuid can never collide with it, which is what lets one `downloading` slot serve both the
+ * template and every report on the panel.
+ */
+const TEMPLATE = 'template';
+
 export interface SubmissionRow {
   submissionId: string;
   status: SubmissionStatus;
@@ -59,6 +67,10 @@ interface Props {
   deciding: boolean;
   /** Fetches the lender's report and saves it. Rejects if the request fails. */
   onDownloadReport: (submissionId: string) => Promise<void>;
+  /** Fetches the blank file to send the lender. */
+  onDownloadTemplate: () => Promise<void>;
+  /** The columns the lender must fill, and the formats. Rendered beside the template. */
+  columnGuide: React.ReactNode;
   /** Rendered under the selected submission: the rows and their reasons. */
   children?: React.ReactNode;
 }
@@ -81,6 +93,8 @@ export function SubmissionsPanel({
   onWithdraw,
   deciding,
   onDownloadReport,
+  onDownloadTemplate,
+  columnGuide,
   children,
 }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -89,6 +103,9 @@ export function SubmissionsPanel({
   // nothing is the worst available outcome here -- the person assumes they have the file.
   const [downloading, setDownloading] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
+  // The format guide is collapsed by default: somebody running this month's file already knows
+  // the columns, and somebody onboarding a lender needs them once.
+  const [guideOpen, setGuideOpen] = useState(false);
   const [confirming, setConfirming] = useState<{ id: string; act: 'accept' | 'withdraw' } | null>(
     null,
   );
@@ -106,13 +123,19 @@ export function SubmissionsPanel({
     onUpload(file);
   }
 
-  async function downloadReport(submissionId: string) {
+  /**
+   * One busy slot and one error line for every file this panel hands out.
+   *
+   * `key` is a submission id for a report and the TEMPLATE sentinel for the blank file, so two
+   * downloads cannot both claim the spinner and a failure lands under the thing that failed.
+   */
+  async function download(key: string, fetch: () => Promise<void>, what: string) {
     setReportError(null);
-    setDownloading(submissionId);
+    setDownloading(key);
     try {
-      await onDownloadReport(submissionId);
+      await fetch();
     } catch {
-      setReportError('That report could not be downloaded. Try again, or reload the page.');
+      setReportError(`That ${what} could not be downloaded. Try again, or reload the page.`);
     } finally {
       setDownloading(null);
     }
@@ -151,6 +174,34 @@ export function SubmissionsPanel({
               : 'CSV or XLSX. Enrols nobody until someone accepts it.'}
         </p>
       </div>
+
+      {/* THE BLANK FILE THE LENDER FILLS IN, and the columns spelled out beside it.
+          The platform used to refuse a malformed file with "use the template at
+          credit-life-enrolment-sample.csv" and serve no such thing -- that file exists only in
+          the repository, so the format reached a lender only because somebody described it in an
+          email, and a column nobody agreed on is a file that bounces. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2">
+        <button
+          type="button"
+          className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+          disabled={downloading === TEMPLATE}
+          onClick={() => void download(TEMPLATE, onDownloadTemplate, 'template')}
+        >
+          <Download className="mr-1 inline size-3.5" aria-hidden />
+          {downloading === TEMPLATE
+            ? 'Preparing the template…'
+            : `Blank ${kind === 'exits' ? 'exits file' : 'schedule'} to send the lender`}
+        </button>
+        <button
+          type="button"
+          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          aria-expanded={guideOpen}
+          onClick={() => setGuideOpen((open) => !open)}
+        >
+          {guideOpen ? 'Hide the columns' : 'What goes in it'}
+        </button>
+      </div>
+      {guideOpen && <div className="border-b border-border px-4 py-3">{columnGuide}</div>}
 
       {fileError && (
         <p role="alert" className="border-b border-border px-4 py-2 text-xs text-status-danger-fg">
@@ -281,7 +332,9 @@ export function SubmissionsPanel({
                       type="button"
                       className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-60"
                       disabled={downloading === s.submissionId}
-                      onClick={() => void downloadReport(s.submissionId)}
+                      onClick={() =>
+                        void download(s.submissionId, () => onDownloadReport(s.submissionId), 'report')
+                      }
                     >
                       <Download className="mr-1 inline size-3.5" aria-hidden />
                       {downloading === s.submissionId

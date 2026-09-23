@@ -227,4 +227,38 @@ class ExitCsvParserTest {
             .isInstanceOf(ExitCsvParser.MalformedExitsFileException.class)
             .hasMessageContaining("no header");
     }
+
+    // ---- the template the lender is given ----------------------------------
+
+    /** The blank exits file we hand a lender must be readable by the parser that judges it. */
+    @Test
+    void theTemplateWeGiveTheLenderParses() {
+        String filled = ExitCsvParser.templateCsv()
+            + "CL-4F8DF58B-000417,2026-09-01,SETTLED_EARLY,450000.00\n";
+
+        var parsed = ExitCsvParser.parse(new StringReader(filled));
+
+        assertThat(parsed.errors()).isEmpty();
+        assertThat(parsed.rows()).hasSize(1);
+        assertThat(parsed.rows().get(0).memberReference()).isEqualTo("CL-4F8DF58B-000417");
+        assertThat(parsed.rows().get(0).exitReason()).isEqualTo(ExitReason.SETTLED_EARLY);
+    }
+
+    @Test
+    void theTemplateCarriesEveryColumnTheParserRequires() {
+        String header = ExitCsvParser.templateCsv().strip();
+        assertThat(ExitCsvParser.requiredColumns())
+            .allSatisfy(column -> assertThat(header).contains(column));
+    }
+
+    /**
+     * CLAIM_SETTLED is not offered to a lender, although it is a valid ExitReason.
+     *
+     * <p>A lender stating it would suppress both the refund and the commission clawback on a loan
+     * that was merely repaid, so only the claim path may write it.
+     */
+    @Test
+    void aLenderIsNotOfferedTheClaimReason() {
+        assertThat(ExitCsvParser.lenderStateableReasons()).doesNotContain(ExitReason.CLAIM_SETTLED);
+    }
 }
