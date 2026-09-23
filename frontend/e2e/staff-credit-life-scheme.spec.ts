@@ -158,6 +158,18 @@ test.describe('staff credit-life scheme', () => {
      */
     await expect(page.getByRole('columnheader', { name: 'Reference' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Grade / salary' })).toHaveCount(0);
+
+    /*
+     * AND THE WAY BACK. The roll used to be a one-way door: this page linked to it, it linked
+     * only to the policy record, and its one primary action was "Add member" -- a form that
+     * cannot work on this product, since it collects a grade and a salary while a credit-life
+     * member is a loan. Somebody who came here to look a borrower up and then wanted to send the
+     * next file found no upload and nothing saying where the upload was.
+     */
+    await expect(page.getByRole('button', { name: 'Add member' })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Upload a file' }).click();
+    await expect(page).toHaveURL(schemePage, { timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Upload schedule' })).toBeVisible();
   });
 
   test('a credit-life scheme can be set up from the console at all', async ({ page }) => {

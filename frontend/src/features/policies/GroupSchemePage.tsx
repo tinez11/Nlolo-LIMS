@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Plus, UserPlus } from 'lucide-react';
+import { ArrowLeft, Plus, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch, Controller } from 'react-hook-form';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -165,10 +165,25 @@ export function GroupSchemePage() {
         actions={
           <>
             {data?.status && <StatusBadge kind="policy" value={data.status} />}
-            <Button size="sm" variant="primary" onClick={() => setAddOpen(true)}>
-              <UserPlus />
-              Add member
-            </Button>
+            {/* A credit-life scheme gets a LINK here, not the add-member form, and the form is
+                not merely inappropriate on it -- it cannot work. It collects a party, a grade and
+                a salary; a credit-life member is a loan, needs terms this form has no fields for,
+                and `chk_policy_member_loan_complete` refuses the row without them. Offering it
+                was the more expensive half of a real confusion: somebody on the roll looking for
+                the CSV upload found one primary button, and it was the wrong one. */}
+            {data?.benefitBasis === 'AMORTISING_LOAN' ? (
+              <Button asChild size="sm" variant="primary">
+                <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
+                  <Upload />
+                  Upload a file
+                </Link>
+              </Button>
+            ) : (
+              <Button size="sm" variant="primary" onClick={() => setAddOpen(true)}>
+                <UserPlus />
+                Add member
+              </Button>
+            )}
           </>
         }
       />
@@ -315,6 +330,31 @@ export function GroupSchemePage() {
                 This scheme is graded but carries no grade table.
               </p>
             )}
+          </Panel>
+        )}
+
+        {/* THE WAY BACK, and it was missing. The credit-life page links here -- "the member
+            roll" -- and this page linked only to the policy record, so following that link was a
+            one-way door: the roll is where you check whether a named borrower is covered, and the
+            monthly files are where every act on this product happens. Somebody who came here to
+            look someone up and then wanted to send the next file found a page with no upload on
+            it and nothing saying where the upload was.
+
+            Only on a credit-life scheme, because an employer scheme has no monthly files: its
+            members are added one at a time on this very page. */}
+        {data?.benefitBasis === 'AMORTISING_LOAN' && (
+          <Panel title="Monthly files">
+            <div className="px-4 pb-4 pt-1">
+              <p className="text-xs text-muted-foreground">
+                Borrowers join and loans end by file, not one at a time. Uploading the lender&rsquo;s
+                schedule, reading what was refused and accepting it all happen there.
+              </p>
+              <Button asChild size="sm" variant="ghost" className="mt-2 -ml-2">
+                <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
+                  Open the monthly files
+                </Link>
+              </Button>
+            </div>
           </Panel>
         )}
 
