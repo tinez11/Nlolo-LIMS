@@ -106,6 +106,27 @@ test.describe('staff credit-life scheme', () => {
     expect(reportText.split('\n')[0]).toContain('member_reference');
 
     /*
+     * THE BLANK FILE THE LENDER FILLS IN. The platform refused malformed files with "use the
+     * template at credit-life-enrolment-sample.csv" while serving no such thing -- that file
+     * exists only in the repository, so the format reached a lender by description. Asserted as
+     * bytes for the same reason the report is: a visible link proves nothing about what downloads.
+     */
+    const templateDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: /Blank schedule to send the lender/ }).click();
+    const template = await templateDownload;
+    expect(template.suggestedFilename()).toBe('credit-life-enrolment-template.csv');
+    const templateText = readFileSync(await template.path(), 'utf8');
+    // The header the parser itself generates, and nothing else: an example row would come back
+    // with the example still in it, enrolling a borrower who does not exist.
+    expect(templateText.trim().split('\n')).toHaveLength(1);
+    expect(templateText).toContain('borrower_full_name');
+    expect(templateText).toContain('disbursement_date');
+
+    // And the columns are explained where somebody can read them out to a lender.
+    await page.getByRole('button', { name: 'What goes in it' }).first().click();
+    await expect(page.getByText(/cover starts on it/).first()).toBeVisible();
+
+    /*
      * NO EMPLOYER-SCHEME FURNITURE. A credit-life scheme has no grades and no salary multiple:
      * the amount insured comes off an amortisation schedule. Rendering either as an empty state
      * would be furniture, and the whole reason this page is not a branch inside GroupSchemePage.

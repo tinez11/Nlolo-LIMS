@@ -58,10 +58,20 @@ test.describe('staff bank transfers', () => {
       timeout: 30_000,
     });
 
+    /*
+     * WAIT FOR THE QUEUE TO SETTLE BEFORE COUNTING. `count()` does not auto-wait, so counting
+     * straight after `goto` asks "is there a row" of a page still fetching, gets zero, and skips
+     * the test — which is indistinguishable from an empty queue and is how this spec quietly
+     * proved nothing on a tenant that DID have a transfer waiting.
+     */
+    const table = page.getByRole('table', { name: 'Bank transfers awaiting execution' });
+    const empty = page.getByText('Nothing is waiting on a transfer');
+    await expect(table.or(empty)).toBeVisible({ timeout: 30_000 });
+
     const first = page.getByRole('button', { name: 'Record transfer' }).first();
-    // Skipped rather than failed when the queue is empty: this tenant's queue depends on what
-    // else has run, and a test that demanded an unpaid claim exist would fail for a reason that
-    // is not about this screen. When there IS one, the guard is checked properly.
+    // Skipped rather than failed when the queue is genuinely empty: this tenant's queue depends on
+    // what else has run, and a test that demanded an unpaid claim exist would fail for a reason
+    // that is not about this screen. When there IS one, the guard is checked properly.
     test.skip((await first.count()) === 0, 'no transfer is awaiting execution in this tenant');
 
     await first.click();
