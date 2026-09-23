@@ -97,6 +97,10 @@ public class PolicyEventListener {
             case "policy.PolicyMatured" -> withTenant(envelope, this::handlePolicyMatured);
             case "policy.PolicySurrendered" -> withTenant(envelope, this::handlePolicySurrendered);
             case "policy.PolicyReinstated" -> withTenant(envelope, this::handlePolicyReinstated);
+            // Both member events say the same thing -- "this scheme's total cover is now X" -- so
+            // one handler serves both. See its javadoc for why the projection is a delta.
+            case "policy.GroupMemberAdded" -> withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupMemberAdded"));
+            case "policy.GroupMemberExited" -> withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupMemberExited"));
             // policy.PolicySuspended: deliberately no case -- see class javadoc.
             default -> { /* not regreporting-relevant here */ }
         }
@@ -214,6 +218,92 @@ public class PolicyEventListener {
             .orElseGet(() -> new PolicyMovement(tenantId, period, attribution.productId(), attribution.currency()));
         applier.accept(movement, attribution.sumAssured());
         policyMovementRepository.save(movement);
+    }
+
+    /**
+     * One handler for both member events, because they say the same thing: <b>this scheme's total
+     * cover is now X</b>. What changed, and by how much, is the difference between that and the
+     * total this module last recorded.
+     *
+     * <p><b>A delta, not the member's own cover.</b> Three reasons, and the third is the one that
+     * matters. {@code GroupMemberExited} carries no {@code coveredAmount} to use at all. A
+     * member's own cover is not necessarily the change in the scheme's total. And
+     * {@code regreporting} has no de-duplication anywhere — these listeners are
+     * {@code AFTER_COMMIT} with at-least-once delivery, and every other handler in this module
+     * double-counts a redelivered event. A delta cannot: the second delivery finds the dimension
+     * already equal to the total it carries and computes zero. The projection also self-heals,
+     * correcting drift from a dropped event on the next one rather than carrying it forever.
+     *
+     * <p><b>A total of zero is skipped entirely, and that is load-bearing.</b> When the last
+     * active member leaves, {@code PolicyApiImpl.exitOneMember} restates the scheme to zero and
+     * then closes it, and the resulting {@code policy.PolicySurrendered} already terminates the
+     * last recorded total through {@link #applyTerminationMovement}. Acting here as well would
+     * write a zero into a column whose CHECK forbids it, and would remove cover the close event
+     * is about to remove again — the whole scheme counted out twice.
+     *
+     * <p><b>A missing dimension is dropped here, unlike everywhere else in this class.</b>
+     * {@link #resolveDimension}'s UNKNOWN-product fallback is right for a termination, whose
+     * event carries no amount, so attributing a zero-valued movement to a sentinel loses nothing.
+     * A member delta is meaningless without the previous total: falling back would book the
+     * scheme's WHOLE total as a movement against a product that does not exist. Counted, not
+     * silently dropped.
+     *
+     * <p>Opening-schedule members need no handling: {@code issueGroupScheme} publishes no
+     * {@code GroupMemberAdded} for them, because their cover is already inside the
+     * {@code sumAssured} on {@code PolicyActivated}. Verified, not assumed.
+     */
+    private void handleSchemeTotalRestated(Map<String, Object> payload, String eventType) {
+        UUID tenantId = TenantContext.get();
+        String policyNumber = (String) payload.get("policyNumber");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> schemeTotal = (Map<String, Object>) payload.get("schemeTotalCovered");
+        BigDecimal newTotal = new BigDecimal((String) schemeTotal.get("amount"));
+
+        if (newTotal.signum() <= 0) {
+            log.info("Scheme {} restated to {} -- its last member has left, so the close event owns "
+                + "taking it out of force. No member movement recorded.", policyNumber, newTotal);
+            return;
+        }
+
+        var maybeDimension = policyDimensionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber);
+        if (maybeDimension.isEmpty()) {
+            log.warn("{} on scheme {} has no policy_dimension row -- no previous total to measure a "
+                + "delta against and no productId to attribute it to, so it is dropped",
+                eventType, policyNumber);
+            meterRegistry.counter(ProjectionSupport.UNATTRIBUTED_MOVEMENT_COUNTER, "eventType", eventType).increment();
+            return;
+        }
+        PolicyDimension dimension = maybeDimension.get();
+        BigDecimal delta = newTotal.subtract(dimension.getSumAssuredAmount());
+        if (delta.signum() == 0) {
+            return; // a redelivery, or a member whose cover was nil
+        }
+
+        // The period is the one the CHANGE falls in, not the scheme's issue quarter: a borrower
+        // enrolled in a later quarter is that quarter's movement even on a scheme issued long
+        // before, or every file a lender sends for the rest of the scheme's life would be
+        // reported in the quarter it opened.
+        String period = ProjectionSupport.quarterOfDate(changeDateOf(payload));
+        PolicyMovement movement = policyMovementRepository
+            .findByTenantIdAndPeriodAndProductId(tenantId, period, dimension.getProductId())
+            .orElseGet(() -> new PolicyMovement(tenantId, period, dimension.getProductId(),
+                dimension.getSumAssuredCurrency()));
+        if (delta.signum() > 0) {
+            movement.applyMemberCoverAdded(delta);
+        } else {
+            movement.applyMemberCoverExited(delta.negate());
+        }
+        policyMovementRepository.save(movement);
+
+        dimension.restateSumAssured(newTotal);
+        policyDimensionRepository.save(dimension);
+    }
+
+    /** {@code joinedOn} on an add, {@code leftOn} on an exit -- the date the cover actually
+     * changed, which is what the period must be derived from. */
+    private static String changeDateOf(Map<String, Object> payload) {
+        Object joined = payload.get("joinedOn");
+        return (String) (joined != null ? joined : payload.get("leftOn"));
     }
 
     private DimensionAttribution resolveDimension(UUID tenantId, String policyNumber, String eventType) {
