@@ -469,3 +469,66 @@ borrower has no health record anywhere, because nobody is underwritten. The rule
 been dead code, or a substring match on prose deciding a multi-million-shilling payout, where
 a narrative *ruling out* suicide contains the word and declines the claim. The platform owns
 the dates; the assessor owns the finding.
+
+---
+
+## Outcome, 2026-09-23
+
+All five tasks built and committed. Five commits, plus two from the whole-branch review.
+
+**What the review found, and none of it was in any one task — all three lived in the seams.**
+
+1. **A settled credit-life claim would have recovered against an XOL treaty.** This plan says
+   above, under "Deliberately NOT in this plan", that "a credit-life claim will recover nothing
+   until that build happens." That sentence was **false** for any tenant holding an XOL treaty.
+   `reinsurance.PolicyEventListener` refuses to *cede* a scheme but writes the projection row
+   first and unconditionally; `ClaimEventListener` read "has a projection row" as "was in scope",
+   which a scheme always satisfies, and fell through to the XOL path — which needs no cession at
+   all, so "never ceded" was exactly the wrong disqualifier to lean on. finaccounting would then
+   have booked the recoverable as a real asset against a real reinsurer.
+
+   It was unreachable before this plan, which is precisely why it survived review on the cession
+   side: no scheme claim could settle. Task 5 made it reachable. Fixed in `58de9b9`, with the
+   category stored on reinsurance's own projection row (`reinsurance/V4`) so both listeners
+   decide the same question from one source — the shape of the bug was two guards that could
+   drift, one of which never existed.
+
+2. **Task 3's exclusion windows could not be set by anyone.** `setExclusionPeriods` had no REST
+   caller, so the windows were reachable only from Java or SQL. In a real deployment every
+   product ships with both null, `ExclusionWindows.openAt` returns nothing, and every exclusion
+   decline is refused for citing a window that is not open — the gate this plan argues so
+   carefully for would have had nothing to gate on. Fixed in `ce3e506`.
+
+3. **The EFT work shipped without reaching its contracts.** `AWAITING_EXECUTION` was a status the
+   API really returns and `openapi-payment.yaml` did not list; neither EFT endpoint was
+   documented; `asyncapi-events.yaml` carried neither of the two new ledger events.
+
+**Deliberately not built, stated rather than left to be discovered:**
+
+- **No check that an EFT payee looks like a bank account rather than a phone number.** No source
+  on this platform specifies a Tanzanian bank account format, and `payeeRef` is an opaque string
+  everywhere else in `payment` — it carries an MSISDN, a bank account or an agent reference
+  depending on purpose. A regex invented here would reject real accounts while proving nothing.
+  What *is* enforced, and tested, is the state machine: an EFT is the only thing a person may
+  hand-complete, and a gateway-owned payout refuses.
+
+- **No maker-checker on the EFT confirmation.** One FINANCE_OFFICER can mark a multi-million
+  shilling payout as executed, and that single call settles the claim, exits the borrower from
+  cover and books the claims expense. This mirrors the open finding already recorded against
+  pricing (one ADMIN can change a live price in one call) and belongs with it rather than being
+  quietly solved differently here.
+
+**A note on how the tests were written.** Two of the fixes were caught by *control* tests rather
+than by the tests under review:
+
+- The reinsurance guard's proof uses the same treaty, the same 1,500,000 retention and the same
+  2,000,000 settled amount as the existing XOL test that recovers 500,000 on those numbers, so a
+  regression cannot hide behind a retention that was never breached. Its companion —
+  `anOrdinaryPolicyOnTheSameTreatyStillRecoversTheExcess` — failed on first run for a reason
+  that had nothing to do with the guard (`policy_projection.policy_number` is `VARCHAR(20)` and
+  the fixture's name was 21 characters, so the insert threw and the policy had no projection row
+  at all). Without that control the scheme test would have passed while proving nothing.
+
+- `EftDisbursementIntegrationTest` arms the WireMock rail even in the tests asserting nothing
+  reaches it. An unstubbed gateway also receives no request, so `verify(exactly(0), …)` against
+  one would pass identically if the EFT branch did not exist.
