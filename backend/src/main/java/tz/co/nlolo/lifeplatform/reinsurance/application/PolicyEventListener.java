@@ -129,6 +129,51 @@ public class PolicyEventListener {
                 sumAssuredAmount, sumAssuredCurrency, premiumAmount, premiumCurrency, issueDate));
         }
 
+        // A GROUP SCHEME IS NOT ONE RISK, AND MUST NOT BE CEDED AS ONE.
+        //
+        // Everything below this point treats sumAssured as a single life's cover and tests it
+        // against the treaty's retention. On a scheme that figure is the TOTAL of a schedule --
+        // four hundred borrowers, or a whole employer's staff -- so ceding it as one risk would
+        // cede a 600,000,000 total against a retention meant for one person, when the real
+        // exposure is four hundred independent lives of about 10,000,000 each. Surplus treaties
+        // retain and cede PER LIFE; nothing here knows how to do that.
+        //
+        // Until 2026-09-22 a scheme never reached this listener at all: issueGroupScheme
+        // activated the policy without publishing PolicyActivated, which is the defect whose fix
+        // routes schemes here for the first time. That fix was about commission, and it must not
+        // quietly start ceding reinsurance on a basis nobody has chosen.
+        //
+        // THE CLIENT ANSWERED THIS ON 2026-09-22, and the answer is why the skip stays rather
+        // than being replaced by a calculation. Three things they said, none of which this
+        // module can currently express:
+        //
+        //   1. A treaty specifies the CLASSES OF BUSINESS COVERED, its exclusions, limits and
+        //      retention arrangements. ReinsuranceTreaty carries a reinsurer, a type, a
+        //      retention limit, a cession percent and two dates -- there is no class of
+        //      business and no exclusions, so "is group business even covered by this treaty?"
+        //      cannot be asked, let alone answered.
+        //   2. A real treaty may carry SPECIAL PROVISIONS FOR GROUP SCHEMES: free cover limits,
+        //      automatic acceptance limits, a maximum exposure per scheme, aggregation rules.
+        //      None of those exist here. Ceding a scheme today would apply an individual-life
+        //      retention to a book total with no per-scheme cap and no aggregation at all.
+        //   3. Where a treaty cedes a PROPORTION of the risk, the ceded amount FOLLOWS THE
+        //      INSURED AMOUNT. Credit-life cover declines every month, and a Cession is one
+        //      immutable row written once at activation with a fixed cededAmount. Following a
+        //      declining sum assured is not a parameter this model is missing; it is a
+        //      different shape of record -- derived on demand the way claimableCover is, or
+        //      restated over time.
+        //
+        // So the hold is the correct behaviour, not a temporary convenience: the platform
+        // cannot represent the treaty terms that would govern this cession. Enabling it needs
+        // the treaty model extended first.
+        String productCategory = (String) payload.get("productCategory");
+        if ("GROUP_LIFE".equals(productCategory) || "CREDIT_LIFE".equals(productCategory)) {
+            log.info("Policy {} is a {} scheme -- its sum assured is the total of a member "
+                + "schedule, not one life, so it is NOT ceded. Group cession needs a per-life "
+                + "basis this module does not have.", policyNumber, productCategory);
+            return;
+        }
+
         Optional<ReinsuranceTreaty> maybeTreaty = reinsuranceApiImpl.selectApplicableTreaty(tenantId, issueDate);
         if (maybeTreaty.isEmpty()) {
             log.info("Policy {} issued with no ACTIVE reinsurance treaty covering {} -- nothing ceded",

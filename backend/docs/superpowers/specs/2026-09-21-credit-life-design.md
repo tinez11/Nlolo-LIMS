@@ -24,8 +24,35 @@ they replace wherever the two disagree.
 | 3.6 | **The borrower is never told.** The insurer deals only with the lender | Removes the borrower-notification path from plan 5 entirely |
 | 3.7 | **TIRA class is "Credit Life"**, and a valid filing reference is required before publish | As the platform already enforces at `publishVersion` |
 
+### 0a. Reinsurance, answered 2026-09-22
+
+Asked because fixing a separate defect — `issueGroupScheme` activating a policy without
+publishing `policy.PolicyActivated` — routed group schemes to `reinsurance` for the very
+first time, and with them the question of how a scheme is ceded at all.
+
+| # | Answer | Effect |
+|---|---|---|
+| R1 | A treaty specifies the **classes of business covered**, its exclusions, limits and retention arrangements | `ReinsuranceTreaty` carries a reinsurer, a type, a retention limit, a cession percent and two dates. There is no class of business and no exclusions, so *"does this treaty cover group business?"* cannot be asked |
+| R2 | A treaty may carry **special provisions for group schemes**: free cover limits, automatic acceptance limits, a **maximum exposure per scheme**, aggregation rules | None of these exist. Ceding a scheme today would apply an individual-life retention to a book total, with no per-scheme cap and no aggregation |
+| R3 | Where a treaty cedes a **proportion** of the risk, the ceded amount **follows the insured amount** | Credit-life cover declines monthly. A `Cession` is one immutable row written once at activation with a fixed `ceded_amount`. Following a declining sum assured is not a missing parameter — it is a different shape of record, derived on demand as `claimableCover` is, or restated over time |
+
+**Consequence, and it is the reason the hold stands.** `reinsurance.PolicyEventListener` now
+skips `GROUP_LIFE` and `CREDIT_LIFE` explicitly, asserted by
+`CessionEndToEndTest.aGroupSchemeIsNotCededBecauseItsSumAssuredIsManyLivesNotOne`. That
+preserves exactly the behaviour that has always been in effect — schemes were never ceded,
+because the event never fired — and it is now the *correct* behaviour rather than a cautious
+one: the platform cannot represent the treaty terms that would govern the cession.
+
+**This is not credit-life-specific.** Employer group schemes have never been ceded either,
+and the same three answers govern them.
+
+**Before any group business can be ceded, the treaty model needs:** classes of business and
+exclusions (R1), per-scheme limits and aggregation (R2), and a cession that can follow a
+changing sum assured (R3). That is a reinsurance build, not a credit-life one.
+
 **Still outstanding: §6 of the requirements table**, first requested 2026-09-03 and asked
-for six times.
+for six times. And **ten real rows in `credit-life-enrolment-sample.csv`** (§6 item 9), which
+would confirm by inspection every assumption the parser and judge were built on.
 
 ---
 

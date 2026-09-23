@@ -363,6 +363,11 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("issueDate", policy.getIssueDate().toString());
         payload.put("agentOfRecordId", policy.getAgentOfRecordId()); // nullable -- a direct sale
         payload.put("activatedAt", LocalDate.now().toString());
+        // What KIND of contract this is, so a consumer can tell one life from many without
+        // reading policy back. GROUP_LIFE and CREDIT_LIFE are the two that insure a schedule of
+        // members, and for those the sumAssured above is the TOTAL of that schedule rather than
+        // one person's cover -- a difference reinsurance in particular must not miss.
+        payload.put("productCategory", policy.getProductCategory());
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyActivated", tenantId, payload));
     }
 
