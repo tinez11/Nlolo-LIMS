@@ -213,20 +213,46 @@ channels:
       surrender; see PolicyEventListener's own javadoc.
     publish:
       message: { $ref: '#/components/messages/PolicySurrendered' }
+  policy.GroupMemberAdded:
+    description: >
+      Producer: policy (PolicyApiImpl.addMember) -- one insured life joins a group scheme after
+      activation. Consumers: regreporting, audit.
+      On a credit-life scheme this is the high-volume event on the platform: a lender's monthly
+      file enrols several hundred borrowers, and bulk intake calls addMember once per row, so one
+      accepted submission publishes one of these per member.
+      It carries NO member id, and that is a property of the domain rather than an oversight: a
+      FREEFORM borrower has no party row, so memberPartyId is explicitly null and there is nothing
+      stable for a consumer to key on. Any consumer needing idempotency must get it from the
+      figures rather than from an identifier -- regreporting projects the DELTA between
+      schemeTotalCovered and the total it last recorded, which makes a redelivery a no-op by
+      arithmetic.
+      schemeTotalCovered is the scheme's total AFTER this member, restated in the same
+      transaction. joinedOn is the date cover started for them, and is what a consumer must
+      derive a reporting period from -- not the scheme's issue date, or every file a lender ever
+      sends would report in the quarter the scheme opened.
+      Opening-schedule members do NOT produce this event: issueGroupScheme creates them inline and
+      their cover is already inside PolicyActivated's sumAssured. A consumer that counted both
+      would double-count every scheme at issuance.
+    publish:
+      message: { $ref: '#/components/messages/GroupMemberAdded' }
   policy.GroupMemberExited:
     description: >
-      Producer: policy (PolicyApiImpl.dischargeForSettledClaim) -- one insured life leaves a
-      group scheme. Today the only reason is CLAIM_SETTLED: a settled death claim discharges
-      that MEMBER, not the contract, so the master policy stays in force and the other lives
-      keep their cover. The scheme's sum assured is restated without them in the same
-      transaction and schemeTotalCovered carries the resulting figure. leftOn is the DATE OF
-      EVENT, never the day the payout cleared -- a death in March settled in September means
-      cover ended in March, and dating it later would leave the member counted in the scheme
-      total for six months they were not alive.
-      NO CONSUMER YET, and that is a known gap rather than a new one: regreporting does not
-      listen to policy.GroupMemberAdded either, so policy_dimension's sum assured already goes
-      stale after a joiner. This adds a second route to the same staleness rather than a new
-      kind of it.
+      Producer: policy (PolicyApiImpl.exitOneMember, reached from dischargeForSettledClaim and
+      from exitMember) -- one insured life leaves a group scheme. Consumers: billing (a premium
+      credit on a refundable exit), regreporting, audit.
+      The reason is CLAIM_SETTLED when a settled death claim discharged that MEMBER (the contract
+      stays in force and the other lives keep their cover), or one of SETTLED_EARLY, REFINANCED,
+      WRITTEN_OFF or CANCELLED when a credit-life loan simply ended. The distinction is not
+      cosmetic: a settled claim earns its premium in full, while a loan that ended early does not,
+      which is why only the latter carries refund detail.
+      The scheme's sum assured is restated without them in the same transaction and
+      schemeTotalCovered carries the resulting figure. leftOn is the DATE OF EVENT, never the day
+      the payout cleared -- a death in March settled in September means cover ended in March, and
+      dating it later would leave the member counted in the scheme total for six months they were
+      not alive.
+      A schemeTotalCovered of ZERO means the LAST member has left. The scheme closes in the same
+      breath and publishes policy.PolicySurrendered, which is what takes the remaining cover out
+      of force -- a consumer that also acted on the zero would remove the same cover twice.
     publish:
       message: { $ref: '#/components/messages/GroupMemberExited' }
   policy.SurrenderPayoutRequested:
@@ -516,6 +542,7 @@ components:
     PolicySurrenderInitiated: { messageId: PolicySurrenderInitiated, name: PolicySurrenderInitiated, payload: { $ref: '#/components/schemas/PolicySurrenderInitiatedPayload' } }
     PolicyMaturityInitiated: { messageId: PolicyMaturityInitiated, name: PolicyMaturityInitiated, payload: { $ref: '#/components/schemas/PolicyMaturityInitiatedPayload' } }
     PolicySurrendered: { messageId: PolicySurrendered, name: PolicySurrendered, payload: { $ref: '#/components/schemas/PolicySurrenderedPayload' } }
+    GroupMemberAdded: { messageId: GroupMemberAdded, name: GroupMemberAdded, payload: { $ref: '#/components/schemas/GroupMemberAddedPayload' } }
     GroupMemberExited: { messageId: GroupMemberExited, name: GroupMemberExited, payload: { $ref: '#/components/schemas/GroupMemberExitedPayload' } }
     SurrenderPayoutRequested: { messageId: SurrenderPayoutRequested, name: SurrenderPayoutRequested, payload: { $ref: '#/components/schemas/SurrenderPayoutRequestedPayload' } }
     MaturityPayoutRequested: { messageId: MaturityPayoutRequested, name: MaturityPayoutRequested, payload: { $ref: '#/components/schemas/MaturityPayoutRequestedPayload' } }
@@ -733,6 +760,24 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { policyNumber: {type: string}, claimId: {type: string, format: uuid}, surrenderedAt: {type: string, format: date-time} }
+    GroupMemberAddedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            policyNumber: {type: string}
+            # Explicitly null for a FREEFORM member rather than omitted, so a consumer can tell
+            # "this life is not a party" from "this producer forgot". Every credit-life borrower
+            # enrolled from a lender's file is FREEFORM.
+            memberPartyId: {type: [string, "null"], format: uuid}
+            memberType: {type: string, enum: [PARTY, FREEFORM]}
+            memberName: {type: [string, "null"]}
+            joinedOn: {type: string, format: date}
+            coveredAmount: {type: object}
+            underwritingStatus: {type: string}
+            # The scheme's total AFTER this member. regreporting's whole input: it projects the
+            # delta between this and the total it last recorded.
+            schemeTotalCovered: {type: object}
     GroupMemberExitedPayload:
       description: >
         reason is CLAIM_SETTLED for every occurrence today. The field exists anyway because a

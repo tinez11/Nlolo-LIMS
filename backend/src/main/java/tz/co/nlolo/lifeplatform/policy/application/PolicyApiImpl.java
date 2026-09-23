@@ -1039,9 +1039,16 @@ public class PolicyApiImpl implements PolicyApi {
             ? BigDecimal.ZERO
             : restateSchemeTotal(policy, tenantId, LocalDate.now());
 
-        // regreporting still does not listen to this, nor to policy.GroupMemberAdded, so
-        // policy_dimension's sum assured goes stale on a joiner and on a leaver alike. A known
-        // gap (spec 2.14), not one this method introduced.
+        // regreporting consumes this and policy.GroupMemberAdded as of plan 5 (spec 2.14).
+        //
+        // KEEP schemeTotalCovered IN THIS PAYLOAD. It is not decoration and not a convenience:
+        // it is the entire input to that projection, which records the DELTA between this figure
+        // and the total it last held. Dropping it, or sending the member's own cover instead,
+        // silently stops a regulatory in-force figure from moving.
+        //
+        // A total of ZERO here means the last member has left, and the projection deliberately
+        // ignores it -- closeAsSurrendered below publishes policy.PolicySurrendered, and THAT is
+        // what takes the remaining cover out of force. Both acting would remove it twice.
         //
         // The payload carries what a refund needs to be computed WITHOUT reading policy back:
         // the reason (a settled claim earns its premium in full; a repaid loan does not) and
