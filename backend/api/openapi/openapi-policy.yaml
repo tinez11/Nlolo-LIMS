@@ -655,6 +655,223 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 
+    get:
+      summary: Every enrolment submission this scheme has had, newest first
+      description: >-
+        Every other read here needs a submissionId, which the upload flow has and a console
+        page opening on a scheme does not. Without this there is no way to reach the report of
+        a file sent last month.
+
+
+        Empty rather than 404 for a scheme that has had none: that is the normal state of a
+        scheme on its first day, not an error.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EnrolmentSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /credit-life-schemes/{policyNumber}/exits:
+    post:
+      summary: Submit a lender's monthly exits file. Takes nobody off cover.
+      description: >-
+        The loans that ended -- repaid early, refinanced, written off or cancelled -- and the
+        cover that comes off with them. Every row is judged and recorded, and NOBODY leaves
+        cover until a second staff user accepts the submission.
+
+
+        CSV only, unlike the enrolment upload which also takes XLSX. An exits file is a short
+        list generated from a loan system rather than a spreadsheet export, and a second format
+        would mean a second set of numeric-coercion traps for no reason anybody has asked for.
+
+
+        One submission may be in flight per scheme at a time.
+
+
+        THIS SURFACE DID NOT EXIST until 2026-09-23. The feature was built complete -- parser,
+        state machine, pro-rata refund, commission clawback -- and shipped with no controller,
+        so no HTTP client could run a lender's monthly file at all.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The exits file as CSV -- member reference, exit date, reason, outstanding balance.
+      responses:
+        '201':
+          description: Judged. Nobody leaves cover until this submission is accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >-
+            Not a credit-life scheme, a submission is already awaiting acceptance, or the file
+            is unreadable as a whole.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: Every exits submission this scheme has had, newest first
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: Newest first. Empty for a scheme that has had none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}:
+    get:
+      summary: One exits submission and where it stands
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The submission.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}/rows:
+    get:
+      summary: Every row of an exits file, with its outcome
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: One entry per row of the uploaded file.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ExitRowView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}/acceptance:
+    post:
+      summary: A second person turns the judged rows into actual exits
+      description: >-
+        This is what takes cover away, refunds unearned premium and claws back the commission
+        it earned. The accepting user must be a DIFFERENT person from the submitter.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Accepted. The good rows are off cover.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}/withdrawal:
+    post:
+      summary: Withdraw a submission nobody should accept
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Withdrawn. The scheme is free to receive a corrected file.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}/report:
+    get:
+      summary: The report that goes back to the lender, as CSV
+      description: >-
+        The only place a lender learns which exits were refused and why. Served as a download
+        because it is read in the spreadsheet the file came from, beside the rows it judges.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The report.
+          content:
+            text/csv:
+              schema: { type: string }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /credit-life-schemes/{policyNumber}/enrolments/{submissionId}:
     get:
       summary: One submission and where it stands
@@ -794,6 +1011,41 @@ paths:
 
 components:
   schemas:
+    ExitSubmissionView:
+      type: object
+      description: >-
+        One monthly exits file and where it stands. Structurally the twin of
+        EnrolmentSubmissionView and differing in exactly one field -- exitedCount where that
+        has enrolledCount -- because the two flows share a shape and not a meaning.
+      properties:
+        submissionId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        status: { type: string, enum: [PENDING, ACCEPTED, WITHDRAWN] }
+        fileName: { type: string }
+        rowCount: { type: integer }
+        exitedCount:
+          type: integer
+          description: Zero until the submission is accepted. Submitting takes nobody off cover.
+        rejectedCount: { type: integer }
+        submittedBy: { type: string }
+        submittedAt: { type: string, format: date-time }
+        acceptedBy: { type: [string, 'null'] }
+        acceptedAt: { type: [string, 'null'], format: date-time }
+    ExitRowView:
+      type: object
+      description: One row of an exits file, with what the platform made of it.
+      properties:
+        rowNumber: { type: integer }
+        memberReference: { type: [string, 'null'] }
+        exitDate: { type: [string, 'null'], format: date }
+        reason:
+          type: [string, 'null']
+          enum: [SETTLED_EARLY, REFINANCED, WRITTEN_OFF, CANCELLED, null]
+        outstandingBalance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        outcome: { type: string, enum: [EXITED, REJECTED] }
+        reasonCode:
+          type: [string, 'null']
+          description: Why this row was refused. Absent on a row that will exit.
     EnrolmentSubmissionView:
       description: >-
         A lender's submitted schedule. enrolledCount is zero until the submission is
