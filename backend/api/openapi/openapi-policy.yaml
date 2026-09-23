@@ -1545,6 +1545,46 @@ components:
             distinguishable from one restated at renewal without opening the history.
           type: [string, "null"]
           format: date
+        memberType:
+          description: >-
+            PARTY for a life the platform holds a party record for, FREEFORM for a name on a
+            lender's schedule.
+          type: [string, "null"]
+          enum: [PARTY, FREEFORM, null]
+        memberName:
+          description: >-
+            The insured life's name where there is no party row to look it up from. Present on
+            every credit-life borrower and absent on a PARTY member, whose name comes from the
+            party record.
+
+
+            This field and the three below existed on PolicyMemberView.java and were absent from
+            this schema, so no client could read them. The consequence was not cosmetic: a
+            credit-life scheme's member roll rendered an em dash for every borrower, because the
+            only name it could reach was through memberPartyId, which a FREEFORM member does not
+            have. A roll whose whole purpose is answering "is this person covered" could not name
+            a single person on it.
+          type: [string, "null"]
+          maxLength: 200
+        memberReference:
+          description: >-
+            The reference the INSURER minted for this member, CL-<scheme>-<seq>. The lender
+            quotes it back on later files, and it is how an exits file names who is leaving.
+          type: [string, "null"]
+        loanAccountNumber:
+          description: The lender's own reference, optional since policy/V16.
+          type: [string, "null"]
+        exitReason:
+          description: Why this member left. Null while they are still on cover.
+          type: [string, "null"]
+          enum: [CLAIM_SETTLED, SETTLED_EARLY, REFINANCED, WRITTEN_OFF, CANCELLED, null]
+        outstandingBalanceAtExit:
+          description: >-
+            What the borrower still owed when they left, as the lender reported it. Null on a
+            claim-settled exit and on any non-credit-life member.
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
     PolicyMemberPage:
       type: object
       properties:

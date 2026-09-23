@@ -394,13 +394,33 @@ const memberColumns: Column<PolicyMemberView>[] = [
   {
     key: 'member',
     header: 'Member',
+    // A FREEFORM member has no party row to look a name up from, and this column used to render
+    // an em dash for one -- which meant a credit-life scheme's roll named nobody on it, on the
+    // one screen whose whole purpose is answering "is this person covered". The name is on the
+    // member row itself; it was simply not on the wire until PolicyMemberView's schema grew the
+    // field. A party member still links to their record, because there is one to link to.
     render: (m) =>
       m.memberPartyId ? (
         <Link to={`/staff/parties/${m.memberPartyId}`} className="font-medium underline">
           <PartyName partyId={m.memberPartyId} />
         </Link>
+      ) : m.memberName ? (
+        <span className="font-medium">{m.memberName}</span>
       ) : (
         NO_VALUE
+      ),
+  },
+  {
+    // The reference the INSURER minted, and the only handle the lender has on this borrower:
+    // they quote it back on every later file, and an exits file names who is leaving by it.
+    // Rendered only when present, so an employer scheme's roll does not grow an empty column.
+    key: 'memberReference',
+    header: 'Reference',
+    render: (m) =>
+      m.memberReference ? (
+        <span className="font-mono text-xs">{m.memberReference}</span>
+      ) : (
+        <span className="text-subtle-foreground">{NO_VALUE}</span>
       ),
   },
   {
