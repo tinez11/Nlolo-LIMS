@@ -54,6 +54,31 @@ public interface ClaimsApi {
     void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
                            String rejectionReason, String payeeRef, String idempotencyKey, String decidedBy);
 
+    /**
+     * Decide a claim, citing a policy-term exclusion as the reason for declining it.
+     *
+     * <p><b>The platform owns the dates; the assessor owns the finding.</b> It cannot decide
+     * that a death was suicide — {@code causeOfDeath} is free text, and a credit-life borrower
+     * has no health record because nobody below the free cover limit is underwritten. What it
+     * does is refuse a reason whose window had already closed, and record which window was
+     * invoked and the dates it was measured from.
+     *
+     * <p>The gate is the platform overruling a human assessor, which it does nowhere else. The
+     * case for it: an expired exclusion is a <em>factual error, not a judgement</em> — the
+     * death was fourteen months after cover started and the exclusion ran twelve, and no
+     * amount of assessor expertise changes those dates. It is also the error least likely to be
+     * noticed, because it produces a plausible-looking declined claim and costs the lender an
+     * entire loan.
+     *
+     * @param declineReason null for every ordinary decline — fraud, non-disclosure, an event
+     *     outside cover. Those are the assessor's findings alone and need no window.
+     * @throws ClaimValidationException if the cited window was not open on the date of event,
+     *     or a decline reason is supplied while approving
+     */
+    void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
+                           String rejectionReason, ClaimDeclineReason declineReason,
+                           String payeeRef, String idempotencyKey, String decidedBy);
+
     void reopenClaim(UUID claimId, String reason, String reopenedBy);
 
     ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy);

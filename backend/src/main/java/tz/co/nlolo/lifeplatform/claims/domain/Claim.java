@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.claims.domain;
 
 import tz.co.nlolo.lifeplatform.claims.api.ClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimDeclineReason;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
@@ -84,6 +85,23 @@ public class Claim {
 
     @Column(name = "approved_currency")
     private String approvedCurrency;
+
+    /**
+     * Which policy-term exclusion a decline invoked, and the dates it was measured from.
+     *
+     * <p>All three together or none — {@code chk_claim_decline_reason_complete}. Null on every
+     * ordinary decline (fraud, non-disclosure, an event outside cover), which are the
+     * assessor's findings alone and need no window.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "decline_reason")
+    private ClaimDeclineReason declineReason;
+
+    @Column(name = "exclusion_cover_start")
+    private LocalDate exclusionCoverStart;
+
+    @Column(name = "exclusion_window_months")
+    private Integer exclusionWindowMonths;
 
     /** Claims/V3 -- set ONLY at construction (registration is the single point a Claim comes
      * into existence, unlike settlementIdempotencyKey below which is set by a later transition).
@@ -200,6 +218,27 @@ public class Claim {
                 "Claim " + claimId + " is " + status + ", cannot reject");
         }
         this.status = ClaimStatus.REJECTED;
+    }
+
+    /**
+     * Reject, recording WHICH policy-term exclusion was invoked and the dates it was measured
+     * from.
+     *
+     * <p>A decline that cannot say which window it used, measured from when, is a decline
+     * nobody can defend. These claims are disputed by a commercial counterparty with the loan
+     * agreement in front of them, sometimes years later, and "the assessor believed it was
+     * suicide" is not an answer — "the death was on 2027-02-03, cover started 2026-08-03, and
+     * the suicide exclusion ran twelve months" is.
+     */
+    public ClaimDeclineReason getDeclineReason() { return declineReason; }
+    public LocalDate getExclusionCoverStart() { return exclusionCoverStart; }
+    public Integer getExclusionWindowMonths() { return exclusionWindowMonths; }
+
+    public void rejectForExclusion(ClaimDeclineReason reason, LocalDate coverStart, int windowMonths) {
+        reject();
+        this.declineReason = reason;
+        this.exclusionCoverStart = coverStart;
+        this.exclusionWindowMonths = windowMonths;
     }
 
     /** ClaimSettlementRequested published. APPROVED -> SETTLEMENT_REQUESTED. */

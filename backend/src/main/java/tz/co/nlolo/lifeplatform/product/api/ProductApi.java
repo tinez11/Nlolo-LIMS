@@ -201,6 +201,21 @@ public interface ProductApi {
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions, TiraFiling tiraFiling, String publishedBy);
 
     /**
+     * Set how long this version's exclusion windows run, in months from cover start.
+     *
+     * <p>Its own operation rather than two more parameters on {@link #publishVersion}, which
+     * has thirty-odd call sites with no opinion about exclusions. Null clears a window: a
+     * product with no such exclusion is the normal case and must stay expressible.
+     *
+     * <p>Credit life carries 12 and 12, confirmed by the client on 2026-09-22. Below the free
+     * cover limit nobody is underwritten — and with the limit far above any loan these lenders
+     * write, nobody ever is — so these two windows are the entire anti-selection control the
+     * product has.
+     */
+    void setExclusionPeriods(UUID productVersionId, Integer suicideMonths,
+                              Integer preExistingMonths, String changedBy);
+
+    /**
      * Publish a version, optionally with the base rate table it is priced from.
      *
      * If {@code baseRates} is non-empty, {@code ratingTable} must NOT also carry

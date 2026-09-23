@@ -96,6 +96,7 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
+            "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",

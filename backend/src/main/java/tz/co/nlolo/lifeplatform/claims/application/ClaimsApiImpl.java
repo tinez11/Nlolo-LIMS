@@ -1,10 +1,14 @@
-package tz.co.nlolo.lifeplatform.claims.application;
+ package tz.co.nlolo.lifeplatform.claims.application;
 
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimAssessmentView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimEvidenceView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimNotFoundException;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimDeclineReason;
+import tz.co.nlolo.lifeplatform.claims.domain.ExclusionPeriods;
+import tz.co.nlolo.lifeplatform.claims.domain.ExclusionWindows;
+import tz.co.nlolo.lifeplatform.policy.api.ExclusionPeriodsView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
@@ -322,8 +326,25 @@ public class ClaimsApiImpl implements ClaimsApi {
     @Transactional
     public void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
                                   String rejectionReason, String payeeRef, String idempotencyKey, String decidedBy) {
+        decideSettlement(claimId, approved, approvedAmount, approvedCurrency, rejectionReason,
+            null, payeeRef, idempotencyKey, decidedBy);
+    }
+
+    @Override
+    @Transactional
+    public void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
+                                  String rejectionReason, ClaimDeclineReason declineReason,
+                                  String payeeRef, String idempotencyKey, String decidedBy) {
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
+
+        // An exclusion is a reason for DECLINING. Citing one while approving is a contradiction
+        // the settlement record could not render, and chk_claim_decline_reason_only_when_rejected
+        // would refuse the row anyway -- this is the readable error in front of it.
+        if (approved && declineReason != null) {
+            throw new ClaimValidationException("A decline reason (" + declineReason
+                + ") cannot be recorded on an APPROVED claim");
+        }
 
         // claims/V1:56-59 documents this invariant and explicitly asks that it not be mistaken
         // for a missed validation: APPROVED requires >=1 assessment, EXCEPT MATURITY which may
@@ -414,7 +435,36 @@ public class ClaimsApiImpl implements ClaimsApi {
             settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, false,
                 null, null, rejectionReason, null));
 
-            claim.reject();
+            if (declineReason != null) {
+                // THE GATE. The platform cannot decide that a death was suicide -- causeOfDeath
+                // is free text and a credit-life borrower has no health record, because nobody
+                // below the free cover limit is underwritten. What it CAN do is refuse a reason
+                // whose window had already closed on the date of event.
+                //
+                // This is the platform overruling a human assessor, which it does nowhere else.
+                // The case for it is that an expired exclusion is a FACTUAL ERROR rather than a
+                // judgement: the death was fourteen months after cover started and the exclusion
+                // ran twelve, and no amount of assessor expertise changes those dates. It is
+                // also the error least likely to be caught, because it produces a
+                // plausible-looking declined claim and costs the lender an entire loan.
+                ExclusionPeriodsView periods = policyApi.exclusionPeriodsFor(
+                    claim.getPolicyNumber(), claim.getPolicyMemberId());
+                ExclusionPeriods windows = new ExclusionPeriods(
+                    periods.suicideMonths(), periods.preExistingMonths());
+
+                if (!ExclusionWindows.openAt(periods.coverStart(), claim.getDateOfEvent(), windows)
+                        .contains(declineReason)) {
+                    throw new ClaimValidationException("Claim " + claimId + " cannot be declined for "
+                        + declineReason + ": that window was not open on " + claim.getDateOfEvent()
+                        + ". Cover started " + periods.coverStart() + " and the window ran "
+                        + monthsOf(declineReason, windows) + " month(s), so it closed on "
+                        + closesOn(periods.coverStart(), declineReason, windows) + ".");
+                }
+                claim.rejectForExclusion(declineReason, periods.coverStart(),
+                    monthsOf(declineReason, windows));
+            } else {
+                claim.reject();
+            }
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimRejected", tenantId,
                 Map.of("claimId", claimId, "reason", rejectionReason == null ? "" : rejectionReason)));
         }
@@ -524,6 +574,18 @@ public class ClaimsApiImpl implements ClaimsApi {
                 claim.getClaimId(), e);
             return true;
         }
+    }
+
+    /** Which window length this reason was measured against. */
+    private static int monthsOf(ClaimDeclineReason reason, ExclusionPeriods windows) {
+        return reason == ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION
+            ? windows.suicideMonths() : windows.preExistingMonths();
+    }
+
+    /** The first day the window no longer covers -- the anniversary itself is outside it. */
+    private static java.time.LocalDate closesOn(java.time.LocalDate coverStart,
+                                                 ClaimDeclineReason reason, ExclusionPeriods windows) {
+        return coverStart.plusMonths(monthsOf(reason, windows));
     }
 
     private Claim findOrThrow(UUID claimId, UUID tenantId) {

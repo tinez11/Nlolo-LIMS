@@ -38,6 +38,17 @@ public class ProductVersion {
     @Column(name = "grace_period_days", nullable = false)
     private int gracePeriodDays;
 
+    /**
+     * Months from cover start during which a suicide, or a pre-existing condition, may be
+     * cited as a decline reason. Null where the product has no such exclusion -- every product
+     * before credit life, whose behaviour is unchanged.
+     */
+    @Column(name = "suicide_exclusion_months")
+    private Integer suicideExclusionMonths;
+
+    @Column(name = "pre_existing_exclusion_months")
+    private Integer preExistingExclusionMonths;
+
     @Column(name = "max_loan_to_value_percent")
     private BigDecimal maxLoanToValuePercent;
 
@@ -128,6 +139,24 @@ public class ProductVersion {
     public LocalDate getEffectiveDate() { return effectiveDate; }
     public LocalDate getRetirementDate() { return retirementDate; }
     public boolean isActiveForNewBusiness() { return activeForNewBusiness; }
+    /** Null clears a window; a product with no such exclusion is the normal case. */
+    public void setExclusionPeriods(Integer suicideMonths, Integer preExistingMonths) {
+        requirePositiveOrAbsent("suicide", suicideMonths);
+        requirePositiveOrAbsent("pre-existing", preExistingMonths);
+        this.suicideExclusionMonths = suicideMonths;
+        this.preExistingExclusionMonths = preExistingMonths;
+    }
+
+    private static void requirePositiveOrAbsent(String which, Integer months) {
+        if (months != null && months <= 0) {
+            throw new IllegalArgumentException("A " + which + " exclusion of " + months
+                + " months is not a window; leave it absent for a product with no such exclusion");
+        }
+    }
+
+    public Integer getSuicideExclusionMonths() { return suicideExclusionMonths; }
+    public Integer getPreExistingExclusionMonths() { return preExistingExclusionMonths; }
+
     public int getGracePeriodDays() { return gracePeriodDays; }
     public BigDecimal getMaxLoanToValuePercent() { return maxLoanToValuePercent; }
     public String getIfrsMeasurementModel() { return ifrsMeasurementModel; }

@@ -78,6 +78,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V14__credit_life_category.sql",
+            "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -110,7 +111,8 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
-            "db-migrations/claims/V5__claim_policy_member.sql");
+            "db-migrations/claims/V5__claim_policy_member.sql",
+            "db-migrations/claims/V6__exclusion_decline.sql");
     }
 
     @Autowired private PartyApi partyApi;
@@ -181,7 +183,92 @@ class CreditLifeClaimEndToEndTest {
         assertThat(claim.claimantPartyId()).isEqualTo(beneficiary);
     }
 
+    // ---- the exclusion windows ----------------------------------------------
+
+    @Test
+    void anExclusionDeclineIsRefusedOnceTheWindowHasClosed() {
+        // THE ERROR THIS PREVENTS: declining a fourteen-month-old claim for suicide on a
+        // twelve-month exclusion. It is simply wrong, it costs the lender the whole loan, and
+        // it produces a plausible-looking declined claim that nothing downstream would
+        // question. The dates do not care how expert the assessor is.
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(14));
+
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, false, null, null,
+            "assessor believes suicide", ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
+            null, null, "assessor.two"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("was not open on");
+    }
+
+    @Test
+    void anExclusionDeclineInsideTheWindowIsAllowedAndRecordsWhichWindow() {
+        // Six months into a twelve-month window. The assessor made the finding; the platform
+        // records which window they invoked and the dates it was measured from, so a dispute
+        // years later is settled from the row rather than from memory.
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
+
+        claimsApi.decideSettlement(claimId, false, null, null, "assessor believes suicide",
+            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, null, null, "assessor.two");
+
+        ClaimView declined = claimsApi.getClaim(claimId);
+        assertThat(declined.status()).isEqualTo(ClaimStatus.REJECTED);
+    }
+
+    @Test
+    void theWindowIsMeasuredFromDISBURSEMENTAndNotFromWhenTheFileArrived() {
+        // Cover started at disbursement (2026-08-03); the scheme itself commenced 2026-06-01
+        // and the enrolment file could have arrived any time after. Measuring from anything
+        // but the borrower's own start date would move every boundary.
+        //
+        // An event 13 months after DISBURSEMENT is outside a 12-month window. If the window
+        // were measured from scheme commencement (two months earlier) it would be outside by
+        // even more; if from a later file date, it might still be inside. Asserting the refusal
+        // here pins that the earlier, correct date is the one in use.
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(13));
+
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, false, null, null,
+            "assessor believes suicide", ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
+            null, null, "assessor.two"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining(DISBURSED.toString());
+    }
+
+    @Test
+    void anOrdinaryDeclineNeedsNoExclusionAndIsUnaffected() {
+        // Fraud, non-disclosure, an event outside cover -- every existing decline path keeps
+        // working with no exclusion reason at all.
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
+
+        claimsApi.decideSettlement(claimId, false, null, null, "documents were forged",
+            null, null, null, "assessor.two");
+
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REJECTED);
+    }
+
+    @Test
+    void anExclusionCannotBeRecordedOnAnApprovedClaim() {
+        // A contradiction the settlement record could not render, and
+        // chk_claim_decline_reason_only_when_rejected refuses the row anyway.
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
+
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true,
+            new BigDecimal("1000000.00"), "TZS", null,
+            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, "bank-account-1", idem(), "assessor.two"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("APPROVED");
+    }
+
     // ---- fixtures -----------------------------------------------------------
+
+    /** A claim on the borrower, dated {@code dateOfEvent}, already under assessment. */
+    private UUID assessedClaimAt(LocalDate dateOfEvent) {
+        ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
+            scheme, borrowerMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
+            new DeathClaimDetails("Under investigation", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
+            idem(), "claims.clerk");
+        claimsApi.submitAssessment(claim.claimId(), "investigating", null, null, false, "assessor.one");
+        return claim.claimId();
+    }
 
     private String idem() { return "idem-" + UUID.randomUUID(); }
 
@@ -231,6 +318,12 @@ class CreditLifeClaimEndToEndTest {
             List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
             null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        if (category == ProductCategory.CREDIT_LIFE) {
+            // Client answer 3.4: twelve months each, and NO general waiting period. These two
+            // windows are the entire anti-selection control the product has, because nobody
+            // below the free cover limit is underwritten.
+            productApi.setExclusionPeriods(snapshot.productVersionId(), 12, 12, "actuary");
+        }
         return new GroupProduct(product.productId(), snapshot.productVersionId());
     }
 

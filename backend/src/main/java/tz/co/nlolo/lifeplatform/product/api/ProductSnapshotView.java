@@ -19,4 +19,7 @@ public record ProductSnapshotView(UUID productId, UUID productVersionId, LocalDa
                                    // read a bound it had just written. Its round-trip test read them back
                                    // through ProductVersionRepository rather than through this view, which
                                    // is why the gap survived a green suite. issueGates reads them here.
-                                   EligibilityBounds eligibility) {}
+                                   EligibilityBounds eligibility,
+                                   /** Months from cover start; null where the product has no such exclusion. */
+                                   Integer suicideExclusionMonths,
+                                   Integer preExistingExclusionMonths) {}

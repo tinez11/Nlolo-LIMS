@@ -411,6 +411,23 @@ public interface PolicyApi {
     PolicyView getPolicy(String policyNumber);
 
     /**
+     * The exclusion windows this policy was issued under, in months from cover start.
+     *
+     * <p>Exists because CLAIMS MAY NOT DEPEND ON PRODUCT -- its allowed dependencies are
+     * policy, underwriting, party, document and refdata, and one product type in claims
+     * bytecode is a module violation ModularityTests rejects. Policy already depends on
+     * product and knows which version a policy was issued on, so it answers on claims behalf.
+     *
+     * <p>A dedicated read rather than fields on PolicyView: that view is every row of several
+     * list endpoints, and resolving the product version per row would be a query each to
+     * answer a question only the decline path asks.
+     *
+     * @param policyMemberId the member whose cover start is wanted; null on individual
+     *     business, where the policy commencement is the answer.
+     */
+    ExclusionPeriodsView exclusionPeriodsFor(String policyNumber, java.util.UUID policyMemberId);
+
+    /**
      * {@code agentOfRecordIds} is null/empty for "no agent filter" (staff and customer callers);
      * a non-empty set restricts results to policies whose {@code agentOfRecordId} is one of the
      * given ids -- an agents-realm caller's own resolved hierarchy team (see

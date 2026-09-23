@@ -64,7 +64,8 @@ class ProductContractTest {
             "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
-            "db-migrations/product/V13__benefit_calculation_method.sql");
+            "db-migrations/product/V13__benefit_calculation_method.sql",
+            "db-migrations/product/V15__exclusion_periods.sql");
     }
 
     @AfterEach

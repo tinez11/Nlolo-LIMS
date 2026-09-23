@@ -344,7 +344,8 @@ public class ProductApiImpl implements ProductApi {
             IfrsMeasurementModel.valueOf(version.getIfrsMeasurementModel()),
             version.getGracePeriodDays(), version.getMaxLoanToValuePercent(),
             ProductCategory.valueOf(definition.getCategory()), version.getSurrenderChargeScheduleJson(),
-            version.getEligibilityBounds());
+            version.getEligibilityBounds(),
+            version.getSuicideExclusionMonths(), version.getPreExistingExclusionMonths());
     }
 
     /**
@@ -908,7 +909,25 @@ public class ProductApiImpl implements ProductApi {
             // The by-version-id lookup carries the bounds too. It is what
             // PolicyController.manualIssue resolves, so omitting them here would leave the
             // issue path unable to see the very bounds its gates are meant to check.
-            version.getEligibilityBounds());
+            version.getEligibilityBounds(),
+            // And the exclusion windows, for the same reason: this is the lookup policy uses
+            // to answer a claim's question about which windows a policy's product carries.
+            version.getSuicideExclusionMonths(), version.getPreExistingExclusionMonths());
+    }
+
+    @Override
+    @Transactional
+    public void setExclusionPeriods(UUID productVersionId, Integer suicideMonths,
+                                     Integer preExistingMonths, String changedBy) {
+        // findById then filter by tenant, exactly as getSnapshotByVersionId does -- the
+        // repository has no tenant-scoped finder for a version id, and inventing one here would
+        // be a second way of asking the same question.
+        UUID tenantId = TenantContext.get();
+        ProductVersion version = productVersionRepository.findById(productVersionId)
+            .filter(v -> v.getTenantId().equals(tenantId))
+            .orElseThrow(() -> new ProductNotFoundException(productVersionId));
+        version.setExclusionPeriods(suicideMonths, preExistingMonths);
+        productVersionRepository.save(version);
     }
 
     private ProductSummaryView toSummaryView(ProductDefinition p) {

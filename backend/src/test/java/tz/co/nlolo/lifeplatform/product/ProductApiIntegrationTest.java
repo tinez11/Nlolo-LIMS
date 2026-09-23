@@ -69,7 +69,8 @@ class ProductApiIntegrationTest {
             // aCreditLifeProductCanBeCreatedAndReadBack fails without it -- and fails
             // as "duplicate product code", because createProduct reports every
             // DataIntegrityViolationException that way. See the note on that test.
-            "db-migrations/product/V14__credit_life_category.sql");
+            "db-migrations/product/V14__credit_life_category.sql",
+            "db-migrations/product/V15__exclusion_periods.sql");
     }
 
     @BeforeEach

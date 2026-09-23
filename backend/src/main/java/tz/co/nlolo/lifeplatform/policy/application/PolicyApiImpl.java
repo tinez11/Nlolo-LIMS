@@ -1222,6 +1222,34 @@ public class PolicyApiImpl implements PolicyApi {
         return toMemberView(member, null, scheme.getCurrency());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public ExclusionPeriodsView exclusionPeriodsFor(String policyNumber, UUID policyMemberId) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
+
+        // A scheme member went on risk on their OWN join date, which on credit life is the loan
+        // disbursement date. That is weeks before the enrolment file reached us, and measuring
+        // a window from the file date would shorten every one of them in the lender's favour.
+        LocalDate coverStart = null;
+        if (policyMemberId != null) {
+            coverStart = policyMemberRepository
+                .findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
+                .filter(m -> m.getPolicyNumber().equals(policyNumber))
+                .map(PolicyMember::getJoinedOn)
+                .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
+                    + " is not a member of " + policyNumber));
+        }
+        if (coverStart == null) {
+            // Individual business: the contract itself is when cover started.
+            coverStart = policy.getCommencementDate() != null
+                ? policy.getCommencementDate() : policy.getIssueDate();
+        }
+        return new ExclusionPeriodsView(coverStart,
+            snapshot.suicideExclusionMonths(), snapshot.preExistingExclusionMonths());
+    }
+
     private List<Beneficiary> validateAndBuildBeneficiaries(UUID tenantId, String policyNumber, List<BeneficiaryInput> inputs) {
         if (inputs == null || inputs.isEmpty()) {
             return List.of();
