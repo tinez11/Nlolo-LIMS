@@ -136,13 +136,16 @@ paths:
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
-        '409':
-          description: >
-            The instruction is not awaiting execution — most often an attempt to hand-complete a
-            mobile-money payout, which the gateway owns and no person may confirm.
-          content:
-            application/problem+json:
-              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetail' }
+        # The shared Conflict response, which openapi-common describes as "Optimistic-locking
+        # conflict or state-machine violation" -- and this is exactly the second of those: the
+        # instruction is not awaiting execution, most often because someone tried to
+        # hand-complete a mobile-money payout that the gateway owns and no person may confirm.
+        # Spelt out inline first, with its own schema ref; that ref named ProblemDetail, which
+        # does not exist (openapi-common defines ProblemDetails), and an unresolvable $ref does
+        # not fail the file that carries it -- it fails every request the contract test validates
+        # against that whole spec. All twelve PaymentContractTest cases errored with
+        # "Unable to load API spec", none of them about this endpoint.
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /webhooks/mobile-money-callback:
     post:
       summary: >
