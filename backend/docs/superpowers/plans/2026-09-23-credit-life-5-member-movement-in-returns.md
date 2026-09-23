@@ -926,3 +926,58 @@ defensible and possibly correct view — the change is one `.add(m.getSumAssured
 **An open question this plan surfaces rather than answers**, for whoever owns C2: PL-04 today
 understates new business on any scheme that grows after activation. That is true of employer
 schemes as well as credit life; credit life only makes it loud.
+
+---
+
+## Outcome, 2026-09-23
+
+All three tasks built, plus the two follow-ups in Task 3's step list. Four commits.
+
+**What the plan got wrong, corrected in place rather than worked around:**
+
+1. **`CumulativeMetricTest` does not "stop at V2".** It applies no migrations at all — it has no
+   container and unit-tests `cumulativeSumAssured` directly. The only `regreporting/V2` string in
+   the file is inside a javadoc comment, which the grep that produced that warning matched. What
+   is true and useful: it is the *existing guard* on the function Task 1 changes, so it now runs
+   beside the new arithmetic test. Nine files reference regreporting migrations; eight needed V5.
+
+2. **Task 3 went to `CreditLifeClaimEndToEndTest`, not `ProjectionEndToEndTest`.** The named
+   class is missing `product/V14`, `policy/V13`, `policy/V14` and `policy/V22` among others —
+   eight migrations before it could issue a credit-life scheme at all — while the class it went to
+   already runs the whole chain including EFT settlement and needed only regreporting's four.
+   regreporting's module dependencies are `{ refdata::api }` alone, already applied there, so
+   nothing is weakened by the move.
+
+**A test that passed with a false comment, which is the finding most worth carrying.** The
+settlement assertion expected 1,200,000 and got it, under a comment saying the borrower's
+*remaining* cover came off. It does not. The claim **pays** 1,600,000 — what they still owed,
+which is what the lender lost — while the cover **removed** from the in-force total is the full
+2,400,000, because `restateSchemeTotal` sums active members' stored `covered_amount` and a dead
+borrower is not covered for a reduced amount, they are not covered at all. The number was right
+and the explanation was wrong, which is worse than a missing test: it teaches the next reader
+something false and invites them to "fix" the right figure into the wrong one.
+
+**A guard test that was green before it meant anything.**
+`theLastMemberLeavingIsLeftToTheCloseEvent` passed on its first run with no listener written —
+nothing could do the wrong thing yet. It only became a real assertion once the handler existed
+and could have acted on a zero. Writing it first was still right; counting it as proof at the
+moment it first went green would not have been.
+
+**Two gaps in the event catalogue, found while doing Task 3 Step 4:**
+
+- `policy.GroupMemberAdded` had **no channel entry at all** — an event the platform publishes,
+  now feeding a regulatory figure, that the catalogue never listed. Its only mention was inside
+  another event's description.
+- `policy.GroupMemberExited` said "NO CONSUMER YET" when billing has consumed it since plan 3,
+  and "today the only reason is CLAIM_SETTLED" when plan 3 added four more.
+
+Both now record the properties a consumer cannot guess: that `GroupMemberAdded` carries no member
+id (a FREEFORM borrower has no party row), that opening-schedule members do not produce it, and
+that a `schemeTotalCovered` of zero belongs to the close event.
+
+**Still open, surfaced by this plan and deliberately not answered by it:**
+`NEW_BUSINESS_SUM_ASSURED` counts policy activations only, so a scheme that opens with one
+borrower and enrols five hundred reports one borrower's cover. That understates new business on
+any scheme that grows after activation — employer schemes as well as credit life. It is for
+whoever owns the TIRA return catalogue (C2). The two new columns exist precisely so that
+answering it later is a reporting decision rather than a migration.
