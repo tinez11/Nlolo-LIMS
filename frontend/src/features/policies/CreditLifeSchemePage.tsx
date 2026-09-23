@@ -179,7 +179,10 @@ export function CreditLifeSchemePage() {
                 to a different benefit basis. No grades, no salary multiple: this product has
                 neither, and an empty grade table would be furniture. */}
             <Panel title="Terms" subtitle="What this scheme covers">
-              <dl className="divide-y divide-border">
+              {/* px-4 pb-2, the same as every other Field list on this platform. This had no
+                  padding and a divide-y: the rows ran edge to edge into the panel border, and the
+                  divider doubled the rule Field already draws for itself. */}
+              <dl className="px-4 pb-2">
                 <Field
                   label="Free cover limit"
                   value={data?.fcl ? formatMoney(data.fcl) : 'No limit'}
