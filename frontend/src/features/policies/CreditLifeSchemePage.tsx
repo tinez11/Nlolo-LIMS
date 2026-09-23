@@ -188,7 +188,7 @@ export function CreditLifeSchemePage() {
                   value={data?.fcl ? formatMoney(data.fcl) : 'No limit'}
                   {...(data?.fcl
                     ? {
-                        note: 'A borrower above this is covered up to it; the excess is the lender\u2019s credit risk.',
+                        note: 'A borrower above this is covered up to it; the excess is the lender’s credit risk.',
                       }
                     : {})}
                 />
@@ -225,7 +225,7 @@ export function CreditLifeSchemePage() {
                   The member roll
                 </Link>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Searchable by borrower name \u2014 the only way to answer \u201cis this person covered\u201d on
+                  Searchable by borrower name — the only way to answer “is this person covered” on
                   a roll of hundreds.
                 </p>
               </div>
@@ -247,7 +247,14 @@ export function CreditLifeSchemePage() {
           onUpload={(file) => void store.uploadEnrolment(policyNumber, file)}
           uploading={enrolmentUpload.status === 'loading'}
           uploadError={enrolmentUpload.error}
-          onAccept={(id) => void store.acceptEnrolment(policyNumber, id)}
+          // Acceptance is the act that creates cover, so the record rail beside it -- lives on
+          // cover, total covered, how many sit above the free cover limit -- is stale the instant
+          // it returns. The store reloads the submissions it owns and says in as many words that
+          // the page owns the scheme; this is the page doing it. A withdrawal needs no reload,
+          // because a withdrawn file changes nothing by definition.
+          onAccept={(id) =>
+            void store.acceptEnrolment(policyNumber, id).then(() => loadScheme(policyNumber))
+          }
           onWithdraw={(id) => void store.withdrawEnrolment(policyNumber, id)}
           deciding={decidingEnrolment.status === 'loading'}
           reportHref={(id) => enrolmentReportPath(policyNumber, id)}
@@ -273,7 +280,11 @@ export function CreditLifeSchemePage() {
           onUpload={(file) => void store.uploadExits(policyNumber, file)}
           uploading={exitsUpload.status === 'loading'}
           uploadError={exitsUpload.error}
-          onAccept={(id) => void store.acceptExits(policyNumber, id)}
+          // Same as the enrolment panel above: accepting exits takes borrowers OFF cover, so the
+          // counts in the record rail no longer describe the scheme until the page refetches it.
+          onAccept={(id) =>
+            void store.acceptExits(policyNumber, id).then(() => loadScheme(policyNumber))
+          }
           onWithdraw={(id) => void store.withdrawExits(policyNumber, id)}
           deciding={decidingExits.status === 'loading'}
           reportHref={(id) => exitsReportPath(policyNumber, id)}
@@ -322,7 +333,7 @@ function EnrolmentRows({
           report's first column, which is why that download is the deliverable rather than a
           convenience, and why this says so instead of leaving a person to wonder. */}
       <p className="px-4 py-2 text-xs text-muted-foreground">
-        Member references are in the report, not here \u2014 it is the only place the lender learns
+        Member references are in the report, not here — it is the only place the lender learns
         them.
       </p>
       <div className="overflow-x-auto">
@@ -354,7 +365,7 @@ function EnrolmentRows({
                     {refused ? (
                       <span className="text-status-danger-fg">
                         {r.reason ?? r.reasonCode ?? 'Refused'}
-                        <span className="sr-only"> \u2014 this borrower is not covered</span>
+                        <span className="sr-only"> — this borrower is not covered</span>
                       </span>
                     ) : (
                       <span className="text-subtle-foreground">{NO_VALUE}</span>
