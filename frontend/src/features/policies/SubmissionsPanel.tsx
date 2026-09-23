@@ -182,10 +182,10 @@ export function SubmissionsPanel({
                         <StatusBadge kind="submission" value={s.status} />
                       </span>
                       <span className="mt-1 block text-xs text-muted-foreground">
-                        {s.rowCount} {s.rowCount === 1 ? 'row' : 'rows'} · uploaded by{' '}
-                        {s.submittedBy} · {formatInstant(s.submittedAt)}
-                        {s.acceptedBy ? ` · accepted by ${s.acceptedBy}` : ''}
+                        {s.rowCount} {s.rowCount === 1 ? 'row' : 'rows'} ·{' '}
+                        {formatInstant(s.submittedAt)}
                       </span>
+                      <Handlers submittedBy={s.submittedBy} acceptedBy={s.acceptedBy ?? null} />
                     </button>
 
                     {isPending && (
@@ -233,7 +233,9 @@ export function SubmissionsPanel({
                     </div>
                     <div className="flex items-baseline gap-1.5">
                       <dt className="text-xs text-muted-foreground">
-                        {isPending ? `Would be ${appliedNoun}` : `${appliedNoun}`}
+                        {isPending
+                          ? `Would be ${appliedNoun}`
+                          : appliedNoun.charAt(0).toUpperCase() + appliedNoun.slice(1)}
                       </dt>
                       <dd className="text-sm font-semibold tabular-nums">{s.appliedCount}</dd>
                     </div>
@@ -305,3 +307,58 @@ export function SubmissionsPanel({
   );
 }
 
+
+/**
+ * Who handled this file, and whether that was two different people.
+ *
+ * <p><b>The raw identifiers are shown short and monospaced rather than resolved to names,
+ * because the platform cannot resolve them.</b> These are Keycloak subjects; there is no
+ * staff-name lookup anywhere on this platform, and the audit log itself has no actor column.
+ * Inventing a name here would be the one thing this console refuses to do. The house treatment
+ * for an identifier is monospace — see `DisclosurePanel`'s `recordedBy` — and the full value is
+ * on the title attribute for anyone who needs to paste it into a support ticket.
+ *
+ * <p><b>What this actually answers is the separation-of-duties question</b>, which is the only
+ * reason either field exists: acceptance is what creates cover, and it must be a different person
+ * from the one who uploaded the file. Two 36-character UUIDs side by side answer that terribly —
+ * a reader has to diff them by eye — so the comparison is made here and stated in words. The
+ * backend refuses a same-person acceptance, so the mismatch branch should be unreachable; it is
+ * rendered loudly rather than omitted, because a control that has silently stopped working is
+ * exactly the thing a person needs told.
+ */
+function Handlers({
+  submittedBy,
+  acceptedBy,
+}: {
+  submittedBy: string;
+  acceptedBy: string | null;
+}) {
+  const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id);
+  const samePerson = acceptedBy != null && acceptedBy === submittedBy;
+
+  return (
+    <span className="mt-1 block text-xs text-muted-foreground">
+      Uploaded by{' '}
+      <span className="font-mono" title={submittedBy}>
+        {short(submittedBy)}
+      </span>
+      {acceptedBy ? (
+        <>
+          , accepted by{' '}
+          <span className="font-mono" title={acceptedBy}>
+            {short(acceptedBy)}
+          </span>
+          {samePerson ? (
+            <span className="ml-1.5 text-status-danger-fg">
+              — the same person. Acceptance is meant to need a second.
+            </span>
+          ) : (
+            <span className="ml-1.5">— two people, as it should be.</span>
+          )}
+        </>
+      ) : (
+        <span className="ml-1.5">— awaiting a second person.</span>
+      )}
+    </span>
+  );
+}
