@@ -172,70 +172,160 @@ void anOrdinaryPartyMemberCannotBePromotedAgain() { ... }
 
 ---
 
-## Task 3: The exclusions the client confirmed, actually enforced
+## Task 3: The exclusions the client confirmed, enforceable without pretending to diagnose
 
-Below the free cover limit nobody is underwritten — and the client's answer of 600,000,000 TZS against loans of 10–20M means **in practice nobody is ever underwritten at all**. These two exclusions are the entire anti-selection control for this product.
+Below the free cover limit nobody is underwritten — and the client's free cover limit of
+600,000,000 TZS against loans of 10–20M means **in practice nobody is ever underwritten at
+all**. These two exclusions are the entire anti-selection control for this product.
+
+**Read this before writing any code, because the obvious design is wrong.**
+
+`DeathClaimDetails.causeOfDeath` is a **free-text String**, and a credit-life borrower has no
+health record anywhere on the platform — they were never underwritten, and the enrolment file
+carries a name, a date of birth, a principal, a term and a disbursement date. Nothing else.
+
+So **the platform cannot decide whether a death was suicide, and cannot know about a
+pre-existing condition.** A rule of the shape `declineReasonFor(…, ClaimDetails details, …)`
+that inspects the details and returns a decline is either dead code or — far worse — a
+substring match on free prose deciding a multi-million-shilling payout. A claim narrative
+containing the word "suicide" in a sentence ruling it out would decline the claim.
+
+**The split this task is built on: the platform owns the DATES, the assessor owns the
+FINDING.** Neither can do the other's job, and the value is in making each one's job
+impossible to get wrong.
+
+1. **Compute and surface the window.** At assessment the claim states plainly which exclusion
+   windows the date of event falls inside — *"6 months into a 12-month suicide exclusion,
+   measured from cover start 2026-08-03"*. A **flag for the assessor, never a decision.**
+2. **Gate the decline.** A decline citing `SUICIDE_WITHIN_EXCLUSION` is permitted **only**
+   while that window is open. Outside it the platform refuses the reason — which is what stops
+   a claim being declined on an exclusion that had already expired, the error that costs a
+   lender real money and is invisible in a spreadsheet.
+3. **Record which window was invoked**, with the dates it was computed from, so a disputed
+   decline can be reconstructed years later from the row rather than from memory.
 
 **Files:**
-- Create: `db-migrations/product/V15__exclusion_periods.sql`, `db-migrations/claims/V6__exclusion_decline.sql`, `claims/domain/ExclusionRules.java`, `claims/api/ClaimDeclineReason.java`
-- Modify: `claims/application/ClaimsApiImpl.java`
-- Test: `claims/ExclusionRulesTest.java` (pure), and cases in `CreditLifeClaimEndToEndTest`
+- Create: `db-migrations/product/V15__exclusion_periods.sql`, `db-migrations/claims/V6__exclusion_decline.sql`,
+  `claims/domain/ExclusionWindows.java`, `claims/api/ClaimDeclineReason.java`, `claims/api/OpenExclusionView.java`
+- Modify: `claims/application/ClaimsApiImpl.java` (assessment surfaces windows; settlement gates the reason),
+  `claims/api/ClaimsApi.java` (`decideSettlement` gains a decline reason), `claims/api/ClaimView.java`
+- Test: `claims/ExclusionWindowsTest.java` (pure), and cases in `CreditLifeClaimEndToEndTest`
 
-**Interfaces:** Produces `ExclusionRules.declineReasonFor(LocalDate coverStart, LocalDate dateOfEvent, ClaimDetails details, ExclusionPeriods periods) -> Optional<ClaimDeclineReason>`.
+**Interfaces:**
+- Produces `ExclusionWindows.openAt(LocalDate coverStart, LocalDate dateOfEvent, ExclusionPeriods periods) -> Set<ClaimDeclineReason>`
+  — **which windows are OPEN on that date.** It never sees `ClaimDetails` and never returns a
+  decision; that is the whole point.
+- Produces `ClaimDeclineReason` = `SUICIDE_WITHIN_EXCLUSION`, `PRE_EXISTING_WITHIN_EXCLUSION`.
+- Consumes `ProductApi` for the two window lengths, and `PolicyMemberView.joinedOn()` as cover
+  start — which on credit life is the **disbursement date**, not the date the file arrived.
 
 - [ ] **Step 1: Write the failing pure test**
 
 ```java
 @Test
-void suicideInsideTheTwelveMonthWindowIsDeclined() {
-    // Cover started 2026-08-03; death by suicide 2027-02-03, six months in.
-    assertThat(ExclusionRules.declineReasonFor(COVER_START, COVER_START.plusMonths(6),
-            suicide(), TWELVE_AND_TWELVE))
-        .contains(ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION);
+void aDeathSixMonthsIntoATwelveMonthSuicideWindowLeavesThatWindowOpen() {
+    // OPEN means "the assessor may decline for this reason", NOT "this is suicide".
+    assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(6), TWELVE_AND_TWELVE))
+        .containsExactlyInAnyOrder(ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
+                                   ClaimDeclineReason.PRE_EXISTING_WITHIN_EXCLUSION);
 }
 
 @Test
-void suicideAfterTheWindowIsCovered() {
-    // The window is measured from COVER START, which on credit life is the disbursement date
-    // -- not from the claim, and not from when the file reached us.
-    assertThat(ExclusionRules.declineReasonFor(COVER_START, COVER_START.plusMonths(13),
-            suicide(), TWELVE_AND_TWELVE)).isEmpty();
+void aDeathAfterThirteenMonthsLeavesNoWindowOpen() {
+    // Measured from COVER START -- on credit life the disbursement date, not the date the
+    // enrolment file reached us, which may be weeks later and would shorten every window.
+    assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(13), TWELVE_AND_TWELVE))
+        .isEmpty();
 }
 
 @Test
-void suicideExactlyOnTheAnniversaryIsCovered() {
-    // A boundary somebody will argue about in writing one day. Twelve months means twelve
-    // months; the thirteenth month is not "within twelve".
-    assertThat(ExclusionRules.declineReasonFor(COVER_START, COVER_START.plusMonths(12),
-            suicide(), TWELVE_AND_TWELVE)).isEmpty();
+void theAnniversaryItselfIsOUTSIDETheWindow() {
+    // A boundary somebody will argue in writing one day. Twelve months means twelve months;
+    // the first day of the thirteenth is not "within twelve".
+    assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(12), TWELVE_AND_TWELVE))
+        .isEmpty();
 }
 
 @Test
-void aPreExistingConditionInsideItsWindowIsDeclined() { ... }
-
-@Test
-void thereIsNoGENERALWaitingPeriod() {
-    // Explicitly confirmed by the client. An ordinary death on day one is COVERED, and a
-    // platform that quietly applied a general waiting period would decline it.
-    assertThat(ExclusionRules.declineReasonFor(COVER_START, COVER_START,
-            ordinaryDeath(), TWELVE_AND_TWELVE)).isEmpty();
+void anOpenWindowIsPERMISSIONToDeclineAndNothingMore() {
+    // On day one BOTH windows are open, and that must never be read as "nothing is payable
+    // yet". openAt reports which reasons are AVAILABLE to an assessor; it declines nothing,
+    // and an ordinary death matches neither reason.
+    //
+    // The client confirmed there is NO general waiting period (answer 3.4), and the test that
+    // actually proves it is end to end: anOrdinaryDeathOnDayOneIsPaidInFull, below. It has to
+    // live there, because "is it paid?" is a question about settlement, not about dates.
+    assertThat(ExclusionWindows.openAt(COVER_START, COVER_START, TWELVE_AND_TWELVE))
+        .containsExactlyInAnyOrder(ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
+                                   ClaimDeclineReason.PRE_EXISTING_WITHIN_EXCLUSION);
 }
 
 @Test
-void aProductWithNoExclusionPeriodsDeclinesNothing() {
-    // Employer group life and individual products keep exactly their current behaviour.
-    assertThat(ExclusionRules.declineReasonFor(COVER_START, COVER_START.plusDays(1),
-            suicide(), ExclusionPeriods.none())).isEmpty();
+void twoWindowsOfDifferentLengthsCloseIndependently() {
+    // The client's answer happens to set both to twelve, but nothing may assume that.
+    ExclusionPeriods sixAndTwentyFour = new ExclusionPeriods(6, 24);
+    assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(9), sixAndTwentyFour))
+        .containsExactly(ClaimDeclineReason.PRE_EXISTING_WITHIN_EXCLUSION);
+}
+
+@Test
+void aProductWithNoExclusionPeriodsOpensNoWindows() {
+    // Every product that exists today. Employer group life and individual business keep
+    // exactly their current behaviour, and no decline reason becomes available on them.
+    assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusDays(1), ExclusionPeriods.none()))
+        .isEmpty();
 }
 ```
 
 - [ ] **Step 2: Run to verify it fails.**
 
-- [ ] **Step 3: Write the migrations.** `suicide_exclusion_months` and `pre_existing_exclusion_months` on `product_version`, both nullable (absent = no exclusion, which is every product that exists today). `claim` gains `decline_reason` and the window it failed, so a declined claim can say *why* in words the lender can act on.
+```
+cd backend && ./mvnw test -Dtest=ExclusionWindowsTest
+```
+Expected: FAIL — `ExclusionWindows` does not exist.
 
-- [ ] **Step 4: Implement `ExclusionRules` and call it from the assessment path**, not from registration: a claim that is going to be declined must still be *registered*, assessed and recorded. Declining at registration would leave no trace that the claim was ever made, which is the one thing a disputed decline must be able to prove.
+- [ ] **Step 3: Write the migrations**
 
-- [ ] **Step 5: Run, then commit.**
+`product/V15`: `suicide_exclusion_months` and `pre_existing_exclusion_months` on
+`product_version`, both nullable and both null for every existing row — absent means no
+exclusion, which is every product on the platform today.
+
+`claims/V6`: `decline_reason VARCHAR(40)` plus `exclusion_cover_start DATE` and
+`exclusion_window_months INTEGER`, with a CHECK that all three are present together or all
+absent. A decline that cannot say which window it invoked, measured from when, is a decline
+nobody can defend.
+
+- [ ] **Step 4: Implement `ExclusionWindows`** — pure, taking dates and lengths, returning the
+open reasons. It must not import `ClaimDetails`.
+
+- [ ] **Step 5: Surface the open windows at assessment**, on `ClaimView`, so the assessor sees
+them while deciding rather than after.
+
+- [ ] **Step 6: Gate the decline in `decideSettlement`.** A decline citing an exclusion is
+refused unless that window is open on the date of event, and the window's cover start and
+length are written onto the claim with it.
+
+```java
+@Test
+void anExclusionDeclineIsRefusedOnceTheWindowHasClosed() {
+    // The error this prevents: declining a fourteen-month-old claim for suicide, on a
+    // twelve-month exclusion, which is simply wrong and costs the lender the whole loan.
+    assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, false, null, null,
+            "assessor believes suicide", ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION,
+            null, idem(), "assessor"))
+        .isInstanceOf(ClaimValidationException.class)
+        .hasMessageContaining("closed on");
+}
+
+@Test
+void anOrdinaryDeclineNeedsNoExclusionAndIsUnaffected() {
+    // Fraud, non-disclosure, a claim outside cover -- every existing decline path keeps
+    // working with no exclusion reason at all.
+    ...
+}
+```
+
+- [ ] **Step 7: Run, then commit.**
 
 ---
 
@@ -299,6 +389,20 @@ void anEftInstructionNeedsABankAccountAndRefusesAPhoneNumber() { ... }
 
 ```java
 @Test
+void anOrdinaryDeathOnDayOneIsPaidInFull() {
+    // THE TEST THAT PROVES THERE IS NO GENERAL WAITING PERIOD (client answer 3.4). Both
+    // exclusion windows are open on day one, and an ordinary death is still paid: an open
+    // window is permission for an assessor to cite a reason, never a bar on settlement.
+    //
+    // Getting this wrong is the expensive direction. A platform that quietly treated an open
+    // window as "not yet covered" would refuse every early death on a book where nobody is
+    // underwritten -- and the lender would be told their borrower was insured.
+    ...
+    assertThat(claim.status()).isEqualTo(ClaimStatus.SETTLED);
+    assertThat(claim.approvedAmount()).isEqualByComparingTo(fullOutstandingOnDayOne);
+}
+
+@Test
 void aDeathClaimPaysWhatTheBorrowerStillOwedOnTheDayTheyDied() {
     // 2,400,000 over 18 months, disbursed 2026-08-03. Death at month 6 leaves twelve of
     // eighteen months outstanding: 1,600,000 -- not the 2,400,000 they borrowed.
@@ -345,4 +449,23 @@ Expected: **≥ 1388 + the new tests, 0 failures, 0 errors.**
 - **Group cession of the payout.** Reinsurance recovery on a scheme is held for the same reason cession is: the treaty model cannot express group provisions. A credit-life claim will recover nothing until that build happens.
 - **Premium netting** — settling the bank's premium against the insurer's claims through one monthly account (§7). Not before the first claim is paid.
 
-**One thing a reviewer should push back on if they disagree:** Task 3 declines at assessment rather than at registration. The argument is that a declined claim must still exist as a record — but it does mean a claim that is certain to fail still consumes an assessment step.
+**One thing a reviewer should push back on if they disagree:** Task 3 lets the platform
+*refuse* an exclusion decline once the window has closed. That is the platform overruling a
+human assessor, which it does nowhere else, and someone could reasonably argue an assessor
+should be free to decline for any reason they can defend and the platform should only record
+it.
+
+The argument for the gate is that an expired exclusion is a **factual error, not a
+judgement**: the death was fourteen months after cover started and the exclusion ran twelve,
+and no amount of assessor expertise changes those dates. It is also the error most likely to
+go unnoticed — it costs the lender a whole loan, produces a plausible-looking declined claim,
+and nothing downstream would ever question it. If the gate is removed, the window must at
+least still be surfaced and recorded, or a disputed decline cannot be reconstructed at all.
+
+**What changed from the first draft of this plan, and why:** Task 3 originally had
+`declineReasonFor(…, ClaimDetails details, …)` returning a decline — the platform deciding
+whether a death was suicide. That cannot work. `causeOfDeath` is free text and a credit-life
+borrower has no health record anywhere, because nobody is underwritten. The rule would have
+been dead code, or a substring match on prose deciding a multi-million-shilling payout, where
+a narrative *ruling out* suicide contains the word and declines the claim. The platform owns
+the dates; the assessor owns the finding.
