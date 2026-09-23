@@ -238,13 +238,25 @@ public class MetricReaderRegistry {
         return total;
     }
 
-    /** Cumulative in-force sum assured as of {@code asOfPeriod}: sumAssuredIssued minus
-     * sumAssuredTerminated, summed over every row with {@code period <= asOfPeriod}. */
+    /**
+     * Cumulative in-force sum assured as of {@code asOfPeriod}: what was issued and what members
+     * brought, less what terminated and what members took away, summed over every row with
+     * {@code period <= asOfPeriod}.
+     *
+     * <p>The two member measures joined this sum in Plan 5. Before that a group scheme's figure
+     * was frozen at its activation total however many borrowers had since joined or been paid
+     * out, because {@code policy.GroupMemberAdded} and {@code GroupMemberExited} had no consumer
+     * at all — see db-migrations/regreporting/V5.
+     */
     public static BigDecimal cumulativeSumAssured(List<PolicyMovement> movements, String asOfPeriod) {
         BigDecimal total = BigDecimal.ZERO;
         for (PolicyMovement m : movements) {
             if (m.getPeriod().compareTo(asOfPeriod) > 0) continue;
-            total = total.add(m.getSumAssuredIssued()).subtract(m.getSumAssuredTerminated());
+            total = total
+                .add(m.getSumAssuredIssued())
+                .add(m.getSumAssuredMemberAdded())
+                .subtract(m.getSumAssuredTerminated())
+                .subtract(m.getSumAssuredMemberExited());
         }
         return total;
     }
@@ -280,6 +292,23 @@ public class MetricReaderRegistry {
         return total;
     }
 
+    /**
+     * FLOW: {@code NEW_BUSINESS_SUM_ASSURED}. Deliberately excludes
+     * {@code sum_assured_member_added}, and that is a preserved STATUS QUO rather than a claim
+     * that excluding it is right.
+     *
+     * <p>Whether a borrower joining an existing scheme is "new business written" is an actuarial
+     * question nobody has answered. As it stands this counts policy activations only, so a
+     * credit-life scheme that opens with one borrower and enrols five hundred over the year
+     * reports that one borrower's cover — an understatement on any scheme that grows after
+     * activation. Changing a reporting definition was not Plan 5's job; recording that it looks
+     * wrong is.
+     *
+     * <p>If it is ever answered the other way this becomes one
+     * {@code .add(m.getSumAssuredMemberAdded())} — the column will already hold the right number.
+     * That is precisely why Plan 5 added separate columns instead of merging into
+     * {@code sum_assured_issued}: merged, the distinction could never be recovered.
+     */
     public static BigDecimal sumSumAssuredIssued(List<PolicyMovement> movements) {
         BigDecimal total = BigDecimal.ZERO;
         for (PolicyMovement m : movements) total = total.add(m.getSumAssuredIssued());

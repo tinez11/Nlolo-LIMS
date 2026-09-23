@@ -67,6 +67,17 @@ public class PolicyMovement {
     @Column(name = "sum_assured_terminated", nullable = false)
     private BigDecimal sumAssuredTerminated = BigDecimal.ZERO;
 
+    /** Cover added by members joining a scheme after activation. Read by SUM_ASSURED_IN_FORCE and
+     * deliberately not by NEW_BUSINESS_SUM_ASSURED -- see db-migrations/regreporting/V5. */
+    @Column(name = "sum_assured_member_added", nullable = false)
+    private BigDecimal sumAssuredMemberAdded = BigDecimal.ZERO;
+
+    /** Cover removed by members leaving. Excludes the final close-out when the LAST member goes:
+     * that restates the scheme to zero and closes it, and the resulting PolicySurrendered lands
+     * in sumAssuredTerminated instead. */
+    @Column(name = "sum_assured_member_exited", nullable = false)
+    private BigDecimal sumAssuredMemberExited = BigDecimal.ZERO;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -131,6 +142,45 @@ public class PolicyMovement {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Cover a joining member brought onto a scheme.
+     *
+     * <p><b>Moves no policy count</b>, unlike every other measure on this entity, and that is the
+     * point rather than an omission: a scheme is ONE policy however many borrowers sit on it.
+     * Incrementing a count here would report one lender's monthly file as several hundred new
+     * contracts.
+     *
+     * <p>Takes a POSITIVE magnitude. The direction is carried by which method you call, exactly
+     * as it is for the terminated measures, and the column's CHECK enforces it besides.
+     */
+    public void applyMemberCoverAdded(BigDecimal amount) {
+        this.sumAssuredMemberAdded = this.sumAssuredMemberAdded.add(requireGrossMagnitude(amount));
+        this.updatedAt = Instant.now();
+    }
+
+    /** Cover a leaving member took off a scheme. Positive magnitude and no policy count, as
+     * above. */
+    public void applyMemberCoverExited(BigDecimal amount) {
+        this.sumAssuredMemberExited = this.sumAssuredMemberExited.add(requireGrossMagnitude(amount));
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Fails HERE rather than at the CHECK constraint, so the error names the call rather than the
+     * column. A caller handing a signed delta straight through is the mistake this catches.
+     *
+     * <p>Zero is allowed, matching the column: {@code policy_movement_non_negative} is {@code >= 0}
+     * and not {@code > 0} because an upsert creates the row with zeros and increments exactly one
+     * measure, so zero is the normal value for every other cause in that period.
+     */
+    private static BigDecimal requireGrossMagnitude(BigDecimal amount) {
+        if (amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException(
+                "A movement measure is a gross non-negative magnitude; got " + amount);
+        }
+        return amount;
+    }
+
     public UUID getTenantId() { return tenantId; }
     public String getPeriod() { return period; }
     public UUID getProductId() { return productId; }
@@ -142,6 +192,8 @@ public class PolicyMovement {
     public int getPoliciesMatured() { return policiesMatured; }
     public int getPoliciesClaimTerminated() { return policiesClaimTerminated; }
     public BigDecimal getSumAssuredTerminated() { return sumAssuredTerminated; }
+    public BigDecimal getSumAssuredMemberAdded() { return sumAssuredMemberAdded; }
+    public BigDecimal getSumAssuredMemberExited() { return sumAssuredMemberExited; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getComputedAt() { return computedAt; }
     public Long getVersion() { return version; }

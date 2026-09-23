@@ -431,13 +431,15 @@ Expected, verified 2026-09-23:
 | `regreporting/RegreportingContractTest` | V3 |
 | `regreporting/application/MovementConcurrencyTest` | V3 |
 | `regreporting/application/RegreportingApiIntegrationTest` | V3 |
-| **`regreporting/CumulativeMetricTest`** | **V2** |
+| **`regreporting/CumulativeMetricTest`** | **none — it is a PURE UNIT TEST** |
 
-`CumulativeMetricTest` is the one to be careful about, and it is not an arbitrary straggler: it
-is the test class that exercises `cumulativeSumAssured`, the exact function Step 6 changes. A
-blanket "append after the V3 line" skips it, and it then fails on the missing column — a failure
-in the one class most likely to be read as "the arithmetic change broke something" rather than
-"a migration is missing".
+`CumulativeMetricTest` needs NO migration entry, and the reason matters: it has no
+`@Testcontainers` and no container at all — it unit-tests `cumulativeSumAssured` directly, which
+is the exact function Step 6 changes. (An earlier draft of this plan claimed it "stops at V2".
+That was wrong: the only `regreporting/V2` string in the file is inside a javadoc comment, which
+a naive grep matches. Verified 2026-09-23 by running it — 8 tests, no container, 4.3s.) Run it
+alongside the new arithmetic test in Step 7; it is the existing guard on the function being
+changed.
 
 In each file add `"db-migrations/regreporting/V5__member_movement_columns.sql"` after that file's
 own last regreporting entry. Watch the line ending: the last entry usually closes the argument

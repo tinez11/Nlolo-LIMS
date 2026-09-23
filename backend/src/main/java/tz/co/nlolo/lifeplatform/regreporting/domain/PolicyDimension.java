@@ -57,6 +57,29 @@ public class PolicyDimension {
         this.issueDate = issueDate;
     }
 
+    /**
+     * The scheme's total cover after a member joined or left.
+     *
+     * <p>The only mutation on this entity. Everything else about a policy dimension is fixed at
+     * activation; the sum assured is not, because on a group scheme it is the total of a member
+     * schedule that changes every month.
+     *
+     * <p><b>Refuses a non-positive total, and that is not defensive coding.</b>
+     * {@code policy_dimension_sum_assured_positive} forbids zero outright, and a scheme whose
+     * total has reached zero is one whose last member has left. That case belongs to the close
+     * event: {@code PolicyApiImpl.exitOneMember} restates to zero and then closes the scheme, and
+     * the resulting {@code policy.PolicySurrendered} terminates the last recorded total. A
+     * restatement to zero here would both violate the constraint and remove cover the close is
+     * about to remove again — the whole scheme counted out twice.
+     */
+    public void restateSumAssured(BigDecimal newTotal) {
+        if (newTotal == null || newTotal.signum() <= 0) {
+            throw new IllegalArgumentException("A policy dimension's sum assured must stay positive; "
+                + "a scheme restated to " + newTotal + " is one the close event owns, not this one");
+        }
+        this.sumAssuredAmount = newTotal;
+    }
+
     public UUID getTenantId() { return tenantId; }
     public String getPolicyNumber() { return policyNumber; }
     public UUID getProductId() { return productId; }
