@@ -433,16 +433,30 @@ class CreditLifeClaimEndToEndTest {
             new DeathClaimDetails("Natural causes", "Dar es Salaam", DISBURSED, "Dr Mwakalinga")),
             idem(), "claims.clerk");
         claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one", null);
+
+        // The 200,000,000 above the limit is uninsured, which is the point -- proved by the
+        // platform refusing to settle for the whole debt. On the SAME claim, first: this used to
+        // register a second death claim on the same borrower to show it, and one death claim per
+        // life now refuses that registration outright.
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claim.claimId(), true, ABOVE_FCL, "TZS",
+            null, null, idem(), "claims.manager"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("covered for");
+
         claimsApi.decideSettlement(claim.claimId(), true, FCL, "TZS", null,
             null, idem(), "claims.manager");
-
         assertThat(claimsApi.getClaim(claim.claimId()).approvedAmount()).isEqualByComparingTo(FCL);
-        // And the 200,000,000 above the limit is uninsured, which is the point -- proved by the
-        // platform refusing to settle for the whole debt rather than by the number above alone.
-        UUID second = assessedClaimOn(bigScheme, member, DISBURSED.plusDays(1));
-        assertThatThrownBy(() -> claimsApi.decideSettlement(second, true, ABOVE_FCL, "TZS",
-            null, null, idem(), "claims.manager"))
-            .isInstanceOf(RuntimeException.class);
+    }
+
+    /** One death claim per life, on the product where it was found: three approved claims on one
+     * borrower in dev, 1,640,000 against 800,000 of cover. */
+    @Test
+    void aSecondDeathClaimOnTheSameBorrowerIsRefused() {
+        UUID first = assessedClaimAt(DISBURSED.plusMonths(6));
+
+        assertThatThrownBy(() -> assessedClaimAt(DISBURSED.plusMonths(6)))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining(first.toString());
     }
 
     // ---- and then the loan comes off cover -----------------------------------
@@ -506,15 +520,6 @@ class CreditLifeClaimEndToEndTest {
         claimsApi.decideSettlement(claimId, true, expected, "TZS", null,
             null, settlementKey, "claims.manager");
         return claimId;
-    }
-
-    private UUID assessedClaimOn(String policyNumber, UUID policyMemberId, LocalDate dateOfEvent) {
-        ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
-            policyNumber, policyMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
-            new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
-            idem(), "claims.clerk");
-        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one", null);
-        return claim.claimId();
     }
 
     private String idem() { return "idem-" + UUID.randomUUID(); }

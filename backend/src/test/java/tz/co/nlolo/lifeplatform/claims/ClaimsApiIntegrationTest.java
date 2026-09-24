@@ -640,11 +640,12 @@ class ClaimsApiIntegrationTest {
         assertThat(claimRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(1);
     }
 
-    /** A DIFFERENT key for what might be the same real-world event is a deliberate, correct
-     * design choice -- NOT a gap -- mirroring billing's retry-with-a-new-key idempotency pattern.
-     * Asserted explicitly so a future reader does not "fix" this into single-claim-per-policy. */
+    /** ONE DEATH CLAIM PER LIFE. This test used to assert the opposite -- two keys, two death
+     * claims on one life -- as a deliberate choice. It was the path to a real overpayment: in
+     * dev one credit-life borrower carried three approved death claims, TZS 1,640,000 against
+     * 800,000 of cover. A different key is still a new attempt; it is just not a second death. */
     @Test
-    void registeringTwiceWithDifferentKeysForTheSameEventCreatesTwoDistinctClaims() {
+    void aSecondDeathClaimOnTheSameLifeIsRefusedUntilTheFirstIsRejected() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REGIDEM-DIFF-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
@@ -652,9 +653,43 @@ class ClaimsApiIntegrationTest {
 
         ClaimsApi.RegisterClaimRequest request = deathRequest(policyNumber, fixture.applicantId(), LocalDate.now().minusDays(1));
         ClaimView first = claimsApi.registerClaim(request, "regidem-diff-key-A", "claims-staff");
-        ClaimView second = claimsApi.registerClaim(request, "regidem-diff-key-B", "claims-staff");
 
+        assertThatThrownBy(() -> claimsApi.registerClaim(request, "regidem-diff-key-B", "claims-staff"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining(first.claimId().toString());
+        assertThat(claimRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(1);
+
+        // Once the first is REJECTED it no longer counts: a fresh claim is the other legitimate
+        // path after a refusal, beside reopening.
+        claimsApi.submitAssessment(first.claimId(), "Findings", new BigDecimal("2000000"), "TZS", false,
+            "assessor-dup", null);
+        claimsApi.decideSettlement(first.claimId(), false, null, null, "Insufficient evidence",
+            null, null, "manager-dup");
+        ClaimView second = claimsApi.registerClaim(request, "regidem-diff-key-C", "claims-staff");
         assertThat(second.claimId()).isNotEqualTo(first.claimId());
-        assertThat(claimRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(2);
+    }
+
+    /** The backstop at the MONEY step, for pairs registered before the rule above existed --
+     * which the dev database really holds. Inserted directly, since registration now refuses. */
+    @Test
+    void approvingOneOfTwoLiveDeathClaimsOnOneLifeIsRefused() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-DUP-APPROVE");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID first = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-dup-approve-1");
+        TenantContext.set(tenantId);
+        LocalDate dateOfEvent = LocalDate.now().minusDays(1);
+        Claim legacyDuplicate = claimRepository.saveAndFlush(new Claim(tenantId, policyNumber, null,
+            fixture.applicantId(), ClaimType.DEATH, dateOfEvent,
+            new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test"),
+            "claims-staff", "reg-idem-dup-approve-2"));
+
+        claimsApi.submitAssessment(legacyDuplicate.getClaimId(), "Findings", new BigDecimal("2000000"), "TZS",
+            false, "assessor-dup-2", null);
+        assertThatThrownBy(() -> claimsApi.decideSettlement(legacyDuplicate.getClaimId(), true,
+            new BigDecimal("2000000"), "TZS", null, null, "payee-ref-dup", "settle-idem-dup", "manager-dup-2"))
+            .isInstanceOf(InvalidClaimStateException.class)
+            .hasMessageContaining(first.toString());
+        assertThat(claimsApi.getClaim(legacyDuplicate.getClaimId()).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
     }
 }

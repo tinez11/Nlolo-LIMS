@@ -45,6 +45,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -110,6 +111,15 @@ public class ClaimsApiImpl implements ClaimsApi {
         //    blank key would otherwise silently disable claims/V3's dedup index for that call.
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ClaimValidationException("A registration idempotency key is required to register a claim");
+        }
+
+        // 0a. A replay of the SAME key is the same registration and returns it. Checked before
+        //     anything else now, not only by catching the unique index below: the one-death-
+        //     claim-per-life rule further down would otherwise refuse a retry as a duplicate of
+        //     itself.
+        Optional<Claim> replay = claimRepository.findByTenantIdAndRegistrationIdempotencyKey(tenantId, idempotencyKey);
+        if (replay.isPresent()) {
+            return toView(replay.get(), deriveContestabilityReview(replay.get()));
         }
 
         // 1. Claimant must exist. PartyNotFoundException propagates as-is (404 at the boundary).
@@ -206,6 +216,24 @@ public class ClaimsApiImpl implements ClaimsApi {
         if (claimable.amount() == null || claimable.amount().signum() <= 0) {
             throw new ClaimValidationException("Policy " + request.policyNumber()
                 + " has no positive cover to claim against on " + request.dateOfEvent());
+        }
+
+        // 3a. ONE DEATH CLAIM PER LIFE.
+        //
+        //     Found in dev: three death claims on one credit-life borrower, all approved, TZS
+        //     1,640,000 against 800,000 of cover, each with its own EFT waiting for finance.
+        //     Nothing stopped the second or the third. The life stays on cover until a claim
+        //     SETTLES -- rightly, the exit is then backdated to the death -- so for every day
+        //     between registration and payment, a second claim passes every check above.
+        //     Individual policies have the same window: the policy closes on settlement, not
+        //     on registration.
+        //
+        //     This reverses an earlier, recorded choice that two keys meant two claims. It is
+        //     narrower than what that choice warned against: one DEATH claim per LIFE, not one
+        //     claim per policy. A rejected claim does not count -- it can be reopened, and a new
+        //     claim is the other legitimate path after a refusal.
+        if (request.claimType() == ClaimType.DEATH) {
+            refuseASecondDeathClaim(tenantId, request.policyNumber(), request.policyMemberId(), null);
         }
 
         // 4. Contestability. Fails CLOSED on an unknown answer, or on any failure reaching
@@ -409,6 +437,13 @@ public class ClaimsApiImpl implements ClaimsApi {
         }
 
         if (approved) {
+            // The backstop for pairs registered before the rule at registration existed -- the
+            // money step is the one that must not happen twice. Any OTHER non-rejected death
+            // claim on this life refuses this approval, whichever of them was registered first:
+            // choosing between them is a person's decision, made by rejecting one.
+            if (claim.getClaimType() == ClaimType.DEATH) {
+                refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+            }
             PolicyView policy = policyApi.getPolicy(claim.getPolicyNumber());
             boolean creditLife = "CREDIT_LIFE".equals(policy.productCategory());
             if (creditLife) {
@@ -684,6 +719,34 @@ public class ClaimsApiImpl implements ClaimsApi {
     private static java.time.LocalDate closesOn(java.time.LocalDate coverStart,
                                                  ClaimDeclineReason reason, ExclusionPeriods windows) {
         return coverStart.plusMonths(monthsOf(reason, windows));
+    }
+
+    /**
+     * Refuses when another non-rejected DEATH claim exists on this life: the same member of a
+     * scheme, or -- on individual business, where no member is named -- the same policy.
+     *
+     * @param self the claim being decided, excluded from the search; null at registration
+     * @throws ClaimValidationException at registration (422: the request is what is wrong)
+     * @throws InvalidClaimStateException at approval (409: it conflicts with recorded state)
+     */
+    private void refuseASecondDeathClaim(UUID tenantId, String policyNumber, UUID policyMemberId, UUID self) {
+        List<Claim> deathClaims = policyMemberId != null
+            ? claimRepository.findByTenantIdAndPolicyNumberAndPolicyMemberIdAndClaimTypeAndStatusNotOrderByCreatedAtAsc(
+                tenantId, policyNumber, policyMemberId, ClaimType.DEATH, ClaimStatus.REJECTED)
+            : claimRepository.findByTenantIdAndPolicyNumberAndPolicyMemberIdIsNullAndClaimTypeAndStatusNotOrderByCreatedAtAsc(
+                tenantId, policyNumber, ClaimType.DEATH, ClaimStatus.REJECTED);
+        Claim other = deathClaims.stream().filter(c -> !c.getClaimId().equals(self)).findFirst().orElse(null);
+        if (other == null) {
+            return;
+        }
+        String life = policyMemberId != null ? "member " + policyMemberId + " of " + policyNumber : policyNumber;
+        String message = "A death claim already exists for this life (" + life + "): claim "
+            + other.getClaimId() + ", " + other.getStatus() + ". A life is paid for once -- reject one of"
+            + " them to proceed with the other.";
+        if (self == null) {
+            throw new ClaimValidationException(message);
+        }
+        throw new InvalidClaimStateException(message);
     }
 
     private Claim findOrThrow(UUID claimId, UUID tenantId) {

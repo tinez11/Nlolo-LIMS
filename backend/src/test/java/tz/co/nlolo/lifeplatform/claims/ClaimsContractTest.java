@@ -559,7 +559,9 @@ class ClaimsContractTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-LIST-01");
         String policyNumber = issuePolicy(tenantId, fixture);
 
-        UUID registeredClaimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        // Two claims on one policy, of DIFFERENT types: one death claim per life now refuses a
+        // second DEATH here, and this test is about the status filter, not the claim type.
+        UUID registeredClaimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
         UUID underAssessmentClaimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
         submitAssessmentDirectly(tenantId, underAssessmentClaimId, "assessor-list-fixture");
 
