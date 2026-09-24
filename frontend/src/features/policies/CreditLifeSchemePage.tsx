@@ -13,7 +13,7 @@ import {
   exitsReportFileName,
   exitsTemplateFileName,
 } from '@/api/creditLife';
-import type { EnrolmentRowView, ExitRowView } from '@/api/types';
+import type { EnrolmentRowView, ExitRowView, SubmissionStatus } from '@/api/types';
 import { DetailLayout } from '@/components/DetailLayout';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
@@ -59,6 +59,30 @@ import { SubmissionsPanel, type SubmissionRow } from './SubmissionsPanel';
  * one. A submission that has not been accepted has enrolled nobody and exited nobody, and a
  * borrower a lender believes is covered but is not is the most expensive mistake available here.
  */
+/**
+ * Which file opens by itself: the one that still needs something, or the last one that did
+ * something. Never a withdrawn one.
+ *
+ * <p>It used to be simply the newest, which is wrong in the case that actually happens. A lender
+ * fighting a file format leaves a stack of withdrawn submissions on top, and a WITHDRAWN file is
+ * by definition the one where nothing took effect — so the page would open on a table of rejected
+ * rows that changed nothing, with the accepted file that DID change the book collapsed beneath it.
+ *
+ * <p>PENDING first because it is owed a decision and blocks the next upload; then the newest
+ * ACCEPTED, which is what "what happened to this book" means. If every file was withdrawn,
+ * nothing opens, which is honest: nothing has happened.
+ *
+ * <p>Withdrawn files stay in the list and stay clickable. See the panel for why they are kept.
+ */
+function defaultOpenSubmission(
+  submissions: { submissionId?: string; status?: SubmissionStatus }[] | null | undefined,
+): string | null {
+  const rows = submissions ?? [];
+  const pending = rows.find((s) => s.status === 'PENDING');
+  const accepted = rows.find((s) => s.status === 'ACCEPTED');
+  return pending?.submissionId ?? accepted?.submissionId ?? null;
+}
+
 export function CreditLifeSchemePage() {
   const { policyNumber = '' } = useParams<{ policyNumber: string }>();
   const [chosenEnrolment, setChosenEnrolment] = useState<string | null | undefined>(undefined);
@@ -82,8 +106,8 @@ export function CreditLifeSchemePage() {
    * file they sent, and the most important thing on it — WHY rows were refused — was previously
    * a click away behind a count.
    */
-  const newestEnrolmentId = enrolments.data?.[0]?.submissionId ?? null;
-  const newestExitId = exits.data?.[0]?.submissionId ?? null;
+  const newestEnrolmentId = defaultOpenSubmission(enrolments.data);
+  const newestExitId = defaultOpenSubmission(exits.data);
   const openEnrolment = chosenEnrolment !== undefined ? chosenEnrolment : newestEnrolmentId;
   const openExits = chosenExits !== undefined ? chosenExits : newestExitId;
 

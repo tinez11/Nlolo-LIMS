@@ -263,6 +263,10 @@ export function SubmissionsPanel({
                     'px-4 py-3',
                     selected && 'bg-selected',
                     !selected && 'hover:bg-hover',
+                    // Dimmed, not hidden. A file that took effect and a file that did not should
+                    // not read with the same weight in a list somebody scans -- but it is still
+                    // a record, and it opens on a click like any other.
+                    s.status === 'WITHDRAWN' && !selected && 'opacity-60',
                   )}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -370,6 +374,20 @@ export function SubmissionsPanel({
                       Nothing has happened yet. {s.rowCount}{' '}
                       {s.rowCount === 1 ? 'row was' : 'rows were'} judged and recorded; a second
                       person must accept this file before anyone is {appliedNoun}.
+                    </p>
+                  )}
+
+                  {/* WHY A WITHDRAWN FILE IS STILL HERE, said rather than left to be inferred.
+                      It changed nothing, so it is easy to read as clutter worth deleting -- and
+                      deleting it would throw away the only record that the lender sent that file
+                      and that these borrowers were judged. The rejection report for it exists and
+                      may already have been sent; if a refused borrower later dies uninsured, this
+                      row and its reasons are the evidence of what the lender was told and when.
+                      Kept, stated, and out of the way. */}
+                  {s.status === 'WITHDRAWN' && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Nothing on this file took effect. Kept as the record of what the lender sent
+                      and what was refused &mdash; the report for it still stands.
                     </p>
                   )}
                   {/* THE CONFIRMATION LIVES IN THE ROW, under the button that armed it.
