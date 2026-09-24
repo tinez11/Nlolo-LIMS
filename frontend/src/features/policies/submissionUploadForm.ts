@@ -24,9 +24,19 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export type SubmissionKind = 'enrolment' | 'exits';
 
+/**
+ * Both kinds take either format now.
+ *
+ * <b>Exits was CSV-only until a real lender's month proved that wrong.</b> The argument was that
+ * an exits file is a short list generated from a loan system, so admitting a second format would
+ * buy a second set of numeric-coercion traps for nobody. What it missed is that the file carries a
+ * DATE, and a CSV cannot survive Excel — it rewrites dates on open and again on save. Two
+ * enrolment files were refused entire that way before that side moved to a workbook, and exits sat
+ * exposed to the identical failure, having simply not been reached yet.
+ */
 const EXTENSIONS: Record<SubmissionKind, readonly string[]> = {
   enrolment: ['.csv', '.xlsx'],
-  exits: ['.csv'],
+  exits: ['.csv', '.xlsx'],
 };
 
 /** What the file input should advertise, so the OS dialog filters before the person picks. */
@@ -50,8 +60,8 @@ export function submissionUploadSchema(kind: SubmissionKind) {
       })
       .refine((f) => allowed.includes(extensionOf(f.name)), {
         message:
-          allowed.length === 1
-            ? 'An exits file must be a CSV'
+          kind === 'exits'
+            ? 'An exits file must be a CSV or an XLSX'
             : 'An enrolment schedule must be a CSV or an XLSX',
       }),
   });

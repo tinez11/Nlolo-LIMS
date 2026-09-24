@@ -85,7 +85,7 @@ export function withdrawEnrolmentSubmission(
 /* ---------------------------------------------------------------------- exits */
 
 /**
- * `POST /credit-life-schemes/{policyNumber}/exits` — multipart, CSV only.
+ * `POST /credit-life-schemes/{policyNumber}/exits` — multipart, CSV or XLSX.
  *
  * **Takes nobody off cover.** Same propose-then-accept shape as the enrolment file, and the same
  * warning applies in the opposite direction: the 201 records a judgement, and acceptance is what
@@ -237,6 +237,26 @@ export function enrolmentTemplateXlsxFileName(policyNumber: string): string {
 }
 export function enrolmentTemplateFileName(policyNumber: string): string {
   return `enrolment-template-${policyNumber}.csv`;
+}
+
+/**
+ * The exits file as a spreadsheet — the one to send a lender who works in Excel.
+ *
+ * Carries the same "How to fill this in" sheet the enrolment workbook does, which is the only way
+ * the rules reach a lender: the console's column guide is on a staff screen they never see, and
+ * nothing delivers it for them.
+ */
+export function downloadExitsTemplateXlsx(policyNumber: string): Promise<Blob> {
+  return get<Blob>(`/credit-life-schemes/${encodeURIComponent(policyNumber)}/exits-template.xlsx`, {
+    responseType: 'blob',
+    headers: {
+      Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+  });
+}
+
+export function exitsTemplateXlsxFileName(policyNumber: string): string {
+  return `exits-template-${policyNumber}.xlsx`;
 }
 
 export function exitsTemplateFileName(policyNumber: string): string {

@@ -19,22 +19,23 @@ describe('submissionUploadForm', () => {
     }
   });
 
-  it('accepts an XLSX enrolment schedule but refuses an XLSX exits file', () => {
-    // The asymmetry is the backend's, mirrored here so a doomed upload fails at the file picker
-    // rather than after the round trip. A lender exports a schedule from a spreadsheet; an exits
-    // file comes out of a loan system, and admitting XLSX there would buy a second set of
-    // numeric-coercion traps for nobody.
+  it('accepts an XLSX for BOTH kinds, because a CSV cannot survive Excel', () => {
+    /*
+     * Exits was CSV-only, on the argument that the file is a short list from a loan system so a
+     * second format would buy a second set of numeric-coercion traps for nobody. What that
+     * missed is that the file carries a DATE. Excel rewrites dates when it opens a CSV and again
+     * when it saves one -- two real enrolment files were refused entire that way before that
+     * side moved to a workbook, and exits sat exposed to the identical failure.
+     *
+     * The coercion traps were already handled: XlsxToCsv is what both upload paths read a
+     * workbook through, and the exits service has always called it. Only the controller and this
+     * schema refused one.
+     */
     const xlsx = fileOf('august.xlsx', 4096);
 
     expect(submissionUploadSchema('enrolment').safeParse({ file: xlsx }).success).toBe(true);
-
-    const exits = submissionUploadSchema('exits').safeParse({ file: xlsx });
-    expect(exits.success).toBe(false);
-    if (!exits.success) {
-      expect(exits.error.issues[0]?.message).toBe('An exits file must be a CSV');
-    }
+    expect(submissionUploadSchema('exits').safeParse({ file: xlsx }).success).toBe(true);
   });
-
   it('refuses a file that is not a schedule at all, and says which formats are allowed', () => {
     const result = submissionUploadSchema('enrolment').safeParse({
       file: fileOf('scan-of-the-agreement.pdf', 9000, 'application/pdf'),
@@ -82,6 +83,6 @@ describe('submissionUploadForm', () => {
 
   it('advertises the right formats to the file picker for each kind', () => {
     expect(acceptAttribute('enrolment')).toBe('.csv,.xlsx');
-    expect(acceptAttribute('exits')).toBe('.csv');
+    expect(acceptAttribute('exits')).toBe('.csv,.xlsx');
   });
 });

@@ -7,11 +7,13 @@ import {
   downloadEnrolmentTemplateXlsx,
   downloadExitsReport,
   downloadExitsTemplate,
+  downloadExitsTemplateXlsx,
   enrolmentReportFileName,
   enrolmentTemplateFileName,
   enrolmentTemplateXlsxFileName,
   exitsReportFileName,
   exitsTemplateFileName,
+  exitsTemplateXlsxFileName,
 } from '@/api/creditLife';
 import type { EnrolmentRowView, ExitRowView, SubmissionStatus } from '@/api/types';
 import { DetailLayout } from '@/components/DetailLayout';
@@ -350,6 +352,12 @@ export function CreditLifeSchemePage() {
             saveBlob(await downloadExitsReport(policyNumber, id), exitsReportFileName(id))
           }
           onDownloadTemplate={async () =>
+            saveBlob(
+              await downloadExitsTemplateXlsx(policyNumber),
+              exitsTemplateXlsxFileName(policyNumber),
+            )
+          }
+          onDownloadTemplateCsv={async () =>
             saveBlob(await downloadExitsTemplate(policyNumber), exitsTemplateFileName(policyNumber))
           }
           columnGuide={<ExitColumns />}

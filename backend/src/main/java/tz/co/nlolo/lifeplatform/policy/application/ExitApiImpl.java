@@ -12,6 +12,7 @@ import tz.co.nlolo.lifeplatform.policy.domain.ExitSubmission;
 import tz.co.nlolo.lifeplatform.policy.domain.ExitSubmissionRow;
 import tz.co.nlolo.lifeplatform.policy.domain.GroupScheme;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
+import tz.co.nlolo.lifeplatform.policy.domain.LenderTemplateXlsx;
 import tz.co.nlolo.lifeplatform.policy.domain.XlsxToCsv;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.ExitSubmissionRepository;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.ExitSubmissionRowRepository;
@@ -313,6 +314,15 @@ public class ExitApiImpl implements ExitApi {
         String example = "CL-" + policyNumber.replace("GRP-", "") + "-000000";
         return ExitCsvParser.templateCsv()
             + String.join(",", example, LocalDate.now().toString(), "SETTLED_EARLY", "") + "\n";
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] renderTemplateXlsx(String policyNumber) {
+        // The same synthetic reference as the CSV above, so the two templates cannot describe
+        // different things -- and neither of them names a real member.
+        return LenderTemplateXlsx.exits(
+            "CL-" + policyNumber.replace("GRP-", "") + "-000000", LocalDate.now());
     }
 
     private ExitSubmission findSubmission(UUID submissionId, UUID tenantId) {

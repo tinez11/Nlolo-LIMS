@@ -306,7 +306,12 @@ test.describe('staff credit-life scheme', () => {
     // The CSV stays, second and quieter, for a lender whose loan system exports one. Its contents
     // are readable as text, so this is where the worked example is asserted.
     const templateDownload = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'or as a CSV' }).click();
+    // Scoped to the enrolment panel: BOTH panels offer a CSV alternative now that the exits file
+    // takes a workbook too, so the bare name resolves to two buttons.
+    const joining = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Borrowers joining' }) });
+    await joining.getByRole('button', { name: 'or as a CSV' }).click();
     const template = await templateDownload;
     expect(template.suggestedFilename()).toMatch(/^enrolment-template-GRP-[A-Z0-9]+\.csv$/);
     const templateText = readFileSync(await template.path(), 'utf8');
@@ -333,7 +338,7 @@ test.describe('staff credit-life scheme', () => {
     await expect(page.getByText(/carries one of this scheme/)).toHaveCount(0);
   });
 
-  test('an exits file must be a CSV, and is refused before the network', async ({ page }) => {
+  test('a file that is neither CSV nor XLSX is refused before the network', async ({ page }) => {
     test.slow();
     const { policyNumber } = await seedCreditLifeScheme();
     await page.goto(`/staff/credit-life-schemes/${policyNumber}`);
@@ -349,10 +354,11 @@ test.describe('staff credit-life scheme', () => {
     await expect(exits.getByText('No files yet')).toBeVisible();
 
     /*
-     * XLSX is accepted for an enrolment schedule -- a lender exports one from a spreadsheet --
-     * and refused for exits, which is a short list generated from a loan system. The asymmetry is
-     * the backend's; the console mirrors it so a doomed upload fails at the file picker instead
-     * of after a multipart round trip. That it fails WITHOUT a request is the assertion.
+     * BOTH kinds take a CSV or a workbook now. Exits was CSV-only on the argument that it is a
+     * short list from a loan system, which missed that the file carries a DATE and that a CSV
+     * cannot survive Excel. What is still refused is a format neither side can read, and the
+     * console refuses it at the file picker so a doomed upload never becomes a multipart round
+     * trip. That it fails WITHOUT a request is the assertion.
      */
     let requested = false;
     await page.route('**/credit-life-schemes/**/exits', (route) => {
@@ -365,12 +371,12 @@ test.describe('staff credit-life scheme', () => {
     await (
       await chooser
     ).setFiles({
-      name: 'exits.xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      name: 'exits.pdf',
+      mimeType: 'application/pdf',
       buffer: Buffer.from('not really a spreadsheet'),
     });
 
-    await expect(exits.getByRole('alert')).toHaveText('An exits file must be a CSV');
+    await expect(exits.getByRole('alert')).toHaveText('An exits file must be a CSV or an XLSX');
     expect(requested, 'a client-refused file must not be sent').toBe(false);
   });
 });

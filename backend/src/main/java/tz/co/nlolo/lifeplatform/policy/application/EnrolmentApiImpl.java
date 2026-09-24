@@ -39,7 +39,7 @@ import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentTemplateXlsx;
+import tz.co.nlolo.lifeplatform.policy.domain.LenderTemplateXlsx;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
@@ -354,7 +354,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     public byte[] renderTemplateXlsx(String policyNumber) {
         // Built from the same example the CSV template uses, so the two cannot describe different
         // borrowers -- and parsed back by the same reader either way.
-        return EnrolmentTemplateXlsx.build(exampleRowFor(policyNumber));
+        return LenderTemplateXlsx.enrolment(exampleRowFor(policyNumber));
     }
 
     /**
@@ -364,7 +364,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
      * because a CSV and an XLSX that demonstrated DIFFERENT borrowers would be the same class of
      * defect the generated header was introduced to prevent.
      */
-    private EnrolmentTemplateXlsx.ExampleRow exampleRowFor(String policyNumber) {
+    private LenderTemplateXlsx.EnrolmentExample exampleRowFor(String policyNumber) {
         UUID tenantId = TenantContext.get();
         Pageable earliest = PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "joinedOn")
             .and(Sort.by(Sort.Direction.ASC, "policyMemberId")));
@@ -385,7 +385,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             if (name == null || born == null) {
                 continue;
             }
-            return new EnrolmentTemplateXlsx.ExampleRow(member.getMemberReference(), name, born,
+            return new LenderTemplateXlsx.EnrolmentExample(member.getMemberReference(), name, born,
                 terms.principalAmount(), terms.termMonths(), terms.disbursementDate(),
                 member.getLoanAccountNumber());
         }

@@ -76,4 +76,16 @@ public interface ExitApi {
      * looks like, and the row is refused as naming no member on this scheme.
      */
     String renderTemplate(String policyNumber);
+
+    /**
+     * The same exits file as a spreadsheet, and the one to send a lender who works in Excel.
+     *
+     * <p>Added later than the enrolment workbook and for the reason that one was: a CSV cannot
+     * survive Excel, which rewrites a date when it opens one and again when it saves it. The exits
+     * file carries an {@code exit_date}, so it was exposed to exactly the failure that refused two
+     * real enrolment files -- it had simply not been reached yet.
+     *
+     * <p>The service has always accepted an uploaded workbook; only the controller refused one.
+     */
+    byte[] renderTemplateXlsx(String policyNumber);
 }

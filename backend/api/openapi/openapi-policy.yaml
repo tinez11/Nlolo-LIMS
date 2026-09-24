@@ -690,9 +690,16 @@ paths:
         cover until a second staff user accepts the submission.
 
 
-        CSV only, unlike the enrolment upload which also takes XLSX. An exits file is a short
-        list generated from a loan system rather than a spreadsheet export, and a second format
-        would mean a second set of numeric-coercion traps for no reason anybody has asked for.
+        CSV or XLSX, the same as the enrolment upload. This was CSV-only on the argument that an
+        exits file is a short list from a loan system, so a second format would buy a second set
+        of numeric-coercion traps for nobody. That missed the thing that matters: the file carries
+        an exit_date, and a CSV cannot survive Excel, which rewrites dates on open and again on
+        save. Two real enrolment files were refused entire that way before that side moved to a
+        workbook; this side was exposed to the identical failure and had merely not been reached.
+
+
+        The coercion traps were already handled -- XlsxToCsv is what both paths read a workbook
+        through, and the exits service has always called it. Only the controller refused one.
 
 
         One submission may be in flight per scheme at a time.
@@ -1085,6 +1092,33 @@ paths:
           content:
             text/csv:
               schema: { type: string }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+
+  /credit-life-schemes/{policyNumber}/exits-template.xlsx:
+    get:
+      summary: The monthly exits file as a spreadsheet, with its instructions sheet
+      description: >-
+        The one to send a lender who works in Excel. A CSV cannot survive it -- Excel rewrites
+        dates on open and again on save -- and this file carries an exit_date, so it was exposed
+        to the failure that refused two real enrolment files before that side moved to a workbook.
+
+
+        The workbook also carries a "How to fill this in" sheet, which is the only way the format
+        rules reach the lender at all: the console column guide is on a staff screen they never
+        see, and nothing delivers it for them.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK -- an XLSX workbook, served as an attachment
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
 
   /credit-life-schemes/{policyNumber}/exits-template:

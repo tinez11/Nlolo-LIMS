@@ -48,6 +48,9 @@ import java.util.UUID;
 @RestController
 public class ExitController {
 
+    private static final String XLSX =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
     private final ExitApi exitApi;
 
     public ExitController(ExitApi exitApi) {
@@ -55,14 +58,19 @@ public class ExitController {
     }
 
     /**
-     * CSV only, unlike the enrolment upload which also takes XLSX.
+     * CSV or XLSX, the same as the enrolment upload.
      *
-     * <p>Not an oversight and not strictness for its own sake: spec §3 settled that the enrolment
-     * template is a CSV because the bank's existing file is one, and XLSX was admitted there only
-     * because a lender may export from a spreadsheet. An exits file is a much shorter list
-     * generated from a loan system, and admitting a second format here would mean a second set of
-     * numeric-coercion traps (a term arriving as {@code 48.0}, a principal as {@code 8.5E+6}) for
-     * no reason anybody has asked for.
+     * <p><b>This refused a workbook until a real lender's month proved the refusal wrong.</b> The
+     * argument for CSV-only was that an exits file is a short list generated from a loan system,
+     * so a second format would buy a second set of numeric-coercion traps for nobody. The traps
+     * are real; what the argument missed is that this file carries a DATE, and a CSV cannot
+     * survive Excel -- it rewrites dates on open and again on save. Two enrolment files were
+     * refused entire that way before the enrolment side moved to a workbook, and the exits side
+     * was exposed to exactly the same failure, having simply not been reached yet.
+     *
+     * <p>The coercion traps were already solved anyway: {@link XlsxToCsv} is what the enrolment
+     * path has read workbooks through since it was written, and {@code ExitApiImpl} has always
+     * called it. Only this guard refused one.
      */
     @PostMapping(value = "/credit-life-schemes/{policyNumber}/exits",
                  consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -76,12 +84,14 @@ public class ExitController {
         } catch (IllegalArgumentException e) {
             throw new InvalidPolicyStateException(e.getMessage());
         }
-        if (!"text/csv".equals(contentType) && !"application/octet-stream".equals(contentType)) {
+        if (!"text/csv".equals(contentType)
+                && !XLSX.equals(contentType)
+                && !"application/octet-stream".equals(contentType)) {
             // octet-stream is tolerated for the same reason the enrolment upload tolerates it: a
-            // browser posting a .csv often sends it, and the parser reads the real shape from the
-            // bytes anyway.
+            // browser posting either format often sends it, and the service reads the real shape
+            // from the bytes anyway.
             throw new InvalidPolicyStateException(
-                "An exits file must be a CSV; this file is " + contentType);
+                "An exits file must be a CSV or an XLSX; this file is " + contentType);
         }
         try {
             return ResponseEntity.status(HttpStatus.CREATED).body(exitApi.submit(
@@ -174,5 +184,21 @@ public class ExitController {
                 "attachment; filename=\"exits-template-" + policyNumber + ".csv\"")
             .contentType(MediaType.valueOf("text/csv"))
             .body(exitApi.renderTemplate(policyNumber));
+    }
+
+    /**
+     * The same exits file as a spreadsheet, and the one to send a lender who works in Excel.
+     *
+     * <p>See {@code ExitApi.renderTemplateXlsx}: a CSV cannot survive Excel, and this file carries
+     * a date. The workbook also carries the instructions, which a CSV has nowhere to put.
+     */
+    @GetMapping(value = "/credit-life-schemes/{policyNumber}/exits-template.xlsx", produces = XLSX)
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<byte[]> exitsTemplateXlsx(@PathVariable String policyNumber) {
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"exits-template-" + policyNumber + ".xlsx\"")
+            .contentType(MediaType.valueOf(XLSX))
+            .body(exitApi.renderTemplateXlsx(policyNumber));
     }
 }
