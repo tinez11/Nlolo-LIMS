@@ -278,12 +278,17 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     @Transactional(readOnly = true)
     public List<EnrolmentRowView> listRows(UUID submissionId) {
         UUID tenantId = TenantContext.get();
-        findSubmission(submissionId, tenantId); // not-found rather than an empty list
+        EnrolmentSubmission submission = findSubmission(submissionId, tenantId);
+        String currency = groupSchemeRepository
+            .findByPolicyNumberAndTenantId(submission.getPolicyNumber(), tenantId)
+            .map(GroupScheme::getCurrency)
+            .orElse(null);
         return rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)
             .stream()
             .map(row -> new EnrolmentRowView(row.getLineNumber(), row.getLoanAccountNumber(),
                 row.getBorrowerFullName(), row.getOutcome(), row.getReasonCode(), row.getReason(),
-                row.getPolicyMemberId(), row.getMemberReference(), row.getPremiumAmount()))
+                row.getPolicyMemberId(), row.getMemberReference(), row.getPremiumAmount(),
+                currency))
             .toList();
     }
 

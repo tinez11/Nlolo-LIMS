@@ -118,9 +118,9 @@ public class ExitController {
 
     @GetMapping("/credit-life-schemes/{policyNumber}/exits/{submissionId}/rows")
     @PreAuthorize("hasRole('REALM_STAFF')")
-    public List<ExitRowView> listRows(@PathVariable String policyNumber,
+    public List<ExitRowResponseDto> listRows(@PathVariable String policyNumber,
                                        @PathVariable UUID submissionId) {
-        return exitApi.listRows(submissionId);
+        return ExitRowResponseDto.from(exitApi.listRows(submissionId));
     }
 
     /**

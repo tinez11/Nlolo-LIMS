@@ -19,10 +19,10 @@ class EnrolmentReportRendererTest {
     void theReportCarriesOneLinePerRowWithItsOutcome() {
         String csv = EnrolmentReportRenderer.toCsv(List.of(
             new EnrolmentRowView(2, "LN-A", "Amina Hassan Mwinyi", RowOutcome.ENROLLED,
-                null, null, UUID.randomUUID(), "CL-4F8DF58B-000417", new BigDecimal("18000.00")),
+                null, null, UUID.randomUUID(), "CL-4F8DF58B-000417", new BigDecimal("18000.00"), "TZS"),
             new EnrolmentRowView(3, null, "", RowOutcome.REJECTED,
                 EnrolmentRejection.MISSING_REQUIRED_FIELD,
-                "borrower_full_name is blank. THIS BORROWER IS NOT COVERED.", null, null, null)));
+                "borrower_full_name is blank. THIS BORROWER IS NOT COVERED.", null, null, null, "TZS")));
 
         assertThat(csv.lines().findFirst().orElseThrow())
             .isEqualTo("row_number,member_reference,loan_account_number,borrower_full_name,"
@@ -38,7 +38,7 @@ class EnrolmentReportRendererTest {
         // "which of these 400 people do you mean?" on every later file.
         String csv = EnrolmentReportRenderer.toCsv(List.of(
             new EnrolmentRowView(2, null, "Amina Hassan Mwinyi", RowOutcome.ENROLLED,
-                null, null, UUID.randomUUID(), "CL-4F8DF58B-000417", new BigDecimal("18000.00"))));
+                null, null, UUID.randomUUID(), "CL-4F8DF58B-000417", new BigDecimal("18000.00"), "TZS")));
 
         assertThat(csv).contains("CL-4F8DF58B-000417");
     }
@@ -50,9 +50,9 @@ class EnrolmentReportRendererTest {
         // total is exactly the sum of this column.
         String csv = EnrolmentReportRenderer.toCsv(List.of(
             new EnrolmentRowView(2, null, "Amina", RowOutcome.ENROLLED, null, null,
-                UUID.randomUUID(), "CL-A-000001", new BigDecimal("18000.00")),
+                UUID.randomUUID(), "CL-A-000001", new BigDecimal("18000.00"), "TZS"),
             new EnrolmentRowView(3, null, "Joseph", RowOutcome.ENROLLED, null, null,
-                UUID.randomUUID(), "CL-A-000002", new BigDecimal("6000.00"))));
+                UUID.randomUUID(), "CL-A-000002", new BigDecimal("6000.00"), "TZS")));
 
         assertThat(csv).contains(",18000.00,");
         assertThat(csv).contains(",6000.00,");
@@ -65,7 +65,7 @@ class EnrolmentReportRendererTest {
         String csv = EnrolmentReportRenderer.toCsv(List.of(
             new EnrolmentRowView(2, null, "Nobody", RowOutcome.REJECTED,
                 EnrolmentRejection.MISSING_REQUIRED_FIELD,
-                "borrower_date_of_birth is blank. THIS BORROWER IS NOT COVERED.", null, null, null)));
+                "borrower_date_of_birth is blank. THIS BORROWER IS NOT COVERED.", null, null, null, "TZS")));
 
         assertThat(csv).contains("2,,,Nobody,REJECTED,,");
     }
@@ -78,7 +78,7 @@ class EnrolmentReportRendererTest {
         String csv = EnrolmentReportRenderer.toCsv(List.of(
             new EnrolmentRowView(2, null, "Peter Massawe", RowOutcome.ENROLLED_CAPPED,
                 null, "Cover limited to the free cover limit.", UUID.randomUUID(),
-                "CL-4F8DF58B-000418", new BigDecimal("150000.00"))));
+                "CL-4F8DF58B-000418", new BigDecimal("150000.00"), "TZS")));
 
         assertThat(csv).contains("ENROLLED_CAPPED,150000.00,,");
     }
@@ -92,7 +92,7 @@ class EnrolmentReportRendererTest {
             new EnrolmentRowView(2, "LN-A", "Mwinyi, Amina", RowOutcome.REJECTED,
                 EnrolmentRejection.MALFORMED_VALUE,
                 "loan_principal_amount \"8.5E+06\" is not an amount. THIS BORROWER IS NOT COVERED.",
-                null, null, null)));
+                null, null, null, "TZS")));
 
         assertThat(csv).contains("\"Mwinyi, Amina\"");
         assertThat(csv).contains("\"\"8.5E+06\"\"");

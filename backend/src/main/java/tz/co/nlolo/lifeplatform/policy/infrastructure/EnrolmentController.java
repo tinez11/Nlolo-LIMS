@@ -117,9 +117,9 @@ public class EnrolmentController {
 
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/rows")
     @PreAuthorize("hasRole('REALM_STAFF')")
-    public List<EnrolmentRowView> listRows(@PathVariable String policyNumber,
+    public List<EnrolmentRowResponseDto> listRows(@PathVariable String policyNumber,
                                             @PathVariable UUID submissionId) {
-        return enrolmentApi.listRows(submissionId);
+        return EnrolmentRowResponseDto.from(enrolmentApi.listRows(submissionId));
     }
 
     /**

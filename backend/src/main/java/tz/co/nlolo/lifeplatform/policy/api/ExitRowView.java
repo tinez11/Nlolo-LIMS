@@ -21,4 +21,13 @@ public record ExitRowView(int lineNumber,
                            String outcome,
                            ExitRejection reasonCode,
                            String reason,
-                           UUID policyMemberId) {}
+                           UUID policyMemberId,
+                           /**
+                            * The scheme's currency, so the wire can render the balance as money.
+                            *
+                            * <p>An amount without one is not money, and this view reached the
+                            * browser as a bare JSON number until 2026-09-24 -- which the console
+                            * rendered as "undefined undefined", because it was reading a Money
+                            * object the contract promised and the server never sent.
+                            */
+                           String currency) {}

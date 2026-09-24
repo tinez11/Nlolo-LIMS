@@ -486,7 +486,7 @@ class ExitFileIntegrationTest {
     void theExitsFileIsReachableOverHttpAndAcceptedByASecondPerson() throws Exception {
         // Every call below 404'd before ExitController existed.
         var upload = mockMvc.perform(multipart("/credit-life-schemes/" + scheme + "/exits")
-                .file(exitsFile("november-exits.csv", reference(0) + ",2026-11-03,SETTLED_EARLY,0.00\n"))
+                .file(exitsFile("november-exits.csv", reference(0) + ",2026-11-03,SETTLED_EARLY,450000.00\n"))
                 .with(staff("staff.one")))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.status").value("PENDING"))
@@ -502,7 +502,20 @@ class ExitFileIntegrationTest {
         mockMvc.perform(get("/credit-life-schemes/" + scheme + "/exits/" + submissionId + "/rows")
                 .with(staff("staff.one")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[0].reasonCode").doesNotExist());
+            .andExpect(jsonPath("$[0].reasonCode").doesNotExist())
+            /*
+             * THE BALANCE IS MONEY ON THE WIRE, never a bare number.
+             *
+             * This endpoint returned the domain view straight out, so the BigDecimal serialised as
+             * 450000 -- no currency, no decimal string -- and the console, reading the Money object
+             * this contract promises, rendered "undefined undefined" in the column.
+             *
+             * The assertion above passed throughout. It checked that a reason code was ABSENT and
+             * never looked at a field that was present, and the only row it ever sent carried 0.00
+             * -- so the test exercised the endpoint without exercising what was broken.
+             */
+            .andExpect(jsonPath("$[0].outstandingBalanceAtExit.amount").value("450000.00"))
+            .andExpect(jsonPath("$[0].outstandingBalanceAtExit.currencyCode").value("TZS"));
 
         // A DIFFERENT subject accepts. Using the same one would prove the endpoint exists while
         // proving nothing about the two-person rule the actor claim is there to enforce.

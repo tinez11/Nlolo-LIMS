@@ -552,14 +552,11 @@ function EnrolmentRows({
 
   return (
     <div className="border-t border-border bg-surface">
-      {/* The reference the insurer minted is NOT on these rows -- EnrolmentRowView carries the
-          lender's own loan account number and nothing else identifying. It exists only in the
-          report's first column, which is why that download is the deliverable rather than a
-          convenience, and why this says so instead of leaving a person to wonder. */}
-      <p className="px-4 py-2 text-xs text-muted-foreground">
-        Member references are in the report, not here — it is the only place the lender learns
-        them.
-      </p>
+      {/* This said "member references are in the report, not here", which was true of the
+          CONTRACT and false of the data: EnrolmentRowView has carried memberReference since
+          enrolment was built, and the OpenAPI schema simply never declared it, so the generated
+          client had no such field to read. The sentence then outlived the limitation it
+          described. The reference is the deliverable, so where it can be shown it is. */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <caption className="sr-only">
@@ -569,6 +566,7 @@ function EnrolmentRows({
             <tr className="border-y border-border text-left text-xs text-muted-foreground">
               <th scope="col" className="px-4 py-2 font-medium">Line</th>
               <th scope="col" className="px-4 py-2 font-medium">Borrower</th>
+              <th scope="col" className="px-4 py-2 font-medium">Reference</th>
               <th scope="col" className="px-4 py-2 font-medium">Loan account</th>
               <th scope="col" className="px-4 py-2 font-medium">Outcome</th>
               <th scope="col" className="px-4 py-2 font-medium">Why</th>
@@ -581,6 +579,15 @@ function EnrolmentRows({
                 <tr key={r.lineNumber} className={cn(refused && 'bg-status-danger-bg/40')}>
                   <td className="px-4 py-2 tabular-nums text-muted-foreground">{r.lineNumber}</td>
                   <td className="px-4 py-2">{r.borrowerFullName ?? NO_VALUE}</td>
+                  {/* Minted at ACCEPTANCE, so a pending or refused row has none yet -- and saying
+                      "on acceptance" is more use than an em dash, which reads as missing. */}
+                  <td className="px-4 py-2 whitespace-nowrap font-mono text-xs">
+                    {r.memberReference ?? (
+                      <span className="font-sans text-subtle-foreground">
+                        {refused ? NO_VALUE : 'on acceptance'}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 font-mono text-xs">{r.loanAccountNumber ?? NO_VALUE}</td>
                   <td className="px-4 py-2">
                     <StatusBadge kind="enrolmentOutcome" value={r.outcome} />

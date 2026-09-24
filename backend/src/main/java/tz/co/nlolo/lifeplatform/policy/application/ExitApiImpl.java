@@ -283,12 +283,19 @@ public class ExitApiImpl implements ExitApi {
     @Transactional(readOnly = true)
     public List<ExitRowView> listRows(UUID submissionId) {
         UUID tenantId = TenantContext.get();
-        findSubmission(submissionId, tenantId); // not-found rather than an empty list
+        ExitSubmission submission = findSubmission(submissionId, tenantId);
+        // The scheme, for its currency alone. An amount with no currency is not money, and the
+        // row's balance had been reaching the browser as a bare number.
+        String currency = groupSchemeRepository
+            .findByPolicyNumberAndTenantId(submission.getPolicyNumber(), tenantId)
+            .map(GroupScheme::getCurrency)
+            .orElse(null);
         return rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)
             .stream()
             .map(row -> new ExitRowView(row.getLineNumber(), row.getMemberReference(),
                 row.getExitDate(), row.getExitReason(), row.getOutstandingBalanceAtExit(),
-                row.getOutcome(), row.getReasonCode(), row.getReason(), row.getPolicyMemberId()))
+                row.getOutcome(), row.getReasonCode(), row.getReason(), row.getPolicyMemberId(),
+                currency))
             .toList();
     }
 

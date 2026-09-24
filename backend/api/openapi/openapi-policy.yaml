@@ -1277,6 +1277,23 @@ components:
           format: uuid
           nullable: true
           description: The member this row became, written at acceptance.
+        memberReference:
+          description: >-
+            The reference the INSURER minted for this borrower, written at acceptance. Carried by
+            EnrolmentRowView since enrolment was built and never declared here, so no generated
+            client had the field and the console could not read one -- which is why its rows table
+            said member references live only in the report. True of this contract, false of the
+            data.
+          type: [string, "null"]
+        premiumAmount:
+          description: >-
+            What this borrower was charged, null on a refused row because nothing is charged for
+            somebody who was not enrolled. Money, never a bare number: this endpoint returned the
+            domain view directly until 2026-09-24, and its sibling on the exits side reached the
+            browser as a raw JSON figure with no currency, rendering as "undefined undefined".
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
 
     BeneficiaryOfView:
       description: >-

@@ -11,7 +11,12 @@ import io.minio.MinioClient;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.web.servlet.MockMvc;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MinIOContainer;
@@ -31,6 +36,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
@@ -42,6 +55,7 @@ import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
  */
 @Testcontainers
 @SpringBootTest(classes = Application.class)
+@AutoConfigureMockMvc
 class EnrolmentIntegrationTest {
 
     @Container
@@ -164,7 +178,8 @@ class EnrolmentIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        TenantContext.set(UUID.randomUUID());
+        tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
         creditLifeScheme = issueScheme(ProductCategory.CREDIT_LIFE, BenefitBasis.AMORTISING_LOAN);
         employerScheme = issueScheme(ProductCategory.GROUP_LIFE, BenefitBasis.FLAT);
     }
@@ -208,6 +223,61 @@ class EnrolmentIntegrationTest {
     private UUID person(String name) {
         return partyApi.registerIndividual(name, LocalDate.of(1985, 6, 15),
             "+2557" + String.format("%08d", SEQ.incrementAndGet()), null, "test-agent").partyId();
+    }
+
+    // ---- the rows, as a BROWSER reads them ---------------------------------
+    //
+    // Everything above this line calls EnrolmentApi directly, which is the right level for
+    // judging rules and the wrong level for finding out what the console receives: the domain
+    // view never crosses a serialiser here, so a field that is present in Java and absent or
+    // mistyped on the wire is invisible to every one of those cases.
+    //
+    // Both ways it can go wrong were live at once on the sibling exits endpoint, which returned
+    // the domain view straight out: an amount reached the browser as a bare JSON number and
+    // rendered "undefined undefined", and the reference was carried by the view but never
+    // declared in the OpenAPI schema, so the generated client had no field to read.
+
+    /** Captured in @BeforeEach rather than read from TenantContext inside the JWT lambda, which is
+     * evaluated while MockMvc builds the request -- by then the ambient thread context is gone. */
+    private UUID tenantId;
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
+
+    private org.springframework.test.web.servlet.request.RequestPostProcessor staff(String subject) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(b -> b.subject(subject).claim("tenant_id", tenantId.toString()));
+    }
+
+    @Test
+    void anAcceptedRowReachesTheBrowserWithItsReferenceAndItsPremiumAsMoney() throws Exception {
+        var upload = mockMvc.perform(multipart("/credit-life-schemes/" + creditLifeScheme + "/enrolments")
+                .file(new MockMultipartFile("file", "june.csv", "text/csv",
+                    (HEADER + ONE_GOOD_ROW).getBytes(StandardCharsets.UTF_8)))
+                .with(staff("staff.one")))
+            .andExpect(status().isCreated())
+            .andReturn();
+        String submissionId = objectMapper.readTree(upload.getResponse().getContentAsString())
+            .path("submissionId").asText();
+
+        // A DIFFERENT subject: the reference and the premium are both written at acceptance, so
+        // before this call the row legitimately has neither and asserting on it proves nothing.
+        mockMvc.perform(post("/credit-life-schemes/" + creditLifeScheme + "/enrolments/"
+                    + submissionId + "/acceptance")
+                .with(staff("staff.two")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACCEPTED"));
+
+        mockMvc.perform(get("/credit-life-schemes/" + creditLifeScheme + "/enrolments/"
+                    + submissionId + "/rows")
+                .with(staff("staff.one")))
+            .andExpect(status().isOk())
+            // THE deliverable. This is the only place a lender learns what the insurer minted.
+            .andExpect(jsonPath("$[0].memberReference").value(startsWith("CL-")))
+            // Money, not a number: a decimal STRING with a currency beside it. The pattern is the
+            // assertion -- a bare BigDecimal serialises as 42500 and would fail it.
+            .andExpect(jsonPath("$[0].premiumAmount.amount").value(matchesPattern("\\d+\\.\\d{2}")))
+            .andExpect(jsonPath("$[0].premiumAmount.currencyCode").value("TZS"));
     }
 
     // ---- submitting judges, and enrols nobody --------------------------------
