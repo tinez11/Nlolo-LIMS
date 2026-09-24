@@ -515,4 +515,165 @@ class EnrolmentIntegrationTest {
             issueScheme(ProductCategory.CREDIT_LIFE, BenefitBasis.AMORTISING_LOAN)))
             .isEmpty();
     }
+
+    /**
+     * A scheme whose free cover limit and opening loan are chosen by the caller.
+     *
+     * <p>{@code issueScheme} fixes both, which is right for the enrolment tests above and useless
+     * for the amendment tests below: they need a member the limit actually CAPS, and that only
+     * happens when the limit is smaller than the loan.
+     */
+    private String issueSchemeWithLimit(BigDecimal fclAmount, BigDecimal principal) {
+        String code = "CL-" + SEQ.incrementAndGet();
+        ProductSummaryView product = productApi.createProduct(code, "Credit life " + code,
+            ProductCategory.CREDIT_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+
+        PolicyApi.MemberInput opening = PolicyApi.MemberInput.borrower(
+            "Opening Borrower", LocalDate.of(1985, 1, 1), "LN-FCL-" + SEQ.incrementAndGet(),
+            new LoanTerms(principal, BigDecimal.ZERO, 12, RepaymentFrequency.MONTHLY,
+                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 7, 1)));
+
+        return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            person("Lender " + code), product.productId(), snapshot.productVersionId(), null,
+            BenefitBasis.AMORTISING_LOAN, null, null, fclAmount, "TZS", null, List.of(opening),
+            new BigDecimal("52000.00"), "TZS", "SINGLE",
+            LocalDate.of(2026, 6, 1), null, "onboarding", IssuanceBasis.MIGRATION,
+            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY,
+            new BigDecimal("0.5000")), "staff-setup").policyNumber();
+    }
+
+    /** As above, but the opening borrower joins TODAY -- so their benefit row is already dated today. */
+    private String issueSchemeWithLimitJoiningToday(BigDecimal fclAmount, BigDecimal principal) {
+        String code = "CL-" + SEQ.incrementAndGet();
+        ProductSummaryView product = productApi.createProduct(code, "Credit life " + code,
+            ProductCategory.CREDIT_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        LocalDate today = LocalDate.now();
+        PolicyApi.MemberInput opening = PolicyApi.MemberInput.borrower(
+            "Opening Borrower", LocalDate.of(1985, 1, 1), "LN-TODAY-" + SEQ.incrementAndGet(),
+            new LoanTerms(principal, BigDecimal.ZERO, 12, RepaymentFrequency.MONTHLY,
+                today, today.plusMonths(1)));
+        return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            person("Lender " + code), product.productId(), snapshot.productVersionId(), null,
+            BenefitBasis.AMORTISING_LOAN, null, null, fclAmount, "TZS", null, List.of(opening),
+            new BigDecimal("52000.00"), "TZS", "SINGLE", today, null, "onboarding",
+            IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY,
+            new BigDecimal("0.5000")), "staff-setup").policyNumber();
+    }
+    private PolicyMemberView onlyMemberOf(String policyNumber) {
+        return policyApi.listMembers(policyNumber, null, null, PageRequest.of(0, 10))
+            .getContent().get(0);
+    }
+
+    /**
+     * Moving a live scheme's free cover limit.
+     *
+     * <p><b>From a real scheme.</b> GRP-60107C78 was set up with a limit of 1,000,000 against
+     * loans of 5,000,000, so every borrower was insured for a fifth of their debt and referred for
+     * medical evidence -- three underwriting cases nobody wanted, on a product whose agreed limit
+     * is 600,000,000 precisely so the cap never fires. There was no amendment path at all, so the
+     * only remedy was a second scheme and a lender told to send their file again.
+     *
+     * <p>The asymmetry below is the design. Raising a limit gives people cover they were always
+     * meant to have, so it restates freely. Lowering one below live cover would leave borrowers
+     * part-uninsured from a date nobody told them about, so it is refused WHOLE rather than
+     * applied to the members it happens not to touch.
+     */
+    @Nested
+    class MovingTheFreeCoverLimit {
+
+        @Test
+        void raisingItRestatesEveryCappedMemberAndTheSchemeTotal() {
+            String policyNumber = issueSchemeWithLimit(new BigDecimal("1000000.00"),
+                new BigDecimal("5000000.00"));
+
+            PolicyMemberView before = onlyMemberOf(policyNumber);
+            assertThat(before.coveredAmount()).isEqualByComparingTo("1000000.00");
+            assertThat(before.underwritingStatus())
+                .isEqualTo(MemberUnderwritingStatus.EVIDENCE_REQUIRED);
+
+            GroupSchemeView amended = policyApi.amendFreeCoverLimit(policyNumber,
+                new BigDecimal("600000000.00"),
+                "Limit typed wrong at set-up; the agreed figure is 600,000,000", "staff.underwriter");
+
+            // The borrower now carries their whole loan, and stops waiting on evidence for an
+            // excess that no longer exists.
+            PolicyMemberView after = onlyMemberOf(policyNumber);
+            assertThat(after.coveredAmount()).isEqualByComparingTo("5000000.00");
+            assertThat(after.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.WITHIN_FCL);
+            // And the scheme's own total agrees, which is the figure a TIRA return reads.
+            assertThat(amended.totalCoveredAmount()).isEqualByComparingTo("5000000.00");
+            assertThat(amended.membersRequiringEvidence()).isZero();
+        }
+
+        @Test
+        void aLimitThatWouldUninsureSomebodyIsRefusedWhole() {
+            String policyNumber = issueSchemeWithLimit(null, new BigDecimal("5000000.00"));
+
+            assertThatThrownBy(() -> policyApi.amendFreeCoverLimit(policyNumber,
+                    new BigDecimal("1000000.00"), "tightening", "staff.underwriter"))
+                .isInstanceOf(InvalidPolicyStateException.class)
+                .hasMessageContaining("would reduce the cover of 1 member");
+
+            // WHOLE: the scheme keeps its limit and the member keeps their cover. A partial
+            // restatement would leave the roll disagreeing with the terms printed above it.
+            assertThat(onlyMemberOf(policyNumber).coveredAmount()).isEqualByComparingTo("5000000.00");
+            assertThat(policyApi.getGroupScheme(policyNumber).fclAmount()).isNull();
+        }
+
+        @Test
+        void loweringIsAllowedWhereItCapsNobodyAlreadyOnTheRoll() {
+            // The honest half of the case: a limit binds members yet to come, so lowering it to a
+            // figure above everybody's current cover changes nothing about them.
+            String policyNumber = issueSchemeWithLimit(null, new BigDecimal("1000000.00"));
+
+            GroupSchemeView amended = policyApi.amendFreeCoverLimit(policyNumber,
+                new BigDecimal("2000000.00"), "Reducing exposure on new borrowers", "staff.underwriter");
+
+            assertThat(amended.fclAmount()).isEqualByComparingTo("2000000.00");
+            assertThat(onlyMemberOf(policyNumber).coveredAmount()).isEqualByComparingTo("1000000.00");
+        }
+
+        @Test
+        void aMemberWhoseCoverStartsTODAY_isCorrectedRatherThanGivenASecondRow() {
+            /*
+             * The case that broke this the first time it ran against a real scheme. Correcting a
+             * limit the same day the scheme was set up means every member already has a benefit
+             * row effective today, and policy_member_benefit is unique on (member, day) -- so a
+             * second insert is a 500. Effective dating here has day granularity: today holds one
+             * row, carrying the final state of the day.
+             */
+            String policyNumber = issueSchemeWithLimitJoiningToday(new BigDecimal("1000000.00"),
+                new BigDecimal("5000000.00"));
+            assertThat(onlyMemberOf(policyNumber).coveredAmount()).isEqualByComparingTo("1000000.00");
+
+            policyApi.amendFreeCoverLimit(policyNumber, new BigDecimal("600000000.00"),
+                "corrected on the day it was set up", "staff.underwriter");
+
+            assertThat(onlyMemberOf(policyNumber).coveredAmount()).isEqualByComparingTo("5000000.00");
+        }
+        @Test
+        void amendingToTheLimitItAlreadyHasIsRefusedRatherThanRecorded() {
+            // An endorsement saying nothing changed is noise in the one place a scheme's history
+            // has to stay readable.
+            String policyNumber = issueSchemeWithLimit(new BigDecimal("1000000.00"),
+                new BigDecimal("500000.00"));
+
+            assertThatThrownBy(() -> policyApi.amendFreeCoverLimit(policyNumber,
+                    new BigDecimal("1000000.00"), "no change", "staff.underwriter"))
+                .isInstanceOf(InvalidPolicyStateException.class)
+                .hasMessageContaining("is already 1000000.00");
+        }
+    }
 }

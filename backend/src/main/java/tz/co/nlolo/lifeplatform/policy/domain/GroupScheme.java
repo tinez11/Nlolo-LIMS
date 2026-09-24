@@ -189,6 +189,28 @@ public class GroupScheme {
     public BenefitBasis getBenefitBasis() { return benefitBasis; }
     public BigDecimal getFlatBenefitAmount() { return flatBenefitAmount; }
     public BigDecimal getSalaryMultiple() { return salaryMultiple; }
+    /**
+     * Move the free cover limit. <b>The one term on this scheme that can be amended</b>, and the
+     * three below it deliberately cannot.
+     *
+     * <p>The difference is what the old answer was already used FOR. An interest method and a
+     * repayment frequency were used to count every existing member's schedule; a premium rate was
+     * used to CHARGE them, and their refund is computed from what they paid. Restating any of
+     * those rewrites history. A free cover limit was used for neither: it decides how much of a
+     * benefit is covered TODAY, cover is effective-dated on {@code policy_member_benefit}, and
+     * moving the limit writes a new row from today rather than altering what was true yesterday.
+     *
+     * <p>Which is also why this is needed rather than merely possible. A limit is a number
+     * somebody types once when a scheme is set up, and a wrong one caps every borrower on the
+     * book at a fraction of their loan and refers every one of them for medical evidence. Without
+     * this the only remedy is a second scheme.
+     *
+     * <p>Null means the scheme has NO limit, which is a real design and not a limit of zero.
+     */
+    public void amendFreeCoverLimit(BigDecimal newLimit) {
+        this.fclAmount = newLimit;
+    }
+
     public BigDecimal getFclAmount() { return fclAmount; }
     public String getCurrency() { return currency; }
     public InterestMethod getInterestMethod() { return interestMethod; }

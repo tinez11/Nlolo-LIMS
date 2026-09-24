@@ -37,6 +37,7 @@ import {
   useCreditLifeStore,
 } from '@/store/creditLifeStore';
 import { selectScheme, usePolicyStore } from '@/store/policyStore';
+import { FreeCoverLimitEditor } from './FreeCoverLimitEditor';
 import { SubmissionsPanel, type SubmissionRow } from './SubmissionsPanel';
 
 /**
@@ -253,6 +254,7 @@ export function CreditLifeSchemePage() {
                   and that is the platform's limit rather than an editorial choice: GroupSchemeView
                   carries neither, so the console cannot show them without inventing them. Recorded
                   as a gap rather than filled with a plausible number. */}
+              <FreeCoverLimitEditor policyNumber={policyNumber} />
               <div className="border-t border-border px-4 py-3">
                 <Link
                   to={`/staff/group-schemes/${encodeURIComponent(policyNumber)}`}

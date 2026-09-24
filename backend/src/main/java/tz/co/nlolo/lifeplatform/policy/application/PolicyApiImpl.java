@@ -2035,6 +2035,129 @@ public class PolicyApiImpl implements PolicyApi {
      * platform two different answers to "how much is this scheme insured for" depending on
      * which screen you were standing in front of.
      */
+
+    @Override
+    @Transactional
+    public GroupSchemeView amendFreeCoverLimit(String policyNumber, BigDecimal newLimit,
+                                                String reason, String amendedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        GroupScheme scheme = findSchemeOrThrow(policyNumber, tenantId);
+        LocalDate today = LocalDate.now();
+
+        if (java.util.Objects.compare(scheme.getFclAmount(), newLimit,
+                java.util.Comparator.nullsFirst(BigDecimal::compareTo)) == 0) {
+            throw new InvalidPolicyStateException("The free cover limit on " + policyNumber
+                + " is already " + (newLimit == null ? "absent" : newLimit.toPlainString())
+                + "; there is nothing to amend.");
+        }
+
+        /*
+         * EVERY ACTIVE MEMBER IS REVALUED AGAINST THE NEW LIMIT, and the revaluation is decided
+         * BEFORE anything is written. A limit that would uninsure people has to be refused whole:
+         * restating half a roll and then failing would leave a scheme whose members disagree with
+         * its own terms, which is worse than the wrong limit.
+         */
+        List<PolicyMember> members = policyMemberRepository
+            .findByTenantIdAndPolicyNumberAndStatus(tenantId, policyNumber, MemberStatus.ACTIVE.name(),
+                Pageable.unpaged())
+            .getContent();
+        int wouldReduce = 0;
+        List<Restatement> restatements = new ArrayList<>();
+        for (PolicyMember member : members) {
+            var inForce = policyMemberBenefitRepository
+                .findInForce(member.getPolicyMemberId(), tenantId, today, PageRequest.of(0, 1))
+                .stream().findFirst().orElse(null);
+            if (inForce == null) {
+                continue; // cover has not started yet; the row it will get is written against the
+                          // limit in force on that day, which is this one.
+            }
+            var valuation = GroupBenefitCalculator.evaluate(inForce.getBenefitAmount(), newLimit);
+            if (valuation.coveredAmount().compareTo(inForce.getCoveredAmount()) < 0) {
+                wouldReduce++;
+            } else if (valuation.coveredAmount().compareTo(inForce.getCoveredAmount()) != 0
+                    || valuation.underwritingStatus() != member.getUnderwritingStatus()) {
+                restatements.add(new Restatement(member, inForce.getSalaryAmount(),
+                    inForce.getBenefitAmount(), valuation, inForce));
+            }
+        }
+
+        if (wouldReduce > 0) {
+            throw new InvalidPolicyStateException("That limit would reduce the cover of "
+                + wouldReduce + " member" + (wouldReduce == 1 ? "" : "s") + " already on "
+                + policyNumber + ". A borrower cannot be part-uninsured from a date nobody told"
+                + " them about; lower it only to a figure that caps nobody already on the roll.");
+        }
+
+        BigDecimal oldLimit = scheme.getFclAmount();
+        scheme.amendFreeCoverLimit(newLimit);
+        groupSchemeRepository.save(scheme);
+
+        for (Restatement r : restatements) {
+            /*
+             * A NEW effective-dated row rather than an edit: what the member was covered for
+             * yesterday is what a claim dated yesterday must still pay.
+             *
+             * UNLESS their cover already starts today, which is the ordinary case on a scheme
+             * whose limit is corrected the day it was set up -- and the case that broke this the
+             * first time it was run against a real scheme, on
+             * policy_member_benefit_policy_member_id_effective_from_key. Effective dating here has
+             * day granularity, so a member enrolled this morning and revalued this afternoon has
+             * ONE row for today holding the final state of the day. Dating the correction tomorrow
+             * would leave the scheme's terms and its own members disagreeing for the rest of it.
+             */
+            PolicyMemberBenefit startingToday = r.inForce().getEffectiveFrom().equals(today)
+                ? r.inForce() : null;
+            if (startingToday != null) {
+                startingToday.correctCoverOnItsOwnEffectiveDate(
+                    r.benefitAmount(), r.valuation().coveredAmount());
+                policyMemberBenefitRepository.save(startingToday);
+            } else {
+                policyMemberBenefitRepository.save(new PolicyMemberBenefit(tenantId,
+                    r.member().getPolicyMemberId(), today, r.salaryAmount(), r.benefitAmount(),
+                    r.valuation().coveredAmount(), amendedBy));
+            }
+            if (r.valuation().underwritingStatus() == MemberUnderwritingStatus.WITHIN_FCL) {
+                // Their excess no longer needs granting. Any case already open is left alone --
+                // closing somebody else's underwriting case is not this method's decision, and an
+                // open case that nobody needs to decide is visible, which a silently closed one
+                // would not be.
+                r.member().clearEvidenceRequirement();
+            }
+        }
+
+        BigDecimal total = restateSchemeTotal(policy, tenantId, today);
+
+        endorsementRepository.save(new Endorsement(tenantId, policyNumber, "FREE_COVER_LIMIT_AMENDED",
+            today, Map.of(
+                "from", oldLimit == null ? "none" : oldLimit.toPlainString(),
+                "to", newLimit == null ? "none" : newLimit.toPlainString(),
+                "membersRestated", String.valueOf(restatements.size()),
+                "reason", reason == null ? "" : reason),
+            amendedBy));
+
+        /*
+         * regreporting keeps a running sum assured per product and learns of changes from member
+         * movement. Raising a limit moves the total with no member joining or leaving, so without
+         * this the TIRA return would quietly understate the book from here on -- the exact
+         * staleness spec section 2.14 exists to close, arriving by a door it did not know about.
+         */
+        Map<String, Object> amended = new LinkedHashMap<>();
+        amended.put("policyNumber", policyNumber);
+        amended.put("joinedOn", today.toString());
+        amended.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        eventPublisher.publishEvent(
+            DomainEventEnvelope.of("policy.GroupSchemeFreeCoverLimitAmended", tenantId, amended));
+
+        return getGroupScheme(policyNumber);
+    }
+
+    /** One member's revaluation, decided before anything is written. */
+    private record Restatement(PolicyMember member, BigDecimal salaryAmount,
+                                BigDecimal benefitAmount, GroupBenefitCalculator.Valuation valuation,
+                                PolicyMemberBenefit inForce) {}
+
     private BigDecimal restateSchemeTotal(Policy policy, UUID tenantId, LocalDate asOf) {
         BigDecimal total = policyMemberBenefitRepository.totalCovered(tenantId, policy.getPolicyNumber(), asOf);
         policy.restateSumAssured(total);

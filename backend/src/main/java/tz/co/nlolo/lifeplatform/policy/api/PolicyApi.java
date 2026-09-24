@@ -330,6 +330,27 @@ public interface PolicyApi {
     PolicyMemberView addMember(String policyNumber, MemberInput member, String addedBy);
 
     /**
+     * Move a scheme's free cover limit, restating every member's cover against the new one.
+     *
+     * <p><b>Raising it is the case this exists for.</b> A limit is typed once at set-up, and a
+     * wrong one covers every borrower for a fraction of their loan and opens an underwriting case
+     * for each of them. Until this, the only remedy was a second scheme.
+     *
+     * <p><b>An amendment may not REDUCE anybody's cover</b>, and is refused naming how many
+     * members it would. Lowering a limit below live cover would leave borrowers part-uninsured
+     * from a date nobody told them about, and on a book of several hundred it would mint an
+     * underwriting case per person. Lowering is allowed where it caps nobody who is not already
+     * capped — which is the honest half of the case, since it only binds members yet to come.
+     *
+     * <p>{@code newLimit} null means the scheme has no limit at all: a real design, and never the
+     * same as zero.
+     *
+     * @return the scheme as it now stands, with its restated total
+     */
+    GroupSchemeView amendFreeCoverLimit(String policyNumber, java.math.BigDecimal newLimit,
+                                         String reason, String amendedBy);
+
+    /**
      * Take one life off a scheme, for a reason other than a claim the insurer paid.
      *
      * <p>Until credit life, the only way off a scheme was

@@ -292,6 +292,18 @@ public class PolicyMember {
      * <p>DECLINED does not mean uninsured -- the member keeps the free cover limit. The
      * resulting covered amount is written on a new benefit row by the caller.
      */
+    /**
+     * The excess no longer needs evidence, because the free cover limit moved above the benefit.
+     *
+     * <p>Distinct from {@link #recordEvidenceDecision}, which records what an underwriter DECIDED.
+     * Nobody decided anything here: the question stopped being asked. Recording it as an
+     * acceptance would put a grant in the audit trail that no underwriter ever made.
+     */
+    public void clearEvidenceRequirement() {
+        this.underwritingStatus = MemberUnderwritingStatus.WITHIN_FCL;
+        this.underwritingCaseId = null;
+    }
+
     public void recordEvidenceDecision(boolean accepted) {
         this.underwritingStatus = accepted
             ? MemberUnderwritingStatus.ACCEPTED

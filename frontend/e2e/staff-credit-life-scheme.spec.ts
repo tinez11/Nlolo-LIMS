@@ -61,6 +61,13 @@ test.describe('staff credit-life scheme', () => {
       .locator('dd')
       .first();
     await expect(livesOnCover).toHaveText('1');
+    /*
+     * AND THE LIMIT CAN BE CORRECTED. It is a number typed once, and a wrong one insures every
+     * borrower for a fraction of their loan and opens an underwriting case for each -- which is
+     * exactly what happened on the first scheme somebody set up this way. Until this control
+     * existed the only remedy was a second scheme.
+     */
+    await expect(page.getByRole('button', { name: 'Change the free cover limit' })).toBeVisible();
 
     // The file is there, and it says outright that nothing has happened.
     await expect(page.getByText('january-schedule.csv')).toBeVisible();

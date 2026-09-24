@@ -199,6 +199,30 @@ public class PolicyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(GroupSchemeResponseDto.from(view));
     }
 
+    /**
+     * Move the free cover limit on a live scheme.
+     *
+     * <p><b>The only term on a scheme that can be amended</b>, and the restriction is the domain's
+     * rather than this endpoint's: an interest method and a repayment frequency were used to count
+     * every existing member's schedule, and a premium rate was used to CHARGE them, so restating
+     * any of those rewrites history. See {@code GroupScheme.amendFreeCoverLimit}.
+     *
+     * <p>UNDERWRITER, matching issuance: this decides how much of every borrower's loan is
+     * insured, which is the same act as setting it in the first place.
+     */
+    @PutMapping("/group-schemes/{policyNumber}/free-cover-limit")
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<GroupSchemeResponseDto> amendFreeCoverLimit(
+            @PathVariable String policyNumber,
+            @Valid @RequestBody AmendFreeCoverLimitRequestDto request,
+            @AuthenticationPrincipal Jwt jwt) {
+        java.math.BigDecimal limit = request.fclAmount() == null || request.fclAmount().isBlank()
+            ? null
+            : new java.math.BigDecimal(request.fclAmount());
+        return ResponseEntity.ok(GroupSchemeResponseDto.from(
+            policyApi.amendFreeCoverLimit(policyNumber, limit, request.reason(), jwt.getSubject())));
+    }
+
     @GetMapping("/group-schemes/{policyNumber}")
     @PreAuthorize("hasRole('REALM_STAFF')")
     public ResponseEntity<GroupSchemeResponseDto> getGroupScheme(@PathVariable String policyNumber) {

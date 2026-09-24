@@ -984,6 +984,75 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 
+  /group-schemes/{policyNumber}/free-cover-limit:
+    put:
+      summary: Move a scheme's free cover limit, restating every member's cover against it
+      description: >-
+        The ONLY term on a group scheme that can be amended, and the restriction is the domain's
+        rather than this endpoint's. An interest method and a repayment frequency were used to
+        count every existing member's schedule; a premium rate was used to CHARGE them, and their
+        refund is computed from what they paid. Restating any of those rewrites history. A free
+        cover limit was used for neither -- it decides how much of a benefit is covered TODAY,
+        cover is effective-dated, and moving the limit writes new rows from today rather than
+        altering what was true yesterday.
+
+
+        RAISING IT IS THE CASE THIS EXISTS FOR. A limit is typed once at set-up, and a wrong one
+        insures every borrower for a fraction of their loan and opens an underwriting case for
+        each of them. Until this existed the only remedy was a second scheme.
+
+
+        AN AMENDMENT MAY NOT REDUCE ANYBODY'S COVER and is refused with a 409 naming how many
+        members it would. Lowering below live cover would leave borrowers part-uninsured from a
+        date nobody told them about. Lowering is allowed where it caps nobody already on the roll,
+        which is the honest half of the case: it binds only members yet to come.
+
+
+        Omitting `fclAmount` means the scheme has NO limit -- a real design, and never the same as
+        zero, which would send every borrower to underwriting.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                fclAmount:
+                  description: >-
+                    Omit for a scheme with no limit at all. Zero is refused rather than accepted
+                    and reinterpreted.
+                  type: [string, "null"]
+                  pattern: '^\d+(\.\d{1,2})?$'
+                reason:
+                  description: >-
+                    Required. A limit is a term agreed with a lender, so an amendment with no
+                    stated reason is an unexplained change to what every borrower is covered for.
+                  type: string
+                  minLength: 1
+      responses:
+        '200':
+          description: OK -- the scheme as it now stands, with its restated total
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupSchemeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >-
+            The limit would reduce somebody's cover, or it is the limit the scheme already has.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+
   /credit-life-schemes/{policyNumber}/template:
     get:
       summary: The enrolment file this scheme's lender fills in, with a worked example

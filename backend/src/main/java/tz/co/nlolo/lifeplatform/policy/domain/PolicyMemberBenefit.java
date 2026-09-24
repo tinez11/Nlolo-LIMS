@@ -83,6 +83,30 @@ public class PolicyMemberBenefit {
     }
 
     public UUID getPolicyMemberBenefitId() { return policyMemberBenefitId; }
+    /**
+     * Correct the cover this row states, for its OWN effective date only.
+     *
+     * <p><b>Not a way to rewrite history.</b> Effective dating on this table has day granularity,
+     * so a member enrolled this morning and revalued this afternoon has one row for today and the
+     * final state of the day is what it holds. Inserting a second row for the same day is
+     * impossible by constraint, and dating the correction tomorrow would leave the scheme's terms
+     * and its members disagreeing for the rest of today.
+     *
+     * <p>A day already past is untouched, because this only ever runs against the row whose
+     * effective date IS today — which is exactly what a claim dated yesterday still reads.
+     */
+    public void correctCoverOnItsOwnEffectiveDate(java.math.BigDecimal benefitAmount,
+                                                   java.math.BigDecimal coveredAmount) {
+        if (coveredAmount.compareTo(benefitAmount) > 0) {
+            // Mirrors policy_member_benefit_covered_within_benefit, and says so here rather than
+            // letting the constraint answer with a stack trace.
+            throw new IllegalArgumentException("Cover " + coveredAmount.toPlainString()
+                + " cannot exceed the benefit " + benefitAmount.toPlainString());
+        }
+        this.benefitAmount = benefitAmount;
+        this.coveredAmount = coveredAmount;
+    }
+
     public UUID getPolicyMemberId() { return policyMemberId; }
     public LocalDate getEffectiveFrom() { return effectiveFrom; }
     public BigDecimal getSalaryAmount() { return salaryAmount; }
