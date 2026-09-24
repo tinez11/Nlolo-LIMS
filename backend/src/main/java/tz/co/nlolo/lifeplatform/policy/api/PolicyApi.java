@@ -608,4 +608,23 @@ public interface PolicyApi {
      */
     void dischargeForSettledClaim(String policyNumber, UUID policyMemberId, LocalDate dateOfEvent,
                                    UUID claimId, String dischargedBy);
+
+    /**
+     * Claims telling policy that a death claim on this member is open -- registered, or reopened
+     * from a rejection -- and not yet paid.
+     *
+     * <p>Policy cannot see claims: claims depends on policy, never the reverse. So between a death
+     * being reported and its claim being paid, the member read as an ordinary live loan, and an
+     * exits file could take them off cover first with the wrong reason and a refund a death never
+     * earns. Recording it here lets the roll say so and lets the exit paths refuse (V23).
+     *
+     * <p>A no-op for a member who has already left: a late claim for somebody who died while
+     * covered is legitimate, and their exit is already on the record.
+     *
+     * @throws InvalidPolicyStateException if the member is not on this scheme
+     */
+    void recordOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId);
+
+    /** The death claim was rejected. Clears only THAT claim; a no-op if another is recorded. */
+    void clearOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId);
 }

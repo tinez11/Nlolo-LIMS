@@ -113,6 +113,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
+            "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -448,6 +449,26 @@ class CreditLifeClaimEndToEndTest {
         assertThat(claimsApi.getClaim(claim.claimId()).approvedAmount()).isEqualByComparingTo(FCL);
     }
 
+    /** Rejecting the death claim clears it from the member; reopening it records it again. */
+    @Test
+    void theOpenDeathClaimFollowsTheClaimThroughRejectionAndReopening() {
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
+        assertThat(borrower().openDeathClaimId()).isEqualTo(claimId);
+
+        claimsApi.decideSettlement(claimId, false, null, null, "documents were forged",
+            null, null, idem(), "claims.manager");
+        assertThat(borrower().openDeathClaimId())
+            .as("a rejected claim is not in progress; the borrower reads as a live loan again")
+            .isNull();
+
+        claimsApi.reopenClaim(claimId, "new evidence", "claims.manager");
+        assertThat(borrower().openDeathClaimId()).isEqualTo(claimId);
+    }
+
+    private PolicyMemberView borrower() {
+        return policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10)).getContent().get(0);
+    }
+
     /** One death claim per life, on the product where it was found: three approved claims on one
      * borrower in dev, 1,640,000 against 800,000 of cover. */
     @Test
@@ -471,8 +492,12 @@ class CreditLifeClaimEndToEndTest {
         // Nothing is settled yet, and that is the EFT rail working: the money has not moved, so
         // the claim has not. A mobile-money claim would already be SETTLED by this line.
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
-        assertThat(policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10))
-            .getContent().get(0).status()).isEqualTo(MemberStatus.ACTIVE);
+        PolicyMemberView awaitingPayment = policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10))
+            .getContent().get(0);
+        assertThat(awaitingPayment.status()).isEqualTo(MemberStatus.ACTIVE);
+        // Still on cover -- but the roll now says why: a death claim is open on this life. Before
+        // V23 this row was indistinguishable from a live loan.
+        assertThat(awaitingPayment.openDeathClaimId()).isEqualTo(claimId);
 
         DisbursementInstruction eft = disbursementRepository
             .findByIdempotencyKeyAndTenantId(settlementKey, TenantContext.get())
@@ -491,6 +516,9 @@ class CreditLifeClaimEndToEndTest {
             .getContent().get(0);
         assertThat(exited.status()).isEqualTo(MemberStatus.EXITED);
         assertThat(exited.leftOn()).isEqualTo(DISBURSED.plusMonths(6));
+        assertThat(exited.exitReason()).isEqualTo(ExitReason.CLAIM_SETTLED);
+        // The settlement's own exit closed the open claim in the same write.
+        assertThat(exited.openDeathClaimId()).isNull();
         // No refund: the premium was fully earned the moment the insurer paid. Refunding it would
         // pay the claim and give back the money that funded it. PolicyApiImpl.addRefundDetail
         // returns before computing anything for a CLAIM_SETTLED exit; MemberExitIntegrationTest

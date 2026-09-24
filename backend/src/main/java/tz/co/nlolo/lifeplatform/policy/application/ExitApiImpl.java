@@ -191,6 +191,16 @@ public class ExitApiImpl implements ExitApi {
                     + " (" + member.getExitReason() + "). No further action was taken.");
         }
 
+        if (member.getOpenDeathClaimId() != null) {
+            // The same verdict exitMember reaches, here so the whole file is judged before anybody
+            // leaves cover. Worded for the LENDER, who reads this on the report: in practice this
+            // is them reporting a death we already know about, by the only channel they have.
+            return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
+                row.memberReference(), ExitRejection.DEATH_CLAIM_IN_PROGRESS,
+                row.memberReference() + " has a death claim in progress. They come off cover when the"
+                    + " claim is paid, dated to the date of death, so no exit is needed for this loan.");
+        }
+
         if (claimed.contains(row.memberReference())) {
             return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
                 row.memberReference(), ExitRejection.DUPLICATE_REFERENCE,

@@ -964,6 +964,40 @@ public class PolicyApiImpl implements PolicyApi {
      * members — so dating the exit to September would have left them in the scheme's sum assured
      * for six months they were not alive.
      */
+    @Override
+    @Transactional
+    public void recordOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId) {
+        PolicyMember member = memberOnSchemeOrThrow(policyNumber, policyMemberId);
+        // A claim for somebody who has ALREADY left is legitimate -- they died while covered and
+        // the claim arrived late, which is why exited rows are kept. There is nothing to mark:
+        // no exits file can take them off cover twice, and their exit is already recorded.
+        if (MemberStatus.EXITED.name().equals(member.getStatus())) {
+            return;
+        }
+        try {
+            member.recordOpenDeathClaim(claimId);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new InvalidPolicyStateException(e.getMessage());
+        }
+        policyMemberRepository.save(member);
+    }
+
+    @Override
+    @Transactional
+    public void clearOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId) {
+        PolicyMember member = memberOnSchemeOrThrow(policyNumber, policyMemberId);
+        member.clearOpenDeathClaim(claimId);
+        policyMemberRepository.save(member);
+    }
+
+    private PolicyMember memberOnSchemeOrThrow(String policyNumber, UUID policyMemberId) {
+        UUID tenantId = TenantContext.get();
+        return policyMemberRepository.findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
+            .filter(m -> m.getPolicyNumber().equals(policyNumber))
+            .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
+                + " is not a member of scheme " + policyNumber));
+    }
+
     private void dischargeMember(Policy policy, GroupScheme scheme, UUID policyMemberId,
                                   LocalDate dateOfEvent, UUID claimId, UUID tenantId) {
         exitOneMember(policy, scheme, policyMemberId, dateOfEvent, ExitReason.CLAIM_SETTLED,
@@ -1152,6 +1186,18 @@ public class PolicyApiImpl implements PolicyApi {
                 "A member leaves as CLAIM_SETTLED only when a claim is actually settled; use "
                     + "the claim path, or state the reason the loan really ended");
         }
+
+        // A DEATH CLAIM IS IN PROGRESS: the claim decides how this life leaves. An exits file
+        // cannot say CLAIM_SETTLED, so a lender reporting the death picks another reason; taking
+        // that would exit them wrongly, refund premium a death never earns, and leave the claim's
+        // own discharge to find them gone and do nothing -- the wrong record would stand.
+        policyMemberRepository.findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
+            .filter(m -> m.getOpenDeathClaimId() != null)
+            .ifPresent(m -> {
+                throw new InvalidPolicyStateException("Member " + policyMemberId + " has a death claim"
+                    + " in progress (claim " + m.getOpenDeathClaimId() + "); they leave cover when it"
+                    + " settles, dated to the death, not by an exit");
+            });
 
         Optional<PolicyMember> exited = exitOneMember(policy, scheme, policyMemberId, exitDate,
             reason, outstandingBalanceAtExit, null, tenantId);
@@ -2224,7 +2270,7 @@ public class PolicyApiImpl implements PolicyApi {
             // A member being written right now came from no file: this builder serves the opening
             // schedule and addMember. The enrolment pipeline's own members are read back through
             // listMembers, which resolves the file they arrived on.
-            null, null);
+            null, null, m.getOpenDeathClaimId());
     }
 
     private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
@@ -2246,7 +2292,8 @@ public class PolicyApiImpl implements PolicyApi {
             // Null when this member did not arrive on a file at all -- the opening schedule, or
             // added one at a time on an employer scheme. A real answer, not missing data.
             arrival != null ? arrival.getSubmissionId() : null,
-            arrival != null ? arrival.getFileName() : null);
+            arrival != null ? arrival.getFileName() : null,
+            m.getOpenDeathClaimId());
     }
 
     private Policy findPolicyOrThrow(String policyNumber, UUID tenantId) {

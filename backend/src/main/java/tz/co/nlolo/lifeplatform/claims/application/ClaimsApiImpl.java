@@ -267,6 +267,13 @@ public class ClaimsApiImpl implements ClaimsApi {
         try {
             requiresNewTransactionTemplate.executeWithoutResult(status -> {
                 claimRepository.saveAndFlush(claim);
+                // Tell policy, in the same transaction, that this life has died and is not yet
+                // paid for -- so the roll says so and no exits file takes them off cover first.
+                // Policy cannot find this out itself; it does not depend on claims.
+                if (claim.getClaimType() == ClaimType.DEATH && claim.getPolicyMemberId() != null) {
+                    policyApi.recordOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(),
+                        claim.getClaimId());
+                }
                 // Payload matches api/asyncapi-events.yaml's ClaimRegisteredPayload field-for-field
                 // (claimId, policyNumber, claimantPartyId, claimType, dateOfEvent), plus one field
                 // ClaimRegisteredPayload does not declare: requiresContestabilityReview. The
@@ -572,6 +579,11 @@ public class ClaimsApiImpl implements ClaimsApi {
             } else {
                 claim.reject();
             }
+            // No longer an open death claim: the member reads as an ordinary live life again,
+            // and an exits file may take them off cover.
+            if (claim.getClaimType() == ClaimType.DEATH && claim.getPolicyMemberId() != null) {
+                policyApi.clearOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+            }
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimRejected", tenantId,
                 Map.of("claimId", claimId, "reason", rejectionReason == null ? "" : rejectionReason)));
         }
@@ -589,10 +601,24 @@ public class ClaimsApiImpl implements ClaimsApi {
     public void reopenClaim(UUID claimId, String reason, String reopenedBy) {
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
+        boolean fromRejected = claim.getStatus() == ClaimStatus.REJECTED;
+
+        // A rejected death claim coming back is a live death claim again, so it must not become
+        // the SECOND one on this life -- somebody may have registered a fresh claim after the
+        // rejection, which is the other legitimate path.
+        if (fromRejected && claim.getClaimType() == ClaimType.DEATH) {
+            refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+        }
 
         // REJECTED or SETTLED -> REOPENED; a no-op if already REOPENED, throws from any other
         // status. Deliberately does not clear the prior approvedAmount (Claim.reopen's own doc).
         claim.reopen();
+
+        // Open again on the member. Only from REJECTED: a claim reopened from SETTLED has already
+        // taken its life off cover, and there is no cover left to mark.
+        if (fromRejected && claim.getClaimType() == ClaimType.DEATH && claim.getPolicyMemberId() != null) {
+            policyApi.recordOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+        }
 
         log.info("Claim {} reopened by {}: {}", claimId, reopenedBy, reason);
     }

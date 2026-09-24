@@ -1222,7 +1222,7 @@ components:
         outcome: { type: string, enum: [EXITED, REJECTED] }
         reasonCode:
           type: [string, 'null']
-          enum: [MISSING_REQUIRED_FIELD, MALFORMED_VALUE, UNKNOWN_MEMBER_REFERENCE, DUPLICATE_REFERENCE, ALREADY_EXITED, EXIT_BEFORE_COVER_STARTED, UNKNOWN_EXIT_REASON, null]
+          enum: [MISSING_REQUIRED_FIELD, MALFORMED_VALUE, UNKNOWN_MEMBER_REFERENCE, DUPLICATE_REFERENCE, ALREADY_EXITED, EXIT_BEFORE_COVER_STARTED, UNKNOWN_EXIT_REASON, DEATH_CLAIM_IN_PROGRESS, null]
           description: Why this row was refused. Absent on a row that will exit.
         reason:
           type: [string, 'null']
@@ -1803,6 +1803,14 @@ components:
           oneOf:
             - $ref: 'openapi-common.yaml#/components/schemas/Money'
           nullable: true
+        openDeathClaimId:
+          description: >-
+            A death claim on this life that is registered and not yet paid. The member is still
+            ACTIVE -- they leave cover when it settles, dated to the death -- and while this is
+            set an exits file cannot take them off, since the claim decides how they leave. Null
+            when there is none.
+          type: [string, "null"]
+          format: uuid
         arrivedOnSubmissionId:
           description: >-
             The enrolment file this member arrived on, so a console can link from the roll to the

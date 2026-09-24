@@ -133,6 +133,7 @@ class ExitFileIntegrationTest {
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
+            "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V21__exit_submission.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
@@ -335,6 +336,41 @@ class ExitFileIntegrationTest {
         List<ExitRowView> rows = exitApi.listRows(submitted.submissionId());
         assertThat(rows.get(0).reasonCode()).isEqualTo(ExitRejection.ALREADY_EXITED);
         assertThat(rows.get(0).reason()).contains("already left cover on 2026-11-03");
+    }
+
+    /** The lender reports a death the only way an exits file lets them -- as a write-off. The
+     * claim already open on that borrower decides how they leave, so the row is refused and says
+     * why; the others on the same file still leave. Before V23 this exited the borrower with the
+     * wrong reason and a premium refund a death never earns, and the claim's own discharge then
+     * found them gone and did nothing. */
+    @Test
+    void aBorrowerWithADeathClaimInProgressIsNotExitedByTheFile() {
+        UUID deathClaimId = UUID.randomUUID();
+        policyApi.recordOpenDeathClaim(scheme, members.get(0).policyMemberId(), deathClaimId);
+
+        ExitSubmissionView submitted = exitApi.submit(scheme,
+            csv(reference(0) + ",2026-11-03,WRITTEN_OFF,1600000.00\n"
+              + reference(1) + ",2026-11-03,SETTLED_EARLY,0.00\n"),
+            "november-exits.csv", "staff.one");
+        List<ExitRowView> rows = exitApi.listRows(submitted.submissionId());
+        assertThat(rows.get(0).reasonCode()).isEqualTo(ExitRejection.DEATH_CLAIM_IN_PROGRESS);
+        assertThat(rows.get(0).reason()).contains("death claim in progress");
+
+        exitApi.accept(submitted.submissionId(), "staff.two");
+        assertThat(statusOf(0)).isEqualTo(MemberStatus.ACTIVE);
+        assertThat(statusOf(1)).isEqualTo(MemberStatus.EXITED);
+
+        // And not by hand either: the staff exit path reaches the same verdict.
+        assertThatThrownBy(() -> policyApi.exitMember(scheme, members.get(0).policyMemberId(), EXIT_DATE,
+                ExitReason.WRITTEN_OFF, BigDecimal.ZERO, "staff.three"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining(deathClaimId.toString());
+
+        // Once the claim is rejected the loan is an ordinary live loan again.
+        policyApi.clearOpenDeathClaim(scheme, members.get(0).policyMemberId(), deathClaimId);
+        policyApi.exitMember(scheme, members.get(0).policyMemberId(), EXIT_DATE,
+            ExitReason.WRITTEN_OFF, BigDecimal.ZERO, "staff.three");
+        assertThat(statusOf(0)).isEqualTo(MemberStatus.EXITED);
     }
 
     @Test

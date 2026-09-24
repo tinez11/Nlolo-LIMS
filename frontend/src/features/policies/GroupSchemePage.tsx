@@ -32,6 +32,7 @@ import {
   type MemberFormValues,
 } from './addMemberForm';
 import { previewBenefit, type SchemeBasis } from './groupBenefitPreview';
+import { exitSummary } from './memberStanding';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { FilterChip } from '@/components/FilterChip';
@@ -541,6 +542,13 @@ const baseMemberColumns: Column<PolicyMemberView>[] = [
               of {formatMoney(m.benefit)}
             </span>
           )}
+          {/* A death is reported and not yet paid: still on cover, but this figure is what the
+              claim will pay, not live cover on a loan still running. */}
+          {m.openDeathClaimId && (
+            <span className="block text-[11px] text-status-warning-fg">
+              Claim pending — cover ends on settlement
+            </span>
+          )}
         </span>
       ) : (
         // Null money is a member whose cover has not started as at today. A zero
@@ -576,8 +584,31 @@ const baseMemberColumns: Column<PolicyMemberView>[] = [
   {
     key: 'status',
     header: 'Status',
-    secondary: true,
-    render: (m) => <StatusBadge kind="member" value={m.status} />,
+    /*
+      Said in full, because ACTIVE / EXITED alone hid the two things that matter most on a
+      credit-life book. A borrower whose death was reported and not yet paid read "ACTIVE" like
+      any live loan -- it now names the claim and links to it. And EXITED said nothing of why:
+      a repaid loan (a refund owed) and a paid death claim looked the same.
+    */
+    render: (m) =>
+      m.openDeathClaimId ? (
+        <Link
+          to={`/staff/claims/${m.openDeathClaimId}`}
+          className="inline-flex flex-col gap-0.5 hover:underline"
+        >
+          <StatusBadge kind="member" value="DEATH_CLAIM_IN_PROGRESS" />
+          <span className="text-[11px] text-muted-foreground">View the claim</span>
+        </Link>
+      ) : m.status === 'EXITED' ? (
+        <span className="inline-flex flex-col gap-0.5">
+          <StatusBadge kind="member" value={m.status} />
+          {exitSummary(m) && (
+            <span className="text-[11px] text-muted-foreground">{exitSummary(m)}</span>
+          )}
+        </span>
+      ) : (
+        <StatusBadge kind="member" value={m.status} />
+      ),
   },
 ];
 

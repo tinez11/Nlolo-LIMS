@@ -66,4 +66,6 @@ public record PolicyMemberView(UUID policyMemberId, UUID memberPartyId,
                                  * question, which is what a lender asks in a dispute: on which
                                  * file did you put this borrower on cover?
                                  */
-                                UUID arrivedOnSubmissionId, String arrivedOnFileName) {}
+                                UUID arrivedOnSubmissionId, String arrivedOnFileName,
+                                /* A registered, unpaid death claim on this life (V23). */
+                                UUID openDeathClaimId) {}

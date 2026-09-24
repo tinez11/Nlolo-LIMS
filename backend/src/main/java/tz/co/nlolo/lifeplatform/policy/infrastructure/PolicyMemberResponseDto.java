@@ -52,7 +52,9 @@ public record PolicyMemberResponseDto(UUID policyMemberId, UUID memberPartyId, S
                                         * they did not arrive on one -- the opening schedule, or a
                                         * member added one at a time on an employer scheme.
                                         */
-                                       UUID arrivedOnSubmissionId, String arrivedOnFileName) {
+                                       UUID arrivedOnSubmissionId, String arrivedOnFileName,
+                                       /** A registered, unpaid death claim on this life. */
+                                       UUID openDeathClaimId) {
 
     public static PolicyMemberResponseDto from(PolicyMemberView view) {
         return new PolicyMemberResponseDto(view.policyMemberId(), view.memberPartyId(), view.gradeCode(),
@@ -65,7 +67,7 @@ public record PolicyMemberResponseDto(UUID policyMemberId, UUID memberPartyId, S
             view.memberType(), view.memberName(), view.memberReference(),
             view.loanAccountNumber(), view.exitReason(),
             money(view.outstandingBalanceAtExit(), view.currency()),
-            view.arrivedOnSubmissionId(), view.arrivedOnFileName());
+            view.arrivedOnSubmissionId(), view.arrivedOnFileName(), view.openDeathClaimId());
     }
 
     private static MoneyDto money(BigDecimal amount, String currency) {

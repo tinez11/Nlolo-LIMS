@@ -129,6 +129,9 @@ export const STATUS_MAPS = {
   member: {
     ACTIVE: 'active',
     EXITED: 'neutral', // left the employer; the row stays, because claims arrive late
+    // Not a backend status -- the member is ACTIVE until the claim pays. The roll derives it
+    // from openDeathClaimId, because "ACTIVE" alone reads as a live loan.
+    DEATH_CLAIM_IN_PROGRESS: 'warning',
   },
 
   // policy/api/MemberUnderwritingStatus.java -- where a member stands against the

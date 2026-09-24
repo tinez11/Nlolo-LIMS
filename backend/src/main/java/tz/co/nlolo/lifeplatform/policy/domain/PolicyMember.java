@@ -70,6 +70,10 @@ public class PolicyMember {
     @Column(name = "underwriting_case_id")
     private UUID underwritingCaseId;
 
+    /** A registered, unpaid death claim on this life, told to policy by claims (V23). */
+    @Column(name = "open_death_claim_id")
+    private UUID openDeathClaimId;
+
     // ---- The loan this member's cover is measured against. -------------------
     // All null on an ordinary group member, all present together on a credit-life one --
     // chk_policy_member_loan_complete is the guarantee. A member with a principal but no
@@ -221,7 +225,35 @@ public class PolicyMember {
         this.leftOn = leftOn;
         this.exitReason = reason;
         this.outstandingBalanceAtExit = outstandingBalanceAtExit;
+        // Whatever took them off cover, nothing is in progress on a life no longer covered --
+        // chk_policy_member_open_death_claim_only_while_active refuses the row otherwise.
+        this.openDeathClaimId = null;
     }
+
+    /**
+     * A death claim on this member was registered, or reopened, and has not been paid.
+     *
+     * <p>They stay ACTIVE -- the claim's settlement exits them, dated to the death -- but the
+     * roll must say so, and an exits file must not take them off cover first (see V23).
+     */
+    public void recordOpenDeathClaim(UUID claimId) {
+        if (claimId == null) {
+            throw new IllegalArgumentException("Recording a death claim needs the claim");
+        }
+        if (!"ACTIVE".equals(status)) {
+            throw new IllegalStateException("Member " + policyMemberId + " is no longer on cover");
+        }
+        this.openDeathClaimId = claimId;
+    }
+
+    /** That claim was rejected. Only clears THAT claim, so a stale call cannot clear another. */
+    public void clearOpenDeathClaim(UUID claimId) {
+        if (claimId != null && claimId.equals(openDeathClaimId)) {
+            this.openDeathClaimId = null;
+        }
+    }
+
+    public UUID getOpenDeathClaimId() { return openDeathClaimId; }
 
     /**
      * Give a freeform life a real identity.

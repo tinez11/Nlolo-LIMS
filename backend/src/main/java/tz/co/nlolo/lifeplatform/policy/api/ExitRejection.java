@@ -37,5 +37,12 @@ public enum ExitRejection {
     ALREADY_EXITED,
 
     /** The exit is dated before the loan was disbursed, so it names a cover that never ran. */
-    EXIT_BEFORE_COVER_STARTED
+    EXIT_BEFORE_COVER_STARTED,
+
+    /**
+     * The borrower has a death claim in progress; its settlement takes them off cover, dated to
+     * the death. Usually the lender reporting a death the insurer already knows about -- through
+     * the only channel an exits file gives them, which has no reason for it.
+     */
+    DEATH_CLAIM_IN_PROGRESS
 }
