@@ -261,7 +261,8 @@ class SpecTypeConformanceTest {
 
         String evidence = """
             [{"claimEvidenceId":"%s","claimId":"%s","documentRef":"claim-evidence/abc.pdf",
-              "description":null,"uploadedBy":"customer","uploadedAt":"2026-01-15T10:00:00Z"}]
+              "description":null,"uploadedBy":"customer","uploadedByName":null,
+              "uploadedAt":"2026-01-15T10:00:00Z"}]
             """.formatted(PARTY_ID, CLAIM_ID);
         MvcResult evidenceResult = jsonResponse("GET", "/claims/" + CLAIM_ID + "/evidence", 200, evidence);
         assertIsValidPasses(evidenceResult);

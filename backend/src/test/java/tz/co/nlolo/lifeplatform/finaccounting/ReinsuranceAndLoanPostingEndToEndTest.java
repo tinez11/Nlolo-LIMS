@@ -201,6 +201,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",

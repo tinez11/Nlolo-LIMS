@@ -94,7 +94,8 @@ class ClaimEvidenceDownloadTest {
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
-            "db-migrations/claims/V7__claim_assessment_assessor_name.sql");
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql");
 
         minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())

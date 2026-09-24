@@ -36,17 +36,24 @@ public class ClaimEvidence {
     @Column(name = "uploaded_by", nullable = false)
     private String uploadedBy;
 
+    /** Who {@link #uploadedBy} was, in words, as their token said at upload. Null on rows
+     *  attached before V8. */
+    @Column(name = "uploaded_by_name")
+    private String uploadedByName;
+
     @Column(name = "uploaded_at", nullable = false)
     private Instant uploadedAt = Instant.now();
 
     protected ClaimEvidence() {}
 
-    public ClaimEvidence(UUID tenantId, UUID claimId, String documentRef, String description, String uploadedBy) {
+    public ClaimEvidence(UUID tenantId, UUID claimId, String documentRef, String description, String uploadedBy,
+                         String uploadedByName) {
         this.tenantId = tenantId;
         this.claimId = claimId;
         this.documentRef = documentRef;
         this.description = description;
         this.uploadedBy = uploadedBy;
+        this.uploadedByName = uploadedByName;
     }
 
     public UUID getClaimEvidenceId() { return claimEvidenceId; }
@@ -55,5 +62,6 @@ public class ClaimEvidence {
     public String getDocumentRef() { return documentRef; }
     public String getDescription() { return description; }
     public String getUploadedBy() { return uploadedBy; }
+    public String getUploadedByName() { return uploadedByName; }
     public Instant getUploadedAt() { return uploadedAt; }
 }

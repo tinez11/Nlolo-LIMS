@@ -127,6 +127,7 @@ class AgentBookOfBusinessScopingTest {
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
             "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
 
@@ -209,7 +210,7 @@ class AgentBookOfBusinessScopingTest {
         String documentRef = documentApi.upload("claim:" + claimId,
             tz.co.nlolo.lifeplatform.document.api.DocumentType.CLAIM_EVIDENCE, "test-fixture",
             new java.io.ByteArrayInputStream(content), content.length, "application/pdf", "evidence.pdf");
-        claimsApi.attachEvidence(claimId, documentRef, "book scoping fixture evidence", "test-fixture");
+        claimsApi.attachEvidence(claimId, documentRef, "book scoping fixture evidence", "test-fixture", null);
         TenantContext.clear();
         return documentRef;
     }

@@ -81,7 +81,8 @@ public class ClaimEvidenceController {
             throw new UncheckedIOException("Failed to read uploaded evidence file", e);
         }
 
-        ClaimEvidenceView evidence = claimsApi.attachEvidence(claimId, documentRef, description, jwt.getSubject());
+        ClaimEvidenceView evidence = claimsApi.attachEvidence(claimId, documentRef, description, jwt.getSubject(),
+            ClaimController.displayName(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(ClaimEvidenceResponseDto.from(evidence));
     }
 

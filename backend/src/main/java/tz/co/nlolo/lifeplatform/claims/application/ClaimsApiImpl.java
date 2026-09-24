@@ -548,7 +548,8 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     @Override
     @Transactional
-    public ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy) {
+    public ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy,
+                                            String uploadedByName) {
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
 
@@ -564,7 +565,8 @@ public class ClaimsApiImpl implements ClaimsApi {
         // DocumentNotFoundException propagates as-is, mapped to 404 by DocumentExceptionHandler.
         documentApi.getMetadata(documentRef);
 
-        ClaimEvidence evidence = new ClaimEvidence(tenantId, claimId, documentRef, description, uploadedBy);
+        ClaimEvidence evidence = new ClaimEvidence(tenantId, claimId, documentRef, description, uploadedBy,
+            uploadedByName);
         claimEvidenceRepository.save(evidence);
 
         return toEvidenceView(evidence);
@@ -689,6 +691,7 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     private ClaimEvidenceView toEvidenceView(ClaimEvidence evidence) {
         return new ClaimEvidenceView(evidence.getClaimEvidenceId(), evidence.getClaimId(), evidence.getDocumentRef(),
-            evidence.getDescription(), evidence.getUploadedBy(), evidence.getUploadedAt());
+            evidence.getDescription(), evidence.getUploadedBy(), evidence.getUploadedByName(),
+            evidence.getUploadedAt());
     }
 }

@@ -6,10 +6,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record ClaimEvidenceResponseDto(UUID claimEvidenceId, UUID claimId, String documentRef, String description,
-                                        String uploadedBy, Instant uploadedAt) {
+                                        String uploadedBy, String uploadedByName, Instant uploadedAt) {
 
     public static ClaimEvidenceResponseDto from(ClaimEvidenceView view) {
         return new ClaimEvidenceResponseDto(view.claimEvidenceId(), view.claimId(), view.documentRef(),
-            view.description(), view.uploadedBy(), view.uploadedAt());
+            view.description(), view.uploadedBy(), view.uploadedByName(), view.uploadedAt());
     }
 }

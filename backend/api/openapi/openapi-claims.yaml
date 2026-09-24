@@ -500,13 +500,22 @@ components:
             not the figure today.
     ClaimEvidenceView:
       type: object
-      required: [claimEvidenceId, claimId, documentRef, uploadedBy, uploadedAt]
+      required: [claimEvidenceId, claimId, documentRef, uploadedBy, uploadedByName, uploadedAt]
       properties:
         claimEvidenceId: { type: string, format: uuid }
         claimId: { type: string, format: uuid }
         documentRef: { type: string }
         description: { type: [string, "null"] }
-        uploadedBy: { type: string }
+        uploadedBy:
+          type: string
+          description: >-
+            The uploader's identity-provider subject — an identifier, not something to show a
+            person.
+        uploadedByName:
+          type: [string, "null"]
+          description: >-
+            The uploader's display name, captured from their token at upload — the claimant,
+            their agent, or staff. NULL on evidence attached before it was captured.
         uploadedAt: { type: string, format: date-time }
     ClaimView:
       type: object

@@ -121,7 +121,12 @@ public interface ClaimsApi {
 
     void reopenClaim(UUID claimId, String reason, String reopenedBy);
 
-    ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy);
+    /**
+     * @param uploadedBy the uploader's identity-provider subject -- the identity.
+     * @param uploadedByName how to show that person, captured now from their token; nullable.
+     */
+    ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy,
+                                     String uploadedByName);
 
     List<ClaimEvidenceView> listEvidence(UUID claimId);
 }

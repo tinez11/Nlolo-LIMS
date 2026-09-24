@@ -152,7 +152,8 @@ class ClaimsContractTest {
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
-            "db-migrations/claims/V7__claim_assessment_assessor_name.sql");
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql");
 
         // Only "claim-evidence" is needed here (MinioDocumentStorage.bucketFor routes
         // DocumentType.CLAIM_EVIDENCE there) -- unlike ClaimEvidenceIntegrationTest, this class
@@ -993,6 +994,36 @@ class ClaimsContractTest {
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$[0].documentRef").value(documentRef));
+    }
+
+    /** The evidence list printed the uploader's Keycloak subject. The name comes from the
+     * uploader's own token -- here the claimant's, since customers attach their own evidence --
+     * and reads back on the list staff see. */
+    @Test
+    void theUploaderIsNamedFromTheirTokenOnTheEvidenceList() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-NAME");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        // No openApi() matcher on the multipart POST -- see the 201 test above.
+        mockMvc.perform(multipart("/claims/" + claimId + "/evidence")
+                .file(new MockMultipartFile("file", "maturity-certificate.pdf", "application/pdf",
+                    "evidence-bytes".getBytes(StandardCharsets.UTF_8)))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.subject("5d1f2c3a-claimant-subject")
+                        .claim("tenant_id", tenantId.toString())
+                        .claim("party_id", fixture.applicantId().toString())
+                        .claim("name", "Amina Claimant")
+                        .claim("preferred_username", "amina"))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.uploadedBy").value("5d1f2c3a-claimant-subject"))
+            .andExpect(jsonPath("$.uploadedByName").value("Amina Claimant"));
+
+        mockMvc.perform(get("/claims/" + claimId + "/evidence").with(staffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].uploadedByName").value("Amina Claimant"));
     }
 
     /** Non-vacuous: the claim is real, and the multipart body is well-formed (a valid file part
