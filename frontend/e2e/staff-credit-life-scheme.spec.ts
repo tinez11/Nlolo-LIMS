@@ -169,6 +169,17 @@ test.describe('staff credit-life scheme', () => {
      */
     await expect(page.getByRole('columnheader', { name: 'Reference' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Grade / salary' })).toHaveCount(0);
+    /*
+     * AND THE ROLL SAYS WHICH FILE EACH BORROWER CAME IN ON. The question that produced this
+     * column was somebody counting: "three names, and I uploaded two." The third had been typed
+     * at set-up and nothing distinguished it. The operational form of the same question outlives
+     * that fix -- in a dispute a lender asks which file you covered somebody on.
+     */
+    await expect(page.getByRole('columnheader', { name: 'Came in on' })).toBeVisible();
+    // The opening borrower this scheme was issued with did not arrive on a file, and the cell
+    // says so rather than showing an em dash that reads as missing data.
+    await expect(page.getByText('Opening schedule').first()).toBeVisible();
+    await expect(page.getByText('january-schedule.csv').first()).toBeVisible();
 
     /*
      * AND THE WAY BACK. The roll used to be a one-way door: this page linked to it, it linked

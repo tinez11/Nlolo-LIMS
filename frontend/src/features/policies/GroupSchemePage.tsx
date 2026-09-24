@@ -456,7 +456,11 @@ export function GroupSchemePage() {
 const memberColumnsFor = (basis: BenefitBasis | undefined): Column<PolicyMemberView>[] => {
   const creditLife = basis === 'AMORTISING_LOAN';
   return baseMemberColumns.filter((c) =>
-    c.key === 'memberReference' ? creditLife : c.key === 'gradeOrSalary' ? !creditLife : true,
+    c.key === 'memberReference' || c.key === 'arrivedOn'
+      ? creditLife
+      : c.key === 'gradeOrSalary'
+        ? !creditLife
+        : true,
   );
 };
 
@@ -494,6 +498,31 @@ const baseMemberColumns: Column<PolicyMemberView>[] = [
         <span className="whitespace-nowrap font-mono text-xs">{m.memberReference}</span>
       ) : (
         <span className="text-subtle-foreground">{NO_VALUE}</span>
+      ),
+  },
+  {
+    /*
+     * WHICH FILE PUT THIS BORROWER ON COVER.
+     *
+     * The column exists because of a question the roll could not answer: "three names, and I
+     * uploaded two." The third had been typed into the set-up form, and nothing here told it
+     * apart from the two that arrived on a file. Schemes no longer open with a typed borrower,
+     * but the ones already created did, and the operational form of the question outlives the
+     * fix anyway -- in a dispute a lender asks which file you covered somebody on.
+     *
+     * A member with no file is not missing data. They were on the opening schedule, so the cell
+     * says so rather than showing an em dash that reads as a gap.
+     */
+    key: 'arrivedOn',
+    header: 'Came in on',
+    secondary: true,
+    render: (m) =>
+      m.arrivedOnFileName ? (
+        <span className="block max-w-[14rem] truncate" title={m.arrivedOnFileName}>
+          {m.arrivedOnFileName}
+        </span>
+      ) : (
+        <span className="text-subtle-foreground">Opening schedule</span>
       ),
   },
   {

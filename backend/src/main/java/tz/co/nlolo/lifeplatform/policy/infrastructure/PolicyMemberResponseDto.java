@@ -46,7 +46,13 @@ public record PolicyMemberResponseDto(UUID policyMemberId, UUID memberPartyId, S
                                         */
                                        MemberType memberType, String memberName,
                                        String memberReference, String loanAccountNumber,
-                                       ExitReason exitReason, MoneyDto outstandingBalanceAtExit) {
+                                       ExitReason exitReason, MoneyDto outstandingBalanceAtExit,
+                                       /**
+                                        * The monthly file this borrower arrived on, and null when
+                                        * they did not arrive on one -- the opening schedule, or a
+                                        * member added one at a time on an employer scheme.
+                                        */
+                                       UUID arrivedOnSubmissionId, String arrivedOnFileName) {
 
     public static PolicyMemberResponseDto from(PolicyMemberView view) {
         return new PolicyMemberResponseDto(view.policyMemberId(), view.memberPartyId(), view.gradeCode(),
@@ -58,7 +64,8 @@ public record PolicyMemberResponseDto(UUID policyMemberId, UUID memberPartyId, S
             view.benefitEffectiveFrom(),
             view.memberType(), view.memberName(), view.memberReference(),
             view.loanAccountNumber(), view.exitReason(),
-            money(view.outstandingBalanceAtExit(), view.currency()));
+            money(view.outstandingBalanceAtExit(), view.currency()),
+            view.arrivedOnSubmissionId(), view.arrivedOnFileName());
     }
 
     private static MoneyDto money(BigDecimal amount, String currency) {

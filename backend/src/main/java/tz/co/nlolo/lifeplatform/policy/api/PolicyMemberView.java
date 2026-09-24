@@ -47,4 +47,23 @@ public record PolicyMemberView(UUID policyMemberId, UUID memberPartyId,
                                  * not trusted -- our own declining schedule is what values a
                                  * claim. Null on a member with no loan.
                                  */
-                                BigDecimal outstandingBalanceAtExit) {}
+                                BigDecimal outstandingBalanceAtExit,
+                                /**
+                                 * The monthly file this borrower arrived on, and NULL when they
+                                 * did not arrive on one.
+                                 *
+                                 * <p>Null is a real answer with two causes: a member of the
+                                 * opening schedule, and a member added one at a time on an
+                                 * employer scheme. Neither came from a lender's file, and the
+                                 * console says so rather than leaving a blank cell that reads as
+                                 * missing data.
+                                 *
+                                 * <p>This exists because of a question nobody could answer on the
+                                 * screen: "the roll has three names and I uploaded two." It had
+                                 * three because one was typed at set-up -- and nothing on the roll
+                                 * distinguished that life from the two that came in on a file.
+                                 * It is also the answer to the operational version of the same
+                                 * question, which is what a lender asks in a dispute: on which
+                                 * file did you put this borrower on cover?
+                                 */
+                                UUID arrivedOnSubmissionId, String arrivedOnFileName) {}

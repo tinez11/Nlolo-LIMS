@@ -1752,6 +1752,24 @@ components:
           oneOf:
             - $ref: 'openapi-common.yaml#/components/schemas/Money'
           nullable: true
+        arrivedOnSubmissionId:
+          description: >-
+            The enrolment file this member arrived on, so a console can link from the roll to the
+            submission that put them on cover. NULL when they did not arrive on one -- a member of
+            the opening schedule, or one added singly on an employer scheme.
+          type: [string, "null"]
+          format: uuid
+        arrivedOnFileName:
+          description: >-
+            That file's name, as the lender sent it. Null for the same reasons as above, and the
+            console renders the absence rather than leaving a blank that reads as missing data.
+
+
+            This exists because of a question the roll could not answer: "three names, and I
+            uploaded two." The third was typed at set-up, and nothing distinguished it. It is also
+            the operational form of the same question -- on which file did you put this borrower
+            on cover? -- which is what a lender asks in a dispute.
+          type: [string, "null"]
     PolicyMemberPage:
       type: object
       properties:

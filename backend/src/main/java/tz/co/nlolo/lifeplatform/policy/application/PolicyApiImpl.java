@@ -1166,7 +1166,7 @@ public class PolicyApiImpl implements PolicyApi {
         // Valued as at the exit date, not as at today: an exited member's cover is what it was
         // when they left, and a caller reading this view back is asking what ended, not what
         // the schedule would say now.
-        return toMemberView(member, null, scheme.getCurrency());
+        return toMemberView(member, null, scheme.getCurrency(), null);
     }
 
     @Override
@@ -1190,7 +1190,7 @@ public class PolicyApiImpl implements PolicyApi {
         // second person every time somebody touches the claim is the failure this prevents.
         if (member.getMemberType() == MemberType.PARTY) {
             if (member.getPromotedToPartyAt() != null) {
-                return toMemberView(member, null, scheme.getCurrency());
+                return toMemberView(member, null, scheme.getCurrency(), null);
             }
             throw new InvalidPolicyStateException("Member " + policyMemberId + " is already a"
                 + " registered party and was never a freeform name, so there is nothing to promote");
@@ -1226,7 +1226,7 @@ public class PolicyApiImpl implements PolicyApi {
 
         log.info("Member {} on scheme {} promoted to party {} by {}",
             policyMemberId, policyNumber, partyId, promotedBy);
-        return toMemberView(member, null, scheme.getCurrency());
+        return toMemberView(member, null, scheme.getCurrency(), null);
     }
 
     @Override
@@ -1618,7 +1618,7 @@ public class PolicyApiImpl implements PolicyApi {
         if (members.isEmpty()) {
             // Short-circuit rather than pass an empty list to an IN clause, which is a
             // Postgres syntax error rather than an empty result.
-            return members.map(m -> toMemberView(m, null, currency));
+            return members.map(m -> toMemberView(m, null, currency, null));
         }
 
         // One query for the whole page. Resolving each member's benefit individually
@@ -1631,7 +1631,27 @@ public class PolicyApiImpl implements PolicyApi {
                 .collect(Collectors.toMap(
                     PolicyMemberBenefitRepository.InForceBenefitRow::getPolicyMemberId, r -> r));
 
-        return members.map(m -> toMemberView(m, benefits.get(m.getPolicyMemberId()), currency));
+        /*
+         * WHICH FILE EACH BORROWER ARRIVED ON, in one more query for the whole page.
+         *
+         * The question this answers came from somebody counting: "the roll has three names and I
+         * uploaded two." It had three because one was typed at set-up, and nothing on the roll
+         * told the two apart. It is also the operational version of the same question, which is
+         * what a lender asks in a dispute -- on which file did you put this borrower on cover?
+         */
+        List<UUID> memberIds = members.getContent().stream()
+            .map(PolicyMember::getPolicyMemberId).toList();
+        Map<UUID, EnrolmentSubmissionRowRepository.MemberArrival> arrivals =
+            enrolmentSubmissionRowRepository.findArrivalsForMembers(tenantId, memberIds).stream()
+                .collect(Collectors.toMap(
+                    EnrolmentSubmissionRowRepository.MemberArrival::getPolicyMemberId, a -> a,
+                    // A member can appear on more than one submission row only if a file was
+                    // withdrawn and re-sent; the accepted one is what put them on cover, and
+                    // either row names the same file, so the first is as good as the last.
+                    (first, second) -> first));
+
+        return members.map(m -> toMemberView(m, benefits.get(m.getPolicyMemberId()), currency,
+            arrivals.get(m.getPolicyMemberId())));
     }
 
     @Override
@@ -2200,11 +2220,16 @@ public class PolicyApiImpl implements PolicyApi {
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
             valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom,
-            m.getExitReason(), m.getOutstandingBalanceAtExit());
+            m.getExitReason(), m.getOutstandingBalanceAtExit(),
+            // A member being written right now came from no file: this builder serves the opening
+            // schedule and addMember. The enrolment pipeline's own members are read back through
+            // listMembers, which resolves the file they arrived on.
+            null, null);
     }
 
     private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
-                                           String currency) {
+                                           String currency,
+                                           EnrolmentSubmissionRowRepository.MemberArrival arrival) {
         return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
             m.getMemberType(), m.getMemberName(), m.getMemberReference(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
@@ -2217,7 +2242,11 @@ public class PolicyApiImpl implements PolicyApi {
             benefit != null ? benefit.getCoveredAmount() : null,
             currency,
             benefit != null ? benefit.getEffectiveFrom() : null,
-            m.getExitReason(), m.getOutstandingBalanceAtExit());
+            m.getExitReason(), m.getOutstandingBalanceAtExit(),
+            // Null when this member did not arrive on a file at all -- the opening schedule, or
+            // added one at a time on an employer scheme. A real answer, not missing data.
+            arrival != null ? arrival.getSubmissionId() : null,
+            arrival != null ? arrival.getFileName() : null);
     }
 
     private Policy findPolicyOrThrow(String policyNumber, UUID tenantId) {
