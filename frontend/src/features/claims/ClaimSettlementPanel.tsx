@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { Receipt } from '@/components/Receipt';
+import { cn } from '@/lib/cn';
 import { compareAmounts, formatMoney, subtractAmounts } from '@/lib/money';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
 import {
@@ -16,7 +17,7 @@ import {
 import { assessorName } from './assessorName';
 import {
   blankApproveDecision,
-  blankRejectDecision,
+  switchDecision,
   recommendationExceedsCover,
   settlementDecisionSchema,
   toApiRequest,
@@ -168,23 +169,44 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
 
   return (
     <form className="space-y-3 p-4" onSubmit={(e) => void handleSubmit(setPending)(e)}>
-      <div className="flex items-center gap-1.5">
-        <Button
-          type="button"
-          size="sm"
-          variant={approved ? 'primary' : 'outline'}
-          onClick={() => reset(blankApproveDecision())}
+      {/*
+        A CHOICE of which decision to record, not an action -- nothing is sent from here.
+        These were two buttons styled like the submit button, one labelled "Approve" beside an
+        "Approve claim", so which one approved was a guess. A labelled radiogroup, the same
+        pattern as the claim form's policy chooser, says what it is to sight and to a screen
+        reader alike.
+      */}
+      <div className="flex items-center gap-2">
+        <span id={`decision-${claimId}`} className="text-xs font-medium text-muted-foreground">
+          Decision
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby={`decision-${claimId}`}
+          className="inline-flex rounded-md border border-border p-0.5"
         >
-          Approve
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={!approved ? 'primary' : 'outline'}
-          onClick={() => reset(blankRejectDecision())}
-        >
-          Reject
-        </Button>
+          {(['approve', 'reject'] as const).map((choice) => {
+            const selected = (choice === 'approve') === approved;
+            return (
+              <button
+                key={choice}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => {
+                  const next = switchDecision(choice, approved, recommended, cover);
+                  if (next) reset(next);
+                }}
+                className={cn(
+                  'rounded px-3 py-1 text-xs transition-colors',
+                  selected ? 'bg-selected font-medium ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
+                )}
+              >
+                {choice === 'approve' ? 'Approve' : 'Reject'}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {approved ? (

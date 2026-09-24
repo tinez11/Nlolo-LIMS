@@ -5,6 +5,7 @@ import {
   recommendationExceedsCover,
   settlementDecisionFormSchema,
   settlementDecisionSchema,
+  switchDecision,
   toApiRequest,
 } from './settlementDecisionForm';
 
@@ -208,6 +209,34 @@ describe('the starting amount', () => {
 
   it('keeps the recommendation when the cover is unknown, claiming nothing about a ceiling', () => {
     expect(blankApproveDecision(recommended, null).approvedAmount).toBe('650000.00');
+  });
+});
+
+describe('switchDecision', () => {
+  const cover = { amount: '800000.00', currencyCode: 'TZS' };
+  const recommended = { amount: '650000.00', currencyCode: 'TZS' };
+
+  it('brings the prefilled amount back on Reject -> Approve', () => {
+    // It used to come back blank, and nothing refilled it.
+    const next = switchDecision('approve', false, recommended, cover);
+    expect(next).toMatchObject({ approved: true, approvedAmount: '650000.00', approvedCurrency: 'TZS' });
+  });
+
+  it('falls back to the cover when there is no recommendation', () => {
+    expect(switchDecision('approve', false, null, cover)).toMatchObject({ approvedAmount: '800000.00' });
+  });
+
+  it('changes nothing when the selected branch is chosen again', () => {
+    // Clicking "Approve" while approving used to wipe the amount and the payee reference.
+    expect(switchDecision('approve', true, recommended, cover)).toBeNull();
+    expect(switchDecision('reject', false, recommended, cover)).toBeNull();
+  });
+
+  it('switches to a blank rejection', () => {
+    expect(switchDecision('reject', true, recommended, cover)).toEqual({
+      approved: false,
+      rejectionReason: '',
+    });
   });
 });
 

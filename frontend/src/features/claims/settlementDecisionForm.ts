@@ -113,6 +113,26 @@ export function blankRejectDecision(): SettlementDecisionFormValues {
   return { approved: false, rejectionReason: '' };
 }
 
+/**
+ * What the form becomes when the decision control is switched -- or `null` to leave it as is.
+ *
+ * Choosing the branch already selected changes NOTHING. It used to reset the form, so clicking
+ * "Approve" while approving wiped the prefilled amount and a typed payee reference.
+ *
+ * Switching to approve starts from the same figures the form opened with. It used to call
+ * `blankApproveDecision()` with no arguments, so Reject → Approve left the amount blank -- and
+ * nothing refilled it, because the prefill effect only reruns when the figures themselves change.
+ */
+export function switchDecision(
+  to: 'approve' | 'reject',
+  currentlyApproved: boolean,
+  recommended: Money | null,
+  claimableCover: Money | null,
+): SettlementDecisionFormValues | null {
+  if ((to === 'approve') === currentlyApproved) return null;
+  return to === 'approve' ? blankApproveDecision(recommended, claimableCover) : blankRejectDecision();
+}
+
 export function toApiRequest(values: SettlementDecisionFormValues): SettlementDecisionRequest {
   if (values.approved) {
     return {

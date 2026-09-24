@@ -148,6 +148,13 @@ test.describe('staff claims adjudication', () => {
     // Approve is the default branch, prefilled with the recommendation -- NOT the 2,000,000 cover
     // -- and nothing is typed into it: the decision stands on the assessor's figure.
     await expect(managerPage.getByLabel('Approved amount')).toHaveValue('1500000.00');
+
+    // Changing your mind and coming back keeps the figure. Switching to Approve used to reset the
+    // form to blank, and nothing refilled it.
+    await managerPage.getByRole('radio', { name: 'Reject' }).click();
+    await managerPage.getByRole('radio', { name: 'Approve' }).click();
+    await expect(managerPage.getByRole('radio', { name: 'Approve' })).toHaveAttribute('aria-checked', 'true');
+    await expect(managerPage.getByLabel('Approved amount')).toHaveValue('1500000.00');
     await expect(managerPage.getByText(/TZS 500,000\.00 less than this claim is covered for/))
       .toBeVisible();
     await managerPage.getByLabel('Payee reference').fill('MOBILE-MONEY-E2E-1');
@@ -214,7 +221,10 @@ test.describe('staff claims adjudication', () => {
     const managerPage = await managerContext.newPage();
     await managerPage.goto(`/staff/claims/${claimId}`);
 
-    await managerPage.getByRole('button', { name: 'Reject', exact: true }).click();
+    // A choice, not an action: the decision control is a radiogroup, and nothing is sent until
+    // "Reject claim" and its confirmation below.
+    await managerPage.getByRole('radio', { name: 'Reject' }).click();
+    await expect(managerPage.getByRole('radio', { name: 'Reject' })).toHaveAttribute('aria-checked', 'true');
     await managerPage.getByLabel('Rejection reason (optional)').fill('Insufficient evidence');
     await managerPage.getByRole('button', { name: 'Reject claim' }).click();
 
