@@ -19,4 +19,9 @@ import java.util.UUID;
 public record DisbursementStatusView(UUID disbursementId, String idempotencyKey, DisbursementStatus status,
                                       BigDecimal amount, String currency, String purpose,
                                       String gatewayReference, String sourceRef, UUID batchId,
-                                      String payeeRef, Instant createdAt) {}
+                                      String payeeRef, Instant createdAt,
+                                      /* MOBILE_MONEY or EFT -- which decides whether anybody has
+                                         to act: an EFT waits for finance, mobile money does not. */
+                                      String method,
+                                      /* When finance recorded an EFT as made; null otherwise. */
+                                      Instant executedAt) {}

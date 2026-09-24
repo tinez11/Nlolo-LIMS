@@ -83,6 +83,36 @@ paths:
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /disbursements:
+    get:
+      summary: The payouts instructed for one source — a claim reading its own settlement (staff — CLAIMS_ASSESSOR, CLAIMS_MANAGER or FINANCE_OFFICER)
+      description: >
+        A claim reached SETTLEMENT_REQUESTED and its page said nothing more: whether money had
+        moved, by which rail, to whom, or — on an EFT — that it was waiting on a finance officer
+        the claims staff could not see. Newest first, and a list, because a failed payout sends
+        the claim back to APPROVED and a re-approval instructs again.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: purpose
+          in: query
+          required: true
+          schema: { type: string, example: CLAIM_SETTLEMENT }
+        - name: sourceRef
+          in: query
+          required: true
+          description: What the payout is for; a claim settlement carries the claim's id.
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK — newest first; empty when nothing has been instructed
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DisbursementView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /disbursements/awaiting-execution:
     get:
       summary: Finance's EFT work queue — every payout instructed by bank transfer and not yet confirmed
@@ -224,6 +254,36 @@ components:
             When the instruction was raised. Not decoration: every row here is money the insurer
             owes and has not paid, and on a credit-life claim an ageing row is a lender still
             carrying a dead borrower's loan.
+    DisbursementView:
+      type: object
+      additionalProperties: false
+      description: >
+        One payout, as the page that ordered it reads it back. Carries no executedBy: that is
+        the finance officer's identity-provider subject, not something to show a person.
+      required: [disbursementId, method, status, amount, payeeRef, reference, createdAt, executedAt]
+      properties:
+        disbursementId: { type: string, format: uuid }
+        method:
+          type: string
+          enum: [MOBILE_MONEY, EFT]
+          description: >
+            EFT waits for a finance officer to make the transfer in the bank and record it;
+            mobile money completes when the gateway calls back.
+        status:
+          type: string
+          enum: [PENDING, AWAITING_EXECUTION, IN_DOUBT, COMPLETED, FAILED]
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        payeeRef: { type: string }
+        reference:
+          type: [string, "null"]
+          description: >
+            The gateway's reference on mobile money; on an EFT, the bank's own reference once
+            finance records it. Null until then.
+        createdAt: { type: string, format: date-time }
+        executedAt:
+          type: [string, "null"]
+          format: date-time
+          description: When finance recorded an EFT as made. Null otherwise.
     PaymentStatusView:
       type: object
       additionalProperties: false

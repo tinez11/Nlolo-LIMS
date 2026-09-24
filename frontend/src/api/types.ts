@@ -68,6 +68,7 @@ export type MemberStatus = NonNullable<PolicyMemberView['status']>;
  * they moved the money.
  */
 export type AwaitingEftView = PaymentComponents['schemas']['AwaitingEftView'];
+export type DisbursementView = PaymentComponents['schemas']['DisbursementView'];
 /**
  * Four states, not a boolean. `EVIDENCE_REQUIRED` and `DECLINED` produce the same
  * covered amount and mean opposite things about whether anyone is still waiting.

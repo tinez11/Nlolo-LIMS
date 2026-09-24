@@ -1,5 +1,5 @@
 import { get, post } from '@/lib/http';
-import type { AwaitingEftView } from './types';
+import type { AwaitingEftView, DisbursementView } from './types';
 
 /**
  * The EFT rail's human half.
@@ -19,6 +19,20 @@ import type { AwaitingEftView } from './types';
 /** `GET /disbursements/awaiting-execution` — FINANCE_OFFICER only. Oldest first, server-side. */
 export function listAwaitingEftExecution(): Promise<AwaitingEftView[]> {
   return get<AwaitingEftView[]>('/disbursements/awaiting-execution');
+}
+
+/**
+ * `GET /disbursements?purpose=CLAIM_SETTLEMENT&sourceRef={claimId}` — CLAIMS_ASSESSOR,
+ * CLAIMS_MANAGER or FINANCE_OFFICER. Newest first.
+ *
+ * What became of a claim's payout. A claim at SETTLEMENT_REQUESTED used to say nothing more, and
+ * on credit life that meant a claims manager looking at a claim that was quietly waiting on a
+ * finance officer they could not see and a screen they could not open.
+ */
+export function listClaimPayouts(claimId: string): Promise<DisbursementView[]> {
+  return get<DisbursementView[]>('/disbursements', {
+    params: { purpose: 'CLAIM_SETTLEMENT', sourceRef: claimId },
+  });
 }
 
 /**

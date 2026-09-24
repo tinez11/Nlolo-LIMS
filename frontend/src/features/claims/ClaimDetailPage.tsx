@@ -16,6 +16,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaimDetail, useClaimStore } from '@/store/claimStore';
 import { AssessmentHistoryPanel } from './AssessmentHistoryPanel';
 import { ClaimAssessmentPanel } from './ClaimAssessmentPanel';
+import { ClaimPaymentPanel } from './ClaimPaymentPanel';
 import { ClaimDetailsFields } from './ClaimDetailsFields';
 import { ClaimReopenPanel } from './ClaimReopenPanel';
 import { ClaimSettlementPanel } from './ClaimSettlementPanel';
@@ -204,6 +205,18 @@ export function ClaimDetailPage() {
               <AssessmentHistoryPanel claimId={claimId} />
             </Panel>
           )}
+
+          {/* Once approved, where the money is. Shown to the claims staff who decided it and to
+              finance who pay it; payee and rail are internal, so not to anybody else. */}
+          {(roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER || roles.FINANCE_OFFICER) &&
+            (claim.status === 'APPROVED' ||
+              claim.status === 'SETTLEMENT_REQUESTED' ||
+              claim.status === 'SETTLED' ||
+              claim.status === 'REOPENED') && (
+              <Panel title="Payment" subtitle="Where the settlement is, and who it is waiting on">
+                <ClaimPaymentPanel claimId={claimId} claimStatus={claim.status} />
+              </Panel>
+            )}
 
           <Panel title="Evidence" subtitle="Photos, certificates, and reports attached to this claim">
             <EvidencePanel claimId={claimId} canAttach={claim.status !== 'SETTLED'} />

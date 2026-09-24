@@ -12,11 +12,13 @@ import {
   submitClaimAssessment,
   type ClaimSearchParams,
 } from '@/api/claims';
+import { listClaimPayouts } from '@/api/payments';
 import type {
   ClaimAssessmentView,
   ClaimCoverView,
   ClaimEvidenceView,
   ClaimView,
+  DisbursementView,
   Page,
   RegisterClaimRequest,
   ReopenClaimRequest,
@@ -60,12 +62,15 @@ interface ClaimState {
   // perfectly well (a policy changed after registration 409s), and it must
   // not be able to take the claim record down with it.
   claimableCover: Keyed<ClaimCoverView>;
+  // What became of the settlement once approved. Read from payment, keyed by claim.
+  payouts: Keyed<DisbursementView[]>;
 
   loadList: (params: ClaimSearchParams) => Promise<void>;
   loadDetail: (claimId: string) => Promise<void>;
   loadEvidence: (claimId: string) => Promise<void>;
   loadAssessments: (claimId: string) => Promise<void>;
   loadClaimableCover: (claimId: string) => Promise<void>;
+  loadPayouts: (claimId: string) => Promise<void>;
   registerClaim: (request: RegisterClaimRequest, attempt: MutationAttempt) => Promise<void>;
   /** Clears a stale registration error before a fresh attempt -- see the call site. */
   resetRegisterClaim: () => void;
@@ -96,6 +101,7 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
   attachingEvidence: {},
   assessments: {},
   claimableCover: {},
+  payouts: {},
 
   loadList: (params) =>
     track(
@@ -135,6 +141,14 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
       getState().claimableCover[claimId] ?? idle<ClaimCoverView>(),
       (next) => set((s) => ({ claimableCover: { ...s.claimableCover, [claimId]: next } })),
       () => getClaimableCover(claimId),
+    ),
+
+  loadPayouts: (claimId) =>
+    track(
+      `claim.payouts.${claimId}`,
+      getState().payouts[claimId] ?? idle<DisbursementView[]>(),
+      (next) => set((s) => ({ payouts: { ...s.payouts, [claimId]: next } })),
+      () => listClaimPayouts(claimId),
     ),
 
   registerClaim: (request, attempt) =>
@@ -254,3 +268,5 @@ export const selectAssessments = (claimId: string) => (s: ClaimState) =>
   s.assessments[claimId] ?? idle<ClaimAssessmentView[]>();
 export const selectClaimableCover = (claimId: string) => (s: ClaimState) =>
   s.claimableCover[claimId] ?? idle<ClaimCoverView>();
+export const selectPayouts = (claimId: string) => (s: ClaimState) =>
+  s.payouts[claimId] ?? idle<DisbursementView[]>();

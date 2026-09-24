@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -63,6 +64,21 @@ public class DisbursementController {
     public ResponseEntity<List<AwaitingEftResponseDto>> listAwaitingExecution() {
         List<DisbursementStatusView> awaiting = paymentApi.listAwaitingEftExecution();
         return ResponseEntity.ok(awaiting.stream().map(AwaitingEftResponseDto::from).toList());
+    }
+
+    /**
+     * The payouts instructed for one source -- in practice, a claim reading its own settlement.
+     *
+     * <p>Wider than the queue above, on purpose: the claims staff who approved a payout are
+     * exactly the people who could not see what became of it. Still staff roles only -- a
+     * customer's own claim page has no business with the payee reference or the rail.
+     */
+    @GetMapping("/disbursements")
+    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER') or hasRole('FINANCE_OFFICER')")
+    public ResponseEntity<List<DisbursementResponseDto>> listForSource(@RequestParam String purpose,
+                                                                       @RequestParam String sourceRef) {
+        return ResponseEntity.ok(paymentApi.listDisbursementsFor(purpose, sourceRef).stream()
+            .map(DisbursementResponseDto::from).toList());
     }
 
     /**

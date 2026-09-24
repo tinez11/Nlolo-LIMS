@@ -41,6 +41,17 @@ export const STATUS_MAPS = {
     REJECTED: 'danger',
   },
 
+  // payment/api/DisbursementStatus.java -- a payout, as the claim that ordered it reads it.
+  // AWAITING_EXECUTION is `warning`, not `pending`: nothing will move it but a person in
+  // finance, so it is a queue somebody has to work rather than something in flight.
+  disbursement: {
+    PENDING: 'pending',
+    AWAITING_EXECUTION: 'warning',
+    IN_DOUBT: 'warning',
+    COMPLETED: 'success',
+    FAILED: 'danger',
+  },
+
   // billing/api/InvoiceStatus.java
   invoice: {
     DUE: 'pending',
