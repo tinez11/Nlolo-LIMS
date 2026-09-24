@@ -140,6 +140,10 @@ test.describe('staff claims adjudication', () => {
     // findings and all, and the amount they are asked to approve starts from it.
     await expect(managerPage.getByText('TZS 1,500,000.00 recommended')).toBeVisible();
     await expect(managerPage.getByText('Standard risk, no adverse findings')).toBeVisible();
+    // Named as a person, from the assessor's own token -- this used to print their Keycloak
+    // subject, a uuid, in both places.
+    await expect(managerPage.getByText(/^Daudi Assessor · /)).toBeVisible();
+    await expect(managerPage.getByText(/recommended by Daudi Assessor\./)).toBeVisible();
 
     // Approve is the default branch, prefilled with the recommendation -- NOT the 2,000,000 cover
     // -- and nothing is typed into it: the decision stands on the assessor's figure.

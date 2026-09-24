@@ -468,11 +468,21 @@ components:
           description: "Scrutiny/reporting signal only — does not itself reject the claim (Deliverable 3 Rev 2, Cl1)"
     ClaimAssessmentView:
       type: object
-      required: [claimAssessmentId, claimId, assessor, findings, recommendedAmount, fraudIndicator, createdAt]
+      required: [claimAssessmentId, claimId, assessor, assessorName, findings, recommendedAmount, fraudIndicator, createdAt]
       properties:
         claimAssessmentId: { type: string, format: uuid }
         claimId: { type: string, format: uuid }
-        assessor: { type: string }
+        assessor:
+          type: string
+          description: >-
+            The assessor's identity-provider subject. What separation of duties compares
+            against the decider — an identifier, not something to show a person.
+        assessorName:
+          type: [string, "null"]
+          description: >-
+            The assessor's display name, captured from their token when the assessment was
+            written. NULL on assessments recorded before it was captured — there is no name to
+            recover for those, and the subject is not one.
         findings: { type: string }
         recommendedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         fraudIndicator: { type: boolean }

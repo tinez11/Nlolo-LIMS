@@ -48,8 +48,15 @@ public interface ClaimsApi {
      */
     Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, String q, Pageable pageable);
 
+    /**
+     * @param assessedBy the assessor's identity-provider subject -- what separation of duties
+     *     compares against the decider, so it must be the stable identifier, never a name.
+     * @param assessorName how to show that person, captured now from their token; nullable,
+     *     since a caller with no display name must still be able to assess.
+     */
     ClaimAssessmentView submitAssessment(UUID claimId, String findings, BigDecimal recommendedAmount,
-                                          String recommendedCurrency, boolean fraudIndicator, String assessedBy);
+                                          String recommendedCurrency, boolean fraudIndicator, String assessedBy,
+                                          String assessorName);
 
     /**
      * This claim's assessments, newest first.

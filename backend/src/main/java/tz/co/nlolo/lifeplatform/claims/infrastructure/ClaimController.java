@@ -140,8 +140,26 @@ public class ClaimController {
             @Valid @RequestBody SubmitClaimAssessmentRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         ClaimAssessmentView assessment = claimsApi.submitAssessment(claimId, request.findings(),
             new BigDecimal(request.recommendedAmount().amount()), request.recommendedAmount().currencyCode(),
-            request.fraudIndicator(), jwt.getSubject());
+            request.fraudIndicator(), jwt.getSubject(), displayName(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(ClaimAssessmentResponseDto.from(assessment));
+    }
+
+    /**
+     * How to show the caller to another person: {@code name} ("Daudi Assessor"), else
+     * {@code preferred_username} ("staff.assessor"), else null.
+     *
+     * <p>Only ever a label. The SUBJECT stays the identity every rule compares -- a display name
+     * is neither unique nor stable, and separation of duties decided on one could be defeated by
+     * two people who share a name.
+     */
+    static String displayName(Jwt jwt) {
+        for (String claim : new String[] {"name", "preferred_username"}) {
+            String value = jwt.getClaimAsString(claim);
+            if (value != null && !value.isBlank()) {
+                return value.strip();
+            }
+        }
+        return null;
     }
 
     /**

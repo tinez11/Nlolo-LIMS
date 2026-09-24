@@ -113,7 +113,8 @@ class ClaimsApiIntegrationTest {
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
-            "db-migrations/claims/V6__exclusion_decline.sql");
+            "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -379,7 +380,7 @@ class ClaimsApiIntegrationTest {
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REGISTERED);
 
         ClaimAssessmentView assessment = claimsApi.submitAssessment(claimId, "Consistent with cause of death",
-            new BigDecimal("2000000"), "TZS", false, "assessor-1");
+            new BigDecimal("2000000"), "TZS", false, "assessor-1", null);
 
         assertThat(assessment.claimId()).isEqualTo(claimId);
         assertThat(assessment.assessor()).isEqualTo("assessor-1");
@@ -398,7 +399,7 @@ class ClaimsApiIntegrationTest {
 
         ClaimValidationException refused = assertThrows(ClaimValidationException.class,
             () -> claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000.01"), "TZS",
-                false, "assessor-cap"));
+                false, "assessor-cap", null));
         assertThat(refused.getMessage()).contains("2000000.01").contains("covered for");
 
         assertThat(claimsApi.listAssessments(claimId)).isEmpty();
@@ -406,7 +407,7 @@ class ClaimsApiIntegrationTest {
 
         // INCLUSIVE, as the approval is: the full cover is the commonest correct recommendation.
         claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000.00"), "TZS", false,
-            "assessor-cap");
+            "assessor-cap", null);
         assertThat(claimsApi.listAssessments(claimId)).hasSize(1);
     }
 
@@ -476,7 +477,7 @@ class ClaimsApiIntegrationTest {
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-sod-01");
 
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "same-person");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "same-person", null);
 
         // "same-person" both assessed and is now trying to decide -- must be rejected even
         // though nothing here checks their Keycloak role, only the persisted assessor identity.
@@ -491,7 +492,7 @@ class ClaimsApiIntegrationTest {
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-sod-02");
 
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-2");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-2", null);
 
         claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
             "payee-ref-4", "settle-idem-sod-02", "manager-2");
@@ -507,7 +508,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-BLANKPAYEE-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-blankpayee-01");
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-3");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-3", null);
 
         assertThrows(ClaimValidationException.class, () -> claimsApi.decideSettlement(claimId, true,
             new BigDecimal("2000000"), "TZS", null, "   ", "settle-idem-blankpayee-01", "manager-3"));
@@ -519,7 +520,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-BLANKIDEM-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-blankidem-01");
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-4");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-4", null);
 
         // A blank key would otherwise silently reach the payment rail zero times.
         assertThrows(ClaimValidationException.class, () -> claimsApi.decideSettlement(claimId, true,
@@ -536,7 +537,7 @@ class ClaimsApiIntegrationTest {
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-fraud-01");
 
         ClaimAssessmentView assessment = claimsApi.submitAssessment(claimId, "Suspicious circumstances",
-            new BigDecimal("2000000"), "TZS", true, "assessor-5");
+            new BigDecimal("2000000"), "TZS", true, "assessor-5", null);
         assertThat(assessment.fraudIndicator()).isTrue();
 
         // Falsifiable: if fraudIndicator wrongly gated approval, this would throw instead.
@@ -554,7 +555,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REJECT-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-reject-01");
-        claimsApi.submitAssessment(claimId, "Insufficient evidence", new BigDecimal("2000000"), "TZS", false, "assessor-6");
+        claimsApi.submitAssessment(claimId, "Insufficient evidence", new BigDecimal("2000000"), "TZS", false, "assessor-6", null);
 
         claimsApi.decideSettlement(claimId, false, null, null, "Cause of death not covered",
             null, null, "manager-6");
@@ -570,7 +571,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REOPEN-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-reopen-01");
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-7");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-7", null);
         claimsApi.decideSettlement(claimId, false, null, null, "Not covered", null, null, "manager-7");
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REJECTED);
 
@@ -585,7 +586,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REOPEN-02");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-reopen-02");
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-8");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-8", null);
         claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
             "payee-ref-7", "settle-idem-reopen-02", "manager-8");
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);

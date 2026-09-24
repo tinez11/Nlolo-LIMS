@@ -4,6 +4,7 @@ import { formatMoney } from '@/lib/money';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectAssessments, selectClaimableCover, useClaimStore } from '@/store/claimStore';
+import { assessorName } from './assessorName';
 import { recommendationExceedsCover } from './settlementDecisionForm';
 
 /**
@@ -66,7 +67,7 @@ export function AssessmentHistoryPanel({ claimId }: { claimId: string }) {
               {formatMoney(assessment.recommendedAmount)} recommended
             </span>
             <span className="text-xs text-muted-foreground">
-              {assessment.assessor} · {formatInstant(assessment.createdAt)}
+              {assessorName(assessment, 'Name not recorded')} · {formatInstant(assessment.createdAt)}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">{assessment.findings}</p>

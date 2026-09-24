@@ -13,6 +13,7 @@ import {
   selectDecidingSettlement,
   useClaimStore,
 } from '@/store/claimStore';
+import { assessorName } from './assessorName';
 import {
   blankApproveDecision,
   blankRejectDecision,
@@ -246,7 +247,7 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
             // it would open the form already refusing its own value, so it starts at the cover
             // -- and says so, because silently replacing a colleague's figure is its own harm.
             <p className="text-xs text-status-warning-fg">
-              {latestAssessment.assessor} recommended{' '}
+              The latest assessment, by {assessorName(latestAssessment)}, recommended{' '}
               {formatMoney(latestAssessment.recommendedAmount)}, more than the{' '}
               {formatMoney(cover)} this claim is covered for. Starting at the cover, the most it
               can pay.
@@ -255,7 +256,7 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
             latestAssessment && (
               <p className="text-xs text-muted-foreground">
                 Starts at {formatMoney(latestAssessment.recommendedAmount)}, recommended by{' '}
-                <span className="font-medium">{latestAssessment.assessor}</span>. Change it if you
+                <span className="font-medium">{assessorName(latestAssessment)}</span>. Change it if you
                 have a finding they did not.
               </p>
             )

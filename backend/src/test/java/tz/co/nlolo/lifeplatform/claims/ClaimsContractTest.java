@@ -151,7 +151,8 @@ class ClaimsContractTest {
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
-            "db-migrations/claims/V6__exclusion_decline.sql");
+            "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql");
 
         // Only "claim-evidence" is needed here (MinioDocumentStorage.bucketFor routes
         // DocumentType.CLAIM_EVIDENCE there) -- unlike ClaimEvidenceIntegrationTest, this class
@@ -245,7 +246,7 @@ class ClaimsContractTest {
 
     private void submitAssessmentDirectly(UUID tenantId, UUID claimId, String assessor) {
         TenantContext.set(tenantId);
-        claimsApi.submitAssessment(claimId, "Fixture findings", new BigDecimal("2000000"), "TZS", false, assessor);
+        claimsApi.submitAssessment(claimId, "Fixture findings", new BigDecimal("2000000"), "TZS", false, assessor, null);
         TenantContext.clear();
     }
 
@@ -593,7 +594,88 @@ class ClaimsContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.claimId").value(claimId.toString()))
             .andExpect(jsonPath("$.assessor").value("assessor-http-1"))
+            // No name claim on this token, so none is invented -- and certainly not the subject.
+            .andExpect(jsonPath("$.assessorName").doesNotExist())
             .andExpect(jsonPath("$.recommendedAmount.amount").value("2000000.00"));
+    }
+
+    /** The manager was shown "recommended by 1697c88f-78d8-…". The name comes from the
+     * assessor's own token -- shaped as Keycloak really issues it, {@code name} beside
+     * {@code preferred_username} -- is persisted, and reads back on the list the manager sees. */
+    @Test
+    void theAssessorIsNamedFromTheirTokenAndTheNameIsWhatTheManagerReads() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-ASSESS-NAME-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(post("/claims/" + claimId + "/assessments")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"),
+                        new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.subject("ac76ad34-d514-421e-8c39-694ce179b590")
+                        .claim("tenant_id", tenantId.toString())
+                        .claim("name", "Daudi Assessor")
+                        .claim("preferred_username", "staff.assessor")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"findings":"Consistent with cause of death",
+                     "recommendedAmount":{"amount":"2000000.00","currencyCode":"TZS"},"fraudIndicator":false}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // The subject is still what is stored as the identity -- separation of duties
+            // compares it, and a name is neither unique nor stable.
+            .andExpect(jsonPath("$.assessor").value("ac76ad34-d514-421e-8c39-694ce179b590"))
+            .andExpect(jsonPath("$.assessorName").value("Daudi Assessor"));
+
+        mockMvc.perform(get("/claims/" + claimId + "/assessments")
+                .with(managerOf(tenantId, "manager-reading-names")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].assessorName").value("Daudi Assessor"));
+    }
+
+    @Test
+    void anAssessorWithNoDisplayNameIsNamedByTheirUsername() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-ASSESS-NAME-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(post("/claims/" + claimId + "/assessments")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_CLAIMS_ASSESSOR"),
+                        new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.subject("assessor-without-a-name")
+                        .claim("tenant_id", tenantId.toString())
+                        .claim("name", "  ")
+                        .claim("preferred_username", "staff.assessor")))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"findings":"Consistent with cause of death",
+                     "recommendedAmount":{"amount":"2000000.00","currencyCode":"TZS"},"fraudIndicator":false}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.assessorName").value("staff.assessor"));
+    }
+
+    /** Through HTTP, so the documented 422 is proven to be the status actually served. */
+    @Test
+    void submitAssessmentReturns422ForARecommendationAboveTheCover() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-ASSESS-CAP");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(post("/claims/" + claimId + "/assessments")
+                .with(assessorOf(tenantId, "assessor-over-cover"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"findings":"Consistent with cause of death",
+                     "recommendedAmount":{"amount":"50000000.00","currencyCode":"TZS"},"fraudIndicator":false}
+                    """))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("CLAIM_VALIDATION_FAILED"));
     }
 
     /** Non-vacuous: the claim is real and REGISTERED, so a missing/broken

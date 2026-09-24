@@ -200,6 +200,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
@@ -322,7 +323,7 @@ class ReinsuranceAndLoanPostingEndToEndTest {
             ClaimType.DEATH, LocalDate.now().minusDays(1),
             new DeathClaimDetails("Natural causes", "Dar es Salaam", LocalDate.now().minusDays(1), "Dr. Test"));
         UUID claimId = claimsApi.registerClaim(request, regKey, "claims-staff").claimId();
-        claimsApi.submitAssessment(claimId, "Consistent with cause of death", new BigDecimal("2000000"), CURRENCY, false, assessor);
+        claimsApi.submitAssessment(claimId, "Consistent with cause of death", new BigDecimal("2000000"), CURRENCY, false, assessor, null);
         return claimId;
     }
 

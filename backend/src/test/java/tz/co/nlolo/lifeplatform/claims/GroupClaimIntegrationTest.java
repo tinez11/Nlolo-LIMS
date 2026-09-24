@@ -133,7 +133,8 @@ class GroupClaimIntegrationTest {
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
-            "db-migrations/claims/V6__exclusion_decline.sql");
+            "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -382,7 +383,7 @@ class GroupClaimIntegrationTest {
             deathRequest(scheme.policyNumber(), scheme.memberIdNamed(memberName)),
             "idem-" + UUID.randomUUID(), "clerk");
         claimsApi.submitAssessment(claim.claimId(), "Findings", new BigDecimal("5000000.00"),
-            "TZS", false, "assessor");
+            "TZS", false, "assessor", null);
         return claim.claimId();
     }
 
@@ -392,7 +393,7 @@ class GroupClaimIntegrationTest {
         ClaimView claim = claimsApi.registerClaim(
             deathRequest(policyNumber, null), "idem-" + UUID.randomUUID(), "clerk");
         claimsApi.submitAssessment(claim.claimId(), "Findings", new BigDecimal("2000000"),
-            "TZS", false, "assessor");
+            "TZS", false, "assessor", null);
         return claim.claimId();
     }
 

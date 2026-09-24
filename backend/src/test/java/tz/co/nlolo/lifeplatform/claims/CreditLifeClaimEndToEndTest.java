@@ -118,6 +118,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
             // The settlement rail. A credit-life payout takes the EFT rail, which calls no
             // gateway at all -- so proving the whole chain here needs the payment schema and
             // nothing else: no WireMock, no aggregator, no stub. That is the rail being what
@@ -413,7 +414,7 @@ class CreditLifeClaimEndToEndTest {
             bigScheme, member, bankPartyId, ClaimType.DEATH, DISBURSED,
             new DeathClaimDetails("Natural causes", "Dar es Salaam", DISBURSED, "Dr Mwakalinga")),
             idem(), "claims.clerk");
-        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one");
+        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one", null);
         claimsApi.decideSettlement(claim.claimId(), true, FCL, "TZS", null,
             "LENDER-ACCT", idem(), "claims.manager");
 
@@ -467,7 +468,7 @@ class CreditLifeClaimEndToEndTest {
             scheme, borrowerMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
             new DeathClaimDetails("Under investigation", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
             idem(), "claims.clerk");
-        claimsApi.submitAssessment(claim.claimId(), "investigating", null, null, false, "assessor.one");
+        claimsApi.submitAssessment(claim.claimId(), "investigating", null, null, false, "assessor.one", null);
         return claim.claimId();
     }
 
@@ -491,7 +492,7 @@ class CreditLifeClaimEndToEndTest {
             policyNumber, policyMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
             new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
             idem(), "claims.clerk");
-        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one");
+        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one", null);
         return claim.claimId();
     }
 

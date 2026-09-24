@@ -301,7 +301,8 @@ public class ClaimsApiImpl implements ClaimsApi {
     @Override
     @Transactional
     public ClaimAssessmentView submitAssessment(UUID claimId, String findings, BigDecimal recommendedAmount,
-                                                 String recommendedCurrency, boolean fraudIndicator, String assessedBy) {
+                                                 String recommendedCurrency, boolean fraudIndicator, String assessedBy,
+                                                 String assessorName) {
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
 
@@ -326,7 +327,7 @@ public class ClaimsApiImpl implements ClaimsApi {
         // (second/third assessor on the same claim), throws from any other status.
         claim.beginAssessment();
 
-        ClaimAssessment assessment = new ClaimAssessment(tenantId, claimId, assessedBy, findings,
+        ClaimAssessment assessment = new ClaimAssessment(tenantId, claimId, assessedBy, assessorName, findings,
             recommendedAmount, recommendedCurrency, fraudIndicator);
         claimAssessmentRepository.save(assessment);
 
@@ -681,7 +682,8 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     private ClaimAssessmentView toAssessmentView(ClaimAssessment assessment) {
         return new ClaimAssessmentView(assessment.getClaimAssessmentId(), assessment.getClaimId(),
-            assessment.getAssessor(), assessment.getFindings(), assessment.getRecommendedAmount(),
+            assessment.getAssessor(), assessment.getAssessorName(), assessment.getFindings(),
+            assessment.getRecommendedAmount(),
             assessment.getRecommendedCurrency(), assessment.isFraudIndicator(), assessment.getCreatedAt());
     }
 
