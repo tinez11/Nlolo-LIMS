@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.time.LocalDate;
 
 /**
  * Bulk exits: read a lender's file, judge every row, and take nobody off cover until a second
@@ -294,6 +295,24 @@ public class ExitApiImpl implements ExitApi {
     @Transactional(readOnly = true)
     public String renderReport(UUID submissionId) {
         return ExitReportRenderer.toCsv(listRows(submissionId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String renderTemplate(String policyNumber) {
+        /*
+         * An example reference the sequence can NEVER have minted: member references run from
+         * 000001, so 000000 names nobody on any scheme, ever.
+         *
+         * That is the whole safety argument, and it is why this template differs from the
+         * enrolment one. There a REAL borrower can be shown, because returning the row unchanged
+         * duplicates a covered loan and is refused. Here a real reference with a real date would
+         * take a living borrower off cover, refund their premium and claw back the commission --
+         * and every one of those is a correct-looking consequence of a row nobody meant to send.
+         */
+        String example = "CL-" + policyNumber.replace("GRP-", "") + "-000000";
+        return ExitCsvParser.templateCsv()
+            + String.join(",", example, LocalDate.now().toString(), "SETTLED_EARLY", "") + "\n";
     }
 
     private ExitSubmission findSubmission(UUID submissionId, UUID tenantId) {

@@ -67,4 +67,26 @@ public interface EnrolmentApi {
 
     /** The report that goes back to the lender, as CSV. */
     String renderReport(UUID submissionId);
+
+    /**
+     * The blank schedule this scheme's lender fills in, with one of their OWN borrowers already
+     * in it as a worked example.
+     *
+     * <p><b>Scoped to a scheme rather than to the product, and the example is the point.</b> The
+     * columns are the same for every lender, so a product-wide blank looked like the right shape
+     * — but a header row plus a page of prose is not how anybody learns a file format. The
+     * borrower a person typed into the set-up form, echoed back in the file they are about to
+     * send, answers the questions the prose was trying to: what a date looks like, where the
+     * amount goes, what a member reference the insurer minted actually reads like.
+     *
+     * <p><b>The example row is safe to return unchanged.</b> It names a loan already on cover, and
+     * the judge refuses a row whose borrower, date of birth, disbursement date and principal match
+     * an existing member — unconditionally, without consulting the reference. So a lender who
+     * sends the template back as-is gets ALREADY_ENROLLED on that line and nobody is insured
+     * twice. That is why a REAL borrower can be used here where an invented one could not.
+     *
+     * <p>Header only when the scheme has no members yet, which is a state the set-up form cannot
+     * produce.
+     */
+    String renderTemplate(String policyNumber);
 }

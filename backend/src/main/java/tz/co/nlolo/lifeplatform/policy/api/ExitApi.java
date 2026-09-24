@@ -61,4 +61,19 @@ public interface ExitApi {
 
     /** The report that goes back to the lender, as CSV. */
     String renderReport(UUID submissionId);
+
+    /**
+     * The blank exits file this scheme's lender fills in, with an example row.
+     *
+     * <p><b>The example quotes a reference that cannot exist</b> — the scheme's own prefix with
+     * sequence zero, where the sequence starts at one — and that asymmetry with the enrolment
+     * template is deliberate rather than an inconsistency. An enrolment example defends itself:
+     * returned unchanged it duplicates an existing loan and is refused. An exits example does
+     * not. A real reference with a real date, returned unchanged, would take a living borrower
+     * off cover, and nothing downstream would question it.
+     *
+     * <p>So the shape is shown and the member is not: the lender sees exactly what a reference
+     * looks like, and the row is refused as naming no member on this scheme.
+     */
+    String renderTemplate(String policyNumber);
 }

@@ -14,7 +14,6 @@ import tz.co.nlolo.lifeplatform.policy.api.EnrolmentApi;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentRowView;
 import tz.co.nlolo.lifeplatform.policy.api.EnrolmentSubmissionView;
 import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
-import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentCsvParser;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -142,25 +141,28 @@ public class EnrolmentController {
     }
 
     /**
-     * The blank file a lender fills in.
+     * The file this scheme's lender fills in, with one of their own borrowers already in it.
      *
      * <p><b>Three separate refusal messages already told people to "use the template at
      * credit-life-enrolment-sample.csv", and nothing served it.</b> That file lives in the
-     * repository's spec folder, where no staff user and certainly no lender can reach it — so
-     * the platform's own error messages named a document that existed only for us.
+     * repository's spec folder, where no staff user and certainly no lender can reach it — so the
+     * platform's own error messages named a document that existed only for us.
      *
-     * <p>Not scoped to a scheme, because the format is a property of the product rather than of
-     * one lender's book: the same nine columns go to every lender, and a per-scheme path would
-     * suggest otherwise. The header comes from {@code EnrolmentCsvParser} itself, so the template
-     * and the parser that judges it cannot disagree.
+     * <p><b>Scoped to the SCHEME, and it was product-scoped for one commit.</b> The columns are
+     * identical for every lender, which made a product-wide blank look like the right shape. It
+     * is not, for two reasons that only show up in use. A header row plus a page of prose is not
+     * how anybody learns a file format — the borrower somebody typed into the set-up form, echoed
+     * back in the file they are about to send, answers what the prose was trying to. And when the
+     * lender's own portal lands, "the template" has to mean *their* scheme's; a product-scoped
+     * path could not be served to a bank without first deciding which product they meant.
      */
-    @GetMapping(value = "/credit-life-schemes/templates/enrolment", produces = "text/csv")
+    @GetMapping(value = "/credit-life-schemes/{policyNumber}/template", produces = "text/csv")
     @PreAuthorize("hasRole('REALM_STAFF')")
-    public ResponseEntity<String> enrolmentTemplate() {
+    public ResponseEntity<String> enrolmentTemplate(@PathVariable String policyNumber) {
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION,
-                "attachment; filename=\"credit-life-enrolment-template.csv\"")
+                "attachment; filename=\"enrolment-template-" + policyNumber + ".csv\"")
             .contentType(MediaType.valueOf("text/csv"))
-            .body(EnrolmentCsvParser.templateCsv());
+            .body(enrolmentApi.renderTemplate(policyNumber));
     }
 }

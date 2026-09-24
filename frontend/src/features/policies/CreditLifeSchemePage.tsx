@@ -2,14 +2,14 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
-  ENROLMENT_TEMPLATE_FILE_NAME,
-  EXITS_TEMPLATE_FILE_NAME,
   downloadEnrolmentReport,
   downloadEnrolmentTemplate,
   downloadExitsReport,
   downloadExitsTemplate,
   enrolmentReportFileName,
+  enrolmentTemplateFileName,
   exitsReportFileName,
+  exitsTemplateFileName,
 } from '@/api/creditLife';
 import type { EnrolmentRowView, ExitRowView } from '@/api/types';
 import { DetailLayout } from '@/components/DetailLayout';
@@ -271,7 +271,10 @@ export function CreditLifeSchemePage() {
             saveBlob(await downloadEnrolmentReport(policyNumber, id), enrolmentReportFileName(id))
           }
           onDownloadTemplate={async () =>
-            saveBlob(await downloadEnrolmentTemplate(), ENROLMENT_TEMPLATE_FILE_NAME)
+            saveBlob(
+              await downloadEnrolmentTemplate(policyNumber),
+              enrolmentTemplateFileName(policyNumber),
+            )
           }
           columnGuide={<EnrolmentColumns />}
         >
@@ -307,7 +310,7 @@ export function CreditLifeSchemePage() {
             saveBlob(await downloadExitsReport(policyNumber, id), exitsReportFileName(id))
           }
           onDownloadTemplate={async () =>
-            saveBlob(await downloadExitsTemplate(), EXITS_TEMPLATE_FILE_NAME)
+            saveBlob(await downloadExitsTemplate(policyNumber), exitsTemplateFileName(policyNumber))
           }
           columnGuide={<ExitColumns />}
         >
@@ -333,6 +336,16 @@ export function CreditLifeSchemePage() {
 function EnrolmentColumns() {
   return (
     <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
+      {/* Said first, because it changes what the download IS. Somebody who has just set the
+          scheme up typed a borrower into that form; the template hands it straight back to them
+          as a filled row, which answers "what does a date look like, where does the amount go"
+          far better than this table does. */}
+      <p className="sm:col-span-2 mb-1 text-[11px] text-muted-foreground">
+        The template already contains this scheme&rsquo;s opening borrower as a worked example, so
+        the lender can see a real row before filling their own. Leaving it in is harmless — that
+        loan is already on cover, so the row comes back refused as already enrolled rather than
+        insuring anybody twice.
+      </p>
       <Column name="member_reference" required={false}>
         Blank for a new borrower — the insurer mints it and returns it on the report. The lender
         quotes it back on any later file about that same loan.
@@ -379,6 +392,13 @@ function EnrolmentColumns() {
 function ExitColumns() {
   return (
     <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
+      {/* The opposite decision to the enrolment template's, and the reason is in the copy: an
+          exits row that names a real member really would take them off cover. */}
+      <p className="sm:col-span-2 mb-1 text-[11px] text-muted-foreground">
+        The template&rsquo;s example row quotes a reference ending 000000, which belongs to nobody
+        — references start at 000001. Returning it unchanged is refused rather than taking a
+        borrower off cover, which is why this example names no real member.
+      </p>
       <Column name="member_reference" required>
         {/* Required here and optional on an enrolment file, and the asymmetry is the point. */}
         The reference the insurer minted, from the enrolment report. An exits file is about a loan

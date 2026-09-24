@@ -36,6 +36,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
 
 /**
  * Bulk enrolment: read a lender's file, judge every row, and enrol nobody until a second
@@ -281,6 +285,63 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     @Transactional(readOnly = true)
     public String renderReport(UUID submissionId) {
         return EnrolmentReportRenderer.toCsv(listRows(submissionId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String renderTemplate(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        // The EARLIEST member, which on a scheme set up through the console is the opening
+        // borrower somebody typed into the form. Echoing their own entry back is the whole point:
+        // the file they are about to send is the file they already filled in once.
+        //
+        // The sort must be TOTAL -- a bulk upload gives every row the same joinedOn, and this
+        // asks for exactly one row out of a paged query.
+        Pageable earliest = PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "joinedOn")
+            .and(Sort.by(Sort.Direction.ASC, "policyMemberId")));
+        List<PolicyMember> members = policyMemberRepository
+            .findByTenantIdAndPolicyNumberAndStatus(tenantId, policyNumber, "ACTIVE", earliest)
+            .getContent();
+
+        StringBuilder csv = new StringBuilder(EnrolmentCsvParser.templateCsv());
+        for (PolicyMember member : members) {
+            LoanTerms terms = member.getLoanTerms();
+            if (terms == null || member.getMemberName() == null
+                    || member.getMemberDateOfBirth() == null) {
+                // A PARTY member on a mixed scheme has no freeform name and no loan. Nothing to
+                // show, and a half-filled example row would teach the wrong shape.
+                continue;
+            }
+            csv.append(String.join(",",
+                    csvValue(member.getMemberReference()),
+                    csvValue(member.getMemberName()),
+                    member.getMemberDateOfBirth().toString(),
+                    "", "", "",
+                    terms.principalAmount().toPlainString(),
+                    String.valueOf(terms.termMonths()),
+                    terms.disbursementDate().toString(),
+                    csvValue(member.getLoanAccountNumber())))
+                .append('\n');
+        }
+        return csv.toString();
+    }
+
+    /**
+     * A value safe to sit in a CSV cell.
+     *
+     * <p>A borrower's name is the one field here a lender wrote, and real exports carry commas in
+     * them -- "Mwinyi, Amina H." is an ordinary way for a bank to hold a name. Emitting it raw
+     * would shift every column after it and hand back a template the parser that generated it
+     * cannot read.
+     */
+    private static String csvValue(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        if (raw.contains(",") || raw.contains("\"") || raw.contains("\n")) {
+            return '"' + raw.replace("\"", "\"\"") + '"';
+        }
+        return raw;
     }
 
     /**

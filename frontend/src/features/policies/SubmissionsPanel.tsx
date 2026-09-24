@@ -190,7 +190,7 @@ export function SubmissionsPanel({
           <Download className="mr-1 inline size-3.5" aria-hidden />
           {downloading === TEMPLATE
             ? 'Preparing the template…'
-            : `Blank ${kind === 'exits' ? 'exits file' : 'schedule'} to send the lender`}
+            : `${kind === 'exits' ? 'Exits file' : 'Schedule'} template to send the lender`}
         </button>
         <button
           type="button"

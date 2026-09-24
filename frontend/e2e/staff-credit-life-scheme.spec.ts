@@ -105,24 +105,7 @@ test.describe('staff credit-life scheme', () => {
     // member_reference leads, because it is the only place the lender ever learns them.
     expect(reportText.split('\n')[0]).toContain('member_reference');
 
-    /*
-     * THE BLANK FILE THE LENDER FILLS IN. The platform refused malformed files with "use the
-     * template at credit-life-enrolment-sample.csv" while serving no such thing -- that file
-     * exists only in the repository, so the format reached a lender by description. Asserted as
-     * bytes for the same reason the report is: a visible link proves nothing about what downloads.
-     */
-    const templateDownload = page.waitForEvent('download');
-    await page.getByRole('button', { name: /Blank schedule to send the lender/ }).click();
-    const template = await templateDownload;
-    expect(template.suggestedFilename()).toBe('credit-life-enrolment-template.csv');
-    const templateText = readFileSync(await template.path(), 'utf8');
-    // The header the parser itself generates, and nothing else: an example row would come back
-    // with the example still in it, enrolling a borrower who does not exist.
-    expect(templateText.trim().split('\n')).toHaveLength(1);
-    expect(templateText).toContain('borrower_full_name');
-    expect(templateText).toContain('disbursement_date');
-
-    // And the columns are explained where somebody can read them out to a lender.
+    // The columns are explained where somebody can read them out to a lender.
     await page.getByRole('button', { name: 'What goes in it' }).first().click();
     await expect(page.getByText(/cover starts on it/).first()).toBeVisible();
 
@@ -267,6 +250,36 @@ test.describe('staff credit-life scheme', () => {
       .locator('dd')
       .first();
     await expect(livesOnCover).toHaveText('1');
+
+    /*
+     * AND THE TEMPLATE COMES BACK WITH THAT BORROWER IN IT.
+     *
+     * This is the reconciliation the whole scheme-scoped template exists for. Somebody has just
+     * typed one borrower into the set-up form; the file they are about to send the lender hands
+     * that same borrower back as a filled row, so "what does a date look like, where does the
+     * amount go, what is a member reference" is answered by their own entry rather than by a
+     * paragraph beside the download.
+     *
+     * The reference is the interesting half: the lender has never seen one, the insurer minted it
+     * at issuance, and this is the first place it is ever shown to them.
+     */
+    const templateDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: /Schedule template to send the lender/ }).click();
+    const template = await templateDownload;
+    expect(template.suggestedFilename()).toMatch(/^enrolment-template-GRP-[A-Z0-9]+\.csv$/);
+    const templateText = readFileSync(await template.path(), 'utf8');
+    const [header, example] = templateText.trim().split('\n');
+
+    expect(header).toContain('borrower_full_name');
+    expect(header).toContain('disbursement_date');
+    expect(example, 'the opening borrower is the worked example').toContain('Amina Hassan Mwinyi');
+    expect(example).toContain('2400000.00');
+    expect(example).toContain('2026-08-03');
+    expect(example).toMatch(/^CL-[A-Z0-9]+-\d{6},/);
+
+    // Exactly one example. A template that dumped the whole book would be a data export, and on a
+    // scheme of several hundred it would bury the thing it is teaching.
+    expect(templateText.trim().split('\n')).toHaveLength(2);
   });
 
   test('an exits file must be a CSV, and is refused before the network', async ({ page }) => {
