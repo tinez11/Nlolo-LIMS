@@ -115,6 +115,9 @@ test.describe('staff credit-life scheme', () => {
     // The columns are explained where somebody can read them out to a lender.
     await page.getByRole('button', { name: 'What goes in it' }).first().click();
     await expect(page.getByText(/cover starts on it/).first()).toBeVisible();
+    // This scheme HAS a borrower, so the guide promises the example that really is in the file.
+    // Its mirror — a scheme with nobody on it — is asserted in the set-up test below.
+    await expect(page.getByText(/carries one of this scheme/)).toBeVisible();
 
     /*
      * NO EMPLOYER-SCHEME FURNITURE. A credit-life scheme has no grades and no salary multiple:
@@ -319,6 +322,15 @@ test.describe('staff credit-life scheme', () => {
      * the first file has been accepted, which is asserted on the seeded scheme above.
      */
     expect(templateText.trim().split('\n')).toHaveLength(1);
+
+    /*
+     * AND THE GUIDE SAYS SO. It promised a worked example unconditionally, which was true while
+     * every scheme was forced to open with a typed borrower and became a lie the day they
+     * stopped -- sending somebody to look for a row that is not in the file.
+     */
+    await page.getByRole('button', { name: 'What goes in it' }).first().click();
+    await expect(page.getByText(/the column headings alone/)).toBeVisible();
+    await expect(page.getByText(/carries one of this scheme/)).toHaveCount(0);
   });
 
   test('an exits file must be a CSV, and is refused before the network', async ({ page }) => {

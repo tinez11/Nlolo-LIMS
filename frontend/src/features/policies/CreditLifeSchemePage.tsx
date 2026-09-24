@@ -313,7 +313,10 @@ export function CreditLifeSchemePage() {
               enrolmentTemplateFileName(policyNumber),
             )
           }
-          columnGuide={<EnrolmentColumns />}
+          // Whether the template actually HAS a worked example, which depends on whether this
+          // scheme has anybody on it yet. A new scheme has nobody, and the guide must not promise
+          // a row that is not in the file.
+          columnGuide={<EnrolmentColumns hasExample={(data?.activeMemberCount ?? 0) > 0} />}
         >
           <EnrolmentRows
             rows={enrolmentRows.data ?? []}
@@ -370,18 +373,32 @@ export function CreditLifeSchemePage() {
  * applied server-side and comes back as a reason on that row; duplicating them here would create
  * a second statement of the rules that goes stale.
  */
-function EnrolmentColumns() {
+function EnrolmentColumns({ hasExample }: { hasExample: boolean }) {
   return (
     <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
-      {/* Said first, because it changes what the download IS. Somebody who has just set the
-          scheme up typed a borrower into that form; the template hands it straight back to them
-          as a filled row, which answers "what does a date look like, where does the amount go"
-          far better than this table does. */}
+      {/* Said first, because it changes what the download IS -- and it has to match what is
+          actually in the file.
+
+          This claimed a worked example unconditionally, which was true while every scheme was
+          forced to open with a typed borrower and became a lie the day they stopped. A scheme set
+          up today has nobody on it, so its template is the header alone, and a person told to look
+          for an example row would go looking for something that is not there. The example is one
+          of the LENDER'S OWN borrowers; there is none until the first file is accepted. */}
       <p className="sm:col-span-2 mb-1 text-[11px] text-muted-foreground">
-        The template already contains this scheme&rsquo;s opening borrower as a worked example, so
-        the lender can see a real row before filling their own. Leaving it in is harmless — that
-        loan is already on cover, so the row comes back refused as already enrolled rather than
-        insuring anybody twice.
+        {hasExample ? (
+          <>
+            The template carries one of this scheme&rsquo;s own borrowers as a worked example, so
+            the lender can see a real row before filling their own. Leaving it in is harmless —
+            that loan is already on cover, so the row comes back refused as already enrolled rather
+            than insuring anybody twice.
+          </>
+        ) : (
+          <>
+            The template is the column headings alone. Nobody is on this scheme yet, and the worked
+            example is one of the lender&rsquo;s own borrowers — so it appears once their first
+            file has been accepted.
+          </>
+        )}
       </p>
       {/* The single most useful sentence on this page. Two real files were refused entire because
           of it, and the second was sent AFTER being told the format -- because the advice was to
