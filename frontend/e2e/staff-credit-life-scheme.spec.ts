@@ -214,7 +214,7 @@ test.describe('staff credit-life scheme', () => {
 
     await page.getByLabel('Premium rate (% of each loan)').fill('0.5');
     await page.getByLabel('Free cover limit (optional)').fill('600000000.00');
-    await page.getByLabel('Premium on the opening loan').fill('52000.00');
+    await page.getByLabel('Premium recorded on the contract').fill('52000.00');
     // Before the opening borrower's loan. A book being onboarded always has loans older than
     // today, and a member cannot join a scheme that did not exist yet -- the form asks for this
     // rather than letting the server refuse the whole submission over a date it never showed.
@@ -226,12 +226,15 @@ test.describe('staff credit-life scheme', () => {
     // one rather than trusting the sentence.
     await expect(page.getByLabel('Why this scheme is in force')).toHaveValue('MIGRATION');
 
-    await page.getByLabel("Borrower's full name").fill('Amina Hassan Mwinyi');
-    await page.getByLabel('Date of birth').fill(dmy('1988-03-14'));
-    await page.getByLabel('Amount borrowed').fill('2400000.00');
-    await page.getByLabel('Term (months)').fill('18');
-    await page.getByLabel('Disbursed on').fill(dmy('2026-08-03'));
-    await page.getByLabel('First repayment due').fill(dmy('2026-09-03'));
+    /*
+     * NO BORROWER IS TYPED, and its absence is the assertion. The form used to demand one
+     * because the service demanded a non-empty schedule -- a rule written for employer schemes,
+     * where the schedule IS the contract. Here it made somebody type a life they then met again
+     * on the member roll without recognising them, which is how "the roll has three names and I
+     * uploaded two" happens.
+     */
+    await expect(page.getByLabel("Borrower's full name")).toHaveCount(0);
+    await expect(page.getByLabel('Amount borrowed')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Set up the scheme' }).click();
 
@@ -256,7 +259,10 @@ test.describe('staff credit-life scheme', () => {
       .last()
       .locator('dd')
       .first();
-    await expect(livesOnCover).toHaveText('1');
+    // NOBODY is on cover: the agreement exists, the book has not arrived. It used to read 1,
+    // because the form made somebody type a borrower -- a life they then met again on the
+    // member roll without recognising them.
+    await expect(livesOnCover).toHaveText('0');
 
     /*
      * AND THE TEMPLATE COMES BACK WITH THAT BORROWER IN IT.
@@ -290,18 +296,18 @@ test.describe('staff credit-life scheme', () => {
     const template = await templateDownload;
     expect(template.suggestedFilename()).toMatch(/^enrolment-template-GRP-[A-Z0-9]+\.csv$/);
     const templateText = readFileSync(await template.path(), 'utf8');
-    const [header, example] = templateText.trim().split('\n');
-
+    const [header] = templateText.trim().split('\n');
     expect(header).toContain('borrower_full_name');
     expect(header).toContain('disbursement_date');
-    expect(example, 'the opening borrower is the worked example').toContain('Amina Hassan Mwinyi');
-    expect(example).toContain('2400000.00');
-    expect(example).toContain('2026-08-03');
-    expect(example).toMatch(/^CL-[A-Z0-9]+-\d{6},/);
 
-    // Exactly one example. A template that dumped the whole book would be a data export, and on a
-    // scheme of several hundred it would bury the thing it is teaching.
-    expect(templateText.trim().split('\n')).toHaveLength(2);
+    /*
+     * THE HEADER ALONE, on a scheme with nobody on it yet. The worked example is one of the
+     * lender's OWN borrowers, so a brand-new scheme has none to show -- and that is honest rather
+     * than a gap: the format still survives Excel, because the file this button gives is a
+     * spreadsheet whose dates are typed cells. The example appears from the second month, once
+     * the first file has been accepted, which is asserted on the seeded scheme above.
+     */
+    expect(templateText.trim().split('\n')).toHaveLength(1);
   });
 
   test('an exits file must be a CSV, and is refused before the network', async ({ page }) => {

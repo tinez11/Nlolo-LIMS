@@ -64,15 +64,6 @@ export interface CreditLifeSchemeIssueFormValues {
   commencementDate: string;
   issuanceBasis: (typeof IN_FORCE_ISSUANCE_BASES)[number] | '';
   reasonForManualIssue: string;
-  /** The one borrower the scheme is opened with. See `openingBorrowerSchema`. */
-  borrowerName: string;
-  borrowerDateOfBirth: string;
-  loanAccountNumber: string;
-  principalAmount: string;
-  annualInterestRatePercent: string;
-  termMonths: string;
-  disbursementDate: string;
-  firstRepaymentDate: string;
 }
 
 export function blankCreditLifeSchemeIssueForm(): CreditLifeSchemeIssueFormValues {
@@ -90,14 +81,6 @@ export function blankCreditLifeSchemeIssueForm(): CreditLifeSchemeIssueFormValue
     commencementDate: '',
     issuanceBasis: 'MIGRATION',
     reasonForManualIssue: '',
-    borrowerName: '',
-    borrowerDateOfBirth: '',
-    loanAccountNumber: '',
-    principalAmount: '',
-    annualInterestRatePercent: '0',
-    termMonths: '',
-    disbursementDate: '',
-    firstRepaymentDate: '',
   };
 }
 
@@ -148,82 +131,19 @@ export function creditLifeSchemeIssueFormSchema(today: string = todayIso()) {
       commencementDate: z
         .string()
         .trim()
-        .min(1, 'When this scheme starts — on or before the oldest loan on it')
+        .min(1, 'When this scheme starts — on or before the oldest loan the lender will send')
         .refine((v) => ISO_DATE_PATTERN.test(v), 'Not a valid date'),
       issuanceBasis: z.union([z.enum(IN_FORCE_ISSUANCE_BASES), z.literal('')]),
       reasonForManualIssue: z.string().trim(),
-      borrowerName: z.string().trim().min(1, 'The scheme opens with one borrower on it'),
-      borrowerDateOfBirth: z
-        .string()
-        .trim()
-        .min(1, 'A date of birth — the product has entry-age bounds and refuses without one')
-        .refine((v) => ISO_DATE_PATTERN.test(v), 'Not a valid date'),
-      loanAccountNumber: z.string().trim(),
-      principalAmount: z
-        .string()
-        .trim()
-        .regex(AMOUNT_PATTERN, 'Must be an amount like 2400000.00')
-        .refine((v) => Number(v) >= 0.01, 'Must be at least 0.01'),
-      annualInterestRatePercent: z
-        .string()
-        .trim()
-        .min(1, 'Zero is a real answer on a flat-rate loan; blank is not')
-        .refine((v) => /^\d+(\.\d{1,4})?$/.test(v), 'Must be a percent like 0 or 18.5'),
-      termMonths: z
-        .string()
-        .trim()
-        .refine((v) => /^\d+$/.test(v), 'Must be a whole number of months')
-        .refine((v) => Number(v) >= 1, 'Must be at least 1 month'),
-      disbursementDate: z
-        .string()
-        .trim()
-        .min(1, 'When the lender paid the money out')
-        .refine((v) => ISO_DATE_PATTERN.test(v), 'Not a valid date'),
-      firstRepaymentDate: z
-        .string()
-        .trim()
-        .min(1, 'When the first instalment falls due')
-        .refine((v) => ISO_DATE_PATTERN.test(v), 'Not a valid date'),
     })
     .superRefine((values, ctx) => {
       const issue = (path: (string | number)[], message: string) =>
         ctx.addIssue({ code: 'custom', path, message });
 
-      // Mirrors a real 409 on the scheme, and the same rule the enrolment pipeline applies per
-      // row: cover cannot commence before the loan exists.
-      if (values.disbursementDate !== '' && values.disbursementDate > today) {
-        issue(['disbursementDate'], 'A loan cannot be disbursed in the future — cover would start before it exists');
-      }
-      if (
-        values.firstRepaymentDate !== '' &&
-        values.disbursementDate !== '' &&
-        values.firstRepaymentDate <= values.disbursementDate
-      ) {
-        issue(['firstRepaymentDate'], 'The first repayment falls due after the money goes out, not before');
-      }
-      if (values.borrowerDateOfBirth !== '' && values.borrowerDateOfBirth >= today) {
-        issue(['borrowerDateOfBirth'], 'Not a date of birth');
-      }
       // Backdating a scheme is normal; forward-dating is refused, because its total would not
       // match its members until then.
       if (values.commencementDate !== '' && values.commencementDate > today) {
         issue(['commencementDate'], 'A scheme cannot commence in the future yet');
-      }
-      /*
-       * Nobody can join a scheme that did not exist yet, and a credit-life member joins on the
-       * day their loan was disbursed. Caught here rather than as a 409 naming a date the form
-       * never showed anybody -- and it is the normal case, not an edge one: onboarding an
-       * existing book means every loan on it predates today.
-       */
-      if (
-        values.commencementDate !== '' &&
-        values.disbursementDate !== '' &&
-        values.commencementDate > values.disbursementDate
-      ) {
-        issue(
-          ['commencementDate'],
-          'The opening borrower was lent to before this date, and nobody can join a scheme that did not exist yet',
-        );
       }
     });
 }
@@ -249,24 +169,18 @@ export function toIssueRequest(values: CreditLifeSchemeIssueFormValues): IssueGr
     interestMethod: values.interestMethod,
     repaymentFrequency: values.repaymentFrequency,
     premiumRatePercent: Number(values.premiumRatePercent),
-    openingSchedule: [
-      {
-        memberType: 'FREEFORM',
-        memberName: values.borrowerName.trim(),
-        memberDateOfBirth: values.borrowerDateOfBirth,
-        ...(values.loanAccountNumber.trim()
-          ? { loanAccountNumber: values.loanAccountNumber.trim() }
-          : {}),
-        loanTerms: {
-          principalAmount: values.principalAmount.trim(),
-          annualInterestRatePercent: Number(values.annualInterestRatePercent),
-          termMonths: Number(values.termMonths),
-          repaymentFrequency: values.repaymentFrequency,
-          disbursementDate: values.disbursementDate,
-          firstRepaymentDate: values.firstRepaymentDate,
-        },
-      },
-    ],
+    /*
+     * NO OPENING SCHEDULE, and the empty array is deliberate rather than an omission.
+     *
+     * A credit-life scheme is an agreement with a lender -- the rate, the free cover limit, the
+     * interest method -- and it exists before any borrower does. The book arrives monthly by file
+     * and never stops arriving, so requiring one borrower at set-up made somebody type a life
+     * they then met again on the member roll without recognising them.
+     *
+     * The service permits an empty schedule on AMORTISING_LOAN and only there; an employer
+     * scheme's schedule IS its contract and still cannot be empty.
+     */
+    openingSchedule: [],
     premium: {
       amount: values.premiumAmount.trim(),
       currencyCode: values.premiumCurrency.trim().toUpperCase(),

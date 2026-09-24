@@ -571,6 +571,45 @@ class EnrolmentIntegrationTest {
             IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY,
             new BigDecimal("0.5000")), "staff-setup").policyNumber();
     }
+    /** A credit-life scheme issued with NO borrowers -- the shape a lender relationship starts in. */
+    private String issueEmptyCreditLifeScheme() {
+        return issueEmptyScheme(ProductCategory.CREDIT_LIFE, BenefitBasis.AMORTISING_LOAN);
+    }
+
+    /** The same, on an employer basis, which the service must still refuse. */
+    private String issueEmptyEmployerScheme() {
+        return issueEmptyScheme(ProductCategory.GROUP_LIFE, BenefitBasis.FLAT);
+    }
+
+    private String issueEmptyScheme(ProductCategory category, BenefitBasis basis) {
+        String code = "CL-" + SEQ.incrementAndGet();
+        ProductSummaryView product = productApi.createProduct(code, "Credit life " + code,
+            category, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, ANY_FILING, "actuary");
+        ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+        boolean loan = basis == BenefitBasis.AMORTISING_LOAN;
+
+        return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            person("Lender " + code), product.productId(), snapshot.productVersionId(), null,
+            basis, loan ? null : new BigDecimal("1000000.00"), null,
+            new BigDecimal("25000000.00"), "TZS", null,
+            // The empty schedule this whole nested class is about.
+            List.of(),
+            // A premium is still required: chk_premium_amount_positive forbids zero on the master
+            // policy. On a credit-life scheme it is never billed -- billing returns early on
+            // SINGLE and the real premium arrives file by file -- so this is a recorded figure
+            // rather than a charge, which is what the console's label now says.
+            new BigDecimal("52000.00"), "TZS", loan ? "SINGLE" : "ANNUALLY",
+            LocalDate.of(2026, 6, 1), null, "onboarding", IssuanceBasis.MIGRATION,
+            loan ? InterestMethod.FLAT_RATE : null,
+            loan ? RepaymentFrequency.MONTHLY : null,
+            loan ? new BigDecimal("0.5000") : null), "staff-setup").policyNumber();
+    }
+
     private PolicyMemberView onlyMemberOf(String policyNumber) {
         return policyApi.listMembers(policyNumber, null, null, PageRequest.of(0, 10))
             .getContent().get(0);
@@ -590,6 +629,43 @@ class EnrolmentIntegrationTest {
      * part-uninsured from a date nobody told them about, so it is refused WHOLE rather than
      * applied to the members it happens not to touch.
      */
+    /**
+     * Opening a scheme with no borrowers on it.
+     *
+     * <p>An employer scheme cannot: its schedule IS the contract. A credit-life scheme is an
+     * agreement with a lender that exists before any borrower, and the book arrives by file --
+     * so requiring one at set-up made somebody type a life they then met again on the member
+     * roll without recognising them.
+     */
+    @Nested
+    class OpeningASchemeWithNobodyOnIt {
+
+        @Test
+        void aCreditLifeSchemeMayOpenEmptyAndTheFirstFileFillsIt() {
+            String policyNumber = issueEmptyCreditLifeScheme();
+
+            GroupSchemeView scheme = policyApi.getGroupScheme(policyNumber);
+            assertThat(scheme.activeMemberCount()).isZero();
+            // Zero, not null and not a refusal: chk_policy_sum_assured_non_negative permits it
+            // and totalCovered coalesces for a scheme with no members.
+            assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo("0");
+
+            // And it takes a file like any other scheme, which is the whole point.
+            EnrolmentSubmissionView submitted = enrolmentApi.submit(policyNumber,
+                csv(ONE_GOOD_ROW), "january.csv", "staff-one");
+            enrolmentApi.accept(submitted.submissionId(), "staff-two");
+
+            assertThat(policyApi.getGroupScheme(policyNumber).activeMemberCount()).isEqualTo(1);
+        }
+
+        @Test
+        void anEmployerSchemeStillCannotOpenEmpty() {
+            // Unchanged, and asserted so the credit-life exception cannot quietly become global.
+            assertThatThrownBy(() -> issueEmptyEmployerScheme())
+                .isInstanceOf(InvalidPolicyStateException.class)
+                .hasMessageContaining("at least one member");
+        }
+    }
     @Nested
     class MovingTheFreeCoverLimit {
 

@@ -1370,7 +1370,25 @@ public class PolicyApiImpl implements PolicyApi {
         }
 
         List<MemberInput> schedule = request.openingSchedule() != null ? request.openingSchedule() : List.of();
-        if (schedule.isEmpty()) {
+        /*
+         * AN EMPLOYER SCHEME CANNOT BE EMPTY; A LENDER'S BOOK CAN.
+         *
+         * The rule was global and it was written for the employer case, where it is right: the
+         * schedule of employees IS the contract, agreed and signed as a whole, and a scheme
+         * insuring nobody for nothing is not a policy.
+         *
+         * Credit life is the opposite shape. The contract is an agreement with a lender -- the
+         * rate, the free cover limit, the interest method -- and it exists BEFORE any borrower
+         * does; the book arrives monthly by file and never stops arriving. Forcing one borrower in
+         * at set-up made somebody type a life they then met again on the member roll without
+         * recognising them, which is how "the roll has three names and I uploaded two" happens.
+         *
+         * Nothing downstream needs the member. A sum assured of zero is permitted by
+         * chk_policy_sum_assured_non_negative, totalCovered coalesces to zero for a scheme with no
+         * members, and a credit-life scheme raises no invoice at issuance anyway -- billing returns
+         * early on SINGLE, because the premium arrives file by file.
+         */
+        if (schedule.isEmpty() && request.benefitBasis() != BenefitBasis.AMORTISING_LOAN) {
             throw new InvalidPolicyStateException(
                 "A scheme must be issued with at least one member: its sum assured is the total of its "
                     + "members' cover, and a scheme insuring nobody has none");

@@ -57,7 +57,17 @@ public record IssueGroupSchemeRequestDto(
 
     @NotBlank @Pattern(regexp = "^[A-Z]{3}$") String currency,
     List<@Valid GroupSchemeGradeInputDto> grades,
-    @NotEmpty List<@Valid GroupMemberInputDto> openingSchedule,
+    /**
+     * The lives the scheme opens with.
+     *
+     * <p>No longer {@code @NotEmpty}, for the same reason {@code flatBenefitAmount} and
+     * {@code salaryMultiple} are not {@code @NotNull}: whether a scheme may open empty depends on
+     * its {@code benefitBasis}, Bean Validation cannot express that, and the service refuses with
+     * a message that names the basis. An employer scheme still cannot be empty -- its schedule is
+     * the contract. A credit-life scheme can: the agreement with the lender exists before any
+     * borrower, and the book arrives by file.
+     */
+    List<@Valid GroupMemberInputDto> openingSchedule,
 
     @NotNull @Valid MoneyDto premium,
     String premiumFrequency,

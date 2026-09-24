@@ -16,12 +16,6 @@ function valid(overrides: Partial<CreditLifeSchemeIssueFormValues> = {}) {
     productVersionId: 'f1b2c3d4-0000-4000-8000-000000000002',
     premiumRatePercent: '0.5',
     premiumAmount: '52000.00',
-    borrowerName: 'Amina Hassan Mwinyi',
-    borrowerDateOfBirth: '1988-03-14',
-    principalAmount: '2400000.00',
-    termMonths: '18',
-    disbursementDate: '2026-08-03',
-    firstRepaymentDate: '2026-09-03',
     commencementDate: '2026-06-01',
     ...overrides,
   };
@@ -46,38 +40,10 @@ function errorsFor(values: CreditLifeSchemeIssueFormValues): Record<string, stri
 }
 
 describe('creditLifeSchemeIssueFormSchema', () => {
-  it('accepts a lender, terms and one opening borrower', () => {
+  it('accepts a lender and terms, with no borrowers at all', () => {
+    // The shape a lender relationship actually starts in: the rate, the limit and the interest
+    // method are agreed, and the book arrives later by file.
     expect(errorsFor(valid())).toEqual({});
-  });
-
-  it('refuses a loan disbursed in the future', () => {
-    // The same rule the enrolment pipeline applies per row, and the reason a borrower is
-    // refused with DISBURSEMENT_DATE_IN_FUTURE: cover cannot start before the loan exists.
-    expect(errorsFor(valid({ disbursementDate: '2027-12-01' })).disbursementDate).toMatch(
-      /cannot be disbursed in the future/,
-    );
-  });
-
-  it('refuses a first repayment on or before the disbursement', () => {
-    expect(
-      errorsFor(valid({ disbursementDate: '2026-08-03', firstRepaymentDate: '2026-08-03' }))
-        .firstRepaymentDate,
-    ).toMatch(/after the money goes out/);
-  });
-
-  it('requires a date of birth, because the product has entry-age bounds', () => {
-    expect(errorsFor(valid({ borrowerDateOfBirth: '' })).borrowerDateOfBirth).toMatch(
-      /entry-age bounds/,
-    );
-  });
-
-  it('accepts a zero interest rate but not a blank one', () => {
-    // Zero is the normal case on a flat-rate loan and a true statement; blank is a missing
-    // answer, and the two must not look alike.
-    expect(errorsFor(valid({ annualInterestRatePercent: '0' }))).toEqual({});
-    expect(errorsFor(valid({ annualInterestRatePercent: '' })).annualInterestRatePercent).toMatch(
-      /Zero is a real answer/,
-    );
   });
 
   it('treats a blank free cover limit as "no limit" rather than an error', () => {
@@ -93,24 +59,33 @@ describe('creditLifeSchemeIssueFormSchema', () => {
     );
   });
 
-  it('refuses a scheme that commences after its own opening borrower was lent to', () => {
+  it('requires a commencement date, and refuses a future one', () => {
     /*
-     * The normal case, not an edge one. Onboarding a lender's existing book means every loan on
-     * it predates today, so a blank commencement date -- which means "today" on the wire -- made
-     * the server refuse the whole submission with "Member X cannot join on 2026-08-03, before the
-     * scheme commenced on 2026-09-23": correct, and about a field the form never asked for.
+     * Required here where the employer-scheme form lets it default. A credit-life scheme is
+     * almost always a book that already exists, so leaving it to default to today means the
+     * first file's loans all predate the scheme and the service refuses every row with
+     * "cannot join before the scheme commenced" -- about a field the form never asked for.
      */
-    expect(
-      errorsFor(valid({ commencementDate: '2026-09-01', disbursementDate: '2026-08-03' }))
-        .commencementDate,
-    ).toMatch(/did not exist yet/);
     expect(errorsFor(valid({ commencementDate: '' })).commencementDate).toMatch(
       /on or before the oldest loan/i,
+    );
+    expect(errorsFor(valid({ commencementDate: '2026-12-01' })).commencementDate).toMatch(
+      /cannot commence in the future/,
     );
   });
 });
 
 describe('toIssueRequest', () => {
+  it('sends an EMPTY opening schedule', () => {
+    /*
+     * The point of the whole form. The service permits this on AMORTISING_LOAN and only there:
+     * an employer scheme's schedule is its contract, while a lender's book arrives by file.
+     * Requiring one borrower here made somebody type a life they then met again on the member
+     * roll without recognising them.
+     */
+    expect(toIssueRequest(valid()).openingSchedule).toEqual([]);
+  });
+
   it('always sends SINGLE, the only premium frequency this product accepts', () => {
     // The service refuses any cycle on an AMORTISING_LOAN scheme outright -- a credit-life
     // premium is charged once per borrower when their loan is written. There is no field for
@@ -118,48 +93,23 @@ describe('toIssueRequest', () => {
     expect(toIssueRequest(valid()).premiumFrequency).toBe('SINGLE');
   });
 
-  it('sends the borrower as FREEFORM with their own loan, not as a party', () => {
-    const request = toIssueRequest(valid());
+  it('carries the scheme terms no other benefit basis has', () => {
+    const request = toIssueRequest(valid({ interestMethod: 'REDUCING_BALANCE' }));
     expect(request.benefitBasis).toBe('AMORTISING_LOAN');
-    expect(request.openingSchedule).toHaveLength(1);
-    const member = request.openingSchedule[0]!;
-    expect(member.memberType).toBe('FREEFORM');
-    expect(member.memberName).toBe('Amina Hassan Mwinyi');
-    // No party id: the insurer holds no record for a borrower, and minting one would put a KYC
-    // obligation on a life whose cover the lender owns.
-    expect(member.memberPartyId).toBeUndefined();
-    expect(member.loanTerms).toMatchObject({
-      principalAmount: '2400000.00',
-      termMonths: 18,
-      repaymentFrequency: 'MONTHLY',
-      disbursementDate: '2026-08-03',
-      firstRepaymentDate: '2026-09-03',
-    });
+    expect(request.interestMethod).toBe('REDUCING_BALANCE');
+    expect(request.premiumRatePercent).toBe(0.5);
+    expect(request.repaymentFrequency).toBe('MONTHLY');
   });
 
   it('omits blank optionals rather than sending empty strings', () => {
-    // commencementDate is included here even though the schema now requires it: the builder is
-    // the wire's contract, not the form's, and "" must never reach a date field whatever refused
-    // it upstream.
-    const request = toIssueRequest(
-      valid({ fclAmount: '', loanAccountNumber: '', reasonForManualIssue: '', commencementDate: '' }),
-    );
+    const request = toIssueRequest(valid({ fclAmount: '', reasonForManualIssue: '' }));
     expect('fclAmount' in request).toBe(false);
-    expect('commencementDate' in request).toBe(false);
     expect('reasonForManualIssue' in request).toBe(false);
-    expect('loanAccountNumber' in request.openingSchedule[0]!).toBe(false);
   });
 
   it('omits the issuance basis when the scheme is being issued as an offer', () => {
     // Null is what says "ordinary offer" on this endpoint; an empty string would fail the enum.
     expect('issuanceBasis' in toIssueRequest(valid({ issuanceBasis: '' }))).toBe(false);
     expect(toIssueRequest(valid({ issuanceBasis: 'MIGRATION' })).issuanceBasis).toBe('MIGRATION');
-  });
-
-  it('carries the scheme terms no other benefit basis has', () => {
-    const request = toIssueRequest(valid({ interestMethod: 'REDUCING_BALANCE' }));
-    expect(request.interestMethod).toBe('REDUCING_BALANCE');
-    expect(request.premiumRatePercent).toBe(0.5);
-    expect(request.repaymentFrequency).toBe('MONTHLY');
   });
 });

@@ -1447,11 +1447,22 @@ components:
           items: { $ref: '#/components/schemas/GroupSchemeGradeInput' }
         openingSchedule:
           description: >-
-            At least one life. A scheme issued empty would have a sum assured of nil, which
-            policy_sum_assured_positive rejects -- a contract insuring nobody for nothing is
-            not a policy.
+            The lives the scheme opens with. REQUIRED to be non-empty on every basis but
+            AMORTISING_LOAN, and the difference is the shape of the contract rather than a
+            convenience.
+
+
+            An employer scheme's schedule IS the contract: agreed and signed as a whole, so one
+            insuring nobody for nothing is not a policy. A credit-life scheme is an agreement with
+            a lender -- the rate, the free cover limit, the interest method -- and it exists before
+            any borrower does; the book arrives monthly by file and never stops. Forcing a borrower
+            in at set-up made somebody type a life they then met again on the member roll without
+            recognising them.
+
+
+            Not expressed as `minItems` because the rule depends on `benefitBasis`, which JSON
+            Schema cannot condition on here; the service refuses with a message naming the basis.
           type: array
-          minItems: 1
           items: { $ref: '#/components/schemas/GroupMemberInput' }
         premium: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         premiumFrequency:

@@ -32,10 +32,14 @@ import {
  * `creditLifeSchemeIssueForm` for why this is a separate page on a separate endpoint rather than
  * a fourth option on that form.
  *
- * <p><b>The form is short on purpose.</b> A credit-life scheme is an agreement with a lender —
- * the rate, the free cover limit, the interest method — plus the one borrower the platform
- * requires to open it. Everybody else arrives by monthly file, which is why this page's last act
- * is to hand over to the one that reads them.
+ * <p><b>The form is short on purpose, and it collects no borrowers at all.</b> A credit-life
+ * scheme is an agreement with a lender — the rate, the free cover limit, the interest method —
+ * and it exists before any borrower does. The book arrives monthly by file and never stops
+ * arriving, which is why this page's last act is to hand over to the page that reads them.
+ *
+ * <p>It used to demand one opening borrower, because the service demanded a non-empty schedule —
+ * a rule written for employer schemes, where the schedule IS the contract. Here it made somebody
+ * type a life they then met again on the member roll without recognising them.
  *
  * <p>Like manual issue, this endpoint declares no `Idempotency-Key`: a second identical
  * submission genuinely creates a second scheme, so disabling the button while in flight is the
@@ -225,8 +229,13 @@ export function IssueCreditLifeSchemePage() {
                 </p>
               </FormField>
 
-              <FormField label="Premium on the opening loan" error={errors.premiumAmount?.message}>
+              <FormField label="Premium recorded on the contract" error={errors.premiumAmount?.message}>
                 <Input placeholder="52000.00" {...register('premiumAmount')} />
+                <p className="mt-1 text-[11px] text-subtle-foreground">
+                  Not what the lender is billed. A credit-life premium is charged per accepted file
+                  at the rate above; this figure sits on the master policy, which the database
+                  requires to carry a positive one.
+                </p>
               </FormField>
 
               <FormField label="Risk commences" error={errors.commencementDate?.message}>
@@ -275,85 +284,6 @@ export function IssueCreditLifeSchemePage() {
                 {...register('reasonForManualIssue')}
               />
             </FormField>
-          </fieldset>
-
-          {/* --- The one borrower the platform needs to open the scheme -------- */}
-          <fieldset className="border-t border-border pt-3">
-            <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
-              Opening borrower
-            </legend>
-            <p className="mb-2.5 text-[11px] text-muted-foreground">
-              A scheme cannot be created insuring nobody, so it opens with one borrower. Everyone
-              else arrives on the monthly file — take the first row of the lender&rsquo;s own
-              spreadsheet.
-            </p>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="Borrower's full name" error={errors.borrowerName?.message}>
-                <Input {...register('borrowerName')} />
-                <p className="mt-1 text-[11px] text-subtle-foreground">
-                  A name, not a client record. The insurer holds no party for a borrower — their
-                  cover belongs to the lender.
-                </p>
-              </FormField>
-
-              <FormField label="Date of birth" error={errors.borrowerDateOfBirth?.message}>
-                <Controller
-                  control={control}
-                  name="borrowerDateOfBirth"
-                  render={({ field }) => (
-                    <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />
-                  )}
-                />
-              </FormField>
-
-              <FormField label="Loan account number (optional)" error={errors.loanAccountNumber?.message}>
-                <Input {...register('loanAccountNumber')} />
-                <p className="mt-1 text-[11px] text-subtle-foreground">
-                  Neither real lender file carries one, which is why the insurer mints its own
-                  member reference instead.
-                </p>
-              </FormField>
-
-              <FormField label="Amount borrowed" error={errors.principalAmount?.message}>
-                <Input placeholder="2400000.00" {...register('principalAmount')} />
-              </FormField>
-
-              <FormField label="Term (months)" error={errors.termMonths?.message}>
-                <Input placeholder="18" {...register('termMonths')} />
-              </FormField>
-
-              <FormField
-                label="Annual interest rate (%)"
-                error={errors.annualInterestRatePercent?.message}
-              >
-                <Input placeholder="0" {...register('annualInterestRatePercent')} />
-                <p className="mt-1 text-[11px] text-subtle-foreground">
-                  Zero is a real answer on a flat-rate loan: cover declines in a straight line, so
-                  no rate is read to value a claim.
-                </p>
-              </FormField>
-
-              <FormField label="Disbursed on" error={errors.disbursementDate?.message}>
-                <Controller
-                  control={control}
-                  name="disbursementDate"
-                  render={({ field }) => (
-                    <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />
-                  )}
-                />
-              </FormField>
-
-              <FormField label="First repayment due" error={errors.firstRepaymentDate?.message}>
-                <Controller
-                  control={control}
-                  name="firstRepaymentDate"
-                  render={({ field }) => (
-                    <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />
-                  )}
-                />
-              </FormField>
-            </div>
           </fieldset>
 
           {issuing.status === 'error' && issuing.error && <ErrorPanel error={issuing.error} />}
