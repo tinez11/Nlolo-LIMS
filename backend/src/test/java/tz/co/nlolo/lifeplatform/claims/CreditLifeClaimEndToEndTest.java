@@ -284,7 +284,7 @@ class CreditLifeClaimEndToEndTest {
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true,
             new BigDecimal("1000000.00"), "TZS", null,
-            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, "bank-account-1", idem(), "assessor.two"))
+            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, null, idem(), "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("APPROVED");
     }
@@ -393,8 +393,25 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, PRINCIPAL, "TZS",
-            null, "LENDER-ACCT", idem(), "claims.manager"))
-            .isInstanceOf(RuntimeException.class);
+            null, null, idem(), "claims.manager"))
+            // The CEILING refused it -- pinned, so a payee rule firing first cannot pass this.
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("covered for");
+
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
+    }
+
+    /** The insurer deals only with the lender (client answer 3.6), who is the claimant and the
+     * policyholder (spec 2.9). A payee typed into a credit-life approval was never a real choice
+     * -- in dev they read "mobile" and "i approve" -- and could have named any account at all. */
+    @Test
+    void aCreditLifeApprovalRefusesATypedPayee() {
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
+
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, new BigDecimal("1600000.00"),
+            "TZS", null, "0712345678", idem(), "claims.manager"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("pays the lender");
 
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
     }
@@ -417,14 +434,14 @@ class CreditLifeClaimEndToEndTest {
             idem(), "claims.clerk");
         claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one", null);
         claimsApi.decideSettlement(claim.claimId(), true, FCL, "TZS", null,
-            "LENDER-ACCT", idem(), "claims.manager");
+            null, idem(), "claims.manager");
 
         assertThat(claimsApi.getClaim(claim.claimId()).approvedAmount()).isEqualByComparingTo(FCL);
         // And the 200,000,000 above the limit is uninsured, which is the point -- proved by the
         // platform refusing to settle for the whole debt rather than by the number above alone.
         UUID second = assessedClaimOn(bigScheme, member, DISBURSED.plusDays(1));
         assertThatThrownBy(() -> claimsApi.decideSettlement(second, true, ABOVE_FCL, "TZS",
-            null, "LENDER-ACCT", idem(), "claims.manager"))
+            null, null, idem(), "claims.manager"))
             .isInstanceOf(RuntimeException.class);
     }
 
@@ -448,6 +465,9 @@ class CreditLifeClaimEndToEndTest {
             .orElseThrow(() -> new AssertionError("No disbursement was recorded for the settlement"));
         assertThat(eft.getStatus()).isEqualTo("AWAITING_EXECUTION");
         assertThat(eft.getMethod()).isEqualTo("EFT");
+        // The lender, named by the platform -- nobody typed a destination. Finance reads who to
+        // pay and on which scheme; the account itself they hold, out of band (spec 2.9).
+        assertThat(eft.getPayeeRef()).isEqualTo("Lender Co — policyholder of " + scheme);
 
         paymentApiImpl.markEftExecuted(eft.getDisbursementId(), "FT26092300881", "finance-officer-asha");
 
@@ -484,7 +504,7 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(dateOfEvent);
         settlementKey = idem();
         claimsApi.decideSettlement(claimId, true, expected, "TZS", null,
-            "LENDER-ACCT", settlementKey, "claims.manager");
+            null, settlementKey, "claims.manager");
         return claimId;
     }
 

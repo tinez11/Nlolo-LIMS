@@ -409,7 +409,25 @@ public class ClaimsApiImpl implements ClaimsApi {
         }
 
         if (approved) {
-            if (payeeRef == null || payeeRef.isBlank()) {
+            PolicyView policy = policyApi.getPolicy(claim.getPolicyNumber());
+            boolean creditLife = "CREDIT_LIFE".equals(policy.productCategory());
+            if (creditLife) {
+                // ON CREDIT LIFE THERE IS NO PAYEE TO CHOOSE. The insurer deals only with the
+                // lender (client answer 3.6), and the lender is the claimant and the policyholder
+                // (spec 2.9) -- "claimant and payee are the same entity". This used to be a free
+                // text box labelled "Mobile-money destination", so the EFTs finance was asked to
+                // make read "mobile" and "i approve"; worse, whoever approved could have typed any
+                // account at all. A supplied value is refused rather than ignored, so a client
+                // still sending one learns it was never going to be used.
+                if (payeeRef != null && !payeeRef.isBlank()) {
+                    throw new ClaimValidationException("A credit-life claim pays the lender who holds "
+                        + claim.getPolicyNumber() + "; a payee cannot be supplied for it");
+                }
+                // The lender by name and scheme -- what finance needs to know whose account to
+                // pay. The account itself is held by finance, out of band, as the spec leaves it.
+                payeeRef = partyApi.getParty(policy.policyholderPartyId()).displayName()
+                    + " — policyholder of " + claim.getPolicyNumber();
+            } else if (payeeRef == null || payeeRef.isBlank()) {
                 throw new ClaimValidationException("A payee reference is required to approve a claim");
             }
             if (idempotencyKey == null || idempotencyKey.isBlank()) {
@@ -483,9 +501,7 @@ public class ClaimsApiImpl implements ClaimsApi {
                        // takes a particular rail is a fact about the product, and payment has
                        // no business knowing what credit life is. Every other publisher omits
                        // the key and gets MOBILE_MONEY, which is what they have always had.
-                       "disbursementMethod", "CREDIT_LIFE".equals(
-                           policyApi.getPolicy(claim.getPolicyNumber()).productCategory())
-                           ? "EFT" : "MOBILE_MONEY",
+                       "disbursementMethod", creditLife ? "EFT" : "MOBILE_MONEY",
                        "idempotencyKey", idempotencyKey)));
         } else {
             settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, false,

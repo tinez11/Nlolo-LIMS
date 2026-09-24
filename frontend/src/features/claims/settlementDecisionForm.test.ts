@@ -64,6 +64,21 @@ describe('settlementDecisionFormSchema -- reject branch', () => {
   });
 });
 
+describe('credit life: the platform names the payee', () => {
+  it('does not require a payee', () => {
+    const values = { ...validApprove(), payeeRef: '' };
+    expect(settlementDecisionSchema(null, false).safeParse(values).success).toBe(true);
+    // ...where any other claim still does.
+    expect(settlementDecisionSchema(null, true).safeParse(values).success).toBe(false);
+  });
+
+  it('never sends one, even if something was left in the field', () => {
+    // The backend refuses a supplied payee on credit life -- the lender is the only payee.
+    const values = settlementDecisionSchema(null, false).parse({ ...validApprove(), payeeRef: 'mobile' });
+    expect(toApiRequest(values, true)).toMatchObject({ approved: true, payeeRef: null });
+  });
+});
+
 describe('toApiRequest', () => {
   it('nests approvedAmount as Money and sends a null rejectionReason on approval', () => {
     const request = toApiRequest(settlementDecisionFormSchema.parse(validApprove()));

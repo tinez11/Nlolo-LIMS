@@ -4,7 +4,9 @@ import { type FieldErrors, useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
+import { PartyName } from '@/components/PartyName';
 import { Receipt } from '@/components/Receipt';
+import { selectDetail, usePolicyStore } from '@/store/policyStore';
 import { cn } from '@/lib/cn';
 import { compareAmounts, formatMoney, subtractAmounts } from '@/lib/money';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
@@ -39,7 +41,25 @@ import { Input, Textarea } from '@/components/ui/input';
  * branches, matching RegisterClaimPage's own claim-type switcher: the two
  * branches share no fields, so there is nothing to preserve across a toggle.
  */
-export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
+export function ClaimSettlementPanel({
+  claimId,
+  policyNumber,
+  onScheme,
+}: {
+  claimId: string;
+  policyNumber: string;
+  /** The claim names a member: a group or credit-life scheme, where one life leaves and the
+   *  contract stays -- so "the policy closes" would be false. */
+  onScheme: boolean;
+}) {
+  const loadPolicy = usePolicyStore((s) => s.loadDetail);
+  const policy = usePolicyStore(selectDetail(policyNumber));
+  // Unknown until the policy loads. Approving waits for it: guessing "not credit life" would ask
+  // for a payee the backend then refuses, and guessing "credit life" would send none where one
+  // is required.
+  const productCategory = policy.data?.productCategory ?? null;
+  const creditLife = productCategory === 'CREDIT_LIFE';
+  const lenderPartyId = creditLife ? (policy.data?.policyholderPartyId ?? null) : null;
   const decideSettlement = useClaimStore((s) => s.decideSettlement);
   const resetDecideSettlement = useClaimStore((s) => s.resetDecideSettlement);
   const deciding = useClaimStore(selectDecidingSettlement(claimId));
@@ -56,8 +76,9 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
     resetDecideSettlement(claimId);
     void loadClaimableCover(claimId);
     void loadAssessments(claimId);
+    void loadPolicy(policyNumber);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claimId]);
+  }, [claimId, policyNumber]);
 
   const cover = coverResource.data?.claimableCover ?? null;
   // Newest first, so [0] is the most recent assessment -- the one a second
@@ -72,7 +93,7 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
     reset,
     formState: { errors, isDirty },
   } = useForm<SettlementDecisionFormValues>({
-    resolver: zodResolver(settlementDecisionSchema(cover)),
+    resolver: zodResolver(settlementDecisionSchema(cover, !creditLife)),
     defaultValues: blankApproveDecision(),
   });
 
@@ -126,7 +147,7 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
   const [pending, setPending] = useState<SettlementDecisionFormValues | null>(null);
 
   async function commit(values: SettlementDecisionFormValues) {
-    await decideSettlement(claimId, toApiRequest(values), attempt);
+    await decideSettlement(claimId, toApiRequest(values, creditLife), attempt);
     if (useClaimStore.getState().decidingSettlement[claimId]?.status === 'success') {
       setPending(null);
     }
@@ -283,12 +304,33 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
               </p>
             )
           )}
-          <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
-            <Input
-              placeholder="Mobile-money destination"
-              {...register('payeeRef')}
-            />
-          </FormField>
+          {creditLife ? (
+            /*
+              NOT a field. The insurer deals only with the lender (client answer 3.6), who is
+              the claimant and the policyholder (spec 2.9) -- there is no payee to choose. This
+              was a "Mobile-money destination" box, so finance was sent EFTs to "mobile" and
+              "i approve", and whoever approved could have typed any account at all.
+            */
+            <div className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
+              <p>
+                Pays{' '}
+                {lenderPartyId ? (
+                  <PartyName partyId={lenderPartyId} className="font-medium" />
+                ) : (
+                  'the lender'
+                )}
+                , the lender who holds this scheme, by bank transfer.
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                Finance makes the transfer to the lender&rsquo;s account and records it under Finance
+                &rarr; Bank transfers.
+              </p>
+            </div>
+          ) : (
+            <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
+              <Input placeholder="Mobile-money destination" {...register('payeeRef')} />
+            </FormField>
+          )}
         </>
       ) : (
         <FormField label="Rejection reason (optional)">
@@ -320,7 +362,18 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
                 <strong>
                   {pending.approvedCurrency.toUpperCase()} {pending.approvedAmount}
                 </strong>{' '}
-                to <strong>{pending.payeeRef}</strong>.
+                to{' '}
+                {creditLife ? (
+                  <>
+                    <strong>
+                      {lenderPartyId ? <PartyName partyId={lenderPartyId} /> : 'the lender'}
+                    </strong>{' '}
+                    by bank transfer
+                  </>
+                ) : (
+                  <strong>{pending.payeeRef}</strong>
+                )}
+                .
               </>
             ) : (
               <>
@@ -350,7 +403,11 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
           */
           reversal={
             pending.approved
-              ? 'Money moves, and the policy closes permanently — reopening this claim later will not reverse the closure or restart billing.'
+              ? onScheme
+                ? // A scheme is not discharged by one death: this life leaves when the claim
+                  // settles, and everybody else stays insured (PolicyApiImpl.dischargeForSettledClaim).
+                  'Money moves, and this life leaves the scheme when the claim settles — the scheme and everyone else on it stay in force.'
+                : 'Money moves, and the policy closes permanently — reopening this claim later will not reverse the closure or restart billing.'
               : 'A claims manager can reopen a rejected claim, but this decision stays on the record.'
           }
           // Never the arming button's own words: "Reject claim" twice, a click
@@ -361,7 +418,13 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
           onCancel={() => setPending(null)}
         />
       ) : (
-        <Button type="submit" size="sm" variant="primary" disabled={deciding.status === 'loading'}>
+        <Button
+          type="submit"
+          size="sm"
+          variant="primary"
+          // Approving waits for the policy: whether a payee is asked for depends on it.
+          disabled={deciding.status === 'loading' || (approved && productCategory === null)}
+        >
           {approved ? 'Approve claim' : 'Reject claim'}
         </Button>
       )}

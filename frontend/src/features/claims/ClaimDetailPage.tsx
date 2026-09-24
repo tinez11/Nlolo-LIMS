@@ -182,7 +182,11 @@ export function ClaimDetailPage() {
               title="Decide settlement"
               subtitle="Approve or reject -- distinct from assessing."
             >
-              <ClaimSettlementPanel claimId={claimId} />
+              <ClaimSettlementPanel
+                claimId={claimId}
+                policyNumber={claim.policyNumber}
+                onScheme={!!claim.policyMemberId}
+              />
             </Panel>
           )}
 

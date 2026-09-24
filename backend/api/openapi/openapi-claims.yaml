@@ -253,7 +253,12 @@ paths:
                 rejectionReason: { type: [string, "null"] }
                 payeeRef:
                   type: [string, "null"]
-                  description: "Mobile-money destination for the payout. Required when approved is true; ignored (may be null) when approved is false"
+                  description: >
+                    Mobile-money destination for the payout. Required when approved is true;
+                    ignored (may be null) when approved is false. On a CREDIT_LIFE claim it must be
+                    ABSENT: the lender is the claimant and the policyholder, so the payout goes to
+                    them by bank transfer and the platform names them itself — a supplied value
+                    is refused with a 422.
       responses:
         '202':
           description: >
@@ -276,7 +281,7 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
         '422':
-          description: "approved is true but payeeRef or Idempotency-Key is missing/blank, or the same person both assessed and is deciding this claim (separation of duties)"
+          description: "approved is true but payeeRef or Idempotency-Key is missing/blank, or a payeeRef was supplied on a CREDIT_LIFE claim, or the same person both assessed and is deciding this claim (separation of duties)"
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }

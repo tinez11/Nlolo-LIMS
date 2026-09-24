@@ -31,7 +31,15 @@ const rejectSchema = z.object({
  * behaviour: amount-shape checks only, and the server stays the authority. It must never be
  * treated as "no limit was breached".
  */
-export function settlementDecisionSchema(claimableCover: Money | null) {
+export function settlementDecisionSchema(
+  claimableCover: Money | null,
+  /**
+   * False on a credit-life claim, where the platform names the payee itself: the lender is the
+   * claimant and the policyholder (spec 2.9) and the insurer deals with nobody else. The field is
+   * then not rendered, not required, and not sent -- the backend refuses one if it is.
+   */
+  payeeRequired = true,
+) {
   const approveSchema = z.object({
     approved: z.literal(true),
     approvedAmount: z
@@ -53,7 +61,9 @@ export function settlementDecisionSchema(claimableCover: Money | null) {
     // Claim.approve() itself has no @NotBlank annotation to mirror (it is a
     // domain object, not a DTO) -- ClaimsApiImpl.decideSettlement's own explicit
     // check IS the rule: "A payee reference is required to approve a claim".
-    payeeRef: z.string().trim().min(1, 'A payee reference is required to approve'),
+    payeeRef: payeeRequired
+      ? z.string().trim().min(1, 'A payee reference is required to approve')
+      : z.string(),
   });
 
   return z.discriminatedUnion('approved', [approveSchema, rejectSchema]);
@@ -133,12 +143,16 @@ export function switchDecision(
   return to === 'approve' ? blankApproveDecision(recommended, claimableCover) : blankRejectDecision();
 }
 
-export function toApiRequest(values: SettlementDecisionFormValues): SettlementDecisionRequest {
+export function toApiRequest(
+  values: SettlementDecisionFormValues,
+  /** Credit life: the payee is the lender, named by the backend, so none is sent. */
+  platformNamesPayee = false,
+): SettlementDecisionRequest {
   if (values.approved) {
     return {
       approved: true,
       approvedAmount: { amount: values.approvedAmount, currencyCode: values.approvedCurrency },
-      payeeRef: values.payeeRef.trim(),
+      payeeRef: platformNamesPayee ? null : values.payeeRef.trim(),
       rejectionReason: null,
     };
   }
