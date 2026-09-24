@@ -165,4 +165,21 @@ public class EnrolmentController {
             .contentType(MediaType.valueOf("text/csv"))
             .body(enrolmentApi.renderTemplate(policyNumber));
     }
+
+    /**
+     * The same template as a spreadsheet, and the one to send a lender who works in Excel.
+     *
+     * <p>See {@code EnrolmentApi.renderTemplateXlsx} for why: a CSV template cannot survive being
+     * opened in Excel, and two real files were refused entire because of it.
+     */
+    @GetMapping(value = "/credit-life-schemes/{policyNumber}/template.xlsx",
+                produces = XLSX)
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<byte[]> enrolmentTemplateXlsx(@PathVariable String policyNumber) {
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"enrolment-template-" + policyNumber + ".xlsx\"")
+            .contentType(MediaType.valueOf(XLSX))
+            .body(enrolmentApi.renderTemplateXlsx(policyNumber));
+    }
 }

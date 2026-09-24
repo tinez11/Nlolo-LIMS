@@ -89,4 +89,18 @@ public interface EnrolmentApi {
      * produce.
      */
     String renderTemplate(String policyNumber);
+
+    /**
+     * The same template as a spreadsheet, which is the one to hand a lender who uses Excel.
+     *
+     * <p><b>A CSV cannot survive Excel and that is not the lender's fault.</b> Two real files came
+     * back refused entire -- every date rewritten, first as {@code 1-Sep-00} and then, after being
+     * told the format, as {@code 9/1/2000}. Excel rewrites dates when it opens a CSV and again
+     * when it saves one, including the worked example whose whole job was to show the format.
+     *
+     * <p>In a spreadsheet a date is a typed cell rather than text. Excel round-trips it whatever
+     * it displays, and {@code XlsxToCsv} already reads one back as ISO. The enrolment endpoint has
+     * accepted XLSX since it was written; nothing was handing one out.
+     */
+    byte[] renderTemplateXlsx(String policyNumber);
 }

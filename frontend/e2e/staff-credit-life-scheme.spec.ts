@@ -263,8 +263,23 @@ test.describe('staff credit-life scheme', () => {
      * The reference is the interesting half: the lender has never seen one, the insurer minted it
      * at issuance, and this is the first place it is ever shown to them.
      */
-    const templateDownload = page.waitForEvent('download');
+    /*
+     * THE SPREADSHEET IS WHAT THE BUTTON GIVES, and that is not cosmetic. A CSV template cannot
+     * survive Excel: it rewrites dates on open and again on save, so two real lender files came
+     * back with every date mangled -- the second AFTER being told the format, because the worked
+     * example had been rewritten too. A date in a spreadsheet is a typed cell and round-trips.
+     */
+    const xlsxDownload = page.waitForEvent('download');
     await page.getByRole('button', { name: /Schedule template to send the lender/ }).click();
+    const xlsx = await xlsxDownload;
+    expect(xlsx.suggestedFilename()).toMatch(/^enrolment-template-GRP-[A-Z0-9]+\.xlsx$/);
+    // A real workbook, not an error page rendered as one: every xlsx is a zip.
+    expect(readFileSync(await xlsx.path()).subarray(0, 2).toString('latin1')).toBe('PK');
+
+    // The CSV stays, second and quieter, for a lender whose loan system exports one. Its contents
+    // are readable as text, so this is where the worked example is asserted.
+    const templateDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'or as a CSV' }).click();
     const template = await templateDownload;
     expect(template.suggestedFilename()).toMatch(/^enrolment-template-GRP-[A-Z0-9]+\.csv$/);
     const templateText = readFileSync(await template.path(), 'utf8');

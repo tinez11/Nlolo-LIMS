@@ -215,6 +215,26 @@ export function downloadExitsTemplate(policyNumber: string): Promise<Blob> {
   });
 }
 
+/**
+ * The same template as a spreadsheet, and the one to send a lender who works in Excel.
+ *
+ * <b>A CSV template cannot survive Excel.</b> Two real files came back with every date rewritten —
+ * 1-Sep-00, then 9/1/2000 after being told the format — including the worked example whose whole
+ * job was to show it. In a spreadsheet a date is a typed cell, not text: Excel round-trips it
+ * whatever it displays, and the upload reads it back as ISO.
+ */
+export function downloadEnrolmentTemplateXlsx(policyNumber: string): Promise<Blob> {
+  return get<Blob>(`/credit-life-schemes/${encodeURIComponent(policyNumber)}/template.xlsx`, {
+    responseType: 'blob',
+    headers: {
+      Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+  });
+}
+
+export function enrolmentTemplateXlsxFileName(policyNumber: string): string {
+  return `enrolment-template-${policyNumber}.xlsx`;
+}
 export function enrolmentTemplateFileName(policyNumber: string): string {
   return `enrolment-template-${policyNumber}.csv`;
 }

@@ -33,6 +33,7 @@ import { acceptAttribute, submissionUploadSchema, type SubmissionKind } from './
  * template and every report on the panel.
  */
 const TEMPLATE = 'template';
+const TEMPLATE_CSV = 'template-csv';
 
 export interface SubmissionRow {
   submissionId: string;
@@ -67,8 +68,16 @@ interface Props {
   deciding: boolean;
   /** Fetches the lender's report and saves it. Rejects if the request fails. */
   onDownloadReport: (submissionId: string) => Promise<void>;
-  /** Fetches the blank file to send the lender. */
+  /** Fetches the template to send the lender. Spreadsheet where there is one, CSV otherwise. */
   onDownloadTemplate: () => Promise<void>;
+  /**
+   * The CSV form of the same template, offered second.
+   *
+   * Absent on the exits panel, which has only a CSV. Present on enrolment, where the spreadsheet
+   * leads because a CSV cannot survive Excel — see `downloadEnrolmentTemplateXlsx` — and the CSV
+   * stays for a lender whose loan system exports one and never opens it in a spreadsheet.
+   */
+  onDownloadTemplateCsv?: () => Promise<void>;
   /** The columns the lender must fill, and the formats. Rendered beside the template. */
   columnGuide: React.ReactNode;
   /** Rendered under the selected submission: the rows and their reasons. */
@@ -94,6 +103,7 @@ export function SubmissionsPanel({
   deciding,
   onDownloadReport,
   onDownloadTemplate,
+  onDownloadTemplateCsv,
   columnGuide,
   children,
 }: Props) {
@@ -192,6 +202,18 @@ export function SubmissionsPanel({
             ? 'Preparing the template…'
             : `${kind === 'exits' ? 'Exits file' : 'Schedule'} template to send the lender`}
         </button>
+        {/* The CSV second, and quieter. The spreadsheet is the one to send: a CSV opened in Excel
+            comes back with every date rewritten, which refused two real files in a row. */}
+        {onDownloadTemplateCsv && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+            disabled={downloading === TEMPLATE_CSV}
+            onClick={() => void download(TEMPLATE_CSV, onDownloadTemplateCsv, 'template')}
+          >
+            {downloading === TEMPLATE_CSV ? 'Preparing…' : 'or as a CSV'}
+          </button>
+        )}
         <button
           type="button"
           className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
@@ -350,6 +372,54 @@ export function SubmissionsPanel({
                       person must accept this file before anyone is {appliedNoun}.
                     </p>
                   )}
+                  {/* THE CONFIRMATION LIVES IN THE ROW, under the button that armed it.
+
+                      It used to render after the whole list, which put it below the expanded rows
+                      table of whichever file was open -- and the newest file opens by itself. So
+                      clicking Withdraw scrolled nothing, changed nothing visible, and read as a
+                      dead button; the only way to find the confirmation was to scroll past every
+                      row of the file. A person with one bad file and no way to clear it is stuck
+                      on a scheme that accepts only one submission at a time.
+
+                      Still not inside the button's own flex row: a heading, a consequence, a
+                      reversal and two buttons do not fit beside a right-aligned pair, which is
+                      the mistake the field-receipts queue records making. */}
+                  {confirming?.id === s.submissionId && (
+                    <div className="mt-3">
+                      <ConfirmAct
+                        heading={confirming.act === 'accept' ? 'Accept this file?' : 'Withdraw this file?'}
+                        consequence={
+                          confirming.act === 'accept' ? (
+                            <>
+                              The rows that passed will be <strong>{appliedNoun}</strong>. Refused
+                              rows are not, and the lender learns which from the report.
+                            </>
+                          ) : (
+                            <>
+                              Nothing on this file takes effect, and the scheme is free to receive a
+                              corrected one.
+                            </>
+                          )
+                        }
+                        reversal={
+                          confirming.act === 'accept'
+                            ? kind === 'exits'
+                              ? 'Reversing an exit means re-enrolling the borrower on a later file.'
+                              : 'Reversing an enrolment means exiting the borrower on a later file.'
+                            : 'A withdrawn file cannot be accepted afterwards; upload the corrected file instead.'
+                        }
+                        confirmLabel={confirming.act === 'accept' ? 'Accept' : 'Withdraw'}
+                        tone={confirming.act === 'accept' ? 'primary' : 'danger'}
+                        busy={deciding}
+                        onConfirm={() => {
+                          if (confirming.act === 'accept') onAccept(confirming.id);
+                          else onWithdraw(confirming.id);
+                          setConfirming(null);
+                        }}
+                        onCancel={() => setConfirming(null)}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {selected && children}
@@ -359,44 +429,6 @@ export function SubmissionsPanel({
         </ul>
       )}
 
-      {confirming && (
-        <ConfirmAct
-          heading={
-            confirming.act === 'accept'
-              ? `Accept this file?`
-              : `Withdraw this file?`
-          }
-          consequence={
-            confirming.act === 'accept' ? (
-              <>
-                The rows that passed will be <strong>{appliedNoun}</strong>. Refused rows are not,
-                and the lender learns which from the report.
-              </>
-            ) : (
-              <>
-                Nothing on this file takes effect, and the scheme is free to receive a corrected
-                one.
-              </>
-            )
-          }
-          reversal={
-            confirming.act === 'accept'
-              ? kind === 'exits'
-                ? 'Reversing an exit means re-enrolling the borrower on a later file.'
-                : 'Reversing an enrolment means exiting the borrower on a later file.'
-              : 'A withdrawn file cannot be accepted afterwards; upload the corrected file instead.'
-          }
-          confirmLabel={confirming.act === 'accept' ? 'Accept' : 'Withdraw'}
-          tone={confirming.act === 'accept' ? 'primary' : 'danger'}
-          busy={deciding}
-          onConfirm={() => {
-            if (confirming.act === 'accept') onAccept(confirming.id);
-            else onWithdraw(confirming.id);
-            setConfirming(null);
-          }}
-          onCancel={() => setConfirming(null)}
-        />
-      )}
     </Panel>
   );
 }

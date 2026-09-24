@@ -39,6 +39,7 @@ import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import tz.co.nlolo.lifeplatform.policy.domain.EnrolmentTemplateXlsx;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
@@ -346,6 +347,49 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                 .append('\n');
         }
         return csv.toString();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] renderTemplateXlsx(String policyNumber) {
+        // Built from the same example the CSV template uses, so the two cannot describe different
+        // borrowers -- and parsed back by the same reader either way.
+        return EnrolmentTemplateXlsx.build(exampleRowFor(policyNumber));
+    }
+
+    /**
+     * The scheme's earliest active borrower, as an example, or null if it has none to show.
+     *
+     * <p>Shared by both templates. Split out when the spreadsheet arrived rather than duplicated,
+     * because a CSV and an XLSX that demonstrated DIFFERENT borrowers would be the same class of
+     * defect the generated header was introduced to prevent.
+     */
+    private EnrolmentTemplateXlsx.ExampleRow exampleRowFor(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Pageable earliest = PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "joinedOn")
+            .and(Sort.by(Sort.Direction.ASC, "policyMemberId")));
+        for (PolicyMember member : policyMemberRepository
+                .findByTenantIdAndPolicyNumberAndStatus(tenantId, policyNumber, "ACTIVE", earliest)
+                .getContent()) {
+            LoanTerms terms = member.getLoanTerms();
+            if (terms == null) {
+                continue;
+            }
+            String name = member.getMemberName();
+            LocalDate born = member.getMemberDateOfBirth();
+            if ((name == null || born == null) && member.getMemberPartyId() != null) {
+                PartyDetailView party = partyApi.getPartyDetail(member.getMemberPartyId());
+                name = name != null ? name : party.displayName();
+                born = born != null ? born : party.dateOfBirth();
+            }
+            if (name == null || born == null) {
+                continue;
+            }
+            return new EnrolmentTemplateXlsx.ExampleRow(member.getMemberReference(), name, born,
+                terms.principalAmount(), terms.termMonths(), terms.disbursementDate(),
+                member.getLoanAccountNumber());
+        }
+        return null;
     }
 
     /**

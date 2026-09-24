@@ -4,10 +4,12 @@ import { Link, useParams } from 'react-router-dom';
 import {
   downloadEnrolmentReport,
   downloadEnrolmentTemplate,
+  downloadEnrolmentTemplateXlsx,
   downloadExitsReport,
   downloadExitsTemplate,
   enrolmentReportFileName,
   enrolmentTemplateFileName,
+  enrolmentTemplateXlsxFileName,
   exitsReportFileName,
   exitsTemplateFileName,
 } from '@/api/creditLife';
@@ -270,7 +272,16 @@ export function CreditLifeSchemePage() {
           onDownloadReport={async (id) =>
             saveBlob(await downloadEnrolmentReport(policyNumber, id), enrolmentReportFileName(id))
           }
+          // The SPREADSHEET leads. A CSV template cannot survive Excel: two real files came back
+          // with every date rewritten, including the worked example that was there to show the
+          // format. A date in a spreadsheet is a typed cell, so Excel round-trips it.
           onDownloadTemplate={async () =>
+            saveBlob(
+              await downloadEnrolmentTemplateXlsx(policyNumber),
+              enrolmentTemplateXlsxFileName(policyNumber),
+            )
+          }
+          onDownloadTemplateCsv={async () =>
             saveBlob(
               await downloadEnrolmentTemplate(policyNumber),
               enrolmentTemplateFileName(policyNumber),
@@ -345,6 +356,14 @@ function EnrolmentColumns() {
         the lender can see a real row before filling their own. Leaving it in is harmless — that
         loan is already on cover, so the row comes back refused as already enrolled rather than
         insuring anybody twice.
+      </p>
+      {/* The single most useful sentence on this page. Two real files were refused entire because
+          of it, and the second was sent AFTER being told the format -- because the advice was to
+          type YYYY-MM-DD, and Excel rewrites it anyway. */}
+      <p className="sm:col-span-2 mb-1 text-[11px] text-status-warning-fg">
+        Send the spreadsheet, not the CSV, to anyone who works in Excel. Excel rewrites dates when
+        it opens a CSV and again when it saves one — 2000-09-01 comes back as 9/1/2000 and the row
+        is refused. In a spreadsheet a date is a real date and survives.
       </p>
       <Column name="member_reference" required={false}>
         Blank for a new borrower — the insurer mints it and returns it on the report. The lender
