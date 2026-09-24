@@ -80,9 +80,11 @@ public final class EnrolmentCsvParser {
      * lender holds a loan account number — and a hand-maintained template would have gone stale
      * on the first of those and been quietly wrong on the second.
      *
-     * <p><b>No example row.</b> A template carrying a plausible borrower is a template somebody
-     * sends back with the example still in it, and that row enrols a person who does not exist.
-     * The console states the formats beside the download instead.
+     * <p><b>The header alone.</b> The worked example is added by {@code EnrolmentApi.renderTemplate},
+     * which has a scheme and can therefore show one of that lender's OWN borrowers — a row that is
+     * safe to leave in, because it duplicates a loan already on cover and comes back refused. An
+     * invented borrower here could not be: left in the file, it would enrol somebody who does not
+     * exist, which is why this method stops at the columns.
      *
      * <p>Required and optional columns are all present, in the order the lender's own exports
      * tend to read. A file may also carry columns we do not use — both real exports do — and
@@ -257,10 +259,38 @@ public final class EnrolmentCsvParser {
         try {
             return LocalDate.parse(value);
         } catch (java.time.format.DateTimeParseException e) {
-            throw new UnreadableValue(column + " \"" + value
-                + "\" is not a date in YYYY-MM-DD form. A number here is an Excel date"
-                + " serial; format the column as a date before exporting.");
+            throw new UnreadableValue(column + " \"" + value + "\" is not a date in YYYY-MM-DD"
+                + " form. " + dateHint(value));
         }
+    }
+
+    /**
+     * What actually went wrong with this value, rather than one guess for every shape.
+     *
+     * <p>The message used to blame an Excel date serial whatever arrived, which was right for
+     * {@code 46203} and actively misleading for {@code 1-Sep-00}: a lender told to "format the
+     * column as a date" would do exactly that and get the same refusal, because formatting as a
+     * DATE is what produced it. The first real file sent through this platform bounced entirely
+     * on that value, and the advice it came back with pointed the wrong way.
+     *
+     * <p>The two-digit year is refused rather than guessed, and that is a deliberate choice on
+     * this column specifically. {@code 00} is 1900 or 2000, the two readings are a century apart,
+     * and this is a DATE OF BIRTH: one of them is a plausible borrower and the other is refused by
+     * the entry-age gate or, worse, quietly accepted at the wrong age. Nothing in the file breaks
+     * the tie, so the lender does.
+     */
+    private static String dateHint(String value) {
+        if (value.chars().allMatch(Character::isDigit)) {
+            return "A number here is an Excel date serial; format the column as a date before"
+                + " exporting.";
+        }
+        if (value.matches(".*\\b\\d{2}$")) {
+            return "This looks like a date Excel rewrote on save, with a two-digit year that could"
+                + " be 19xx or 20xx -- a century apart on a date of birth, so it is not guessed."
+                + " Set the column format to Text and type the date as 2000-09-01.";
+        }
+        return "Excel rewrites dates when it saves a CSV. Set the column format to Text and type"
+            + " the date as 2000-09-01.";
     }
 
     /**

@@ -40,6 +40,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 
 /**
  * Bulk enrolment: read a lender's file, judge every row, and enrol nobody until a second
@@ -59,6 +61,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     private final GroupSchemeRepository groupSchemeRepository;
     private final PolicyRepository policyRepository;
     private final PolicyMemberRepository policyMemberRepository;
+    private final PartyApi partyApi;
     private final PolicyApi policyApi;
     private final ProductApi productApi;
     private final DocumentApi documentApi;
@@ -70,12 +73,14 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                              PolicyRepository policyRepository,
                              PolicyMemberRepository policyMemberRepository,
                              PolicyApi policyApi, ProductApi productApi, DocumentApi documentApi,
+                             PartyApi partyApi,
                              ApplicationEventPublisher eventPublisher) {
         this.submissionRepository = submissionRepository;
         this.rowRepository = rowRepository;
         this.groupSchemeRepository = groupSchemeRepository;
         this.policyRepository = policyRepository;
         this.policyMemberRepository = policyMemberRepository;
+        this.partyApi = partyApi;
         this.policyApi = policyApi;
         this.productApi = productApi;
         this.documentApi = documentApi;
@@ -306,16 +311,33 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         StringBuilder csv = new StringBuilder(EnrolmentCsvParser.templateCsv());
         for (PolicyMember member : members) {
             LoanTerms terms = member.getLoanTerms();
-            if (terms == null || member.getMemberName() == null
-                    || member.getMemberDateOfBirth() == null) {
-                // A PARTY member on a mixed scheme has no freeform name and no loan. Nothing to
-                // show, and a half-filled example row would teach the wrong shape.
+            if (terms == null) {
+                // No loan, nothing to demonstrate. A half-filled row teaches the wrong shape.
+                continue;
+            }
+            /*
+             * A PARTY MEMBER'S NAME LIVES IN party, NOT ON THE MEMBER ROW, and skipping those was
+             * a real defect rather than a tidy guard. The first scheme a person set up this way
+             * had its opening borrower above the free cover limit, so the platform referred them
+             * for evidence and PROMOTED them to a registered party -- correct behaviour, and it
+             * left memberName null. The template then fell back to a bare header, on the one
+             * scheme whose owner most needed to see a filled row, and the file they sent back had
+             * every date in Excel's own format and was refused entire.
+             */
+            String name = member.getMemberName();
+            LocalDate born = member.getMemberDateOfBirth();
+            if ((name == null || born == null) && member.getMemberPartyId() != null) {
+                PartyDetailView party = partyApi.getPartyDetail(member.getMemberPartyId());
+                name = name != null ? name : party.displayName();
+                born = born != null ? born : party.dateOfBirth();
+            }
+            if (name == null || born == null) {
                 continue;
             }
             csv.append(String.join(",",
                     csvValue(member.getMemberReference()),
-                    csvValue(member.getMemberName()),
-                    member.getMemberDateOfBirth().toString(),
+                    csvValue(name),
+                    born.toString(),
                     "", "", "",
                     terms.principalAmount().toPlainString(),
                     String.valueOf(terms.termMonths()),
