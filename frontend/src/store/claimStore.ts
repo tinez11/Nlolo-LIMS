@@ -3,6 +3,8 @@ import {
   attachClaimEvidence,
   decideSettlement,
   getClaim,
+  getClaimableCover,
+  listClaimAssessments,
   listClaimEvidence,
   registerClaim,
   reopenClaim,
@@ -12,6 +14,7 @@ import {
 } from '@/api/claims';
 import type {
   ClaimAssessmentView,
+  ClaimCoverView,
   ClaimEvidenceView,
   ClaimView,
   Page,
@@ -48,10 +51,21 @@ interface ClaimState {
   // for a given claim's panel at a time (the form disables itself while
   // submitting), so there is nothing a second key would disambiguate.
   attachingEvidence: Keyed<true>;
+  // What the assessor recommended, and the most the claim may pay. Both feed the
+  // same decision, and both are READS a decision-maker previously did not have:
+  // separation of duties guarantees the decider never saw the assessment, and
+  // the ceiling was only ever reachable by exceeding it.
+  assessments: Keyed<ClaimAssessmentView[]>;
+  // Not folded into `detail`: this one legitimately ERRORS on a claim that loads
+  // perfectly well (a policy changed after registration 409s), and it must
+  // not be able to take the claim record down with it.
+  claimableCover: Keyed<ClaimCoverView>;
 
   loadList: (params: ClaimSearchParams) => Promise<void>;
   loadDetail: (claimId: string) => Promise<void>;
   loadEvidence: (claimId: string) => Promise<void>;
+  loadAssessments: (claimId: string) => Promise<void>;
+  loadClaimableCover: (claimId: string) => Promise<void>;
   registerClaim: (request: RegisterClaimRequest, attempt: MutationAttempt) => Promise<void>;
   /** Clears a stale registration error before a fresh attempt -- see the call site. */
   resetRegisterClaim: () => void;
@@ -80,6 +94,8 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
   reopening: {},
   evidence: {},
   attachingEvidence: {},
+  assessments: {},
+  claimableCover: {},
 
   loadList: (params) =>
     track(
@@ -103,6 +119,22 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
       getState().evidence[claimId] ?? idle<ClaimEvidenceView[]>(),
       (next) => set((s) => ({ evidence: { ...s.evidence, [claimId]: next } })),
       () => listClaimEvidence(claimId),
+    ),
+
+  loadAssessments: (claimId) =>
+    track(
+      `claim.assessments.${claimId}`,
+      getState().assessments[claimId] ?? idle<ClaimAssessmentView[]>(),
+      (next) => set((s) => ({ assessments: { ...s.assessments, [claimId]: next } })),
+      () => listClaimAssessments(claimId),
+    ),
+
+  loadClaimableCover: (claimId) =>
+    track(
+      `claim.claimableCover.${claimId}`,
+      getState().claimableCover[claimId] ?? idle<ClaimCoverView>(),
+      (next) => set((s) => ({ claimableCover: { ...s.claimableCover, [claimId]: next } })),
+      () => getClaimableCover(claimId),
     ),
 
   registerClaim: (request, attempt) =>
@@ -129,6 +161,9 @@ export const useClaimStore = create<ClaimState>((set, getState) => ({
         // The response is the assessment record, not the claim -- refetch so the
         // status flip (REGISTERED/REOPENED -> UNDER_ASSESSMENT) shows in `detail`.
         await getState().loadDetail(claimId);
+        // And the history, which renders on the same page: without this the panel
+        // listing assessments goes on showing the list from before this one.
+        await getState().loadAssessments(claimId);
         return assessment;
       },
     ),
@@ -215,3 +250,7 @@ export const selectEvidence = (claimId: string) => (s: ClaimState) =>
   s.evidence[claimId] ?? idle<ClaimEvidenceView[]>();
 export const selectAttachingEvidence = (claimId: string) => (s: ClaimState) =>
   s.attachingEvidence[claimId] ?? idle<true>();
+export const selectAssessments = (claimId: string) => (s: ClaimState) =>
+  s.assessments[claimId] ?? idle<ClaimAssessmentView[]>();
+export const selectClaimableCover = (claimId: string) => (s: ClaimState) =>
+  s.claimableCover[claimId] ?? idle<ClaimCoverView>();

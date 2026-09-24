@@ -29,6 +29,7 @@ import { FieldControl } from './fieldControl';
 export function FormField({
   label,
   error,
+  hint,
   className,
   children,
 }: {
@@ -37,6 +38,18 @@ export function FormField({
   // call site passes `errors.x?.message`, which IS `string | undefined` -- a bare
   // `error?: string` would reject that assignment outright.
   error?: string | undefined;
+  /**
+   * A standing explanation, rendered under the control and wired into
+   * `aria-describedby` — a limit the value must respect, or where a prefilled
+   * figure came from.
+   *
+   * Distinct from `error` in the way that matters for assistive tech: an error
+   * appears because something is wrong and goes away when it is fixed, while a
+   * hint is true before anything is typed. Putting a limit in the error slot
+   * would mean nobody learns it until they have already broken it, which is the
+   * exact failure this prop was added to fix.
+   */
+  hint?: string | undefined;
   /** For a field that has to participate in its parent's layout — `flex-1`, a
    *  grid span. Not for restyling the field itself. */
   className?: string | undefined;
@@ -44,15 +57,28 @@ export function FormField({
 }) {
   const id = useId();
   const errorId = `${id}-error`;
+  const hintId = `${id}-hint`;
 
   return (
     <div className={cn('block', className)}>
       <label htmlFor={id} className="mb-1 block text-xs font-medium text-muted-foreground">
         {label}
       </label>
-      <FieldControl value={{ id, invalid: Boolean(error), errorId: error ? errorId : undefined }}>
+      <FieldControl
+        value={{
+          id,
+          invalid: Boolean(error),
+          errorId: error ? errorId : undefined,
+          hintId: hint ? hintId : undefined,
+        }}
+      >
         {children}
       </FieldControl>
+      {hint && (
+        <p id={hintId} className="mt-1 text-[11px] text-muted-foreground">
+          {hint}
+        </p>
+      )}
       {error && (
         // role="alert" so a rejection that appears on submit is announced rather
         // than just painted red for whoever can see it.

@@ -3,6 +3,7 @@
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimAssessmentView;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimCoverView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimEvidenceView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimNotFoundException;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimDeclineReason;
@@ -323,6 +324,32 @@ public class ClaimsApiImpl implements ClaimsApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<ClaimAssessmentView> listAssessments(UUID claimId) {
+        UUID tenantId = TenantContext.get();
+        // Same guard as listEvidence: an unknown or cross-tenant claimId must 404 rather than
+        // return an empty list, which would read as "this claim was never assessed".
+        findOrThrow(claimId, tenantId);
+
+        return claimAssessmentRepository.findByClaimIdAndTenantIdOrderByCreatedAtDesc(claimId, tenantId)
+            .stream()
+            .map(this::toAssessmentView)
+            .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ClaimCoverView claimableCover(UUID claimId) {
+        Claim claim = findOrThrow(claimId, TenantContext.get());
+        // The SAME call decideSettlement makes, with the same four arguments off the same stored
+        // facts. Not a re-implementation of the rule and not an approximation of it: if this and
+        // the ceiling could disagree, showing it would be worse than showing nothing.
+        ClaimableCoverView cover = policyApi.claimableCover(claim.getPolicyNumber(),
+            claim.getPolicyMemberId(), claim.getDateOfEvent(), claim.getClaimType().name());
+        return new ClaimCoverView(cover.amount(), cover.currencyCode());
+    }
+
+    @Override
     @Transactional
     public void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
                                   String rejectionReason, String payeeRef, String idempotencyKey, String decidedBy) {
@@ -557,8 +584,32 @@ public class ClaimsApiImpl implements ClaimsApi {
      */
     private boolean requiresContestabilityReview(PolicyView policy, LocalDate dateOfEvent) {
         if (policy.underwritingCaseId() == null) {
-            log.warn("Policy {} has no underwriting case id (issued before M6); treating claim as "
-                + "within the contestability window and flagging for review", policy.policyNumber());
+            /*
+             * THIS BRANCH IS NOT THE EDGE CASE IT WAS WRITTEN AS.
+             *
+             * It used to log "issued before M6", which reads as a handful of legacy rows. It is
+             * not: PolicyApiImpl.issueGroupScheme passes null for underwritingCaseId
+             * unconditionally, and so does the listener that issues a scheme FROM a decided
+             * group case -- that case id is recorded only in a free-text issuance note. So EVERY
+             * group scheme has no case, and every claim on one lands here.
+             *
+             * On the dev database that is 121 of 121 schemes against 0 of 406 individual
+             * policies. The console shows "Contestability: Requires review" on every single
+             * group claim, permanently, which is a flag carrying no information -- the failure
+             * mode where staff learn to click past a warning because it is always lit.
+             *
+             * Fail-closed is still correct and is deliberately kept: being wrong this way costs
+             * a manual review, being wrong the other way approves a possibly non-disclosed
+             * claim. What is wrong is the DERIVATION, not the default. A group member's
+             * contestability window should run from the date THIS life's cover started -- the
+             * member's joinedOn -- not from a scheme-level underwriting decision that does not
+             * exist. Fixing that changes when claims are flagged for review, which is a
+             * compliance-weight business rule and not something to slip into a UI change.
+             */
+            log.warn("Policy {} has no underwriting case id, so contestability cannot be measured;"
+                + " flagging for review. Expected on every group scheme -- issueGroupScheme never"
+                + " records one -- and on individual policies issued before M6",
+                policy.policyNumber());
             return true;
         }
         try {

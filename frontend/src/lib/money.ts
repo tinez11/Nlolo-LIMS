@@ -43,6 +43,65 @@ const GROUPED_2DP = new Intl.NumberFormat('en-US', {
 });
 
 /**
+ * Compare two Money amounts. Negative when `a < b`, zero when equal, positive when `a > b`.
+ *
+ * This module says it holds no arithmetic on purpose, and that still stands: nothing here adds,
+ * subtracts or totals. A comparison is different in kind — it is how a form can refuse an amount
+ * the backend would refuse anyway, before the round trip.
+ *
+ * <b>Via BigInt, never Number.</b> The whole reason money travels as a string here is that a
+ * double cannot hold every decimal the backend stores, and `Number('9007199254740993.99')` is
+ * already wrong. A ceiling check that quietly loses the last digits would pass an amount the
+ * server then rejects — reintroducing the exact confusion it exists to prevent, one round trip
+ * later. Both sides are scaled to integer cents and compared exactly.
+ *
+ * Returns `NaN` for an amount that is not in the backend's own format, so callers can tell
+ * "cannot compare" apart from "not greater". Nothing may treat that as "within the limit".
+ */
+export function compareAmounts(a: string, b: string): number {
+  if (!isValidAmount(a) || !isValidAmount(b)) return NaN;
+  const cents = (value: string): bigint => {
+    const negative = value.startsWith('-');
+    const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.');
+    const scaled = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+    return negative ? -scaled : scaled;
+  };
+  const left = cents(a);
+  const right = cents(b);
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
+/**
+ * `a - b`, as a Money amount string. Exact, via BigInt cents.
+ *
+ * <b>This is the one exception to "no arithmetic here", and it is narrower than it looks.</b> The
+ * rule exists so that totals — a scheme's cover, a ledger balance, a premium — are computed once,
+ * by the backend, and never recomputed into a second slightly different answer on screen. This
+ * computes no total. It states the DIFFERENCE between two figures a person is already looking at,
+ * so a warning can say "TZS 300,000.00 less than this claim is covered for" instead of making
+ * somebody subtract two seven-digit numbers in their head while approving a death claim.
+ *
+ * The result is for display only. It is never sent to the server, never persisted, and never
+ * feeds another calculation. Anything that needs a real figure asks the backend for it.
+ *
+ * Returns `null` when either side is not a valid amount, so a caller cannot render a number
+ * derived from something half-typed.
+ */
+export function subtractAmounts(a: string, b: string): string | null {
+  if (!isValidAmount(a) || !isValidAmount(b)) return null;
+  const cents = (value: string): bigint => {
+    const negative = value.startsWith('-');
+    const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.');
+    const scaled = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+    return negative ? -scaled : scaled;
+  };
+  const difference = cents(a) - cents(b);
+  const sign = difference < 0n ? '-' : '';
+  const magnitude = difference < 0n ? -difference : difference;
+  return `${sign}${magnitude / 100n}.${String(magnitude % 100n).padStart(2, '0')}`;
+}
+
+/**
  * Format a Money for display, e.g. `TZS 1,000,000.00`.
  *
  * The ISO code is used rather than a locale currency symbol: TZS has no widely

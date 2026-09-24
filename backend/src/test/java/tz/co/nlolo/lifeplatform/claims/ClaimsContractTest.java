@@ -618,6 +618,115 @@ class ClaimsContractTest {
     }
 
     // ============================================================================================
+    // GET /claims/{claimId}/assessments
+    // ============================================================================================
+
+    /**
+     * The read that closes separation of duties.
+     *
+     * <p>A manager may not decide a claim they assessed, so the decider is always somebody else —
+     * and until this endpoint existed there was no way for that person to see the recommendation
+     * they were being asked to approve. The assertion is deliberately made with a MANAGER token,
+     * not an assessor one: an endpoint only the assessor could read would leave the actual gap
+     * exactly where it was.
+     */
+    @Test
+    void listAssessmentsLetsTheDecidingManagerSeeWhatTheAssessorRecommended() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-ASSESS-LIST-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        submitAssessmentDirectly(tenantId, claimId, "assessor-who-will-not-decide");
+
+        mockMvc.perform(get("/claims/" + claimId + "/assessments")
+                .with(managerOf(tenantId, "manager-who-decides")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].assessor").value("assessor-who-will-not-decide"))
+            .andExpect(jsonPath("$[0].findings").value("Fixture findings"))
+            // Money, not a number -- this is the figure the approval form prefills from.
+            .andExpect(jsonPath("$[0].recommendedAmount.amount").value("2000000.00"))
+            .andExpect(jsonPath("$[0].recommendedAmount.currencyCode").value("TZS"))
+            .andExpect(jsonPath("$[0].fraudIndicator").value(false));
+    }
+
+    /** Findings and the fraud flag are internal. A customer must not read a scrutiny signal
+     * recorded about themselves, and the claim here is real and assessed so a missing
+     * {@code @PreAuthorize} would answer 200 rather than an incidental 404. */
+    @Test
+    void listAssessmentsReturns403ForACustomerToken() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-ASSESS-LIST-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+        submitAssessmentDirectly(tenantId, claimId, "assessor-http-list");
+
+        mockMvc.perform(get("/claims/" + claimId + "/assessments")
+                .with(customerOf(tenantId, fixture.applicantId())))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+
+    // ============================================================================================
+    // GET /claims/{claimId}/claimable-cover
+    // ============================================================================================
+
+    /**
+     * The ceiling, readable before it is exceeded.
+     *
+     * <p>2,000,000.00 is this fixture's sum assured — the SAME number {@code Claim.approve} bounds
+     * an approval with. Asserting the value rather than merely the shape is the point: a response
+     * that parsed but carried a different figure would be worse than no endpoint, because the
+     * form prefills from it.
+     */
+    @Test
+    void claimableCoverPublishesTheCeilingAnApprovalIsBoundedBy() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-COVER-01");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(get("/claims/" + claimId + "/claimable-cover")
+                .with(managerOf(tenantId, "manager-reading-cover")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.claimableCover.amount").value("2000000.00"))
+            .andExpect(jsonPath("$.claimableCover.currencyCode").value("TZS"));
+    }
+
+    /** An assessor needs it too: the recommendation they type is bounded by the same figure the
+     * manager's approval is, so showing it to only one of the two would leave the other guessing. */
+    @Test
+    void claimableCoverIsReadableByTheAssessorAsWellAsTheManager() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-COVER-02");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(get("/claims/" + claimId + "/claimable-cover")
+                .with(assessorOf(tenantId, "assessor-reading-cover")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.claimableCover.amount").value("2000000.00"));
+    }
+
+    /** A plain staff token is not enough. Claims work is role-gated, and the cover on somebody's
+     * death claim is not general staff reading. */
+    @Test
+    void claimableCoverReturns403ForAPlainStaffToken() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-COVER-03");
+        String policyNumber = issuePolicy(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
+
+        mockMvc.perform(get("/claims/" + claimId + "/claimable-cover")
+                .with(staffOf(tenantId)))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+
+    // ============================================================================================
     // POST /claims/{claimId}/settlement-decision
     // ============================================================================================
 

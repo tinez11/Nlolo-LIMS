@@ -5,13 +5,18 @@ import { Button } from '@/components/ui/button';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { Receipt } from '@/components/Receipt';
-import { formatMoney } from '@/lib/money';
+import { compareAmounts, formatMoney, subtractAmounts } from '@/lib/money';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
-import { selectDecidingSettlement, useClaimStore } from '@/store/claimStore';
+import {
+  selectAssessments,
+  selectClaimableCover,
+  selectDecidingSettlement,
+  useClaimStore,
+} from '@/store/claimStore';
 import {
   blankApproveDecision,
   blankRejectDecision,
-  settlementDecisionFormSchema,
+  settlementDecisionSchema,
   toApiRequest,
   type SettlementDecisionFormValues,
 } from './settlementDecisionForm';
@@ -35,6 +40,10 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
   const decideSettlement = useClaimStore((s) => s.decideSettlement);
   const resetDecideSettlement = useClaimStore((s) => s.resetDecideSettlement);
   const deciding = useClaimStore(selectDecidingSettlement(claimId));
+  const loadClaimableCover = useClaimStore((s) => s.loadClaimableCover);
+  const loadAssessments = useClaimStore((s) => s.loadAssessments);
+  const coverResource = useClaimStore(selectClaimableCover(claimId));
+  const assessmentsResource = useClaimStore(selectAssessments(claimId));
   // Minted once for the lifetime of this panel, reused across retries -- same
   // idiom as RegisterClaimPage, even though this key is only load-bearing on
   // approval (see api/claims.ts's decideSettlement doc).
@@ -42,22 +51,66 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
 
   useEffect(() => {
     resetDecideSettlement(claimId);
+    void loadClaimableCover(claimId);
+    void loadAssessments(claimId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimId]);
+
+  const cover = coverResource.data?.claimableCover ?? null;
+  // Newest first, so [0] is the most recent assessment -- the one a second
+  // assessor wrote after the first, if there were two.
+  const latestAssessment = assessmentsResource.data?.[0] ?? null;
+  const recommended = latestAssessment?.recommendedAmount ?? null;
 
   const {
     register,
     handleSubmit,
     watch,
     reset,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<SettlementDecisionFormValues>({
-    resolver: zodResolver(settlementDecisionFormSchema),
+    resolver: zodResolver(settlementDecisionSchema(cover)),
     defaultValues: blankApproveDecision(),
   });
 
   // eslint-disable-next-line react-hooks/incompatible-library -- see RegisterClaimPage
   const approved = watch('approved');
+
+  /*
+    Both reads land AFTER this form mounts, so the starting amount cannot be a
+    `defaultValue` -- it has to be written in when it arrives.
+
+    `reset`, not `setValue`: reset also clears the dirty flag, so the prefilled
+    figure is the form's BASELINE rather than looking like an edit somebody
+    already made and might be expected to justify.
+
+    Two guards, and both are load-bearing. `isDirty` stops a slow read
+    overwriting something already typed -- the one behaviour that would be worse
+    than no prefill at all. `approved` stops it resurrecting the approve branch
+    under somebody who has moved to Reject while the reads were in flight.
+  */
+  useEffect(() => {
+    if (isDirty || !approved) return;
+    if (!recommended && !cover) return;
+    reset(blankApproveDecision(recommended, cover));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommended?.amount, recommended?.currencyCode, cover?.amount, cover?.currencyCode]);
+
+  /*
+    Derived from what is rendered right now, never stored in state -- the lint
+    rule against synchronous setState in an effect exists for exactly this, and
+    a stored copy would go stale on the keystroke after it was computed.
+
+    `compareAmounts` returns NaN for a half-typed amount, and `< 0` is false for
+    NaN, so nothing is claimed while somebody is still typing.
+  */
+  const typedAmount = watch('approvedAmount');
+  const shortfall = (() => {
+    if (!approved || !cover || typeof typedAmount !== 'string') return null;
+    if (!(compareAmounts(typedAmount, cover.amount) < 0)) return null;
+    const difference = subtractAmounts(cover.amount, typedAmount);
+    return difference ? formatMoney({ amount: difference, currencyCode: cover.currencyCode }) : null;
+  })();
 
   /**
    * Validation runs FIRST, then the confirmation.
@@ -135,11 +188,27 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
       {approved ? (
         <>
           <div className="grid grid-cols-[1fr_auto] gap-2">
-            <FormField label="Approved amount" error={fieldError(errors, 'approvedAmount')}>
-              <Input
-                placeholder="1500000.00"
-                {...register('approvedAmount')}
-              />
+            <FormField
+              label="Approved amount"
+              error={fieldError(errors, 'approvedAmount')}
+              /*
+                The ceiling, BEFORE anything is typed.
+
+                This field used to be blank with a `placeholder="1500000.00"` --
+                an invented number that was the only figure on screen, so it is
+                what people entered and then had rejected by a 422 quoting a
+                different one. The limit was always knowable; nothing published
+                it.
+              */
+              hint={
+                cover
+                  ? `Covered for ${formatMoney(cover)} — the most this claim can pay`
+                  : coverResource.status === 'error'
+                    ? 'Could not read what this claim is covered for; the amount will be checked on submission'
+                    : undefined
+              }
+            >
+              <Input {...register('approvedAmount')} />
             </FormField>
             <FormField label="Currency" error={fieldError(errors, 'approvedCurrency')}>
               <Input
@@ -148,6 +217,36 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
               />
             </FormField>
           </div>
+
+          {/*
+            Under, not over. Over is refused outright by the schema and by
+            Claim.approve behind it.
+
+            Paying LESS than the cover is a legitimate decision -- a partial
+            disability award, a balance already partly repaid outside the
+            schedule -- so it is not blocked. It is also exactly what a typo
+            looks like, which is why the shortfall is stated in money rather
+            than left for somebody to notice by subtracting two numbers.
+          */}
+          {shortfall && (
+            <p className="text-xs text-status-warning-fg">
+              {shortfall} less than this claim is covered for.
+              {recommended && ' Change it only on a finding that justifies paying less.'}
+            </p>
+          )}
+
+          {/*
+            Where the starting number came from. A prefilled field that does not
+            say why is a number somebody is being asked to trust blind, and this
+            one carries a colleague's judgement.
+          */}
+          {latestAssessment && (
+            <p className="text-xs text-muted-foreground">
+              Starts at {formatMoney(latestAssessment.recommendedAmount)}, recommended by{' '}
+              <span className="font-medium">{latestAssessment.assessor}</span>. Change it if you
+              have a finding they did not.
+            </p>
+          )}
           <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
             <Input
               placeholder="Mobile-money destination"

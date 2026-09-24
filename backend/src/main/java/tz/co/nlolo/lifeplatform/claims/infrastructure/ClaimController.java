@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -141,6 +142,39 @@ public class ClaimController {
             new BigDecimal(request.recommendedAmount().amount()), request.recommendedAmount().currencyCode(),
             request.fraudIndicator(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(ClaimAssessmentResponseDto.from(assessment));
+    }
+
+    /**
+     * The assessments behind a decision, newest first.
+     *
+     * <p>Assessor OR manager, and neither realm-wide nor customer-facing. Separation of duties
+     * guarantees the decider is not the assessor, so the manager is exactly the person who needs
+     * this and exactly the person who could not get it; the assessor needs it to see what a
+     * colleague already recorded before adding a second assessment to the same claim.
+     *
+     * <p>Not readable by a customer or an agent at any level. Findings are internal, and
+     * {@code fraudIndicator} in particular is a scrutiny signal about the claimant that must
+     * never travel back to them.
+     */
+    @GetMapping("/claims/{claimId}/assessments")
+    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    public ResponseEntity<List<ClaimAssessmentResponseDto>> listAssessments(@PathVariable UUID claimId) {
+        return ResponseEntity.ok(claimsApi.listAssessments(claimId).stream()
+            .map(ClaimAssessmentResponseDto::from)
+            .toList());
+    }
+
+    /**
+     * The most this claim may pay.
+     *
+     * <p>The figure {@code Claim.approve} bounds an approval with, published so it can be shown
+     * BEFORE somebody types rather than quoted back at them in a 422. Same two roles: an assessor
+     * recommending an amount is bounded by exactly the same ceiling as the manager approving one.
+     */
+    @GetMapping("/claims/{claimId}/claimable-cover")
+    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    public ResponseEntity<ClaimCoverResponseDto> claimableCover(@PathVariable UUID claimId) {
+        return ResponseEntity.ok(ClaimCoverResponseDto.from(claimsApi.claimableCover(claimId)));
     }
 
     /**

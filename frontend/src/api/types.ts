@@ -107,6 +107,7 @@ export type ClaimDetails = ClaimsComponents['schemas']['ClaimDetails'];
 export type RegisterClaimRequest = ClaimsComponents['schemas']['RegisterClaimRequest'];
 
 export type ClaimAssessmentView = ClaimsComponents['schemas']['ClaimAssessmentView'];
+export type ClaimCoverView = ClaimsComponents['schemas']['ClaimCoverView'];
 export type SubmitClaimAssessmentRequest = ClaimsComponents['schemas']['SubmitClaimAssessmentRequest'];
 
 /**
