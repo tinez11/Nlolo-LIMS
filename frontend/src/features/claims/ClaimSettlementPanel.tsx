@@ -16,6 +16,7 @@ import {
 import {
   blankApproveDecision,
   blankRejectDecision,
+  recommendationExceedsCover,
   settlementDecisionSchema,
   toApiRequest,
   type SettlementDecisionFormValues,
@@ -240,12 +241,24 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
             say why is a number somebody is being asked to trust blind, and this
             one carries a colleague's judgement.
           */}
-          {latestAssessment && (
-            <p className="text-xs text-muted-foreground">
-              Starts at {formatMoney(latestAssessment.recommendedAmount)}, recommended by{' '}
-              <span className="font-medium">{latestAssessment.assessor}</span>. Change it if you
-              have a finding they did not.
+          {latestAssessment && cover && recommendationExceedsCover(recommended, cover) ? (
+            // An assessment recorded before the backend bounded recommendations. Starting from
+            // it would open the form already refusing its own value, so it starts at the cover
+            // -- and says so, because silently replacing a colleague's figure is its own harm.
+            <p className="text-xs text-status-warning-fg">
+              {latestAssessment.assessor} recommended{' '}
+              {formatMoney(latestAssessment.recommendedAmount)}, more than the{' '}
+              {formatMoney(cover)} this claim is covered for. Starting at the cover, the most it
+              can pay.
             </p>
+          ) : (
+            latestAssessment && (
+              <p className="text-xs text-muted-foreground">
+                Starts at {formatMoney(latestAssessment.recommendedAmount)}, recommended by{' '}
+                <span className="font-medium">{latestAssessment.assessor}</span>. Change it if you
+                have a finding they did not.
+              </p>
+            )
           )}
           <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
             <Input

@@ -3,7 +3,8 @@ import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { isInitialLoad } from '@/store/createResourceSlice';
-import { selectAssessments, useClaimStore } from '@/store/claimStore';
+import { selectAssessments, selectClaimableCover, useClaimStore } from '@/store/claimStore';
+import { recommendationExceedsCover } from './settlementDecisionForm';
 
 /**
  * What the assessors found, newest first.
@@ -26,6 +27,10 @@ import { selectAssessments, useClaimStore } from '@/store/claimStore';
 export function AssessmentHistoryPanel({ claimId }: { claimId: string }) {
   const loadAssessments = useClaimStore((s) => s.loadAssessments);
   const assessments = useClaimStore(selectAssessments(claimId));
+  // Read, never loaded, here: the assessment and settlement panels beside this one already
+  // load it, and the store does not deduplicate a second request. Absent, the mark below
+  // simply does not render -- nothing is claimed about a ceiling nobody has read.
+  const cover = useClaimStore(selectClaimableCover(claimId)).data?.claimableCover ?? null;
 
   useEffect(() => {
     void loadAssessments(claimId);
@@ -65,6 +70,15 @@ export function AssessmentHistoryPanel({ claimId }: { claimId: string }) {
             </span>
           </div>
           <p className="text-xs text-muted-foreground">{assessment.findings}</p>
+          {/* Recorded before the backend bounded recommendations. Kept on the record as
+              written -- an assessment is evidence and is not rewritten -- but flagged, since no
+              approval can follow it. */}
+          {cover && recommendationExceedsCover(assessment.recommendedAmount, cover) && (
+            <p className="text-xs font-medium text-status-warning-fg">
+              Exceeds the {formatMoney(cover)} this claim is covered for, so it cannot be approved
+              as recommended.
+            </p>
+          )}
           {/*
             Shown only when true, and worded as what it is. A fraud indicator is a
             SCRUTINY SIGNAL and never blocks approval -- that is stated in the

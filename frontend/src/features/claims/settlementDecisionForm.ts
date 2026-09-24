@@ -75,18 +75,38 @@ export type SettlementDecisionFormValues = z.infer<typeof settlementDecisionForm
  *
  * Neither is locked. "Change it if there is a new finding" is the actual workflow; what was
  * wrong was starting from nothing and being corrected by a 422.
+ *
+ * A recommendation ABOVE the cover is not a starting point: the form would open already refusing
+ * its own value. The backend now refuses such a recommendation when it is written, but ones
+ * recorded before that exist, so the form starts at the cover instead -- the most that can be
+ * paid -- and the panel says why (`recommendationExceedsCover`).
  */
 export function blankApproveDecision(
   recommended?: Money | null,
   claimableCover?: Money | null,
 ): Extract<SettlementDecisionFormValues, { approved: true }> {
-  const start = recommended ?? claimableCover ?? null;
+  const usable = recommended && !recommendationExceedsCover(recommended, claimableCover)
+    ? recommended
+    : null;
+  const start = usable ?? claimableCover ?? null;
   return {
     approved: true,
     approvedAmount: start?.amount ?? '',
     approvedCurrency: start?.currencyCode ?? 'TZS',
     payeeRef: '',
   };
+}
+
+/**
+ * True only when BOTH figures are known and the recommendation is strictly above the cover.
+ * Unknown cover is not "exceeds" -- nothing can be claimed about a ceiling nobody has read.
+ */
+export function recommendationExceedsCover(
+  recommended: Money | null | undefined,
+  claimableCover: Money | null | undefined,
+): boolean {
+  if (!recommended || !claimableCover) return false;
+  return compareAmounts(recommended.amount, claimableCover.amount) > 0;
 }
 
 export function blankRejectDecision(): SettlementDecisionFormValues {

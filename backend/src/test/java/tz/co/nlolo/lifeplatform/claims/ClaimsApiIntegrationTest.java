@@ -386,6 +386,30 @@ class ClaimsApiIntegrationTest {
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
     }
 
+    /** Only the APPROVAL used to be bounded by the cover, so an assessor could record a figure no
+     * manager could ever approve. The recommendation is now held to the same ceiling -- and a
+     * refused one leaves nothing behind: no row, and the claim still REGISTERED. */
+    @Test
+    void aRecommendationAboveTheCoverIsRefusedAndLeavesTheClaimUntouched() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-ASSESS-CAP");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-assess-cap");
+
+        ClaimValidationException refused = assertThrows(ClaimValidationException.class,
+            () -> claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000.01"), "TZS",
+                false, "assessor-cap"));
+        assertThat(refused.getMessage()).contains("2000000.01").contains("covered for");
+
+        assertThat(claimsApi.listAssessments(claimId)).isEmpty();
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REGISTERED);
+
+        // INCLUSIVE, as the approval is: the full cover is the commonest correct recommendation.
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000.00"), "TZS", false,
+            "assessor-cap");
+        assertThat(claimsApi.listAssessments(claimId)).hasSize(1);
+    }
+
     // ---- Task 5: decideSettlement -- assessment-count invariant (Cl3) ----------------------
 
     @Test

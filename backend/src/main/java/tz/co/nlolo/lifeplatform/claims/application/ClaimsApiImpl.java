@@ -305,6 +305,23 @@ public class ClaimsApiImpl implements ClaimsApi {
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
 
+        // The same ceiling decideSettlement bounds the approval with, from the same call. Only the
+        // APPROVAL used to be bounded, so an assessor could record a figure no manager could ever
+        // approve -- and the refusal then landed on a different person in a different session,
+        // looking at a colleague's recommendation they could not act on. Amount only, exactly as
+        // Claim.approve compares it. Resolved only when there is an amount to bound: a
+        // recommendation is optional, and an assessment without one must not start failing on a
+        // cover read it never needed.
+        if (recommendedAmount != null) {
+            ClaimableCoverView claimable = policyApi.claimableCover(
+                claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
+                claim.getClaimType().name());
+            if (recommendedAmount.compareTo(claimable.amount()) > 0) {
+                throw new ClaimValidationException("Recommended amount " + recommendedAmount
+                    + " exceeds the " + claimable.amount() + " this claim is covered for");
+            }
+        }
+
         // REGISTERED or REOPENED -> UNDER_ASSESSMENT; a no-op if already UNDER_ASSESSMENT
         // (second/third assessor on the same claim), throws from any other status.
         claim.beginAssessment();

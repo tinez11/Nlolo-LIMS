@@ -141,6 +141,14 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: >
+            recommendedAmount exceeds what this claim is covered for (GET
+            /claims/{claimId}/claimable-cover) — the same ceiling the approval is bounded by, so a
+            recommendation no manager could approve is refused where it is written.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
     get:
       summary: List this claim's assessments, newest first (staff — CLAIMS_ASSESSOR or CLAIMS_MANAGER)
       description: >

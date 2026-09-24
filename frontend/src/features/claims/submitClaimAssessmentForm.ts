@@ -11,14 +11,11 @@ const currency = () => z.string().regex(CURRENCY_PATTERN, 'Must be a 3-letter co
 /**
  * Bounded by the same ceiling the eventual approval is.
  *
- * <b>The backend does NOT enforce this one.</b> {@code Claim.approve} bounds the APPROVED amount;
- * nothing bounds a recommendation, so an assessor may record any figure and the refusal lands
- * later, on a different person, in a different session. That is the worst place for it to land:
- * the manager sees a colleague's recommendation they cannot act on and no explanation of why.
- *
- * So this is a client-side guard with no server counterpart, which is unusual here and worth
- * stating plainly — it prevents an impossible recommendation from being written down, rather
- * than enforcing a rule. `null` keeps the plain shape checks and nothing more.
+ * Mirrors `ClaimsApiImpl.submitAssessment`, which refuses a recommendation above the cover with a
+ * 422. Only the APPROVAL used to be bounded, so an assessor could record any figure and the
+ * refusal landed later, on a different person, in a different session -- a manager looking at a
+ * colleague's recommendation they could not act on. This check just says so before the round
+ * trip. `null` keeps the plain shape checks and leaves the server the authority.
  */
 export function submitClaimAssessmentSchema(claimableCover: Money | null) {
   return z.object({

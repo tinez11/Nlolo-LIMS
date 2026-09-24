@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   blankApproveDecision,
   blankRejectDecision,
+  recommendationExceedsCover,
   settlementDecisionFormSchema,
   settlementDecisionSchema,
   toApiRequest,
@@ -187,5 +188,40 @@ describe('the starting amount', () => {
       payeeRef: 'MOBILE-MONEY-REF-1',
     });
     expect(result.success).toBe(true);
+  });
+
+  it('starts at the cover when the recommendation exceeds it', () => {
+    // Seen in the console: a TZS 50,000,000 recommendation on a claim covered for
+    // 20,000,000 opened the approval form at 50,000,000 -- a value it then refused.
+    const overCover = { amount: '50000000.00', currencyCode: 'TZS' };
+    const ceiling = { amount: '20000000.00', currencyCode: 'TZS' };
+    const values = blankApproveDecision(overCover, ceiling);
+    expect(values.approvedAmount).toBe('20000000.00');
+    expect(
+      settlementDecisionSchema(ceiling).safeParse({ ...values, payeeRef: 'REF-1' }).success,
+    ).toBe(true);
+  });
+
+  it('keeps a recommendation equal to the cover -- the bound is inclusive', () => {
+    expect(blankApproveDecision(cover, cover).approvedAmount).toBe('800000.00');
+  });
+
+  it('keeps the recommendation when the cover is unknown, claiming nothing about a ceiling', () => {
+    expect(blankApproveDecision(recommended, null).approvedAmount).toBe('650000.00');
+  });
+});
+
+describe('recommendationExceedsCover', () => {
+  const cover = { amount: '800000.00', currencyCode: 'TZS' };
+
+  it('is true only strictly above the cover', () => {
+    expect(recommendationExceedsCover({ amount: '800000.01', currencyCode: 'TZS' }, cover)).toBe(true);
+    expect(recommendationExceedsCover({ amount: '800000.00', currencyCode: 'TZS' }, cover)).toBe(false);
+    expect(recommendationExceedsCover({ amount: '1.00', currencyCode: 'TZS' }, cover)).toBe(false);
+  });
+
+  it('is false when either figure is missing', () => {
+    expect(recommendationExceedsCover(null, cover)).toBe(false);
+    expect(recommendationExceedsCover(cover, null)).toBe(false);
   });
 });
