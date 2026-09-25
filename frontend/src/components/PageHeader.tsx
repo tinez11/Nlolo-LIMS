@@ -68,6 +68,9 @@ export function PageHeader({
   return (
     <div
       ref={bar}
+      // Marked so `DetailLayout` can observe this element's height directly: a CSS custom
+      // property is only reactive to CSS, and the rail has to re-measure when the bar grows.
+      data-pagebar
       className="sticky top-0 z-20 flex flex-wrap items-start justify-between gap-4 border-b border-border bg-background px-6 pt-4 pb-3"
     >
       <div className="min-w-0">

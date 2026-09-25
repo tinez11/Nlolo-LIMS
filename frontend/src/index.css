@@ -74,7 +74,7 @@
   --control-hover: oklch(0.935 0 0);
   /* A table header row and an empty-state ground: one step above the page. */
   --band: oklch(0.982 0 0);
-  --shadow-raise: 0 0 0 1px oklch(0 0 0 / 6%), 0 1px 2px oklch(0 0 0 / 10%);
+  --raise: 0 0 0 1px oklch(0 0 0 / 6%), 0 1px 2px oklch(0 0 0 / 10%);
 
   /* status: neutral / pending / active / success / warning / danger */
   --status-neutral-bg: oklch(0.96 0.002 250);
@@ -123,7 +123,7 @@
   --control: oklch(1 0 0 / 7%);
   --control-hover: oklch(1 0 0 / 11%);
   --band: oklch(0.165 0 0);
-  --shadow-raise: 0 0 0 1px oklch(1 0 0 / 8%), 0 1px 2px oklch(0 0 0 / 40%);
+  --raise: 0 0 0 1px oklch(1 0 0 / 8%), 0 1px 2px oklch(0 0 0 / 40%);
 
   /* Dark badges invert: a dim tinted ground with a bright foreground. The same
      hue order is preserved so the mapping is learnable across themes. */
@@ -160,7 +160,7 @@
   --color-control: var(--control);
   --color-control-hover: var(--control-hover);
   --color-band: var(--band);
-  --shadow-raise: var(--shadow-raise);
+  --shadow-raise: var(--raise);
 
   --color-status-neutral-bg: var(--status-neutral-bg);
   --color-status-neutral-fg: var(--status-neutral-fg);

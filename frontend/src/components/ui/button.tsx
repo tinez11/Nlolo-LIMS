@@ -31,16 +31,30 @@ const button = cva(
   },
 );
 
-export type ButtonProps = ComponentProps<'button'> &
-  VariantProps<typeof button> & {
-    asChild?: boolean;
-    /**
-     * The request this button started is in flight. Disables it -- the submit guard every
-     * mutating form on the console relies on, now in one place -- and says so to assistive
-     * tech, where a bare `disabled` only says "unavailable".
-     */
-    pending?: boolean;
-  };
+/**
+ * A button, or -- with `asChild` -- whatever the caller rendered wearing its clothes.
+ *
+ * The two are genuinely different things, so the props are split rather than made optional
+ * on one shape: an anchor has no disabled state and no busy state, and `Slot` takes exactly
+ * one child, so a spinner cannot be injected beside it. Spelling that as a union means
+ * `<Button asChild pending>` does not compile, instead of compiling and doing nothing.
+ */
+type ButtonBaseProps = ComponentProps<'button'> & VariantProps<typeof button>;
+
+export type ButtonProps =
+  | (ButtonBaseProps & {
+      asChild?: false;
+      /**
+       * The request this button started is in flight. Disables it AND says so to assistive
+       * tech, where a bare `disabled` reports only "unavailable", never "working".
+       *
+       * Forms on this console still hand-roll the guard as
+       * `disabled={x.status === 'loading'}` plus a label swap; the screen plans move them
+       * onto this prop one surface at a time. It is the destination, not yet the practice.
+       */
+      pending?: boolean;
+    })
+  | (ButtonBaseProps & { asChild: true; pending?: never });
 
 export function Button({
   className,

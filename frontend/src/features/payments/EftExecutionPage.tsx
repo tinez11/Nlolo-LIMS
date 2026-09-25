@@ -243,7 +243,10 @@ export function EftExecutionPage() {
       />
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        {/* `overflow-hidden` so the full-bleed error strip below, which is deliberately
+            square-cornered, is clipped to the panel's own radius rather than painting its
+            danger ground over the rounded top edge when it is the first child. */}
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
           {confirming && (
             <div className="border-b border-border px-3 py-2.5">
               <ConfirmAct

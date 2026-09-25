@@ -1,6 +1,6 @@
 import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { avatarHue, displayName, initials, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
@@ -25,6 +25,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const identity = readIdentity(auth.user?.access_token);
   const config = REALM_CONFIG[realm];
 
+  const location = useLocation();
   const groups = navFor(realm, identity);
   const badges = useNavBadges(realm, identity);
 
@@ -147,12 +148,17 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            aria-label="Go to a screen"
+            // No aria-label: the visible words ARE the name. An aria-label of "Go to a
+            // screen" replaced them, and a voice-control user saying the words they can
+            // see would have matched nothing (WCAG 2.5.3, Label in Name). The shortcut
+            // hint is aria-hidden so the name stays the sentence, not "Go to… Ctrl K".
             className="flex w-full items-center gap-2 rounded-md bg-control px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-control-hover hover:text-foreground pointer-coarse:min-h-11"
           >
             <Search className="size-4 shrink-0" aria-hidden />
             <span className="flex-1 text-left">Go to…</span>
-            <kbd className="font-sans text-xs">Ctrl K</kbd>
+            <kbd className="font-sans text-xs" aria-hidden>
+              Ctrl K
+            </kbd>
           </button>
         </div>
 
@@ -224,8 +230,14 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                           // white pill on its grey sidebar, which measures 1.06:1 -- the
                           // shadow is carrying it alone. Weight is the second signal, and
                           // the one that survives a dim screen or a colour-blind reader.
+                          // `dark:bg-selected` because the light and dark grounds run in
+                          // opposite directions: in light, Paper above Quiet Paper is a
+                          // lift; in dark, --surface (0.185) sits barely above the
+                          // sidebar's --surface-muted (0.165) and reads as LESS separated
+                          // than the --selected it replaced. Dark keeps the brighter tone;
+                          // both keep the weight, which is the signal that survives either.
                           isActive
-                            ? 'bg-surface font-medium text-foreground shadow-raise'
+                            ? 'bg-surface font-medium text-foreground shadow-raise dark:bg-selected'
                             : 'text-muted-foreground hover:bg-hover hover:text-foreground',
                         )
                       }
@@ -292,10 +304,23 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           tabIndex={-1}
           className="min-h-0 min-w-0 flex-1 overflow-y-auto focus:outline-none"
         >
-          {/* Every screen is a lazy chunk (see `@/screens`), so the first visit to one
-              suspends while it downloads. LoadingBlock is the console's own `role="status"`
-              surface, which is what the rest of the app shows while it waits. */}
-          <Suspense fallback={<LoadingBlock />}>{children}</Suspense>
+          {/*
+            Every screen is a lazy chunk (see `@/lazyPages`), so a first visit to one
+            suspends while it downloads. LoadingBlock is the console's own `role="status"`
+            surface, which is what the rest of the app shows while it waits.
+
+            KEYED ON THE PATH, and that is the whole of it: react-router 7 wraps every
+            location update in `startTransition`, and a Suspense boundary that ALREADY has
+            committed content does not swap to its fallback inside a transition -- React
+            holds the old screen instead. Without the key, the fallback would paint exactly
+            once, on the first screen after sign-in, and every later navigation to an
+            undownloaded chunk would leave the previous screen on display under a URL that
+            had already changed. The key makes each path a fresh, contentless boundary,
+            which is allowed to show its fallback.
+          */}
+          <Suspense key={location.pathname} fallback={<LoadingBlock />}>
+            {children}
+          </Suspense>
         </main>
       </div>
     </div>

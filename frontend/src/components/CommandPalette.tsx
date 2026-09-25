@@ -32,17 +32,30 @@ export function CommandPalette({
   const [query, setQuery] = useState('');
   const jump = resolveJump(query);
 
+  const close = (open: boolean) => {
+    // Cleared on EVERY close, not only on a jump: Escape and a click on the overlay both
+    // land here, and reopening onto a stale query and its filtered list reads as a box
+    // that remembered something it had no business remembering.
+    if (!open) setQuery('');
+    onOpenChange(open);
+  };
+
   const go = (to: string) => {
-    onOpenChange(false);
-    setQuery('');
+    close(false);
     navigate(`/${realm}/${to}`);
+    // Radix restores focus to whatever was focused before the palette opened -- on a list
+    // screen that is a table-row button this navigation immediately unmounts, dropping
+    // focus to <body>. A keyboard user would then be at the top of the document with the
+    // whole sidebar ahead of them, which is the exact cost the skip link exists to remove.
+    // `#main` is already tabIndex={-1} for the skip link, so it can take focus.
+    requestAnimationFrame(() => document.getElementById('main')?.focus());
   };
 
   const item =
     'flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-3 text-sm aria-selected:bg-selected pointer-coarse:min-h-11';
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={close}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/25" />
         <Dialog.Content

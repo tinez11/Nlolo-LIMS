@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FileText, ScrollText } from 'lucide-react';
+import { useState } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { CommandPalette } from './CommandPalette';
@@ -64,5 +65,28 @@ describe('CommandPalette', () => {
     renderPalette();
     await userEvent.type(screen.getByRole('combobox'), 'Juma Rajabu');
     expect(screen.getByText(/does not search names or records/)).toBeInTheDocument();
+  });
+});
+
+describe('CommandPalette, closing', () => {
+  it('forgets the query when it closes, so reopening is a fresh box', async () => {
+    // Escape and an overlay click both close through onOpenChange, not through a jump, so
+    // clearing only inside go() left the next Ctrl+K showing stale text and a filtered list.
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <MemoryRouter>
+          <CommandPalette realm="staff" groups={GROUPS} open={open} onOpenChange={setOpen} />
+          <button onClick={() => setOpen(true)}>reopen</button>
+        </MemoryRouter>
+      );
+    }
+    render(<Harness />);
+    await userEvent.type(screen.getByRole('combobox'), 'claims');
+    expect(screen.getByRole('combobox')).toHaveValue('claims');
+
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: 'reopen' }));
+    expect(screen.getByRole('combobox')).toHaveValue('');
   });
 });

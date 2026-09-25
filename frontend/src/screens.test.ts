@@ -218,6 +218,26 @@ describe('homeFor', () => {
     expect(homeFor('agents', as())).toBe(REALM_HOME.agents);
   });
 
+  it('only ever lands on a screen the identity can actually see', () => {
+    // Existence is not reachability. A queue behind a gated nav group would land the role
+    // on a screen with no sidebar item and an API that 403s -- correct-looking and useless.
+    // FINANCE_OFFICER -> arrears passes only because `arrears` sits in the finance group
+    // behind the same gate; nothing but this test would notice if a later mapping did not.
+    for (const roles of [
+      ['UNDERWRITER'],
+      ['CLAIMS_ASSESSOR'],
+      ['CLAIMS_MANAGER'],
+      ['FINANCE_OFFICER'],
+      ['ADMIN', 'FINANCE_OFFICER'],
+      [],
+    ]) {
+      const identity = as(...roles);
+      const home = (homeFor('staff', identity) ?? '').split('?')[0];
+      const reachable = navFor('staff', identity).flatMap((g) => g.items.map((i) => i.to));
+      expect(reachable, `${roles.join('+') || 'no roles'} lands on "${home}"`).toContain(home);
+    }
+  });
+
   it('only ever lands on a screen that exists', () => {
     const paths = new Set(SCREENS.staff.map((s) => s.path));
     for (const roles of [

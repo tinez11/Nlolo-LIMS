@@ -78,7 +78,11 @@ export function Textarea({ className, inputSize, ...props }: TextareaProps) {
   return (
     <textarea
       {...aria}
-      className={cn(field({ inputSize }), 'h-auto py-2', className)}
+      // `pointer-coarse:h-auto` as well as `h-auto`: tailwind-merge only resolves classes
+      // that carry the SAME modifiers, so a bare `h-auto` does not cancel the size
+      // variant's `pointer-coarse:h-11` and every textarea would be pinned to 44px on a
+      // touch device -- invisible today only because every call site passes a `min-h-*`.
+      className={cn(field({ inputSize }), 'h-auto py-2 pointer-coarse:h-auto', className)}
       {...props}
     />
   );

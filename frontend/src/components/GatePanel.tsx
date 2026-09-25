@@ -43,7 +43,9 @@ export function GatePanel({ gates, title }: { gates: Gate[]; title?: string }) {
           <li key={gate.title} className="flex items-start gap-2.5">
             <span
               className={cn(
-                'mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-xs font-bold',
+                // `leading-none`: the glyph is decorative (aria-hidden) and sits in a 16px
+                // circle, where text-xs brings a 16px line box and fills it wall to wall.
+                'mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-xs leading-none font-bold',
                 // Glyph colour is the matching `-bg` token, not white: the pair
                 // inverts together, so `-fg` is dark in light mode and light in
                 // dark mode. `text-white` would be white-on-light in dark mode.

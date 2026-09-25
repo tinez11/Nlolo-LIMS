@@ -49,6 +49,14 @@ export function DetailLayout({ record, children }: { record?: ReactNode; childre
     };
     const observer = new ResizeObserver(measure);
     observer.observe(node);
+    // The page bar too, not just the rail. Its height is what `--pagebar-h` carries, and it
+    // grows after mount on its own schedule -- a status badge or an action that appears
+    // once the fetch lands, a description that wraps. Watching only the rail left `pinned`
+    // computed against a stale, smaller offset, which pins a rail into a space that no
+    // longer fits it and puts its last rows permanently below the fold: the exact failure
+    // `shouldPin` exists to prevent.
+    const bar = document.querySelector('[data-pagebar]');
+    if (bar) observer.observe(bar);
     window.addEventListener('resize', measure);
     return () => {
       observer.disconnect();
