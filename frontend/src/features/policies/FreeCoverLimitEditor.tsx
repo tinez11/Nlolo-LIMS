@@ -62,7 +62,7 @@ export function FreeCoverLimitEditor({ policyNumber }: { policyNumber: string })
           Change the free cover limit
         </Button>
         {scheme.status === 'error' && scheme.error && (
-          <p role="alert" className="mt-1 text-[11px] text-status-danger-fg">
+          <p role="alert" className="mt-1 text-xs text-status-danger-fg">
             {scheme.error.detail ?? scheme.error.title}
           </p>
         )}
@@ -101,7 +101,7 @@ export function FreeCoverLimitEditor({ policyNumber }: { policyNumber: string })
               placeholder="600000000.00"
               onChange={(e) => setAmount(e.target.value)}
             />
-            <span className="mt-1 block text-[11px] text-muted-foreground">
+            <span className="mt-1 block text-xs text-muted-foreground">
               {amount.trim() === ''
                 ? 'Blank means this scheme has no limit at all — every borrower covered in full.'
                 : `Currently ${scheme.data?.fcl ? formatMoney(scheme.data.fcl) : 'no limit'}.`}
@@ -115,19 +115,19 @@ export function FreeCoverLimitEditor({ policyNumber }: { policyNumber: string })
               placeholder="Typed wrong at set-up; agreed figure is 600,000,000"
               onChange={(e) => setReason(e.target.value)}
             />
-            <span className="mt-1 block text-[11px] text-muted-foreground">
+            <span className="mt-1 block text-xs text-muted-foreground">
               Recorded against the scheme. A limit is a term agreed with a lender.
             </span>
           </label>
         </div>
       </ConfirmAct>
       {malformed && (
-        <p className="mt-1 text-[11px] text-status-danger-fg">
+        <p className="mt-1 text-xs text-status-danger-fg">
           An amount like 600000000.00, or blank for no limit.
         </p>
       )}
       {!malformed && reason.trim() === '' && (
-        <p className="mt-1 text-[11px] text-status-danger-fg">
+        <p className="mt-1 text-xs text-status-danger-fg">
           Say why. The change is recorded against the scheme.
         </p>
       )}

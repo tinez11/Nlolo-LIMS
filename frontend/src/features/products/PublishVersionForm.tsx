@@ -28,6 +28,7 @@ import {
   type PublishVersionFormValues,
 } from './publishVersionSchema';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 import { humanizeStatus } from '@/lib/status';
 
 /**
@@ -182,7 +183,7 @@ export function PublishVersionForm({
           about. */}
       <div className="rounded-md border border-border p-3">
         <p className="text-xs font-medium text-muted-foreground">Eligibility (optional)</p>
-        <p className="mt-0.5 mb-2.5 text-[11px] text-subtle-foreground">
+        <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
           Age and term are refused at issue — an age outside the rate table cannot be
           priced at all. A sum assured outside its bounds is flagged, not blocked, and the
           reason is recorded: above retention is what reinsurance is for.
@@ -290,7 +291,7 @@ export function PublishVersionForm({
             : 'Rating table -- must cover at least AGE and SUM_ASSURED_BAND'}
         </p>
         {priced && (
-          <p className="-mt-1 mb-2 text-[11px] text-subtle-foreground">
+          <p className="-mt-1 mb-2 text-xs text-subtle-foreground">
             Age and smoker status are keys of the base rate table, so they are not rated by
             multiplier here.
           </p>
@@ -311,7 +312,7 @@ export function PublishVersionForm({
           column header above it would be labelling the wrong things.
         */}
         <div className="@container">
-          <div className="mb-1 hidden items-center gap-2 px-1 text-[11px] text-subtle-foreground @min-[37.5rem]:flex">
+          <div className="mb-1 hidden items-center gap-2 px-1 text-xs text-subtle-foreground @min-[37.5rem]:flex">
             <span className="w-44 shrink-0">Factor</span>
             <span className="min-w-32 flex-1">Band</span>
             {/* Wide enough for an amount, not just an age: the same two columns now carry a
@@ -469,7 +470,7 @@ export function PublishVersionForm({
                 </div>
 
                 {rowMessage && (
-                  <p role="alert" className="mt-1 px-1 text-[11px] text-status-danger-fg">
+                  <p role="alert" className="mt-1 px-1 text-xs text-status-danger-fg">
                     {rowMessage}
                   </p>
                 )}
@@ -477,7 +478,7 @@ export function PublishVersionForm({
                     so the label and the range cannot disagree. Said once, on the row that
                     would otherwise look unfinished. */}
                 {!rowMessage && rowType === 'AGE' && !ratingRows?.[index]?.band && (
-                  <p className="mt-1 px-1 text-[11px] text-subtle-foreground">
+                  <p className="mt-1 px-1 text-xs text-subtle-foreground">
                     Band is optional for age — it is labelled from the range.
                   </p>
                 )}
@@ -497,7 +498,7 @@ export function PublishVersionForm({
           Add rating factor
         </Button>
         {errors.ratingTable?.root?.message && (
-          <p className="mt-1 text-[11px] text-status-danger-fg">{errors.ratingTable.root.message}</p>
+          <p className="mt-1 text-xs text-status-danger-fg">{errors.ratingTable.root.message}</p>
         )}
       </div>
 
@@ -514,7 +515,7 @@ export function PublishVersionForm({
       */}
       <div className="rounded-md border border-border p-3">
         <p className="text-xs font-medium text-muted-foreground">Base rates (optional)</p>
-        <p className="mt-0.5 mb-2.5 text-[11px] text-subtle-foreground">
+        <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
           The annual rate per 1,000 of sum assured, by age band, sex and smoker status. A
           version published without them is valid and sellable but{' '}
           <strong className="font-medium text-foreground">can never be quoted</strong>, and
@@ -529,7 +530,7 @@ export function PublishVersionForm({
           figure carried over from the narrower rating table above, would have done.
         */}
         <div className="@container">
-          <div className="mb-1 hidden items-center gap-2 px-1 text-[11px] text-subtle-foreground @min-[41rem]:flex">
+          <div className="mb-1 hidden items-center gap-2 px-1 text-xs text-subtle-foreground @min-[41rem]:flex">
             <span className="w-16 shrink-0 text-right">From</span>
             <span className="w-16 shrink-0 text-right">To</span>
             <span className="w-28 shrink-0">Sex</span>
@@ -621,7 +622,7 @@ export function PublishVersionForm({
                   </div>
 
                   {rowMessage && (
-                    <p role="alert" className="mt-1 px-1 text-[11px] text-status-danger-fg">
+                    <p role="alert" className="mt-1 px-1 text-xs text-status-danger-fg">
                       {rowMessage}
                     </p>
                   )}
@@ -653,7 +654,7 @@ export function PublishVersionForm({
             claim is later valued at. */}
         <p className="mb-2 text-xs font-medium text-muted-foreground">Benefit schedule</p>
         {errors.benefitSchedule?.root?.message && (
-          <p role="alert" className="mb-2 text-[11px] text-status-danger-fg">
+          <p role="alert" className="mb-2 text-xs text-status-danger-fg">
             {errors.benefitSchedule.root.message}
           </p>
         )}
@@ -738,7 +739,7 @@ export function PublishVersionForm({
                   </Button>
                 </div>
                 {rowMessage && (
-                  <p role="alert" className="mt-1 px-1 text-[11px] text-status-danger-fg">
+                  <p role="alert" className="mt-1 px-1 text-xs text-status-danger-fg">
                     {rowMessage}
                   </p>
                 )}
@@ -804,12 +805,7 @@ export function PublishVersionForm({
       )}
 
       {publishing.status === 'error' && publishing.error && (
-        <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-          {publishing.error.detail ?? publishing.error.title}
-          {publishing.error.traceId && (
-            <span className="ml-2 font-mono text-[10px] opacity-80">({publishing.error.traceId})</span>
-          )}
-        </div>
+        <InlineError error={publishing.error} />
       )}
 
       <Button type="submit" variant="primary" disabled={publishing.status === 'loading'}>

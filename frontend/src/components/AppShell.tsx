@@ -1,6 +1,6 @@
-import { LogOut, Menu, Moon, Sun, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { avatarHue, displayName, initials, readIdentity } from '@/auth/claims';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
@@ -8,6 +8,9 @@ import { cn } from '@/lib/cn';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
 import { useNavBadges } from '@/navBadges';
 import { navFor } from '@/screens';
+import { CommandPalette } from './CommandPalette';
+import { LoadingBlock } from './states';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
 /**
@@ -22,6 +25,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   const identity = readIdentity(auth.user?.access_token);
   const config = REALM_CONFIG[realm];
 
+  const location = useLocation();
   const groups = navFor(realm, identity);
   const badges = useNavBadges(realm, identity);
 
@@ -30,8 +34,22 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   // scene (PRODUCT.md), so the drawer is the narrow-width accommodation, not a
   // second layout to maintain -- the same markup, repositioned.
   const [navOpen, setNavOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const openButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+
+  // Ctrl+K / Cmd+K anywhere in the console. An event handler, never a synchronous setState
+  // in an effect body, which this project's lint rule forbids.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     if (!navOpen) return;
@@ -99,9 +117,20 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         )}
       >
         <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-4">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold tracking-tight">Life Platform</p>
-            <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
+          <div className="flex min-w-0 items-center gap-2.5">
+            {/* A monogram in ink, not a logo: several insurers are tenants of this one
+                console, so the mark belongs to the platform and can carry no tenant's
+                colour. */}
+            <span
+              className="grid size-8 shrink-0 place-items-center rounded-md bg-accent text-xs font-semibold text-accent-foreground"
+              aria-hidden
+            >
+              LP
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold tracking-tight">Life Platform</p>
+              <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
+            </div>
           </div>
           <Button
             ref={closeButton}
@@ -113,6 +142,24 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           >
             <X />
           </Button>
+        </div>
+
+        <div className="shrink-0 px-2 pb-2">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            // No aria-label: the visible words ARE the name. An aria-label of "Go to a
+            // screen" replaced them, and a voice-control user saying the words they can
+            // see would have matched nothing (WCAG 2.5.3, Label in Name). The shortcut
+            // hint is aria-hidden so the name stays the sentence, not "Go to… Ctrl K".
+            className="flex w-full items-center gap-2 rounded-md bg-control px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-control-hover hover:text-foreground pointer-coarse:min-h-11"
+          >
+            <Search className="size-4 shrink-0" aria-hidden />
+            <span className="flex-1 text-left">Go to…</span>
+            <kbd className="font-sans text-xs" aria-hidden>
+              Ctrl K
+            </kbd>
+          </button>
         </div>
 
         {/*
@@ -164,7 +211,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         >
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-2 pb-1.5 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+              <p className="px-2 pb-1.5 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
                 {group.label}
               </p>
               <ul className="space-y-0.5">
@@ -174,9 +221,23 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                       to={item.to}
                       className={({ isActive }) =>
                         cn(
-                          'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors',
+                          // Espresso's nav rhythm, one step tighter horizontally: at its
+                          // full 12px the longest label on this console ("Corporate/Group",
+                          // beside a count) truncated to "Corporate/Gro...", and a nav item
+                          // that cannot say its own name is a worse trade than 2px.
+                          'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors pointer-coarse:min-h-11',
+                          // Raised AND weighted. Espresso marks the active item with a
+                          // white pill on its grey sidebar, which measures 1.06:1 -- the
+                          // shadow is carrying it alone. Weight is the second signal, and
+                          // the one that survives a dim screen or a colour-blind reader.
+                          // `dark:bg-selected` because the light and dark grounds run in
+                          // opposite directions: in light, Paper above Quiet Paper is a
+                          // lift; in dark, --surface (0.185) sits barely above the
+                          // sidebar's --surface-muted (0.165) and reads as LESS separated
+                          // than the --selected it replaced. Dark keeps the brighter tone;
+                          // both keep the weight, which is the signal that survives either.
                           isActive
-                            ? 'bg-selected font-medium text-foreground'
+                            ? 'bg-surface font-medium text-foreground shadow-raise dark:bg-selected'
                             : 'text-muted-foreground hover:bg-hover hover:text-foreground',
                         )
                       }
@@ -185,14 +246,16 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {item.badge && badges[item.badge] && (
                         <span
-                          className="shrink-0 rounded-full bg-selected px-1.5 text-[11px] font-medium text-muted-foreground tabular-nums"
+                          className="shrink-0"
                           // The count alone reads as "3 claims", which is not what
                           // it means. Both the tooltip and the screen-reader text
                           // say what was counted.
                           title={badges[item.badge]!.title}
                         >
-                          {badges[item.badge]!.count}
-                          <span className="sr-only"> — {badges[item.badge]!.title}</span>
+                          <Badge className="px-1.5 py-0 tabular-nums">
+                            {badges[item.badge]!.count}
+                            <span className="sr-only"> — {badges[item.badge]!.title}</span>
+                          </Badge>
                         </span>
                       )}
                     </NavLink>
@@ -205,6 +268,13 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
 
         <UserBlock identity={identity} />
       </aside>
+
+      <CommandPalette
+        realm={realm}
+        groups={groups}
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+      />
 
       {/* `inert` while the drawer is open so Tab cannot walk out of the overlay
           into the page behind it. Cheaper and harder to get wrong than a
@@ -234,7 +304,23 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           tabIndex={-1}
           className="min-h-0 min-w-0 flex-1 overflow-y-auto focus:outline-none"
         >
-          {children}
+          {/*
+            Every screen is a lazy chunk (see `@/lazyPages`), so a first visit to one
+            suspends while it downloads. LoadingBlock is the console's own `role="status"`
+            surface, which is what the rest of the app shows while it waits.
+
+            KEYED ON THE PATH, and that is the whole of it: react-router 7 wraps every
+            location update in `startTransition`, and a Suspense boundary that ALREADY has
+            committed content does not swap to its fallback inside a transition -- React
+            holds the old screen instead. Without the key, the fallback would paint exactly
+            once, on the first screen after sign-in, and every later navigation to an
+            undownloaded chunk would leave the previous screen on display under a URL that
+            had already changed. The key makes each path a fresh, contentless boundary,
+            which is allowed to show its fallback.
+          */}
+          <Suspense key={location.pathname} fallback={<LoadingBlock />}>
+            {children}
+          </Suspense>
         </main>
       </div>
     </div>
@@ -254,7 +340,7 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
     <div className="shrink-0 border-t border-border px-3 py-3">
       <div className="flex items-center gap-2.5">
         <span
-          className="grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold"
+          className="grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold"
           style={{
             // Deterministic hue so the same person is always the same colour. Parties
             // on this platform have no photos, so the initials fallback IS the avatar.
@@ -267,7 +353,7 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium">{name}</p>
-          <p className="truncate text-[11px] text-muted-foreground">
+          <p className="truncate text-xs text-muted-foreground">
             {identity.roles.length > 0 ? identity.roles.join(', ') : 'No roles'}
           </p>
         </div>

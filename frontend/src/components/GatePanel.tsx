@@ -34,7 +34,7 @@ export function GatePanel({ gates, title }: { gates: Gate[]; title?: string }) {
           gate text carries the meaning, and each gate states its own outcome to
           a screen reader, so the container needs no name of its own. */}
       {title && (
-        <p className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {title}
         </p>
       )}
@@ -43,7 +43,9 @@ export function GatePanel({ gates, title }: { gates: Gate[]; title?: string }) {
           <li key={gate.title} className="flex items-start gap-2.5">
             <span
               className={cn(
-                'mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-[10px] font-bold',
+                // `leading-none`: the glyph is decorative (aria-hidden) and sits in a 16px
+                // circle, where text-xs brings a 16px line box and fills it wall to wall.
+                'mt-0.5 grid size-4 shrink-0 place-items-center rounded-full text-xs leading-none font-bold',
                 // Glyph colour is the matching `-bg` token, not white: the pair
                 // inverts together, so `-fg` is dark in light mode and light in
                 // dark mode. `text-white` would be white-on-light in dark mode.

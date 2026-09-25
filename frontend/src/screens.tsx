@@ -22,44 +22,46 @@ import type { ReactNode } from 'react';
 import { canSeeFinance, staffRoles, type StaffRoles, type readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { RedirectPreservingQuery } from '@/components/RedirectPreservingQuery';
-import { AuditLogPage } from '@/features/audit/AuditLogPage';
-import { MessagesPage } from '@/features/communications/MessagesPage';
-import { TemplatesPage } from '@/features/communications/TemplatesPage';
-import { ArrearsPage } from '@/features/billing/ArrearsPage';
-import { FieldReceiptsPage } from '@/features/billing/FieldReceiptsPage';
-import { EftExecutionPage } from '@/features/payments/EftExecutionPage';
-import { ClaimDetailPage } from '@/features/claims/ClaimDetailPage';
-import { ClaimsPage } from '@/features/claims/ClaimsPage';
-import { RegisterClaimPage } from '@/features/claims/RegisterClaimPage';
-import { AgentDetailPage } from '@/features/distribution/AgentDetailPage';
-import { AgentProfilePage } from '@/features/distribution/AgentProfilePage';
-import { AgentsPage } from '@/features/distribution/AgentsPage';
-import { OnboardAgentPage } from '@/features/distribution/OnboardAgentPage';
-import { ChartOfAccountsPage } from '@/features/finaccounting/ChartOfAccountsPage';
-import { GlPostingDetailPage } from '@/features/finaccounting/GlPostingDetailPage';
-import { GlPostingsPage } from '@/features/finaccounting/GlPostingsPage';
-import { ClientsPage } from '@/features/party/ClientsPage';
-import { OnboardCustomerPage } from '@/features/party/OnboardCustomerPage';
-import { EditClientPage } from '@/features/party/EditClientPage';
-import { PartyDetailPage } from '@/features/party/PartyDetailPage';
-import { CreditLifeSchemePage } from '@/features/policies/CreditLifeSchemePage';
-import { IssueCreditLifeSchemePage } from '@/features/policies/IssueCreditLifeSchemePage';
-import { GroupSchemePage } from '@/features/policies/GroupSchemePage';
-import { IssueGroupSchemePage } from '@/features/policies/IssueGroupSchemePage';
-import { IssuePolicyPage } from '@/features/policies/IssuePolicyPage';
-import { PoliciesPage } from '@/features/policies/PoliciesPage';
-import { PolicyDetailPage } from '@/features/policies/PolicyDetailPage';
-import { CreateProductPage } from '@/features/products/CreateProductPage';
-import { ProductDetailPage } from '@/features/products/ProductDetailPage';
-import { ProductsPage } from '@/features/products/ProductsPage';
-import { RegulatoryReturnDetailPage } from '@/features/regreporting/RegulatoryReturnDetailPage';
-import { RegulatoryReturnsPage } from '@/features/regreporting/RegulatoryReturnsPage';
-import { CreateTreatyPage } from '@/features/reinsurance/CreateTreatyPage';
-import { TreatiesPage } from '@/features/reinsurance/TreatiesPage';
-import { TreatyDetailPage } from '@/features/reinsurance/TreatyDetailPage';
-import { OpenUnderwritingCasePage } from '@/features/underwriting/OpenUnderwritingCasePage';
-import { UnderwritingCaseDetailPage } from '@/features/underwriting/UnderwritingCaseDetailPage';
-import { UnderwritingQueuePage } from '@/features/underwriting/UnderwritingQueuePage';
+import {
+  AuditLogPage,
+  MessagesPage,
+  TemplatesPage,
+  ArrearsPage,
+  FieldReceiptsPage,
+  EftExecutionPage,
+  ClaimDetailPage,
+  ClaimsPage,
+  RegisterClaimPage,
+  AgentDetailPage,
+  AgentProfilePage,
+  AgentsPage,
+  OnboardAgentPage,
+  ChartOfAccountsPage,
+  GlPostingDetailPage,
+  GlPostingsPage,
+  ClientsPage,
+  OnboardCustomerPage,
+  EditClientPage,
+  PartyDetailPage,
+  CreditLifeSchemePage,
+  IssueCreditLifeSchemePage,
+  GroupSchemePage,
+  IssueGroupSchemePage,
+  IssuePolicyPage,
+  PoliciesPage,
+  PolicyDetailPage,
+  CreateProductPage,
+  ProductDetailPage,
+  ProductsPage,
+  RegulatoryReturnDetailPage,
+  RegulatoryReturnsPage,
+  CreateTreatyPage,
+  TreatiesPage,
+  TreatyDetailPage,
+  OpenUnderwritingCasePage,
+  UnderwritingCaseDetailPage,
+  UnderwritingQueuePage,
+} from '@/lazyPages';
 
 /**
  * The one place a screen is declared.
@@ -201,6 +203,25 @@ export const REALM_HOME: Record<Realm, string | null> = {
   customers: null,
   regulators: null,
 };
+
+/**
+ * Where a signed-in person lands: their own queue, not a register of everyone's.
+ *
+ * Every staff member used to land on Policies, which is nobody's work -- a policy in force
+ * is not a task. ADMIN keeps Policies because it holds every role, so no one queue is its
+ * job. The claim statuses are the SAME filters `navBadges` counts, so the number beside
+ * "Claims" is exactly the list a person lands on.
+ */
+export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>): string | null {
+  if (realm !== 'staff') return REALM_HOME[realm];
+  const roles = staffRoles(identity);
+  if (roles.ADMIN) return 'policies';
+  if (roles.UNDERWRITER) return 'underwriting';
+  if (roles.CLAIMS_MANAGER) return 'claims?status=SETTLEMENT_REQUESTED';
+  if (roles.CLAIMS_ASSESSOR) return 'claims?status=REGISTERED';
+  if (roles.FINANCE_OFFICER) return 'arrears';
+  return REALM_HOME.staff;
+}
 
 const STAFF_SCREENS: Screen[] = [
   {

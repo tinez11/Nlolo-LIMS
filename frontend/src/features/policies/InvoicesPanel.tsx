@@ -117,7 +117,7 @@ function InvoiceRow({
           <span className="ml-2 inline-flex items-center gap-1.5">
             <StatusBadge kind="invoice" value={invoice.status} />
             {typeof invoice.dunningLevel === 'number' && (
-              <span className="text-[11px] text-status-danger-fg" title="Dunning escalation level (1-5)">
+              <span className="text-xs text-status-danger-fg" title="Dunning escalation level (1-5)">
                 L{invoice.dunningLevel}
               </span>
             )}
@@ -130,14 +130,14 @@ function InvoiceRow({
             {formatMoney(invoice.balanceDue ?? invoice.amount)}
           </span>
           {invoice.balanceDue && invoice.balanceDue.amount !== invoice.amount?.amount && (
-            <span className="block text-[11px] text-muted-foreground">due of {formatMoney(invoice.amount)} charged</span>
+            <span className="block text-xs text-muted-foreground">due of {formatMoney(invoice.amount)} charged</span>
           )}
         </span>
       </div>
 
       {/* Which monthly file this invoice charged, so it can be traced to its borrowers. */}
       {invoice.enrolmentSubmissionId && (
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Charged by{' '}
           <Link to={`/staff/credit-life-schemes/${policyNumber}`} className="underline hover:text-foreground">
             {file?.fileName ?? 'a monthly enrolment file'}
@@ -150,7 +150,7 @@ function InvoiceRow({
       <InvoiceReconciliationLines invoice={invoice} credits={credits} />
 
       {invoice.gracePeriodEndsAt && (
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Grace ends {formatDate(invoice.gracePeriodEndsAt)}
         </p>
       )}
@@ -210,7 +210,7 @@ function InvoiceRow({
 function InvoiceReconciliationLines({ invoice, credits }: { invoice: InvoiceView; credits: CreditLine[] }) {
   if (!hasMovement(invoice) && credits.length === 0) return null;
   return (
-    <dl className="mt-1.5 space-y-0.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-[11px]">
+    <dl className="mt-1.5 space-y-0.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-xs">
       <div className="flex justify-between gap-2">
         <dt className="text-muted-foreground">Charged</dt>
         <dd className="font-mono">{formatMoney(invoice.amount)}</dd>
@@ -291,7 +291,7 @@ function WaiveForm({
       </FormField>
 
       {waiving.status === 'error' && waiving.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {waiving.error.detail ?? waiving.error.title}
         </p>
       )}
@@ -385,7 +385,7 @@ function PaymentRequestForm({
       </FormField>
 
       {requesting.status === 'error' && requesting.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {requesting.error.detail ?? requesting.error.title}
         </p>
       )}

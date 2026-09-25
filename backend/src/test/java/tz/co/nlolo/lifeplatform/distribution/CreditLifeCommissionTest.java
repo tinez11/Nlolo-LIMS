@@ -154,6 +154,8 @@ class CreditLifeCommissionTest {
     @Autowired private EnrolmentApi enrolmentApi;
     @Autowired private DistributionApi distributionApi;
     @Autowired private CommissionAccrualRepository commissionAccrualRepository;
+    /** Only to put a scheme into the state a pre-rule one is in; no API can, by design. */
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     private static final AtomicInteger SEQ = new AtomicInteger(6000);
 
@@ -375,24 +377,23 @@ class CreditLifeCommissionTest {
             .isInstanceOf(DistributionValidationException.class);
     }
 
-    /** Correcting who earns applies to the NEXT file. The file accepted before the change stays with
-     * the agent who earned it -- the "from now on" the business chose. */
+    /** Making the lender the earner applies to the NEXT file. A file accepted while the scheme was
+     * direct earned nobody, and stays that way -- the "from now on" the business chose. */
     @Test
-    void correctingTheAgentOfRecordAppliesToTheNextFileOnly() {
+    void makingTheLenderTheEarnerAppliesToTheNextFileOnly() {
         GroupProduct product = creditLifeProduct();
-        UUID firstAgent = onboardAgent("Wrong Agent");
-        UUID lenderAgent = onboardAgent("Right Lender");
-        distributionApi.setAgentCommissionRate(firstAgent, product.productId(), new BigDecimal("10"), "finance");
-        distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("10"), "finance");
-        scheme = issueScheme(firstAgent, product);
+        UUID lenderParty = newLenderParty();
+        scheme = issueSchemeFor(lenderParty, null, product);
         submitAndAccept(THREE_BORROWERS);
 
+        UUID lenderAgent = onboardAgentFor(lenderParty);
+        distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("10"), "finance");
         policyApi.changeSchemeAgentOfRecord(scheme, lenderAgent, "The lender earns commission (spec 2.8)", "finance");
         submitAndAccept(",Salum Juma Rashid,1969-01-30,M,,,3600000.00,12,2026-09-02\n");
 
         assertThat(policyApi.getPolicy(scheme).agentOfRecordId()).isEqualTo(lenderAgent);
         assertThat(firstYearAccruals()).extracting(CommissionAccrual::getAgentId)
-            .containsExactlyInAnyOrder(firstAgent, lenderAgent);
+            .containsExactly(lenderAgent);
 
         // And never to an agent that does not exist -- a mistyped id would make the scheme direct
         // without anyone deciding it.
@@ -401,19 +402,61 @@ class CreditLifeCommissionTest {
         assertThat(policyApi.getPolicy(scheme).agentOfRecordId()).isEqualTo(lenderAgent);
     }
 
+    // ---- Only the lender earns on its own scheme (spec 2.8) ------------------------------------
+    //
+    // Five dev schemes carried the individual agent who had merely registered the lender, and earned
+    // nothing only because he had no credit-life plan yet. Giving him one would have handed him every
+    // file's commission. Refused where the earner is set, and again where commission accrues.
+
+    @Test
+    void anAgentWhoIsNotTheLenderCannotBeMadeTheEarner() {
+        GroupProduct product = creditLifeProduct();
+        UUID outsider = onboardAgent("Outside Agent");
+
+        // At set-up.
+        assertThatThrownBy(() -> issueSchemeFor(newLenderParty(), outsider, product))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("only the lender itself earns");
+
+        // And by a later change.
+        scheme = issueSchemeFor(newLenderParty(), null, product);
+        assertThatThrownBy(() -> policyApi.changeSchemeAgentOfRecord(scheme, outsider, "wrong", "finance"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("only the lender itself earns");
+        assertThat(policyApi.getPolicy(scheme).agentOfRecordId()).isNull();
+    }
+
+    /** The backstop: a scheme from before the rule, still naming another agent, earns that agent
+     * nothing -- even once they hold a credit-life plan. */
+    @Test
+    void aSchemeFromBeforeTheRulePaysNoCommissionToAnAgentWhoIsNotTheLender() {
+        GroupProduct product = creditLifeProduct();
+        UUID outsider = onboardAgent("Legacy Agent");
+        distributionApi.setAgentCommissionRate(outsider, product.productId(), new BigDecimal("10"), "finance");
+        scheme = issueSchemeFor(newLenderParty(), null, product);
+        // The state a pre-rule scheme is in: the outsider named as its agent of record, on both sides.
+        jdbcTemplate.update("UPDATE policy.policy SET agent_of_record_id = ? WHERE policy_number = ?", outsider, scheme);
+        jdbcTemplate.update("UPDATE distribution.policy_projection SET agent_id = ? WHERE policy_number = ?", outsider, scheme);
+
+        submitAndAccept(THREE_BORROWERS);
+
+        assertThat(firstYearAccruals()).as("the outsider earns nothing on the lender's file").isEmpty();
+    }
+
     /** On credit life the chosen agent is the agent. Whoever registered the lender's party used to
      * win at issuance -- which is how an individual agent came to sit on a lender's scheme. */
     @Test
     void theAgentWhoRegisteredTheLenderDoesNotOverrideTheChosenOne() {
         GroupProduct product = creditLifeProduct();
         UUID registeringAgent = onboardAgent("Registering Agent");
-        UUID lenderAgent = onboardAgent("Chosen Lender");
         int tag = SEQ.incrementAndGet();
         UUID registeringAgentParty = distributionApi.getAgent(registeringAgent).partyId();
         UUID lenderParty = partyApi.registerIndividual(new tz.co.nlolo.lifeplatform.party.api.IndividualRegistration(
                 "Lender Registered By Agent " + tag, LocalDate.of(1985, 6, 15), "+2557" + String.format("%08d", tag),
                 null, null, null, null, null, null, null, null, null),
             "agent-user", registeringAgentParty).partyId();
+        // The chosen earner is the LENDER itself, as it must be on credit life.
+        UUID lenderAgent = onboardAgentFor(lenderParty);
 
         String issued = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
             lenderParty, product.productId(), product.productVersionId(), lenderAgent,
@@ -434,6 +477,12 @@ class CreditLifeCommissionTest {
         int tag = SEQ.incrementAndGet();
         UUID party = partyApi.registerIndividual(name + " " + tag, LocalDate.of(1980, 1, 1),
             "+2557" + String.format("%08d", tag), null, "test").partyId();
+        return onboardAgentFor(party);
+    }
+
+    /** Make an existing party -- a lender -- an agent, so it can earn on its own scheme. */
+    private UUID onboardAgentFor(UUID party) {
+        int tag = SEQ.incrementAndGet();
         partyApi.submitKycEvidence(party, tz.co.nlolo.lifeplatform.party.api.KycStatus.VERIFIED, "doc-" + tag,
             "kyc-officer");
         return distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
@@ -501,10 +550,26 @@ class CreditLifeCommissionTest {
         return issueScheme(agentOfRecordId, creditLifeProduct());
     }
 
+    /**
+     * A scheme whose LENDER is the given agent's own party -- on credit life only the lender may
+     * earn (spec 2.8), so an agent of record is always the lender itself. Null issues it direct,
+     * with a lender of its own.
+     */
     private String issueScheme(UUID agentOfRecordId, GroupProduct product) {
+        UUID lenderParty = agentOfRecordId != null
+            ? distributionApi.getAgent(agentOfRecordId).partyId()
+            : newLenderParty();
+        return issueSchemeFor(lenderParty, agentOfRecordId, product);
+    }
+
+    private UUID newLenderParty() {
+        return partyApi.registerIndividual("Lender Co", LocalDate.of(1985, 6, 15),
+            "+2557" + String.format("%08d", SEQ.incrementAndGet()), null, "test").partyId();
+    }
+
+    private String issueSchemeFor(UUID lenderParty, UUID agentOfRecordId, GroupProduct product) {
         scheme = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
-            partyApi.registerIndividual("Lender Co", LocalDate.of(1985, 6, 15),
-                "+2557" + String.format("%08d", SEQ.incrementAndGet()), null, "test").partyId(),
+            lenderParty,
             product.productId(), product.productVersionId(), agentOfRecordId,
             BenefitBasis.AMORTISING_LOAN, null, null, new BigDecimal("600000000.00"), "TZS",
             null, List.of(PolicyApi.MemberInput.borrower("Opening Schedule Borrower",

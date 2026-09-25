@@ -25,6 +25,8 @@ import {
 } from './claimRegisterForm';
 import { PartyName } from '@/components/PartyName';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
+import { CheckboxField } from '@/components/ui/checkbox';
 
 /**
  * `POST /claims` is one of only six endpoints on the platform that HARD-REQUIRES
@@ -351,7 +353,7 @@ export function RegisterClaimPage() {
                 </option>
               ))}
             </Select>
-            <p className="mt-1 text-[11px] text-subtle-foreground">
+            <p className="mt-1 text-xs text-subtle-foreground">
               Members who have left are listed too — a claim can arrive after somebody leaves,
               and what decides it is whether they were covered on the date of event.
               {(members.data?.page?.totalElements ?? 0) > (members.data?.items?.length ?? 0) && (
@@ -456,10 +458,7 @@ export function RegisterClaimPage() {
                   )}
                 />
               </FormField>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <input type="checkbox" {...register('details.permanent')} />
-                Permanent
-              </label>
+              <CheckboxField label="Permanent" {...register('details.permanent')} />
               <FormField label="Impairment percent" error={detailError('impairmentPercent')}>
                 <div className="flex items-center gap-1">
                   <Input
@@ -516,12 +515,7 @@ export function RegisterClaimPage() {
             whole-request business rejection, not a per-field error -- same shape
             as beneficiaries' BeneficiaryValidationException. */}
         {registering.status === 'error' && registering.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {registering.error.detail ?? registering.error.title}
-            {registering.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({registering.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={registering.error} />
         )}
 
         <div className="flex items-center gap-2">

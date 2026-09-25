@@ -5,6 +5,7 @@ import { FormField } from '@/components/FormField';
 import { Panel } from '@/components/Panel';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 import type { Resource } from '@/store/createResourceSlice';
 import {
   blankDecideForm,
@@ -96,9 +97,9 @@ export function DecisionPanel({
                 )}
               </p>
               {view.recommendationReason && (
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{view.recommendationReason}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{view.recommendationReason}</p>
               )}
-              <p className="mt-1 text-[11px] text-subtle-foreground">
+              <p className="mt-1 text-xs text-subtle-foreground">
                 A recommendation, not a decision. It is recomputed each time evidence arrives
                 and binds nothing.
               </p>
@@ -164,24 +165,14 @@ export function DecisionPanel({
             )}
 
             {override && isSenior && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 This departs from the recommendation of {recommendation}. It will be recorded as
                 an override, against your name.
               </p>
             )}
 
             {deciding.status === 'error' && deciding.error && (
-              <div
-                role="alert"
-                className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-              >
-                <p>{deciding.error.detail ?? deciding.error.title}</p>
-                {deciding.error.traceId && (
-                  <p className="mt-1.5 font-mono text-[10px] opacity-80 select-all">
-                    trace {deciding.error.traceId}
-                  </p>
-                )}
-              </div>
+              <InlineError error={deciding.error} />
             )}
 
             <Button

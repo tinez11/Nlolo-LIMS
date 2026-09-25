@@ -98,7 +98,7 @@ export function UnderwritingCasePicker({
       {cases.length === 0 && (
         // Not an error. It is the ordinary state of a platform with nothing decided yet, and
         // saying so beats an empty dropdown the user has to interpret.
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           No decided cases. A case appears here once an underwriter has decided it.
         </p>
       )}
@@ -109,14 +109,14 @@ export function UnderwritingCasePicker({
         the honest thing is to warn that some of these may be spent.
       */}
       {cases.length > 0 && (
-        <p className="text-[11px] text-subtle-foreground">
+        <p className="text-xs text-subtle-foreground">
           Some of these may already have a policy. Issuing against one is refused, and the
           refusal names the policy that exists.
         </p>
       )}
 
       {selected && (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Applicant:{' '}
           {selected.applicantPartyId ? <PartyName partyId={selected.applicantPartyId} /> : '—'}
           {selected.decisionOverrodeRecommendation && (

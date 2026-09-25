@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { UseFormRegisterReturn } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
+import { CheckboxField } from '@/components/ui/checkbox';
 
 /**
  * One editable beneficiary: who they are, what share, and whether it can be revoked.
@@ -118,13 +119,10 @@ export function BeneficiaryRow({
 
         {/* A real wrapping <label>, so the checkbox is named by the word beside it
             without an id having to be threaded through. */}
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" {...revocableField} />
-          Revocable
-        </label>
+        <CheckboxField label="Revocable" {...revocableField} />
       </div>
 
-      {error && <p className="mt-2 text-[11px] text-status-danger-fg">{error}</p>}
+      {error && <p className="mt-2 text-xs text-status-danger-fg">{error}</p>}
     </div>
   );
 }

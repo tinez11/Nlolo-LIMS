@@ -232,7 +232,7 @@ function LenderCommissionActions({
               Make the lender the commission earner
             </Button>
           )}
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             From now on only — commission already earned stays where it was booked.
           </p>
         </>

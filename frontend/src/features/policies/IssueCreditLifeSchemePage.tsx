@@ -174,13 +174,13 @@ export function IssueCreditLifeSchemePage() {
                 />
               )}
             />
-            <p className="mt-1 text-[11px] text-subtle-foreground">
+            <p className="mt-1 text-xs text-subtle-foreground">
               They hold the contract and pay the premium, and they are the beneficiary of every
               claim on it — a credit-life payout settles the borrower&rsquo;s debt, so it goes to
               the lender rather than to a family.
             </p>
             {lenderPartyId && lenderAgentKnown && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {lenderAgentId
                   ? 'Commission: paid to the lender, a registered agent. Its rate is set on the scheme page.'
                   : 'Commission: the lender is not a registered agent yet, so the scheme starts direct. Register it and set its rate on the scheme page.'}
@@ -220,10 +220,10 @@ export function IssueCreditLifeSchemePage() {
 
           {/* --- What the insurer agreed with the lender ----------------------- */}
           <fieldset className="border-t border-border pt-3">
-            <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+            <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
               Scheme terms
             </legend>
-            <p className="mb-2.5 text-[11px] text-muted-foreground">
+            <p className="mb-2.5 text-xs text-muted-foreground">
               Agreed once, per lender. There is no benefit basis to choose: a borrower is covered
               for what they still owe, which falls as they repay.
             </p>
@@ -231,7 +231,7 @@ export function IssueCreditLifeSchemePage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <FormField label="Premium rate (% of each loan)" error={errors.premiumRatePercent?.message}>
                 <Input placeholder="0.5" {...register('premiumRatePercent')} />
-                <p className="mt-1 text-[11px] text-subtle-foreground">
+                <p className="mt-1 text-xs text-subtle-foreground">
                   Charged once per borrower on what they borrowed, not on the declining balance.
                 </p>
               </FormField>
@@ -256,7 +256,7 @@ export function IssueCreditLifeSchemePage() {
 
               <FormField label="Free cover limit (optional)" error={errors.fclAmount?.message}>
                 <Input placeholder="600000000.00" {...register('fclAmount')} />
-                <p className="mt-1 text-[11px] text-subtle-foreground">
+                <p className="mt-1 text-xs text-subtle-foreground">
                   Leave blank for a scheme with no limit. Blank is not zero — a limit of zero
                   would send every borrower to underwriting.
                 </p>
@@ -264,7 +264,7 @@ export function IssueCreditLifeSchemePage() {
 
               <FormField label="Premium recorded on the contract" error={errors.premiumAmount?.message}>
                 <Input placeholder="52000.00" {...register('premiumAmount')} />
-                <p className="mt-1 text-[11px] text-subtle-foreground">
+                <p className="mt-1 text-xs text-subtle-foreground">
                   Not what the lender is billed. A credit-life premium is charged per accepted file
                   at the rate above; this figure sits on the master policy, which the database
                   requires to carry a positive one.
@@ -279,7 +279,7 @@ export function IssueCreditLifeSchemePage() {
                     <DatePicker value={field.value} onChange={(iso) => field.onChange(iso ?? '')} />
                   )}
                 />
-                <p className="mt-1 text-[11px] text-subtle-foreground">
+                <p className="mt-1 text-xs text-subtle-foreground">
                   On or before the oldest loan on the book. A borrower joins on the day they were
                   lent to, and nobody can join a scheme that did not exist yet.
                 </p>
@@ -299,14 +299,14 @@ export function IssueCreditLifeSchemePage() {
                   ))}
                   <option value="OFFER">None — issue it as an offer</option>
                 </Select>
-                <p className="mt-1 text-[11px] text-muted-foreground">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Recorded with your name as the underwriter who set this scheme up, for compliance.
                 </p>
                 {/* The wall, said before somebody hits it rather than after. An offer sits
                     PROPOSED until the first premium clears, enrolment requires the scheme IN
                     FORCE, and this console has no action anywhere that accepts an offer. */}
                 {issuanceBasis === 'OFFER' && (
-                  <p className="mt-1 text-[11px] text-status-warning-fg">
+                  <p className="mt-1 text-xs text-status-warning-fg">
                     An offer cannot receive an enrolment file until its first premium clears, and
                     nothing in this console can accept one. Pick a basis unless you are recording
                     a scheme that genuinely is not on risk yet.
@@ -329,7 +329,7 @@ export function IssueCreditLifeSchemePage() {
             <Button type="submit" disabled={issuing.status === 'loading'}>
               {issuing.status === 'loading' ? 'Setting up…' : 'Set up the scheme'}
             </Button>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Lands on the scheme&rsquo;s monthly files, ready for the first enrolment.
             </p>
           </div>

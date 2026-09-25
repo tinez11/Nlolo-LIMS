@@ -11,6 +11,7 @@ import {
   type ReopenClaimFormValues,
 } from './reopenClaimForm';
 import { Textarea } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /claims/{claimId}/reopen` -- `CLAIMS_MANAGER` role only, rendered by
@@ -47,7 +48,7 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
   return (
     <form className="space-y-3 p-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       {wasSettled && (
-        <p className="rounded-md bg-status-warning-bg px-3 py-2 text-[11px] text-status-warning-fg">
+        <p className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg">
           This claim is SETTLED. Reopening it does not reverse the policy closure settlement already
           caused -- coverage stays discharged and billing stays stopped.
         </p>
@@ -62,12 +63,7 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
       </FormField>
 
       {reopening.status === 'error' && reopening.error && (
-        <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-          {reopening.error.detail ?? reopening.error.title}
-          {reopening.error.traceId && (
-            <span className="ml-2 font-mono text-[10px] opacity-80">({reopening.error.traceId})</span>
-          )}
-        </div>
+        <InlineError error={reopening.error} />
       )}
 
       <Button type="submit" size="sm" variant="primary" disabled={reopening.status === 'loading'}>

@@ -17,6 +17,7 @@ import {
   type BeneficiaryFormValues,
 } from './beneficiaryForm';
 import { Field } from '@/components/Field';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * The one mutating form in this slice, deliberately placed on the full detail page
@@ -232,7 +233,7 @@ function EditForm({
       </p>
 
       {errors.beneficiaries?.root?.message && (
-        <p className="mt-1 text-[11px] text-status-danger-fg">{errors.beneficiaries.root.message}</p>
+        <p className="mt-1 text-xs text-status-danger-fg">{errors.beneficiaries.root.message}</p>
       )}
 
       {/* A 422 here is a whole-request business rule (exactly-one-of, sum-to-100) --
@@ -243,15 +244,7 @@ function EditForm({
         // role="alert" is a real fix, not just a test hook: a screen reader user
         // submitting this form needs the rejection announced immediately, the same
         // way ErrorPanel's role="alert" works elsewhere on this platform.
-        <div
-          role="alert"
-          className="mt-2 rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-        >
-          {saving.error.detail ?? saving.error.title}
-          {saving.error.traceId && (
-            <span className="ml-2 font-mono text-[10px] opacity-80">({saving.error.traceId})</span>
-          )}
-        </div>
+        <InlineError error={saving.error} className="mt-2" />
       )}
 
       <div className="mt-3 flex items-center gap-2">

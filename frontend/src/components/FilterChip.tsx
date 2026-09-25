@@ -24,12 +24,20 @@ export function FilterChip({
   active,
   onClick,
   mono = false,
+  bare = false,
 }: {
   label: ReactNode;
   active: boolean;
   onClick: () => void;
   /** Render the label as code — for filters whose values are identifiers. */
   mono?: boolean;
+  /**
+   * The label already draws its own pill — a `StatusBadge`, on the seven screens whose
+   * status filters are the statuses themselves. The chip then draws NO ground of its own
+   * and marks selection with a ring, because a tinted badge sitting inside a filled chip is
+   * two pills for one control, and the badge's hue is the thing being read.
+   */
+  bare?: boolean;
 }) {
   return (
     <button
@@ -37,9 +45,18 @@ export function FilterChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'rounded-full px-2 py-1 text-xs transition-colors',
+        // Ink-filled when active, not a faint ring: three inactive chips beside one active
+        // one have to be distinguishable at a glance from across a desk. `aria-pressed`
+        // still carries the state for assistive tech, as it always did.
+        'inline-flex min-h-8 items-center rounded-full transition-colors pointer-coarse:min-h-11',
         mono && 'font-mono',
-        active ? 'bg-selected ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
+        bare
+          ? // The ring sits outside the badge, so the status hue underneath it is untouched.
+            cn('p-0.5', active ? 'ring-2 ring-accent' : 'hover:bg-hover')
+          : cn(
+              'px-3 text-[13px]',
+              active ? 'bg-accent text-accent-foreground' : 'bg-control hover:bg-control-hover',
+            ),
       )}
     >
       {label}

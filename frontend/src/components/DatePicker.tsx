@@ -475,7 +475,7 @@ export function DatePicker({ value, onChange, disabled }: DatePickerProps) {
       </Popover.Anchor>
 
       {invalid && (
-        <p id={errorId} role="alert" className="mt-1 text-[11px] text-status-danger-fg">
+        <p id={errorId} role="alert" className="mt-1 text-xs text-status-danger-fg">
           {parsed ? 'Date outside the allowed range' : 'Not a valid date'}
         </p>
       )}

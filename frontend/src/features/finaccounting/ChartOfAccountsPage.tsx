@@ -574,7 +574,7 @@ function AccountRowActions({
       </span>
 
       {settingStatus.status === 'error' && settingStatus.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {settingStatus.error.detail ?? settingStatus.error.title}
         </p>
       )}
@@ -664,7 +664,7 @@ function CreateAccountForm({ onDone }: { onDone: () => void }) {
         </FormField>
 
         {creating.status === 'error' && creating.error && (
-          <p role="alert" className="text-[11px] text-status-danger-fg">
+          <p role="alert" className="text-xs text-status-danger-fg">
             {creating.error.detail ?? creating.error.title}
           </p>
         )}
@@ -727,7 +727,7 @@ function UpdateAccountForm({
       </FormField>
 
       {updating.status === 'error' && updating.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {updating.error.detail ?? updating.error.title}
         </p>
       )}
@@ -778,7 +778,7 @@ function DeleteAccountForm({
       </p>
 
       {deleting.status === 'error' && deleting.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {deleting.error.detail ?? deleting.error.title}
         </p>
       )}

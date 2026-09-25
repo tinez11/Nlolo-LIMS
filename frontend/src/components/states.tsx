@@ -140,7 +140,7 @@ export function ErrorPanel({
 
       {error.traceId && (
         // The only thread back to the backend logs. Selectable, not decorative.
-        <p className="mt-3 font-mono text-[11px] text-subtle-foreground select-all">
+        <p className="mt-3 font-mono text-xs text-subtle-foreground select-all">
           trace {error.traceId}
         </p>
       )}

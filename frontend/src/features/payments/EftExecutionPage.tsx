@@ -11,6 +11,7 @@ import { useTransferContexts } from './useTransferContexts';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { InlineError } from '@/components/InlineError';
 import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -102,7 +103,7 @@ export function EftExecutionPage() {
               {verdict?.lenderPartyId ? <PartyName partyId={verdict.lenderPartyId} /> : d.payeeRef}
             </span>
             {verdict?.notes.map((note) => (
-              <span key={note} className="text-[11px] text-status-warning-fg">
+              <span key={note} className="text-xs text-status-warning-fg">
                 {note}
               </span>
             ))}
@@ -187,7 +188,7 @@ export function EftExecutionPage() {
             </Button>
             {blocked &&
               verdict.reasons.map((reason) => (
-                <span key={reason} className="max-w-xs text-right text-[11px] text-status-danger-fg">
+                <span key={reason} className="max-w-xs text-right text-xs text-status-danger-fg">
                   Do not transfer. {reason}
                 </span>
               ))}
@@ -242,7 +243,10 @@ export function EftExecutionPage() {
       />
 
       <div className="px-6 pb-6">
-        <div className="rounded-lg border border-border bg-surface">
+        {/* `overflow-hidden` so the full-bleed error strip below, which is deliberately
+            square-cornered, is clipped to the panel's own radius rather than painting its
+            danger ground over the rounded top edge when it is the first child. */}
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
           {confirming && (
             <div className="border-b border-border px-3 py-2.5">
               <ConfirmAct
@@ -296,7 +300,7 @@ export function EftExecutionPage() {
                   onChange={(e) => setBankReference(e.target.value)}
                   autoFocus
                 />
-                <p id="eft-bank-reference-hint" className="mt-1 text-[11px] text-muted-foreground">
+                <p id="eft-bank-reference-hint" className="mt-1 text-xs text-muted-foreground">
                   The bank&rsquo;s own reference for the transfer. Without it this is a claim
                   marked paid that nobody can trace.
                 </p>
@@ -305,7 +309,7 @@ export function EftExecutionPage() {
                   explanation is the thing people file tickets about; the backend refuses a blank
                   reference anyway, so this is the same rule said earlier rather than a new one. */}
               {bankReference.trim() === '' && (
-                <p className="mt-1 text-[11px] text-status-danger-fg">
+                <p className="mt-1 text-xs text-status-danger-fg">
                   A bank reference is required before this can be recorded.
                 </p>
               )}
@@ -313,17 +317,11 @@ export function EftExecutionPage() {
           )}
 
           {executeState.status === 'error' && executeState.error && (
-            <p
-              role="alert"
-              className="border-b border-border bg-status-danger-bg px-4 py-2 text-xs text-status-danger-fg"
-            >
-              Could not record the transfer — {executeState.error.detail ?? executeState.error.title}
-              {executeState.error.traceId && (
-                <span className="ml-2 font-mono text-[10px] opacity-80">
-                  ({executeState.error.traceId})
-                </span>
-              )}
-            </p>
+            <InlineError
+              lead="Could not record the transfer"
+              error={executeState.error}
+              className="rounded-none border-b border-border px-4"
+            />
           )}
 
           {renderBody()}

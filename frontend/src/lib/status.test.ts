@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStatus, STATUS_MAPS, type StatusKind } from './status';
+import { humanizeStatus, resolveStatus, STATUS_MAPS, type StatusKind } from './status';
 
 const bucket = (kind: StatusKind, value: string) => resolveStatus(kind, value).bucket;
 
@@ -154,5 +154,29 @@ describe('STATUS_MAPS coverage', () => {
     expect(bucket('account', 'ACTIVE')).toBe('active');
     // Retiring an account is housekeeping, not a failure -- neutral, never danger.
     expect(bucket('account', 'INACTIVE')).toBe('neutral');
+  });
+});
+
+describe('humanizeStatus', () => {
+  it('sentence-cases an ordinary literal', () => {
+    expect(humanizeStatus('SETTLEMENT_REQUESTED')).toBe('Settlement requested');
+  });
+
+  it('keeps the acronyms staff read as acronyms', () => {
+    // Every one of these is a real literal in the generated API types, not an invented
+    // example: a free cover limit, a reinsurance basis, and a ledger side are never
+    // written in lower case anywhere in the business.
+    expect(humanizeStatus('WITHIN_FCL')).toBe('Within FCL');
+    expect(humanizeStatus('NATIONAL_ID')).toBe('National ID');
+    expect(humanizeStatus('VOTER_ID')).toBe('Voter ID');
+    expect(humanizeStatus('XOL')).toBe('XOL');
+    expect(humanizeStatus('PAA')).toBe('PAA');
+    expect(humanizeStatus('CR')).toBe('CR');
+    expect(humanizeStatus('SMS')).toBe('SMS');
+  });
+
+  it('does not uppercase an acronym hiding inside a longer word', () => {
+    expect(humanizeStatus('GLOBAL')).toBe('Global');
+    expect(humanizeStatus('IDENTITY_VERIFIED')).toBe('Identity verified');
   });
 });

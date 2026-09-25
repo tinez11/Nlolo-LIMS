@@ -126,7 +126,7 @@ export function ClaimsPage({
           <StatusBadge kind="claim" value={c.status} />
           {c.requiresContestabilityReview && (
             <span
-              className="text-[11px] text-status-warning-fg"
+              className="text-xs text-status-warning-fg"
               title="Falls inside the policy's contestability window"
             >
               CR
@@ -251,6 +251,7 @@ export function ClaimsPage({
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="claim" value={value} />}
+                bare
                 active={status === value}
                 onClick={() => update({ status: value })}
               />

@@ -38,6 +38,7 @@ import {
   type PolicyIssueFormValues,
 } from './policyIssueForm';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /policies/manual-issue` -- the staff exception path.
@@ -366,7 +367,7 @@ export function IssuePolicyPage() {
             </Select>
           )}
           {productId && isInitialLoad(snapshot) && (
-            <p className="mt-1 text-[11px] text-muted-foreground">Resolving product version…</p>
+            <p className="mt-1 text-xs text-muted-foreground">Resolving product version…</p>
           )}
         </FormField>
 
@@ -416,10 +417,10 @@ export function IssuePolicyPage() {
             annually renewable group scheme genuinely have none, so leaving these blank
             is a real answer rather than an omission. */}
         <fieldset className="border-t border-border pt-3">
-          <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+          <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
             Term
           </legend>
-          <p className="mb-2.5 text-[11px] text-muted-foreground">
+          <p className="mb-2.5 text-xs text-muted-foreground">
             Leave blank for a product that does not term — whole life, an annuity, a
             renewable group scheme.
           </p>
@@ -462,7 +463,7 @@ export function IssuePolicyPage() {
             {/* The consequence of "240 months", legible before submit. Display only --
                 the aggregate derives and stores the real value. */}
             <div className="self-end pb-1">
-              <p className="text-[11px] text-muted-foreground">Matures</p>
+              <p className="text-xs text-muted-foreground">Matures</p>
               <p className="text-sm tabular-nums">
                 {maturity ? (
                   formatDate(maturity)
@@ -487,10 +488,10 @@ export function IssuePolicyPage() {
         */}
         {introducingAgentPartyId ? (
           <FormField label="Agent of record">
-            <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
+            <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs">
               <PartyName partyId={introducingAgentPartyId} />
             </div>
-            <p className="mt-1 text-[11px] text-subtle-foreground">
+            <p className="mt-1 text-xs text-subtle-foreground">
               The agent who introduced this client. Commission on this policy accrues to them, and
               that is not editable here — an attribution an issue form could rewrite is a
               commission an issue form could reassign.
@@ -511,7 +512,7 @@ export function IssuePolicyPage() {
               }
               placeholder="Search agents by name or licence…"
             />
-            <p className="mt-1 text-[11px] text-subtle-foreground">
+            <p className="mt-1 text-xs text-subtle-foreground">
               No agent introduced this client, so the sale is attributed here. Leave it empty for
               a direct sale, which accrues no commission.
             </p>
@@ -540,7 +541,7 @@ export function IssuePolicyPage() {
             ))}
           </Select>
           {issuanceBasis !== '' && (
-            <p className="mt-1 text-[11px] text-fg-muted">
+            <p className="mt-1 text-xs text-muted-foreground">
               {ISSUANCE_BASES.find((b) => b.value === issuanceBasis)?.startsCoverImmediately
                 ? 'Cover starts immediately — this contract is already in force elsewhere.'
                 : 'Cover starts when the first premium clears.'}
@@ -561,7 +562,7 @@ export function IssuePolicyPage() {
               warning staff learn to click past, which launders the decision rather
               than capturing it. */}
           {breaches.length > 0 && (
-            <p className="mt-1 text-[11px] text-status-warning-fg">
+            <p className="mt-1 text-xs text-status-warning-fg">
               {breaches.length === 1
                 ? 'One check above is flagged — this reason is where that decision is recorded.'
                 : `${breaches.length} checks above are flagged — this reason is where those decisions are recorded.`}
@@ -628,12 +629,7 @@ export function IssuePolicyPage() {
             unresolvable party or product version) is a genuine, whole-request
             rejection worth showing plainly. */}
         {issuing.status === 'error' && issuing.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {issuing.error.detail ?? issuing.error.title}
-            {issuing.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({issuing.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={issuing.error} />
         )}
 
         <div className="flex items-center gap-2">

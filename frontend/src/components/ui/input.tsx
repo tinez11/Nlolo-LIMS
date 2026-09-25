@@ -28,11 +28,15 @@ import { useFieldControl } from '../fieldControl';
  */
 
 const field = cva(
+  // Espresso's filled ground WITH this console's 3:1 --input border. Espresso drops the
+  // border; its #f3f3f3 ground is 1.11:1 against paper and cannot identify a field alone
+  // (WCAG 1.4.11). The field turns to paper on keyboard focus so the ink ring reads on it.
+  //
   // focus-visible, not focus: a mouse click on an input should not draw the
   // same ring a keyboard tab does. The ring uses --border-strong rather than
   // --input, because --input at ~1.27:1 against the surface fails 1.4.11's 3:1
   // for a UI component boundary and cannot carry a focus indicator either.
-  'w-full rounded-md border border-input bg-surface transition-colors ' +
+  'w-full rounded-md border border-input bg-control transition-colors focus-visible:bg-surface ' +
     'focus-visible:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ' +
     'disabled:cursor-not-allowed disabled:opacity-50 ' +
     // Tailwind's built-in aria-invalid variant, so the red border follows the
@@ -42,8 +46,8 @@ const field = cva(
   {
     variants: {
       inputSize: {
-        md: 'h-9 px-2.5 text-sm',
-        sm: 'h-8 px-2 text-xs',
+        md: 'h-9 px-2.5 text-sm pointer-coarse:h-11',
+        sm: 'h-8 px-2 text-xs pointer-coarse:h-11',
       },
     },
     defaultVariants: { inputSize: 'md' },
@@ -74,7 +78,11 @@ export function Textarea({ className, inputSize, ...props }: TextareaProps) {
   return (
     <textarea
       {...aria}
-      className={cn(field({ inputSize }), 'h-auto py-2', className)}
+      // `pointer-coarse:h-auto` as well as `h-auto`: tailwind-merge only resolves classes
+      // that carry the SAME modifiers, so a bare `h-auto` does not cancel the size
+      // variant's `pointer-coarse:h-11` and every textarea would be pinned to 44px on a
+      // touch device -- invisible today only because every call site passes a `min-h-*`.
+      className={cn(field({ inputSize }), 'h-auto py-2 pointer-coarse:h-auto', className)}
       {...props}
     />
   );

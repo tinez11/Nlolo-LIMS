@@ -112,7 +112,7 @@ function TemplateRow({ template, canEdit }: { template: NotificationTemplateView
             {'{{expiryDate}}'} exists will delete it, and a reminder that lost its deadline still
             sends — it just stops saying the thing it was for. */}
         {(template.placeholders ?? []).map((name) => (
-          <code key={name} className="rounded bg-status-pending-bg px-1 py-0.5 text-[11px]">
+          <code key={name} className="rounded bg-status-pending-bg px-1 py-0.5 text-xs">
             {`{{${name}}}`}
           </code>
         ))}
@@ -128,7 +128,7 @@ function TemplateRow({ template, canEdit }: { template: NotificationTemplateView
             onChange={(e) => setBody(e.target.value)}
           />
           {rewording.status === 'error' && rewording.error && (
-            <p role="alert" className="text-[11px] text-status-danger-fg">
+            <p role="alert" className="text-xs text-status-danger-fg">
               {rewording.error.detail ?? 'Could not save this wording.'}
             </p>
           )}

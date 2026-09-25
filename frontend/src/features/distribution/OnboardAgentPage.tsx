@@ -18,6 +18,7 @@ import {
   type OnboardAgentFormValues,
 } from './onboardAgentForm';
 import { Input } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /agents`.
@@ -133,7 +134,7 @@ export function OnboardAgentPage() {
               />
             )}
           />
-          <p className="mt-1 text-[11px] text-subtle-foreground">
+          <p className="mt-1 text-xs text-subtle-foreground">
             Their supervisor, who earns override commission on this agent's business. Leave it
             empty for an agent at the top of the hierarchy.
           </p>
@@ -152,7 +153,7 @@ export function OnboardAgentPage() {
           platform's own dev data, only two have a login at all -- and nothing on screen has
           ever indicated that the rest are, from the agent's point of view, not yet onboarded.
         */}
-        <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
+        <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs">
           <p className="font-medium">This is step one of two</p>
           <p className="mt-1 text-subtle-foreground">
             Onboarding creates the agent's commission record. It does not create their login —
@@ -164,12 +165,7 @@ export function OnboardAgentPage() {
         </div>
 
         {onboarding.status === 'error' && onboarding.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {onboarding.error.detail ?? onboarding.error.title}
-            {onboarding.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({onboarding.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={onboarding.error} />
         )}
 
         <div className="flex items-center gap-2">

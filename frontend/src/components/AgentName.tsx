@@ -105,7 +105,7 @@ export function AgentName({
     <span className={cn('text-sm', className)} title={agentId}>
       <PartyName partyId={cached.partyId} />
       {withLicense && cached.licenseNumber && (
-        <span className="ml-1.5 font-mono text-[11px] text-subtle-foreground">
+        <span className="ml-1.5 font-mono text-xs text-subtle-foreground">
           {cached.licenseNumber}
         </span>
       )}

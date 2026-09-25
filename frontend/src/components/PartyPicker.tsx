@@ -254,7 +254,7 @@ export function PartyPicker({ value, onChange, kycStatus, placeholder = 'Search 
                   >
                     <span className="min-w-0 truncate">{party.displayName ?? '—'}</span>
                     <span className="flex shrink-0 items-center gap-1.5">
-                      <span className="text-[11px] text-muted-foreground">{party.partyType}</span>
+                      <span className="text-xs text-muted-foreground">{party.partyType}</span>
                       {party.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
                     </span>
                   </CommandPrimitive.Item>

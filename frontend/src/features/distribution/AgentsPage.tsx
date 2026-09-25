@@ -222,6 +222,7 @@ export function AgentsPage() {
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="agentLicense" value={value} />}
+                bare
                 active={status === value}
                 onClick={() => update({ status: value })}
               />

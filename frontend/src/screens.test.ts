@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
-import { NAV_GROUPS, REALM_HOME, SCREENS, navFor } from '@/screens';
+import { NAV_GROUPS, REALM_HOME, SCREENS, homeFor, navFor } from '@/screens';
 
 /**
  * The manifest is the single source for both the router and the sidebar, so these
@@ -193,5 +193,62 @@ describe('screen manifest', () => {
       'Individuals',
       'Underwriting',
     ]);
+  });
+});
+
+const as = (...roles: string[]) =>
+  ({ roles: ['REALM_STAFF', ...roles] }) as unknown as Parameters<typeof homeFor>[1];
+
+describe('homeFor', () => {
+  it('lands each staff role on its own queue', () => {
+    expect(homeFor('staff', as('UNDERWRITER'))).toBe('underwriting');
+    expect(homeFor('staff', as('UNDERWRITER', 'SENIOR_UNDERWRITER'))).toBe('underwriting');
+    expect(homeFor('staff', as('CLAIMS_ASSESSOR'))).toBe('claims?status=REGISTERED');
+    expect(homeFor('staff', as('CLAIMS_MANAGER'))).toBe('claims?status=SETTLEMENT_REQUESTED');
+    expect(homeFor('staff', as('FINANCE_OFFICER'))).toBe('arrears');
+  });
+
+  it('keeps an admin, and a role with no queue, on policies', () => {
+    // ADMIN holds every role, so no one queue is its job.
+    expect(homeFor('staff', as('ADMIN', 'UNDERWRITER', 'FINANCE_OFFICER'))).toBe('policies');
+    expect(homeFor('staff', as('CUSTOMER_SERVICE_REP'))).toBe('policies');
+  });
+
+  it('leaves other realms on their fixed home', () => {
+    expect(homeFor('agents', as())).toBe(REALM_HOME.agents);
+  });
+
+  it('only ever lands on a screen the identity can actually see', () => {
+    // Existence is not reachability. A queue behind a gated nav group would land the role
+    // on a screen with no sidebar item and an API that 403s -- correct-looking and useless.
+    // FINANCE_OFFICER -> arrears passes only because `arrears` sits in the finance group
+    // behind the same gate; nothing but this test would notice if a later mapping did not.
+    for (const roles of [
+      ['UNDERWRITER'],
+      ['CLAIMS_ASSESSOR'],
+      ['CLAIMS_MANAGER'],
+      ['FINANCE_OFFICER'],
+      ['ADMIN', 'FINANCE_OFFICER'],
+      [],
+    ]) {
+      const identity = as(...roles);
+      const home = (homeFor('staff', identity) ?? '').split('?')[0];
+      const reachable = navFor('staff', identity).flatMap((g) => g.items.map((i) => i.to));
+      expect(reachable, `${roles.join('+') || 'no roles'} lands on "${home}"`).toContain(home);
+    }
+  });
+
+  it('only ever lands on a screen that exists', () => {
+    const paths = new Set(SCREENS.staff.map((s) => s.path));
+    for (const roles of [
+      ['UNDERWRITER'],
+      ['CLAIMS_ASSESSOR'],
+      ['CLAIMS_MANAGER'],
+      ['FINANCE_OFFICER'],
+      [],
+    ]) {
+      const home = homeFor('staff', as(...roles)) ?? '';
+      expect(paths, home).toContain(home.split('?')[0]);
+    }
   });
 });

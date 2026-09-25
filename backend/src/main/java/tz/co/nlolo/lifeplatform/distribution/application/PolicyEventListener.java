@@ -376,6 +376,21 @@ public class PolicyEventListener {
             return;
         }
 
+        // THE BACKSTOP to policy's own rule (spec 2.8): on credit life only the LENDER earns. A
+        // scheme set up before that rule may still name another agent -- five did, all the
+        // individual who had registered the lender -- and giving that agent a credit-life plan
+        // would hand them every file's commission. Refused here as well, so it cannot.
+        Object lender = payload.get("policyholderPartyId");
+        if (lender != null) {
+            UUID agentParty = agentProfileRepository.findById(agentId).map(a -> a.getPartyId()).orElse(null);
+            if (!UUID.fromString(lender.toString()).equals(agentParty)) {
+                log.warn("Scheme {}'s agent of record {} is not its lender -- only the lender earns on a "
+                    + "credit-life scheme, so submission {} accrues no commission. Correct the scheme's "
+                    + "earner to the lender, or leave it direct.", policyNumber, agentId, submissionId);
+                return;
+            }
+        }
+
         CommissionCalculator.AgentWithPlan seller = distributionApiImpl.resolveAgentWithPlan(
             tenantId, agentId, maybeProjection.get().getProductId());
         if (seller == null) {

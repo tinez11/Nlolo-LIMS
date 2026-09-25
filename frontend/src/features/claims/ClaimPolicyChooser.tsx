@@ -261,7 +261,7 @@ function PolicyOption({
         {capacities.map((c) => (
           <span
             key={c}
-            className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
+            className="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground"
           >
             {CAPACITY_LABELS[c]}
           </span>
@@ -272,7 +272,7 @@ function PolicyOption({
         /* Warned, never blocked -- see the component header. Naming the remedy matters: the
            backend's own comment says staff must reinstate the policy before the claim can be
            filed, and nothing else on screen would tell them that. */
-        <p className="mt-1.5 text-[11px] text-status-warning-fg">
+        <p className="mt-1.5 text-xs text-status-warning-fg">
           Registration will be refused while the policy is{' '}
           {(policy.status ?? 'not in force').toLowerCase()} — it has to be reinstated first.
           Choose it anyway if this is the right contract; the rejection will say the same thing.

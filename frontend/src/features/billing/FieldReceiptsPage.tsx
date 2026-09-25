@@ -11,6 +11,7 @@ import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { FilterChip } from '@/components/FilterChip';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { InlineError } from '@/components/InlineError';
 import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -291,6 +292,7 @@ export function FieldReceiptsPage() {
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="fieldReceipt" value={value} />}
+                bare
                 active={status === value}
                 onClick={() => update({ status: value })}
               />
@@ -312,18 +314,14 @@ export function FieldReceiptsPage() {
             />
           )}
 
+          {/* Full bleed, so it reads as a strip across the queue rather than a card
+              floating inside one. */}
           {reconcileState.status === 'error' && reconcileState.error && (
-            <p
-              role="alert"
-              className="border-b border-border bg-status-danger-bg px-4 py-2 text-xs text-status-danger-fg"
-            >
-              Could not mark it matched — {reconcileState.error.detail ?? reconcileState.error.title}
-              {reconcileState.error.traceId && (
-                <span className="ml-2 font-mono text-[10px] opacity-80">
-                  ({reconcileState.error.traceId})
-                </span>
-              )}
-            </p>
+            <InlineError
+              lead="Could not mark it matched"
+              error={reconcileState.error}
+              className="rounded-none border-b border-border px-4"
+            />
           )}
 
           {renderBody()}

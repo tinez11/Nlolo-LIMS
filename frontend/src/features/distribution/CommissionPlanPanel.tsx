@@ -21,6 +21,7 @@ import {
   type RuleRowFormValues,
 } from './createCommissionPlanForm';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `GET /agents/{agentId}/commission-plan?productId=...` -- resolves the
@@ -208,7 +209,7 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
               )}
 
               {ruleError(errors, index) && (
-                <p className="mt-1 text-[11px] text-status-danger-fg">{ruleError(errors, index)}</p>
+                <p className="mt-1 text-xs text-status-danger-fg">{ruleError(errors, index)}</p>
               )}
             </div>
           );
@@ -227,16 +228,11 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
       </Button>
 
       {errors.rules?.root?.message && (
-        <p className="text-[11px] text-status-danger-fg">{errors.rules.root.message}</p>
+        <p className="text-xs text-status-danger-fg">{errors.rules.root.message}</p>
       )}
 
       {creating.status === 'error' && creating.error && (
-        <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-          {creating.error.detail ?? creating.error.title}
-          {creating.error.traceId && (
-            <span className="ml-2 font-mono text-[10px] opacity-80">({creating.error.traceId})</span>
-          )}
-        </div>
+        <InlineError error={creating.error} />
       )}
 
       <Button type="submit" size="sm" variant="primary" disabled={creating.status === 'loading'}>

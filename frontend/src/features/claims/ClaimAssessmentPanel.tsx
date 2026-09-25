@@ -16,6 +16,8 @@ import {
   type SubmitClaimAssessmentFormValues,
 } from './submitClaimAssessmentForm';
 import { Input, Textarea } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
+import { CheckboxField } from '@/components/ui/checkbox';
 
 /**
  * `POST /claims/{claimId}/assessments` -- `CLAIMS_ASSESSOR` role only, rendered
@@ -120,18 +122,10 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
           </FormField>
         </div>
 
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" {...register('fraudIndicator')} />
-          Flag for fraud review
-        </label>
+        <CheckboxField label="Flag for fraud review" {...register('fraudIndicator')} />
 
         {submitting.status === 'error' && submitting.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {submitting.error.detail ?? submitting.error.title}
-            {submitting.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({submitting.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={submitting.error} />
         )}
 
         <Button type="submit" size="sm" variant="primary" disabled={submitting.status === 'loading'}>
@@ -140,7 +134,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
       </form>
 
       {last && (
-        <p className="border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+        <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           Last submission this session: {formatMoney(last.recommendedAmount)}
           {last.fraudIndicator && ' · flagged for fraud review'}
         </p>

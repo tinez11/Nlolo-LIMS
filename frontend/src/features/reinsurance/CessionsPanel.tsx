@@ -36,13 +36,13 @@ export function CessionsPanel({ policyNumber }: { policyNumber: string }) {
       {rows.map((c) => (
         <li key={c.cessionId} className="rounded-md border border-border p-2.5 text-xs">
           <div className="flex items-center justify-between">
-            <span className="font-mono text-[11px] text-muted-foreground">
+            <span className="font-mono text-xs text-muted-foreground">
               treaty {c.treatyId.slice(0, 8)}
             </span>
             <span className="font-medium">{formatMoney(c.cededAmount)}</span>
           </div>
           {c.cededPremium && (
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               Premium ceded: {formatMoney(c.cededPremium)}
             </p>
           )}

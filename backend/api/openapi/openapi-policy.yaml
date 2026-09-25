@@ -559,7 +559,9 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409':
-          description: The policy is not a scheme.
+          description: >-
+            The policy is not a scheme, or it is a credit-life scheme and the agent is not its
+            lender — on credit life only the lender itself earns commission (spec 2.8).
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }

@@ -37,7 +37,7 @@ export function Field({
         <span className={cn('text-sm', emphasis && 'text-base font-semibold')}>{value}</span>
       </dd>
       {note && (
-        <dd className="mt-0.5 w-full text-right text-[11px] text-subtle-foreground">{note}</dd>
+        <dd className="mt-0.5 w-full text-right text-xs text-subtle-foreground">{note}</dd>
       )}
     </div>
   );

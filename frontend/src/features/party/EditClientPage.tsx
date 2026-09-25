@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 import { amendCorporate, amendIndividual, getParty } from '@/api/party';
 import type { PartyDetailView } from '@/api/types';
 import type { ApiError } from '@/lib/apiError';
@@ -146,15 +147,7 @@ export function EditClientPage() {
           <IndividualFields register={register} control={control} errors={errors} />
 
           {saveError && (
-            <div
-              role="alert"
-              className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-            >
-              {saveError.detail ?? saveError.title}
-              {saveError.traceId && (
-                <span className="ml-2 font-mono text-[10px] opacity-80">({saveError.traceId})</span>
-              )}
-            </div>
+            <InlineError error={saveError} />
           )}
 
           <Button type="submit" variant="primary" disabled={saving}>
@@ -187,21 +180,13 @@ export function EditClientPage() {
             duplicate check runs on, and what a policy was underwritten against. Correcting a
             phone number must not be a route to quietly becoming a different company.
           */}
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Registration number is not editable here — it is this company&apos;s identity in the
             national register, not a detail about it.
           </p>
 
           {saveError && (
-            <div
-              role="alert"
-              className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-            >
-              {saveError.detail ?? saveError.title}
-              {saveError.traceId && (
-                <span className="ml-2 font-mono text-[10px] opacity-80">({saveError.traceId})</span>
-              )}
-            </div>
+            <InlineError error={saveError} />
           )}
 
           <Button type="submit" variant="primary" disabled={saving}>

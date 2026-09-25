@@ -7,9 +7,13 @@ colors:
   paper: "oklch(1 0 0)"
   paper-muted: "oklch(0.985 0 0)"
   muted-ink: "oklch(0.52 0 0)"
-  subtle-ink: "oklch(0.63 0 0)"
+  subtle-ink: "oklch(0.55 0 0)"
   rule: "oklch(0.918 0 0)"
   rule-strong: "oklch(0.85 0 0)"
+  input: "oklch(0.66 0 0)"
+  control: "oklch(0.965 0 0)"
+  control-hover: "oklch(0.935 0 0)"
+  band: "oklch(0.982 0 0)"
   hover: "oklch(0.968 0 0)"
   selected: "oklch(0.955 0 0)"
   status-neutral-bg: "oklch(0.96 0.002 250)"
@@ -55,26 +59,26 @@ typography:
     lineHeight: 1.4
   micro:
     fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "0.6875rem"
+    fontSize: "0.75rem"
     fontWeight: 400
     lineHeight: 1.4
   eyebrow:
     fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    fontSize: "0.6875rem"
+    fontSize: "0.75rem"
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: "0.03em"
     textTransform: "uppercase"
   mono:
     fontFamily: "ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace"
-    fontSize: "0.6875rem"
+    fontSize: "0.75rem"
     fontWeight: 400
     lineHeight: 1.4
 rounded:
   xs: "0.25rem"
-  sm: "0.25rem"
-  md: "0.375rem"
-  lg: "0.5rem"
+  sm: "0.375rem"
+  md: "0.5rem"
+  lg: "0.625rem"
   full: "9999px"
 spacing:
   hairline-gap: "2px"
@@ -92,13 +96,23 @@ components:
     rounded: "{rounded.md}"
     padding: "0 14px"
     height: "36px"
-  button-outline:
-    backgroundColor: "{colors.paper}"
+  button-secondary:
+    backgroundColor: "{colors.control}"
     textColor: "{colors.ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "0 14px"
     height: "36px"
+    pointerCoarseHeight: "44px"
+  button-outline:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    borderColor: "{colors.rule-strong}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: "0 14px"
+    height: "36px"
+    pointerCoarseHeight: "44px"
   button-ghost:
     backgroundColor: "transparent"
     textColor: "{colors.ink}"
@@ -125,12 +139,15 @@ components:
     height: "32px"
     width: "32px"
   input-text:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "{colors.control}"
+    borderColor: "{colors.input}"
+    focusBackgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "0 10px"
     height: "36px"
+    pointerCoarseHeight: "44px"
   status-badge:
     typography: "{typography.label}"
     rounded: "{rounded.full}"
@@ -161,10 +178,12 @@ components:
     textColor: "{colors.muted-ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
-    padding: "6px 8px"
+    padding: "8px 10px"
   nav-item-active:
-    backgroundColor: "{colors.selected}"
+    backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
+    fontWeight: 500
+    shadow: "raise"
   sidebar:
     backgroundColor: "{colors.paper-muted}"
     width: "224px"
@@ -216,6 +235,34 @@ tenants of the same console, so the identity belongs to the platform.
 - A compressed, functional type scale that prizes density over display
 - Dark mode is a first-class peer, not a filter: every token is defined twice
 - Vendor-neutral and tenant-invisible by construction
+
+### Espresso, adapted
+
+The console's **structure** is taken from Frappe's Espresso (the ERPNext desk),
+measured from its own published `desk.bundle` stylesheet rather than eyeballed
+from a screenshot: a sticky page bar carrying breadcrumb, title, status and
+actions; sticky record tabs beneath it; a grey band on table headers; filled
+controls; a raised pill for the active nav item; 8px control radius; and a
+12px type floor. All of it suits a console whose users sit in it all day, and
+none of it touches the palette — the ink, the paper and the six stamps are
+unchanged, because the identity is not Espresso's to lend.
+
+**Its contrast values are deliberately NOT adopted.** Four of them fail WCAG AA,
+measured from those same published tokens:
+
+| Espresso | Measured | Needs |
+| --- | --- | --- |
+| Borderless filled field (`#f3f3f3` on white) | 1.11:1 | 3:1 (1.4.11) |
+| Focus ring `#c9c9c9` on white | 1.66:1 | 3:1 |
+| `text-light` `#7c7c7c` — inactive tabs, meta | 4.17:1 | 4.5:1 |
+| Checkbox border `#999` | 2.85:1 | 3:1 |
+
+So this console takes the filled ground **and keeps its own 3:1 `input` border
+on top of it**, keeps the ink focus ring, uses Muted Ink (~7:1) where Espresso
+uses `text-light`, and gives the active nav item weight as well as a shadow —
+Espresso's white-on-grey pill is 1.06:1 and leans on the shadow alone. Espresso
+sizes controls at 28px; this console stays at 32/36px and lifts every control to
+44px under `pointer-coarse`, which catches a touch laptop as well as a phone.
 
 ## Colors
 
@@ -327,10 +374,18 @@ figures are policy numbers and money.
 **The scale is compressed on purpose, and it is compressed further than a
 publication scale would admit.** This is a confirmed decision, not drift: a
 back-office operator wants rows on screen, and density beats comfort here. The
-measured distribution is 226 uses of 0.75rem, 98 of 0.875rem, 94 of 0.6875rem,
+measured distribution was 226 uses of 0.75rem, 98 of 0.875rem, 94 of 0.6875rem,
 16 of 0.625rem, and exactly one each of the two largest sizes. Read that as the
 real hierarchy: **0.75rem is the workhorse of this console**, and 0.875rem is
 reserved for the values a person actually reads a row to find.
+
+**0.75rem is now also the floor.** The 0.6875rem and 0.625rem tiers are gone:
+168 hard-coded runs across 59 files, carrying trace IDs, field notes, stat
+captions and the em dash that means "absent" — the tier a console reaches for
+when a value is secondary, which is not the same as unreadable. Espresso's own
+floor is 12px, and a guard test (`src/test/designGuards.test.ts`) keeps it.
+Where a caption and its neighbour are now the same size, hierarchy is carried by
+ink (Subtle against Muted) and by case, which it largely already was.
 
 - **Display** (600, 1.5rem, tracking-tight): the stat-card figure, and nothing
   else. One occurrence in the codebase, by design — and now on **one screen**,
@@ -349,9 +404,10 @@ reserved for the values a person actually reads a row to find.
 - **Label** (500, 0.75rem): the **most-used size in the system by a wide margin**,
   and the true default for chrome — table headers, field labels, descriptions,
   stat labels, form captions, most secondary cell content.
-- **Micro** (400, 0.6875rem): notes, error messages, badge counts, trace IDs,
-  stat hints. The intended floor.
-- **Eyebrow** (500, 0.6875rem, +0.03em, uppercase): sidebar group captions and
+- **Micro** (400, 0.75rem): notes, error messages, badge counts, trace IDs,
+  stat hints. The floor, and now genuinely the same size as Label — the two are
+  separated by ink, not by size.
+- **Eyebrow** (500, 0.75rem, +0.03em, uppercase): sidebar group captions and
   gate-panel titles. The only uppercase in the system, and it is structural
   labelling, never a marketing device.
 

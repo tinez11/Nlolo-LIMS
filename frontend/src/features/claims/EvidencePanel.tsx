@@ -65,7 +65,7 @@ export function EvidencePanel({ claimId, canAttach }: { claimId: string; canAtta
           <li key={item.claimEvidenceId} className="flex items-center justify-between gap-3 px-4 py-2.5">
             <div className="min-w-0">
               <p className="truncate text-sm">{item.description || 'No description'}</p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {/* The name captured from the uploader's token -- never `uploadedBy`, which is
                     their Keycloak subject. Evidence attached before the name was captured has
                     none to recover, and says so. */}
@@ -152,18 +152,18 @@ function UploadForm({ claimId }: { claimId: string }) {
               ? 'Drop the file'
               : 'Drag a file here, or click to browse'}
         </p>
-        <p className="text-[11px] text-subtle-foreground">JPEG, PNG, or PDF</p>
+        <p className="text-xs text-subtle-foreground">JPEG, PNG, or PDF</p>
       </div>
 
       {acceptedFiles[0] && attaching.status !== 'loading' && (
-        <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <Paperclip className="size-3" />
           {acceptedFiles[0].name}
         </p>
       )}
 
       {attaching.status === 'error' && attaching.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {attaching.error.detail ?? attaching.error.title}
         </p>
       )}

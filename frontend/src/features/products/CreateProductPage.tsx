@@ -19,6 +19,7 @@ import {
 } from './createProductForm';
 import { PublishVersionForm } from './PublishVersionForm';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * A genuinely two-phase flow, not a stylistic choice: `GET /products` only
@@ -115,12 +116,7 @@ export function CreateProductPage() {
               </FormField>
 
               {creating.status === 'error' && creating.error && (
-                <div
-                  role="alert"
-                  className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-                >
-                  <p>{creating.error.detail ?? creating.error.title}</p>
-
+                <InlineError error={creating.error}>
                   {/*
                     A duplicate code is very often a code taken by a product nobody can see.
                     `GET /products` returns ACTIVE products only, and a product is ACTIVE only
@@ -130,26 +126,13 @@ export function CreateProductPage() {
                     exactly right and was impossible to work out from the message alone.
                   */}
                   {creating.error.kind === 'conflict' && (
-                    <p className="mt-1.5 opacity-90">
+                    <p className="mt-1.5">
                       If it is not in the products list, it is an unpublished draft: the list
                       shows only products with a published version. Use a different code, or
                       ask an administrator to publish or remove the draft.
                     </p>
                   )}
-
-                  {/*
-                    Labelled `trace`, and on its own line. It was an unlabelled uuid in bare
-                    parentheses immediately after "...already exists for this tenant", which
-                    reads as the tenant's id -- and was read that way. `select-all` matches the
-                    console's other trace ids: it is the thread back to the backend logs, so
-                    it exists to be copied.
-                  */}
-                  {creating.error.traceId && (
-                    <p className="mt-1.5 font-mono text-[10px] opacity-80 select-all">
-                      trace {creating.error.traceId}
-                    </p>
-                  )}
-                </div>
+                </InlineError>
               )}
 
               <Button type="submit" variant="primary" disabled={creating.status === 'loading'}>
@@ -194,7 +177,7 @@ function Step({
   return (
     <section className={`rounded-lg border border-border bg-surface ${disabled ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <span className="grid size-5 place-items-center rounded-full bg-selected text-[11px] font-semibold">
+        <span className="grid size-5 place-items-center rounded-full bg-selected text-xs font-semibold">
           {done ? <Check className="size-3" /> : number}
         </span>
         <h2 className="text-sm font-semibold">{title}</h2>

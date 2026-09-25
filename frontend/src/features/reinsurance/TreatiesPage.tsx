@@ -147,6 +147,7 @@ export function TreatiesPage() {
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="treaty" value={value} />}
+                bare
                 active={status === value}
                 onClick={() => update(value)}
               />

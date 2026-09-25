@@ -129,7 +129,7 @@ export function LoansPanel({
           </Button>
         )}
         {!originating && !hasCashValue && (
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             A loan is limited to the policy&rsquo;s cash value, which is still 0.00 —
             nothing credits it yet.
           </p>
@@ -158,14 +158,14 @@ function LoanRow({ policyNumber, loan }: { policyNumber: string; loan: LoanView 
         </div>
         <div className="shrink-0 text-right">
           <span className="text-sm font-medium">{formatMoney(loan.outstandingBalance)}</span>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             of {formatMoney(loan.principalAmount)} principal
           </p>
         </div>
       </div>
 
       {typeof loan.currentInterestRate === 'number' && (
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           {loan.currentInterestRate}% a year, accrued daily
         </p>
       )}
@@ -236,12 +236,12 @@ function OriginateLoanForm({
           available loan value, or says the policy is not in force. Both are more
           useful than anything this form could say on its own. */}
       {originating.status === 'error' && originating.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {originating.error.detail ?? originating.error.title}
         </p>
       )}
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Limited to the policy&rsquo;s available cash value. Disbursement is requested
         automatically and confirmed by the payment rail, so the loan stays pending until
         the money is sent.
@@ -309,12 +309,12 @@ function RepaymentForm({
       </FormField>
 
       {repaying.status === 'error' && repaying.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {repaying.error.detail ?? repaying.error.title}
         </p>
       )}
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Partial repayments are accepted as often as needed. Clearing the balance settles
         the loan.
       </p>

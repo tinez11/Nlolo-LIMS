@@ -350,6 +350,7 @@ export function ClientsPage({
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="kyc" value={value} />}
+                bare
                 active={kycStatus === value}
                 onClick={() => update({ kycStatus: value })}
               />

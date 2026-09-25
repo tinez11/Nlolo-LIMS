@@ -35,6 +35,7 @@ import { DecisionPanel } from './DecisionPanel';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { Input, Select, Textarea } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * Reached from `OpenUnderwritingCasePage`'s own redirect, a direct visit to a
@@ -225,7 +226,7 @@ export function UnderwritingCaseDetailPage() {
                 This case was decided, but automatic issuance failed and no policy exists.
               </p>
               <p className="mt-1">{view.issuanceFailureReason}</p>
-              <p className="mt-2 opacity-80">
+              <p className="mt-2">
                 Recorded {formatInstant(view.issuanceFailedAt)}. The decision itself stands.
                 Correct what the message names, then issue the policy by hand from Policies — this
                 will not retry on its own.
@@ -325,17 +326,7 @@ export function UnderwritingCaseDetailPage() {
               </FormField>
 
               {submitting.status === 'error' && submitting.error && (
-                <div
-                  role="alert"
-                  className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-                >
-                  {submitting.error.detail ?? submitting.error.title}
-                  {submitting.error.traceId && (
-                    <span className="ml-2 font-mono text-[10px] opacity-80">
-                      ({submitting.error.traceId})
-                    </span>
-                  )}
-                </div>
+                <InlineError error={submitting.error} />
               )}
 
               {/*

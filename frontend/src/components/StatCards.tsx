@@ -108,7 +108,7 @@ export function StatCards({ stats }: { stats: Stat[] }) {
                 </span>
               )}
             </p>
-            <p className="mt-0.5 text-[11px] text-subtle-foreground">{stat.hint}</p>
+            <p className="mt-0.5 text-xs text-subtle-foreground">{stat.hint}</p>
           </Tag>
         );
       })}

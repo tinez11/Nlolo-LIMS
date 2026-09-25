@@ -188,7 +188,7 @@ export function IssueGroupSchemePage() {
               />
             )}
           />
-          <p className="mt-1 text-[11px] text-subtle-foreground">
+          <p className="mt-1 text-xs text-subtle-foreground">
             They own the contract and pay the premium. They are not a life assured — the lives
             are the schedule below.
           </p>
@@ -225,10 +225,10 @@ export function IssueGroupSchemePage() {
 
         {/* --- How the scheme values anybody ---------------------------------- */}
         <fieldset className="border-t border-border pt-3">
-          <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+          <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
             Benefit basis
           </legend>
-          <p className="mb-2.5 text-[11px] text-muted-foreground">
+          <p className="mb-2.5 text-xs text-muted-foreground">
             One basis for the whole scheme. Flat suits SACCO, funeral and credit-linked cover;
             a salary multiple is standard for employer schemes; graded splits by staff category.
           </p>
@@ -282,7 +282,7 @@ export function IssueGroupSchemePage() {
               />
               {/* Blank and zero are opposites here, so the field says which one
                   blank means rather than leaving it to be guessed. */}
-              <p className="mt-1 text-[11px] text-subtle-foreground">
+              <p className="mt-1 text-xs text-subtle-foreground">
                 Leave blank if this scheme has no limit — everyone is then covered in full with
                 no medical evidence.
               </p>
@@ -299,7 +299,7 @@ export function IssueGroupSchemePage() {
                 </Button>
               </div>
               {typeof errors.grades?.message === 'string' && (
-                <p className="mb-1 text-[11px] text-status-danger-fg">{errors.grades.message}</p>
+                <p className="mb-1 text-xs text-status-danger-fg">{errors.grades.message}</p>
               )}
               <div className="space-y-2">
                 {grades.fields.map((field, index) => (
@@ -337,16 +337,16 @@ export function IssueGroupSchemePage() {
 
         {/* --- The opening schedule ------------------------------------------- */}
         <fieldset className="border-t border-border pt-3">
-          <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+          <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
             Opening schedule
           </legend>
-          <p className="mb-2.5 text-[11px] text-muted-foreground">
+          <p className="mb-2.5 text-xs text-muted-foreground">
             The lives covered from day one. At least one — a scheme's sum assured is the total
             of its members, so it cannot be issued empty. More can be added afterwards.
           </p>
 
           {typeof errors.openingSchedule?.message === 'string' && (
-            <p className="mb-1 text-[11px] text-status-danger-fg">{errors.openingSchedule.message}</p>
+            <p className="mb-1 text-xs text-status-danger-fg">{errors.openingSchedule.message}</p>
           )}
 
           <div className="space-y-2">
@@ -415,7 +415,7 @@ export function IssueGroupSchemePage() {
                 )}
 
                 {previews[index] && (
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  <p className="mt-1.5 text-xs text-muted-foreground">
                     Covered for{' '}
                     <strong>{formatMoney(previews[index].covered)}</strong>
                     {previews[index].status === 'EVIDENCE_REQUIRED' && (
@@ -449,7 +449,7 @@ export function IssueGroupSchemePage() {
               <span className="text-muted-foreground">Total sum insured</span>
               <strong>{formatMoney({ amount: runningTotal, currencyCode: currency || 'TZS' })}</strong>
             </div>
-            <p className="mt-0.5 text-[11px] text-subtle-foreground">
+            <p className="mt-0.5 text-xs text-subtle-foreground">
               Derived from the schedule — the platform calculates it, nobody types it.
               {unpriced > 0 && ` ${unpriced} row${unpriced === 1 ? '' : 's'} not yet priced.`}
               {overLimit > 0 &&
@@ -460,7 +460,7 @@ export function IssueGroupSchemePage() {
 
         {/* --- Premium and term ----------------------------------------------- */}
         <fieldset className="border-t border-border pt-3">
-          <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+          <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
             Premium and term
           </legend>
 
@@ -498,7 +498,7 @@ export function IssueGroupSchemePage() {
                   <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />
                 )}
               />
-              <p className="mt-1 text-[11px] text-subtle-foreground">
+              <p className="mt-1 text-xs text-subtle-foreground">
                 Blank means today. Backdating is fine; a future date is not supported yet.
               </p>
             </FormField>

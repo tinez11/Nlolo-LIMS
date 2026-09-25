@@ -175,10 +175,10 @@ export function FieldGroup({
 }) {
   return (
     <fieldset className="border-t border-border pt-3">
-      <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+      <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
         {title}
       </legend>
-      {hint && <p className="mb-2.5 text-[11px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="mb-2.5 text-xs text-muted-foreground">{hint}</p>}
       {children}
     </fieldset>
   );

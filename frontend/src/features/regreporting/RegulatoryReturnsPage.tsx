@@ -165,7 +165,7 @@ function GenerateReturnForm({ onDone }: { onDone: (returnId?: string) => void })
       </div>
 
       {generating.status === 'error' && generating.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {generating.error.detail ?? generating.error.title}
         </p>
       )}

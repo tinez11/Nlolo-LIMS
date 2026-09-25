@@ -265,6 +265,7 @@ export function PoliciesPage({
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="policy" value={value} />}
+                bare
                 active={status === value}
                 onClick={() => update({ status: value })}
               />

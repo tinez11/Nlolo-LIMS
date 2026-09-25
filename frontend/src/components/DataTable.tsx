@@ -56,7 +56,8 @@ export function DataTable<T>({
       <table className="w-full border-collapse text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
-          <tr className="border-b border-border">
+          {/* Espresso's grey header band. The muted header ink is ~7:1 on it. */}
+          <tr className="border-b border-border bg-band">
             {columns.map((column) => (
               <th
                 key={column.key}

@@ -110,7 +110,7 @@ export function PartyName({
     return (
       <span className={cn('inline-block', className)}>
         <span className="text-sm">{name}</span>
-        <span className="mt-0.5 block font-mono text-[11px] text-subtle-foreground select-all">
+        <span className="mt-0.5 block font-mono text-xs text-subtle-foreground select-all">
           {partyId}
         </span>
       </span>

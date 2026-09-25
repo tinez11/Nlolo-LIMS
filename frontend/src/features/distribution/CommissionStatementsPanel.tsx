@@ -225,10 +225,10 @@ function PayoutForm({
             {...register('payeeRef')}
           />
           {errors.payeeRef?.message && (
-            <p className="mt-1 text-[11px] text-status-danger-fg">{errors.payeeRef.message}</p>
+            <p className="mt-1 text-xs text-status-danger-fg">{errors.payeeRef.message}</p>
           )}
           {requesting.status === 'error' && requesting.error && (
-            <p role="alert" className="mt-1 text-[11px] text-status-danger-fg">
+            <p role="alert" className="mt-1 text-xs text-status-danger-fg">
               {requesting.error.detail ?? requesting.error.title}
             </p>
           )}

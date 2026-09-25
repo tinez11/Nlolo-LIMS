@@ -133,3 +133,14 @@ test.describe('staff policies', () => {
     expect(authorizedRequests).toEqual([]);
   });
 });
+
+test('Ctrl+K goes to a screen', async ({ page }) => {
+  await page.goto('/staff/policies');
+  await expect(page.getByRole('heading', { name: 'Policies', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.keyboard.press('Control+K');
+  await page.getByRole('combobox').fill('claims');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/staff\/claims/);
+});
