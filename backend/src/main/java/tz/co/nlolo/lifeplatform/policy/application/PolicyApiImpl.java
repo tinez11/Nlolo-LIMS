@@ -2150,7 +2150,7 @@ public class PolicyApiImpl implements PolicyApi {
         if (valuation.underwritingStatus() == MemberUnderwritingStatus.EVIDENCE_REQUIRED
                 && member.getUnderwritingCaseId() == null) {
             Policy schemePolicy = findPolicyOrThrow(policyNumber, tenantId);
-            UnderwritingCaseView evidenceCase = underwritingApi.openCase(
+            UnderwritingCaseView evidenceCase = underwritingApi.openMemberEvidenceCase(
                 member.getMemberPartyId(), schemePolicy.getProductId(),
                 schemePolicy.getProductVersionId(), valuation.benefitAmount(),
                 schemePolicy.getSumAssuredCurrency(), schemePolicy.getAgentOfRecordId(),

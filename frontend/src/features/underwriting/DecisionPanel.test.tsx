@@ -30,6 +30,7 @@ function renderPanel(over: {
   canDecide?: boolean;
   deciding?: Resource<UnderwritingCaseView>;
   onDecide?: (r: unknown) => void;
+  callerSubject?: string | null;
 } = {}) {
   const onDecide = over.onDecide ?? vi.fn();
   render(
@@ -38,6 +39,7 @@ function renderPanel(over: {
       deciding={over.deciding ?? idle<UnderwritingCaseView>()}
       canDecide={over.canDecide ?? true}
       isSenior={over.isSenior ?? false}
+      callerSubject={over.callerSubject ?? 'decider-sub'}
       onDecide={onDecide}
     />,
   );
@@ -120,6 +122,28 @@ describe('the senior underwriter gate', () => {
   });
 });
 
+describe('separation of duties', () => {
+  it('withholds the form from whoever assessed the case, and says who must decide', () => {
+    renderPanel({ view: { openedBy: 'agent-sub', assessedBy: ['me-sub'] }, callerSubject: 'me-sub' });
+    expect(screen.getByText(/recorded an assessment on this case/)).toBeInTheDocument();
+    expect(screen.getByText(/another underwriter must decide it/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record decision' })).not.toBeInTheDocument();
+    // The advice stays visible: they may still read what they are handing over.
+    expect(screen.getByText(/The rules engine recommends/)).toBeInTheDocument();
+  });
+
+  it('withholds it from whoever opened the case, senior or not', () => {
+    renderPanel({ view: { openedBy: 'me-sub', assessedBy: [] }, callerSubject: 'me-sub', isSenior: true });
+    expect(screen.getByText(/You opened this case/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record decision' })).not.toBeInTheDocument();
+  });
+
+  it('offers it to anyone else', () => {
+    renderPanel({ view: { openedBy: 'agent-sub', assessedBy: ['assessor-sub'] }, callerSubject: 'me-sub' });
+    expect(screen.getByRole('button', { name: 'Record decision' })).toBeEnabled();
+  });
+});
+
 describe('the loading field', () => {
   it('appears only for an accepted-with-loading decision', async () => {
     const user = userEvent.setup();
@@ -164,6 +188,7 @@ describe('visibility', () => {
         deciding={idle<UnderwritingCaseView>()}
         canDecide={false}
         isSenior={false}
+        callerSubject="decider-sub"
         onDecide={() => {}}
       />,
     );

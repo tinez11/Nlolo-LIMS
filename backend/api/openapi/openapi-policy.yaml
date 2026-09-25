@@ -30,6 +30,10 @@ paths:
   /policies/manual-issue:
     post:
       summary: Manually issue a policy (staff exception path only)
+      description: >-
+        Single-life policies only. A GROUP_LIFE or CREDIT_LIFE product answers 422
+        `NOT_A_SINGLE_LIFE_PRODUCT`: issued here it would be a group contract with no member
+        schedule, covering nobody. Schemes are issued through their own set-up.
       security:
         - staffAuth: []
       requestBody:

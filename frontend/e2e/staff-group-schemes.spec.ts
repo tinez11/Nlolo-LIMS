@@ -3,6 +3,7 @@ import { issueRealPolicy } from './policies';
 import { dmy, todayIso } from './dates';
 import { asAdmin } from './admin';
 import { fillPolicyNumberManually } from './guards';
+import { decideAsSenior } from './underwriting';
 
 /**
  * Group business, end to end against the real stack.
@@ -94,10 +95,11 @@ async function pickParty(
  * the decision issues the scheme as an offer. Everything downstream of a scheme existing
  * therefore has to come through here first — which is the change, not an inconvenience.
  *
- * <p>Decided as the default staff.underwriter identity with no senior: a group case carries
- * NO engine recommendation, so there is nothing to depart from and no override to approve.
- * That is asserted here rather than assumed, because it is the half of the design most
- * likely to be broken by a later change to the rules engine.
+ * <p>A group case carries NO engine recommendation, so there is nothing to depart from and no
+ * override to approve -- asserted rather than assumed, because it is the half of the design
+ * most likely to be broken by a later change to the rules engine. It is decided by
+ * staff.senior only because staff.underwriter proposed and assessed it, and separation of
+ * duties keeps those two from deciding it; seniority plays no part.
  *
  * <p>The issued scheme is found as the newest policy. /staff/policies orders by createdAt
  * DESC, this scheme was created seconds ago inside a serial run, and the case detail page
@@ -125,13 +127,15 @@ async function acceptProposedScheme(page: Page): Promise<string> {
   ]);
   await expect(page.getByText(/The rules engine recommends/)).toHaveCount(0);
 
-  await page.getByLabel('Decision').selectOption({ label: 'Accept' });
-  await page.getByLabel('Reason').fill('Scheme accepted');
-  await page.getByRole('button', { name: 'Record decision' }).click();
+  // Separation of duties: this identity proposed and assessed the scheme, so it is told to
+  // leave the decision to someone else -- and a second underwriter makes it.
+  await expect(page.getByText(/another underwriter must decide it/)).toBeVisible();
+  await decideAsSenior(page, 'Accept', 'Scheme accepted');
 
   // The Decision PANEL, not the word "Accept" -- which also names an <option> inside the
   // decision <select>, so a text locator matched the still-open form and reported the
   // failure as "hidden" rather than as the refusal the alert was actually showing.
+  await page.reload();
   await expect(page.getByRole('heading', { name: 'Decision', exact: true })).toBeVisible({
     timeout: 20_000,
   });

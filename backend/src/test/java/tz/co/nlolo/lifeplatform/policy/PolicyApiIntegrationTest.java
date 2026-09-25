@@ -227,7 +227,7 @@ class PolicyApiIntegrationTest {
             new BigDecimal("1000000"), "TZS", null, "agent1");
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
         underwritingApi.decide(opened.caseId(),
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "decider1", false);
 
         // awaitility is not a declared Maven dependency (Global Constraints: no new
         // dependencies) -- a short bounded retry loop proves the same thing: the
@@ -284,7 +284,7 @@ class PolicyApiIntegrationTest {
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Normal findings",
             new BigDecimal("10"), "underwriter1");
         underwritingApi.decide(opened.caseId(),
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "decider1", false);
 
         List<PolicyView> found = List.of();
         for (int attempt = 0; attempt < 50; attempt++) {
@@ -320,7 +320,7 @@ class PolicyApiIntegrationTest {
             fixture.productVersionId(), new BigDecimal("1000000"), "TZS", null, proposal, "agent1");
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard", new BigDecimal("10"), "uw");
         underwritingApi.decide(opened.caseId(),
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw-decider", false);
 
         List<PolicyView> found = List.of();
         for (int attempt = 0; attempt < 50; attempt++) {
@@ -523,7 +523,7 @@ class PolicyApiIntegrationTest {
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard",
             new BigDecimal("10"), "uw");
         underwritingApi.decide(opened.caseId(),
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw-decider", false);
 
         TenantContext.set(tenantId);
         assertThat(policyApi.searchPolicies(fixture.applicantId(), null, null, null, null,
@@ -633,7 +633,7 @@ class PolicyApiIntegrationTest {
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard",
             new BigDecimal("10"), "uw");
         underwritingApi.decide(opened.caseId(),
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw-decider", false);
 
         TenantContext.set(tenantId);
         assertThat(policyApi.searchPolicies(applicantId, null, null, null, null,
@@ -713,7 +713,7 @@ class PolicyApiIntegrationTest {
         underwritingApi.submitAssessment(opened.caseId(), AssessmentType.MEDICAL, "Standard",
             new BigDecimal("10"), "uw");
         underwritingApi.decide(opened.caseId(),
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "uw-decider", false);
 
         TenantContext.set(tenantId);
         assertThat(policyApi.searchPolicies(applicantId, null, null, null, null, PageRequest.of(0, 10)).getContent())

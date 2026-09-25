@@ -365,6 +365,15 @@ export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   'CREDIT_LIFE',
 ];
 
+/**
+ * Whether a product insures one life and so may be proposed or issued as a single policy.
+ * GROUP_LIFE and CREDIT_LIFE insure a schedule of members and are set up as schemes; the
+ * server refuses them on `POST /underwriting/cases` and `POST /policies/manual-issue`.
+ */
+export function isSingleLifeProduct(p: { category?: ProductCategory | null }): boolean {
+  return p.category !== 'GROUP_LIFE' && p.category !== 'CREDIT_LIFE';
+}
+
 export const RATING_FACTOR_TYPES: readonly RatingFactorType[] = [
   'AGE',
   'OCCUPATION_CLASS',

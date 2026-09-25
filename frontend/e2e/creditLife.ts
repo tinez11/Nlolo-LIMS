@@ -76,6 +76,7 @@ export interface CreditLifeScheme {
   policyNumber: string;
   /** The corporate lender that holds the scheme, by the name the console will render. */
   lenderName: string;
+  lenderPartyId: string;
   /** The pending enrolment submission uploaded by `staff.admin`, awaiting a second person. */
   submissionId: string;
 }
@@ -289,7 +290,7 @@ export async function seedCreditLifeScheme(): Promise<CreditLifeScheme> {
     expect(submission.rejectedCount).toBe(ENROLMENT_REFUSED);
     expect(submission.enrolledCount).toBe(0);
 
-    return { policyNumber, lenderName, submissionId: submission.submissionId as string };
+    return { policyNumber, lenderName, lenderPartyId, submissionId: submission.submissionId as string };
   } finally {
     await http.dispose();
   }

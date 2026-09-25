@@ -33,6 +33,8 @@ import {
   selectClientCases,
   selectClientClaims,
   selectClientPolicies,
+  isSchemeCategory,
+  selectClientSchemeKinds,
   selectClientSchemeMembers,
   useClientRecordStore,
 } from '@/store/clientRecord';
@@ -133,13 +135,35 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
    */
   const isOrganisation = party?.partyType === 'CORPORATE' || party?.partyType === 'GROUP';
 
-  // Derived from the policies panel's own page. `useMemo` keeps the array identity
-  // stable so the members effect below does not re-fire on every render.
-  const schemes = useMemo(
-    () => (policies.data?.items ?? []).filter((p) => p.productCategory === 'GROUP_LIFE'),
+  // CANDIDATES from the policies panel's own page, by category -- group life AND credit life,
+  // since a lender's credit-life book is a scheme too and used to be invisible here. Then
+  // CONFIRMED one by one: a group product was once proposable as a single life, and a policy
+  // issued that way has the category and no schedule, so offering its "member roll" could only
+  // fail. `useMemo` keeps identities stable so the effects below do not re-fire every render.
+  const candidates = useMemo(
+    () => (policies.data?.items ?? []).filter((p) => isSchemeCategory(p.productCategory)),
     [policies.data],
   );
-  const soleSchemeNumber = schemes.length === 1 ? schemes[0]?.policyNumber : undefined;
+  const candidateKey = candidates.map((p) => p.policyNumber ?? '').join(',');
+  const schemeKinds = useClientRecordStore(selectClientSchemeKinds(partyId));
+  const loadSchemeKinds = useClientRecordStore((s) => s.loadSchemeKinds);
+  useEffect(() => {
+    if (partyId && candidateKey) void loadSchemeKinds(partyId, candidateKey.split(','));
+  }, [partyId, candidateKey, loadSchemeKinds]);
+
+  const kinds = schemeKinds.data;
+  // Until the check lands every candidate counts as a scheme, so the panel does not flicker
+  // empty; an UNKNOWN (null) stays a scheme, and only the server's "not a group scheme" moves one.
+  const schemes = useMemo(
+    () => candidates.filter((p) => kinds?.[p.policyNumber ?? ''] !== false),
+    [candidates, kinds],
+  );
+  const notSchemes = useMemo(
+    () => candidates.filter((p) => kinds?.[p.policyNumber ?? ''] === false),
+    [candidates, kinds],
+  );
+  // Only once confirmed, so the roll is never requested for a policy that cannot have one.
+  const soleSchemeNumber = kinds && schemes.length === 1 ? schemes[0]?.policyNumber : undefined;
 
   useEffect(() => {
     // Only for the single-scheme case: with two or more there is no one roll to
@@ -360,7 +384,7 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
           an individual -- so a type-only gate would have hidden real cover from the
           record of the person who holds it.
         */}
-        {(isOrganisation || schemes.length > 0) && (
+        {(isOrganisation || candidates.length > 0) && (
           <Panel
             title="Group schemes"
             subtitle={
@@ -372,6 +396,7 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
             <SchemeList
               resource={policies}
               schemes={schemes}
+              notSchemes={notSchemes}
               partyId={partyId}
               onRetry={() => void loadPolicies(partyId)}
             />
@@ -592,11 +617,14 @@ function PolicyList({
 function SchemeList({
   resource,
   schemes,
+  notSchemes,
   partyId,
   onRetry,
 }: {
   resource: Resource<Page<PolicyView>>;
   schemes: PolicyView[];
+  /** Group/credit-life policies the server says carry no scheme -- issued as a single life. */
+  notSchemes: PolicyView[];
   partyId: string;
   onRetry: () => void;
 }) {
@@ -605,7 +633,10 @@ function SchemeList({
   return (
     <PanelState resource={resource} onRetry={onRetry} empty="No group scheme on this client.">
       {() => {
-        if (schemes.length === 0) return null;
+        if (schemes.length === 0 && notSchemes.length === 0) {
+          return <p className="px-4 py-3 text-xs text-muted-foreground">No group scheme on this client.</p>;
+        }
+        if (schemes.length === 0) return <NotSchemeRows policies={notSchemes} />;
 
         const sole = schemes.length === 1 ? schemes[0] : undefined;
         const soleNumber = sole?.policyNumber;
@@ -689,10 +720,37 @@ function SchemeList({
                 )}
               </div>
             )}
+            <NotSchemeRows policies={notSchemes} />
           </div>
         );
       }}
     </PanelState>
+  );
+}
+
+/**
+ * A group or credit-life policy that is not a scheme: issued down the single-life path, so it
+ * has the product and no member schedule, and covers nobody. Said plainly rather than hidden
+ * -- it is a real contract on the client's record, and the fix is someone's to make -- and
+ * linked to the POLICY, since there is no schedule to link to.
+ */
+function NotSchemeRows({ policies }: { policies: PolicyView[] }) {
+  if (policies.length === 0) return null;
+  return (
+    <div className="border-t border-border">
+      {policies.map((p) => (
+        <LinkRow
+          key={p.policyNumber}
+          to={`../../policies/${encodeURIComponent(p.policyNumber ?? '')}`}
+          left={<span className="font-mono">{p.policyNumber}</span>}
+          right={
+            <span className="text-status-warning-fg">
+              Group product issued as a single-life policy — covers no members
+            </span>
+          }
+        />
+      ))}
+    </div>
   );
 }
 

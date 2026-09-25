@@ -32,6 +32,27 @@ import { dmy } from './dates';
  */
 
 test.describe('staff credit-life scheme', () => {
+  /**
+   * The lender's own client record lists its credit-life scheme and previews the roll.
+   *
+   * It did not: the Group schemes panel counted GROUP_LIFE policies only, so a lender -- whose
+   * whole relationship with the insurer IS its credit-life book -- showed no scheme at all.
+   */
+  test("a lender's client record lists its credit-life scheme and who is on it", async ({ page }) => {
+    test.slow();
+    const { policyNumber, lenderPartyId } = await seedCreditLifeScheme();
+
+    await page.goto(`/staff/parties/${lenderPartyId}`);
+    // A fresh lender per run, so this is its ONLY scheme and the roll is previewed inline.
+    const panel = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'Group schemes' }) });
+    await expect(panel.getByText(policyNumber)).toBeVisible({ timeout: 20_000 });
+    // The one opening borrower, from the real member roll -- not "could not load".
+    await expect(panel.getByText('1 member')).toBeVisible({ timeout: 20_000 });
+    await expect(panel.getByText('Could not load the member schedule.')).toHaveCount(0);
+  });
+
   test('an uploaded schedule enrols nobody until a second person accepts it', async ({ page }) => {
     // A lender, a product, a published version, a scheme and a five-row file, then two console
     // pages and an acceptance. Not a 60-second test.

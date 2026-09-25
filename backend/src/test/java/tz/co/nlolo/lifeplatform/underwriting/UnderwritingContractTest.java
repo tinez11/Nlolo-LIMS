@@ -324,10 +324,24 @@ class UnderwritingContractTest {
             .andExpect(jsonPath("$.recommendationOutcome").value("ACCEPT"))
             .andExpect(jsonPath("$.status").value("IN_REVIEW"));
 
+        // The person who assessed it may not decide it -- even a senior, and even in line with
+        // the engine. Every token above carries the same default subject, so this is that person.
+        mockMvc.perform(post("/underwriting/cases/" + caseId + "/decision")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_UNDERWRITER"),
+                        new SimpleGrantedAuthority("ROLE_SENIOR_UNDERWRITER"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"outcome":"ACCEPT","reason":"Routine"}
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.errorCode").value("UNDERWRITING_SEPARATION_OF_DUTIES"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
         // DECLINED departs from that recommendation, and this caller is not senior.
         mockMvc.perform(post("/underwriting/cases/" + caseId + "/decision")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_UNDERWRITER"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
-                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                    .jwt(builder -> builder.subject("ct-decider").claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"outcome":"DECLINED","reason":"Adverse history disclosed off-system"}
@@ -339,7 +353,7 @@ class UnderwritingContractTest {
         mockMvc.perform(post("/underwriting/cases/" + caseId + "/decision")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_UNDERWRITER"),
                         new SimpleGrantedAuthority("ROLE_SENIOR_UNDERWRITER"), new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
-                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                    .jwt(builder -> builder.subject("ct-senior").claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"outcome":"DECLINED","reason":"Adverse history disclosed off-system"}

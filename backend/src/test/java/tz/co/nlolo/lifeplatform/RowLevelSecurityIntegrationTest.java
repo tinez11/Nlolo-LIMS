@@ -1126,7 +1126,7 @@ class RowLevelSecurityIntegrationTest {
         underwritingApi.decide(caseId,
             new tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi.DecisionInput(
                 tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null, "Fixture: standard acceptance"),
-            "underwriter1", false);
+            "decider1", false);
     }
 
     private void bumpCashValue(String policyNumber, String cashValue) throws Exception {

@@ -180,6 +180,7 @@ public class UnderwritingCase {
     }
 
     public UUID getAgentOfRecordId() { return agentOfRecordId; }
+    public String getCreatedBy() { return createdBy; }
 
     /**
      * Record the proposal's identity and who it insures.

@@ -248,6 +248,7 @@ export function UnderwritingCaseDetailPage() {
             deciding={deciding}
             canDecide={roles.UNDERWRITER}
             isSenior={roles.SENIOR_UNDERWRITER}
+            callerSubject={identity.subject}
             onDecide={(request) => void commitDecision(request)}
           />
         )}

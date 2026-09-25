@@ -1,5 +1,7 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, request as apiRequest, test, type Browser, type Page } from '@playwright/test';
+import { staffToken } from './creditLife';
 import { dmy, todayIso } from './dates';
+import { asSeniorOnSameCase, decideAsSenior } from './underwriting';
 
 /**
  * Underwriting domain e2e coverage against the real backend.
@@ -81,21 +83,53 @@ test.describe('staff underwriting', () => {
     await expect(page.getByRole('heading', { name: 'Decision' })).not.toBeVisible();
     await expect(page.getByRole('button', { name: 'Submit assessment' })).toBeVisible();
 
-    // ACCEPT agrees with the recommendation, so the default staff.underwriter identity --
-    // which holds UNDERWRITER and not SENIOR_UNDERWRITER -- is allowed to record it.
-    await page.getByLabel('Decision').selectOption({ label: 'Accept' });
-    await page.getByLabel('Reason').fill('Standard risk, in line with the recommendation');
-    await page.getByRole('button', { name: 'Record decision' }).click();
-
-    await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
-    // Both forms are gone -- a decided case takes no further evidence and no second decision.
-    await expect(page.getByRole('button', { name: 'Submit assessment' })).not.toBeVisible();
+    // Separation of duties. This identity opened the case and wrote its evidence, so the
+    // decision is not theirs: no form, and a sentence saying who it belongs to.
+    await expect(page.getByText(/another underwriter must decide it/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Record decision' })).not.toBeVisible();
+
+    // A second underwriter decides. ACCEPT agrees with the recommendation, so no override.
+    await decideAsSenior(page, 'Accept', 'Standard risk, in line with the recommendation');
 
     // Reload from scratch -- proves this is a real Postgres row, not the
     // store's in-memory state surviving a soft navigation.
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Decision', exact: true })).toBeVisible();
+    // Both forms are gone -- a decided case takes no further evidence and no second decision.
+    await expect(page.getByRole('button', { name: 'Submit assessment' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Record decision' })).not.toBeVisible();
+  });
+
+  /**
+   * Separation of duties against the real backend, for the one person the console cannot
+   * warn: a second tab, or a stale form. The server refuses the assessor too.
+   */
+  test('the underwriter who assessed a case is refused the decision by the server as well', async ({
+    page,
+  }) => {
+    await openCaseForAmina(page);
+    await page.getByLabel('Findings').fill('Standard risk');
+    await page.getByLabel('Risk score (optional)').fill('10');
+    await page.getByRole('button', { name: 'Submit assessment' }).click();
+    await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
+
+    // A real token for the same person the browser is signed in as -- see ./creditLife for
+    // why it is minted from Keycloak and never fabricated.
+    const caseId = page.url().split('/').pop() as string;
+    const http = await apiRequest.newContext();
+    try {
+      const token = await staffToken(http, 'staff.underwriter');
+      const response = await http.post(`http://localhost:8080/underwriting/cases/${caseId}/decision`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { outcome: 'ACCEPT', reason: 'Deciding my own assessment' },
+      });
+      expect(response.status()).toBe(403);
+      expect(((await response.json()) as { errorCode?: string }).errorCode).toBe(
+        'UNDERWRITING_SEPARATION_OF_DUTIES',
+      );
+    } finally {
+      await http.dispose();
+    }
   });
 
   /**
@@ -104,13 +138,10 @@ test.describe('staff underwriting', () => {
    * `staff.underwriter` holds UNDERWRITER only. A decision that departs from the engine's
    * recommendation is refused to them -- by the form, and by the server behind it.
    */
-  test('a junior underwriter cannot decide against the recommendation', async ({ page }) => {
-    await openCaseForAmina(page);
-    await page.getByLabel('Findings').fill('Standard risk');
-    await page.getByLabel('Risk score (optional)').fill('10');
-    await page.getByRole('button', { name: 'Submit assessment' }).click();
-    await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
-
+  test('a junior underwriter cannot decide against the recommendation', async ({ page, browser }) => {
+    // Opened and assessed by staff.senior, so the junior is free of separation of duties and
+    // meets the senior gate alone -- otherwise the first refusal would hide the second.
+    await page.goto(await caseOpenedAndAssessedBySenior(browser));
     await page.getByLabel('Decision').selectOption({ label: 'Decline' });
 
     await expect(page.getByText(/a senior underwriter has to record it/)).toBeVisible();
@@ -168,10 +199,10 @@ test.describe('staff underwriting', () => {
     await page.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
 
-    await page.getByLabel('Decision').selectOption({ label: 'Accept' });
-    await page.getByLabel('Reason').fill('Standard risk, in line with the recommendation');
-    await page.getByRole('button', { name: 'Record decision' }).click();
-    await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
+    // A second underwriter decides -- this one opened and assessed it.
+    await decideAsSenior(page, 'Accept', 'Standard risk, in line with the recommendation');
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Decision', exact: true })).toBeVisible({ timeout: 30_000 });
 
     // The applicant's own id, read off the case rather than written down -- party ids are
     // minted per seed run, and this file has already been bitten by hard-coded ones.
@@ -267,12 +298,12 @@ test.describe('staff underwriting', () => {
     // The race is on the DECISION now, not the assessment. Two assessments on one case are
     // ordinary -- evidence accumulates -- so the 409 moved to where the conflict actually is:
     // two people settling the same case.
-    await page.getByLabel('Findings').fill('Tab A decides first');
+    // Tab A records the evidence and a second underwriter settles it on that -- tab A's own
+    // user may not, having just assessed it.
+    await page.getByLabel('Findings').fill('Tab A assesses first');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
-    await page.getByLabel('Reason').fill('Tab A settles it');
-    await page.getByRole('button', { name: 'Record decision' }).click();
-    await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
+    await decideAsSenior(page, 'Accept', 'Settled while tab B still had the form open');
 
     await page2.getByLabel('Findings').fill('Tab B arrives too late');
     await page2.getByRole('button', { name: 'Submit assessment' }).click();
@@ -300,11 +331,16 @@ test.describe('staff underwriting', () => {
     await page.getByLabel('Risk score (optional)').fill('95');
     await page.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
-    await page.getByLabel('Decision').selectOption({ label: 'Postpone — more evidence needed' });
-    await page.getByLabel('Reason').fill('Awaiting the specialist report');
-    await page.getByRole('button', { name: 'Record decision' }).click();
+    // Decided by a second underwriter; this one opened and assessed it.
+    await asSeniorOnSameCase(page, async (senior) => {
+      await senior.getByLabel('Decision').selectOption({ label: 'Postpone — more evidence needed' });
+      await senior.getByLabel('Reason').fill('Awaiting the specialist report');
+      await senior.getByRole('button', { name: 'Record decision' }).click();
+      await expect(senior.getByText('Postponed', { exact: true })).toBeVisible({ timeout: 15_000 });
+    });
 
-    await expect(page.getByText('Postponed', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await page.reload();
+    await expect(page.getByText('Postponed', { exact: true })).toBeVisible({ timeout: 30_000 });
     // The form survives, and says what it is now for.
     await expect(page.getByRole('heading', { name: 'Submit further evidence' })).toBeVisible();
     await expect(page.getByText('Further evidence', { exact: true })).toBeVisible();
@@ -324,11 +360,10 @@ test.describe('staff underwriting', () => {
     // per type, not the worst ever recorded, or the 95 above would recommend postponing
     // forever. Then a person acts on it.
     await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
-    await page.getByLabel('Decision').selectOption({ label: 'Accept' });
-    await page.getByLabel('Reason').fill('Specialist report resolves it');
-    await page.getByRole('button', { name: 'Record decision' }).click();
+    await decideAsSenior(page, 'Accept', 'Specialist report resolves it');
 
-    await expect(page.getByText('Accept', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await page.reload();
+    await expect(page.getByText('Accept', { exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('heading', { name: 'Submit further evidence' })).not.toBeVisible();
   });
 
@@ -390,6 +425,26 @@ test.describe('staff underwriting', () => {
  * A real POST -> 201 -> navigation to the new case's own url. The case id is server-generated,
  * so the caller matches the url pattern and reads `page.url()` rather than any literal value.
  */
+/** A case staff.senior opened and assessed (ACCEPT recommended), as a url, for another user. */
+async function caseOpenedAndAssessedBySenior(browser: Browser): Promise<string> {
+  const context = await browser.newContext({ storageState: 'e2e/.auth/staff-senior.json' });
+  try {
+    const seniorPage = await context.newPage();
+    await seniorPage.goto('/staff/underwriting/new');
+    await expect(seniorPage.getByRole('heading', { name: 'Open an underwriting case' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await openCaseForAmina(seniorPage);
+    await seniorPage.getByLabel('Findings').fill('Standard risk');
+    await seniorPage.getByLabel('Risk score (optional)').fill('10');
+    await seniorPage.getByRole('button', { name: 'Submit assessment' }).click();
+    await expect(seniorPage.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
+    return seniorPage.url();
+  } finally {
+    await context.close();
+  }
+}
+
 async function openCaseForAmina(page: Page) {
   await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill('Amina');

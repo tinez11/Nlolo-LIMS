@@ -11,6 +11,7 @@ import {
   decideFormSchema,
   DECISION_OUTCOMES,
   isOverride,
+  separationOfDutiesConflict,
   toApiRequest,
   type DecideFormInput,
   type DecideFormValues,
@@ -42,6 +43,7 @@ export function DecisionPanel({
   deciding,
   canDecide,
   isSenior,
+  callerSubject,
   onDecide,
 }: {
   view: UnderwritingCaseView;
@@ -49,6 +51,8 @@ export function DecisionPanel({
   /** Holds UNDERWRITER. Without it the endpoint is closed regardless of anything here. */
   canDecide: boolean;
   isSenior: boolean;
+  /** The signed-in user's subject, compared with who opened and assessed the case. */
+  callerSubject: string | null;
   onDecide: (request: ReturnType<typeof toApiRequest>) => void;
 }) {
   const {
@@ -66,6 +70,7 @@ export function DecisionPanel({
   const recommendation = view.recommendationOutcome ?? null;
   const override = isOverride(outcome, recommendation);
   const blockedByRank = override && !isSenior;
+  const conflict = separationOfDutiesConflict(view, callerSubject);
 
   if (!canDecide) return null;
 
@@ -106,70 +111,86 @@ export function DecisionPanel({
           )}
         </div>
 
-        <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => onDecide(toApiRequest(v)))(e)}>
-          <FormField label="Decision" error={errors.outcome?.message}>
-            <Select {...register('outcome')}>
-              {DECISION_OUTCOMES.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-
-          {outcome === 'LOADED' && (
-            <FormField label="Loading (%)" error={errors.loadingPercent?.message}>
-              <Input className="w-32" placeholder="25" {...register('loadingPercent')} />
-            </FormField>
-          )}
-
-          <FormField label="Reason" error={errors.reason?.message}>
-            <Textarea
-              className="min-h-20"
-              placeholder="Standard risk, in line with the recommendation"
-              {...register('reason')}
-            />
-          </FormField>
-
-          {blockedByRank && (
-            <p
-              role="status"
-              className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
-            >
-              This departs from the recommendation of <strong>{recommendation}</strong>, so a
-              senior underwriter has to record it. Refer the case, or ask one to decide it.
-            </p>
-          )}
-
-          {override && isSenior && (
-            <p className="text-[11px] text-muted-foreground">
-              This departs from the recommendation of {recommendation}. It will be recorded as
-              an override, against your name.
-            </p>
-          )}
-
-          {deciding.status === 'error' && deciding.error && (
-            <div
-              role="alert"
-              className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-            >
-              <p>{deciding.error.detail ?? deciding.error.title}</p>
-              {deciding.error.traceId && (
-                <p className="mt-1.5 font-mono text-[10px] opacity-80 select-all">
-                  trace {deciding.error.traceId}
-                </p>
-              )}
-            </div>
-          )}
-
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={blockedByRank || deciding.status === 'loading'}
+        {/*
+          The form is withheld rather than disabled: nothing on it is theirs to fill in, whatever
+          outcome they pick, and seniority does not lift it -- the senior rule is about
+          overriding the engine, this one is about marking one's own work.
+        */}
+        {conflict ? (
+          <p
+            role="status"
+            className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
           >
-            {deciding.status === 'loading' ? 'Recording…' : 'Record decision'}
-          </Button>
-        </form>
+            You {conflict === 'opened' ? 'opened this case' : 'recorded an assessment on this case'},
+            so another underwriter must decide it. Separation of duties: whoever takes or assesses
+            a proposal does not also accept it.
+          </p>
+        ) : (
+          <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => onDecide(toApiRequest(v)))(e)}>
+            <FormField label="Decision" error={errors.outcome?.message}>
+              <Select {...register('outcome')}>
+                {DECISION_OUTCOMES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
+            {outcome === 'LOADED' && (
+              <FormField label="Loading (%)" error={errors.loadingPercent?.message}>
+                <Input className="w-32" placeholder="25" {...register('loadingPercent')} />
+              </FormField>
+            )}
+
+            <FormField label="Reason" error={errors.reason?.message}>
+              <Textarea
+                className="min-h-20"
+                placeholder="Standard risk, in line with the recommendation"
+                {...register('reason')}
+              />
+            </FormField>
+
+            {blockedByRank && (
+              <p
+                role="status"
+                className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
+              >
+                This departs from the recommendation of <strong>{recommendation}</strong>, so a
+                senior underwriter has to record it. Refer the case, or ask one to decide it.
+              </p>
+            )}
+
+            {override && isSenior && (
+              <p className="text-[11px] text-muted-foreground">
+                This departs from the recommendation of {recommendation}. It will be recorded as
+                an override, against your name.
+              </p>
+            )}
+
+            {deciding.status === 'error' && deciding.error && (
+              <div
+                role="alert"
+                className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
+              >
+                <p>{deciding.error.detail ?? deciding.error.title}</p>
+                {deciding.error.traceId && (
+                  <p className="mt-1.5 font-mono text-[10px] opacity-80 select-all">
+                    trace {deciding.error.traceId}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={blockedByRank || deciding.status === 'loading'}
+            >
+              {deciding.status === 'loading' ? 'Recording…' : 'Record decision'}
+            </Button>
+          </form>
+        )}
       </div>
     </Panel>
   );

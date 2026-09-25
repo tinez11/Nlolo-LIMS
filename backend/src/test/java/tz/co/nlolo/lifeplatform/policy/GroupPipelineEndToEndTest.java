@@ -192,7 +192,7 @@ class GroupPipelineEndToEndTest {
 
         underwritingApi.decide(opened.caseId(),
             new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Scheme accepted"),
-            "uw", false);
+            "uw-decider", false);
 
         String policyNumber = awaitSchemeFor(employer);
         TenantContext.set(tenantId);
@@ -223,7 +223,7 @@ class GroupPipelineEndToEndTest {
 
         underwritingApi.decide(opened.caseId(),
             new UnderwritingApi.DecisionInput(DecisionOutcome.DECLINED, null, "Claims experience"),
-            "uw", false);
+            "uw-decider", false);
 
         TenantContext.set(tenantId);
         assertThat(policyApi.searchPolicies(employer, null, null, null, null, PageRequest.of(0, 10))

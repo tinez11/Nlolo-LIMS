@@ -230,6 +230,44 @@ class PolicyContractTest {
     }
 
     /**
+     * A GROUP_LIFE scheme in force, with one member within the free cover limit -- for the
+     * suspend/resume/reinstate tests, since only GROUP_LIFE is suspension-eligible.
+     *
+     * <p>A REAL scheme. These tests used to manual-issue a single-life policy on a GROUP_LIFE
+     * product: a group contract with no member schedule, covering nobody, which is exactly the
+     * shape both {@code POST /underwriting/cases} and manual issue now refuse. Suspending one
+     * proved the endpoint on a contract that should never have existed.
+     */
+    private IssuedPolicy issueScheme(UUID tenantId, String productCode) throws Exception {
+        // Four digits, zero-padded: the phone is +255 plus NINE, and a short suffix is a 400 on
+        // registration rather than anything to do with schemes.
+        UUID employer = registerApplicant(tenantId, String.format("%04d", Math.abs(productCode.hashCode() % 10000)));
+        UUID member = registerApplicant(tenantId, String.format("%04d", Math.abs((productCode + "m").hashCode() % 10000)));
+        ProductFixture product = publishProduct(tenantId, productCode, "GROUP_LIFE");
+        String scheme = mockMvc.perform(post("/group-schemes")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                     "benefitBasis":"SALARY_MULTIPLE","salaryMultiple":3,"fclAmount":"30000000.00",
+                     "currency":"TZS",
+                     "openingSchedule":[{"memberPartyId":"%s","salaryAmount":"1000000.00"}],
+                     "premium":{"amount":"900000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY",
+                     "issuanceBasis":"MIGRATION"}
+                    """.formatted(employer, product.productVersionId(), member)))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String policyNumber = JsonPath.read(scheme, "$.policyNumber");
+        TenantContext.set(tenantId);
+        if (policyApi.getPolicy(policyNumber).status() != tz.co.nlolo.lifeplatform.policy.api.PolicyStatus.ACTIVE) {
+            policyApi.activateOnFirstPremium(policyNumber);
+        }
+        TenantContext.clear();
+        return new IssuedPolicy(policyNumber, employer);
+    }
+
+    /**
      * A manually issued policy, in force.
      *
      * <p>Manual issue itself produces an OFFER, like every other issuance path -- see
@@ -242,6 +280,32 @@ class PolicyContractTest {
         policyApi.activateOnFirstPremium(issued.policyNumber());
         TenantContext.clear();
         return issued;
+    }
+
+    /**
+     * The backstop behind underwriting's own refusal: a case opened before that check existed can
+     * still name a group product, and manual issue must not finish the job. Refused on the
+     * product alone, before the case is even read -- so an arbitrary case id is enough here.
+     */
+    @Test
+    void manualIssueRefusesAGroupProductAsASingleLifePolicy() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerApplicant(tenantId, "9102");
+        ProductFixture product = publishProduct(tenantId, "POLICY-CONTRACT-GRP-00", "GROUP_LIFE");
+
+        mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
+                     "reasonForManualIssue":"A scheme product down the single-life path"}
+                    """.formatted(UUID.randomUUID(), applicantId, product.productVersionId())))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("NOT_A_SINGLE_LIFE_PRODUCT"));
     }
 
     @Test
@@ -751,7 +815,7 @@ class PolicyContractTest {
     void suspendPolicyMatchesOpenApiContractAndTransitionsToSuspended() throws Exception {
         // POLICY_SUSPENSION_ELIGIBLE_CATEGORIES (refdata/V2) seeds only GROUP_LIFE.
         UUID tenantId = UUID.randomUUID();
-        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-13", "GROUP_LIFE");
+        IssuedPolicy issued = issueScheme(tenantId, "POLICY-CONTRACT-13");
 
         mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
@@ -786,7 +850,7 @@ class PolicyContractTest {
     @Test
     void suspendPolicyRejectsNonStaffCallerWith403() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-15", "GROUP_LIFE");
+        IssuedPolicy issued = issueScheme(tenantId, "POLICY-CONTRACT-15");
 
         mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
@@ -801,7 +865,7 @@ class PolicyContractTest {
     @Test
     void suspendPolicyRejectsABlankReasonWith400() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-16", "GROUP_LIFE");
+        IssuedPolicy issued = issueScheme(tenantId, "POLICY-CONTRACT-16");
 
         mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
@@ -817,7 +881,7 @@ class PolicyContractTest {
     @Test
     void resumePolicyMatchesOpenApiContractAndTransitionsBackToActive() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-17", "GROUP_LIFE");
+        IssuedPolicy issued = issueScheme(tenantId, "POLICY-CONTRACT-17");
         mockMvc.perform(post("/policies/" + issued.policyNumber() + "/suspend")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
@@ -838,7 +902,7 @@ class PolicyContractTest {
     @Test
     void resumePolicyRejectsAnAlreadyActivePolicyWith409() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-18", "GROUP_LIFE");
+        IssuedPolicy issued = issueScheme(tenantId, "POLICY-CONTRACT-18");
 
         mockMvc.perform(post("/policies/" + issued.policyNumber() + "/resume")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
@@ -853,7 +917,7 @@ class PolicyContractTest {
         // arrears, per the audit) -- same direct-PolicyApi-call fixture idiom as issueTestPolicy
         // above, used here only to reach the precondition state, not to bypass the assertion.
         UUID tenantId = UUID.randomUUID();
-        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-19", "GROUP_LIFE");
+        IssuedPolicy issued = issueScheme(tenantId, "POLICY-CONTRACT-19");
         TenantContext.set(tenantId);
         policyApi.lapsePolicy(issued.policyNumber(), "test-fixture");
         TenantContext.clear();
@@ -869,7 +933,7 @@ class PolicyContractTest {
     @Test
     void reinstatePolicyRejectsANonLapsedPolicyWith409() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-20", "GROUP_LIFE");
+        IssuedPolicy issued = issueScheme(tenantId, "POLICY-CONTRACT-20");
 
         mockMvc.perform(post("/policies/" + issued.policyNumber() + "/reinstate")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
@@ -881,7 +945,7 @@ class PolicyContractTest {
     @Test
     void reinstatePolicyRejectsNonStaffCallerWith403() throws Exception {
         UUID tenantId = UUID.randomUUID();
-        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-21", "GROUP_LIFE");
+        IssuedPolicy issued = issueScheme(tenantId, "POLICY-CONTRACT-21");
 
         mockMvc.perform(post("/policies/" + issued.policyNumber() + "/reinstate")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))

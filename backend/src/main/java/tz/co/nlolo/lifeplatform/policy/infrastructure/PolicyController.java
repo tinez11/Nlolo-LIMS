@@ -4,6 +4,7 @@ import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -76,6 +77,11 @@ public class PolicyController {
     @PreAuthorize("hasRole('REALM_STAFF')")
     public ResponseEntity<PolicyResponseDto> manualIssue(@Valid @RequestBody ManualIssueRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(request.productVersionId());
+        // The backstop to underwriting's own refusal at openCase: a case opened before that
+        // check existed can still carry a group product, and this screen must not finish the job.
+        if (snapshot.category() == ProductCategory.GROUP_LIFE || snapshot.category() == ProductCategory.CREDIT_LIFE) {
+            throw new NotASingleLifeProductException(snapshot.category().name());
+        }
         List<PolicyApi.BeneficiaryInput> beneficiaries = request.beneficiaries() != null
             ? request.beneficiaries().stream().map(BeneficiaryInputDto::toApiInput).toList() : List.of();
         PolicyApi.IssueRequest issueRequest = new PolicyApi.IssueRequest(request.policyholderPartyId(), snapshot.productId(), request.productVersionId(),

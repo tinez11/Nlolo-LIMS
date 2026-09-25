@@ -256,6 +256,9 @@ CUSTOMER_OWNER_TOKEN=$(token_for customers customer.owner "$CUSTOMERS_SECRET")
 
 echo "=== Step 5: Underwriting -> auto-issue ==="
 STAFF_UNDERWRITER_TOKEN=$(token_for staff staff.underwriter "$STAFF_SECRET")
+# Separation of duties: whoever assesses a case may not decide it. staff.senior writes the
+# evidence so that staff.underwriter can record the ordinary, in-line decision below.
+STAFF_SENIOR_TOKEN=$(token_for staff staff.senior "$STAFF_SECRET")
 
 # Sum assured 1,500,000 TZS. It resolves to NO sum assured band at all, and that is now a
 # deliberate neutral rather than an accident: the seeded SUM_ASSURED_BAND row above carries the
@@ -280,7 +283,7 @@ CASE_JSON=$(api "$AGENT_SENIOR_TOKEN" POST "/underwriting/cases" \
 CASE_ID=$(jsonval "$CASE_JSON" caseId)
 echo "caseId=$CASE_ID"
 
-ASSESSMENT_JSON=$(api "$STAFF_UNDERWRITER_TOKEN" POST "/underwriting/cases/$CASE_ID/assessments" \
+ASSESSMENT_JSON=$(api "$STAFF_SENIOR_TOKEN" POST "/underwriting/cases/$CASE_ID/assessments" \
   '{"assessmentType":"MEDICAL","findings":"Standard risk, no adverse findings","riskScore":10}')
 RECOMMENDATION=$(jsonval "$ASSESSMENT_JSON" recommendationOutcome)
 echo "recommendationOutcome=$RECOMMENDATION"

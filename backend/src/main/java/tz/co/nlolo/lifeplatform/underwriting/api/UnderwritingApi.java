@@ -34,6 +34,19 @@ public interface UnderwritingApi {
     UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, ProposalDetails proposal, String openedBy);
 
     /**
+     * Open the evidence case for ONE scheme member whose benefit exceeds the free cover limit.
+     *
+     * <p>Its own entry point because it is the one legitimate individual case on a GROUP_LIFE
+     * or CREDIT_LIFE product: {@link #openCase} refuses those, since a group product proposed
+     * as a single life was issued as a policy covering nobody. Here the product is the
+     * scheme's and the question is only "may this person have the excess". Still refused for a
+     * life assured who is not a person.
+     */
+    UnderwritingCaseView openMemberEvidenceCase(UUID memberPartyId, UUID productId, UUID productVersionId,
+                                                BigDecimal benefitAmount, String currency,
+                                                UUID agentOfRecordId, String openedBy);
+
+    /**
      * Open a case for a group scheme: an employer asking to cover a schedule of lives.
      *
      * <p>Group business used to skip this entirely — {@code POST /group-schemes} created the

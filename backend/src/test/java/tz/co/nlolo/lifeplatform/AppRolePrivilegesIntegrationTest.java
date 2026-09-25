@@ -379,9 +379,9 @@ class AppRolePrivilegesIntegrationTest {
         assertThat(assessed.recommendationOutcome()).isNotNull();
 
         UnderwritingCaseView decided = underwritingApi.decide(opened.caseId(),
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "decider1", false);
         assertThat(decided.decisionOutcome()).isNotNull();
-        assertThat(decided.decisionDecidedBy()).isEqualTo("underwriter1");
+        assertThat(decided.decisionDecidedBy()).isEqualTo("decider1");
 
         UnderwritingCaseView fetched = underwritingApi.getCase(opened.caseId());
         assertThat(fetched.caseId()).isEqualTo(opened.caseId());
