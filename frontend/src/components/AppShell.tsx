@@ -1,4 +1,4 @@
-import { LogOut, Menu, Moon, Sun, X } from 'lucide-react';
+import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
 import { useNavBadges } from '@/navBadges';
 import { navFor } from '@/screens';
+import { CommandPalette } from './CommandPalette';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
@@ -31,8 +32,22 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
   // scene (PRODUCT.md), so the drawer is the narrow-width accommodation, not a
   // second layout to maintain -- the same markup, repositioned.
   const [navOpen, setNavOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const openButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+
+  // Ctrl+K / Cmd+K anywhere in the console. An event handler, never a synchronous setState
+  // in an effect body, which this project's lint rule forbids.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     if (!navOpen) return;
@@ -100,9 +115,20 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         )}
       >
         <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-4">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold tracking-tight">Life Platform</p>
-            <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
+          <div className="flex min-w-0 items-center gap-2.5">
+            {/* A monogram in ink, not a logo: several insurers are tenants of this one
+                console, so the mark belongs to the platform and can carry no tenant's
+                colour. */}
+            <span
+              className="grid size-8 shrink-0 place-items-center rounded-md bg-accent text-xs font-semibold text-accent-foreground"
+              aria-hidden
+            >
+              LP
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold tracking-tight">Life Platform</p>
+              <p className="truncate text-xs text-muted-foreground">{config.label} console</p>
+            </div>
           </div>
           <Button
             ref={closeButton}
@@ -114,6 +140,19 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           >
             <X />
           </Button>
+        </div>
+
+        <div className="shrink-0 px-2 pb-2">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Go to a screen"
+            className="flex w-full items-center gap-2 rounded-md bg-control px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-control-hover hover:text-foreground pointer-coarse:min-h-11"
+          >
+            <Search className="size-4 shrink-0" aria-hidden />
+            <span className="flex-1 text-left">Go to…</span>
+            <kbd className="font-sans text-xs">Ctrl K</kbd>
+          </button>
         </div>
 
         {/*
@@ -175,9 +214,17 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                       to={item.to}
                       className={({ isActive }) =>
                         cn(
-                          'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors',
+                          // Espresso's nav rhythm, one step tighter horizontally: at its
+                          // full 12px the longest label on this console ("Corporate/Group",
+                          // beside a count) truncated to "Corporate/Gro...", and a nav item
+                          // that cannot say its own name is a worse trade than 2px.
+                          'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors pointer-coarse:min-h-11',
+                          // Raised AND weighted. Espresso marks the active item with a
+                          // white pill on its grey sidebar, which measures 1.06:1 -- the
+                          // shadow is carrying it alone. Weight is the second signal, and
+                          // the one that survives a dim screen or a colour-blind reader.
                           isActive
-                            ? 'bg-selected font-medium text-foreground'
+                            ? 'bg-surface font-medium text-foreground shadow-raise'
                             : 'text-muted-foreground hover:bg-hover hover:text-foreground',
                         )
                       }
@@ -208,6 +255,13 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
 
         <UserBlock identity={identity} />
       </aside>
+
+      <CommandPalette
+        realm={realm}
+        groups={groups}
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+      />
 
       {/* `inert` while the drawer is open so Tab cannot walk out of the overlay
           into the page behind it. Cheaper and harder to get wrong than a
