@@ -270,8 +270,26 @@ export function resolveStatus(kind: StatusKind, value: string): ResolvedStatus {
   return bucket ? { bucket, known: true } : { bucket: 'neutral', known: false };
 }
 
+/**
+ * Acronyms a staff member reads as acronyms. "Within fcl" is what the generic lower-casing
+ * made of WITHIN_FCL on the member roll -- a free cover limit is never written in lower case
+ * anywhere in the business.
+ *
+ * Every entry is a whole token in a real literal in `types/api`, not a guess: this function
+ * is applied far beyond statuses (claim types, benefit and factor types, ledger sides,
+ * identity document kinds), so an invented acronym would shout a word that is not one.
+ * Whole tokens only, so GLOBAL does not become "GLobal".
+ */
+const ACRONYMS = new Set(['FCL', 'KYC', 'EFT', 'SMS', 'ID', 'XOL', 'PAA', 'GMM', 'CR', 'DR']);
+
 /** Turn `SETTLEMENT_REQUESTED` into `Settlement requested` for display. */
 export function humanizeStatus(value: string): string {
-  const lower = value.replace(/_/g, ' ').toLowerCase();
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
+  return value
+    .split('_')
+    .map((word, index) => {
+      if (ACRONYMS.has(word)) return word;
+      const lower = word.toLowerCase();
+      return index === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+    })
+    .join(' ');
 }
