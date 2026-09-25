@@ -124,7 +124,7 @@ export function ArrearsPage() {
           <span className="flex items-baseline gap-2">
             <span className="font-medium tabular-nums">L{c.dunningLevel}</span>
             {c.dunningLevel >= LAPSE_RECOMMENDATION_LEVEL && (
-              <span className="text-[11px] text-status-danger-fg">lapse recommended</span>
+              <span className="text-xs text-status-danger-fg">lapse recommended</span>
             )}
           </span>
         ),
@@ -277,7 +277,7 @@ export function ArrearsPage() {
             />
             <FilterChip label="All" active={resolved === undefined} onClick={() => update({ resolved: 'ALL' })} />
 
-            <span className="ml-3 text-[11px] text-subtle-foreground uppercase">Level</span>
+            <span className="ml-3 text-xs text-subtle-foreground uppercase">Level</span>
             <FilterChip
               label="Any"
               active={minDunningLevel === undefined}

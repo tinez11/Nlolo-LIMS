@@ -82,7 +82,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
           aria-label={`Declarations recorded ${formatInstant(set.recordedAt)}`}
           className="rounded-md border border-border"
         >
-          <p className="border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+          <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
             Recorded {formatInstant(set.recordedAt)}
             {set.recordedBy && <> by <span className="font-mono">{set.recordedBy}</span></>}
           </p>
@@ -90,11 +90,11 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
             {(set.answers ?? []).map((a, i) => (
               <div key={`${set.medicalDisclosureId}-${i}`} className="px-3 py-2">
                 <dt className="text-xs">
-                  <span className="mr-2 font-mono text-[11px] text-muted-foreground">{a.questionCode}</span>
+                  <span className="mr-2 font-mono text-xs text-muted-foreground">{a.questionCode}</span>
                   {a.question}
                 </dt>
                 <dd className="mt-0.5 text-xs font-medium">{a.answer}</dd>
-                {a.notes && <dd className="mt-0.5 text-[11px] text-muted-foreground">{a.notes}</dd>}
+                {a.notes && <dd className="mt-0.5 text-xs text-muted-foreground">{a.notes}</dd>}
               </div>
             ))}
           </dl>

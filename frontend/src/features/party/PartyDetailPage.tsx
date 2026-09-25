@@ -708,7 +708,7 @@ function SchemeList({
             */}
             {sole && (
               <div className="border-t border-border">
-                <p className="px-4 pt-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+                <p className="px-4 pt-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
                   Group members
                 </p>
                 {members.status === 'error' && members.error && members.data === null ? (
@@ -976,14 +976,14 @@ function DocumentList({
                 <p className="truncate" title={d.fileName ?? d.documentRef}>
                   {d.fileName ?? <span className="font-mono">{d.documentRef}</span>}
                 </p>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   {(d.documentType ?? '').replace(/_/g, ' ').toLowerCase()} ·{' '}
                   {formatInstant(d.uploadedAt)}
                 </p>
               </li>
             ))}
             {rows.length > PANEL_ROW_CAP && (
-              <li className="pt-1 text-[11px] text-muted-foreground">
+              <li className="pt-1 text-xs text-muted-foreground">
                 {rows.length - PANEL_ROW_CAP} more not shown
               </li>
             )}
@@ -1085,18 +1085,18 @@ function KycPanel({
               ? 'Drop the file'
               : 'Drag an ID scan or proof of address here, or click to browse'}
         </p>
-        <p className="text-[11px] text-subtle-foreground">JPEG, PNG, or PDF</p>
+        <p className="text-xs text-subtle-foreground">JPEG, PNG, or PDF</p>
       </div>
 
       {uploading.status === 'error' && uploading.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {uploading.error.detail ?? uploading.error.title}
         </p>
       )}
 
       {documentRef && (
         <div className="space-y-2 rounded-md border border-border p-2.5">
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Evidence uploaded: <span className="font-mono">{documentRef}</span>
           </p>
           {pending ? (
@@ -1154,7 +1154,7 @@ function KycPanel({
             </div>
           )}
           {deciding.status === 'error' && deciding.error && (
-            <p role="alert" className="text-[11px] text-status-danger-fg">
+            <p role="alert" className="text-xs text-status-danger-fg">
               {deciding.error.detail ?? deciding.error.title}
             </p>
           )}

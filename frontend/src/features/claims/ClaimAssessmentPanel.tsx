@@ -136,7 +136,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
       </form>
 
       {last && (
-        <p className="border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
+        <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           Last submission this session: {formatMoney(last.recommendedAmount)}
           {last.fraudIndicator && ' · flagged for fraud review'}
         </p>

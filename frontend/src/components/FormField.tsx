@@ -75,14 +75,14 @@ export function FormField({
         {children}
       </FieldControl>
       {hint && (
-        <p id={hintId} className="mt-1 text-[11px] text-muted-foreground">
+        <p id={hintId} className="mt-1 text-xs text-muted-foreground">
           {hint}
         </p>
       )}
       {error && (
         // role="alert" so a rejection that appears on submit is announced rather
         // than just painted red for whoever can see it.
-        <p id={errorId} role="alert" className="mt-1 text-[11px] text-status-danger-fg">
+        <p id={errorId} role="alert" className="mt-1 text-xs text-status-danger-fg">
           {error}
         </p>
       )}

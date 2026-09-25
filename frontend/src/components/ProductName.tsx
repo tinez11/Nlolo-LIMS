@@ -103,7 +103,7 @@ export function ProductName({
     <span className={cn('text-sm', className)} title={productId}>
       {cached.name}
       {withCode && cached.code && (
-        <span className="ml-1.5 font-mono text-[11px] text-subtle-foreground">{cached.code}</span>
+        <span className="ml-1.5 font-mono text-xs text-subtle-foreground">{cached.code}</span>
       )}
     </span>
   );

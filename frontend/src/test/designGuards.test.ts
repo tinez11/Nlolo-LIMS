@@ -89,6 +89,12 @@ describe('design guards', () => {
     expect([...new Set(unknown)]).toEqual([]);
   });
 
+  it('sets no text below 12px', () => {
+    // Espresso's floor, and WCAG's practical one: 188 runs sat at 10-11px, carrying trace
+    // ids, field notes, stat captions and the em dash that means "absent".
+    expect(offenders(/text-\[(?:[0-9]|1[01])(?:\.\d+)?px\]/)).toEqual([]);
+  });
+
   it('never dims text with an alpha colour', () => {
     // `text-status-success-fg/80` at 11px was ~4.49:1 -- a pass on the page, a fail in the
     // arithmetic. Alpha on TEXT hides a contrast failure; a solid token cannot.

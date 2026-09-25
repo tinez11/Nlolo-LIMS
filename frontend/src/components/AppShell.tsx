@@ -164,7 +164,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
         >
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-2 pb-1.5 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+              <p className="px-2 pb-1.5 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
                 {group.label}
               </p>
               <ul className="space-y-0.5">
@@ -185,7 +185,7 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {item.badge && badges[item.badge] && (
                         <span
-                          className="shrink-0 rounded-full bg-selected px-1.5 text-[11px] font-medium text-muted-foreground tabular-nums"
+                          className="shrink-0 rounded-full bg-selected px-1.5 text-xs font-medium text-muted-foreground tabular-nums"
                           // The count alone reads as "3 claims", which is not what
                           // it means. Both the tooltip and the screen-reader text
                           // say what was counted.
@@ -254,7 +254,7 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
     <div className="shrink-0 border-t border-border px-3 py-3">
       <div className="flex items-center gap-2.5">
         <span
-          className="grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold"
+          className="grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold"
           style={{
             // Deterministic hue so the same person is always the same colour. Parties
             // on this platform have no photos, so the initials fallback IS the avatar.
@@ -267,7 +267,7 @@ function UserBlock({ identity }: { identity: ReturnType<typeof readIdentity> }) 
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium">{name}</p>
-          <p className="truncate text-[11px] text-muted-foreground">
+          <p className="truncate text-xs text-muted-foreground">
             {identity.roles.length > 0 ? identity.roles.join(', ') : 'No roles'}
           </p>
         </div>

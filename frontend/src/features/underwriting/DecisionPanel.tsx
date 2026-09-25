@@ -97,9 +97,9 @@ export function DecisionPanel({
                 )}
               </p>
               {view.recommendationReason && (
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{view.recommendationReason}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{view.recommendationReason}</p>
               )}
-              <p className="mt-1 text-[11px] text-subtle-foreground">
+              <p className="mt-1 text-xs text-subtle-foreground">
                 A recommendation, not a decision. It is recomputed each time evidence arrives
                 and binds nothing.
               </p>
@@ -165,7 +165,7 @@ export function DecisionPanel({
             )}
 
             {override && isSenior && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 This departs from the recommendation of {recommendation}. It will be recorded as
                 an override, against your name.
               </p>

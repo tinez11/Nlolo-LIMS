@@ -173,7 +173,7 @@ function AccountTableRow({
             {/* Collected by both forms on this screen and, until now, rendered
                 nowhere: a description you can write and never read. */}
             {account.description && (
-              <p className="mt-0.5 text-[11px] text-subtle-foreground">{account.description}</p>
+              <p className="mt-0.5 text-xs text-subtle-foreground">{account.description}</p>
             )}
           </div>
         </div>

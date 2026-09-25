@@ -124,7 +124,7 @@ export function BeneficiaryRow({
         </label>
       </div>
 
-      {error && <p className="mt-2 text-[11px] text-status-danger-fg">{error}</p>}
+      {error && <p className="mt-2 text-xs text-status-danger-fg">{error}</p>}
     </div>
   );
 }

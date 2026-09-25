@@ -48,7 +48,7 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
   return (
     <form className="space-y-3 p-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
       {wasSettled && (
-        <p className="rounded-md bg-status-warning-bg px-3 py-2 text-[11px] text-status-warning-fg">
+        <p className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg">
           This claim is SETTLED. Reopening it does not reverse the policy closure settlement already
           caused -- coverage stays discharged and billing stays stopped.
         </p>

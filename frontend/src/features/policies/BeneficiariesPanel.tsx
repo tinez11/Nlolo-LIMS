@@ -233,7 +233,7 @@ function EditForm({
       </p>
 
       {errors.beneficiaries?.root?.message && (
-        <p className="mt-1 text-[11px] text-status-danger-fg">{errors.beneficiaries.root.message}</p>
+        <p className="mt-1 text-xs text-status-danger-fg">{errors.beneficiaries.root.message}</p>
       )}
 
       {/* A 422 here is a whole-request business rule (exactly-one-of, sum-to-100) --

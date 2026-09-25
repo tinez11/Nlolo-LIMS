@@ -54,7 +54,7 @@ export function RealmPicker() {
                         {config.description}
                       </span>
                     </span>
-                    <span className="shrink-0 text-[11px] text-subtle-foreground">
+                    <span className="shrink-0 text-xs text-subtle-foreground">
                       Not available yet
                     </span>
                   </div>

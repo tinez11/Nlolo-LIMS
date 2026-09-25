@@ -196,7 +196,7 @@ export function OpenUnderwritingCasePage() {
             </Select>
           )}
           {productId && isInitialLoad(snapshot) && (
-            <p className="mt-1 text-[11px] text-muted-foreground">Resolving product version…</p>
+            <p className="mt-1 text-xs text-muted-foreground">Resolving product version…</p>
           )}
         </FormField>
 
@@ -231,7 +231,7 @@ export function OpenUnderwritingCasePage() {
             <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs">
               <PartyName partyId={introducingAgentPartyId} />
             </div>
-            <p className="mt-1 text-[11px] text-subtle-foreground">
+            <p className="mt-1 text-xs text-subtle-foreground">
               The agent who introduced this client. Commission on the policy this case issues
               accrues to them, and that is not editable here.
             </p>
@@ -249,7 +249,7 @@ export function OpenUnderwritingCasePage() {
                 setValue('agentOfRecordId', agentId ?? '', { shouldValidate: true })
               }
             />
-            <p className="mt-1 text-[11px] text-subtle-foreground">
+            <p className="mt-1 text-xs text-subtle-foreground">
               No agent introduced this client, so the sale is attributed here. Leave it empty for
               a direct sale — a policy issued with no agent of record accrues no commission.
             </p>
@@ -259,7 +259,7 @@ export function OpenUnderwritingCasePage() {
         {/* Where the business came from. Last and grouped: all three are optional, and the
             risk — who, what product, how much — is what the form is actually for. */}
         <fieldset className="border-t border-border pt-3">
-          <legend className="pr-2 text-[11px] font-medium tracking-wide text-subtle-foreground uppercase">
+          <legend className="pr-2 text-xs font-medium tracking-wide text-subtle-foreground uppercase">
             Source
           </legend>
 

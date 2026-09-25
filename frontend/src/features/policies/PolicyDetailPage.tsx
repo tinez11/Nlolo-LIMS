@@ -528,7 +528,7 @@ function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: (
       </FormField>
 
       {suspending.status === 'error' && suspending.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {suspending.error.detail ?? suspending.error.title}
         </p>
       )}
@@ -558,7 +558,7 @@ function ResumeAction({ policyNumber }: { policyNumber: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {resuming.status === 'error' && resuming.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {resuming.error.detail ?? resuming.error.title}
         </p>
       )}
@@ -586,7 +586,7 @@ function ReinstateAction({ policyNumber }: { policyNumber: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {reinstating.status === 'error' && reinstating.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {reinstating.error.detail ?? reinstating.error.title}
         </p>
       )}

@@ -209,7 +209,7 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
               )}
 
               {ruleError(errors, index) && (
-                <p className="mt-1 text-[11px] text-status-danger-fg">{ruleError(errors, index)}</p>
+                <p className="mt-1 text-xs text-status-danger-fg">{ruleError(errors, index)}</p>
               )}
             </div>
           );
@@ -228,7 +228,7 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
       </Button>
 
       {errors.rules?.root?.message && (
-        <p className="text-[11px] text-status-danger-fg">{errors.rules.root.message}</p>
+        <p className="text-xs text-status-danger-fg">{errors.rules.root.message}</p>
       )}
 
       {creating.status === 'error' && creating.error && (

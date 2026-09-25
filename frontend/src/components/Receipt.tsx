@@ -76,7 +76,7 @@ export function Receipt({
         </dl>
       )}
 
-      {note && <p className="mt-2 text-[11px] text-status-success-fg">{note}</p>}
+      {note && <p className="mt-2 text-xs text-status-success-fg">{note}</p>}
       {onward && <div className="mt-2">{onward}</div>}
     </section>
   );

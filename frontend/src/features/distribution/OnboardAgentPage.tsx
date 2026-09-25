@@ -134,7 +134,7 @@ export function OnboardAgentPage() {
               />
             )}
           />
-          <p className="mt-1 text-[11px] text-subtle-foreground">
+          <p className="mt-1 text-xs text-subtle-foreground">
             Their supervisor, who earns override commission on this agent's business. Leave it
             empty for an agent at the top of the hierarchy.
           </p>

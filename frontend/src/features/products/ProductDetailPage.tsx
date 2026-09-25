@@ -520,7 +520,7 @@ function RatingBasis({
  */
 function SectionHeading({ children }: { children: ReactNode }) {
   return (
-    <h3 className="px-4 pt-5 pb-2 text-[11px] font-medium tracking-[0.03em] text-subtle-foreground uppercase">
+    <h3 className="px-4 pt-5 pb-2 text-xs font-medium tracking-[0.03em] text-subtle-foreground uppercase">
       {children}
     </h3>
   );
@@ -625,7 +625,7 @@ function FactorSection({
                   // The band the actuary typed, and the age bounds where they
                   // apply. Secondary to the factor type, so it sits under it
                   // rather than competing on the same line.
-                  <span className="block text-[11px] text-subtle-foreground">{row.note}</span>
+                  <span className="block text-xs text-subtle-foreground">{row.note}</span>
                 )}
               </dt>
               <dd className="shrink-0 text-sm">{row.value}</dd>

@@ -217,7 +217,7 @@ function SuspendAction({ agentId }: { agentId: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {suspending.status === 'error' && suspending.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {suspending.error.detail ?? suspending.error.title}
         </p>
       )}
@@ -242,7 +242,7 @@ function ReactivateAction({ agentId }: { agentId: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {reactivating.status === 'error' && reactivating.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {reactivating.error.detail ?? reactivating.error.title}
         </p>
       )}

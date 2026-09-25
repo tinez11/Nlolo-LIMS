@@ -129,7 +129,7 @@ export function CreateTreatyPage() {
         )}
 
         {treatyType !== 'QUOTA_SHARE' && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {treatyType === 'SURPLUS'
               ? 'SURPLUS cedes by retention limit, not a percent.'
               : 'XOL cedes nothing at issuance -- it participates only in claim recovery.'}

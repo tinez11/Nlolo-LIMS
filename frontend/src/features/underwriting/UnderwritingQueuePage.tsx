@@ -98,7 +98,7 @@ export function UnderwritingQueuePage() {
           {c.status ? <StatusBadge kind="underwritingCase" value={c.status} /> : '—'}
           {c.issuanceFailureReason && (
             <span
-              className="rounded bg-status-danger-bg px-1.5 py-0.5 text-[10px] font-medium text-status-danger-fg"
+              className="rounded bg-status-danger-bg px-1.5 py-0.5 text-xs font-medium text-status-danger-fg"
               title={c.issuanceFailureReason}
             >
               No policy
@@ -125,14 +125,14 @@ export function UnderwritingQueuePage() {
         <span className="inline-flex items-center gap-1.5">
           {c.applicantPartyId ? <PartyName partyId={c.applicantPartyId} /> : '—'}
           {c.groupScheme && (
-            <span className="rounded bg-control px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
               Group scheme
             </span>
           )}
           {/* A scheme member's free-cover-limit evidence, not a proposal: it decides one
               member's excess and issues nothing. It read as a new proposal until now. */}
           {c.evidenceForPolicyNumber && (
-            <span className="rounded bg-control px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
               Evidence · {c.evidenceForPolicyNumber}
             </span>
           )}

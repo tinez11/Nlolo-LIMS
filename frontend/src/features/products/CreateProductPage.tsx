@@ -177,7 +177,7 @@ function Step({
   return (
     <section className={`rounded-lg border border-border bg-surface ${disabled ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <span className="grid size-5 place-items-center rounded-full bg-selected text-[11px] font-semibold">
+        <span className="grid size-5 place-items-center rounded-full bg-selected text-xs font-semibold">
           {done ? <Check className="size-3" /> : number}
         </span>
         <h2 className="text-sm font-semibold">{title}</h2>

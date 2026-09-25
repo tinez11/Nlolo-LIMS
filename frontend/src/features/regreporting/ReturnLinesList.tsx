@@ -16,7 +16,7 @@ export function ReturnLinesList({ lines }: { lines: ReturnLineView[] }) {
       {lines.map((line) => (
         <li key={line.returnLineId} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
           <div className="min-w-0">
-            <span className="font-mono text-[11px] text-muted-foreground">{line.lineCode}</span>
+            <span className="font-mono text-xs text-muted-foreground">{line.lineCode}</span>
             <span className="ml-2">{line.label}</span>
           </div>
           <span className="shrink-0 font-medium">{renderValue(line.value)}</span>

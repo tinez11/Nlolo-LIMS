@@ -59,14 +59,14 @@ function RecoveryRow({ claimId, recovery }: { claimId: string; recovery: ClaimRe
   return (
     <li className="rounded-md border border-border p-2.5 text-xs">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="font-mono text-xs text-muted-foreground">
           treaty {recovery.treatyId.slice(0, 8)}
         </span>
         <span className="font-medium">{formatMoney(recovery.recoverableAmount)}</span>
       </div>
 
       {recovery.confirmedAt ? (
-        <p className="mt-1 text-[11px] text-status-success-fg">
+        <p className="mt-1 text-xs text-status-success-fg">
           Confirmed {formatInstant(recovery.confirmedAt)}
         </p>
       ) : (
@@ -80,7 +80,7 @@ function RecoveryRow({ claimId, recovery }: { claimId: string; recovery: ClaimRe
             {confirming.status === 'loading' ? 'Confirming…' : 'Confirm recovery'}
           </Button>
           {confirming.status === 'error' && confirming.error && (
-            <p role="alert" className="mt-1 text-[11px] text-status-danger-fg">
+            <p role="alert" className="mt-1 text-xs text-status-danger-fg">
               {confirming.error.detail ?? confirming.error.title}
             </p>
           )}

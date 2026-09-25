@@ -426,7 +426,7 @@ function EnrolmentColumns({ hasExample }: { hasExample: boolean }) {
           up today has nobody on it, so its template is the header alone, and a person told to look
           for an example row would go looking for something that is not there. The example is one
           of the LENDER'S OWN borrowers; there is none until the first file is accepted. */}
-      <p className="sm:col-span-2 mb-1 text-[11px] text-muted-foreground">
+      <p className="sm:col-span-2 mb-1 text-xs text-muted-foreground">
         {hasExample ? (
           <>
             The template carries one of this scheme&rsquo;s own borrowers as a worked example, so
@@ -445,7 +445,7 @@ function EnrolmentColumns({ hasExample }: { hasExample: boolean }) {
       {/* The single most useful sentence on this page. Two real files were refused entire because
           of it, and the second was sent AFTER being told the format -- because the advice was to
           type YYYY-MM-DD, and Excel rewrites it anyway. */}
-      <p className="sm:col-span-2 mb-1 text-[11px] text-status-warning-fg">
+      <p className="sm:col-span-2 mb-1 text-xs text-status-warning-fg">
         Send the spreadsheet, not the CSV, to anyone who works in Excel. Excel rewrites dates when
         it opens a CSV and again when it saves one — 2000-09-01 comes back as 9/1/2000 and the row
         is refused. In a spreadsheet a date is a real date and survives.
@@ -483,7 +483,7 @@ function EnrolmentColumns({ hasExample }: { hasExample: boolean }) {
         Read and echoed back if the lender has one. Neither real lender does, which is why the
         insurer mints the reference instead.
       </Column>
-      <p className="sm:col-span-2 mt-1 text-[11px] text-muted-foreground">
+      <p className="sm:col-span-2 mt-1 text-xs text-muted-foreground">
         Extra columns are ignored, not refused — a lender&rsquo;s own export carries plenty we do
         not use. A row repeating the name, date of birth, disbursement date and principal of a
         loan already on cover is refused as a duplicate rather than insuring it twice.
@@ -498,7 +498,7 @@ function ExitColumns() {
     <dl className="grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[auto_1fr]">
       {/* The opposite decision to the enrolment template's, and the reason is in the copy: an
           exits row that names a real member really would take them off cover. */}
-      <p className="sm:col-span-2 mb-1 text-[11px] text-muted-foreground">
+      <p className="sm:col-span-2 mb-1 text-xs text-muted-foreground">
         The template&rsquo;s example row quotes a reference ending 000000, which belongs to nobody
         — references start at 000001. Returning it unchanged is refused rather than taking a
         borrower off cover, which is why this example names no real member.
@@ -518,7 +518,7 @@ function ExitColumns() {
       <Column name="outstanding_balance_at_exit" required={false}>
         What was still owed, if the lender tracks it.
       </Column>
-      <p className="sm:col-span-2 mt-1 text-[11px] text-muted-foreground">
+      <p className="sm:col-span-2 mt-1 text-xs text-muted-foreground">
         A restructure or top-up is an exit and a fresh enrolment, never an amendment: the new loan
         is a different risk over a different term, and it earns its own reference.
       </p>
@@ -537,7 +537,7 @@ function Column({
 }) {
   return (
     <>
-      <dt className="font-mono text-[11px] whitespace-nowrap">
+      <dt className="font-mono text-xs whitespace-nowrap">
         {name}
         {required ? (
           <span className="ml-1 text-status-danger-fg" title="Required">

@@ -352,7 +352,7 @@ export function RegisterClaimPage() {
                 </option>
               ))}
             </Select>
-            <p className="mt-1 text-[11px] text-subtle-foreground">
+            <p className="mt-1 text-xs text-subtle-foreground">
               Members who have left are listed too — a claim can arrive after somebody leaves,
               and what decides it is whether they were covered on the date of event.
               {(members.data?.page?.totalElements ?? 0) > (members.data?.items?.length ?? 0) && (

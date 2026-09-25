@@ -180,7 +180,7 @@ export function EditClientPage() {
             duplicate check runs on, and what a policy was underwritten against. Correcting a
             phone number must not be a route to quietly becoming a different company.
           */}
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Registration number is not editable here — it is this company&apos;s identity in the
             national register, not a detail about it.
           </p>

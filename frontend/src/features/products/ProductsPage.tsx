@@ -216,7 +216,7 @@ function DraftProducts() {
           ? '1 product is created but not published'
           : `${drafts.data.length} products are created but not published`}
       </p>
-      <p className="mt-0.5 text-[11px] text-status-warning-fg">
+      <p className="mt-0.5 text-xs text-status-warning-fg">
         Each one already holds its product code, so the code cannot be reused, and none of
         them appear in the catalogue below. Open one to publish its first version.
       </p>
@@ -230,7 +230,7 @@ function DraftProducts() {
             >
               {p.productName ?? '—'}
             </Link>
-            <span className="ml-2 font-mono text-[11px] text-status-warning-fg">
+            <span className="ml-2 font-mono text-xs text-status-warning-fg">
               {p.productCode ?? '—'}
             </span>
           </li>

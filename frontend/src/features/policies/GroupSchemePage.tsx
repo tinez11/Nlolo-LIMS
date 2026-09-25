@@ -538,14 +538,14 @@ const baseMemberColumns: Column<PolicyMemberView>[] = [
         <span>
           <span className="whitespace-nowrap font-medium">{formatMoney(m.covered)}</span>
           {m.benefit && m.benefit.amount !== m.covered.amount && (
-            <span className="block text-[11px] text-subtle-foreground">
+            <span className="block text-xs text-subtle-foreground">
               of {formatMoney(m.benefit)}
             </span>
           )}
           {/* A death is reported and not yet paid: still on cover, but this figure is what the
               claim will pay, not live cover on a loan still running. */}
           {m.openDeathClaimId && (
-            <span className="block text-[11px] text-status-warning-fg">
+            <span className="block text-xs text-status-warning-fg">
               Claim pending — cover ends on settlement
             </span>
           )}
@@ -597,13 +597,13 @@ const baseMemberColumns: Column<PolicyMemberView>[] = [
           className="inline-flex flex-col gap-0.5 hover:underline"
         >
           <StatusBadge kind="member" value="DEATH_CLAIM_IN_PROGRESS" />
-          <span className="text-[11px] text-muted-foreground">View the claim</span>
+          <span className="text-xs text-muted-foreground">View the claim</span>
         </Link>
       ) : m.status === 'EXITED' ? (
         <span className="inline-flex flex-col gap-0.5">
           <StatusBadge kind="member" value={m.status} />
           {exitSummary(m) && (
-            <span className="text-[11px] text-muted-foreground">{exitSummary(m)}</span>
+            <span className="text-xs text-muted-foreground">{exitSummary(m)}</span>
           )}
         </span>
       ) : (
@@ -768,7 +768,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
 
         <FormField label="Cover starts" error={errors.joinedOn?.message}>
           <Input type="date" inputSize="sm" {...register('joinedOn')} />
-          <p className="mt-1 text-[11px] text-subtle-foreground">
+          <p className="mt-1 text-xs text-subtle-foreground">
             Leave blank for today. Backdating is fine; a future date is not.
           </p>
         </FormField>
@@ -798,7 +798,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
       )}
 
       {adding.status === 'error' && adding.error && (
-        <p role="alert" className="text-[11px] text-status-danger-fg">
+        <p role="alert" className="text-xs text-status-danger-fg">
           {adding.error.detail ?? adding.error.title}
         </p>
       )}

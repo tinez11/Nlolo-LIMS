@@ -214,7 +214,7 @@ export function AgentPicker({
                           )}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5">
-                          <span className="font-mono text-[11px] text-muted-foreground">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {agent.licenseNumber}
                           </span>
                           {agent.licenseStatus && (
