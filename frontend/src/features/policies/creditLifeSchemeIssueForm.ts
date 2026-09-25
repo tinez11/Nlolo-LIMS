@@ -62,7 +62,8 @@ export interface CreditLifeSchemeIssueFormValues {
   premiumAmount: string;
   premiumCurrency: string;
   commencementDate: string;
-  issuanceBasis: (typeof IN_FORCE_ISSUANCE_BASES)[number] | '';
+  /** A basis, OFFER for an ordinary offer, or '' while the underwriter has not chosen yet. */
+  issuanceBasis: (typeof IN_FORCE_ISSUANCE_BASES)[number] | 'OFFER' | '';
   reasonForManualIssue: string;
 }
 
@@ -79,7 +80,10 @@ export function blankCreditLifeSchemeIssueForm(): CreditLifeSchemeIssueFormValue
     premiumAmount: '',
     premiumCurrency: 'TZS',
     commencementDate: '',
-    issuanceBasis: 'MIGRATION',
+    // NO DEFAULT. It used to be MIGRATION, which is true only of a lender whose book already
+    // runs elsewhere; a brand-new lender set up in a hurry went on record as a migration. The
+    // basis is kept with the underwriter's name for compliance, so they state it themselves.
+    issuanceBasis: '',
     reasonForManualIssue: '',
   };
 }
@@ -133,7 +137,8 @@ export function creditLifeSchemeIssueFormSchema(today: string = todayIso()) {
         .trim()
         .min(1, 'When this scheme starts — on or before the oldest loan the lender will send')
         .refine((v) => ISO_DATE_PATTERN.test(v), 'Not a valid date'),
-      issuanceBasis: z.union([z.enum(IN_FORCE_ISSUANCE_BASES), z.literal('')]),
+      issuanceBasis: z.union([z.enum(IN_FORCE_ISSUANCE_BASES), z.literal('OFFER'), z.literal('')])
+        .refine((v) => v !== '', 'Say why this scheme is in force'),
       reasonForManualIssue: z.string().trim(),
     })
     .superRefine((values, ctx) => {
@@ -193,7 +198,8 @@ export function toIssueRequest(
     },
     premiumFrequency: 'SINGLE',
     ...(values.commencementDate ? { commencementDate: values.commencementDate } : {}),
-    ...(values.issuanceBasis ? { issuanceBasis: values.issuanceBasis } : {}),
+    // OFFER is the console's word for "no basis": the endpoint says ordinary offer by omission.
+    ...(values.issuanceBasis && values.issuanceBasis !== 'OFFER' ? { issuanceBasis: values.issuanceBasis } : {}),
     ...(values.reasonForManualIssue.trim()
       ? { reasonForManualIssue: values.reasonForManualIssue.trim() }
       : {}),

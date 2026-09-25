@@ -129,7 +129,9 @@ export function DecisionPanel({
           <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => onDecide(toApiRequest(v)))(e)}>
             <FormField label="Decision" error={errors.outcome?.message}>
               <Select {...register('outcome')}>
-                {DECISION_OUTCOMES.map((o) => (
+                {/* No loading on a member's evidence case -- one member of a scheme has no
+                    premium of their own, and the server refuses it. */}
+                {DECISION_OUTCOMES.filter((o) => !(view.evidenceForPolicyNumber && o.value === 'LOADED')).map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>

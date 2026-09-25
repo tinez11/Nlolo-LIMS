@@ -295,6 +295,19 @@ public interface PolicyApi {
     GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy);
 
     /**
+     * As above, also recording WHAT the scheme was issued on and BY WHOM (policy V24).
+     *
+     * @param underwritingCaseId the decided group case this scheme came from, or null on the
+     *     exception route. Recorded on the scheme, and a second scheme from one case is refused
+     *     ({@link PolicyAlreadyIssuedForCaseException}) -- the same one-case-one-policy rule an
+     *     individual policy has always had, and schemes never did.
+     * @param issuedByName the issuer's display name from their token: the underwriter of record
+     *     for a scheme set up from agreed terms. Null for automatic issuance.
+     */
+    GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy,
+                                     UUID underwritingCaseId, String issuedByName);
+
+    /**
      * A scheme's configuration and current totals.
      *
      * @throws PolicyNotFoundException if no such policy exists in this tenant
@@ -360,6 +373,46 @@ public interface PolicyApi {
      */
     GroupSchemeView amendFreeCoverLimit(String policyNumber, java.math.BigDecimal newLimit,
                                          String reason, String amendedBy);
+
+    /** What recording a member's evidence decision did. */
+    enum MemberEvidenceResult {
+        /** The excess was granted: covered up to the full benefit from today. */
+        GRANTED,
+        /** The excess was refused: covered up to the free cover limit, as before. */
+        REFUSED,
+        /** Nothing to decide any more -- the member left, or a raised limit already covers them. */
+        NOT_NEEDED
+    }
+
+    /**
+     * Apply an underwriter's decision on a scheme member's free-cover-limit evidence case.
+     *
+     * <p>Until this existed an accepted evidence case issued the member a separate single-life
+     * policy on the scheme's product, and the member's own record stayed EVIDENCE_REQUIRED with
+     * the excess never granted; a decline recorded nothing. Granting writes a NEW effective-dated
+     * benefit row -- what the member was covered for yesterday is what a claim dated yesterday
+     * pays -- restates the scheme total and tells regreporting. Refusing leaves cover at the limit
+     * and records the decision. Either way an endorsement says who decided and on which case.
+     *
+     * <p>The premium does not move: a scheme's premium was agreed for its schedule and changes at
+     * renewal, which is why underwriting refuses a loading on an evidence case.
+     *
+     * @return {@link MemberEvidenceResult#NOT_NEEDED} when the member is no longer waiting on this
+     *     case -- exited, or brought within a raised limit -- in which case nothing is written
+     * @throws InvalidPolicyStateException if the member is not on this scheme
+     */
+    MemberEvidenceResult recordMemberEvidenceDecision(String policyNumber, UUID policyMemberId, UUID caseId,
+                                                      boolean accepted, String decidedBy);
+
+    /**
+     * The scheme member an evidence case was opened for, found from the member's side. For cases
+     * opened before underwriting V11 recorded it on the case itself; empty if no member (still)
+     * points at the case.
+     */
+    java.util.Optional<MemberRef> findMemberAwaitingEvidence(UUID caseId);
+
+    /** A scheme member, by the two ids that name one. */
+    record MemberRef(String policyNumber, UUID policyMemberId) {}
 
     /**
      * Take one life off a scheme, for a reason other than a claim the insurer paid.
@@ -427,6 +480,9 @@ public interface PolicyApi {
                                     PromoteMemberRequest identity, String promotedBy);
 
     PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy);
+
+    /** As above, naming the issuer from their token (policy V24) -- see issueGroupScheme's overload. */
+    PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy, String issuedByName);
     PolicyView applyEndorsement(String policyNumber, EndorsementInput request, String appliedBy);
     void replaceBeneficiaries(String policyNumber, List<BeneficiaryInput> beneficiaries, String changedBy);
 

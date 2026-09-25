@@ -44,7 +44,8 @@ public interface UnderwritingApi {
      */
     UnderwritingCaseView openMemberEvidenceCase(UUID memberPartyId, UUID productId, UUID productVersionId,
                                                 BigDecimal benefitAmount, String currency,
-                                                UUID agentOfRecordId, String openedBy);
+                                                UUID agentOfRecordId, String policyNumber,
+                                                UUID policyMemberId, String openedBy);
 
     /**
      * Open a case for a group scheme: an employer asking to cover a schedule of lives.

@@ -684,7 +684,9 @@ paths:
         '409':
           description: >-
             Already an active member, the scheme is not in force, the join date is in the future
-            or before commencement, or the inputs do not match the scheme's benefit basis.
+            or before commencement, the inputs do not match the scheme's benefit basis, the
+            member is outside the product's entry age or loan term, or the scheme is credit
+            life — borrowers join only through an enrolment file a second person accepts.
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -1524,6 +1526,25 @@ components:
             that also answers on /group-schemes/{policyNumber}.
           type: [string, "null"]
           enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, null]
+        underwritingCaseId:
+          description: >-
+            The decided underwriting case this policy — or scheme — was issued from. Null on an
+            exception route with no case behind it, and on policies older than the rule.
+          type: [string, "null"]
+          format: uuid
+        issuanceBasis:
+          description: >-
+            Why it was issued outside the ordinary proposal, decision and first premium
+            (MIGRATION, UNDERWRITING_OVERRIDE, ...). Null for ordinary new business.
+          type: [string, "null"]
+        issuanceReason:
+          description: The issuer's own words for an exception-route issuance. Null otherwise.
+          type: [string, "null"]
+        issuedByName:
+          description: >-
+            Who issued it, by name from their token — for a credit-life scheme set up from agreed
+            terms, the underwriter of record. Null for automatic issuance and older policies.
+          type: [string, "null"]
     IssueGroupSchemeRequest:
       description: >-
         No sumAssured field, deliberately: a scheme's sum assured is the total of its members'

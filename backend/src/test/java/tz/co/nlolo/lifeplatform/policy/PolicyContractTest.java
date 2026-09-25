@@ -5,7 +5,12 @@ import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
+import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.policy.api.InterestMethod;
+import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
+import tz.co.nlolo.lifeplatform.policy.api.LoanTerms;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.RepaymentFrequency;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import com.atlassian.oai.validator.mockmvc.OpenApiValidationMatchers;
 import com.jayway.jsonpath.JsonPath;
@@ -76,6 +81,7 @@ class PolicyContractTest {
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
+            "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
@@ -86,6 +92,7 @@ class PolicyContractTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -108,6 +115,7 @@ class PolicyContractTest {
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -288,6 +296,74 @@ class PolicyContractTest {
      * still name a group product, and manual issue must not finish the job. Refused on the
      * product alone, before the case is even read -- so an arbitrary case id is enough here.
      */
+    /**
+     * An exception-route issuance keeps what it says about itself, and who said it.
+     *
+     * <p>Manual issue required an issuance basis and a reason, validated both, and stored neither:
+     * across every PolicyIssued in the audit log the platform could not say which policies went
+     * round underwriting, why, or on whose word. Now the policy carries them, with the issuer's
+     * NAME from their token, and the case it names.
+     */
+    @Test
+    void manualIssueRecordsItsBasisReasonAndIssuerByName() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID applicantId = registerApplicant(tenantId, "9103");
+        ProductFixture product = publishProduct(tenantId, "POLICY-CONTRACT-REC-00", "TERM_LIFE");
+        UUID caseId = openUnderwritingCase(tenantId, applicantId, product);
+
+        mockMvc.perform(post("/policies/manual-issue")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("name", "Halima Underwriter").claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"issuanceBasis":"UNDERWRITING_OVERRIDE","underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s",
+                     "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                     "premiumAmount":{"amount":"15000.00","currencyCode":"TZS"},"agentOfRecordId":null,
+                     "reasonForManualIssue":"Automated block overturned on review"}
+                    """.formatted(caseId, applicantId, product.productVersionId())))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.underwritingCaseId").value(caseId.toString()))
+            .andExpect(jsonPath("$.issuanceBasis").value("UNDERWRITING_OVERRIDE"))
+            .andExpect(jsonPath("$.issuanceReason").value("Automated block overturned on review"))
+            .andExpect(jsonPath("$.issuedByName").value("Halima Underwriter"));
+    }
+
+    /**
+     * A borrower joins a credit-life scheme by file, which a second person accepts -- never one
+     * at a time on one underwriter's word (credit-life design 2.10).
+     */
+    @Test
+    void aBorrowerCannotBeAddedToACreditLifeSchemeOneAtATime() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID lender = registerApplicant(tenantId, "9104");
+        ProductFixture product = publishProduct(tenantId, "POLICY-CONTRACT-CL-00", "CREDIT_LIFE");
+        TenantContext.set(tenantId);
+        String policyNumber = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(lender,
+                product.productId(), product.productVersionId(), null, BenefitBasis.AMORTISING_LOAN, null, null,
+                new BigDecimal("600000000.00"), "TZS", null,
+                List.of(PolicyApi.MemberInput.borrower("Opening Borrower", java.time.LocalDate.of(1980, 1, 1), null,
+                    new LoanTerms(new BigDecimal("1000000.00"), BigDecimal.ZERO, 12, RepaymentFrequency.MONTHLY,
+                        java.time.LocalDate.of(2026, 6, 5), java.time.LocalDate.of(2026, 7, 5)))),
+                new BigDecimal("5000.00"), "TZS", "SINGLE", java.time.LocalDate.of(2026, 6, 1), null,
+                "contract test lender", IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, new BigDecimal("0.5000")),
+            "staff-1").policyNumber();
+        TenantContext.clear();
+
+        mockMvc.perform(post("/group-schemes/" + policyNumber + "/members")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"memberType":"FREEFORM","memberName":"One At A Time","memberDateOfBirth":"1985-01-01",
+                     "loanTerms":{"principalAmount":"1000000.00","annualInterestRatePercent":0,"termMonths":12,
+                       "repaymentFrequency":"MONTHLY","disbursementDate":"2026-08-01","firstRepaymentDate":"2026-09-01"}}
+                    """))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("through an enrolment file")));
+    }
+
     @Test
     void manualIssueRefusesAGroupProductAsASingleLifePolicy() throws Exception {
         UUID tenantId = UUID.randomUUID();

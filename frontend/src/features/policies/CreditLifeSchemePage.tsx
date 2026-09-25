@@ -26,6 +26,7 @@ import { EmptyState, ErrorPanel, LoadingBlock, TableSkeleton } from '@/component
 import type { ApiError } from '@/lib/apiError';
 import { cn } from '@/lib/cn';
 import { formatDate } from '@/lib/dates';
+import { humanizeStatus } from '@/lib/status';
 import { saveBlob } from '@/lib/download';
 import { NO_VALUE, formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -38,7 +39,7 @@ import {
   selectUploading,
   useCreditLifeStore,
 } from '@/store/creditLifeStore';
-import { selectScheme, usePolicyStore } from '@/store/policyStore';
+import { selectDetail, selectScheme, usePolicyStore } from '@/store/policyStore';
 import { CommissionPanel } from './CommissionPanel';
 import { FreeCoverLimitEditor } from './FreeCoverLimitEditor';
 import { SubmissionsPanel, type SubmissionRow } from './SubmissionsPanel';
@@ -94,6 +95,8 @@ export function CreditLifeSchemePage() {
 
   const scheme = usePolicyStore(selectScheme(policyNumber));
   const loadScheme = usePolicyStore((s) => s.loadScheme);
+  const policyRecord = usePolicyStore(selectDetail(policyNumber));
+  const loadDetail = usePolicyStore((s) => s.loadDetail);
 
   const enrolments = useCreditLifeStore(selectEnrolments(policyNumber));
   const exits = useCreditLifeStore(selectExits(policyNumber));
@@ -127,6 +130,8 @@ export function CreditLifeSchemePage() {
   useEffect(() => {
     if (!policyNumber) return;
     void loadScheme(policyNumber);
+    // The policy record, for who set the scheme up and on what basis (policy V24).
+    void loadDetail(policyNumber);
     void store.loadEnrolments(policyNumber);
     void store.loadExits(policyNumber);
     // The store actions are stable zustand references; re-running on them would refetch forever.
@@ -252,6 +257,21 @@ export function CreditLifeSchemePage() {
                   note="Covered to the limit; the excess needs evidence nobody has supplied."
                 />
                 <Field label="Commenced" value={formatDate(data?.commencementDate)} />
+                {/* A credit-life scheme is set up by an underwriter from terms agreed with the
+                    lender -- there is no underwriting case -- so the record of who agreed them is
+                    the underwriter's own name, kept for compliance with the basis and reason. */}
+                <Field
+                  label="Set up by"
+                  value={policyRecord.data?.issuedByName ?? 'Not recorded'}
+                  note={
+                    [
+                      policyRecord.data?.issuanceBasis ? humanizeStatus(policyRecord.data.issuanceBasis) : null,
+                      policyRecord.data?.issuanceReason ?? null,
+                    ]
+                      .filter(Boolean)
+                      .join(' — ') || 'Set up before the underwriter of record was kept.'
+                  }
+                />
                 {/* Said, not assumed. Schemes are not ceded (credit-life spec 0a): the treaty
                     model cannot express a scheme treaty -- classes of business, per-scheme
                     limits, a cession that follows a declining balance -- so the insurer keeps

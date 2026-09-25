@@ -129,6 +129,13 @@ export function UnderwritingQueuePage() {
               Group scheme
             </span>
           )}
+          {/* A scheme member's free-cover-limit evidence, not a proposal: it decides one
+              member's excess and issues nothing. It read as a new proposal until now. */}
+          {c.evidenceForPolicyNumber && (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              Evidence · {c.evidenceForPolicyNumber}
+            </span>
+          )}
         </span>
       ),
     },

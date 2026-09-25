@@ -287,6 +287,7 @@ export function IssueCreditLifeSchemePage() {
 
               <FormField label="Why this scheme is in force" error={errors.issuanceBasis?.message}>
                 <Select {...register('issuanceBasis')}>
+                  <option value="">Choose…</option>
                   {IN_FORCE_ISSUANCE_BASES.map((value) => (
                     <option key={value} value={value}>
                       {value === 'MIGRATION'
@@ -296,12 +297,15 @@ export function IssueCreditLifeSchemePage() {
                           : 'Reinstatement — arrears have been settled'}
                     </option>
                   ))}
-                  <option value="">None — issue it as an offer</option>
+                  <option value="OFFER">None — issue it as an offer</option>
                 </Select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Recorded with your name as the underwriter who set this scheme up, for compliance.
+                </p>
                 {/* The wall, said before somebody hits it rather than after. An offer sits
                     PROPOSED until the first premium clears, enrolment requires the scheme IN
                     FORCE, and this console has no action anywhere that accepts an offer. */}
-                {issuanceBasis === '' && (
+                {issuanceBasis === 'OFFER' && (
                   <p className="mt-1 text-[11px] text-status-warning-fg">
                     An offer cannot receive an enrolment file until its first premium clears, and
                     nothing in this console can accept one. Pick a basis unless you are recording

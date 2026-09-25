@@ -127,6 +127,7 @@ class CessionEndToEndTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -148,6 +149,7 @@ class CessionEndToEndTest {
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql");

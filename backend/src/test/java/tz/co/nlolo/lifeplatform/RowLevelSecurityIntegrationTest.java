@@ -99,6 +99,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata
@@ -131,6 +132,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",

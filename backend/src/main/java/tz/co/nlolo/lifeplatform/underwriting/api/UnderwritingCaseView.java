@@ -114,4 +114,9 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     // Serialized, so the decision panel can say "another
                                     // underwriter must decide this" before a 403 has to.
                                     String openedBy,
-                                    List<String> assessedBy) {}
+                                    List<String> assessedBy,
+                                    // A scheme member's evidence case (V11): whose free-cover-limit
+                                    // excess it decides. Null on a proposal. Serialized, so the
+                                    // queue and the case page can say what is being decided.
+                                    String evidenceForPolicyNumber,
+                                    UUID evidenceForMemberId) {}

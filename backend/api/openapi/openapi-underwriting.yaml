@@ -768,3 +768,14 @@ components:
             of them may decide it — the decision answers 403 `UNDERWRITING_SEPARATION_OF_DUTIES`.
           type: array
           items: { type: string }
+        evidenceForPolicyNumber:
+          description: >-
+            Set when this is a scheme member's free-cover-limit evidence case rather than a
+            proposal: the scheme the member belongs to. Its decision grants (ACCEPT) or refuses
+            (DECLINED) that member's excess and never issues a policy; LOADED is refused, since
+            one member of a scheme has no premium of their own to load.
+          type: [string, "null"]
+        evidenceForMemberId:
+          description: The scheme member the evidence is for. Set together with evidenceForPolicyNumber.
+          type: [string, "null"]
+          format: uuid

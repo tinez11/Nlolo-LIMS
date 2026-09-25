@@ -112,19 +112,9 @@ public class PartyController {
         }
     }
 
-    /**
-     * How to name the registrar on the client record: {@code name}, else {@code preferred_username},
-     * else null. The same rule as claims' {@code ClaimController.displayName}, which party may not
-     * reach. Only ever a label -- the SUBJECT is what agent scoping compares.
-     */
+    /** The registrar's name for the client record -- a label; agent scoping compares the subject. */
     private static String registrarName(Jwt jwt) {
-        for (String claim : new String[] {"name", "preferred_username"}) {
-            String value = jwt.getClaimAsString(claim);
-            if (value != null && !value.isBlank()) {
-                return value.strip();
-            }
-        }
-        return null;
+        return tz.co.nlolo.lifeplatform.TokenNames.displayName(jwt);
     }
 
     @PostMapping("/parties/corporates")

@@ -270,11 +270,10 @@ test.describe('staff credit-life scheme', () => {
     // rather than letting the server refuse the whole submission over a date it never showed.
     await page.getByLabel('Risk commences').fill(dmy('2026-06-01'));
 
-    // MIGRATION is the default and it is load-bearing: an offer cannot receive an enrolment file
-    // until its first premium clears and nothing in this console accepts an offer, so a scheme
-    // created as one would be unusable. The form says so; this proves the default is the usable
-    // one rather than trusting the sentence.
-    await expect(page.getByLabel('Why this scheme is in force')).toHaveValue('MIGRATION');
+    // NO DEFAULT: the underwriter states the basis, because it is kept with their name for
+    // compliance and a brand-new lender is not a migration. It used to default to MIGRATION.
+    await expect(page.getByLabel('Why this scheme is in force')).toHaveValue('');
+    await page.getByLabel('Why this scheme is in force').selectOption('MIGRATION');
 
     /*
      * NO BORROWER IS TYPED, and its absence is the assertion. The form used to demand one
@@ -304,6 +303,11 @@ test.describe('staff credit-life scheme', () => {
     // issuance-basis default above.
     await expect(page.getByText('Active', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Borrowers joining' })).toBeVisible();
+    // The underwriter of record, by name, with the basis they gave -- no case stands behind a
+    // credit-life scheme, so this is its compliance record. staff.underwriter set it up.
+    await expect(page.getByText('Set up by')).toBeVisible();
+    // In the page, not the sidebar -- which shows the signed-in user's own name too.
+    await expect(page.locator('#main').getByText('Halima Underwriter')).toBeVisible({ timeout: 20_000 });
 
     // One life on cover: the opening borrower, and nobody the form invented.
     const livesOnCover = page

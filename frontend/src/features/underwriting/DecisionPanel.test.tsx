@@ -144,6 +144,15 @@ describe('separation of duties', () => {
   });
 });
 
+describe("a scheme member's evidence case", () => {
+  it('offers no loading, since one member of a scheme has no premium of their own', () => {
+    renderPanel({ view: { evidenceForPolicyNumber: 'GRP-1', evidenceForMemberId: 'm-1' } });
+    expect(screen.queryByRole('option', { name: 'Accept with a loading' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Decline' })).toBeInTheDocument();
+  });
+});
+
 describe('the loading field', () => {
   it('appears only for an accepted-with-loading decision', async () => {
     const user = userEvent.setup();

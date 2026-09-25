@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.policy.infrastructure;
 
+import tz.co.nlolo.lifeplatform.TokenNames;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
@@ -95,7 +96,8 @@ public class PolicyController {
             // -- the underwriting-decision listener, group schemes -- is ordinary new business
             // and waits for its first premium.
             request.issuanceBasis());
-        PolicyView view = policyApi.issuePolicy(request.underwritingCaseId(), issueRequest, jwt.getSubject());
+        PolicyView view = policyApi.issuePolicy(request.underwritingCaseId(), issueRequest, jwt.getSubject(),
+            TokenNames.displayName(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyResponseDto.from(view));
     }
 
@@ -201,7 +203,10 @@ public class PolicyController {
         // could name a version belonging to a different product, and the service would
         // then check the category of one and issue against the other.
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(request.productVersionId());
-        GroupSchemeView view = policyApi.issueGroupScheme(request.toApiRequest(snapshot.productId()), jwt.getSubject());
+        // No case on this route, so the underwriter who set the scheme up IS its record: their
+        // name is kept on the scheme beside the basis and reason (policy V24), for compliance.
+        GroupSchemeView view = policyApi.issueGroupScheme(request.toApiRequest(snapshot.productId()), jwt.getSubject(),
+            null, TokenNames.displayName(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(GroupSchemeResponseDto.from(view));
     }
 
@@ -297,6 +302,14 @@ public class PolicyController {
     @PreAuthorize("hasRole('UNDERWRITER')")
     public ResponseEntity<PolicyMemberResponseDto> addMember(@PathVariable String policyNumber,
             @Valid @RequestBody GroupMemberInputDto request, @AuthenticationPrincipal Jwt jwt) {
+        // A BORROWER JOINS BY FILE, NEVER ONE AT A TIME. A credit-life row admitted here skipped
+        // everything the enrolment pipeline does -- the duplicate-loan and date checks, and above
+        // all the second person who must accept every submission (credit-life design 2.10) -- on
+        // one underwriter's word. The file path calls addMember itself, below this endpoint.
+        if (policyApi.getGroupScheme(policyNumber).benefitBasis() == BenefitBasis.AMORTISING_LOAN) {
+            throw new InvalidPolicyStateException(policyNumber + " is a credit-life scheme: borrowers join"
+                + " through an enrolment file, which a second person accepts, not one at a time");
+        }
         PolicyMemberView view = policyApi.addMember(policyNumber, request.toApiInput(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyMemberResponseDto.from(view));
     }

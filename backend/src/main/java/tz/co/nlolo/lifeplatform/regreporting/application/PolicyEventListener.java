@@ -107,6 +107,10 @@ public class PolicyEventListener {
             // arriving through a door that did not exist when it was.
             case "policy.GroupSchemeFreeCoverLimitAmended" ->
                 withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupSchemeFreeCoverLimitAmended"));
+            // The same door again: an underwriter granting a member's excess raises the total
+            // with nobody joining or leaving.
+            case "policy.GroupMemberEvidenceGranted" ->
+                withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupMemberEvidenceGranted"));
             // policy.PolicySuspended: deliberately no case -- see class javadoc.
             default -> { /* not regreporting-relevant here */ }
         }

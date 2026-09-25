@@ -17,6 +17,7 @@ function valid(overrides: Partial<CreditLifeSchemeIssueFormValues> = {}) {
     premiumRatePercent: '0.5',
     premiumAmount: '52000.00',
     commencementDate: '2026-06-01',
+    issuanceBasis: 'MIGRATION' as const,
     ...overrides,
   };
 }
@@ -118,7 +119,14 @@ describe('toIssueRequest', () => {
 
   it('omits the issuance basis when the scheme is being issued as an offer', () => {
     // Null is what says "ordinary offer" on this endpoint; an empty string would fail the enum.
-    expect('issuanceBasis' in toIssueRequest(valid({ issuanceBasis: '' }))).toBe(false);
+    expect('issuanceBasis' in toIssueRequest(valid({ issuanceBasis: 'OFFER' }))).toBe(false);
     expect(toIssueRequest(valid({ issuanceBasis: 'MIGRATION' })).issuanceBasis).toBe('MIGRATION');
+  });
+
+  it('has no default basis: the underwriter must say why the scheme is in force', () => {
+    // It defaulted to MIGRATION, which put a brand-new lender on record as a migrated book.
+    expect(blankCreditLifeSchemeIssueForm().issuanceBasis).toBe('');
+    const result = creditLifeSchemeIssueFormSchema(TODAY).safeParse(valid({ issuanceBasis: '' }));
+    expect(result.success).toBe(false);
   });
 });

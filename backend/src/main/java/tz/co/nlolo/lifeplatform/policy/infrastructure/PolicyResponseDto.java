@@ -19,7 +19,11 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
                                  Integer premiumPayingTermMonths, LocalDate maturityDate,
                                  UUID lifeAssuredPartyId,
                                  /** GROUP_LIFE means the lives are a member schedule, not this record. */
-                                 String productCategory) {
+                                 String productCategory,
+                                 /** The decided case this was issued from; null on an exception route. */
+                                 UUID underwritingCaseId,
+                                 /** V24: how it was issued, and by whom -- see PolicyView. */
+                                 String issuanceBasis, String issuanceReason, String issuedByName) {
 
     public static PolicyResponseDto from(PolicyView view) {
         return new PolicyResponseDto(view.policyNumber(), view.policyholderPartyId(), view.productId(), view.productVersionId(),
@@ -30,6 +34,7 @@ public record PolicyResponseDto(String policyNumber, UUID policyholderPartyId, U
             view.beneficiaries(),
             view.commencementDate(), view.policyTermMonths(),
             view.premiumPayingTermMonths(), view.maturityDate(),
-            view.lifeAssuredPartyId(), view.productCategory());
+            view.lifeAssuredPartyId(), view.productCategory(),
+            view.underwritingCaseId(), view.issuanceBasis(), view.issuanceReason(), view.issuedByName());
     }
 }

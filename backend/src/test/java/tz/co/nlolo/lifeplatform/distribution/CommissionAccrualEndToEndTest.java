@@ -126,6 +126,7 @@ class CommissionAccrualEndToEndTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -135,6 +136,7 @@ class CommissionAccrualEndToEndTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
         try (Connection connection = DriverManager.getConnection(

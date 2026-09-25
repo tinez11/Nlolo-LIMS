@@ -11,6 +11,8 @@ import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
 import tz.co.nlolo.lifeplatform.product.api.PremiumFrequency;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
+import tz.co.nlolo.lifeplatform.policy.api.NotASingleLifeProductException;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
@@ -157,7 +159,9 @@ public class UnderwritingDecisionEventListener {
             proposal.commencementDate(), proposal.policyTermMonths(),
             "Issued on underwriting decision " + decidedCase.caseId(),
             null),
-            "system:underwriting-decision-listener");
+            // The case itself, not only its id in a sentence: the scheme records the decision
+            // that put it on risk, and one case can issue one scheme.
+            "system:underwriting-decision-listener", decidedCase.caseId(), null);
     }
 
     /**
@@ -270,11 +274,16 @@ public class UnderwritingDecisionEventListener {
         Map<String, Object> payload = (Map<String, Object>) envelope.payload();
         Object outcome = payload.get("outcome");
         // Per docs/03-aggregate-design.md: ACCEPT and LOADED (rated-up-but-accepted) both
-        // result in issuance; DECLINED/POSTPONED never do.
-        if (!DecisionOutcome.ACCEPT.name().equals(outcome) && !"LOADED".equals(outcome)) {
+        // result in issuance; DECLINED/POSTPONED never do. A DECLINE still matters for one kind
+        // of case -- a scheme member's evidence case, where it is the answer the member's record
+        // is waiting for -- so it is let through and dropped below if the case is anything else.
+        boolean issuesOnDecision = DecisionOutcome.ACCEPT.name().equals(outcome) || "LOADED".equals(outcome);
+        boolean declined = DecisionOutcome.DECLINED.name().equals(outcome);
+        if (!issuesOnDecision && !declined) {
             return;
         }
         UUID caseId = (UUID) payload.get("caseId");
+        String decidedBy = payload.get("decidedBy") instanceof String s ? s : "system:underwriting-decision-listener";
         // AFTER_COMMIT listeners run synchronously on the SAME thread as the original caller
         // (Spring registers this as a same-thread TransactionSynchronization, not a hand-off to
         // another thread) -- so this is NOT necessarily an otherwise-empty ThreadLocal. Save
@@ -290,6 +299,37 @@ public class UnderwritingDecisionEventListener {
         try {
             requiresNewTransactionTemplate.executeWithoutResult(status -> {
                 UnderwritingCaseView decidedCase = underwritingApi.getCase(caseId);
+
+                // A MEMBER'S EVIDENCE, NOT A PROPOSAL. Its decision grants or refuses one scheme
+                // member's excess over the free cover limit. It used to fall through to the
+                // single-life path below and issue that member a separate policy on the scheme's
+                // product, while their own record stayed EVIDENCE_REQUIRED and a decline recorded
+                // nothing. Named on the case since underwriting V11; found from the member's side
+                // for a case opened before that.
+                //
+                // Only a scheme product can carry an evidence case, so the member-side lookup for
+                // an older case is made on those alone -- not on every individual decision.
+                ProductCategory category = productApi.getSnapshotByVersionId(decidedCase.productVersionId()).category();
+                boolean schemeProduct = category == ProductCategory.GROUP_LIFE || category == ProductCategory.CREDIT_LIFE;
+                PolicyApi.MemberRef evidenceFor = decidedCase.evidenceForPolicyNumber() != null
+                    ? new PolicyApi.MemberRef(decidedCase.evidenceForPolicyNumber(), decidedCase.evidenceForMemberId())
+                    : schemeProduct && !decidedCase.groupScheme()
+                        ? policyApi.findMemberAwaitingEvidence(caseId).orElse(null)
+                        : null;
+                if (evidenceFor != null) {
+                    PolicyApi.MemberEvidenceResult result = policyApi.recordMemberEvidenceDecision(
+                        evidenceFor.policyNumber(), evidenceFor.policyMemberId(), caseId, issuesOnDecision, decidedBy);
+                    if (result == PolicyApi.MemberEvidenceResult.NOT_NEEDED) {
+                        log.warn("Evidence case {} was decided after member {} of {} stopped waiting on it "
+                            + "(exited, or a raised limit covers them); nothing to change",
+                            caseId, evidenceFor.policyMemberId(), evidenceFor.policyNumber());
+                    }
+                    return;
+                }
+                if (!issuesOnDecision) {
+                    return; // an ordinary decline issues nothing
+                }
+
                 if (decidedCase.groupScheme()) {
                     // A SCHEME, NOT A POLICY. Everything below this line prices ONE LIFE from
                     // an age band and a sum assured band, and neither means anything for a
@@ -301,6 +341,14 @@ public class UnderwritingDecisionEventListener {
                     // proposal, so it is used verbatim.
                     issueSchemeFromProposal(decidedCase);
                     return;
+                }
+                // THE BACKSTOP. Everything below issues ONE life, and a group or credit-life
+                // product issued that way is a contract covering nobody. Underwriting refuses to
+                // open such a case now, and an evidence case was dealt with above -- so reaching
+                // here on a scheme product means a case older than both, and it is refused onto
+                // the case as an issuance failure rather than turned into a policy.
+                if (schemeProduct) {
+                    throw new NotASingleLifeProductException(category.name());
                 }
                 // No actuarial rating engine exists anywhere in this codebase (M2's
                 // SimpleRulesEngine is a deliberate placeholder). Global Constraints (M4):

@@ -28,4 +28,8 @@ public record PolicyView(String policyNumber, UUID underwritingCaseId, UUID poli
                           // from a 500-life group scheme. A reader has to know: a GROUP_LIFE
                           // policy's lives are its member schedule, and its "life assured" is
                           // deliberately null rather than missing.
-                          String productCategory) {}
+                          String productCategory,
+                          // How it came to be issued (V24): the basis and reason on an exception
+                          // route, and who issued it by name -- the underwriter of record for a
+                          // scheme set up from agreed terms. All null on ordinary business.
+                          String issuanceBasis, String issuanceReason, String issuedByName) {}

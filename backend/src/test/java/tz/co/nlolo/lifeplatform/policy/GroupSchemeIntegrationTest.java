@@ -9,6 +9,11 @@ import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMemberBenefit;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.PolicyMemberBenefitRepository;
 import tz.co.nlolo.lifeplatform.product.api.*;
+import tz.co.nlolo.lifeplatform.underwriting.api.AssessmentType;
+import tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingValidationException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -90,6 +95,7 @@ class GroupSchemeIntegrationTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -112,12 +118,14 @@ class GroupSchemeIntegrationTest {
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
+    @Autowired private UnderwritingApi underwritingApi;
     @Autowired private PolicyMemberBenefitRepository benefitRepository;
     /** Only for proving V14's constraints bite: no API can write these columns until task 6. */
     @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
@@ -907,6 +915,125 @@ class GroupSchemeIntegrationTest {
         // Cover is still capped while the evidence is outstanding.
         assertThat(big.coveredAmount()).isEqualByComparingTo("25000000.00");
         assertThat(big.benefitAmount()).isEqualByComparingTo("30000000.00");
+    }
+
+    // ---- The evidence decision reaches the member -------------------------------------------
+    //
+    // PolicyMember.recordEvidenceDecision had no caller. An ACCEPTED evidence case fell through to
+    // the single-life issuance path and issued the member a separate policy on the scheme's
+    // product, while their own record stayed EVIDENCE_REQUIRED and the excess was never granted;
+    // a DECLINED one recorded nothing at all.
+
+    /** An above-FCL borrower on a fresh scheme, with their evidence case assessed and undecided. */
+    private PolicyMemberView referredBorrower(String code) {
+        TenantContext.set(UUID.randomUUID());
+        GroupProduct product = creditLifeProduct(code);
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(product,
+            person(code + " Lender"), InterestMethod.FLAT_RATE, List.of(openingBorrower())), "staff-1");
+        PolicyMemberView big = policyApi.addMember(scheme.policyNumber(),
+            PolicyApi.MemberInput.borrower("Peter Massawe", LocalDate.of(1980, 7, 19), "LN-2026-00424",
+                new LoanTerms(new BigDecimal("30000000.00"), new BigDecimal("17.00"), 72,
+                    RepaymentFrequency.MONTHLY, LocalDate.of(2026, 8, 13), LocalDate.of(2026, 9, 13))),
+            "staff-1");
+        underwritingApi.submitAssessment(big.underwritingCaseId(), AssessmentType.MEDICAL,
+            "Specialist report", new BigDecimal("10"), "uw-assessor");
+        return big;
+    }
+
+    private String schemeOf(PolicyMemberView member) {
+        return underwritingApi.getCase(member.underwritingCaseId()).evidenceForPolicyNumber();
+    }
+
+    /**
+     * The product's entry-age and term gates, on every route onto a scheme.
+     *
+     * <p>Only the lender's monthly file applied them. A borrower too old for the product, or a
+     * loan longer than it covers, went on risk through the opening schedule or a single add.
+     */
+    @Test
+    void theProductsEntryAgeAndTermGatesApplyOnEveryRouteOntoAScheme() {
+        TenantContext.set(UUID.randomUUID());
+        ProductSummaryView product = productApi.createProduct("CL-GATES", "Credit Life gates",
+            ProductCategory.CREDIT_LIFE, "TZS", "actuary");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-99", BigDecimal.ONE, 18, 99),
+                    new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null, null, new EligibilityBounds(18, 60, null, 24, null, null), ANY_FILING, "actuary");
+        GroupProduct gated = new GroupProduct(product.productId(),
+            productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId());
+
+        // The opening schedule: born 1950, so 76 at disbursement against a maximum of 60.
+        PolicyApi.MemberInput tooOld = PolicyApi.MemberInput.borrower("Too Old", LocalDate.of(1950, 1, 1), null,
+            new LoanTerms(new BigDecimal("1000000.00"), BigDecimal.ZERO, 12,
+                RepaymentFrequency.MONTHLY, LocalDate.of(2026, 6, 5), LocalDate.of(2026, 7, 5)));
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(loanSchemeWith(gated, person("Gated Lender"),
+                InterestMethod.FLAT_RATE, List.of(tooOld)), "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("entry ages up to 60");
+
+        // One at a time: a 36-month loan against a 24-month maximum.
+        GroupSchemeView scheme = policyApi.issueGroupScheme(loanSchemeWith(gated, person("Gated Lender 2"),
+            InterestMethod.FLAT_RATE, List.of(openingBorrower())), "staff-1");
+        assertThatThrownBy(() -> policyApi.addMember(scheme.policyNumber(),
+                PolicyApi.MemberInput.borrower("Long Loan", LocalDate.of(1985, 1, 1), null,
+                    new LoanTerms(new BigDecimal("1000000.00"), BigDecimal.ZERO, 36,
+                        RepaymentFrequency.MONTHLY, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 9, 1))),
+                "staff-1"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining("longer than this product's maximum of 24");
+    }
+
+    @Test
+    void anEvidenceCaseSaysWhoseEvidenceItIs() {
+        PolicyMemberView big = referredBorrower("CL-EVID-0");
+        UnderwritingCaseView evidence = underwritingApi.getCase(big.underwritingCaseId());
+        assertThat(evidence.evidenceForPolicyNumber()).isNotNull();
+        assertThat(evidence.evidenceForMemberId()).isEqualTo(big.policyMemberId());
+    }
+
+    @Test
+    void acceptingTheEvidenceGrantsTheExcessAndIssuesNoPolicy() {
+        PolicyMemberView big = referredBorrower("CL-EVID-1");
+        String policyNumber = schemeOf(big);
+
+        underwritingApi.decide(big.underwritingCaseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Evidence satisfactory"),
+            "uw-decider", false);
+
+        PolicyMemberView after = policyApi.getMember(policyNumber, big.policyMemberId());
+        assertThat(after.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.ACCEPTED);
+        assertThat(after.coveredAmount()).as("covered for the full benefit from today")
+            .isEqualByComparingTo("30000000.00");
+        assertThat(policyApi.searchPolicies(big.memberPartyId(), null, null, null, null,
+                PageRequest.of(0, 5)).getTotalElements())
+            .as("the member is on the scheme; no policy of their own is issued")
+            .isZero();
+        assertThat(underwritingApi.getCase(big.underwritingCaseId()).issuanceFailureReason()).isNull();
+    }
+
+    @Test
+    void decliningTheEvidenceKeepsCoverAtTheLimitAndRecordsIt() {
+        PolicyMemberView big = referredBorrower("CL-EVID-2");
+        String policyNumber = schemeOf(big);
+
+        underwritingApi.decide(big.underwritingCaseId(),
+            new UnderwritingApi.DecisionInput(DecisionOutcome.DECLINED, null, "Adverse history"),
+            "uw-decider", true);
+
+        PolicyMemberView after = policyApi.getMember(policyNumber, big.policyMemberId());
+        assertThat(after.underwritingStatus()).isEqualTo(MemberUnderwritingStatus.DECLINED);
+        assertThat(after.coveredAmount()).isEqualByComparingTo("25000000.00");
+    }
+
+    @Test
+    void aLoadingIsRefusedOnAnEvidenceCase() {
+        PolicyMemberView big = referredBorrower("CL-EVID-3");
+        assertThatThrownBy(() -> underwritingApi.decide(big.underwritingCaseId(),
+                new UnderwritingApi.DecisionInput(DecisionOutcome.LOADED, new BigDecimal("25"), "Rated"),
+                "uw-decider", true))
+            .isInstanceOf(UnderwritingValidationException.class)
+            .hasMessageContaining("no premium of their own to load");
     }
 
     @Test

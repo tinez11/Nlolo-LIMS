@@ -4,7 +4,9 @@ import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
 import tz.co.nlolo.lifeplatform.policy.api.GroupSchemeView;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyAlreadyIssuedForCaseException;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
@@ -30,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
@@ -82,6 +85,7 @@ class GroupPipelineEndToEndTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
@@ -103,6 +107,7 @@ class GroupPipelineEndToEndTest {
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
@@ -160,6 +165,15 @@ class GroupPipelineEndToEndTest {
      * listener were ever made asynchronous. Same shape as
      * {@code PolicyApiIntegrationTest.issueFromProposal}.
      */
+    /** A plain flat scheme request -- for proving a second issue from one case is refused. */
+    private PolicyApi.IssueGroupSchemeRequest anyScheme(UUID employer, ProductFixture product, UUID life) {
+        return new PolicyApi.IssueGroupSchemeRequest(employer, product.productId(), product.productVersionId(),
+            null, BenefitBasis.FLAT, new BigDecimal("5000000.00"), null, null, "TZS", null,
+            List.of(new PolicyApi.MemberInput(life, null, null, null)),
+            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null,
+            "a second scheme from the same decision", null, null, null);
+    }
+
     private String awaitSchemeFor(UUID employerPartyId) throws InterruptedException {
         for (int attempt = 0; attempt < 50; attempt++) {
             TenantContext.set(tenantId);
@@ -207,6 +221,16 @@ class GroupPipelineEndToEndTest {
         // And the schedule came across, valued by policy's own calculator.
         assertThat(scheme.activeMemberCount()).isEqualTo(2);
         assertThat(scheme.totalCoveredAmount()).isEqualByComparingTo(new BigDecimal("10000000.00"));
+
+        // The scheme records the decision that put it on risk -- it used to record no case at
+        // all, so no scheme could be traced to its underwriting and one case could issue two.
+        assertThat(policyApi.getPolicy(policyNumber).underwritingCaseId()).isEqualTo(opened.caseId());
+        assertThat(policyApi.getPolicy(policyNumber).issuanceBasis())
+            .as("an ordinary decision is not an exception route").isNull();
+        assertThatThrownBy(() -> policyApi.issueGroupScheme(anyScheme(employer, product, first),
+                "system:underwriting-decision-listener", opened.caseId(), null))
+            .isInstanceOf(PolicyAlreadyIssuedForCaseException.class)
+            .hasMessageContaining(policyNumber);
 
         policyApi.activateOnFirstPremium(policyNumber);
         assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.ACTIVE);

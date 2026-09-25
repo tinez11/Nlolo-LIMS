@@ -123,16 +123,20 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     @Transactional
     public UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, ProposalDetails proposal, String openedBy) {
         return openIndividualCase(applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
-            agentOfRecordId, proposal, openedBy, false);
+            agentOfRecordId, proposal, openedBy, null, null);
     }
 
     @Override
     @Transactional
     public UnderwritingCaseView openMemberEvidenceCase(UUID memberPartyId, UUID productId, UUID productVersionId,
                                                        BigDecimal benefitAmount, String currency,
-                                                       UUID agentOfRecordId, String openedBy) {
+                                                       UUID agentOfRecordId, String policyNumber,
+                                                       UUID policyMemberId, String openedBy) {
+        if (policyNumber == null || policyMemberId == null) {
+            throw new UnderwritingValidationException("An evidence case names the scheme and the member it is for");
+        }
         return openIndividualCase(memberPartyId, productId, productVersionId, benefitAmount, currency,
-            agentOfRecordId, ProposalDetails.selfInsured(), openedBy, true);
+            agentOfRecordId, ProposalDetails.selfInsured(), openedBy, policyNumber, policyMemberId);
     }
 
     /** @param memberEvidence the free-cover-limit case for one scheme member, the one individual
@@ -140,7 +144,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private UnderwritingCaseView openIndividualCase(UUID applicantPartyId, UUID productId, UUID productVersionId,
                                                     BigDecimal sumAssuredAmount, String sumAssuredCurrency,
                                                     UUID agentOfRecordId, ProposalDetails proposal, String openedBy,
-                                                    boolean memberEvidence) {
+                                                    String evidenceForPolicyNumber, UUID evidenceForMemberId) {
+        boolean memberEvidence = evidenceForPolicyNumber != null;
         UUID tenantId = TenantContext.get();
         // Confirms the applicant party genuinely exists and belongs to this tenant --
         // PartyApi.getParty already throws PartyNotFoundException on cross-tenant access
@@ -187,6 +192,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
         UnderwritingCase underwritingCase = new UnderwritingCase(tenantId, applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency, agentOfRecordId, openedBy);
         underwritingCase.recordProposal(nextProposalNumber(), lifeAssuredPartyId, details);
+        if (memberEvidence) {
+            underwritingCase.recordEvidenceFor(evidenceForPolicyNumber, evidenceForMemberId);
+        }
         underwritingCaseRepository.save(underwritingCase);
 
         for (BeneficiaryNomination nomination : details.beneficiaries()) {
@@ -446,6 +454,14 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (!loaded && decision.loadingPercent() != null) {
             throw new UnderwritingValidationException(
                 "A loading percent is only meaningful on a LOADED decision, not " + decision.outcome());
+        }
+        // A scheme member's evidence case grants or refuses the excess, and nothing else. A
+        // loading needs a premium to load, and one member of a scheme has none of their own --
+        // the scheme's premium was agreed for the whole schedule and changes at renewal.
+        if (loaded && underwritingCase.getEvidenceForPolicyNumber() != null) {
+            throw new UnderwritingValidationException("Case " + caseId + " is evidence for a member of "
+                + underwritingCase.getEvidenceForPolicyNumber() + ": accept or decline the excess; a member"
+                + " of a scheme has no premium of their own to load");
         }
 
         // SEPARATION OF DUTIES, as claims enforces between its assessor and its decider. The
@@ -837,7 +853,8 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             List.of(),
             // One more query per row, for the same reason and at the same price as the group
             // proposal lookup above.
-            c.getCreatedBy(), riskAssessmentRepository.findDistinctAssessors(c.getTenantId(), c.getCaseId()));
+            c.getCreatedBy(), riskAssessmentRepository.findDistinctAssessors(c.getTenantId(), c.getCaseId()),
+            c.getEvidenceForPolicyNumber(), c.getEvidenceForMemberId());
     }
 
     /**
@@ -871,6 +888,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             base.groupScheme(), base.groupProposal(),
             base.ratingMultiplier(),
             base.issuanceFailureReason(), base.issuanceFailedAt(),
-            nominations, base.openedBy(), base.assessedBy());
+            nominations, base.openedBy(), base.assessedBy(),
+            base.evidenceForPolicyNumber(), base.evidenceForMemberId());
     }
 }

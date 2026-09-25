@@ -14,6 +14,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatDate, formatMonths } from '@/lib/dates';
+import { humanizeStatus } from '@/lib/status';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
@@ -289,6 +290,30 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 note="Always 0.00 until the platform credits cash value"
               />
               <Field label="Issued" value={formatDate(policy.issueDate)} />
+              {/*
+                HOW IT CAME TO BE ISSUED (policy V24). An underwriting decision links to its case;
+                an exception route -- manual issue, a scheme set up from agreed terms -- says why,
+                in the issuer's own words, and who issued it, for compliance. Both used to be
+                collected and discarded, so a policy could not say whether anyone underwrote it.
+              */}
+              {policy.underwritingCaseId && (
+                <Field
+                  label="Underwriting"
+                  value={
+                    <Link className="hover:underline" to={`/staff/underwriting/${policy.underwritingCaseId}`}>
+                      The decided case
+                    </Link>
+                  }
+                />
+              )}
+              {policy.issuanceBasis && (
+                <Field
+                  label="Issued outside underwriting"
+                  value={humanizeStatus(policy.issuanceBasis)}
+                  {...(policy.issuanceReason ? { note: policy.issuanceReason } : {})}
+                />
+              )}
+              {policy.issuedByName && <Field label="Issued by" value={policy.issuedByName} />}
               <Field
                 label="Risk commences"
                 value={formatDate(policy.commencementDate)}
