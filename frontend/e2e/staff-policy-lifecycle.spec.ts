@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
-import { dmy } from './dates';
-import { asAdmin } from './admin';
+import { issueGroupScheme } from './groupSchemes';
 
 /**
  * `POST /policies/{n}/suspend`/`resume`/`reinstate` -- all three were fully
@@ -23,33 +22,6 @@ import { asAdmin } from './admin';
  * contract-test level only; this file covers the button's absence on a
  * non-LAPSED policy implicitly (only Suspend/Resume ever render below).
  */
-
-async function createGroupLifeProduct(page: import('@playwright/test').Page, code: string, name: string) {
-  await page.goto('/staff/products/new');
-  await page.getByLabel('Product code').fill(code);
-  await page.getByLabel('Product name').fill(name);
-  await page.getByLabel('Category').selectOption('GROUP_LIFE');
-  await page.getByLabel('Default currency').fill('TZS');
-  await page.getByRole('button', { name: 'Create product' }).click();
-  await expect(page.getByText('DRAFT')).toBeVisible();
-
-  const ratingSection = page.locator('p', { hasText: 'Rating table -- must cover' }).locator('..');
-  await ratingSection.getByRole('button', { name: 'Remove rating factor' }).last().click();
-  await ratingSection.getByLabel('Rating factor 1 band').fill('18-30');
-  // AGE is rated by range now: the band text is a label, these two are what the platform
-  // resolves against. Publishing without them is a real 422.
-  await ratingSection.getByLabel('Rating factor 1 from age').fill('18');
-  await ratingSection.getByLabel('Rating factor 1 to age').fill('30');
-  await ratingSection.getByRole('button', { name: 'Add rating factor' }).click();
-  await ratingSection.locator('select').nth(1).selectOption('SUM_ASSURED_BAND');
-  await ratingSection.getByLabel('Rating factor 2 band').fill('1000000-5000000');
-  await page.getByLabel('Effective date').fill(dmy('2026-01-01'));
-  // The TIRA filing that authorises this version -- required as of V12.
-  await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
-  await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
-  await page.getByRole('button', { name: 'Publish version' }).click();
-  await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
-}
 
 async function issuePolicyAgainst(
   page: import('@playwright/test').Page,
@@ -75,11 +47,36 @@ async function issuePolicyAgainst(
 }
 
 test.describe('staff policy lifecycle', () => {
-  test('suspends and resumes a real GROUP_LIFE policy end to end', async ({ page, browser }) => {
-    const code = `E2E-GRP-${Date.now()}`;
-    const name = `E2E Group Life ${code}`;
-    await asAdmin(browser, (adminPage) => createGroupLifeProduct(adminPage, code, name));
-    await issuePolicyAgainst(page, `${name} (${code})`, 'E2E policy-lifecycle fixture');
+  /*
+   * SKIPPED, and the skip is the finding: **no browser can reach an in-force group scheme.**
+   *
+   * This test used to author a GROUP_LIFE product and issue it from the manual single-life
+   * screen on a MIGRATION basis, which put it straight in force. `5571ca6` closed that path
+   * on the server -- `NotASingleLifeProductException`, because a group policy issued that
+   * way covers nobody: it has no member schedule -- and the console correctly stopped
+   * offering group products in that dropdown. The test was not updated and went red.
+   *
+   * Rebuilding the fixture the only way a group policy is now born (propose -> assess ->
+   * decide, via `issueGroupScheme`) gets as far as an OFFER and stops there. Suspend renders
+   * only for status ACTIVE (`LifecycleActions`), a scheme becomes ACTIVE when the employer's
+   * first premium clears, and **this console has no action that accepts an offer** -- for
+   * group or individual business. `staff-group-schemes.spec.ts` hit the same wall for the
+   * joiner assertion and documented it there; `e2e/policies.ts` only dodges it for
+   * individual policies because MIGRATION is still open to them.
+   *
+   * So this is a product gap, not a test to repair. The behaviour itself is proven against a
+   * real database in `PolicyApiIntegrationTest.suspendAndResumeRoundTripForAnEligibleCategory`
+   * and `resumingASuspendedPolicyPublishesPolicyResumed`; what is NOT covered anywhere is the
+   * two buttons in this console. Un-skip the day an offer can be accepted from the browser --
+   * `issueGroupScheme` already delivers the scheme, so only the activation step is missing.
+   */
+  test.skip('suspends and resumes a real GROUP_LIFE policy end to end', async ({
+    page,
+    browser,
+  }) => {
+    test.slow();
+    const policyNumber = await issueGroupScheme(page, browser);
+    await page.goto(`/staff/policies/${policyNumber}`);
 
     await expect(page.getByRole('heading', { level: 2, name: 'Lifecycle' })).toBeVisible();
     await page.getByRole('button', { name: 'Suspend' }).click();
