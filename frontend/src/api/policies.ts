@@ -330,6 +330,17 @@ export interface MemberListParams {
 }
 
 /**
+ * `GET /group-schemes/{n}/members/{memberId}` -- one member, built exactly as a roll
+ * row. For a screen holding only the member id a claim carries: finance's transfer
+ * queue, saying whose death a payment settles.
+ */
+export function getSchemeMember(policyNumber: string, policyMemberId: string): Promise<PolicyMemberView> {
+  return get<PolicyMemberView>(
+    `/group-schemes/${encodeURIComponent(policyNumber)}/members/${encodeURIComponent(policyMemberId)}`,
+  );
+}
+
+/**
  * `GET /group-schemes/{n}/members` -- one page of the schedule, each row carrying
  * the benefit in force for that member today.
  *

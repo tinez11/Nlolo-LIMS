@@ -1198,6 +1198,54 @@ class PolicyContractTest {
      * still return the member the caller wanted, so each case pins the row that must be
      * ABSENT and the total that must have shrunk.
      */
+    /** One member by id, as the roll shows them -- what finance's transfer queue reads to say
+     * whose death a payment settles, holding only the id a claim carries. */
+    @Test
+    void oneMemberCanBeReadByIdExactlyAsTheRollShowsThem() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID zawadi = namedPerson(tenantId, "Zawadi Single Fixture", "8301");
+        UUID mwangaza = namedPerson(tenantId, "Mwangaza Single Fixture", "8302");
+        String policyNumber = schemeWithTwoNamedMembers(tenantId, "GRP-SINGLE-01", "83", zawadi, mwangaza);
+        String listed = mockMvc.perform(get("/group-schemes/" + policyNumber + "/members")
+                .queryParam("q", "zawadi")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andReturn().getResponse().getContentAsString();
+        String memberId = com.jayway.jsonpath.JsonPath.read(listed, "$.items[0].policyMemberId");
+        String coveredOnRoll = com.jayway.jsonpath.JsonPath.read(listed, "$.items[0].covered.amount");
+
+        mockMvc.perform(get("/group-schemes/" + policyNumber + "/members/" + memberId)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.policyMemberId").value(memberId))
+            .andExpect(jsonPath("$.memberPartyId").value(zawadi.toString()))
+            .andExpect(jsonPath("$.covered.amount").value(coveredOnRoll));
+    }
+
+    /** A member id from ANOTHER scheme is refused, not read -- the same cross-scheme leak the
+     * exits file guards against. */
+    @Test
+    void aMemberOfAnotherSchemeIsNotReadThroughThisOne() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String first = schemeWithTwoNamedMembers(tenantId, "GRP-SINGLE-02", "84",
+            namedPerson(tenantId, "Asha First Scheme", "8401"), namedPerson(tenantId, "Baraka First Scheme", "8402"));
+        String second = schemeWithTwoNamedMembers(tenantId, "GRP-SINGLE-03", "85",
+            namedPerson(tenantId, "Chausiku Second Scheme", "8501"), namedPerson(tenantId, "Daudi Second Scheme", "8502"));
+        String listed = mockMvc.perform(get("/group-schemes/" + second + "/members")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andReturn().getResponse().getContentAsString();
+        String theirs = com.jayway.jsonpath.JsonPath.read(listed, "$.items[0].policyMemberId");
+
+        mockMvc.perform(get("/group-schemes/" + first + "/members/" + theirs)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
     @Test
     void aMemberRollCanBeSearchedByName() throws Exception {
         UUID tenantId = UUID.randomUUID();

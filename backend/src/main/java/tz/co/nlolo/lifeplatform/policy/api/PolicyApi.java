@@ -314,6 +314,17 @@ public interface PolicyApi {
      *     id filter — searching a 500-life roll for one person is otherwise impossible
      *     without paging the whole schedule by eye.
      */
+    /**
+     * One member of a scheme, by id -- built exactly as {@link #listMembers} builds a row.
+     *
+     * <p>For a screen that holds a member id and needs the person: finance's transfer queue
+     * knows a claim, and the claim knows only the member's id. The roll could be searched by
+     * name or reference but not by id, so the queue could say which claim it paid but not whose.
+     *
+     * @throws InvalidPolicyStateException if the policy is not a scheme or the member is not on it
+     */
+    PolicyMemberView getMember(String policyNumber, UUID policyMemberId);
+
     Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, String q,
                                         Pageable pageable);
 

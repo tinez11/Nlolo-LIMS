@@ -154,9 +154,16 @@ test.describe('staff credit-life claim', () => {
     const financeContext = await browser.newContext({ storageState: 'e2e/.auth/staff-finance.json' });
     const financePage = await financeContext.newPage();
     await financePage.goto('/staff/bank-transfers');
-    const transfer = financePage.getByRole('row').filter({ hasText: `policyholder of ${policyNumber}` });
+    // Found by its scheme, which the For column now names.
+    const transfer = financePage.getByRole('row').filter({ hasText: `scheme ${policyNumber}` });
     await expect(transfer).toBeVisible({ timeout: 30_000 });
-    await transfer.getByRole('button', { name: 'Record transfer' }).click();
+    // WHO, where this used to print a typed payee and a raw claim id: the lender as the payee,
+    // the borrower whose death this pays, and the claim it settles.
+    await expect(transfer).toContainText(lenderName, { timeout: 30_000 });
+    await expect(transfer).toContainText('Amina Hassan Mwinyi');
+    await expect(transfer).toContainText('Death claim');
+    await expect(transfer).toContainText('Claim settlement');
+    await transfer.getByRole('button', { name: 'Record payment made' }).click();
     const confirmation = financePage.getByRole('group', { name: 'Has this transfer been made?' });
     await confirmation.getByLabel('Bank reference', { exact: true }).fill(`E2E-FT-${Date.now()}`);
     await confirmation.getByRole('button', { name: 'Record the transfer' }).click();

@@ -515,6 +515,38 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /group-schemes/{policyNumber}/members/{policyMemberId}:
+    get:
+      summary: One member of a scheme, by id (staff)
+      description: >-
+        Built exactly as a row of the roll. For a screen that holds a member id and needs the
+        person -- finance's bank-transfer queue knows a claim, and a claim knows only its
+        member's id; the roll could be searched by name or reference but not by id.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { type: string }
+        - name: policyMemberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyMemberView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: The policy is not a scheme, or no member with that id is on it.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /group-schemes/{policyNumber}/members:
     get:
       summary: One page of a scheme's member schedule

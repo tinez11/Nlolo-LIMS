@@ -1701,6 +1701,22 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public PolicyMemberView getMember(String policyNumber, UUID policyMemberId) {
+        UUID tenantId = TenantContext.get();
+        String currency = findSchemeOrThrow(policyNumber, tenantId).getCurrency();
+        PolicyMember member = memberOnSchemeOrThrow(policyNumber, policyMemberId);
+        // The same two lookups listMembers makes for a page, for a page of one -- so a member read
+        // here and the same member read on the roll cannot disagree.
+        PolicyMemberBenefitRepository.InForceBenefitRow benefit = policyMemberBenefitRepository
+            .findInForceForMembers(tenantId, List.of(policyMemberId), LocalDate.now())
+            .stream().findFirst().orElse(null);
+        EnrolmentSubmissionRowRepository.MemberArrival arrival = enrolmentSubmissionRowRepository
+            .findArrivalsForMembers(tenantId, List.of(policyMemberId)).stream().findFirst().orElse(null);
+        return toMemberView(member, benefit, currency, arrival);
+    }
+
+    @Override
     @Transactional
     public PolicyMemberView addMember(String policyNumber, MemberInput member, String addedBy) {
         UUID tenantId = TenantContext.get();

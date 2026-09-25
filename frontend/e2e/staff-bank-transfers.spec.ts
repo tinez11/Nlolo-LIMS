@@ -68,7 +68,9 @@ test.describe('staff bank transfers', () => {
     const empty = page.getByText('Nothing is waiting on a transfer');
     await expect(table.or(empty)).toBeVisible({ timeout: 30_000 });
 
-    const first = page.getByRole('button', { name: 'Record transfer' }).first();
+    // The first ENABLED one: a transfer whose life is already paid, or has another live death
+    // claim, is disabled with its reason beside it, and is not what this guard is about.
+    const first = page.getByRole('button', { name: 'Record payment made', disabled: false }).first();
     // Skipped rather than failed when the queue is genuinely empty: this tenant's queue depends on
     // what else has run, and a test that demanded an unpaid claim exist would fail for a reason
     // that is not about this screen. When there IS one, the guard is checked properly.

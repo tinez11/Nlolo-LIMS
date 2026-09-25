@@ -258,6 +258,17 @@ public class PolicyController {
     }
 
     /**
+     * One member, by id. REALM_STAFF, the same as the roll it is a row of: finance reads it to
+     * say whose death a bank transfer settles, and holds only the member id the claim carries.
+     */
+    @GetMapping("/group-schemes/{policyNumber}/members/{policyMemberId}")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyMemberResponseDto> getMember(@PathVariable String policyNumber,
+                                                             @PathVariable UUID policyMemberId) {
+        return ResponseEntity.ok(PolicyMemberResponseDto.from(policyApi.getMember(policyNumber, policyMemberId)));
+    }
+
+    /**
      * Admit one life to an in-force scheme.
      *
      * <p>UNDERWRITER for the same reason issuing the scheme is: this accepts a new life onto a

@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { AwaitingEftView } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
+import { PartyName } from '@/components/PartyName';
+import { humanizeStatus } from '@/lib/status';
+import { transferVerdict } from './transferVerdict';
+import { useTransferContexts } from './useTransferContexts';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -70,14 +75,40 @@ export function EftExecutionPage() {
     hint: queue.status === 'error' && !queue.data ? 'could not load' : 'none of this money has moved',
   };
 
+  // Whose death each transfer pays, and whether it may be paid at all -- see transferVerdict.
+  const contexts = useTransferContexts(rows);
+  const verdictFor = (d: AwaitingEftView) => {
+    const context = contexts[d.disbursementId];
+    return context
+      ? transferVerdict({ claimId: d.sourceRef, payeeRef: d.payeeRef, claim: context.claim,
+          policy: context.policy, member: context.member })
+      : null;
+  };
+
   const columns: Column<AwaitingEftView>[] = [
     {
       key: 'payeeRef',
       header: 'Pay',
-      // The payee as the ordering module recorded them. Not resolved to a name, because nothing
-      // on this path can resolve one and an invented name on a payment instruction is worse than
-      // a reference somebody can match against the claim.
-      render: (d) => <span className="font-medium">{d.payeeRef}</span>,
+      /*
+        On credit life the lender, by name -- always the payee (client answer 3.6, spec 2.9).
+        Otherwise the payee as recorded. This column used to print whatever was typed at
+        approval, so finance was shown "mobile" as the destination of an 800,000 transfer.
+      */
+      render: (d) => {
+        const verdict = verdictFor(d);
+        return (
+          <span className="inline-flex flex-col gap-0.5">
+            <span className="font-medium">
+              {verdict?.lenderPartyId ? <PartyName partyId={verdict.lenderPartyId} /> : d.payeeRef}
+            </span>
+            {verdict?.notes.map((note) => (
+              <span key={note} className="text-[11px] text-status-warning-fg">
+                {note}
+              </span>
+            ))}
+          </span>
+        );
+      },
     },
     {
       key: 'amount',
@@ -88,13 +119,42 @@ export function EftExecutionPage() {
     {
       key: 'sourceRef',
       header: 'For',
-      render: (d) => <span className="whitespace-nowrap font-mono text-xs">{d.sourceRef}</span>,
+      // Whose death, on which scheme, as a link to the claim -- where this used to be a raw id.
+      render: (d) => {
+        const context = contexts[d.disbursementId];
+        const claim = context?.claim;
+        if (d.purpose !== 'CLAIM_SETTLEMENT' || !claim) {
+          return <span className="whitespace-nowrap font-mono text-xs">{d.sourceRef}</span>;
+        }
+        const member = context.member;
+        return (
+          <span className="inline-flex flex-col gap-0.5 text-xs">
+            <Link to={`/staff/claims/${claim.claimId}`} className="font-medium hover:underline">
+              {humanizeStatus(claim.claimType)} claim
+            </Link>
+            {member && (
+              <span>
+                {/* A borrower is freeform and carries their own name; an employee is a party. */}
+                {member.memberName ??
+                  (member.memberPartyId ? <PartyName partyId={member.memberPartyId} /> : 'Member')}
+                {member.memberReference && (
+                  <span className="text-muted-foreground"> ({member.memberReference})</span>
+                )}
+              </span>
+            )}
+            <span className="text-muted-foreground">
+              {member ? 'scheme' : 'policy'} {claim.policyNumber}
+            </span>
+          </span>
+        );
+      },
     },
     {
       key: 'purpose',
       header: 'Purpose',
       secondary: true,
-      render: (d) => d.purpose ?? <span className="text-subtle-foreground">—</span>,
+      render: (d) =>
+        d.purpose ? humanizeStatus(d.purpose) : <span className="text-subtle-foreground">—</span>,
     },
     {
       key: 'waitingSince',
@@ -107,19 +167,33 @@ export function EftExecutionPage() {
       key: 'execute',
       header: '',
       align: 'right',
-      render: (d) => (
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={executingId === d.disbursementId}
-          onClick={() => {
-            setBankReference('');
-            setConfirming(d);
-          }}
-        >
-          {executingId === d.disbursementId ? 'Recording…' : 'Record transfer'}
-        </Button>
-      ),
+      render: (d) => {
+        const verdict = verdictFor(d);
+        const blocked = verdict !== null && !verdict.payable;
+        return (
+          <span className="inline-flex flex-col items-end gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              // Blocked when this life must not be paid (again). Said beside the button rather
+              // than hidden behind a disabled control nobody can explain.
+              disabled={executingId === d.disbursementId || blocked}
+              onClick={() => {
+                setBankReference('');
+                setConfirming(d);
+              }}
+            >
+              {executingId === d.disbursementId ? 'Recording…' : 'Record payment made'}
+            </Button>
+            {blocked &&
+              verdict.reasons.map((reason) => (
+                <span key={reason} className="max-w-xs text-right text-[11px] text-status-danger-fg">
+                  Do not transfer. {reason}
+                </span>
+              ))}
+          </span>
+        );
+      },
     },
   ];
 
@@ -163,7 +237,7 @@ export function EftExecutionPage() {
     <>
       <PageHeader
         title="Bank transfers"
-        description="Payouts instructed by bank transfer. The platform cannot make these — somebody moves the money in the bank and records it here. Oldest first."
+        description="Payouts instructed by bank transfer, oldest first. The platform cannot make these: make the transfer in the bank, then press Record payment made. That settles the claim, takes the borrower off the scheme dated to their death, updates the scheme's totals and books the expense."
         count={<CountLine {...count} />}
       />
 
@@ -178,8 +252,16 @@ export function EftExecutionPage() {
                 consequence={
                   <>
                     Records that <strong>{formatMoney(confirming.amount)}</strong> has been paid to{' '}
-                    <strong>{confirming.payeeRef}</strong> for {confirming.sourceRef}. The claim
-                    settles, the borrower comes off cover, and the expense is booked to the ledger.
+                    <strong>
+                      {verdictFor(confirming)?.lenderPartyId ? (
+                        <PartyName partyId={verdictFor(confirming)?.lenderPartyId ?? ''} />
+                      ) : (
+                        confirming.payeeRef
+                      )}
+                    </strong>
+                    . The claim settles; the borrower leaves the scheme, dated to their death; the
+                    scheme&rsquo;s member count and cover drop by them; and the expense is booked
+                    to the ledger.
                   </>
                 }
                 // True, and checked: there is no endpoint that un-executes a disbursement.
