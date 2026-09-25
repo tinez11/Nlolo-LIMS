@@ -66,6 +66,16 @@
   --hover: oklch(0.968 0 0);
   --selected: oklch(0.955 0 0);
 
+  /* The filled ground of a control -- Espresso's #f3f3f3. A GROUND, never a boundary: at
+     1.11:1 against paper it cannot identify a field on its own (WCAG 1.4.11), which is why
+     text fields keep their --input border on top of it. Buttons need no boundary: their
+     label identifies them. */
+  --control: oklch(0.965 0 0);
+  --control-hover: oklch(0.935 0 0);
+  /* A table header row and an empty-state ground: one step above the page. */
+  --band: oklch(0.982 0 0);
+  --shadow-raise: 0 0 0 1px oklch(0 0 0 / 6%), 0 1px 2px oklch(0 0 0 / 10%);
+
   /* status: neutral / pending / active / success / warning / danger */
   --status-neutral-bg: oklch(0.96 0.002 250);
   --status-neutral-fg: oklch(0.42 0.008 250);
@@ -80,7 +90,8 @@
   --status-danger-bg: oklch(0.95 0.035 22);
   --status-danger-fg: oklch(0.48 0.17 25);
 
-  --radius: 0.375rem;
+  /* 8px, Espresso's control radius. Was 6px. */
+  --radius: 0.5rem;
 }
 
 .dark {
@@ -108,6 +119,11 @@
   --accent-foreground: oklch(0.16 0 0);
   --hover: oklch(1 0 0 / 5%);
   --selected: oklch(1 0 0 / 8%);
+
+  --control: oklch(1 0 0 / 7%);
+  --control-hover: oklch(1 0 0 / 11%);
+  --band: oklch(0.165 0 0);
+  --shadow-raise: 0 0 0 1px oklch(1 0 0 / 8%), 0 1px 2px oklch(0 0 0 / 40%);
 
   /* Dark badges invert: a dim tinted ground with a bright foreground. The same
      hue order is preserved so the mapping is learnable across themes. */
@@ -141,6 +157,10 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-hover: var(--hover);
   --color-selected: var(--selected);
+  --color-control: var(--control);
+  --color-control-hover: var(--control-hover);
+  --color-band: var(--band);
+  --shadow-raise: var(--shadow-raise);
 
   --color-status-neutral-bg: var(--status-neutral-bg);
   --color-status-neutral-fg: var(--status-neutral-fg);
@@ -178,6 +198,10 @@
     /* Tabular figures everywhere: money and dates sit in columns, and proportional
        digits make a currency column visibly ragged. */
     font-variant-numeric: tabular-nums;
+    /* Espresso's body tracking, halved: it sets 0.02em on InterVariable at weight 420, and
+       this console loads static Inter at 400, where 0.02em reads loose at 14px. Headings
+       keep their own negative tracking. */
+    letter-spacing: 0.01em;
   }
 
   /* Visible focus only for keyboard users, but never suppressed outright. */

@@ -67,7 +67,7 @@ export function Receipt({
         <dl className="mt-2 space-y-1">
           {lines.map((line) => (
             <div key={line.label} className="flex items-baseline justify-between gap-4 text-xs">
-              <dt className="shrink-0 text-status-success-fg/80">{line.label}</dt>
+              <dt className="shrink-0 text-status-success-fg">{line.label}</dt>
               <dd className="min-w-0 text-right font-medium text-status-success-fg">
                 {line.value}
               </dd>
@@ -76,7 +76,7 @@ export function Receipt({
         </dl>
       )}
 
-      {note && <p className="mt-2 text-[11px] text-status-success-fg/80">{note}</p>}
+      {note && <p className="mt-2 text-[11px] text-status-success-fg">{note}</p>}
       {onward && <div className="mt-2">{onward}</div>}
     </section>
   );

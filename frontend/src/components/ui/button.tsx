@@ -13,7 +13,7 @@ const button = cva(
         ghost: 'hover:bg-hover',
         // Reserved for genuinely destructive actions, so the colour keeps meaning.
         danger:
-          'bg-status-danger-fg text-white hover:opacity-90 dark:text-status-danger-bg',
+          'bg-status-danger-fg text-background hover:opacity-90',
       },
       size: {
         sm: 'h-8 px-2.5 text-[13px]',

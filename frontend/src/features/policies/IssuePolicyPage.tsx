@@ -487,7 +487,7 @@ export function IssuePolicyPage() {
         */}
         {introducingAgentPartyId ? (
           <FormField label="Agent of record">
-            <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
+            <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs">
               <PartyName partyId={introducingAgentPartyId} />
             </div>
             <p className="mt-1 text-[11px] text-subtle-foreground">
@@ -540,7 +540,7 @@ export function IssuePolicyPage() {
             ))}
           </Select>
           {issuanceBasis !== '' && (
-            <p className="mt-1 text-[11px] text-fg-muted">
+            <p className="mt-1 text-[11px] text-muted-foreground">
               {ISSUANCE_BASES.find((b) => b.value === issuanceBasis)?.startsCoverImmediately
                 ? 'Cover starts immediately — this contract is already in force elsewhere.'
                 : 'Cover starts when the first premium clears.'}

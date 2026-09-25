@@ -217,7 +217,7 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
             */}
             {realm === 'staff' && party && (
               <Link
-                className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted"
+                className="rounded-md border border-border px-2.5 py-1 text-xs hover:bg-hover"
                 to={`/staff/parties/${partyId}/edit`}
               >
                 Correct details

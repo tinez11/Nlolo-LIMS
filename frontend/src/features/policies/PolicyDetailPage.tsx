@@ -176,7 +176,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         */}
         {policy?.status === 'PROPOSED' && (
           <Panel title="Not yet on cover">
-            <p className="px-4 pb-4 text-xs text-fg-muted">
+            <p className="px-4 pb-4 text-xs text-muted-foreground">
               This is an offer, not a policy in force. Cover starts when the first premium
               clears — until then no claim can be settled against it. The invoices below are
               what the customer pays to accept.
@@ -185,7 +185,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         )}
         {policy?.status === 'NOT_TAKEN_UP' && (
           <Panel title="Offer expired unpaid">
-            <p className="px-4 pb-4 text-xs text-fg-muted">
+            <p className="px-4 pb-4 text-xs text-muted-foreground">
               This offer was never taken up: no first premium arrived within the offer window, so
               it closed. Cover never started, which is why this is not a lapse — it does not
               count against persistency. A new application is needed to insure this person.

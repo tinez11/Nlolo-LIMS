@@ -152,7 +152,7 @@ export function OnboardAgentPage() {
           platform's own dev data, only two have a login at all -- and nothing on screen has
           ever indicated that the rest are, from the agent's point of view, not yet onboarded.
         */}
-        <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
+        <div className="rounded-md border border-border bg-surface-muted px-3 py-2 text-xs">
           <p className="font-medium">This is step one of two</p>
           <p className="mt-1 text-subtle-foreground">
             Onboarding creates the agent's commission record. It does not create their login —
