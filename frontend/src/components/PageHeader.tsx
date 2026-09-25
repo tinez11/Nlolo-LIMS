@@ -1,7 +1,15 @@
-import type { ReactNode } from 'react';
+import { ChevronRight } from 'lucide-react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 
 /**
  * Page header used by every screen, so titles and actions align across the console.
+ *
+ * Sticky, because the actions live here: on a detail page with eight panels the button that
+ * issues, suspends or settles scrolled out of reach, and the way back was a scroll to the
+ * top. It publishes its own height as `--pagebar-h` so everything else that sticks -- the
+ * record tabs, the claim section bar, the record rail -- stops UNDER it rather than behind
+ * it, and keeps doing so when a description wraps and the bar grows.
  *
  * Lives here rather than in `AppShell` for an import-cycle reason: `AppShell`
  * builds the sidebar from the screen manifest (`@/screens`), and the manifest
@@ -16,6 +24,8 @@ export function PageHeader({
   description,
   count,
   actions,
+  breadcrumb,
+  status,
 }: {
   title: ReactNode;
   description?: ReactNode;
@@ -34,15 +44,55 @@ export function PageHeader({
    */
   count?: ReactNode;
   actions?: ReactNode;
+  /** Where this page sits, oldest first. The current page is the title, never a crumb. */
+  breadcrumb?: { label: string; to: string }[];
+  /** A StatusBadge beside the title -- Espresso's "Active" / "Not saved" pill. */
+  status?: ReactNode;
 }) {
+  const bar = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const node = bar.current;
+    if (!node) return;
+    const publish = () =>
+      document.documentElement.style.setProperty('--pagebar-h', `${node.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty('--pagebar-h');
+    };
+  }, []);
+
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6 pb-4">
+    <div
+      ref={bar}
+      className="sticky top-0 z-20 flex flex-wrap items-start justify-between gap-4 border-b border-border bg-background px-6 pt-4 pb-3"
+    >
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        {breadcrumb && breadcrumb.length > 0 && (
+          <nav aria-label="Breadcrumb" className="mb-1">
+            <ol className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              {breadcrumb.map((crumb) => (
+                <li key={crumb.to} className="flex items-center gap-1">
+                  <Link to={crumb.to} className="rounded-sm hover:text-foreground hover:underline">
+                    {crumb.label}
+                  </Link>
+                  <ChevronRight className="size-3" aria-hidden />
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+          {status}
+        </div>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
         {count && <p className="mt-1 text-xs text-muted-foreground">{count}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

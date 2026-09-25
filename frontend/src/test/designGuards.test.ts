@@ -57,9 +57,7 @@ const NOT_COLOURS: Record<string, Set<string>> = {
     'xl', '2xl', '3xl', '4xl', 'wrap', 'nowrap', 'balance', 'pretty', 'ellipsis', 'clip']),
   bg: new Set(['clip', 'fixed', 'local', 'scroll', 'cover', 'contain', 'center', 'no-repeat',
     'repeat', 'none']),
-  // `t`/`b`/`l`/`r` also carry widths (`border-t-0`), which the name pattern reads as a
-  // colour called `t-0`; the side names below cover both forms.
-  border: new Set(['t', 'b', 'l', 'r', 'x', 'y', 's', 'e', 't-0', 'b-0', 'l-0', 'r-0',
+  border: new Set(['t', 'b', 'l', 'r', 'x', 'y', 's', 'e',
     'collapse', 'separate', 'dashed', 'dotted', 'solid', 'double', 'none', 'hidden']),
   ring: new Set(['inset', 'offset']),
 };
@@ -83,6 +81,9 @@ describe('design guards', () => {
       for (const [, prefix, name] of code(source).matchAll(utility)) {
         if (!prefix || !name) continue;
         if (NOT_COLOURS[prefix]?.has(name)) continue;
+        // A side plus a width -- `border-b-2`, `border-t-0` -- is a border width, which the
+        // name pattern would otherwise read as a colour called "b-2".
+        if (prefix === 'border' && /^[tblrxyse]-\d+$/.test(name)) continue;
         if (!TOKENS.has(name)) unknown.push(`${path}: ${prefix}-${name}`);
       }
     }

@@ -37,11 +37,18 @@ import { cn } from '@/lib/cn';
  *   take no emphasis. Emphasising every panel promotes none of them.
  */
 export function Panel({
+  id,
   title,
   subtitle,
   emphasis = false,
   children,
 }: {
+  /**
+   * An anchor target for `SectionNav`, on the pages that must stay one scroll. The scroll
+   * margin below clears the sticky page bar and the section bar under it, so a jumped-to
+   * panel lands below both rather than behind them.
+   */
+  id?: string;
   title: string;
   subtitle?: string;
   emphasis?: boolean;
@@ -49,7 +56,11 @@ export function Panel({
 }) {
   return (
     <section
-      className={cn('rounded-lg border bg-surface', emphasis ? 'border-border-strong' : 'border-border')}
+      id={id}
+      className={cn(
+        'scroll-mt-[calc(var(--pagebar-h,0px)+3.5rem)] rounded-lg border bg-surface',
+        emphasis ? 'border-border-strong' : 'border-border',
+      )}
     >
       <div className="border-b border-border px-4 py-3">
         <h2 className={cn('font-semibold', emphasis ? 'text-base' : 'text-sm')}>{title}</h2>
