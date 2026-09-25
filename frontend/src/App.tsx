@@ -3,6 +3,7 @@ import { RealmAuthProvider } from '@/auth/RealmAuthProvider';
 import { RequireAuth } from '@/auth/RequireAuth';
 import { REALM_CONFIG, type Realm } from '@/auth/realms';
 import { AppShell } from '@/components/AppShell';
+import { RealmHome } from '@/components/RealmHome';
 import { RealmPicker } from '@/features/RealmPicker';
 import { REALM_HOME, SCREENS } from '@/screens';
 
@@ -33,7 +34,7 @@ export function App() {
           const home = REALM_HOME[realm];
           return (
             <Route key={realm} path={`/${realm}`} element={<RealmSubtree realm={realm} />}>
-              {home && <Route index element={<Navigate to={home} replace />} />}
+              {home && <Route index element={<RealmHome realm={realm} />} />}
               {SCREENS[realm].map((screen) => (
                 <Route key={screen.path} path={screen.path} element={screen.element} />
               ))}

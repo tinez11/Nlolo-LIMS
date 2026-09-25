@@ -202,6 +202,25 @@ export const REALM_HOME: Record<Realm, string | null> = {
   regulators: null,
 };
 
+/**
+ * Where a signed-in person lands: their own queue, not a register of everyone's.
+ *
+ * Every staff member used to land on Policies, which is nobody's work -- a policy in force
+ * is not a task. ADMIN keeps Policies because it holds every role, so no one queue is its
+ * job. The claim statuses are the SAME filters `navBadges` counts, so the number beside
+ * "Claims" is exactly the list a person lands on.
+ */
+export function homeFor(realm: Realm, identity: ReturnType<typeof readIdentity>): string | null {
+  if (realm !== 'staff') return REALM_HOME[realm];
+  const roles = staffRoles(identity);
+  if (roles.ADMIN) return 'policies';
+  if (roles.UNDERWRITER) return 'underwriting';
+  if (roles.CLAIMS_MANAGER) return 'claims?status=SETTLEMENT_REQUESTED';
+  if (roles.CLAIMS_ASSESSOR) return 'claims?status=REGISTERED';
+  if (roles.FINANCE_OFFICER) return 'arrears';
+  return REALM_HOME.staff;
+}
+
 const STAFF_SCREENS: Screen[] = [
   {
     path: 'policies',

@@ -104,7 +104,13 @@ test.describe('staff bank transfers, as somebody who is not finance', () => {
     // assertion -- a staff member who cannot use it should not be shown a link that 403s.
     test.slow();
     await page.goto('/staff');
-    await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible({ timeout: 30_000 });
+    // The realm index lands this identity on ITS OWN queue, which for an underwriter is the
+    // underwriting one. Waiting on the sidebar rather than on a particular page's heading,
+    // because the nav is what this test is actually about and it is the same at every
+    // landing screen.
+    await expect(page.getByRole('link', { name: 'Underwriting' })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByRole('link', { name: 'Bank transfers' })).toHaveCount(0);
   });
 });

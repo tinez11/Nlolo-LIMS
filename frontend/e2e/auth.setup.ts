@@ -34,7 +34,7 @@ setup(`authenticate as ${STAFF_USER}`, async ({ page }) => {
 
   // Back inside the app, with the ?code= stripped by onSigninCallback.
   await page.waitForURL(/localhost:5173\/staff/, { timeout: 30_000 });
-  await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Underwriting', exact: true })).toBeVisible();
 
   await page.context().storageState({ path: 'e2e/.auth/staff.json' });
 });

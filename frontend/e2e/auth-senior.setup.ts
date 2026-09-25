@@ -25,7 +25,7 @@ setup(`authenticate as ${SENIOR_USER}`, async ({ page }) => {
   await page.locator('#kc-login').click();
 
   await page.waitForURL(/localhost:5173\/staff/, { timeout: 30_000 });
-  await expect(page.getByRole('heading', { name: 'Policies' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Underwriting', exact: true })).toBeVisible();
 
   await page.context().storageState({ path: 'e2e/.auth/staff-senior.json' });
 });
