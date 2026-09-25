@@ -27,6 +27,7 @@ import {
   type RegisterIndividualFormValues,
 } from './registerIndividualForm';
 import { Input } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 type CustomerType = 'INDIVIDUAL' | 'CORPORATE';
 
@@ -117,12 +118,7 @@ function RegisterIndividualForm() {
       <IndividualFields register={register} control={control} errors={errors} />
 
       {registering.status === 'error' && registering.error && (
-        <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-          {registering.error.detail ?? registering.error.title}
-          {registering.error.traceId && (
-            <span className="ml-2 font-mono text-[10px] opacity-80">({registering.error.traceId})</span>
-          )}
-        </div>
+        <InlineError error={registering.error} />
       )}
 
       <Button type="submit" variant="primary" disabled={registering.status === 'loading'}>
@@ -199,12 +195,7 @@ function RegisterCorporateForm() {
       </FormField>
 
       {registering.status === 'error' && registering.error && (
-        <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-          {registering.error.detail ?? registering.error.title}
-          {registering.error.traceId && (
-            <span className="ml-2 font-mono text-[10px] opacity-80">({registering.error.traceId})</span>
-          )}
-        </div>
+        <InlineError error={registering.error} />
       )}
 
       <Button type="submit" variant="primary" disabled={registering.status === 'loading'}>

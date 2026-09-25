@@ -11,6 +11,7 @@ import { useTransferContexts } from './useTransferContexts';
 import { CountLine, type Stat } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Button } from '@/components/ui/button';
+import { InlineError } from '@/components/InlineError';
 import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -313,17 +314,11 @@ export function EftExecutionPage() {
           )}
 
           {executeState.status === 'error' && executeState.error && (
-            <p
-              role="alert"
-              className="border-b border-border bg-status-danger-bg px-4 py-2 text-xs text-status-danger-fg"
-            >
-              Could not record the transfer — {executeState.error.detail ?? executeState.error.title}
-              {executeState.error.traceId && (
-                <span className="ml-2 font-mono text-[10px] opacity-80">
-                  ({executeState.error.traceId})
-                </span>
-              )}
-            </p>
+            <InlineError
+              lead="Could not record the transfer"
+              error={executeState.error}
+              className="rounded-none border-b border-border px-4"
+            />
           )}
 
           {renderBody()}

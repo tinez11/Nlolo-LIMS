@@ -18,6 +18,7 @@ import {
   type OnboardAgentFormValues,
 } from './onboardAgentForm';
 import { Input } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /agents`.
@@ -164,12 +165,7 @@ export function OnboardAgentPage() {
         </div>
 
         {onboarding.status === 'error' && onboarding.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {onboarding.error.detail ?? onboarding.error.title}
-            {onboarding.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({onboarding.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={onboarding.error} />
         )}
 
         <div className="flex items-center gap-2">

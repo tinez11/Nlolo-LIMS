@@ -38,6 +38,7 @@ import {
   type PolicyIssueFormValues,
 } from './policyIssueForm';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /policies/manual-issue` -- the staff exception path.
@@ -628,12 +629,7 @@ export function IssuePolicyPage() {
             unresolvable party or product version) is a genuine, whole-request
             rejection worth showing plainly. */}
         {issuing.status === 'error' && issuing.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {issuing.error.detail ?? issuing.error.title}
-            {issuing.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({issuing.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={issuing.error} />
         )}
 
         <div className="flex items-center gap-2">

@@ -16,6 +16,7 @@ import {
   type SubmitClaimAssessmentFormValues,
 } from './submitClaimAssessmentForm';
 import { Input, Textarea } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /claims/{claimId}/assessments` -- `CLAIMS_ASSESSOR` role only, rendered
@@ -126,12 +127,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
         </label>
 
         {submitting.status === 'error' && submitting.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {submitting.error.detail ?? submitting.error.title}
-            {submitting.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({submitting.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={submitting.error} />
         )}
 
         <Button type="submit" size="sm" variant="primary" disabled={submitting.status === 'loading'}>

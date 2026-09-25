@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 import { amendCorporate, amendIndividual, getParty } from '@/api/party';
 import type { PartyDetailView } from '@/api/types';
 import type { ApiError } from '@/lib/apiError';
@@ -146,15 +147,7 @@ export function EditClientPage() {
           <IndividualFields register={register} control={control} errors={errors} />
 
           {saveError && (
-            <div
-              role="alert"
-              className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-            >
-              {saveError.detail ?? saveError.title}
-              {saveError.traceId && (
-                <span className="ml-2 font-mono text-[10px] opacity-80">({saveError.traceId})</span>
-              )}
-            </div>
+            <InlineError error={saveError} />
           )}
 
           <Button type="submit" variant="primary" disabled={saving}>
@@ -193,15 +186,7 @@ export function EditClientPage() {
           </p>
 
           {saveError && (
-            <div
-              role="alert"
-              className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-            >
-              {saveError.detail ?? saveError.title}
-              {saveError.traceId && (
-                <span className="ml-2 font-mono text-[10px] opacity-80">({saveError.traceId})</span>
-              )}
-            </div>
+            <InlineError error={saveError} />
           )}
 
           <Button type="submit" variant="primary" disabled={saving}>

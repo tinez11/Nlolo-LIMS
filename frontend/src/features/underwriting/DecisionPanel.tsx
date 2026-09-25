@@ -5,6 +5,7 @@ import { FormField } from '@/components/FormField';
 import { Panel } from '@/components/Panel';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 import type { Resource } from '@/store/createResourceSlice';
 import {
   blankDecideForm,
@@ -171,17 +172,7 @@ export function DecisionPanel({
             )}
 
             {deciding.status === 'error' && deciding.error && (
-              <div
-                role="alert"
-                className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg"
-              >
-                <p>{deciding.error.detail ?? deciding.error.title}</p>
-                {deciding.error.traceId && (
-                  <p className="mt-1.5 font-mono text-[10px] opacity-80 select-all">
-                    trace {deciding.error.traceId}
-                  </p>
-                )}
-              </div>
+              <InlineError error={deciding.error} />
             )}
 
             <Button

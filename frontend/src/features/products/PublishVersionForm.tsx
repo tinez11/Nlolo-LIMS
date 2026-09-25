@@ -28,6 +28,7 @@ import {
   type PublishVersionFormValues,
 } from './publishVersionSchema';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 import { humanizeStatus } from '@/lib/status';
 
 /**
@@ -804,12 +805,7 @@ export function PublishVersionForm({
       )}
 
       {publishing.status === 'error' && publishing.error && (
-        <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-          {publishing.error.detail ?? publishing.error.title}
-          {publishing.error.traceId && (
-            <span className="ml-2 font-mono text-[10px] opacity-80">({publishing.error.traceId})</span>
-          )}
-        </div>
+        <InlineError error={publishing.error} />
       )}
 
       <Button type="submit" variant="primary" disabled={publishing.status === 'loading'}>

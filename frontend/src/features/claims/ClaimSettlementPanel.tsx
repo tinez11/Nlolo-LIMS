@@ -26,6 +26,7 @@ import {
   type SettlementDecisionFormValues,
 } from './settlementDecisionForm';
 import { Input, Textarea } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /claims/{claimId}/settlement-decision` -- `CLAIMS_MANAGER` role only,
@@ -343,12 +344,7 @@ export function ClaimSettlementPanel({
       )}
 
       {deciding.status === 'error' && deciding.error && (
-        <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-          {deciding.error.detail ?? deciding.error.title}
-          {deciding.error.traceId && (
-            <span className="ml-2 font-mono text-[10px] opacity-80">({deciding.error.traceId})</span>
-          )}
-        </div>
+        <InlineError error={deciding.error} />
       )}
 
       {pending ? (

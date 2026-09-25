@@ -26,6 +26,7 @@ import {
   type OpenCaseFormValues,
 } from './openCaseForm';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /underwriting/cases` -- the only entry point onto this domain that
@@ -402,12 +403,7 @@ export function OpenUnderwritingCasePage() {
         </fieldset>
 
         {opening.status === 'error' && opening.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {opening.error.detail ?? opening.error.title}
-            {opening.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({opening.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={opening.error} />
         )}
 
         <div className="flex items-center gap-2">

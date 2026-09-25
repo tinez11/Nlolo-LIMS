@@ -25,6 +25,7 @@ import {
 } from './claimRegisterForm';
 import { PartyName } from '@/components/PartyName';
 import { Input, Select } from '@/components/ui/input';
+import { InlineError } from '@/components/InlineError';
 
 /**
  * `POST /claims` is one of only six endpoints on the platform that HARD-REQUIRES
@@ -516,12 +517,7 @@ export function RegisterClaimPage() {
             whole-request business rejection, not a per-field error -- same shape
             as beneficiaries' BeneficiaryValidationException. */}
         {registering.status === 'error' && registering.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {registering.error.detail ?? registering.error.title}
-            {registering.error.traceId && (
-              <span className="ml-2 font-mono text-[10px] opacity-80">({registering.error.traceId})</span>
-            )}
-          </div>
+          <InlineError error={registering.error} />
         )}
 
         <div className="flex items-center gap-2">
