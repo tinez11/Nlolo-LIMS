@@ -227,9 +227,14 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         // had been accepted, and the premium it earned was charged to nobody -- the master
         // policy's own schedule was billing a hand-typed figure instead (see
         // billing.PolicyEventListener, and the SINGLE guard that stopped it).
+        // The LENDER, for distribution's rule that only the lender earns commission on its own
+        // credit-life scheme (spec 2.8) -- distribution may not read policy to find out.
+        UUID lenderPartyId = policyRepository.findByPolicyNumberAndTenantId(submission.getPolicyNumber(), tenantId)
+            .map(Policy::getPolicyholderPartyId).orElseThrow();
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.EnrolmentAccepted", tenantId,
             Map.of("submissionId", submission.getSubmissionId(),
                    "policyNumber", submission.getPolicyNumber(),
+                   "policyholderPartyId", lenderPartyId,
                    "enrolledCount", enrolled,
                    // The invoice's due date is derived from this, NOT from the consumer's
                    // clock: ux_premium_invoice_per_submission has to include due_date (the

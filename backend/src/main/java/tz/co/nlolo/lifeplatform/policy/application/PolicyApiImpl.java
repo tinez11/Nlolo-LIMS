@@ -173,6 +173,27 @@ public class PolicyApiImpl implements PolicyApi {
         return suppliedAgentOfRecordId;
     }
 
+    /**
+     * ON CREDIT LIFE, ONLY THE LENDER EARNS (spec 2.8). The commission on a lender's files is the
+     * lender's, at the rate it agreed; an individual agent named on the scheme would take it. That
+     * is not hypothetical -- five dev schemes carried the agent who had merely registered the
+     * lender, and earned nothing only because he had no credit-life plan yet. Null stays legal: a
+     * lender that takes no commission leaves the scheme direct.
+     */
+    private UUID requireLenderAsEarner(UUID agentOfRecordId, UUID lenderPartyId) {
+        UUID agent = requireRealAgent(agentOfRecordId);
+        if (agent == null) {
+            return null;
+        }
+        UUID agentParty = distributionApi.getAgentIfPresent(agent).map(a -> a.partyId()).orElse(null);
+        if (!lenderPartyId.equals(agentParty)) {
+            throw new InvalidPolicyStateException("On a credit-life scheme only the lender itself earns"
+                + " commission; agent " + agent + " is not this scheme's lender. Register the lender as an"
+                + " agent at its agreed rate, or leave the scheme direct.");
+        }
+        return agent;
+    }
+
     @Override
     @Transactional
     public PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy) {
@@ -1002,7 +1023,9 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException("Changing who earns commission on a scheme needs a reason");
         }
         UUID previous = policy.getAgentOfRecordId();
-        policy.changeAgentOfRecord(requireRealAgent(agentOfRecordId));
+        policy.changeAgentOfRecord(ProductCategory.CREDIT_LIFE.name().equals(policy.getProductCategory())
+            ? requireLenderAsEarner(agentOfRecordId, policy.getPolicyholderPartyId())
+            : requireRealAgent(agentOfRecordId));
         policyRepository.save(policy);
 
         Map<String, Object> payload = new java.util.HashMap<>();
@@ -1561,7 +1584,7 @@ public class PolicyApiImpl implements PolicyApi {
         // (spec 2.8). That rule is how an individual agent came to sit on GRP-B6CE9639 and would
         // have taken every file's commission, had any plan existed.
         UUID agentOfRecordId = category == ProductCategory.CREDIT_LIFE
-            ? requireRealAgent(request.agentOfRecordId())
+            ? requireLenderAsEarner(request.agentOfRecordId(), request.policyholderPartyId())
             : agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId());
 
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(),
