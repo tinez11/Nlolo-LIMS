@@ -297,29 +297,18 @@ jobs:
         env:
           STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
         run: ./scripts/migrate.sh staging
-      # ON_ERROR_STOP is load-bearing: without it psql exits 0 even when every statement in
-      # the file failed, which is exactly how three broken create_parent() calls survived
-      # unnoticed until M3's final review (see the header of configure-pg-partman.sql).
-      - name: Configure pg_partman for any newly-added partitioned tables
-        run: psql "${{ secrets.STAGING_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-pg-partman.sql
-      - name: Assert every pg_partman-created partition inherited the parent's RLS/append-only controls
-        run: psql "${{ secrets.STAGING_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/verify-partition-controls.sql
-      # Idempotent: CREATE OR REPLACE FUNCTION plus cron.schedule() on an existing job name
-      # updates in place, so re-running on every deploy is safe and is what keeps the function
-      # body in step with the committed file.
+      # EVERY post-migration script, in order, through the one installer every environment uses:
+      # partitions, the partition-controls check, then every pg_cron job. Idempotent, so it runs
+      # on every deploy. It refuses to run if the folder holds a script it does not list.
       #
-      # KNOWN GAP, NOT FIXED HERE: configure-billing-sweep.sql (M4) and
-      # configure-commission-close.sql (M7) are still absent from this job, even though both
-      # files' own headers say "Run by the CD pipeline immediately after Flyway migrations
-      # complete." They have therefore never been installed in ANY environment -- verified
-      # against the dev database, where neither billing.sweep_billing_state() nor
-      # distribution.close_commission_statements() so much as EXISTS. That means dunning
-      # escalation and commission-statement closing have never run anywhere. Adding them is a
-      # one-line change each, deliberately left to a decision rather than bundled in: switching
-      # them on moves real invoice statuses to IN_GRACE/OVERDUE and opens arrears cases, which
-      # is a business-process activation, not a wiring fix.
-      - name: Install the policy-loan interest accrual sweep (pg_cron)
-        run: psql "${{ secrets.STAGING_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-loan-interest-accrual.sql
+      # This used to run two of the six. The billing sweep and the commission close were left out
+      # on purpose, pending a decision, because switching them on is a business-process activation:
+      # the billing sweep moves real invoices to IN_GRACE/OVERDUE and opens arrears cases, and the
+      # close makes commission payable. Decided 2026-09-25: install all of them everywhere.
+      - name: Install partitions and scheduled jobs (pg_partman, pg_cron)
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+        run: ./scripts/configure-db.sh staging
       - name: Rolling deploy
         run: ./scripts/deploy.sh staging ${{ github.sha }}
 
@@ -337,14 +326,10 @@ jobs:
         env:
           PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
         run: ./scripts/migrate.sh production
-      - name: Configure pg_partman for any newly-added partitioned tables
-        run: psql "${{ secrets.PRODUCTION_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-pg-partman.sql
-      - name: Assert every pg_partman-created partition inherited the parent's RLS/append-only controls
-        run: psql "${{ secrets.PRODUCTION_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/verify-partition-controls.sql
-      # See the staging job's note on this step, including the still-open gap that
-      # configure-billing-sweep.sql and configure-commission-close.sql are installed by no
-      # environment at all.
-      - name: Install the policy-loan interest accrual sweep (pg_cron)
-        run: psql "${{ secrets.PRODUCTION_DB_URL }}" -v ON_ERROR_STOP=1 -f db-migrations/_post-migration/configure-loan-interest-accrual.sql
+      # See the staging job's note: every post-migration script, through one installer.
+      - name: Install partitions and scheduled jobs (pg_partman, pg_cron)
+        env:
+          PRODUCTION_DB_URL: ${{ secrets.PRODUCTION_DB_URL }}
+        run: ./scripts/configure-db.sh production
       - name: Rolling deploy
         run: ./scripts/deploy.sh production ${{ github.ref_name }}
