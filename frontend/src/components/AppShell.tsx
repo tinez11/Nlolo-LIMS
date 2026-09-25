@@ -1,5 +1,5 @@
 import { LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { avatarHue, displayName, initials, readIdentity } from '@/auth/claims';
@@ -9,6 +9,7 @@ import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
 import { useNavBadges } from '@/navBadges';
 import { navFor } from '@/screens';
 import { CommandPalette } from './CommandPalette';
+import { LoadingBlock } from './states';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
@@ -291,7 +292,10 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
           tabIndex={-1}
           className="min-h-0 min-w-0 flex-1 overflow-y-auto focus:outline-none"
         >
-          {children}
+          {/* Every screen is a lazy chunk (see `@/screens`), so the first visit to one
+              suspends while it downloads. LoadingBlock is the console's own `role="status"`
+              surface, which is what the rest of the app shows while it waits. */}
+          <Suspense fallback={<LoadingBlock />}>{children}</Suspense>
         </main>
       </div>
     </div>
