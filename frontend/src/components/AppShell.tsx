@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 import { currentTheme, toggleTheme, type Theme } from '@/lib/theme';
 import { useNavBadges } from '@/navBadges';
 import { navFor } from '@/screens';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
 /**
@@ -185,14 +186,16 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {item.badge && badges[item.badge] && (
                         <span
-                          className="shrink-0 rounded-full bg-selected px-1.5 text-xs font-medium text-muted-foreground tabular-nums"
+                          className="shrink-0"
                           // The count alone reads as "3 claims", which is not what
                           // it means. Both the tooltip and the screen-reader text
                           // say what was counted.
                           title={badges[item.badge]!.title}
                         >
-                          {badges[item.badge]!.count}
-                          <span className="sr-only"> — {badges[item.badge]!.title}</span>
+                          <Badge className="px-1.5 py-0 tabular-nums">
+                            {badges[item.badge]!.count}
+                            <span className="sr-only"> — {badges[item.badge]!.title}</span>
+                          </Badge>
                         </span>
                       )}
                     </NavLink>

@@ -251,6 +251,7 @@ export function ClaimsPage({
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="claim" value={value} />}
+                bare
                 active={status === value}
                 onClick={() => update({ status: value })}
               />

@@ -14,6 +14,7 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { useUnderwritingStore } from '@/store/underwritingStore';
 import { UnderwritingCaseDrawer } from './UnderwritingCaseDrawer';
 import { FilterChip } from '@/components/FilterChip';
+import { Badge } from '@/components/ui/badge';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -125,16 +126,12 @@ export function UnderwritingQueuePage() {
         <span className="inline-flex items-center gap-1.5">
           {c.applicantPartyId ? <PartyName partyId={c.applicantPartyId} /> : '—'}
           {c.groupScheme && (
-            <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-              Group scheme
-            </span>
+            <Badge>Group scheme</Badge>
           )}
           {/* A scheme member's free-cover-limit evidence, not a proposal: it decides one
               member's excess and issues nothing. It read as a new proposal until now. */}
           {c.evidenceForPolicyNumber && (
-            <span className="rounded bg-control px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-              Evidence · {c.evidenceForPolicyNumber}
-            </span>
+            <Badge>Evidence · {c.evidenceForPolicyNumber}</Badge>
           )}
         </span>
       ),
@@ -248,6 +245,7 @@ export function UnderwritingQueuePage() {
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="underwritingCase" value={value} />}
+                bare
                 active={status === value}
                 onClick={() => update({ status: value })}
               />

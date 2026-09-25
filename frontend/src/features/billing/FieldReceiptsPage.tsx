@@ -292,6 +292,7 @@ export function FieldReceiptsPage() {
               <FilterChip
                 key={value}
                 label={<StatusBadge kind="fieldReceipt" value={value} />}
+                bare
                 active={status === value}
                 onClick={() => update({ status: value })}
               />
