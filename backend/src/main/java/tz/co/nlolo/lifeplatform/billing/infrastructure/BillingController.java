@@ -109,6 +109,24 @@ public class BillingController {
         return ResponseEntity.ok(invoices);
     }
 
+    /**
+     * What was credited back on a policy -- premium refunded to members who left early.
+     *
+     * <p>Same audience and the same ownership check as the invoices it is credited against: a
+     * credit is the other half of an invoice, and reading one without the other is how a lender
+     * came to be shown 13,800 due when 9,600 was.
+     */
+    @GetMapping("/policies/{policyNumber}/credits")
+    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
+    public ResponseEntity<List<PremiumCreditResponseDto>> listCredits(@PathVariable String policyNumber,
+                                                                       @AuthenticationPrincipal Jwt jwt,
+                                                                       Authentication authentication) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        enforceCustomerOwnPolicyOnly(policy, jwt, authentication);
+        return ResponseEntity.ok(billingApi.listCredits(policyNumber).stream()
+            .map(PremiumCreditResponseDto::from).toList());
+    }
+
     @GetMapping("/policies/{policyNumber}/invoices/next-due")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS')")
     public ResponseEntity<InvoiceResponseDto> getNextDueInvoice(@PathVariable String policyNumber,

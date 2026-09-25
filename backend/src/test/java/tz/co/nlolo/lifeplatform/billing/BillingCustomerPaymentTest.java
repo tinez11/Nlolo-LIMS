@@ -92,6 +92,7 @@ class BillingCustomerPaymentTest {
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
+            "db-migrations/billing/V6__premium_credit.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

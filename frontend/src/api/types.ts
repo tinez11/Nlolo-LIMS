@@ -79,6 +79,7 @@ export type GroupSchemeGradeInput = PolicyComponents['schemas']['GroupSchemeGrad
 export type GroupMemberInput = PolicyComponents['schemas']['GroupMemberInput'];
 
 export type InvoiceView = BillingComponents['schemas']['InvoiceView'];
+export type PremiumCreditView = BillingComponents['schemas']['PremiumCreditView'];
 /**
  * One row of the collections queue. Its money and due date come from the invoice the case was
  * opened against, and are null -- never zero -- when that invoice cannot be resolved.

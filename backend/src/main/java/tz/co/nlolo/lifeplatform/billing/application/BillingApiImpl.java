@@ -254,7 +254,13 @@ public class BillingApiImpl implements BillingApi {
             .stream()
             .collect(Collectors.toMap(ArrearsCase::getInvoiceId, ArrearsCase::getDunningLevel, (a, b) -> a));
 
-        return invoices.stream().map(invoice -> toView(invoice, dunningByInvoice.get(invoice.getInvoiceId()))).toList();
+        // Credits in one query too, summed per invoice they were raised against.
+        Map<UUID, BigDecimal> creditedByInvoice = premiumCreditRepository
+            .findByTenantIdAndPolicyNumber(tenantId, policyNumber).stream()
+            .collect(Collectors.toMap(PremiumCredit::getOriginalInvoiceId, PremiumCredit::getAmount, BigDecimal::add));
+
+        return invoices.stream().map(invoice -> toView(invoice, dunningByInvoice.get(invoice.getInvoiceId()),
+            creditedByInvoice.getOrDefault(invoice.getInvoiceId(), BigDecimal.ZERO))).toList();
     }
 
     @Override
@@ -297,10 +303,20 @@ public class BillingApiImpl implements BillingApi {
         }
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
+        // WHAT IS OWED, not what was charged. This asked for the invoice's full amount, so a
+        // lender whose borrower repaid early was asked to pay again the premium already credited
+        // back to them -- 13,800 requested where 9,600 was owed.
+        BigDecimal balance = invoice.balanceDue(creditedAgainst(invoice));
+        if (balance.signum() <= 0) {
+            throw new NothingOwedException("Invoice " + invoiceId + " has nothing left to pay: it is "
+                + invoice.getStatus() + ", with " + invoice.getAmount().toPlainString() + " charged, "
+                + (invoice.getAmountPaid() == null ? "0" : invoice.getAmountPaid().toPlainString())
+                + " paid and the rest credited");
+        }
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PaymentRequested", tenantId,
             Map.of("invoiceId", invoiceId,
                    "payerRef", payerRef,
-                   "amount", Map.of("amount", invoice.getAmount().toPlainString(),
+                   "amount", Map.of("amount", balance.toPlainString(),
                                     "currencyCode", invoice.getCurrency()),
                    // NOT invoiceId.toString() -- see BillingApi.requestPaymentForInvoice's javadoc.
                    // payment's registry PK is (tenant_id, idempotency_key), so whatever lands here
@@ -316,7 +332,8 @@ public class BillingApiImpl implements BillingApi {
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
         String statusBefore = invoice.getStatus();
-        invoice.applyPayment(amount);
+        // Credits count towards settling it -- see PremiumInvoice.applyPayment(paid, credited).
+        invoice.applyPayment(amount, creditedAgainst(invoice));
         premiumInvoiceRepository.save(invoice);
         arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoiceId, tenantId)
             .ifPresent(ArrearsCase::resolve);
@@ -544,13 +561,20 @@ public class BillingApiImpl implements BillingApi {
         PremiumCredit credit = premiumCreditRepository.save(new PremiumCredit(tenantId,
             policyNumber, policyMemberId, invoice.get().getInvoiceId(), amount, currency,
             exitReason, exitDate));
+        premiumCreditRepository.flush();
+
+        // If payments and credits now cover the invoice, nothing more is owed -- otherwise a
+        // file whose every borrower left sits DUE and the arrears sweep chases it for nothing.
+        invoice.get().settleIfCovered(creditedAgainst(invoice.get()));
+        premiumInvoiceRepository.save(invoice.get());
 
         // The ONLY input to the commission clawback. A refund and its clawback must not be
         // separable: without the matching reversal the insurer returns the premium while the
         // bank keeps commission on money that was given back -- a loss on every early
         // settlement, on a product whose settlement volume the bank controls.
         eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumRefundDue", tenantId,
-            Map.of("policyNumber", policyNumber,
+            Map.of("creditId", credit.getCreditId(),
+                   "policyNumber", policyNumber,
                    "policyMemberId", policyMemberId,
                    "originalInvoiceId", invoice.get().getInvoiceId(),
                    // WHICH file this borrower was on, and what that whole file was charged.
@@ -607,7 +631,7 @@ public class BillingApiImpl implements BillingApi {
     private InvoiceView toView(PremiumInvoice invoice) {
         Integer dunningLevel = arrearsCaseRepository.findByInvoiceIdAndTenantIdAndResolvedAtIsNull(invoice.getInvoiceId(), invoice.getTenantId())
             .map(ArrearsCase::getDunningLevel).orElse(null);
-        return toView(invoice, dunningLevel);
+        return toView(invoice, dunningLevel, creditedAgainst(invoice));
     }
 
     /**
@@ -617,9 +641,30 @@ public class BillingApiImpl implements BillingApi {
      * an invoice that was never overdue and one whose arrears were resolved both land here, and
      * neither should render a dunning badge.
      */
-    private InvoiceView toView(PremiumInvoice invoice, Integer dunningLevel) {
+    private InvoiceView toView(PremiumInvoice invoice, Integer dunningLevel, BigDecimal credited) {
         return new InvoiceView(invoice.getInvoiceId(), invoice.getPolicyNumber(), invoice.getDueDate(),
             invoice.getAmount(), invoice.getCurrency(), InvoiceStatus.valueOf(invoice.getStatus()),
-            invoice.getGracePeriodEndsAt(), dunningLevel);
+            invoice.getGracePeriodEndsAt(), dunningLevel,
+            (invoice.getAmountPaid() == null ? BigDecimal.ZERO : invoice.getAmountPaid()).setScale(2),
+            credited.setScale(2), invoice.balanceDue(credited), invoice.getEnrolmentSubmissionId());
+    }
+
+    /** Everything credited back off one invoice. Zero when nothing was. */
+    private BigDecimal creditedAgainst(PremiumInvoice invoice) {
+        return premiumCreditRepository
+            .findByTenantIdAndOriginalInvoiceId(invoice.getTenantId(), invoice.getInvoiceId()).stream()
+            .map(PremiumCredit::getAmount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PremiumCreditView> listCredits(String policyNumber) {
+        return premiumCreditRepository.findByTenantIdAndPolicyNumber(TenantContext.get(), policyNumber).stream()
+            .sorted(java.util.Comparator.comparing(PremiumCredit::getCreatedAt))
+            .map(c -> new PremiumCreditView(c.getCreditId(), c.getPolicyNumber(), c.getPolicyMemberId(),
+                c.getOriginalInvoiceId(), c.getAmount(), c.getCurrency(), c.getExitReason(), c.getExitDate(),
+                c.getCreatedAt()))
+            .toList();
     }
 }

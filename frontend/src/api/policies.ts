@@ -7,6 +7,7 @@ import type {
   GroupMemberInput,
   GroupSchemeView,
   InvoiceView,
+  PremiumCreditView,
   IssueGroupSchemeRequest,
   MemberStatus,
   PolicyMemberView,
@@ -105,6 +106,14 @@ export function getCoverageStatus(
 /** `GET /policies/{n}/invoices` -- a bare unpaged array, so the whole set arrives. */
 export function listInvoices(policyNumber: string): Promise<InvoiceView[]> {
   return get<InvoiceView[]>(`/policies/${encodeURIComponent(policyNumber)}/invoices`);
+}
+
+/**
+ * `GET /policies/{n}/credits` -- premium credited back to members who left early, oldest first.
+ * The other half of an invoice: without it a lender was shown 13,800 due when 9,600 was.
+ */
+export function listPolicyCredits(policyNumber: string): Promise<PremiumCreditView[]> {
+  return get<PremiumCreditView[]>(`/policies/${encodeURIComponent(policyNumber)}/credits`);
 }
 
 /** `GET /policies/{n}/loans` -- also a bare unpaged array. */

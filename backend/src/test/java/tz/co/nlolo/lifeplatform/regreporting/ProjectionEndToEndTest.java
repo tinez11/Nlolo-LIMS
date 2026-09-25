@@ -171,6 +171,7 @@ class ProjectionEndToEndTest {
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
+            "db-migrations/billing/V6__premium_credit.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",

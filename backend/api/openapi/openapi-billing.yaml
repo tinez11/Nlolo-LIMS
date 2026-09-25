@@ -193,6 +193,28 @@ paths:
                 items: { $ref: '#/components/schemas/InvoiceView' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/credits:
+    get:
+      summary: Premium credited back on a policy -- refunds to members who left early, oldest first
+      security:
+        - customersAuth: [profile]
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PremiumCreditView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /policies/{policyNumber}/invoices/next-due:
     get:
       summary: Lightweight "what do I owe?" lookup (Deliverable 3 Rev 2, Bi2 — built for USSD)
@@ -285,10 +307,15 @@ paths:
               properties:
                 payerRef: { type: string }
       responses:
-        '202': { description: "Payment requested, accepted for processing" }
+        '202': { description: "Payment requested for the invoice's balance due (charged, less paid, less credited), accepted for processing" }
         '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: "Nothing is owed on this invoice: payments and credits already cover what was charged (NOTHING_OWED)"
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /agents/{agentId}/field-receipts:
     post:
       summary: Capture a premium receipt offline (BillingSyncApi — agent field app)
@@ -414,6 +441,27 @@ components:
         invoiceStatus:
           type: [string, "null"]
           enum: [DUE, PARTIALLY_PAID, PAID, IN_GRACE, OVERDUE, WAIVED, null]
+    PremiumCreditView:
+      type: object
+      additionalProperties: false
+      description: >-
+        Premium refunded to a member who left before the cover it paid for ran out. Its own
+        record, never a reduction of the invoice it is credited against.
+      required: [creditId, policyNumber, policyMemberId, originalInvoiceId, amount, exitReason, exitDate, createdAt]
+      properties:
+        creditId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        policyMemberId: { type: string, format: uuid }
+        originalInvoiceId:
+          type: string
+          format: uuid
+          description: The invoice raised by the file that charged this member.
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        exitReason:
+          type: string
+          description: Why the member left, as policy recorded it -- e.g. SETTLED_EARLY.
+        exitDate: { type: string, format: date }
+        createdAt: { type: string, format: date-time }
     InvoiceView:
       type: object
       additionalProperties: false
@@ -429,3 +477,24 @@ components:
           minimum: 1
           maximum: 5
           description: Present only when an ArrearsCase is open (Deliverable 3 Rev 2, Bi1).
+        amountPaid:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          description: Collected against this invoice so far.
+        amountCredited:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          description: >-
+            Premium given back off this invoice to members who left early (see GET
+            /policies/{policyNumber}/credits). A credit is its own record; `amount` keeps saying
+            what was charged.
+        balanceDue:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          description: >-
+            What is actually owed -- amount, less paid, less credited, never negative. A payment
+            request asks for this, not for `amount`.
+        enrolmentSubmissionId:
+          type: [string, "null"]
+          format: uuid
+          description: The monthly file that raised this invoice, on credit life. Null for a scheduled premium.

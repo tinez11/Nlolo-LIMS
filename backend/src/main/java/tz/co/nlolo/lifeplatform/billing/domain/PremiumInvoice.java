@@ -118,6 +118,18 @@ public class PremiumInvoice {
      * a payment arriving against a waived invoice is an operational anomaly, not a state change.
      */
     public void applyPayment(BigDecimal paidAmount) {
+        applyPayment(paidAmount, BigDecimal.ZERO);
+    }
+
+    /**
+     * A payment against this invoice, given what has already been CREDITED back off it.
+     *
+     * <p>A credit is a separate row by design -- the invoice goes on saying what was charged --
+     * but it IS a reduction of what is owed. Settling a 13,800 invoice carrying a 4,200 credit
+     * takes 9,600, and must read PAID at 9,600; comparing the payment to the charged amount alone
+     * left it PARTIALLY_PAID for ever, chasing the lender for money already given back.
+     */
+    public void applyPayment(BigDecimal paidAmount, BigDecimal credited) {
         if (paidAmount == null || paidAmount.signum() <= 0) {
             throw new IllegalArgumentException("Payment amount must be positive, got: " + paidAmount);
         }
@@ -125,7 +137,39 @@ public class PremiumInvoice {
             return;
         }
         this.amountPaid = this.amountPaid == null ? paidAmount : this.amountPaid.add(paidAmount);
-        this.status = this.amountPaid.compareTo(this.amount) >= 0 ? "PAID" : "PARTIALLY_PAID";
+        this.status = settledBy(credited) ? "PAID" : "PARTIALLY_PAID";
+    }
+
+    /**
+     * A credit was issued against this invoice. If payments and credits now cover it, nothing
+     * more is owed -- including the case where every borrower on a file left and it was credited
+     * in full, which would otherwise sit DUE and be chased by the arrears sweep for nothing.
+     *
+     * <p>PAID therefore means "nothing further is owed", by payment, by credit, or both. The
+     * invoice's credits and amount paid say which.
+     */
+    public void settleIfCovered(BigDecimal credited) {
+        if ("WAIVED".equals(status) || "PAID".equals(status)) {
+            return;
+        }
+        if (settledBy(credited)) {
+            this.status = "PAID";
+        }
+    }
+
+    /** What is still owed: charged, less paid, less credited. Never negative. */
+    public BigDecimal balanceDue(BigDecimal credited) {
+        if ("WAIVED".equals(status)) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        BigDecimal paid = amountPaid == null ? BigDecimal.ZERO : amountPaid;
+        BigDecimal balance = amount.subtract(paid).subtract(credited == null ? BigDecimal.ZERO : credited);
+        return balance.signum() < 0 ? BigDecimal.ZERO.setScale(2) : balance.setScale(2);
+    }
+
+    private boolean settledBy(BigDecimal credited) {
+        BigDecimal paid = amountPaid == null ? BigDecimal.ZERO : amountPaid;
+        return paid.add(credited == null ? BigDecimal.ZERO : credited).compareTo(amount) >= 0;
     }
 
     public UUID getInvoiceId() { return invoiceId; }
