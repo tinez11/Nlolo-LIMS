@@ -204,6 +204,14 @@ public class PaymentApiImpl implements PaymentApi {
             .stream().map(PaymentApiImpl::toView).toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<DisbursementStatusView> listDisbursementsFor(String purpose, String sourceRef) {
+        return disbursementRepository
+            .findByTenantIdAndPurposeAndSourceRefOrderByCreatedAtDesc(TenantContext.get(), purpose, sourceRef)
+            .stream().map(PaymentApiImpl::toView).toList();
+    }
+
     /**
      * The EFT rail's completion, and the only one it has. There is no callback and no gateway to
      * hear from: a person in finance moved the money in the bank's portal and is recording that
@@ -647,7 +655,8 @@ public class PaymentApiImpl implements PaymentApi {
     private static DisbursementStatusView toView(DisbursementInstruction d) {
         return new DisbursementStatusView(d.getDisbursementId(), d.getIdempotencyKey(),
             DisbursementStatus.valueOf(d.getStatus()), d.getAmount(), d.getCurrency(), d.getPurpose(),
-            d.getGatewayReference(), d.getSourceRef(), d.getBatchId());
+            d.getGatewayReference(), d.getSourceRef(), d.getBatchId(),
+            d.getPayeeRef(), d.getCreatedAt(), d.getMethod(), d.getExecutedAt());
     }
 
     private static PaymentStatusView toView(PaymentTransaction p) {

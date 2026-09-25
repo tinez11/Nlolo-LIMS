@@ -1,10 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Plus, UserPlus } from 'lucide-react';
+import { ArrowLeft, Plus, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch, Controller } from 'react-hook-form';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { DEFAULT_MEMBER_PAGE_SIZE } from '@/api/policies';
-import type { GroupSchemeView, MemberStatus, PolicyMemberView } from '@/api/types';
+import type { BenefitBasis, GroupSchemeView, MemberStatus, PolicyMemberView } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
@@ -32,6 +32,7 @@ import {
   type MemberFormValues,
 } from './addMemberForm';
 import { previewBenefit, type SchemeBasis } from './groupBenefitPreview';
+import { exitSummary } from './memberStanding';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
 import { FilterChip } from '@/components/FilterChip';
@@ -165,10 +166,25 @@ export function GroupSchemePage() {
         actions={
           <>
             {data?.status && <StatusBadge kind="policy" value={data.status} />}
-            <Button size="sm" variant="primary" onClick={() => setAddOpen(true)}>
-              <UserPlus />
-              Add member
-            </Button>
+            {/* A credit-life scheme gets a LINK here, not the add-member form, and the form is
+                not merely inappropriate on it -- it cannot work. It collects a party, a grade and
+                a salary; a credit-life member is a loan, needs terms this form has no fields for,
+                and `chk_policy_member_loan_complete` refuses the row without them. Offering it
+                was the more expensive half of a real confusion: somebody on the roll looking for
+                the CSV upload found one primary button, and it was the wrong one. */}
+            {data?.benefitBasis === 'AMORTISING_LOAN' ? (
+              <Button asChild size="sm" variant="primary">
+                <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
+                  <Upload />
+                  Upload a file
+                </Link>
+              </Button>
+            ) : (
+              <Button size="sm" variant="primary" onClick={() => setAddOpen(true)}>
+                <UserPlus />
+                Add member
+              </Button>
+            )}
           </>
         }
       />
@@ -190,8 +206,18 @@ export function GroupSchemePage() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div>
               <h2 className="text-sm font-semibold">Members</h2>
+              {/* Two sentences, because one of them would be a lie on the other kind of scheme.
+                  An employer member's stored cover IS their cover today. A credit-life member's
+                  is their cover on the day they were enrolled: the amount insured is the loan
+                  balance, it falls every month, and the declining figure is recomputed at the
+                  date of event when a claim is registered -- never stored, because materialising
+                  a row per repayment would be tens of thousands of rows per file. So this column
+                  is cover at inception, and saying "today" over it overstates every borrower who
+                  has made a repayment. */}
               <p className="text-xs text-muted-foreground">
-                Each row shows the benefit in force for that person today.
+                {data?.benefitBasis === 'AMORTISING_LOAN'
+                  ? 'Each row shows the cover this borrower was enrolled at. A claim pays what they still owed on the day.'
+                  : 'Each row shows the benefit in force for that person today.'}
               </p>
             </div>
             <div className="flex items-center gap-1">
@@ -308,6 +334,31 @@ export function GroupSchemePage() {
           </Panel>
         )}
 
+        {/* THE WAY BACK, and it was missing. The credit-life page links here -- "the member
+            roll" -- and this page linked only to the policy record, so following that link was a
+            one-way door: the roll is where you check whether a named borrower is covered, and the
+            monthly files are where every act on this product happens. Somebody who came here to
+            look someone up and then wanted to send the next file found a page with no upload on
+            it and nothing saying where the upload was.
+
+            Only on a credit-life scheme, because an employer scheme has no monthly files: its
+            members are added one at a time on this very page. */}
+        {data?.benefitBasis === 'AMORTISING_LOAN' && (
+          <Panel title="Monthly files">
+            <div className="px-4 pb-4 pt-1">
+              <p className="text-xs text-muted-foreground">
+                Borrowers join and loans end by file, not one at a time. Uploading the lender&rsquo;s
+                schedule, reading what was refused and accepting it all happen there.
+              </p>
+              <Button asChild size="sm" variant="ghost" className="mt-2 -ml-2">
+                <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
+                  Open the monthly files
+                </Link>
+              </Button>
+            </div>
+          </Panel>
+        )}
+
         <Panel title="Contract">
           <div className="px-4 pb-4 pt-1">
             <p className="text-xs text-muted-foreground">
@@ -373,7 +424,7 @@ export function GroupSchemePage() {
     return (
       <>
         <DataTable
-          columns={memberColumns}
+          columns={memberColumnsFor(data?.benefitBasis)}
           rows={rows}
           rowKey={(m) => m.policyMemberId ?? `${m.memberPartyId}`}
           caption="Members of this group scheme"
@@ -390,17 +441,89 @@ export function GroupSchemePage() {
   }
 }
 
-const memberColumns: Column<PolicyMemberView>[] = [
+/**
+ * The roll's columns depend on what kind of scheme it is, because two of them are dead weight on
+ * the other kind.
+ *
+ * A credit-life member has no grade and no salary -- those are how an EMPLOYER scheme decides
+ * what a life is worth, and this product decides it from a loan schedule instead. An employer
+ * member has no member reference, because the insurer only mints one for a borrower a lender will
+ * quote back on a later file.
+ *
+ * Rendering both on both left seven columns where six fit, one of them permanently empty. That is
+ * not a tidiness point: a roll of several hundred borrowers is read by scanning, and a column of
+ * em dashes costs width that the names and references need.
+ */
+const memberColumnsFor = (basis: BenefitBasis | undefined): Column<PolicyMemberView>[] => {
+  const creditLife = basis === 'AMORTISING_LOAN';
+  return baseMemberColumns.filter((c) =>
+    c.key === 'memberReference' || c.key === 'arrivedOn'
+      ? creditLife
+      : c.key === 'gradeOrSalary'
+        ? !creditLife
+        : true,
+  );
+};
+
+const baseMemberColumns: Column<PolicyMemberView>[] = [
   {
     key: 'member',
     header: 'Member',
+    // A FREEFORM member has no party row to look a name up from, and this column used to render
+    // an em dash for one -- which meant a credit-life scheme's roll named nobody on it, on the
+    // one screen whose whole purpose is answering "is this person covered". The name is on the
+    // member row itself; it was simply not on the wire until PolicyMemberView's schema grew the
+    // field. A party member still links to their record, because there is one to link to.
     render: (m) =>
       m.memberPartyId ? (
         <Link to={`/staff/parties/${m.memberPartyId}`} className="font-medium underline">
           <PartyName partyId={m.memberPartyId} />
         </Link>
+      ) : m.memberName ? (
+        <span className="font-medium">{m.memberName}</span>
       ) : (
         NO_VALUE
+      ),
+  },
+  {
+    // The reference the INSURER minted, and the only handle the lender has on this borrower:
+    // they quote it back on every later file, and an exits file names who is leaving by it.
+    // Rendered only when present, so an employer scheme's roll does not grow an empty column.
+    key: 'memberReference',
+    header: 'Reference',
+    render: (m) =>
+      m.memberReference ? (
+        // nowrap: a reference is one token and breaks after every hyphen if it is allowed to,
+        // which turned CL-AF8D3D3C-000002 into three stacked lines and took the width away from
+        // the names beside it. It is ~18 characters at this size; it always fits on one.
+        <span className="whitespace-nowrap font-mono text-xs">{m.memberReference}</span>
+      ) : (
+        <span className="text-subtle-foreground">{NO_VALUE}</span>
+      ),
+  },
+  {
+    /*
+     * WHICH FILE PUT THIS BORROWER ON COVER.
+     *
+     * The column exists because of a question the roll could not answer: "three names, and I
+     * uploaded two." The third had been typed into the set-up form, and nothing here told it
+     * apart from the two that arrived on a file. Schemes no longer open with a typed borrower,
+     * but the ones already created did, and the operational form of the question outlives the
+     * fix anyway -- in a dispute a lender asks which file you covered somebody on.
+     *
+     * A member with no file is not missing data. They were on the opening schedule, so the cell
+     * says so rather than showing an em dash that reads as a gap.
+     */
+    key: 'arrivedOn',
+    header: 'Came in on',
+    secondary: true,
+    render: (m) =>
+      m.arrivedOnFileName ? (
+        <span className="block max-w-[14rem] truncate" title={m.arrivedOnFileName}>
+          {m.arrivedOnFileName}
+        </span>
+      ) : (
+        <span className="text-subtle-foreground">Opening schedule</span>
       ),
   },
   {
@@ -413,10 +536,17 @@ const memberColumns: Column<PolicyMemberView>[] = [
     render: (m) =>
       m.covered ? (
         <span>
-          <span className="font-medium">{formatMoney(m.covered)}</span>
+          <span className="whitespace-nowrap font-medium">{formatMoney(m.covered)}</span>
           {m.benefit && m.benefit.amount !== m.covered.amount && (
             <span className="block text-[11px] text-subtle-foreground">
               of {formatMoney(m.benefit)}
+            </span>
+          )}
+          {/* A death is reported and not yet paid: still on cover, but this figure is what the
+              claim will pay, not live cover on a loan still running. */}
+          {m.openDeathClaimId && (
+            <span className="block text-[11px] text-status-warning-fg">
+              Claim pending — cover ends on settlement
             </span>
           )}
         </span>
@@ -454,8 +584,31 @@ const memberColumns: Column<PolicyMemberView>[] = [
   {
     key: 'status',
     header: 'Status',
-    secondary: true,
-    render: (m) => <StatusBadge kind="member" value={m.status} />,
+    /*
+      Said in full, because ACTIVE / EXITED alone hid the two things that matter most on a
+      credit-life book. A borrower whose death was reported and not yet paid read "ACTIVE" like
+      any live loan -- it now names the claim and links to it. And EXITED said nothing of why:
+      a repaid loan (a refund owed) and a paid death claim looked the same.
+    */
+    render: (m) =>
+      m.openDeathClaimId ? (
+        <Link
+          to={`/staff/claims/${m.openDeathClaimId}`}
+          className="inline-flex flex-col gap-0.5 hover:underline"
+        >
+          <StatusBadge kind="member" value="DEATH_CLAIM_IN_PROGRESS" />
+          <span className="text-[11px] text-muted-foreground">View the claim</span>
+        </Link>
+      ) : m.status === 'EXITED' ? (
+        <span className="inline-flex flex-col gap-0.5">
+          <StatusBadge kind="member" value={m.status} />
+          {exitSummary(m) && (
+            <span className="text-[11px] text-muted-foreground">{exitSummary(m)}</span>
+          )}
+        </span>
+      ) : (
+        <StatusBadge kind="member" value={m.status} />
+      ),
   },
 ];
 
@@ -468,6 +621,12 @@ function describeBasis(scheme: GroupSchemeView): string {
       return scheme.salaryMultiple ? `${scheme.salaryMultiple}× salary` : 'Salary multiple';
     case 'GRADED':
       return `Graded — ${scheme.grades?.length ?? 0} bands`;
+    case 'AMORTISING_LOAN':
+      // Credit life. There is no figure to quote for the scheme as a whole, because every
+      // borrower is worth a different declining number on a different day -- which is exactly
+      // what this line has to say. Until it was added, the fourth basis fell through to the
+      // default and a live credit-life scheme reported its benefit basis as an em dash.
+      return 'Outstanding loan balance';
     default:
       return NO_VALUE;
   }

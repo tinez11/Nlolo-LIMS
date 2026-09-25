@@ -39,7 +39,38 @@ export async function decide(page: Page, outcomeLabel: string, reason: string): 
   await page.getByLabel('Decision').selectOption({ label: outcomeLabel });
   await page.getByLabel('Reason').fill(reason);
   await page.getByRole('button', { name: 'Record decision' }).click();
-  await expect(page.getByRole('heading', { name: 'Decision' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('heading', { name: 'Decision', exact: true })).toBeVisible({ timeout: 15_000 });
+}
+
+/**
+ * Runs `act` as `staff.senior` on the case the given page is showing.
+ *
+ * Separation of duties: the underwriter who opened or assessed a case may not decide it, so a
+ * spec driving the case as `staff.underwriter` hands the decision to a second person. Its own
+ * browser context, like `asAdmin` in ./admin, so the calling page keeps its identity.
+ */
+export async function asSeniorOnSameCase(
+  page: Page,
+  act: (seniorPage: Page) => Promise<void>,
+): Promise<void> {
+  const browser = page.context().browser();
+  if (!browser) throw new Error('asSeniorOnSameCase needs a browser-backed context');
+  const context = await browser.newContext({ storageState: 'e2e/.auth/staff-senior.json' });
+  try {
+    const seniorPage = await context.newPage();
+    await seniorPage.goto(page.url());
+    await expect(seniorPage.getByRole('heading', { name: 'Underwriting case' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await act(seniorPage);
+  } finally {
+    await context.close();
+  }
+}
+
+/** The ordinary two-person path: someone other than the assessor records the decision. */
+export async function decideAsSenior(page: Page, outcomeLabel: string, reason: string): Promise<void> {
+  await asSeniorOnSameCase(page, (seniorPage) => decide(seniorPage, outcomeLabel, reason));
 }
 
 /**
@@ -79,7 +110,8 @@ export async function caseAwaitingManualIssue(page: Page, sumAssured = '1500000.
     const uwPage = await underwriterContext.newPage();
     const caseId = await openCaseForAmina(uwPage, sumAssured);
     await assess(uwPage, 'E2E fixture: adverse findings', '80');
-    await decide(uwPage, 'Decline', 'E2E fixture: declined, to be overturned by manual issue');
+    // A second underwriter decides: the one who opened and assessed it may not.
+    await decideAsSenior(uwPage, 'Decline', 'E2E fixture: declined, to be overturned by manual issue');
     return caseId;
   } finally {
     await underwriterContext.close();

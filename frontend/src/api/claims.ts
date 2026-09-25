@@ -2,6 +2,7 @@ import { post, get } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   ClaimAssessmentView,
+  ClaimCoverView,
   ClaimEvidenceView,
   ClaimStatus,
   ClaimView,
@@ -84,6 +85,37 @@ export function submitClaimAssessment(
   request: SubmitClaimAssessmentRequest,
 ): Promise<ClaimAssessmentView> {
   return post<ClaimAssessmentView>(`/claims/${encodeURIComponent(claimId)}/assessments`, request);
+}
+
+/**
+ * `GET /claims/{claimId}/assessments` -- newest first. `CLAIMS_ASSESSOR` or
+ * `CLAIMS_MANAGER`, and unlike most claim reads NOT open to a customer or an
+ * agent: findings are internal and `fraudIndicator` is a scrutiny signal about
+ * the claimant that must not travel back to them.
+ *
+ * The manager deciding a settlement is, by the separation-of-duties rule,
+ * never the person who assessed it -- so this is the only way they can see the
+ * recommendation they are being asked to approve.
+ */
+export function listClaimAssessments(claimId: string): Promise<ClaimAssessmentView[]> {
+  return get<ClaimAssessmentView[]>(`/claims/${encodeURIComponent(claimId)}/assessments`);
+}
+
+/**
+ * `GET /claims/{claimId}/claimable-cover` -- the most this claim may pay.
+ *
+ * The exact figure `Claim.approve` bounds an approval with, resolved from the
+ * claim's own stored facts. On credit life it is the outstanding loan balance
+ * on the date of event, so it declines every month and must be read fresh
+ * rather than remembered.
+ *
+ * 409s when the claim's facts no longer resolve to cover (its policy changed
+ * after registration -- registration runs the same resolution). Callers render
+ * that rather than falling back to a zero, which would read as "this claim
+ * pays nothing".
+ */
+export function getClaimableCover(claimId: string): Promise<ClaimCoverView> {
+  return get<ClaimCoverView>(`/claims/${encodeURIComponent(claimId)}/claimable-cover`);
 }
 
 /**

@@ -151,6 +151,16 @@ public class UnderwritingCase {
     @Column(name = "issuance_failed_at")
     private Instant issuanceFailedAt;
 
+    /**
+     * Set when this is a scheme member's free-cover-limit evidence case (V11): whose excess its
+     * decision grants or refuses. Such a case never issues a policy.
+     */
+    @Column(name = "evidence_for_policy_number", updatable = false)
+    private String evidenceForPolicyNumber;
+
+    @Column(name = "evidence_for_member_id", updatable = false)
+    private UUID evidenceForMemberId;
+
     /** NULL for a pre-V5 case: those were decided by the engine, and no person authored them. */
     @Column(name = "decision_decided_by")
     private String decisionDecidedBy;
@@ -180,6 +190,7 @@ public class UnderwritingCase {
     }
 
     public UUID getAgentOfRecordId() { return agentOfRecordId; }
+    public String getCreatedBy() { return createdBy; }
 
     /**
      * Record the proposal's identity and who it insures.
@@ -306,6 +317,14 @@ public class UnderwritingCase {
 
     public String getIssuanceFailureReason() { return issuanceFailureReason; }
     public Instant getIssuanceFailedAt() { return issuanceFailedAt; }
+    public String getEvidenceForPolicyNumber() { return evidenceForPolicyNumber; }
+    public UUID getEvidenceForMemberId() { return evidenceForMemberId; }
+
+    /** Mark this as the evidence case for one scheme member. Before the first save only. */
+    public void recordEvidenceFor(String policyNumber, UUID policyMemberId) {
+        this.evidenceForPolicyNumber = policyNumber;
+        this.evidenceForMemberId = policyMemberId;
+    }
 
     public String getRecommendationOutcome() { return recommendationOutcome; }
     public BigDecimal getRecommendationLoadingPercent() { return recommendationLoadingPercent; }

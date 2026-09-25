@@ -16,6 +16,7 @@ import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
 import type { components as CommunicationComponents } from '@/types/api/communication';
 import type { components as PartyComponents } from '@/types/api/party';
+import type { components as PaymentComponents } from '@/types/api/payment';
 import type { components as PolicyComponents } from '@/types/api/policy';
 import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { components as FinaccountingComponents } from '@/types/api/finaccounting';
@@ -44,7 +45,30 @@ export type GroupSchemeView = PolicyComponents['schemas']['GroupSchemeView'];
 export type BenefitBasis = NonNullable<GroupSchemeView['benefitBasis']>;
 export type GroupSchemeGrade = PolicyComponents['schemas']['GroupSchemeGrade'];
 export type PolicyMemberView = PolicyComponents['schemas']['PolicyMemberView'];
+
+/**
+ * A lender's monthly files. The two submission views are structurally identical and differ in
+ * exactly one field -- `enrolledCount` where the other has `exitedCount` -- which is what lets one
+ * panel render both. They mean opposite things, so nothing above that panel should merge them.
+ */
+export type EnrolmentSubmissionView = PolicyComponents['schemas']['EnrolmentSubmissionView'];
+export type EnrolmentRowView = PolicyComponents['schemas']['EnrolmentRowView'];
+export type ExitSubmissionView = PolicyComponents['schemas']['ExitSubmissionView'];
+export type ExitRowView = PolicyComponents['schemas']['ExitRowView'];
+/** PENDING / ACCEPTED / WITHDRAWN. PENDING is the one that matters: it means NOTHING has happened yet. */
+export type SubmissionStatus = NonNullable<EnrolmentSubmissionView['status']>;
 export type MemberStatus = NonNullable<PolicyMemberView['status']>;
+
+/**
+ * One bank transfer a finance officer has to go and make.
+ *
+ * The console's first reach into the payment spec at all, and it exists because the EFT rail has
+ * no callback: a mobile-money payout completes itself when the aggregator calls back, while a
+ * credit-life claim's millions go by bank transfer and complete only when a person records that
+ * they moved the money.
+ */
+export type AwaitingEftView = PaymentComponents['schemas']['AwaitingEftView'];
+export type DisbursementView = PaymentComponents['schemas']['DisbursementView'];
 /**
  * Four states, not a boolean. `EVIDENCE_REQUIRED` and `DECLINED` produce the same
  * covered amount and mean opposite things about whether anyone is still waiting.
@@ -55,6 +79,7 @@ export type GroupSchemeGradeInput = PolicyComponents['schemas']['GroupSchemeGrad
 export type GroupMemberInput = PolicyComponents['schemas']['GroupMemberInput'];
 
 export type InvoiceView = BillingComponents['schemas']['InvoiceView'];
+export type PremiumCreditView = BillingComponents['schemas']['PremiumCreditView'];
 /**
  * One row of the collections queue. Its money and due date come from the invoice the case was
  * opened against, and are null -- never zero -- when that invoice cannot be resolved.
@@ -84,6 +109,7 @@ export type ClaimDetails = ClaimsComponents['schemas']['ClaimDetails'];
 export type RegisterClaimRequest = ClaimsComponents['schemas']['RegisterClaimRequest'];
 
 export type ClaimAssessmentView = ClaimsComponents['schemas']['ClaimAssessmentView'];
+export type ClaimCoverView = ClaimsComponents['schemas']['ClaimCoverView'];
 export type SubmitClaimAssessmentRequest = ClaimsComponents['schemas']['SubmitClaimAssessmentRequest'];
 
 /**
@@ -338,6 +364,15 @@ export const PRODUCT_CATEGORIES: readonly ProductCategory[] = [
   'EDUCATION_SAVINGS',
   'CREDIT_LIFE',
 ];
+
+/**
+ * Whether a product insures one life and so may be proposed or issued as a single policy.
+ * GROUP_LIFE and CREDIT_LIFE insure a schedule of members and are set up as schemes; the
+ * server refuses them on `POST /underwriting/cases` and `POST /policies/manual-issue`.
+ */
+export function isSingleLifeProduct(p: { category?: ProductCategory | null }): boolean {
+  return p.category !== 'GROUP_LIFE' && p.category !== 'CREDIT_LIFE';
+}
 
 export const RATING_FACTOR_TYPES: readonly RatingFactorType[] = [
   'AGE',

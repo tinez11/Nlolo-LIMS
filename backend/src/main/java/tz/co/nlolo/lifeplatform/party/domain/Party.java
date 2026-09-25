@@ -131,6 +131,10 @@ public class Party {
     @Column(name = "created_by")
     private String createdBy;
 
+    /** Who {@link #createdBy} is, by name, as their token said at registration (V5). Display only. */
+    @Column(name = "created_by_name", updatable = false)
+    private String createdByName;
+
     @Column(name = "updated_at")
     private Instant updatedAt;
 
@@ -317,4 +321,11 @@ public class Party {
     public Instant getCreatedAt() { return createdAt; }
     /** The JWT subject that registered this party -- what the agents realm is scoped on. */
     public String getCreatedBy() { return createdBy; }
+    public String getCreatedByName() { return createdByName; }
+
+    /** Name the registrar. Called once, before the first save; returns this for chaining. */
+    public Party namedRegistrar(String name) {
+        this.createdByName = name == null || name.isBlank() ? null : name;
+        return this;
+    }
 }

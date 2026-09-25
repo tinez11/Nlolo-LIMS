@@ -53,7 +53,11 @@ paths:
                   page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
     post:
       summary: Submit a new business application for underwriting
-      description: Entry point for new business — agent portal, bancassurance portal, or staff back-office.
+      description: >-
+        Entry point for single-life new business — agent portal, bancassurance portal, or staff
+        back-office. 422 for a GROUP_LIFE or CREDIT_LIFE product (propose a group scheme, or set
+        up a credit-life scheme) and for a life assured who is not an INDIVIDUAL: a company may
+        be the applicant, never the life.
       security:
         - agentsAuth: [agent]
         - staffAuth: []
@@ -188,8 +192,11 @@ paths:
         '403':
           description: >-
             `SENIOR_UNDERWRITER_APPROVAL_REQUIRED` — the decision departs from the
-            recommendation and the caller is not a senior underwriter. Also the ordinary
-            Forbidden for a caller without UNDERWRITER at all.
+            recommendation and the caller is not a senior underwriter.
+            `UNDERWRITING_SEPARATION_OF_DUTIES` — the caller opened the case or recorded one of
+            its assessments; another underwriter must decide it, as claims requires of its
+            assessor and decider. Also the ordinary Forbidden for a caller without UNDERWRITER
+            at all.
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -749,3 +756,26 @@ components:
             `issuanceFailureReason`, which the database enforces.
           type: [string, "null"]
           format: date-time
+        openedBy:
+          description: >-
+            Identity-provider subject of whoever opened the case. Separation of duties: they may
+            not decide it. An identifier to compare against the signed-in user, not something to
+            show a person.
+          type: [string, "null"]
+        assessedBy:
+          description: >-
+            Identity-provider subjects of everyone who recorded an assessment on the case. None
+            of them may decide it — the decision answers 403 `UNDERWRITING_SEPARATION_OF_DUTIES`.
+          type: array
+          items: { type: string }
+        evidenceForPolicyNumber:
+          description: >-
+            Set when this is a scheme member's free-cover-limit evidence case rather than a
+            proposal: the scheme the member belongs to. Its decision grants (ACCEPT) or refuses
+            (DECLINED) that member's excess and never issues a policy; LOADED is refused, since
+            one member of a scheme has no premium of their own to load.
+          type: [string, "null"]
+        evidenceForMemberId:
+          description: The scheme member the evidence is for. Set together with evidenceForPolicyNumber.
+          type: [string, "null"]
+          format: uuid

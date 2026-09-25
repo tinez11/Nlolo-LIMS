@@ -64,18 +64,21 @@ public final class PostingRule {
     public static final String COMMISSION_EXPENSE = "5200";
     public static final String REINSURANCE_CEDED_PREMIUM = "5500";
 
-    // Exactly ten pairs -- Map.of's maximum. An eleventh rule must switch this to Map.ofEntries.
-    private static final Map<String, AccountPair> RULES = Map.of(
-        "billing.PremiumInvoiceGenerated", new AccountPair(PREMIUM_RECEIVABLE, UNEARNED_PREMIUM),
-        "billing.PremiumCollected",        new AccountPair(CASH, PREMIUM_RECEIVABLE),
-        "claims.ClaimSettled",             new AccountPair(CLAIMS_EXPENSE, CASH),
-        "distribution.CommissionPaid",     new AccountPair(COMMISSION_EXPENSE, CASH),
-        "reinsurance.CessionRecorded",     new AccountPair(REINSURANCE_CEDED_PREMIUM, REINSURANCE_PAYABLE),
-        "reinsurance.RecoveryConfirmed",   new AccountPair(REINSURANCE_RECOVERABLE, CLAIMS_EXPENSE),
-        "policyloan.LoanDisbursed",        new AccountPair(POLICY_LOAN_RECEIVABLE, CASH),
-        "policyloan.LoanRepaid",           new AccountPair(CASH, POLICY_LOAN_RECEIVABLE),
-        "payment.EftDisbursementAwaitingExecution", new AccountPair(CLAIMS_EXPENSE, CLAIMS_PAYABLE),
-        "payment.EftDisbursementExecuted",  new AccountPair(CLAIMS_PAYABLE, CLAIMS_EXPENSE));
+    private static final Map<String, AccountPair> RULES = Map.ofEntries(
+        Map.entry("billing.PremiumInvoiceGenerated", new AccountPair(PREMIUM_RECEIVABLE, UNEARNED_PREMIUM)),
+        Map.entry("billing.PremiumCollected",        new AccountPair(CASH, PREMIUM_RECEIVABLE)),
+        // A premium credit is the invoice posting run backwards, for the part given back. It had
+        // no rule at all: billing recorded 4,200 credited to a lender while the ledger went on
+        // carrying the whole 13,800 as receivable -- the two could not be reconciled.
+        Map.entry("billing.PremiumRefundDue",        new AccountPair(UNEARNED_PREMIUM, PREMIUM_RECEIVABLE)),
+        Map.entry("claims.ClaimSettled",             new AccountPair(CLAIMS_EXPENSE, CASH)),
+        Map.entry("distribution.CommissionPaid",     new AccountPair(COMMISSION_EXPENSE, CASH)),
+        Map.entry("reinsurance.CessionRecorded",     new AccountPair(REINSURANCE_CEDED_PREMIUM, REINSURANCE_PAYABLE)),
+        Map.entry("reinsurance.RecoveryConfirmed",   new AccountPair(REINSURANCE_RECOVERABLE, CLAIMS_EXPENSE)),
+        Map.entry("policyloan.LoanDisbursed",        new AccountPair(POLICY_LOAN_RECEIVABLE, CASH)),
+        Map.entry("policyloan.LoanRepaid",           new AccountPair(CASH, POLICY_LOAN_RECEIVABLE)),
+        Map.entry("payment.EftDisbursementAwaitingExecution", new AccountPair(CLAIMS_EXPENSE, CLAIMS_PAYABLE)),
+        Map.entry("payment.EftDisbursementExecuted",  new AccountPair(CLAIMS_PAYABLE, CLAIMS_EXPENSE)));
 
     /** Empty for any event with no accounting consequence -- which is most events on this
      * platform, and is a normal outcome rather than an error. */

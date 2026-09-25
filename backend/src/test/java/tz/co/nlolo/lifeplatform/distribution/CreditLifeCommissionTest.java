@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
@@ -75,6 +76,7 @@ class CreditLifeCommissionTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
@@ -98,6 +100,7 @@ class CreditLifeCommissionTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
@@ -121,6 +124,8 @@ class CreditLifeCommissionTest {
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
+            "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -334,6 +339,105 @@ class CreditLifeCommissionTest {
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         assertThat(clawedBack.abs()).isEqualByComparingTo(accrued);
+    }
+
+    // ---- the lender's own rate, and who earns it ---------------------------
+
+    /** The rate is agreed per lender (client answer 3.1). With no product-wide plan at all, the
+     * lender's own rate is what its files earn -- 12.5% of 84,000 is 10,500. Before, nothing could
+     * attach a rate to an agent, so a scheme with no product plan earned nothing, silently. */
+    @Test
+    void aLendersOwnRateIsWhatItsFilesEarn() {
+        GroupProduct product = creditLifeProduct();
+        UUID lenderAgent = onboardAgent("Lender Rate");
+        distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("12.5"), "finance");
+        scheme = issueScheme(lenderAgent, product);
+
+        submitAndAccept(THREE_BORROWERS);
+
+        assertThat(firstYearAccruals()).singleElement().satisfies(a -> {
+            assertThat(a.getAgentId()).isEqualTo(lenderAgent);
+            assertThat(a.getAmount()).isEqualByComparingTo("10500.00");
+        });
+    }
+
+    /** A rate is a percentage above 0 and at most 100, to two places -- never a fraction typed as
+     * a percent, and never anything a double would round. */
+    @Test
+    void aRateOutsideZeroToOneHundredIsRefused() {
+        GroupProduct product = creditLifeProduct();
+        UUID agent = onboardAgent("Lender Bad Rate");
+        assertThatThrownBy(() -> distributionApi.setAgentCommissionRate(agent, product.productId(), BigDecimal.ZERO, "f"))
+            .isInstanceOf(DistributionValidationException.class);
+        assertThatThrownBy(() -> distributionApi.setAgentCommissionRate(agent, product.productId(), new BigDecimal("100.01"), "f"))
+            .isInstanceOf(DistributionValidationException.class);
+        assertThatThrownBy(() -> distributionApi.setAgentCommissionRate(agent, product.productId(), new BigDecimal("12.345"), "f"))
+            .isInstanceOf(DistributionValidationException.class);
+    }
+
+    /** Correcting who earns applies to the NEXT file. The file accepted before the change stays with
+     * the agent who earned it -- the "from now on" the business chose. */
+    @Test
+    void correctingTheAgentOfRecordAppliesToTheNextFileOnly() {
+        GroupProduct product = creditLifeProduct();
+        UUID firstAgent = onboardAgent("Wrong Agent");
+        UUID lenderAgent = onboardAgent("Right Lender");
+        distributionApi.setAgentCommissionRate(firstAgent, product.productId(), new BigDecimal("10"), "finance");
+        distributionApi.setAgentCommissionRate(lenderAgent, product.productId(), new BigDecimal("10"), "finance");
+        scheme = issueScheme(firstAgent, product);
+        submitAndAccept(THREE_BORROWERS);
+
+        policyApi.changeSchemeAgentOfRecord(scheme, lenderAgent, "The lender earns commission (spec 2.8)", "finance");
+        submitAndAccept(",Salum Juma Rashid,1969-01-30,M,,,3600000.00,12,2026-09-02\n");
+
+        assertThat(policyApi.getPolicy(scheme).agentOfRecordId()).isEqualTo(lenderAgent);
+        assertThat(firstYearAccruals()).extracting(CommissionAccrual::getAgentId)
+            .containsExactlyInAnyOrder(firstAgent, lenderAgent);
+
+        // And never to an agent that does not exist -- a mistyped id would make the scheme direct
+        // without anyone deciding it.
+        assertThatThrownBy(() -> policyApi.changeSchemeAgentOfRecord(scheme, UUID.randomUUID(), "typo", "finance"))
+            .isInstanceOf(UnknownAgentOfRecordException.class);
+        assertThat(policyApi.getPolicy(scheme).agentOfRecordId()).isEqualTo(lenderAgent);
+    }
+
+    /** On credit life the chosen agent is the agent. Whoever registered the lender's party used to
+     * win at issuance -- which is how an individual agent came to sit on a lender's scheme. */
+    @Test
+    void theAgentWhoRegisteredTheLenderDoesNotOverrideTheChosenOne() {
+        GroupProduct product = creditLifeProduct();
+        UUID registeringAgent = onboardAgent("Registering Agent");
+        UUID lenderAgent = onboardAgent("Chosen Lender");
+        int tag = SEQ.incrementAndGet();
+        UUID registeringAgentParty = distributionApi.getAgent(registeringAgent).partyId();
+        UUID lenderParty = partyApi.registerIndividual(new tz.co.nlolo.lifeplatform.party.api.IndividualRegistration(
+                "Lender Registered By Agent " + tag, LocalDate.of(1985, 6, 15), "+2557" + String.format("%08d", tag),
+                null, null, null, null, null, null, null, null, null),
+            "agent-user", registeringAgentParty).partyId();
+
+        String issued = policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
+            lenderParty, product.productId(), product.productVersionId(), lenderAgent,
+            BenefitBasis.AMORTISING_LOAN, null, null, new BigDecimal("600000000.00"), "TZS",
+            null, List.of(PolicyApi.MemberInput.borrower("Opening Schedule Borrower",
+                LocalDate.of(1988, 3, 14), null,
+                new LoanTerms(new BigDecimal("8500000.00"), BigDecimal.ZERO, 48,
+                    RepaymentFrequency.MONTHLY, LocalDate.of(2026, 8, 3), LocalDate.of(2026, 9, 3)))),
+            new BigDecimal("52000.00"), "TZS", "SINGLE",
+            LocalDate.of(2026, 6, 1), null, "credit life onboarding", IssuanceBasis.MIGRATION,
+            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, new BigDecimal("0.5000")),
+            "staff-1").policyNumber();
+
+        assertThat(policyApi.getPolicy(issued).agentOfRecordId()).isEqualTo(lenderAgent);
+    }
+
+    private UUID onboardAgent(String name) {
+        int tag = SEQ.incrementAndGet();
+        UUID party = partyApi.registerIndividual(name + " " + tag, LocalDate.of(1980, 1, 1),
+            "+2557" + String.format("%08d", tag), null, "test").partyId();
+        partyApi.submitKycEvidence(party, tz.co.nlolo.lifeplatform.party.api.KycStatus.VERIFIED, "doc-" + tag,
+            "kyc-officer");
+        return distributionApi.onboardAgent(new DistributionApi.OnboardAgentRequest(
+            party, "LIC-" + tag, LocalDate.now().plusYears(1), null), "staff-1").agentId();
     }
 
     // ---- fixtures -----------------------------------------------------------

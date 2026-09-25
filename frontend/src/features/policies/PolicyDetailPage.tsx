@@ -14,11 +14,13 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatDate, formatMonths } from '@/lib/dates';
+import { humanizeStatus } from '@/lib/status';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectCoverage,
   selectDetail,
+  selectInvoices,
   selectReinstating,
   selectResuming,
   selectSuspending,
@@ -74,6 +76,8 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   }, [policyNumber, loadDetail, loadCoverage]);
 
   const policy = detail.data;
+  // Loaded by the Invoices panel on this same page; read here only to count them.
+  const invoiceCount = usePolicyStore(selectInvoices(policyNumber)).data?.length ?? 0;
 
   // isInitialLoad, not a 'loading'-only check: the load fires from an effect that
   // runs AFTER first render, so status is briefly 'idle' -- a 'loading'-only check
@@ -115,6 +119,18 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 <Link to={`/staff/group-schemes/${encodeURIComponent(policyNumber)}`}>
                   <Users />
                   Member schedule
+                </Link>
+              </Button>
+            )}
+            {/* A credit-life scheme goes to its OWN page rather than the member schedule. The
+                schedule answers "who is on this scheme"; a lender's book is administered one
+                monthly file at a time, and "what happened to this book this month" is the
+                question somebody arriving here actually has. The roll is reachable from there. */}
+            {isStaff && policy?.productCategory === 'CREDIT_LIFE' && (
+              <Button asChild size="sm">
+                <Link to={`/staff/credit-life-schemes/${encodeURIComponent(policyNumber)}`}>
+                  <Users />
+                  Monthly files
                 </Link>
               </Button>
             )}
@@ -231,29 +247,73 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 // typed -- it is the total of the member schedule, restated
                 // whenever somebody joins or leaves. Saying so stops it being
                 // read as a fixed sum that has quietly changed.
-                {...(policy.productCategory === 'GROUP_LIFE'
-                  ? { note: 'The total of every covered member — it moves as the schedule does.' }
+                {...(policy.productCategory === 'GROUP_LIFE' || policy.productCategory === 'CREDIT_LIFE'
+                  ? {
+                      note: 'The total of every covered member — it moves as the schedule does, and keeps its last figure once nobody is covered.',
+                    }
                   : {})}
               />
-              <Field
-                label="Premium"
-                value={
-                  <>
-                    {formatMoney(policy.premium)}
-                    {policy.premiumFrequency && (
-                      <span className="ml-1 text-xs text-subtle-foreground">
-                        {policy.premiumFrequency.toLowerCase()}
-                      </span>
-                    )}
-                  </>
-                }
-              />
+              {policy.productCategory === 'CREDIT_LIFE' ? (
+                /*
+                  NOT policy.premium. On credit life that is a figure typed at set-up; the real
+                  premium is charged file by file, per borrower, at the scheme's rate. Showing
+                  "500,000.00 single" beside a 13,800 invoice was a number that reconciled with
+                  nothing.
+                */
+                // No total here: totals are the backend's to compute (lib/money), and billing
+                // publishes none across files. Each invoice below states its own.
+                <Field
+                  label="Premium"
+                  value="Charged per monthly file"
+                  note={`Single premium per borrower at the scheme's rate, invoiced when a file is accepted${
+                    invoiceCount ? ` — ${invoiceCount} invoice${invoiceCount === 1 ? '' : 's'} so far, see Invoices` : ''
+                  }.`}
+                />
+              ) : (
+                <Field
+                  label="Premium"
+                  value={
+                    <>
+                      {formatMoney(policy.premium)}
+                      {policy.premiumFrequency && (
+                        <span className="ml-1 text-xs text-subtle-foreground">
+                          {policy.premiumFrequency.toLowerCase()}
+                        </span>
+                      )}
+                    </>
+                  }
+                />
+              )}
               <Field
                 label="Cash value"
                 value={formatMoney(policy.cashValue)}
                 note="Always 0.00 until the platform credits cash value"
               />
               <Field label="Issued" value={formatDate(policy.issueDate)} />
+              {/*
+                HOW IT CAME TO BE ISSUED (policy V24). An underwriting decision links to its case;
+                an exception route -- manual issue, a scheme set up from agreed terms -- says why,
+                in the issuer's own words, and who issued it, for compliance. Both used to be
+                collected and discarded, so a policy could not say whether anyone underwrote it.
+              */}
+              {policy.underwritingCaseId && (
+                <Field
+                  label="Underwriting"
+                  value={
+                    <Link className="hover:underline" to={`/staff/underwriting/${policy.underwritingCaseId}`}>
+                      The decided case
+                    </Link>
+                  }
+                />
+              )}
+              {policy.issuanceBasis && (
+                <Field
+                  label="Issued outside underwriting"
+                  value={humanizeStatus(policy.issuanceBasis)}
+                  {...(policy.issuanceReason ? { note: policy.issuanceReason } : {})}
+                />
+              )}
+              {policy.issuedByName && <Field label="Issued by" value={policy.issuedByName} />}
               <Field
                 label="Risk commences"
                 value={formatDate(policy.commencementDate)}

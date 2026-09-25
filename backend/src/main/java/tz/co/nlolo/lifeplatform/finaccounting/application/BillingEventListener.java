@@ -84,6 +84,7 @@ public class BillingEventListener {
         switch (envelope.eventType()) {
             case "billing.PremiumInvoiceGenerated" -> withTenant(envelope, p -> post("billing.PremiumInvoiceGenerated", p));
             case "billing.PremiumCollected" -> withTenant(envelope, p -> post("billing.PremiumCollected", p));
+            case "billing.PremiumRefundDue" -> withTenant(envelope, this::postCredit);
             default -> { /* not finaccounting-relevant */ }
         }
     }
@@ -125,6 +126,33 @@ public class BillingEventListener {
         if (maybeEntry.isEmpty()) {
             log.info("{} for invoice {} produced no journal entry (already posted, no accounting rule, "
                 + "or a non-positive amount)", eventType, invoiceId);
+            return;
+        }
+        finaccountingApiImpl.postEntry(maybeEntry.get());
+    }
+
+    /**
+     * A premium credit: reverses the invoice's posting for the part given back.
+     *
+     * <p>Keyed on the CREDIT's id, not the invoice's: one invoice can carry a credit for every
+     * borrower on its file, and each is its own movement. Keying on the invoice would treat the
+     * second borrower's refund as a repeat of the first and post nothing.
+     */
+    private void postCredit(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String creditId = String.valueOf(payload.get("creditId"));
+        String policyNumber = (String) payload.get("policyNumber");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> amountMap = (Map<String, Object>) payload.get("amount");
+        BigDecimal amount = new BigDecimal((String) amountMap.get("amount"));
+        String currency = (String) amountMap.get("currencyCode");
+
+        String eventType = "billing.PremiumRefundDue";
+        chartOfAccountSeeder.seedIfAbsent(tenantId, "system:" + eventType);
+        Optional<JournalEntry> maybeEntry = GlPostingCalculator.calculate(tenantId, eventType,
+            creditId, policyNumber, amount, currency, YearMonth.now().toString(), "system:" + eventType);
+        if (maybeEntry.isEmpty()) {
+            log.info("{} for credit {} produced no journal entry", eventType, creditId);
             return;
         }
         finaccountingApiImpl.postEntry(maybeEntry.get());

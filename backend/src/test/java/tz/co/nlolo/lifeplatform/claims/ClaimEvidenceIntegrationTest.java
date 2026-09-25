@@ -77,7 +77,9 @@ class ClaimEvidenceIntegrationTest {
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
-            "db-migrations/claims/V6__exclusion_decline.sql");
+            "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql");
 
         minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -131,7 +133,7 @@ class ClaimEvidenceIntegrationTest {
             .build())).isNotNull();
 
         ClaimEvidenceView attached = claimsApi.attachEvidence(claim.getClaimId(), documentRef,
-            "Maturity certificate scan", "test-uploader");
+            "Maturity certificate scan", "test-uploader", null);
 
         assertThat(attached.claimId()).isEqualTo(claim.getClaimId());
         assertThat(attached.documentRef()).isEqualTo(documentRef);
@@ -161,7 +163,7 @@ class ClaimEvidenceIntegrationTest {
         Claim claim = registerClaim(tenantId);
 
         assertThrows(DocumentNotFoundException.class,
-            () -> claimsApi.attachEvidence(claim.getClaimId(), foreignDocumentRef, "desc", "test-uploader"));
+            () -> claimsApi.attachEvidence(claim.getClaimId(), foreignDocumentRef, "desc", "test-uploader", null));
     }
 
     @Test
@@ -183,6 +185,6 @@ class ClaimEvidenceIntegrationTest {
             "late-evidence.jpg");
 
         assertThrows(InvalidClaimStateException.class,
-            () -> claimsApi.attachEvidence(claim.getClaimId(), documentRef, "too late", "test-uploader"));
+            () -> claimsApi.attachEvidence(claim.getClaimId(), documentRef, "too late", "test-uploader", null));
     }
 }

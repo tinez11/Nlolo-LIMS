@@ -106,4 +106,17 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     // reads nominations from the case detail endpoint instead,
                                     // where they can be a first-class list rather than a field
                                     // smuggled onto every case summary in a page of twenty.
-                                    @JsonIgnore List<BeneficiaryNomination> beneficiaries) {}
+                                    @JsonIgnore List<BeneficiaryNomination> beneficiaries,
+                                    // Separation of duties: who opened the case and who wrote its
+                                    // evidence, none of whom may decide it. Identity-provider
+                                    // subjects, exactly as claims exposes its assessor -- things to
+                                    // compare against the signed-in user, not to show a person.
+                                    // Serialized, so the decision panel can say "another
+                                    // underwriter must decide this" before a 403 has to.
+                                    String openedBy,
+                                    List<String> assessedBy,
+                                    // A scheme member's evidence case (V11): whose free-cover-limit
+                                    // excess it decides. Null on a proposal. Serialized, so the
+                                    // queue and the case page can say what is being decided.
+                                    String evidenceForPolicyNumber,
+                                    UUID evidenceForMemberId) {}

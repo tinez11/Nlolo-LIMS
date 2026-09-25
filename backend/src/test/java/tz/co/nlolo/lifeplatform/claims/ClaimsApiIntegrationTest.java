@@ -79,6 +79,7 @@ class ClaimsApiIntegrationTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -100,6 +101,7 @@ class ClaimsApiIntegrationTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -109,11 +111,14 @@ class ClaimsApiIntegrationTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
-            "db-migrations/claims/V6__exclusion_decline.sql");
+            "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -379,11 +384,35 @@ class ClaimsApiIntegrationTest {
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REGISTERED);
 
         ClaimAssessmentView assessment = claimsApi.submitAssessment(claimId, "Consistent with cause of death",
-            new BigDecimal("2000000"), "TZS", false, "assessor-1");
+            new BigDecimal("2000000"), "TZS", false, "assessor-1", null);
 
         assertThat(assessment.claimId()).isEqualTo(claimId);
         assertThat(assessment.assessor()).isEqualTo("assessor-1");
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
+    }
+
+    /** Only the APPROVAL used to be bounded by the cover, so an assessor could record a figure no
+     * manager could ever approve. The recommendation is now held to the same ceiling -- and a
+     * refused one leaves nothing behind: no row, and the claim still REGISTERED. */
+    @Test
+    void aRecommendationAboveTheCoverIsRefusedAndLeavesTheClaimUntouched() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-ASSESS-CAP");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-assess-cap");
+
+        ClaimValidationException refused = assertThrows(ClaimValidationException.class,
+            () -> claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000.01"), "TZS",
+                false, "assessor-cap", null));
+        assertThat(refused.getMessage()).contains("2000000.01").contains("covered for");
+
+        assertThat(claimsApi.listAssessments(claimId)).isEmpty();
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REGISTERED);
+
+        // INCLUSIVE, as the approval is: the full cover is the commonest correct recommendation.
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000.00"), "TZS", false,
+            "assessor-cap", null);
+        assertThat(claimsApi.listAssessments(claimId)).hasSize(1);
     }
 
     // ---- Task 5: decideSettlement -- assessment-count invariant (Cl3) ----------------------
@@ -452,7 +481,7 @@ class ClaimsApiIntegrationTest {
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-sod-01");
 
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "same-person");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "same-person", null);
 
         // "same-person" both assessed and is now trying to decide -- must be rejected even
         // though nothing here checks their Keycloak role, only the persisted assessor identity.
@@ -467,7 +496,7 @@ class ClaimsApiIntegrationTest {
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-sod-02");
 
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-2");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-2", null);
 
         claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
             "payee-ref-4", "settle-idem-sod-02", "manager-2");
@@ -483,7 +512,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-BLANKPAYEE-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-blankpayee-01");
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-3");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-3", null);
 
         assertThrows(ClaimValidationException.class, () -> claimsApi.decideSettlement(claimId, true,
             new BigDecimal("2000000"), "TZS", null, "   ", "settle-idem-blankpayee-01", "manager-3"));
@@ -495,7 +524,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-BLANKIDEM-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-blankidem-01");
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-4");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-4", null);
 
         // A blank key would otherwise silently reach the payment rail zero times.
         assertThrows(ClaimValidationException.class, () -> claimsApi.decideSettlement(claimId, true,
@@ -512,7 +541,7 @@ class ClaimsApiIntegrationTest {
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-fraud-01");
 
         ClaimAssessmentView assessment = claimsApi.submitAssessment(claimId, "Suspicious circumstances",
-            new BigDecimal("2000000"), "TZS", true, "assessor-5");
+            new BigDecimal("2000000"), "TZS", true, "assessor-5", null);
         assertThat(assessment.fraudIndicator()).isTrue();
 
         // Falsifiable: if fraudIndicator wrongly gated approval, this would throw instead.
@@ -530,7 +559,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REJECT-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-reject-01");
-        claimsApi.submitAssessment(claimId, "Insufficient evidence", new BigDecimal("2000000"), "TZS", false, "assessor-6");
+        claimsApi.submitAssessment(claimId, "Insufficient evidence", new BigDecimal("2000000"), "TZS", false, "assessor-6", null);
 
         claimsApi.decideSettlement(claimId, false, null, null, "Cause of death not covered",
             null, null, "manager-6");
@@ -546,7 +575,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REOPEN-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-reopen-01");
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-7");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-7", null);
         claimsApi.decideSettlement(claimId, false, null, null, "Not covered", null, null, "manager-7");
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.REJECTED);
 
@@ -561,7 +590,7 @@ class ClaimsApiIntegrationTest {
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REOPEN-02");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
         UUID claimId = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-reopen-02");
-        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-8");
+        claimsApi.submitAssessment(claimId, "Findings", new BigDecimal("2000000"), "TZS", false, "assessor-8", null);
         claimsApi.decideSettlement(claimId, true, new BigDecimal("2000000"), "TZS", null,
             "payee-ref-7", "settle-idem-reopen-02", "manager-8");
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
@@ -614,11 +643,12 @@ class ClaimsApiIntegrationTest {
         assertThat(claimRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(1);
     }
 
-    /** A DIFFERENT key for what might be the same real-world event is a deliberate, correct
-     * design choice -- NOT a gap -- mirroring billing's retry-with-a-new-key idempotency pattern.
-     * Asserted explicitly so a future reader does not "fix" this into single-claim-per-policy. */
+    /** ONE DEATH CLAIM PER LIFE. This test used to assert the opposite -- two keys, two death
+     * claims on one life -- as a deliberate choice. It was the path to a real overpayment: in
+     * dev one credit-life borrower carried three approved death claims, TZS 1,640,000 against
+     * 800,000 of cover. A different key is still a new attempt; it is just not a second death. */
     @Test
-    void registeringTwiceWithDifferentKeysForTheSameEventCreatesTwoDistinctClaims() {
+    void aSecondDeathClaimOnTheSameLifeIsRefusedUntilTheFirstIsRejected() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-REGIDEM-DIFF-01");
         String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
@@ -626,9 +656,43 @@ class ClaimsApiIntegrationTest {
 
         ClaimsApi.RegisterClaimRequest request = deathRequest(policyNumber, fixture.applicantId(), LocalDate.now().minusDays(1));
         ClaimView first = claimsApi.registerClaim(request, "regidem-diff-key-A", "claims-staff");
-        ClaimView second = claimsApi.registerClaim(request, "regidem-diff-key-B", "claims-staff");
 
+        assertThatThrownBy(() -> claimsApi.registerClaim(request, "regidem-diff-key-B", "claims-staff"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining(first.claimId().toString());
+        assertThat(claimRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(1);
+
+        // Once the first is REJECTED it no longer counts: a fresh claim is the other legitimate
+        // path after a refusal, beside reopening.
+        claimsApi.submitAssessment(first.claimId(), "Findings", new BigDecimal("2000000"), "TZS", false,
+            "assessor-dup", null);
+        claimsApi.decideSettlement(first.claimId(), false, null, null, "Insufficient evidence",
+            null, null, "manager-dup");
+        ClaimView second = claimsApi.registerClaim(request, "regidem-diff-key-C", "claims-staff");
         assertThat(second.claimId()).isNotEqualTo(first.claimId());
-        assertThat(claimRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber)).hasSize(2);
+    }
+
+    /** The backstop at the MONEY step, for pairs registered before the rule above existed --
+     * which the dev database really holds. Inserted directly, since registration now refuses. */
+    @Test
+    void approvingOneOfTwoLiveDeathClaimsOnOneLifeIsRefused() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-DUP-APPROVE");
+        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        UUID first = registerDeathClaim(tenantId, fixture, policyNumber, "reg-idem-dup-approve-1");
+        TenantContext.set(tenantId);
+        LocalDate dateOfEvent = LocalDate.now().minusDays(1);
+        Claim legacyDuplicate = claimRepository.saveAndFlush(new Claim(tenantId, policyNumber, null,
+            fixture.applicantId(), ClaimType.DEATH, dateOfEvent,
+            new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test"),
+            "claims-staff", "reg-idem-dup-approve-2"));
+
+        claimsApi.submitAssessment(legacyDuplicate.getClaimId(), "Findings", new BigDecimal("2000000"), "TZS",
+            false, "assessor-dup-2", null);
+        assertThatThrownBy(() -> claimsApi.decideSettlement(legacyDuplicate.getClaimId(), true,
+            new BigDecimal("2000000"), "TZS", null, null, "payee-ref-dup", "settle-idem-dup", "manager-dup-2"))
+            .isInstanceOf(InvalidClaimStateException.class)
+            .hasMessageContaining(first.toString());
+        assertThat(claimsApi.getClaim(legacyDuplicate.getClaimId()).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
     }
 }

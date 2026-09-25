@@ -7,6 +7,10 @@ package tz.co.nlolo.lifeplatform.billing.application;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.billing.api.InvoiceStatus;
+import tz.co.nlolo.lifeplatform.billing.api.InvoiceView;
+import tz.co.nlolo.lifeplatform.billing.api.NothingOwedException;
+import tz.co.nlolo.lifeplatform.billing.api.PremiumCreditView;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumCredit;
 import tz.co.nlolo.lifeplatform.billing.domain.PremiumInvoice;
 import tz.co.nlolo.lifeplatform.billing.infrastructure.BillingScheduleRepository;
@@ -87,6 +91,7 @@ class SinglePremiumIntegrationTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
@@ -110,6 +115,7 @@ class SinglePremiumIntegrationTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
@@ -133,6 +139,8 @@ class SinglePremiumIntegrationTest {
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
+            "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -567,6 +575,73 @@ class SinglePremiumIntegrationTest {
             LocalDate.of(2027, 5, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.two");
 
         assertThat(creditsFor(amina.policyMemberId())).hasSize(1);
+    }
+
+    // ---------------------------------------------------------------------------------
+    // What is OWED, not what was charged
+    // ---------------------------------------------------------------------------------
+
+    /** The policy page showed a 13,800 invoice DUE when 4,200 of it had been credited back and
+     * 9,600 was owed. The invoice now carries what was credited and the balance, and the credits
+     * themselves are readable. */
+    @Test
+    void anInvoiceSaysWhatWasCreditedAndWhatIsStillOwed() {
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        UUID file = submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        PolicyMemberView amina = memberNamed(scheme.policyNumber(), "Amina Hassan Mwinyi");
+        policyApi.exitMember(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2027, 5, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+
+        InvoiceView invoice = billingApiImpl.listInvoices(scheme.policyNumber(), null).get(0);
+        assertThat(invoice.amount()).isEqualByComparingTo(THREE_BORROWER_TOTAL);   // still what was charged
+        assertThat(invoice.amountCredited()).isEqualByComparingTo("9000.00");
+        assertThat(invoice.amountPaid()).isEqualByComparingTo("0.00");
+        assertThat(invoice.balanceDue()).isEqualByComparingTo("75000.00");          // 84,000 - 9,000
+        assertThat(invoice.enrolmentSubmissionId()).isEqualTo(file);
+
+        List<PremiumCreditView> credits = billingApiImpl.listCredits(scheme.policyNumber());
+        assertThat(credits).singleElement().satisfies(c -> {
+            assertThat(c.policyMemberId()).isEqualTo(amina.policyMemberId());
+            assertThat(c.originalInvoiceId()).isEqualTo(invoice.invoiceId());
+            assertThat(c.exitReason()).isEqualTo("SETTLED_EARLY");
+        });
+    }
+
+    /** Paying the BALANCE settles it. Compared to the charged amount alone, a 75,000 payment on an
+     * 84,000 invoice carrying a 9,000 credit sat PARTIALLY_PAID for ever. */
+    @Test
+    void payingTheBalanceSettlesAnInvoiceThatCarriesACredit() {
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        PolicyMemberView amina = memberNamed(scheme.policyNumber(), "Amina Hassan Mwinyi");
+        policyApi.exitMember(scheme.policyNumber(), amina.policyMemberId(),
+            LocalDate.of(2027, 5, 3), ExitReason.SETTLED_EARLY, BigDecimal.ZERO, "staff.one");
+        UUID invoiceId = billingApiImpl.listInvoices(scheme.policyNumber(), null).get(0).invoiceId();
+
+        InvoiceView paid = billingApiImpl.applyConfirmedPayment(invoiceId, new BigDecimal("75000.00"), "TZS", "MM-1");
+
+        assertThat(paid.status()).isEqualTo(InvoiceStatus.PAID);
+        assertThat(paid.balanceDue()).isEqualByComparingTo("0.00");
+    }
+
+    /** Every borrower on a file left on the day of disbursement, so all of it came back. Nothing is
+     * owed: it reads PAID rather than sitting DUE for the arrears sweep to chase, and a payment
+     * request is refused rather than asking the lender for money already returned. */
+    @Test
+    void aFullyCreditedInvoiceOwesNothingAndCannotBeRequested() {
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+        submitAndAccept(scheme.policyNumber(), THREE_BORROWERS);
+        for (PolicyMemberView member : policyApi.listMembers(scheme.policyNumber(), null, null,
+                org.springframework.data.domain.PageRequest.of(0, 10)).getContent()) {
+            policyApi.exitMember(scheme.policyNumber(), member.policyMemberId(),
+                member.joinedOn(), ExitReason.CANCELLED, BigDecimal.ZERO, "staff.one");
+        }
+
+        InvoiceView invoice = billingApiImpl.listInvoices(scheme.policyNumber(), null).get(0);
+        assertThat(invoice.balanceDue()).isEqualByComparingTo("0.00");
+        assertThat(invoice.status()).isEqualTo(InvoiceStatus.PAID);
+        assertThatThrownBy(() -> billingApiImpl.requestPaymentForInvoice(invoice.invoiceId(), "payer", "idem-1"))
+            .isInstanceOf(NothingOwedException.class);
     }
 
     // ---------------------------------------------------------------------------------

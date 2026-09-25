@@ -107,6 +107,28 @@ export function isOverride(
   return recommendation != null && recommendation !== outcome;
 }
 
+/**
+ * Why the signed-in user may not decide this case at all, or null when they may.
+ *
+ * Separation of duties, the rule claims already applies between its assessor and its decider:
+ * whoever opened the case or wrote any of its evidence must leave the decision to someone else.
+ * Both acts sit behind the same UNDERWRITER role, so no role check can say it -- only a
+ * comparison of people. The server refuses with 403 `UNDERWRITING_SEPARATION_OF_DUTIES`
+ * regardless; this is so the form says so before anyone fills it in.
+ *
+ * An unknown subject conflicts with nothing, since there is nothing to compare, and the server
+ * remains the authority.
+ */
+export function separationOfDutiesConflict(
+  view: { openedBy?: string | null; assessedBy?: string[] },
+  subject: string | null,
+): 'opened' | 'assessed' | null {
+  if (!subject) return null;
+  if (view.openedBy === subject) return 'opened';
+  if (view.assessedBy?.includes(subject)) return 'assessed';
+  return null;
+}
+
 /** Convert validated values into exactly what `POST .../decision` expects. */
 export function toApiRequest(values: DecideFormValues): DecideRequest {
   return {

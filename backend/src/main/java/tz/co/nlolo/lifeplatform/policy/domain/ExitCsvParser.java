@@ -69,6 +69,34 @@ public final class ExitCsvParser {
         ExitReason.SETTLED_EARLY, ExitReason.REFINANCED,
         ExitReason.WRITTEN_OFF, ExitReason.CANCELLED);
 
+    /**
+     * The blank exits file a lender is given, header row only.
+     *
+     * <p>Generated from the constants above for the same reason the enrolment template is: a
+     * hand-written copy drifts from the parser that reads it, and the first person to notice is
+     * a lender whose file was refused for a column nobody told them about.
+     */
+    public static String templateCsv() {
+        return String.join(",",
+            MEMBER_REFERENCE, EXIT_DATE, EXIT_REASON, OUTSTANDING_BALANCE_AT_EXIT) + "\n";
+    }
+
+    /** The three a lender must fill. */
+    public static List<String> requiredColumns() {
+        return REQUIRED_COLUMNS;
+    }
+
+    /**
+     * The reasons a lender may state, for a console that has to tell them.
+     *
+     * <p>Not every {@link ExitReason}: CLAIM_SETTLED is written only by the claim path, because a
+     * lender asserting a claim was paid would suppress both the refund and the clawback on a loan
+     * that was merely repaid.
+     */
+    public static List<ExitReason> lenderStateableReasons() {
+        return LENDER_STATEABLE;
+    }
+
     private ExitCsvParser() {}
 
     public static ParsedExits parse(Reader reader) {

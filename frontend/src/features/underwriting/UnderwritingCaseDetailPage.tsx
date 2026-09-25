@@ -171,6 +171,36 @@ export function UnderwritingCaseDetailPage() {
           declarations below were being read against it. */}
       <DetailLayout record={renderRecord()}>
         {/*
+          WHAT IS BEING DECIDED, when it is not a proposal. A scheme member's free-cover-limit
+          evidence case grants or refuses that member's excess, and issues no policy -- it used
+          to read exactly like a new proposal, and accepting it issued the member a policy of
+          their own. First, so nobody decides it without knowing what it is.
+        */}
+        {view?.evidenceForPolicyNumber && (
+          <Panel
+            title="Evidence for a scheme member"
+            subtitle="This decides one member's cover above the scheme's free cover limit. It issues no policy."
+          >
+            <div className="space-y-1 px-4 py-3 text-xs">
+              <p>
+                Member of{' '}
+                <Link
+                  className="font-mono hover:underline"
+                  to={`/staff/group-schemes/${encodeURIComponent(view.evidenceForPolicyNumber)}`}
+                >
+                  {view.evidenceForPolicyNumber}
+                </Link>
+                . Accept to cover them for their full benefit from the decision date; decline to
+                keep them covered up to the limit.
+              </p>
+              <p className="text-muted-foreground">
+                A loading is not available: one member of a scheme has no premium of their own. The
+                scheme&apos;s premium changes at renewal.
+              </p>
+            </div>
+          </Panel>
+        )}
+        {/*
           THE ACCEPTANCE THAT PRODUCED NOTHING.
 
           Automatic issuance runs in an AFTER_COMMIT listener, so when it fails the decision has
@@ -248,6 +278,7 @@ export function UnderwritingCaseDetailPage() {
             deciding={deciding}
             canDecide={roles.UNDERWRITER}
             isSenior={roles.SENIOR_UNDERWRITER}
+            callerSubject={identity.subject}
             onDecide={(request) => void commitDecision(request)}
           />
         )}

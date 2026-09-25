@@ -48,8 +48,48 @@ public interface ClaimsApi {
      */
     Page<ClaimView> searchClaims(ClaimStatus status, UUID claimantPartyId, Set<String> policyNumbers, String q, Pageable pageable);
 
+    /**
+     * @param assessedBy the assessor's identity-provider subject -- what separation of duties
+     *     compares against the decider, so it must be the stable identifier, never a name.
+     * @param assessorName how to show that person, captured now from their token; nullable,
+     *     since a caller with no display name must still be able to assess.
+     */
     ClaimAssessmentView submitAssessment(UUID claimId, String findings, BigDecimal recommendedAmount,
-                                          String recommendedCurrency, boolean fraudIndicator, String assessedBy);
+                                          String recommendedCurrency, boolean fraudIndicator, String assessedBy,
+                                          String assessorName);
+
+    /**
+     * This claim's assessments, newest first.
+     *
+     * <p><b>Assessments were write-only.</b> {@code submitAssessment} persisted them,
+     * {@code countByClaimIdAndTenantId} counted them for the "APPROVED needs an assessment"
+     * invariant, and {@code existsByClaimIdAndTenantIdAndAssessor} enforced separation of duties
+     * — but nothing ever read one back, and
+     * {@code findByClaimIdAndTenantIdOrderByCreatedAtDesc} sat in the repository with no caller
+     * at all.
+     *
+     * <p>That is not a missing convenience. Separation of duties means the person who decides a
+     * settlement is, by construction, NOT the person who assessed it — a different human in a
+     * different session. Without this they could not see the findings, the recommended amount or
+     * the fraud flag, so the one number they had to type was the one number nobody had shown
+     * them. The ceiling then refused it after the fact.
+     */
+    List<ClaimAssessmentView> listAssessments(UUID claimId);
+
+    /**
+     * The most this claim may pay, resolved the same way the approval ceiling is.
+     *
+     * <p>Deliberately its own read rather than a field on {@link ClaimView}. The underlying
+     * {@code PolicyApi.claimableCover} THROWS when a member was not covered on the date of
+     * event, and {@code searchClaims} builds a {@code ClaimView} per row — so deriving it there
+     * would let one unclaimable row break the entire claims queue. Here a failure is one panel
+     * on one screen.
+     *
+     * @throws tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException if the claim's own
+     *     facts no longer resolve to cover. The caller renders that; it must not be swallowed
+     *     into a zero, which would read as "this claim pays nothing".
+     */
+    ClaimCoverView claimableCover(UUID claimId);
 
     void decideSettlement(UUID claimId, boolean approved, BigDecimal approvedAmount, String approvedCurrency,
                            String rejectionReason, String payeeRef, String idempotencyKey, String decidedBy);
@@ -81,7 +121,12 @@ public interface ClaimsApi {
 
     void reopenClaim(UUID claimId, String reason, String reopenedBy);
 
-    ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy);
+    /**
+     * @param uploadedBy the uploader's identity-provider subject -- the identity.
+     * @param uploadedByName how to show that person, captured now from their token; nullable.
+     */
+    ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy,
+                                     String uploadedByName);
 
     List<ClaimEvidenceView> listEvidence(UUID claimId);
 }

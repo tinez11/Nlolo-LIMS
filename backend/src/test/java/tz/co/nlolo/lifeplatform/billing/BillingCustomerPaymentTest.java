@@ -53,6 +53,7 @@ class BillingCustomerPaymentTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -74,6 +75,7 @@ class BillingCustomerPaymentTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -85,6 +87,7 @@ class BillingCustomerPaymentTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
@@ -92,6 +95,7 @@ class BillingCustomerPaymentTest {
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
+            "db-migrations/billing/V6__premium_credit.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

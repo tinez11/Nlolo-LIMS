@@ -230,4 +230,88 @@ class EnrolmentCsvParserTest {
             .isInstanceOf(EnrolmentCsvParser.MalformedScheduleException.class)
             .hasMessageContaining("no header");
     }
+
+    // ---- the template the lender is given ----------------------------------
+
+    /**
+     * The blank file we hand a lender must be readable by the parser that judges it.
+     *
+     * <p>This is the whole point of generating the template from the column constants. Three
+     * refusal messages told people to "use the template at credit-life-enrolment-sample.csv", a
+     * file that lived only in the repository, so the format reached a lender by description --
+     * and the HEADER constant at the top of this very test file is a hand-written copy of the
+     * same columns, which is exactly the drift this guards against.
+     */
+    @Test
+    void theTemplateWeGiveTheLenderParses() {
+        String filled = EnrolmentCsvParser.templateCsv()
+            + ",Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-08-03,LN-2026-00417\n";
+
+        var parsed = EnrolmentCsvParser.parse(new StringReader(filled));
+
+        assertThat(parsed.errors()).isEmpty();
+        assertThat(parsed.rows()).hasSize(1);
+        assertThat(parsed.rows().get(0).borrowerFullName()).isEqualTo("Amina Hassan Mwinyi");
+        assertThat(parsed.rows().get(0).loanAccountNumber()).isEqualTo("LN-2026-00417");
+    }
+
+    /** A template missing a required column is a file the lender cannot possibly get right. */
+    @Test
+    void theTemplateCarriesEveryColumnTheParserRequires() {
+        String header = EnrolmentCsvParser.templateCsv().strip();
+        assertThat(EnrolmentCsvParser.requiredColumns())
+            .allSatisfy(column -> assertThat(header).contains(column));
+    }
+
+    /**
+     * No example row, deliberately.
+     *
+     * <p>A template carrying a plausible borrower is one somebody returns with the example still
+     * in it, and that row would enrol a person who does not exist.
+     */
+    @Test
+    void theTemplateIsAHeaderAndNothingElse() {
+        assertThat(EnrolmentCsvParser.templateCsv().strip().lines()).hasSize(1);
+    }
+
+    // ---- what the refusal tells a lender to do -----------------------------
+
+    /**
+     * The advice has to match the shape that failed.
+     *
+     * <p>Every unparseable date used to come back "A number here is an Excel date serial; format
+     * the column as a date before exporting." For 46203 that is right. For "1-Sep-00" it points
+     * the wrong way: formatting the column as a DATE is what produced that value, so a lender
+     * following the advice would do it again and get the same refusal. The first real file sent
+     * through this platform bounced entirely on exactly that value.
+     */
+    @Test
+    void anExcelSerialIsNamedAsOne() {
+        var parsed = parse("LN-1,Amina Hassan Mwinyi,46203,F,,,8500000.00,48,2026-08-03\n");
+
+        assertThat(parsed.errors()).hasSize(1);
+        assertThat(parsed.errors().get(0).detail()).contains("Excel date serial");
+    }
+
+    @Test
+    void aTwoDigitYearIsRefusedRatherThanGuessed() {
+        // 00 is 1900 or 2000, a century apart, and this is a date of birth: one reading is a
+        // plausible borrower and the other is refused by the entry-age gate. Nothing in the file
+        // breaks the tie, so the lender does.
+        var parsed = parse("LN-1,Martin Fred Lema,1-Sep-00,M,,,900000.00,12,2026-09-01\n");
+
+        assertThat(parsed.errors()).hasSize(1);
+        String detail = parsed.errors().get(0).detail();
+        assertThat(detail).contains("two-digit year");
+        assertThat(detail).contains("2000-09-01");
+        assertThat(detail).doesNotContain("Excel date serial");
+    }
+
+    @Test
+    void anyOtherUnreadableDateSaysWhatExcelDidAndWhatToTypeInstead() {
+        var parsed = parse("LN-1,Amina Hassan Mwinyi,03/08/2026,F,,,8500000.00,48,2026-08-03\n");
+
+        assertThat(parsed.errors()).hasSize(1);
+        assertThat(parsed.errors().get(0).detail()).contains("Set the column format to Text");
+    }
 }

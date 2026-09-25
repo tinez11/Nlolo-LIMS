@@ -66,7 +66,10 @@ export function EvidencePanel({ claimId, canAttach }: { claimId: string; canAtta
             <div className="min-w-0">
               <p className="truncate text-sm">{item.description || 'No description'}</p>
               <p className="text-[11px] text-muted-foreground">
-                {item.uploadedBy} · {formatInstant(item.uploadedAt)}
+                {/* The name captured from the uploader's token -- never `uploadedBy`, which is
+                    their Keycloak subject. Evidence attached before the name was captured has
+                    none to recover, and says so. */}
+                {item.uploadedByName?.trim() || 'Name not recorded'} · {formatInstant(item.uploadedAt)}
               </p>
             </div>
             <Button

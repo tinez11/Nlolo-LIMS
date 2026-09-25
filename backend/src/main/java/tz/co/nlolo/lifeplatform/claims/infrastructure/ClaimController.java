@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -139,8 +140,59 @@ public class ClaimController {
             @Valid @RequestBody SubmitClaimAssessmentRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         ClaimAssessmentView assessment = claimsApi.submitAssessment(claimId, request.findings(),
             new BigDecimal(request.recommendedAmount().amount()), request.recommendedAmount().currencyCode(),
-            request.fraudIndicator(), jwt.getSubject());
+            request.fraudIndicator(), jwt.getSubject(), displayName(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(ClaimAssessmentResponseDto.from(assessment));
+    }
+
+    /**
+     * How to show the caller to another person: {@code name} ("Daudi Assessor"), else
+     * {@code preferred_username} ("staff.assessor"), else null.
+     *
+     * <p>Only ever a label. The SUBJECT stays the identity every rule compares -- a display name
+     * is neither unique nor stable, and separation of duties decided on one could be defeated by
+     * two people who share a name.
+     */
+    static String displayName(Jwt jwt) {
+        for (String claim : new String[] {"name", "preferred_username"}) {
+            String value = jwt.getClaimAsString(claim);
+            if (value != null && !value.isBlank()) {
+                return value.strip();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The assessments behind a decision, newest first.
+     *
+     * <p>Assessor OR manager, and neither realm-wide nor customer-facing. Separation of duties
+     * guarantees the decider is not the assessor, so the manager is exactly the person who needs
+     * this and exactly the person who could not get it; the assessor needs it to see what a
+     * colleague already recorded before adding a second assessment to the same claim.
+     *
+     * <p>Not readable by a customer or an agent at any level. Findings are internal, and
+     * {@code fraudIndicator} in particular is a scrutiny signal about the claimant that must
+     * never travel back to them.
+     */
+    @GetMapping("/claims/{claimId}/assessments")
+    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    public ResponseEntity<List<ClaimAssessmentResponseDto>> listAssessments(@PathVariable UUID claimId) {
+        return ResponseEntity.ok(claimsApi.listAssessments(claimId).stream()
+            .map(ClaimAssessmentResponseDto::from)
+            .toList());
+    }
+
+    /**
+     * The most this claim may pay.
+     *
+     * <p>The figure {@code Claim.approve} bounds an approval with, published so it can be shown
+     * BEFORE somebody types rather than quoted back at them in a 422. Same two roles: an assessor
+     * recommending an amount is bounded by exactly the same ceiling as the manager approving one.
+     */
+    @GetMapping("/claims/{claimId}/claimable-cover")
+    @PreAuthorize("hasRole('CLAIMS_ASSESSOR') or hasRole('CLAIMS_MANAGER')")
+    public ResponseEntity<ClaimCoverResponseDto> claimableCover(@PathVariable UUID claimId) {
+        return ResponseEntity.ok(ClaimCoverResponseDto.from(claimsApi.claimableCover(claimId)));
     }
 
     /**

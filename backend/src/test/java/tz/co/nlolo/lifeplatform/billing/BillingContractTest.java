@@ -69,6 +69,7 @@ class BillingContractTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -90,6 +91,7 @@ class BillingContractTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -101,6 +103,7 @@ class BillingContractTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V3__money_check_constraints.sql",
@@ -112,6 +115,7 @@ class BillingContractTest {
             // column.
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
+            "db-migrations/billing/V6__premium_credit.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -518,7 +522,53 @@ class BillingContractTest {
             .andExpect(jsonPath("$[0].policyNumber").value(fixture.policyNumber()))
             .andExpect(jsonPath("$[0].amount.amount").value("15000.00"))
             .andExpect(jsonPath("$[0].amount.currencyCode").value("TZS"))
-            .andExpect(jsonPath("$[0].status").value("DUE"));
+            .andExpect(jsonPath("$[0].status").value("DUE"))
+            // Nothing paid or credited yet, so everything charged is owed.
+            .andExpect(jsonPath("$[0].amountPaid.amount").value("0.00"))
+            .andExpect(jsonPath("$[0].amountCredited.amount").value("0.00"))
+            .andExpect(jsonPath("$[0].balanceDue.amount").value("15000.00"))
+            // A scheduled premium, not raised by a monthly file.
+            .andExpect(jsonPath("$[0].enrolmentSubmissionId").doesNotExist());
+    }
+
+    /** A credit is readable, and the invoice it is credited against says so in its balance --
+     * the two halves the policy page needs to show what is actually owed. */
+    @Test
+    void creditsAreListedAndReduceTheInvoiceBalance() throws Exception {
+        Fixture fixture = issuePolicy("BILLING-CONTRACT-CREDIT-01");
+        String invoices = mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andReturn().getResponse().getContentAsString();
+        String invoiceId = com.jayway.jsonpath.JsonPath.read(invoices, "$[0].invoiceId");
+        try (java.sql.Connection connection = dataSource.getConnection();
+             java.sql.PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO billing.premium_credit (tenant_id, policy_number, policy_member_id, "
+                     + "original_invoice_id, amount, currency, exit_reason, exit_date) "
+                     + "VALUES (?, ?, ?, ?, 4200.00, 'TZS', 'SETTLED_EARLY', DATE '2026-09-24')")) {
+            insert.setObject(1, fixture.tenantId());
+            insert.setString(2, fixture.policyNumber());
+            insert.setObject(3, UUID.randomUUID());
+            insert.setObject(4, UUID.fromString(invoiceId));
+            insert.executeUpdate();
+        }
+
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/credits")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "PremiumCreditView"))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].originalInvoiceId").value(invoiceId))
+            .andExpect(jsonPath("$[0].amount.amount").value("4200.00"))
+            .andExpect(jsonPath("$[0].exitReason").value("SETTLED_EARLY"));
+
+        mockMvc.perform(get("/policies/" + fixture.policyNumber() + "/invoices")
+                .with(staffOf(fixture.tenantId())))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].amount.amount").value("15000.00"))
+            .andExpect(jsonPath("$[0].amountCredited.amount").value("4200.00"))
+            .andExpect(jsonPath("$[0].balanceDue.amount").value("10800.00"));
     }
 
     @Test

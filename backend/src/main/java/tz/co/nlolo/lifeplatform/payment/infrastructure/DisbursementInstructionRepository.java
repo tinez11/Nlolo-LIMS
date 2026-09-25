@@ -20,6 +20,10 @@ public interface DisbursementInstructionRepository
      * lender payout is the one that matters most. */
     List<DisbursementInstruction> findByTenantIdAndStatusOrderByCreatedAtAsc(UUID tenantId, String status);
 
+    List<DisbursementInstruction> findByTenantIdAndPurposeAndSourceRefOrderByCreatedAtDesc(UUID tenantId,
+                                                                                           String purpose,
+                                                                                           String sourceRef);
+
     /**
      * Task 8's inbound callback bootstrap: resolves ONLY the owning tenant_id for a given
      * gateway reference, before any TenantContext exists to scope an ordinary query with. Calls

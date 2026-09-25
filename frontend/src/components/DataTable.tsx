@@ -113,16 +113,23 @@ export function DataTable<T>({
                         type="button"
                         onClick={() => onRowActivate(row)}
                         className={cn(
-                          '-mx-1 flex h-11 w-full items-center rounded px-1',
+                          '-mx-1 flex min-h-11 w-full items-center rounded py-1.5 px-1',
                           column.align === 'right' ? 'justify-end text-right' : 'text-left',
                         )}
                       >
                         {column.render(row)}
                       </button>
                     ) : (
+                      // min-h-11, not h-11. A fixed height is the right rhythm for a cell whose
+                      // value fits on one line, and every table on this console was one until a
+                      // credit-life member roll arrived: a borrower's full name and a minted
+                      // reference each wrap to three lines in their columns, the cell kept its
+                      // 44px, and the overflow ran straight through the row below it -- names
+                      // printed on top of names on the one screen that answers "is this person
+                      // covered". The floor keeps the rhythm; the row grows when a value needs it.
                       <div
                         className={cn(
-                          'flex h-11 items-center',
+                          'flex min-h-11 items-center py-1.5',
                           column.align === 'right' && 'justify-end',
                         )}
                       >

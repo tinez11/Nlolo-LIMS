@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.claims.infrastructure;
 
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.domain.Claim;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -64,4 +65,13 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
      * ClaimsApiImpl.registerClaim re-queries this on a caught unique-constraint violation to
      * return the EXISTING claim instead of erroring on a repeated registration attempt. */
     Optional<Claim> findByTenantIdAndRegistrationIdempotencyKey(UUID tenantId, String registrationIdempotencyKey);
+
+    /** Claims of one type on one member of a scheme that are not in the given status -- in
+     *  practice, the death claims on one life that were not rejected. Oldest first. */
+    List<Claim> findByTenantIdAndPolicyNumberAndPolicyMemberIdAndClaimTypeAndStatusNotOrderByCreatedAtAsc(
+        UUID tenantId, String policyNumber, UUID policyMemberId, ClaimType claimType, ClaimStatus status);
+
+    /** The same, on individual business, where the policy names the life and no member is set. */
+    List<Claim> findByTenantIdAndPolicyNumberAndPolicyMemberIdIsNullAndClaimTypeAndStatusNotOrderByCreatedAtAsc(
+        UUID tenantId, String policyNumber, ClaimType claimType, ClaimStatus status);
 }

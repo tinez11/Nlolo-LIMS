@@ -26,4 +26,6 @@ public record EnrolmentRowView(int lineNumber,
                                 String reason,
                                 UUID policyMemberId,
                                 String memberReference,
-                                BigDecimal premiumAmount) {}
+                                BigDecimal premiumAmount,
+                                /** The scheme's currency, so the premium can reach the wire as money. */
+                                String currency) {}

@@ -109,6 +109,16 @@ public class Policy {
     @Column(name = "underwriting_case_id")
     private UUID underwritingCaseId;
 
+    /** V24: why an exception-path issuance happened, in its own words, and who did it. */
+    @Column(name = "issuance_basis", updatable = false)
+    private String issuanceBasis;
+
+    @Column(name = "issuance_reason", updatable = false)
+    private String issuanceReason;
+
+    @Column(name = "issued_by_name", updatable = false)
+    private String issuedByName;
+
     @Version
     private Long version;
 
@@ -228,6 +238,15 @@ public class Policy {
     public UUID getProductVersionId() { return productVersionId; }
     public String getProductCategory() { return productCategory; }
     public UUID getAgentOfRecordId() { return agentOfRecordId; }
+
+    /**
+     * Who earns commission on this contract from now on. Changes nothing already earned -- an
+     * accrual is booked against the agent of record at the moment it is earned -- so a correction
+     * applies to the next file, not the last one.
+     */
+    public void changeAgentOfRecord(UUID agentOfRecordId) {
+        this.agentOfRecordId = agentOfRecordId;
+    }
     public String getStatus() { return status; }
     public LocalDate getIssueDate() { return issueDate; }
     public BigDecimal getSumAssuredAmount() { return sumAssuredAmount; }
@@ -249,6 +268,16 @@ public class Policy {
     public String getSuspensionReason() { return suspensionReason; }
     public Instant getLapsedAt() { return lapsedAt; }
     public UUID getUnderwritingCaseId() { return underwritingCaseId; }
+    public String getIssuanceBasis() { return issuanceBasis; }
+    public String getIssuanceReason() { return issuanceReason; }
+    public String getIssuedByName() { return issuedByName; }
+
+    /** Record how this policy came to be issued (V24). Before the first save only. */
+    public void recordIssuance(String basis, String reason, String issuerName) {
+        this.issuanceBasis = basis;
+        this.issuanceReason = reason == null || reason.isBlank() ? null : reason.strip();
+        this.issuedByName = issuerName == null || issuerName.isBlank() ? null : issuerName;
+    }
 
     /**
      * When the contract record was issued — the date on the document, not the date risk starts.

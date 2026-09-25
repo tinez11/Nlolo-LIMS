@@ -3,9 +3,25 @@ import {
   blankDecideForm,
   decideFormSchema,
   isOverride,
+  separationOfDutiesConflict,
   toApiRequest,
   type DecideFormInput,
 } from './decideForm';
+
+describe('separationOfDutiesConflict', () => {
+  const view = { openedBy: 'opener', assessedBy: ['assessor-a', 'assessor-b'] };
+
+  it('names the opener and every assessor, and nobody else', () => {
+    expect(separationOfDutiesConflict(view, 'opener')).toBe('opened');
+    expect(separationOfDutiesConflict(view, 'assessor-b')).toBe('assessed');
+    expect(separationOfDutiesConflict(view, 'someone-else')).toBeNull();
+  });
+
+  it('conflicts with nothing when the subject is unknown -- the server stays the authority', () => {
+    expect(separationOfDutiesConflict(view, null)).toBeNull();
+    expect(separationOfDutiesConflict({}, 'opener')).toBeNull();
+  });
+});
 
 const valid = (over: Partial<DecideFormInput> = {}): DecideFormInput => ({
   ...blankDecideForm(),

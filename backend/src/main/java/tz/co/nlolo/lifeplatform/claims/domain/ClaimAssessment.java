@@ -32,6 +32,11 @@ public class ClaimAssessment {
     @Column(nullable = false)
     private String assessor;
 
+    /** Who {@link #assessor} was, in words, as their token said when they wrote this. Null on
+     *  rows recorded before V7 -- see that migration for why it is captured, not looked up. */
+    @Column(name = "assessor_name")
+    private String assessorName;
+
     @Column
     private String findings;
 
@@ -49,11 +54,12 @@ public class ClaimAssessment {
 
     protected ClaimAssessment() {}
 
-    public ClaimAssessment(UUID tenantId, UUID claimId, String assessor, String findings,
+    public ClaimAssessment(UUID tenantId, UUID claimId, String assessor, String assessorName, String findings,
                             BigDecimal recommendedAmount, String recommendedCurrency, boolean fraudIndicator) {
         this.tenantId = tenantId;
         this.claimId = claimId;
         this.assessor = assessor;
+        this.assessorName = assessorName;
         this.findings = findings;
         this.recommendedAmount = recommendedAmount;
         this.recommendedCurrency = recommendedCurrency;
@@ -64,6 +70,7 @@ public class ClaimAssessment {
     public UUID getTenantId() { return tenantId; }
     public UUID getClaimId() { return claimId; }
     public String getAssessor() { return assessor; }
+    public String getAssessorName() { return assessorName; }
     public String getFindings() { return findings; }
     public BigDecimal getRecommendedAmount() { return recommendedAmount; }
     public String getRecommendedCurrency() { return recommendedCurrency; }

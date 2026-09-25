@@ -5,6 +5,8 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.party.api.PartyType;
+import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FactorType;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -120,11 +122,35 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     @Override
     @Transactional
     public UnderwritingCaseView openCase(UUID applicantPartyId, UUID productId, UUID productVersionId, BigDecimal sumAssuredAmount, String sumAssuredCurrency, UUID agentOfRecordId, ProposalDetails proposal, String openedBy) {
+        return openIndividualCase(applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency,
+            agentOfRecordId, proposal, openedBy, null, null);
+    }
+
+    @Override
+    @Transactional
+    public UnderwritingCaseView openMemberEvidenceCase(UUID memberPartyId, UUID productId, UUID productVersionId,
+                                                       BigDecimal benefitAmount, String currency,
+                                                       UUID agentOfRecordId, String policyNumber,
+                                                       UUID policyMemberId, String openedBy) {
+        if (policyNumber == null || policyMemberId == null) {
+            throw new UnderwritingValidationException("An evidence case names the scheme and the member it is for");
+        }
+        return openIndividualCase(memberPartyId, productId, productVersionId, benefitAmount, currency,
+            agentOfRecordId, ProposalDetails.selfInsured(), openedBy, policyNumber, policyMemberId);
+    }
+
+    /** @param memberEvidence the free-cover-limit case for one scheme member, the one individual
+     *  case a scheme product may carry -- see {@link UnderwritingApi#openMemberEvidenceCase}. */
+    private UnderwritingCaseView openIndividualCase(UUID applicantPartyId, UUID productId, UUID productVersionId,
+                                                    BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                                                    UUID agentOfRecordId, ProposalDetails proposal, String openedBy,
+                                                    String evidenceForPolicyNumber, UUID evidenceForMemberId) {
+        boolean memberEvidence = evidenceForPolicyNumber != null;
         UUID tenantId = TenantContext.get();
         // Confirms the applicant party genuinely exists and belongs to this tenant --
         // PartyApi.getParty already throws PartyNotFoundException on cross-tenant access
         // (M1's anti-enumeration pattern), which is exactly the failure mode we want here too.
-        partyApi.getParty(applicantPartyId);
+        PartyView applicant = partyApi.getParty(applicantPartyId);
 
         // CORRECTION: agentOfRecordId used to be stored as an opaque id and NOT validated
         // against distribution, on the grounds that this module need only carry it through to
@@ -139,8 +165,26 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         // Validated the same way the applicant is, and for the same reason: a case naming
         // a life assured who does not exist in this tenant is unassessable, and
         // PartyApi.getParty already refuses cross-tenant reads.
-        if (!lifeAssuredPartyId.equals(applicantPartyId)) {
-            partyApi.getParty(lifeAssuredPartyId);
+        PartyView lifeAssured = lifeAssuredPartyId.equals(applicantPartyId)
+            ? applicant : partyApi.getParty(lifeAssuredPartyId);
+
+        // AN INDIVIDUAL CASE INSURES ONE PERSON. Nothing checked either half of that, so a
+        // GROUP_LIFE product was proposed here with the corporate client itself as the "life
+        // assured", decided, and issued as a single-life policy covering no members -- a group
+        // contract with no schedule, which the client page then could not load. A scheme is
+        // proposed through the group path, a credit-life book through its scheme set-up; both
+        // of those know what a member is. The exception is a member's own evidence case, opened by
+        // policy for the excess over the free cover limit on a scheme that already exists.
+        ProductCategory category = productApi.getSnapshotByVersionId(productVersionId).category();
+        if (!memberEvidence && (category == ProductCategory.GROUP_LIFE || category == ProductCategory.CREDIT_LIFE)) {
+            throw new UnderwritingValidationException("A " + category + " product is not proposed as a single life"
+                + " -- set it up as a " + (category == ProductCategory.GROUP_LIFE ? "group scheme" : "credit-life scheme"));
+        }
+        if (lifeAssured.partyType() != PartyType.INDIVIDUAL) {
+            // No date of birth, no sex, no health: nothing about a company can be underwritten
+            // as a life. It may be the APPLICANT (key-person cover), never the life assured.
+            throw new UnderwritingValidationException(
+                "The life assured must be a person; " + lifeAssured.displayName() + " is " + lifeAssured.partyType());
         }
 
         rejectTermOutsideProductBounds(productVersionId, details.requestedTermMonths());
@@ -148,6 +192,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
 
         UnderwritingCase underwritingCase = new UnderwritingCase(tenantId, applicantPartyId, productId, productVersionId, sumAssuredAmount, sumAssuredCurrency, agentOfRecordId, openedBy);
         underwritingCase.recordProposal(nextProposalNumber(), lifeAssuredPartyId, details);
+        if (memberEvidence) {
+            underwritingCase.recordEvidenceFor(evidenceForPolicyNumber, evidenceForMemberId);
+        }
         underwritingCaseRepository.save(underwritingCase);
 
         for (BeneficiaryNomination nomination : details.beneficiaries()) {
@@ -407,6 +454,26 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (!loaded && decision.loadingPercent() != null) {
             throw new UnderwritingValidationException(
                 "A loading percent is only meaningful on a LOADED decision, not " + decision.outcome());
+        }
+        // A scheme member's evidence case grants or refuses the excess, and nothing else. A
+        // loading needs a premium to load, and one member of a scheme has none of their own --
+        // the scheme's premium was agreed for the whole schedule and changes at renewal.
+        if (loaded && underwritingCase.getEvidenceForPolicyNumber() != null) {
+            throw new UnderwritingValidationException("Case " + caseId + " is evidence for a member of "
+                + underwritingCase.getEvidenceForPolicyNumber() + ": accept or decline the excess; a member"
+                + " of a scheme has no premium of their own to load");
+        }
+
+        // SEPARATION OF DUTIES, as claims enforces between its assessor and its decider. The
+        // underwriter role says who MAY decide; it cannot say that the one deciding is not the
+        // one who captured the proposal or wrote its evidence. Without this a single login could
+        // open, assess and accept a case -- and one did, in twenty seconds, issuing a single-life
+        // policy on a group product to a corporate "life assured" nobody else ever looked at.
+        if (decidedBy != null && decidedBy.equals(underwritingCase.getCreatedBy())) {
+            throw new UnderwritingSeparationOfDutiesException(caseId, "opened");
+        }
+        if (riskAssessmentRepository.existsByTenantIdAndCaseIdAndAssessor(tenantId, caseId, decidedBy)) {
+            throw new UnderwritingSeparationOfDutiesException(caseId, "assessed");
         }
 
         // An ABSENT recommendation is not a disagreement. A pre-V5 case has none, and a case
@@ -783,7 +850,11 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             groupProposal != null, groupProposal,
             c.getRatingMultiplier(),
             c.getIssuanceFailureReason(), c.getIssuanceFailedAt(),
-            List.of());
+            List.of(),
+            // One more query per row, for the same reason and at the same price as the group
+            // proposal lookup above.
+            c.getCreatedBy(), riskAssessmentRepository.findDistinctAssessors(c.getTenantId(), c.getCaseId()),
+            c.getEvidenceForPolicyNumber(), c.getEvidenceForMemberId());
     }
 
     /**
@@ -817,6 +888,7 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             base.groupScheme(), base.groupProposal(),
             base.ratingMultiplier(),
             base.issuanceFailureReason(), base.issuanceFailedAt(),
-            nominations);
+            nominations, base.openedBy(), base.assessedBy(),
+            base.evidenceForPolicyNumber(), base.evidenceForMemberId());
     }
 }

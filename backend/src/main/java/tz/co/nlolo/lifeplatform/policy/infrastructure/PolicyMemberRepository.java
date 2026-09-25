@@ -70,6 +70,9 @@ public interface PolicyMemberRepository extends JpaRepository<PolicyMember, UUID
 
     Optional<PolicyMember> findByPolicyMemberIdAndTenantId(UUID policyMemberId, UUID tenantId);
 
+    /** The member an evidence case is for, from the member's side -- see PolicyApi#findMemberAwaitingEvidence. */
+    Optional<PolicyMember> findFirstByTenantIdAndUnderwritingCaseId(UUID tenantId, UUID underwritingCaseId);
+
     /** Backs the "already on this scheme" check behind ux_policy_member_active_party. */
     boolean existsByTenantIdAndPolicyNumberAndMemberPartyIdAndStatus(
         UUID tenantId, String policyNumber, UUID memberPartyId, String status);

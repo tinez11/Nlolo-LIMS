@@ -9,7 +9,9 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
 import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
+import tz.co.nlolo.lifeplatform.policy.api.InterestMethod;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.RepaymentFrequency;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -55,7 +57,17 @@ public record IssueGroupSchemeRequestDto(
 
     @NotBlank @Pattern(regexp = "^[A-Z]{3}$") String currency,
     List<@Valid GroupSchemeGradeInputDto> grades,
-    @NotEmpty List<@Valid GroupMemberInputDto> openingSchedule,
+    /**
+     * The lives the scheme opens with.
+     *
+     * <p>No longer {@code @NotEmpty}, for the same reason {@code flatBenefitAmount} and
+     * {@code salaryMultiple} are not {@code @NotNull}: whether a scheme may open empty depends on
+     * its {@code benefitBasis}, Bean Validation cannot express that, and the service refuses with
+     * a message that names the basis. An employer scheme still cannot be empty -- its schedule is
+     * the contract. A credit-life scheme can: the agreement with the lender exists before any
+     * borrower, and the book arrives by file.
+     */
+    List<@Valid GroupMemberInputDto> openingSchedule,
 
     @NotNull @Valid MoneyDto premium,
     String premiumFrequency,
@@ -74,7 +86,34 @@ public record IssueGroupSchemeRequestDto(
      * exception that has to name itself. Here the ordinary case is an offer, and null says
      * exactly that.
      */
-    IssuanceBasis issuanceBasis) {
+    IssuanceBasis issuanceBasis,
+
+    /**
+     * The three terms a credit-life scheme needs and no other benefit basis has.
+     *
+     * <p>All three were absent from this DTO entirely until 2026-09-23, which made
+     * AMORTISING_LOAN unreachable over HTTP however complete the domain behind it was: the
+     * service requires an interest method and a premium rate to value a schedule, and neither
+     * had a wire field to arrive in.
+     *
+     * <p>Not {@code @NotNull}, for the same reason {@code flatBenefitAmount} and
+     * {@code salaryMultiple} are not: which fields a scheme requires depends on its
+     * {@code benefitBasis}, Bean Validation cannot express that, and the service refuses with a
+     * message that names the basis -- which is what somebody fixing a request needs to read.
+     */
+    InterestMethod interestMethod,
+    RepaymentFrequency repaymentFrequency,
+    @DecimalMin("0.0001") BigDecimal premiumRatePercent,
+    /**
+     * The group case this scheme is issued on. REQUIRED for an employer (GROUP_LIFE) scheme --
+     * the same rule manual issue has for a single life: nothing goes on risk on this route
+     * without an underwriting case behind it. It must be a group proposal by this employer on
+     * this product version, and one that no scheme came from yet.
+     *
+     * <p>Not required for credit life, whose scheme is set up by an underwriter from terms agreed
+     * with the lender; their name is recorded as its underwriter of record instead.
+     */
+    UUID underwritingCaseId) {
 
     public PolicyApi.IssueGroupSchemeRequest toApiRequest(UUID productId) {
         return new PolicyApi.IssueGroupSchemeRequest(
@@ -84,7 +123,8 @@ public record IssueGroupSchemeRequestDto(
             openingSchedule.stream().map(GroupMemberInputDto::toApiInput).toList(),
             new BigDecimal(premium.amount()), premium.currencyCode(),
             premiumFrequency != null && !premiumFrequency.isBlank() ? premiumFrequency : "ANNUALLY",
-            commencementDate, policyTermMonths, reasonForManualIssue, issuanceBasis);
+            commencementDate, policyTermMonths, reasonForManualIssue, issuanceBasis,
+            interestMethod, repaymentFrequency, premiumRatePercent);
     }
 
     private static BigDecimal decimal(String amount) {

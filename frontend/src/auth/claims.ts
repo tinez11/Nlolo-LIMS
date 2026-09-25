@@ -28,6 +28,8 @@ export interface StaffRoles {
 
 export interface TokenIdentity {
   roles: string[];
+  /** The identity-provider subject -- what separation of duties compares. Not for display. */
+  subject: string | null;
   /** Present on customers and agents tokens only. */
   partyId: string | null;
   /** Always present, or TenantContextFilter 403s the request. */
@@ -39,6 +41,7 @@ export interface TokenIdentity {
 
 const EMPTY: TokenIdentity = {
   roles: [],
+  subject: null,
   partyId: null,
   tenantId: null,
   preferredUsername: null,
@@ -82,6 +85,7 @@ export function readIdentity(accessToken: string | undefined): TokenIdentity {
 
   return {
     roles: Array.isArray(roles) ? roles.filter((r): r is string => typeof r === 'string') : [],
+    subject: readString(claims, 'sub'),
     partyId: readString(claims, 'party_id'),
     tenantId: readString(claims, 'tenant_id'),
     preferredUsername: readString(claims, 'preferred_username'),

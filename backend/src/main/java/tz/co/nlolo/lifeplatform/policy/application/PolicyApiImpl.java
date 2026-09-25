@@ -13,6 +13,7 @@ import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.*;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.*;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
+import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.BenefitDefinition;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
@@ -175,6 +176,12 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy) {
+        return issuePolicy(underwritingCaseId, request, issuedBy, null);
+    }
+
+    @Override
+    @Transactional
+    public PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy, String issuedByName) {
         UUID tenantId = TenantContext.get();
 
         // Before anything is written, and before the party and product lookups, so a retry of
@@ -218,6 +225,7 @@ public class PolicyApiImpl implements PolicyApi {
         // Always, and before the conditional activation below: an offer has an issue date too.
         // See Policy.recordIssuedOn for the readers that would otherwise get a null.
         policy.recordIssuedOn(LocalDate.now());
+        recordIssuance(policy, request.issuanceBasis(), request.reasonForManualIssue(), underwritingCaseId, issuedByName);
 
         // An accepted decision produces an OFFER, not cover. The policy exists so the customer
         // has something to pay against -- billing raises its first invoice off PolicyIssued --
@@ -285,6 +293,7 @@ public class PolicyApiImpl implements PolicyApi {
         // customer to pay by a date, and must NOT tell that to somebody whose migrated policy is
         // already in force -- and it may not depend on policy to find out which it is looking at.
         payload.put("status", policy.getStatus());
+        putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
         // Both events together for an immediate-cover issuance, so every downstream consumer
@@ -964,6 +973,64 @@ public class PolicyApiImpl implements PolicyApi {
      * members — so dating the exit to September would have left them in the scheme's sum assured
      * for six months they were not alive.
      */
+    @Override
+    @Transactional
+    public void recordOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId) {
+        PolicyMember member = memberOnSchemeOrThrow(policyNumber, policyMemberId);
+        // A claim for somebody who has ALREADY left is legitimate -- they died while covered and
+        // the claim arrived late, which is why exited rows are kept. There is nothing to mark:
+        // no exits file can take them off cover twice, and their exit is already recorded.
+        if (MemberStatus.EXITED.name().equals(member.getStatus())) {
+            return;
+        }
+        try {
+            member.recordOpenDeathClaim(claimId);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new InvalidPolicyStateException(e.getMessage());
+        }
+        policyMemberRepository.save(member);
+    }
+
+    @Override
+    @Transactional
+    public PolicyView changeSchemeAgentOfRecord(String policyNumber, UUID agentOfRecordId, String reason,
+                                                String changedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        findSchemeOrThrow(policyNumber, tenantId);
+        if (reason == null || reason.isBlank()) {
+            throw new InvalidPolicyStateException("Changing who earns commission on a scheme needs a reason");
+        }
+        UUID previous = policy.getAgentOfRecordId();
+        policy.changeAgentOfRecord(requireRealAgent(agentOfRecordId));
+        policyRepository.save(policy);
+
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("policyNumber", policyNumber);
+        payload.put("previousAgentOfRecordId", previous);
+        payload.put("agentOfRecordId", agentOfRecordId);
+        payload.put("reason", reason.strip());
+        payload.put("changedBy", changedBy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.AgentOfRecordChanged", tenantId, payload));
+        return toView(policy);
+    }
+
+    @Override
+    @Transactional
+    public void clearOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId) {
+        PolicyMember member = memberOnSchemeOrThrow(policyNumber, policyMemberId);
+        member.clearOpenDeathClaim(claimId);
+        policyMemberRepository.save(member);
+    }
+
+    private PolicyMember memberOnSchemeOrThrow(String policyNumber, UUID policyMemberId) {
+        UUID tenantId = TenantContext.get();
+        return policyMemberRepository.findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
+            .filter(m -> m.getPolicyNumber().equals(policyNumber))
+            .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
+                + " is not a member of scheme " + policyNumber));
+    }
+
     private void dischargeMember(Policy policy, GroupScheme scheme, UUID policyMemberId,
                                   LocalDate dateOfEvent, UUID claimId, UUID tenantId) {
         exitOneMember(policy, scheme, policyMemberId, dateOfEvent, ExitReason.CLAIM_SETTLED,
@@ -1153,6 +1220,18 @@ public class PolicyApiImpl implements PolicyApi {
                     + "the claim path, or state the reason the loan really ended");
         }
 
+        // A DEATH CLAIM IS IN PROGRESS: the claim decides how this life leaves. An exits file
+        // cannot say CLAIM_SETTLED, so a lender reporting the death picks another reason; taking
+        // that would exit them wrongly, refund premium a death never earns, and leave the claim's
+        // own discharge to find them gone and do nothing -- the wrong record would stand.
+        policyMemberRepository.findByPolicyMemberIdAndTenantId(policyMemberId, tenantId)
+            .filter(m -> m.getOpenDeathClaimId() != null)
+            .ifPresent(m -> {
+                throw new InvalidPolicyStateException("Member " + policyMemberId + " has a death claim"
+                    + " in progress (claim " + m.getOpenDeathClaimId() + "); they leave cover when it"
+                    + " settles, dated to the death, not by an exit");
+            });
+
         Optional<PolicyMember> exited = exitOneMember(policy, scheme, policyMemberId, exitDate,
             reason, outstandingBalanceAtExit, null, tenantId);
 
@@ -1166,7 +1245,7 @@ public class PolicyApiImpl implements PolicyApi {
         // Valued as at the exit date, not as at today: an exited member's cover is what it was
         // when they left, and a caller reading this view back is asking what ended, not what
         // the schedule would say now.
-        return toMemberView(member, null, scheme.getCurrency());
+        return toMemberView(member, null, scheme.getCurrency(), null);
     }
 
     @Override
@@ -1190,7 +1269,7 @@ public class PolicyApiImpl implements PolicyApi {
         // second person every time somebody touches the claim is the failure this prevents.
         if (member.getMemberType() == MemberType.PARTY) {
             if (member.getPromotedToPartyAt() != null) {
-                return toMemberView(member, null, scheme.getCurrency());
+                return toMemberView(member, null, scheme.getCurrency(), null);
             }
             throw new InvalidPolicyStateException("Member " + policyMemberId + " is already a"
                 + " registered party and was never a freeform name, so there is nothing to promote");
@@ -1226,7 +1305,7 @@ public class PolicyApiImpl implements PolicyApi {
 
         log.info("Member {} on scheme {} promoted to party {} by {}",
             policyMemberId, policyNumber, partyId, promotedBy);
-        return toMemberView(member, null, scheme.getCurrency());
+        return toMemberView(member, null, scheme.getCurrency(), null);
     }
 
     @Override
@@ -1292,7 +1371,54 @@ public class PolicyApiImpl implements PolicyApi {
     @Override
     @Transactional
     public GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy) {
+        return issueGroupScheme(request, issuedBy, null, null);
+    }
+
+    /**
+     * What an issuance says about itself (policy V24): the basis and reason when it went round
+     * the ordinary path -- a basis was given, or no underwriting case stands behind it -- and the
+     * issuer's name. An ordinary decision records neither: its case is its record.
+     */
+    private static void recordIssuance(Policy policy, IssuanceBasis basis, String reason,
+                                       UUID underwritingCaseId, String issuedByName) {
+        boolean exceptionRoute = basis != null || underwritingCaseId == null;
+        policy.recordIssuance(basis != null ? basis.name() : null, exceptionRoute ? reason : null, issuedByName);
+    }
+
+    /** The same record, on PolicyIssued -- so the audit log carries it, which it never did. */
+    private static void putIssuanceRecord(Map<String, Object> payload, Policy policy, String issuedBy) {
+        payload.put("underwritingCaseId", policy.getUnderwritingCaseId());
+        payload.put("issuanceBasis", policy.getIssuanceBasis());
+        payload.put("issuanceReason", policy.getIssuanceReason());
+        payload.put("issuedBy", issuedBy);
+        payload.put("issuedByName", policy.getIssuedByName());
+    }
+
+    @Override
+    @Transactional
+    public GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy,
+                                            UUID underwritingCaseId, String issuedByName) {
         UUID tenantId = TenantContext.get();
+        // One case, one scheme -- as issuePolicy has always enforced for a single life. A scheme
+        // used to record no case at all, so a decided group case could be issued twice and no
+        // scheme could be traced back to the decision that put it on risk.
+        if (underwritingCaseId != null) {
+            policyRepository.findByTenantIdAndUnderwritingCaseId(tenantId, underwritingCaseId)
+                .ifPresent(existing -> {
+                    throw new PolicyAlreadyIssuedForCaseException(underwritingCaseId, existing.getPolicyNumber());
+                });
+            // The case must be THIS scheme's: a group case, proposed by this employer, on this
+            // product version. Naming any real case would satisfy "there is a case" and prove
+            // nothing about this contract.
+            var underwritten = underwritingApi.getCase(underwritingCaseId);
+            if (!underwritten.groupScheme()
+                    || !request.policyholderPartyId().equals(underwritten.applicantPartyId())
+                    || !request.productVersionId().equals(underwritten.productVersionId())) {
+                throw new InvalidPolicyStateException("Underwriting case " + underwritingCaseId
+                    + " is not a group proposal by this employer on this product version, so it cannot"
+                    + " stand behind this scheme");
+            }
+        }
         partyApi.getParty(request.policyholderPartyId()); // the employer must exist
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
         // Without a category check a scheme could be hung off a term-life product, and
@@ -1370,7 +1496,25 @@ public class PolicyApiImpl implements PolicyApi {
         }
 
         List<MemberInput> schedule = request.openingSchedule() != null ? request.openingSchedule() : List.of();
-        if (schedule.isEmpty()) {
+        /*
+         * AN EMPLOYER SCHEME CANNOT BE EMPTY; A LENDER'S BOOK CAN.
+         *
+         * The rule was global and it was written for the employer case, where it is right: the
+         * schedule of employees IS the contract, agreed and signed as a whole, and a scheme
+         * insuring nobody for nothing is not a policy.
+         *
+         * Credit life is the opposite shape. The contract is an agreement with a lender -- the
+         * rate, the free cover limit, the interest method -- and it exists BEFORE any borrower
+         * does; the book arrives monthly by file and never stops arriving. Forcing one borrower in
+         * at set-up made somebody type a life they then met again on the member roll without
+         * recognising them, which is how "the roll has three names and I uploaded two" happens.
+         *
+         * Nothing downstream needs the member. A sum assured of zero is permitted by
+         * chk_policy_sum_assured_non_negative, totalCovered coalesces to zero for a scheme with no
+         * members, and a credit-life scheme raises no invoice at issuance anyway -- billing returns
+         * early on SINGLE, because the premium arrives file by file.
+         */
+        if (schedule.isEmpty() && request.benefitBasis() != BenefitBasis.AMORTISING_LOAN) {
             throw new InvalidPolicyStateException(
                 "A scheme must be issued with at least one member: its sum assured is the total of its "
                     + "members' cover, and a scheme insuring nobody has none");
@@ -1410,15 +1554,26 @@ public class PolicyApiImpl implements PolicyApi {
         // flag applies -- no sequence generator is wired here yet.
         String policyNumber = "GRP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
+        // ON CREDIT LIFE THE AGENT IS WHO WAS CHOSEN, never whoever registered the lender.
+        // agentOfRecordFor lets the policyholder's registering agent win over the caller -- right
+        // for individual business, where the introducing agent earns the sale -- but a lender is
+        // a corporate client somebody typed in once, and the commission belongs to the LENDER
+        // (spec 2.8). That rule is how an individual agent came to sit on GRP-B6CE9639 and would
+        // have taken every file's commission, had any plan existed.
+        UUID agentOfRecordId = category == ProductCategory.CREDIT_LIFE
+            ? requireRealAgent(request.agentOfRecordId())
+            : agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId());
+
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(),
             request.productVersionId(), snapshot.category().name(),
-            agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId()),
+            agentOfRecordId,
             total, request.currency(), request.premiumAmount(), request.premiumCurrency(),
-            request.premiumFrequency(), null, issuedBy);
+            request.premiumFrequency(), underwritingCaseId, issuedBy);
         policy.applyTerm(commencement, request.policyTermMonths(), null);
         // Deliberately no recordLifeAssured: migration V8. An employer is not a life
         // assured, and the lives are the schedule below.
         policy.recordIssuedOn(today);
+        recordIssuance(policy, request.issuanceBasis(), request.reasonForManualIssue(), underwritingCaseId, issuedByName);
         // AN OFFER, not cover, unless the basis already carries cover. Identical to
         // issuePolicy: a scheme is a contract an employer accepts by paying for it, and the
         // first cleared premium is that acceptance.
@@ -1472,6 +1627,7 @@ public class PolicyApiImpl implements PolicyApi {
                     + " cannot join on " + joinedOn + ", before the scheme commenced on "
                     + commencement);
             }
+            requireEligible(snapshot.eligibility(), v.input(), joinedOn);
             persistMember(tenantId, policyNumber, v.input(), v.valuation(), joinedOn, issuedBy);
         }
 
@@ -1499,6 +1655,7 @@ public class PolicyApiImpl implements PolicyApi {
         // Load-bearing downstream: communication's offerMade branches on exactly this key, so
         // an employer now receives the offer message and its deadline. That is the point.
         payload.put("status", policy.getStatus());
+        putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
         // Both events together for an immediate-cover issuance, exactly as issuePolicy does.
@@ -1600,7 +1757,7 @@ public class PolicyApiImpl implements PolicyApi {
         if (members.isEmpty()) {
             // Short-circuit rather than pass an empty list to an IN clause, which is a
             // Postgres syntax error rather than an empty result.
-            return members.map(m -> toMemberView(m, null, currency));
+            return members.map(m -> toMemberView(m, null, currency, null));
         }
 
         // One query for the whole page. Resolving each member's benefit individually
@@ -1613,7 +1770,43 @@ public class PolicyApiImpl implements PolicyApi {
                 .collect(Collectors.toMap(
                     PolicyMemberBenefitRepository.InForceBenefitRow::getPolicyMemberId, r -> r));
 
-        return members.map(m -> toMemberView(m, benefits.get(m.getPolicyMemberId()), currency));
+        /*
+         * WHICH FILE EACH BORROWER ARRIVED ON, in one more query for the whole page.
+         *
+         * The question this answers came from somebody counting: "the roll has three names and I
+         * uploaded two." It had three because one was typed at set-up, and nothing on the roll
+         * told the two apart. It is also the operational version of the same question, which is
+         * what a lender asks in a dispute -- on which file did you put this borrower on cover?
+         */
+        List<UUID> memberIds = members.getContent().stream()
+            .map(PolicyMember::getPolicyMemberId).toList();
+        Map<UUID, EnrolmentSubmissionRowRepository.MemberArrival> arrivals =
+            enrolmentSubmissionRowRepository.findArrivalsForMembers(tenantId, memberIds).stream()
+                .collect(Collectors.toMap(
+                    EnrolmentSubmissionRowRepository.MemberArrival::getPolicyMemberId, a -> a,
+                    // A member can appear on more than one submission row only if a file was
+                    // withdrawn and re-sent; the accepted one is what put them on cover, and
+                    // either row names the same file, so the first is as good as the last.
+                    (first, second) -> first));
+
+        return members.map(m -> toMemberView(m, benefits.get(m.getPolicyMemberId()), currency,
+            arrivals.get(m.getPolicyMemberId())));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PolicyMemberView getMember(String policyNumber, UUID policyMemberId) {
+        UUID tenantId = TenantContext.get();
+        String currency = findSchemeOrThrow(policyNumber, tenantId).getCurrency();
+        PolicyMember member = memberOnSchemeOrThrow(policyNumber, policyMemberId);
+        // The same two lookups listMembers makes for a page, for a page of one -- so a member read
+        // here and the same member read on the roll cannot disagree.
+        PolicyMemberBenefitRepository.InForceBenefitRow benefit = policyMemberBenefitRepository
+            .findInForceForMembers(tenantId, List.of(policyMemberId), LocalDate.now())
+            .stream().findFirst().orElse(null);
+        EnrolmentSubmissionRowRepository.MemberArrival arrival = enrolmentSubmissionRowRepository
+            .findArrivalsForMembers(tenantId, List.of(policyMemberId)).stream().findFirst().orElse(null);
+        return toMemberView(member, benefit, currency, arrival);
     }
 
     @Override
@@ -1679,6 +1872,7 @@ public class PolicyApiImpl implements PolicyApi {
             scheme.getFlatBenefitAmount(), scheme.getSalaryMultiple(), scheme.getFclAmount(),
             gradeTableFor(tenantId, policyNumber, scheme.getBenefitBasis()), member);
 
+        requireEligible(productApi.getSnapshotByVersionId(policy.getProductVersionId()).eligibility(), member, joinedOn);
         PolicyMember saved = persistMember(tenantId, policyNumber, member, valuation, joinedOn, addedBy);
 
         // Flush so the derived total below sees the row just written, then restate the
@@ -1948,6 +2142,48 @@ public class PolicyApiImpl implements PolicyApi {
         return table;
     }
 
+    /**
+     * The product's HARD gates, on every life that joins a scheme: entry age and loan term.
+     *
+     * <p>Only the lender's monthly file used to apply them (EnrolmentApiImpl), so the opening
+     * schedule and a member added one at a time were never checked -- a borrower too old for the
+     * product, or a loan longer than it covers, went on risk by either route. Refused, never
+     * truncated (credit-life design 2.7): a loan insured for part of its life is worse than one
+     * openly refused. A limit the product does not set is no limit. An employer's member may
+     * carry no date of birth at all, and is then not age-checked -- there is nothing to check.
+     */
+    private void requireEligible(EligibilityBounds bounds, MemberInput input, LocalDate joinedOn) {
+        if (bounds == null) return;
+        LocalDate born = input.memberDateOfBirth();
+        if (born == null && input.memberPartyId() != null
+                && (bounds.minEntryAge() != null || bounds.maxEntryAge() != null)) {
+            born = partyApi.getPartyDetail(input.memberPartyId()).dateOfBirth();
+        }
+        if (born != null) {
+            int entryAge = Period.between(born, joinedOn).getYears();
+            if (bounds.minEntryAge() != null && entryAge < bounds.minEntryAge()) {
+                throw new InvalidPolicyStateException("Member " + describe(input) + " is " + entryAge
+                    + " on joining; this product accepts from " + bounds.minEntryAge());
+            }
+            if (bounds.maxEntryAge() != null && entryAge > bounds.maxEntryAge()) {
+                throw new InvalidPolicyStateException("Member " + describe(input) + " is " + entryAge
+                    + " on joining; this product accepts entry ages up to " + bounds.maxEntryAge());
+            }
+        }
+        if (input.loanTerms() != null) {
+            int term = input.loanTerms().termMonths();
+            if (bounds.minTermMonths() != null && term < bounds.minTermMonths()) {
+                throw new InvalidPolicyStateException("Member " + describe(input) + "'s loan of " + term
+                    + " months is shorter than this product's minimum of " + bounds.minTermMonths());
+            }
+            if (bounds.maxTermMonths() != null && term > bounds.maxTermMonths()) {
+                throw new InvalidPolicyStateException("Member " + describe(input) + "'s loan of " + term
+                    + " months is longer than this product's maximum of " + bounds.maxTermMonths()
+                    + "; cover is not truncated to fit");
+            }
+        }
+    }
+
     private PolicyMember persistMember(UUID tenantId, String policyNumber, MemberInput input,
                                         GroupBenefitCalculator.Valuation valuation, LocalDate joinedOn,
                                         String createdBy) {
@@ -2016,11 +2252,11 @@ public class PolicyApiImpl implements PolicyApi {
         if (valuation.underwritingStatus() == MemberUnderwritingStatus.EVIDENCE_REQUIRED
                 && member.getUnderwritingCaseId() == null) {
             Policy schemePolicy = findPolicyOrThrow(policyNumber, tenantId);
-            UnderwritingCaseView evidenceCase = underwritingApi.openCase(
+            UnderwritingCaseView evidenceCase = underwritingApi.openMemberEvidenceCase(
                 member.getMemberPartyId(), schemePolicy.getProductId(),
                 schemePolicy.getProductVersionId(), valuation.benefitAmount(),
                 schemePolicy.getSumAssuredCurrency(), schemePolicy.getAgentOfRecordId(),
-                createdBy);
+                policyNumber, member.getPolicyMemberId(), createdBy);
             member.referForEvidence(evidenceCase.caseId());
         }
         return member;
@@ -2035,6 +2271,197 @@ public class PolicyApiImpl implements PolicyApi {
      * platform two different answers to "how much is this scheme insured for" depending on
      * which screen you were standing in front of.
      */
+
+    @Override
+    @Transactional
+    public GroupSchemeView amendFreeCoverLimit(String policyNumber, BigDecimal newLimit,
+                                                String reason, String amendedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        GroupScheme scheme = findSchemeOrThrow(policyNumber, tenantId);
+        LocalDate today = LocalDate.now();
+
+        if (java.util.Objects.compare(scheme.getFclAmount(), newLimit,
+                java.util.Comparator.nullsFirst(BigDecimal::compareTo)) == 0) {
+            throw new InvalidPolicyStateException("The free cover limit on " + policyNumber
+                + " is already " + (newLimit == null ? "absent" : newLimit.toPlainString())
+                + "; there is nothing to amend.");
+        }
+
+        /*
+         * EVERY ACTIVE MEMBER IS REVALUED AGAINST THE NEW LIMIT, and the revaluation is decided
+         * BEFORE anything is written. A limit that would uninsure people has to be refused whole:
+         * restating half a roll and then failing would leave a scheme whose members disagree with
+         * its own terms, which is worse than the wrong limit.
+         */
+        List<PolicyMember> members = policyMemberRepository
+            .findByTenantIdAndPolicyNumberAndStatus(tenantId, policyNumber, MemberStatus.ACTIVE.name(),
+                Pageable.unpaged())
+            .getContent();
+        int wouldReduce = 0;
+        List<Restatement> restatements = new ArrayList<>();
+        for (PolicyMember member : members) {
+            var inForce = policyMemberBenefitRepository
+                .findInForce(member.getPolicyMemberId(), tenantId, today, PageRequest.of(0, 1))
+                .stream().findFirst().orElse(null);
+            if (inForce == null) {
+                continue; // cover has not started yet; the row it will get is written against the
+                          // limit in force on that day, which is this one.
+            }
+            var valuation = GroupBenefitCalculator.evaluate(inForce.getBenefitAmount(), newLimit);
+            if (valuation.coveredAmount().compareTo(inForce.getCoveredAmount()) < 0) {
+                wouldReduce++;
+            } else if (valuation.coveredAmount().compareTo(inForce.getCoveredAmount()) != 0
+                    || valuation.underwritingStatus() != member.getUnderwritingStatus()) {
+                restatements.add(new Restatement(member, inForce.getSalaryAmount(),
+                    inForce.getBenefitAmount(), valuation, inForce));
+            }
+        }
+
+        if (wouldReduce > 0) {
+            throw new InvalidPolicyStateException("That limit would reduce the cover of "
+                + wouldReduce + " member" + (wouldReduce == 1 ? "" : "s") + " already on "
+                + policyNumber + ". A borrower cannot be part-uninsured from a date nobody told"
+                + " them about; lower it only to a figure that caps nobody already on the roll.");
+        }
+
+        BigDecimal oldLimit = scheme.getFclAmount();
+        scheme.amendFreeCoverLimit(newLimit);
+        groupSchemeRepository.save(scheme);
+
+        for (Restatement r : restatements) {
+            /*
+             * A NEW effective-dated row rather than an edit: what the member was covered for
+             * yesterday is what a claim dated yesterday must still pay.
+             *
+             * UNLESS their cover already starts today, which is the ordinary case on a scheme
+             * whose limit is corrected the day it was set up -- and the case that broke this the
+             * first time it was run against a real scheme, on
+             * policy_member_benefit_policy_member_id_effective_from_key. Effective dating here has
+             * day granularity, so a member enrolled this morning and revalued this afternoon has
+             * ONE row for today holding the final state of the day. Dating the correction tomorrow
+             * would leave the scheme's terms and its own members disagreeing for the rest of it.
+             */
+            PolicyMemberBenefit startingToday = r.inForce().getEffectiveFrom().equals(today)
+                ? r.inForce() : null;
+            if (startingToday != null) {
+                startingToday.correctCoverOnItsOwnEffectiveDate(
+                    r.benefitAmount(), r.valuation().coveredAmount());
+                policyMemberBenefitRepository.save(startingToday);
+            } else {
+                policyMemberBenefitRepository.save(new PolicyMemberBenefit(tenantId,
+                    r.member().getPolicyMemberId(), today, r.salaryAmount(), r.benefitAmount(),
+                    r.valuation().coveredAmount(), amendedBy));
+            }
+            if (r.valuation().underwritingStatus() == MemberUnderwritingStatus.WITHIN_FCL) {
+                // Their excess no longer needs granting. Any case already open is left alone --
+                // closing somebody else's underwriting case is not this method's decision, and an
+                // open case that nobody needs to decide is visible, which a silently closed one
+                // would not be.
+                r.member().clearEvidenceRequirement();
+            }
+        }
+
+        BigDecimal total = restateSchemeTotal(policy, tenantId, today);
+
+        endorsementRepository.save(new Endorsement(tenantId, policyNumber, "FREE_COVER_LIMIT_AMENDED",
+            today, Map.of(
+                "from", oldLimit == null ? "none" : oldLimit.toPlainString(),
+                "to", newLimit == null ? "none" : newLimit.toPlainString(),
+                "membersRestated", String.valueOf(restatements.size()),
+                "reason", reason == null ? "" : reason),
+            amendedBy));
+
+        /*
+         * regreporting keeps a running sum assured per product and learns of changes from member
+         * movement. Raising a limit moves the total with no member joining or leaving, so without
+         * this the TIRA return would quietly understate the book from here on -- the exact
+         * staleness spec section 2.14 exists to close, arriving by a door it did not know about.
+         */
+        Map<String, Object> amended = new LinkedHashMap<>();
+        amended.put("policyNumber", policyNumber);
+        amended.put("joinedOn", today.toString());
+        amended.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
+            "currencyCode", scheme.getCurrency()));
+        eventPublisher.publishEvent(
+            DomainEventEnvelope.of("policy.GroupSchemeFreeCoverLimitAmended", tenantId, amended));
+
+        return getGroupScheme(policyNumber);
+    }
+
+    @Override
+    @Transactional
+    public MemberEvidenceResult recordMemberEvidenceDecision(String policyNumber, UUID policyMemberId, UUID caseId,
+                                                             boolean accepted, String decidedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        GroupScheme scheme = findSchemeOrThrow(policyNumber, tenantId);
+        PolicyMember member = memberOnSchemeOrThrow(policyNumber, policyMemberId);
+        LocalDate today = LocalDate.now();
+
+        // Nothing is waiting on this case any more. Left alone rather than refused: the decision is
+        // real and recorded on the case, it just has no cover left to change -- the member exited,
+        // or a raised limit cleared the requirement and with it the link (amendFreeCoverLimit).
+        if (!MemberStatus.ACTIVE.name().equals(member.getStatus())
+                || member.getUnderwritingStatus() != MemberUnderwritingStatus.EVIDENCE_REQUIRED
+                || !caseId.equals(member.getUnderwritingCaseId())) {
+            return MemberEvidenceResult.NOT_NEEDED;
+        }
+
+        member.recordEvidenceDecision(accepted);
+        policyMemberRepository.save(member);
+
+        if (accepted) {
+            PolicyMemberBenefit inForce = policyMemberBenefitRepository
+                .findInForce(policyMemberId, tenantId, today, PageRequest.of(0, 1))
+                .stream().findFirst()
+                .orElseThrow(() -> new InvalidPolicyStateException("Member " + policyMemberId
+                    + " has no benefit in force on " + today + " to extend"));
+            BigDecimal benefit = inForce.getBenefitAmount();
+            // Same day-granularity rule as amendFreeCoverLimit: a member whose cover started today
+            // has one row for today, holding the final state of the day.
+            if (inForce.getEffectiveFrom().equals(today)) {
+                inForce.correctCoverOnItsOwnEffectiveDate(benefit, benefit);
+                policyMemberBenefitRepository.save(inForce);
+            } else {
+                policyMemberBenefitRepository.save(new PolicyMemberBenefit(tenantId, policyMemberId, today,
+                    inForce.getSalaryAmount(), benefit, benefit, decidedBy));
+            }
+            BigDecimal total = restateSchemeTotal(policy, tenantId, today);
+
+            // The total moved with nobody joining or leaving -- regreporting's running sum
+            // assured must hear about it, exactly as it does for a limit amendment.
+            Map<String, Object> granted = new LinkedHashMap<>();
+            granted.put("policyNumber", policyNumber);
+            granted.put("policyMemberId", policyMemberId);
+            granted.put("underwritingCaseId", caseId);
+            granted.put("joinedOn", today.toString());
+            granted.put("schemeTotalCovered", Map.of("amount", total.toPlainString(),
+                "currencyCode", scheme.getCurrency()));
+            eventPublisher.publishEvent(
+                DomainEventEnvelope.of("policy.GroupMemberEvidenceGranted", tenantId, granted));
+        }
+
+        endorsementRepository.save(new Endorsement(tenantId, policyNumber, "MEMBER_EVIDENCE_DECIDED", today,
+            Map.of("policyMemberId", policyMemberId.toString(),
+                "underwritingCaseId", caseId.toString(),
+                "outcome", accepted ? "EXCESS_GRANTED" : "EXCESS_REFUSED"),
+            decidedBy));
+        return accepted ? MemberEvidenceResult.GRANTED : MemberEvidenceResult.REFUSED;
+    }
+
+    @Override
+    public java.util.Optional<MemberRef> findMemberAwaitingEvidence(UUID caseId) {
+        UUID tenantId = TenantContext.get();
+        return policyMemberRepository.findFirstByTenantIdAndUnderwritingCaseId(tenantId, caseId)
+            .map(m -> new MemberRef(m.getPolicyNumber(), m.getPolicyMemberId()));
+    }
+
+    /** One member's revaluation, decided before anything is written. */
+    private record Restatement(PolicyMember member, BigDecimal salaryAmount,
+                                BigDecimal benefitAmount, GroupBenefitCalculator.Valuation valuation,
+                                PolicyMemberBenefit inForce) {}
+
     private BigDecimal restateSchemeTotal(Policy policy, UUID tenantId, LocalDate asOf) {
         BigDecimal total = policyMemberBenefitRepository.totalCovered(tenantId, policy.getPolicyNumber(), asOf);
         policy.restateSumAssured(total);
@@ -2059,11 +2486,16 @@ public class PolicyApiImpl implements PolicyApi {
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
             m.getUnderwritingStatus(), m.getUnderwritingCaseId(), salaryAmount,
             valuation.benefitAmount(), valuation.coveredAmount(), currency, effectiveFrom,
-            m.getExitReason(), m.getOutstandingBalanceAtExit());
+            m.getExitReason(), m.getOutstandingBalanceAtExit(),
+            // A member being written right now came from no file: this builder serves the opening
+            // schedule and addMember. The enrolment pipeline's own members are read back through
+            // listMembers, which resolves the file they arrived on.
+            null, null, m.getOpenDeathClaimId());
     }
 
     private PolicyMemberView toMemberView(PolicyMember m, PolicyMemberBenefitRepository.InForceBenefitRow benefit,
-                                           String currency) {
+                                           String currency,
+                                           EnrolmentSubmissionRowRepository.MemberArrival arrival) {
         return new PolicyMemberView(m.getPolicyMemberId(), m.getMemberPartyId(),
             m.getMemberType(), m.getMemberName(), m.getMemberReference(), m.getLoanAccountNumber(), m.getGradeCode(),
             m.getJoinedOn(), m.getLeftOn(), MemberStatus.valueOf(m.getStatus()),
@@ -2076,7 +2508,12 @@ public class PolicyApiImpl implements PolicyApi {
             benefit != null ? benefit.getCoveredAmount() : null,
             currency,
             benefit != null ? benefit.getEffectiveFrom() : null,
-            m.getExitReason(), m.getOutstandingBalanceAtExit());
+            m.getExitReason(), m.getOutstandingBalanceAtExit(),
+            // Null when this member did not arrive on a file at all -- the opening schedule, or
+            // added one at a time on an employer scheme. A real answer, not missing data.
+            arrival != null ? arrival.getSubmissionId() : null,
+            arrival != null ? arrival.getFileName() : null,
+            m.getOpenDeathClaimId());
     }
 
     private Policy findPolicyOrThrow(String policyNumber, UUID tenantId) {
@@ -2099,6 +2536,7 @@ public class PolicyApiImpl implements PolicyApi {
             beneficiaryViews,
             policy.getCommencementDate(), policy.getPolicyTermMonths(),
             policy.getPremiumPayingTermMonths(), policy.getMaturityDate(),
-            policy.getLifeAssuredPartyId(), policy.getProductCategory());
+            policy.getLifeAssuredPartyId(), policy.getProductCategory(),
+            policy.getIssuanceBasis(), policy.getIssuanceReason(), policy.getIssuedByName());
     }
 }

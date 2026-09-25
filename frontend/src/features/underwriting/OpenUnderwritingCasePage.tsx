@@ -10,7 +10,7 @@ import { PartyName } from '@/components/PartyName';
 import { AgentPicker } from '@/components/AgentPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
-import { PREMIUM_FREQUENCIES } from '@/api/types';
+import { isSingleLifeProduct, PREMIUM_FREQUENCIES } from '@/api/types';
 import { humanizeStatus } from '@/lib/status';
 import { BeneficiaryRow } from '@/features/policies/BeneficiaryRow';
 import { blankBeneficiaryRow } from '@/features/policies/beneficiaryForm';
@@ -184,7 +184,10 @@ export function OpenUnderwritingCasePage() {
               {...register('productId')}
             >
               <option value="">Select a product</option>
-              {(products.data ?? []).map((p) => (
+              {/* Single-life products only. A group or credit-life product proposed here was
+                  issued as one policy covering nobody; the server now refuses it, and those
+                  are set up from Group schemes / Credit-life schemes instead. */}
+              {(products.data ?? []).filter(isSingleLifeProduct).map((p) => (
                 <option key={p.productId} value={p.productId}>
                   {p.productName} ({p.productCode})
                 </option>

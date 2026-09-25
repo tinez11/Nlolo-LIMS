@@ -334,6 +334,76 @@ class PaymentContractTest {
             .andExpect(jsonPath("$.errorCode").value("PAYMENT_NOT_FOUND"));
     }
 
+    // --- GET /disbursements?purpose=&sourceRef= ----------------------------------------------
+
+    private void seedClaimPayout(UUID tenantId, String claimId, String method, String status) throws Exception {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                 "INSERT INTO payment.disbursement_instruction (tenant_id, idempotency_key, payee_ref, " +
+                 "amount, currency, purpose, source_ref, status, method) " +
+                 "VALUES (?, ?, 'Lender Bank Ltd', 800000.00, 'TZS', 'CLAIM_SETTLEMENT', ?, ?, ?)")) {
+            insert.setObject(1, tenantId);
+            insert.setString(2, "claim-" + claimId + "-" + UUID.randomUUID());
+            insert.setString(3, claimId);
+            insert.setString(4, status);
+            insert.setString(5, method);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        }
+    }
+
+    private static RequestPostProcessor claimsManagerOf(UUID tenantId) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_CLAIMS_MANAGER"),
+                new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+    }
+
+    /** The claims manager approved this payout and then could not see it: it sat AWAITING
+     * finance with nothing on the claim page to say so. Only this claim's payout comes back. */
+    @Test
+    void theClaimsManagerReadsTheirClaimsPayoutAndSeesItWaitsOnFinance() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String claimId = UUID.randomUUID().toString();
+        seedClaimPayout(tenantId, claimId, "EFT", "AWAITING_EXECUTION");
+        seedClaimPayout(tenantId, UUID.randomUUID().toString(), "EFT", "AWAITING_EXECUTION"); // another claim
+
+        mockMvc.perform(get("/disbursements").param("purpose", "CLAIM_SETTLEMENT").param("sourceRef", claimId)
+                .with(claimsManagerOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].method").value("EFT"))
+            .andExpect(jsonPath("$[0].status").value("AWAITING_EXECUTION"))
+            .andExpect(jsonPath("$[0].amount.amount").value("800000.00"))
+            .andExpect(jsonPath("$[0].payeeRef").value("Lender Bank Ltd"))
+            .andExpect(jsonPath("$[0].executedAt").doesNotExist())
+            // The finance officer's subject is never part of this view.
+            .andExpect(jsonPath("$[0].executedBy").doesNotExist());
+    }
+
+    @Test
+    void anotherTenantsPayoutIsNotReadable() throws Exception {
+        String claimId = UUID.randomUUID().toString();
+        seedClaimPayout(UUID.randomUUID(), claimId, "EFT", "AWAITING_EXECUTION");
+
+        mockMvc.perform(get("/disbursements").param("purpose", "CLAIM_SETTLEMENT").param("sourceRef", claimId)
+                .with(claimsManagerOf(UUID.randomUUID())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    /** Payee and rail are internal: plain staff without a claims or finance role get nothing. */
+    @Test
+    void aStaffTokenWithoutAClaimsOrFinanceRoleIsRefused() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String claimId = UUID.randomUUID().toString();
+        seedClaimPayout(tenantId, claimId, "MOBILE_MONEY", "COMPLETED");
+
+        mockMvc.perform(get("/disbursements").param("purpose", "CLAIM_SETTLEMENT").param("sourceRef", claimId)
+                .with(staffOf(tenantId)))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
     // --- POST /webhooks/mobile-money-callback -------------------------------------------------
 
     /** Seeds a PENDING disbursement that already carries the gatewayReference the callback will

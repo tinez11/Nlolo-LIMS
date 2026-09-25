@@ -18,6 +18,10 @@ export interface FieldControlContext {
   id: string;
   invalid: boolean;
   errorId: string | undefined;
+  /** A standing explanation of the field — a limit, a format, where a prefilled
+   *  value came from. Unlike an error it is present before anything is typed, and
+   *  it stays. Both ids are described-by when both exist. */
+  hintId?: string | undefined;
 }
 
 export const FieldControl = createContext<FieldControlContext | null>(null);
@@ -46,9 +50,13 @@ export interface FieldControlAttributes {
 export function useFieldControl(ownId?: string | undefined): FieldControlAttributes {
   const context = use(FieldControl);
   if (!context) return {};
+  // Hint first, then error: a describedby list is announced in order, and the
+  // standing explanation ("the most this claim can pay is TZS 800,000.00") is
+  // what makes the rejection that follows it make sense.
+  const describedBy = [context.hintId, context.errorId].filter(Boolean).join(' ');
   return {
     id: ownId ?? context.id,
     ...(context.invalid ? { 'aria-invalid': true as const } : {}),
-    ...(context.errorId ? { 'aria-describedby': context.errorId } : {}),
+    ...(describedBy ? { 'aria-describedby': describedBy } : {}),
   };
 }

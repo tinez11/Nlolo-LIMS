@@ -7,6 +7,7 @@ import type {
   GroupMemberInput,
   GroupSchemeView,
   InvoiceView,
+  PremiumCreditView,
   IssueGroupSchemeRequest,
   MemberStatus,
   PolicyMemberView,
@@ -105,6 +106,29 @@ export function getCoverageStatus(
 /** `GET /policies/{n}/invoices` -- a bare unpaged array, so the whole set arrives. */
 export function listInvoices(policyNumber: string): Promise<InvoiceView[]> {
   return get<InvoiceView[]>(`/policies/${encodeURIComponent(policyNumber)}/invoices`);
+}
+
+/**
+ * `POST /group-schemes/{n}/agent-of-record` -- FINANCE_OFFICER/ADMIN. Who earns commission on a
+ * scheme from now on; accruals already booked stay where they are. Null makes it direct.
+ */
+export function changeSchemeAgentOfRecord(
+  policyNumber: string,
+  agentOfRecordId: string | null,
+  reason: string,
+): Promise<PolicyView> {
+  return post<PolicyView>(`/group-schemes/${encodeURIComponent(policyNumber)}/agent-of-record`, {
+    agentOfRecordId,
+    reason,
+  });
+}
+
+/**
+ * `GET /policies/{n}/credits` -- premium credited back to members who left early, oldest first.
+ * The other half of an invoice: without it a lender was shown 13,800 due when 9,600 was.
+ */
+export function listPolicyCredits(policyNumber: string): Promise<PremiumCreditView[]> {
+  return get<PremiumCreditView[]>(`/policies/${encodeURIComponent(policyNumber)}/credits`);
 }
 
 /** `GET /policies/{n}/loans` -- also a bare unpaged array. */
@@ -269,6 +293,30 @@ export function beneficiaryOf(partyId: string): Promise<BeneficiaryOfView[]> {
  * genuinely creates a second scheme. The form's own in-flight disabling is the
  * only guard against a double-click, exactly as with `issuePolicy`.
  */
+/**
+ * `PUT /group-schemes/{policyNumber}/free-cover-limit` -- staff UNDERWRITER only.
+ *
+ * The ONLY term on a scheme that can be amended. The interest method, the repayment frequency
+ * and the premium rate are write-once by design: members were valued and CHARGED against them,
+ * so restating any of those rewrites history. A free cover limit only decides how much of a
+ * benefit is covered today, and cover is effective-dated -- so moving it writes new rows from
+ * today rather than altering what was true yesterday.
+ *
+ * 409 when the new limit would reduce somebody's cover, naming how many, or when it is the
+ * limit the scheme already has.
+ *
+ * `fclAmount` null means no limit at all, which is never the same as zero.
+ */
+export function amendFreeCoverLimit(
+  policyNumber: string,
+  fclAmount: string | null,
+  reason: string,
+): Promise<GroupSchemeView> {
+  return put<GroupSchemeView>(
+    `/group-schemes/${encodeURIComponent(policyNumber)}/free-cover-limit`,
+    { ...(fclAmount ? { fclAmount } : {}), reason },
+  );
+}
 export function issueGroupScheme(request: IssueGroupSchemeRequest): Promise<GroupSchemeView> {
   return post<GroupSchemeView>('/group-schemes', request);
 }
@@ -303,6 +351,17 @@ export interface MemberListParams {
   q?: string;
   page?: number;
   pageSize?: number;
+}
+
+/**
+ * `GET /group-schemes/{n}/members/{memberId}` -- one member, built exactly as a roll
+ * row. For a screen holding only the member id a claim carries: finance's transfer
+ * queue, saying whose death a payment settles.
+ */
+export function getSchemeMember(policyNumber: string, policyMemberId: string): Promise<PolicyMemberView> {
+  return get<PolicyMemberView>(
+    `/group-schemes/${encodeURIComponent(policyNumber)}/members/${encodeURIComponent(policyMemberId)}`,
+  );
 }
 
 /**

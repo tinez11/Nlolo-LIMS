@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
-import { ISSUANCE_BASES, PREMIUM_FREQUENCIES } from '@/api/types';
+import { isSingleLifeProduct, ISSUANCE_BASES, PREMIUM_FREQUENCIES } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -358,7 +358,7 @@ export function IssuePolicyPage() {
               {...register('productId')}
             >
               <option value="">Select a product</option>
-              {(products.data ?? []).map((p) => (
+              {(products.data ?? []).filter(isSingleLifeProduct).map((p) => (
                 <option key={p.productId} value={p.productId}>
                   {p.productName} ({p.productCode})
                 </option>

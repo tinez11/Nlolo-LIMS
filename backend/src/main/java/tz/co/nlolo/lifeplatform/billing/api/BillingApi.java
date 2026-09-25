@@ -70,6 +70,15 @@ public interface BillingApi {
     List<InvoiceView> listInvoices(String policyNumber, InvoiceStatus status);
 
     /**
+     * Every premium credit on a policy, oldest first -- what was given back, for whom, and why.
+     *
+     * <p>Credits were recorded and never readable: the policy page showed a 13,800 invoice DUE
+     * when 4,200 of it had been refunded to a borrower who repaid early, and the lender actually
+     * owed 9,600.
+     */
+    List<PremiumCreditView> listCredits(String policyNumber);
+
+    /**
      * Single-invoice read by id, needed for object-level authorization on endpoints that identify
      * an invoice without naming its policy (BillingController.requestPaymentForInvoice). Tenant
      * scoping is applied inside the implementation, never taken from the caller.

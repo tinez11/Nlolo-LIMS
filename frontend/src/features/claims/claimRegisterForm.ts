@@ -84,7 +84,22 @@ export interface RegisterClaimFormContext {
 }
 
 export function registerClaimFormSchema(context: RegisterClaimFormContext = {}) {
-  const isGroupScheme = context.productCategory === 'GROUP_LIFE';
+  /**
+   * Does this contract insure MANY lives, so that a claim on it must say which one died?
+   *
+   * <p><b>The third place this same question was asked by naming one category.</b> The page
+   * decided whether to render the picker, this module decided whether to require it, and the
+   * member roll decided which columns to show — each by testing GROUP_LIFE alone. A CREDIT_LIFE
+   * scheme insures a lender's whole book and answers yes to all three, so every one of them was
+   * wrong about it, and the failures compounded: the picker did not render, so no member was
+   * chosen, so this rule then refused the claim for naming a member on a policy it believed had
+   * none.
+   *
+   * <p>Phrased as the question rather than the category, because that is what the rule is about
+   * and it is what the next scheme category will also answer yes to.
+   */
+  const insuresManyLives =
+    context.productCategory === 'GROUP_LIFE' || context.productCategory === 'CREDIT_LIFE';
   return z
     .object({
       policyNumber: requiredText('Policy number is required').regex(
@@ -105,14 +120,14 @@ export function registerClaimFormSchema(context: RegisterClaimFormContext = {}) 
       // A scheme insures many lives, so a claim on one must say which. The server refuses it
       // too (409 from PolicyApi.claimableCover) -- this is here so the person filing finds out
       // while they are still looking at the form.
-      if (isGroupScheme && values.policyMemberId === '') {
+      if (insuresManyLives && values.policyMemberId === '') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['policyMemberId'],
           message: 'Choose which member this claim is for',
         });
       }
-      if (isGroupScheme && values.policyMemberId !== '' && !UUID_PATTERN.test(values.policyMemberId)) {
+      if (insuresManyLives && values.policyMemberId !== '' && !UUID_PATTERN.test(values.policyMemberId)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['policyMemberId'],
@@ -123,11 +138,11 @@ export function registerClaimFormSchema(context: RegisterClaimFormContext = {}) 
       // scheme -- validated anyway, because it belongs to the contract rather than to which
       // inputs happen to be on screen. A member id against an individual policy is somebody
       // who believes that contract has a schedule.
-      if (!isGroupScheme && values.policyMemberId !== '') {
+      if (!insuresManyLives && values.policyMemberId !== '') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['policyMemberId'],
-          message: 'This policy is not a group scheme, so it has no members',
+          message: 'This policy insures one life, so it has no members to name',
         });
       }
     });

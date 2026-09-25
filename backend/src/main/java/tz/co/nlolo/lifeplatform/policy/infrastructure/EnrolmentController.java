@@ -91,6 +91,23 @@ public class EnrolmentController {
         return enrolmentApi.withdraw(submissionId, jwt.getSubject());
     }
 
+    /**
+     * The scheme's submission history, newest first.
+     *
+     * <p>Every other read on this controller needs a {@code submissionId}, which the upload flow
+     * has and a console page opening on a scheme does not. Without this there is no way to reach
+     * the report of a file sent last month.
+     *
+     * <p>{@code REALM_STAFF}, matching every other operation here: running a lender's file is
+     * staff work, and what the lender themselves can see is the portal's problem rather than
+     * this endpoint's.
+     */
+    @GetMapping("/credit-life-schemes/{policyNumber}/enrolments")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public List<EnrolmentSubmissionView> listSubmissions(@PathVariable String policyNumber) {
+        return enrolmentApi.listSubmissions(policyNumber);
+    }
+
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}")
     @PreAuthorize("hasRole('REALM_STAFF')")
     public EnrolmentSubmissionView getSubmission(@PathVariable String policyNumber,
@@ -100,9 +117,9 @@ public class EnrolmentController {
 
     @GetMapping("/credit-life-schemes/{policyNumber}/enrolments/{submissionId}/rows")
     @PreAuthorize("hasRole('REALM_STAFF')")
-    public List<EnrolmentRowView> listRows(@PathVariable String policyNumber,
+    public List<EnrolmentRowResponseDto> listRows(@PathVariable String policyNumber,
                                             @PathVariable UUID submissionId) {
-        return enrolmentApi.listRows(submissionId);
+        return EnrolmentRowResponseDto.from(enrolmentApi.listRows(submissionId));
     }
 
     /**
@@ -121,5 +138,48 @@ public class EnrolmentController {
                 "attachment; filename=\"enrolment-report-" + submissionId + ".csv\"")
             .contentType(MediaType.valueOf("text/csv"))
             .body(enrolmentApi.renderReport(submissionId));
+    }
+
+    /**
+     * The file this scheme's lender fills in, with one of their own borrowers already in it.
+     *
+     * <p><b>Three separate refusal messages already told people to "use the template at
+     * credit-life-enrolment-sample.csv", and nothing served it.</b> That file lives in the
+     * repository's spec folder, where no staff user and certainly no lender can reach it — so the
+     * platform's own error messages named a document that existed only for us.
+     *
+     * <p><b>Scoped to the SCHEME, and it was product-scoped for one commit.</b> The columns are
+     * identical for every lender, which made a product-wide blank look like the right shape. It
+     * is not, for two reasons that only show up in use. A header row plus a page of prose is not
+     * how anybody learns a file format — the borrower somebody typed into the set-up form, echoed
+     * back in the file they are about to send, answers what the prose was trying to. And when the
+     * lender's own portal lands, "the template" has to mean *their* scheme's; a product-scoped
+     * path could not be served to a bank without first deciding which product they meant.
+     */
+    @GetMapping(value = "/credit-life-schemes/{policyNumber}/template", produces = "text/csv")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<String> enrolmentTemplate(@PathVariable String policyNumber) {
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"enrolment-template-" + policyNumber + ".csv\"")
+            .contentType(MediaType.valueOf("text/csv"))
+            .body(enrolmentApi.renderTemplate(policyNumber));
+    }
+
+    /**
+     * The same template as a spreadsheet, and the one to send a lender who works in Excel.
+     *
+     * <p>See {@code EnrolmentApi.renderTemplateXlsx} for why: a CSV template cannot survive being
+     * opened in Excel, and two real files were refused entire because of it.
+     */
+    @GetMapping(value = "/credit-life-schemes/{policyNumber}/template.xlsx",
+                produces = XLSX)
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<byte[]> enrolmentTemplateXlsx(@PathVariable String policyNumber) {
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"enrolment-template-" + policyNumber + ".xlsx\"")
+            .contentType(MediaType.valueOf(XLSX))
+            .body(enrolmentApi.renderTemplateXlsx(policyNumber));
     }
 }

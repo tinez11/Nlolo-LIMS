@@ -4,6 +4,7 @@ import {
   getCoverageStatus,
   getGroupScheme,
   getPolicy,
+  amendFreeCoverLimit,
   issueGroupScheme,
   issuePolicy,
   listInvoices,
@@ -145,6 +146,7 @@ interface PolicyState {
   loadScheme: (policyNumber: string) => Promise<void>;
   loadMembers: (policyNumber: string, params?: MemberListParams) => Promise<void>;
   issueGroupScheme: (request: IssueGroupSchemeRequest) => Promise<void>;
+  amendFreeCoverLimit: (policyNumber: string, fclAmount: string | null, reason: string) => Promise<void>;
   resetIssueGroupScheme: () => void;
   addSchemeMember: (policyNumber: string, member: GroupMemberInput) => Promise<void>;
   resetAddSchemeMember: (policyNumber: string) => void;
@@ -470,6 +472,17 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
     ),
 
   resetIssueGroupScheme: () => set({ issuingScheme: idle() }),
+
+  amendFreeCoverLimit: (policyNumber, fclAmount, reason) =>
+    track(
+      `policy.amendFreeCoverLimit.${policyNumber}`,
+      getState().scheme[policyNumber] ?? idle<GroupSchemeView>(),
+      (next) => set((st) => ({ scheme: { ...st.scheme, [policyNumber]: next } })),
+      // The amended scheme IS the new scheme resource: the response carries the restated
+      // total and the new count above the limit, so tracking it into the same slot means
+      // the record rail redraws from the answer rather than from a refetch that could race.
+      () => amendFreeCoverLimit(policyNumber, fclAmount, reason),
+    ),
 
   addSchemeMember: (policyNumber, member) =>
     track(

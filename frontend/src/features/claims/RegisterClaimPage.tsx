@@ -3,7 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
-import { CLAIM_TYPES } from '@/api/types';
+import { CLAIM_TYPES, type PolicyMemberView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -34,6 +34,19 @@ import { Input, Select } from '@/components/ui/input';
  * rather than risking a duplicate registration. A fresh page visit -- a genuinely
  * new intent -- gets a fresh key naturally, since that remounts the component.
  */
+/**
+ * How one insured life reads in the "Who died" list.
+ *
+ * <p>A freeform borrower carries their own name; an employer-scheme member is a registered party
+ * and is resolved through it. Neither is ever a bare uuid, which is what this showed before.
+ */
+function memberLabel(m: PolicyMemberView) {
+  if (m.memberName) {
+    return m.memberReference ? `${m.memberName} — ${m.memberReference}` : m.memberName;
+  }
+  return m.memberPartyId ? <PartyName partyId={m.memberPartyId} /> : m.policyMemberId;
+}
+
 export function RegisterClaimPage() {
   const navigate = useNavigate();
   const [attempt] = useState<MutationAttempt>(() => startMutation());
@@ -131,13 +144,30 @@ export function RegisterClaimPage() {
    * hoping. Filtering a fetched page instead would search only the rows in hand and report
    * "not found" for somebody who is on the schedule.
    */
-  const isGroupScheme = policy.data?.productCategory === 'GROUP_LIFE';
+  /**
+   * Does this policy insure MANY lives, so that a claim on it has to say which one died?
+   *
+   * <p><b>This tested GROUP_LIFE alone, and a credit-life claim could not be registered at all
+   * because of it.</b> A CREDIT_LIFE scheme insures a lender's whole book, so the answer is
+   * obviously yes — but the check was written when GROUP_LIFE was the only scheme category, and
+   * the new one was added beside it rather than inside it. The consequence was not a wrong label:
+   * the "Who died" picker never rendered, the schedule was never fetched, the client-side guard
+   * never fired, and the form posted policyMemberId: null. The backend then refused with "Scheme
+   * ... insures many lives, so a claim on it names a member" — correctly, and about a field that
+   * was not on the screen, so there was no way through.
+   *
+   * <p>Phrased as the QUESTION rather than as a category test, because that is what every caller
+   * here actually wants to know and it is what the next scheme category will also answer yes to.
+   */
+  const insuresManyLives =
+    policy.data?.productCategory === 'GROUP_LIFE' ||
+    policy.data?.productCategory === 'CREDIT_LIFE';
   const members = usePolicyStore(selectMembers(policyNumber));
   const loadMembers = usePolicyStore((s) => s.loadMembers);
   const [memberQuery, setMemberQuery] = useState('');
 
   useEffect(() => {
-    if (!isGroupScheme) return;
+    if (!insuresManyLives) return;
     // Debounced, so typing a name is one request rather than one per keystroke. 300ms is
     // PartyPicker's own interval; the two searches should not feel different.
     const timer = setTimeout(() => {
@@ -147,7 +177,7 @@ export function RegisterClaimPage() {
       });
     }, 300);
     return () => clearTimeout(timer);
-  }, [isGroupScheme, policyNumber, memberQuery, loadMembers]);
+  }, [insuresManyLives, policyNumber, memberQuery, loadMembers]);
 
   /**
    * Read by the resolver above at validation time. A ref rather than state because it must not
@@ -162,8 +192,8 @@ export function RegisterClaimPage() {
   // Clearing it when the policy stops being a scheme matters: a member id left behind from a
   // previously-typed scheme number would be sent against an individual policy and refused.
   useEffect(() => {
-    if (!isGroupScheme) setValue('policyMemberId', '');
-  }, [isGroupScheme, setValue]);
+    if (!insuresManyLives) setValue('policyMemberId', '');
+  }, [insuresManyLives, setValue]);
 
   // react-hook-form's FieldErrors type does not narrow per-branch on a
   // discriminated union field the way the VALUE type does -- `errors.details` is
@@ -283,7 +313,7 @@ export function RegisterClaimPage() {
           )}
         </FormField>
 
-        {isGroupScheme && (
+        {insuresManyLives && (
           <>
           {/* The search sits OUTSIDE the FormField on purpose. FormField binds its label to the
               first control inside it, so putting two controls in one leaves the second
@@ -305,10 +335,19 @@ export function RegisterClaimPage() {
               <option value="">Choose the member…</option>
               {(members.data?.items ?? []).map((m) => (
                 <option key={m.policyMemberId} value={m.policyMemberId}>
-                  {/* memberPartyId is optional on the generated type because the backend
-                      schema allows a member with no party. No such member can exist today,
-                      and when one can, its own name will be what belongs here. */}
-                  {m.memberPartyId ? <PartyName partyId={m.memberPartyId} /> : m.policyMemberId}
+                  {/* THE BORROWER'S OWN NAME FIRST.
+
+                      This resolved a name through the PARTY module or fell back to printing the
+                      raw uuid, on the reasoning that a member with no party could not exist. One
+                      can: a credit-life borrower is FREEFORM and has no party record, because
+                      minting one per borrower would put a KYC obligation on a life whose cover
+                      the lender owns. So this dropdown asked "who died?" and offered a column of
+                      uuids -- the same defect the member roll had, and the same fix: the name is
+                      on the member row, it was simply never read.
+
+                      The reference is shown beside it because on a real book several borrowers
+                      share a name, and the reference is the handle the lender quotes. */}
+                  {memberLabel(m)}
                 </option>
               ))}
             </Select>

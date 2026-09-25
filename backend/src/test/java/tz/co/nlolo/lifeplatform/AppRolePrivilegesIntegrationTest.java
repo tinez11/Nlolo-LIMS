@@ -120,6 +120,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             // M2 additions (final-review finding 4): product/underwriting's GRANT/RLS SQL
             // read correct by inspection but were never exercised under the real app_role
@@ -145,6 +146,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyloan.PolicyLoanApiImpl.originateLoan reads
@@ -177,6 +179,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
@@ -185,6 +188,7 @@ class AppRolePrivilegesIntegrationTest {
             // generateInvoicesAhead) would otherwise fail against a table missing this column.
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
+            "db-migrations/billing/V6__premium_credit.sql",
             // M6 (Task 1) additions: appRoleCanReadWriteAndUpdateAClaim below needs claims' own
             // schema/grants -- V1 alone had zero GRANT statements anywhere in the file (again),
             // the exact M1/M5 failure mode this class exists to catch, and RLS on only 1 of its
@@ -195,6 +199,8 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             // M5 (Task 1) additions: appRoleCanReadWriteAndUpdateDisbursementInstruction below
             // needs payment's own schema/grants -- V1 alone had zero GRANT statements anywhere
             // in the file, the exact M1 failure mode this class exists to catch.
@@ -376,9 +382,9 @@ class AppRolePrivilegesIntegrationTest {
         assertThat(assessed.recommendationOutcome()).isNotNull();
 
         UnderwritingCaseView decided = underwritingApi.decide(opened.caseId(),
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "decider1", false);
         assertThat(decided.decisionOutcome()).isNotNull();
-        assertThat(decided.decisionDecidedBy()).isEqualTo("underwriter1");
+        assertThat(decided.decisionDecidedBy()).isEqualTo("decider1");
 
         UnderwritingCaseView fetched = underwritingApi.getCase(opened.caseId());
         assertThat(fetched.caseId()).isEqualTo(opened.caseId());

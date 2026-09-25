@@ -72,6 +72,9 @@ test.describe('staff claim evidence', () => {
 
     await expect(page.getByText(description)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('No evidence')).not.toBeVisible();
+    // The uploader is named from their own token (staff.underwriter), where this used to
+    // print their Keycloak subject.
+    await expect(page.getByText(/^Halima Underwriter · /).first()).toBeVisible();
 
     // "View" opens the real downloaded file in a new tab -- assert on the new
     // tab's own response rather than just that a tab opened, so this proves the

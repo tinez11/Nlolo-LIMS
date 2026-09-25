@@ -11,6 +11,11 @@ import io.minio.MinioClient;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.web.servlet.MockMvc;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -27,6 +32,14 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -45,6 +58,7 @@ import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
  */
 @Testcontainers
 @SpringBootTest(classes = Application.class)
+@AutoConfigureMockMvc
 class ExitFileIntegrationTest {
 
     @Container
@@ -74,6 +88,7 @@ class ExitFileIntegrationTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -97,6 +112,7 @@ class ExitFileIntegrationTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
@@ -119,6 +135,8 @@ class ExitFileIntegrationTest {
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
+            "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V21__exit_submission.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
@@ -154,7 +172,8 @@ class ExitFileIntegrationTest {
 
     @BeforeEach
     void seedSchemeOfThree() {
-        TenantContext.set(UUID.randomUUID());
+        tenantId = UUID.randomUUID();
+        TenantContext.set(tenantId);
         scheme = issueCreditLifeScheme(List.of(
             borrower("Amina Hassan Mwinyi", LocalDate.of(1988, 3, 14)),
             borrower("Joseph Mkenda", LocalDate.of(1975, 11, 2)),
@@ -322,6 +341,41 @@ class ExitFileIntegrationTest {
         assertThat(rows.get(0).reason()).contains("already left cover on 2026-11-03");
     }
 
+    /** The lender reports a death the only way an exits file lets them -- as a write-off. The
+     * claim already open on that borrower decides how they leave, so the row is refused and says
+     * why; the others on the same file still leave. Before V23 this exited the borrower with the
+     * wrong reason and a premium refund a death never earns, and the claim's own discharge then
+     * found them gone and did nothing. */
+    @Test
+    void aBorrowerWithADeathClaimInProgressIsNotExitedByTheFile() {
+        UUID deathClaimId = UUID.randomUUID();
+        policyApi.recordOpenDeathClaim(scheme, members.get(0).policyMemberId(), deathClaimId);
+
+        ExitSubmissionView submitted = exitApi.submit(scheme,
+            csv(reference(0) + ",2026-11-03,WRITTEN_OFF,1600000.00\n"
+              + reference(1) + ",2026-11-03,SETTLED_EARLY,0.00\n"),
+            "november-exits.csv", "staff.one");
+        List<ExitRowView> rows = exitApi.listRows(submitted.submissionId());
+        assertThat(rows.get(0).reasonCode()).isEqualTo(ExitRejection.DEATH_CLAIM_IN_PROGRESS);
+        assertThat(rows.get(0).reason()).contains("death claim in progress");
+
+        exitApi.accept(submitted.submissionId(), "staff.two");
+        assertThat(statusOf(0)).isEqualTo(MemberStatus.ACTIVE);
+        assertThat(statusOf(1)).isEqualTo(MemberStatus.EXITED);
+
+        // And not by hand either: the staff exit path reaches the same verdict.
+        assertThatThrownBy(() -> policyApi.exitMember(scheme, members.get(0).policyMemberId(), EXIT_DATE,
+                ExitReason.WRITTEN_OFF, BigDecimal.ZERO, "staff.three"))
+            .isInstanceOf(InvalidPolicyStateException.class)
+            .hasMessageContaining(deathClaimId.toString());
+
+        // Once the claim is rejected the loan is an ordinary live loan again.
+        policyApi.clearOpenDeathClaim(scheme, members.get(0).policyMemberId(), deathClaimId);
+        policyApi.exitMember(scheme, members.get(0).policyMemberId(), EXIT_DATE,
+            ExitReason.WRITTEN_OFF, BigDecimal.ZERO, "staff.three");
+        assertThat(statusOf(0)).isEqualTo(MemberStatus.EXITED);
+    }
+
     @Test
     void anExitDatedBeforeCoverStartedIsRejected() {
         ExitSubmissionView submitted = exitApi.submit(scheme,
@@ -438,5 +492,131 @@ class ExitFileIntegrationTest {
     private UUID person(String name) {
         return partyApi.registerIndividual(name, LocalDate.of(1985, 6, 15),
             "+2557" + String.format("%08d", SEQ.incrementAndGet()), null, "test-agent").partyId();
+    }
+
+    // ---- the same file, over HTTP -----------------------------------------
+    //
+    // Plan 3 built everything above and shipped it with NO CONTROLLER: ExitApi and
+    // ExitApiImpl were the only two files in the backend that named it, so a lender's monthly
+    // file could not be run by any HTTP client. These cases live in this class rather than a
+    // new one because the harness they need -- a credit-life scheme with three members on it
+    // and their minted references -- is exactly what @BeforeEach above already builds.
+
+    /** Captured in @BeforeEach rather than read from TenantContext inside the JWT lambda: that
+     * lambda is evaluated while MockMvc builds the request, by which point the ambient thread
+     * context is gone and the claim blew up with "No tenant context set". A request identity must
+     * not depend on ambient state anyway. */
+    private UUID tenantId;
+
+    @Autowired private MockMvc mockMvc;
+    @Autowired private ObjectMapper objectMapper;
+
+    private org.springframework.test.web.servlet.request.RequestPostProcessor staff(String subject) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+            .jwt(b -> b.subject(subject).claim("tenant_id", tenantId.toString()));
+    }
+
+    private MockMultipartFile exitsFile(String name, String body) {
+        return new MockMultipartFile("file", name, "text/csv",
+            (HEADER + body).getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void theExitsFileIsReachableOverHttpAndAcceptedByASecondPerson() throws Exception {
+        // Every call below 404'd before ExitController existed.
+        var upload = mockMvc.perform(multipart("/credit-life-schemes/" + scheme + "/exits")
+                .file(exitsFile("november-exits.csv", reference(0) + ",2026-11-03,SETTLED_EARLY,450000.00\n"))
+                .with(staff("staff.one")))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("PENDING"))
+            .andReturn();
+        String submissionId = objectMapper.readTree(upload.getResponse().getContentAsString())
+            .path("submissionId").asText();
+
+        mockMvc.perform(get("/credit-life-schemes/" + scheme + "/exits").with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].submissionId").value(submissionId))
+            .andExpect(jsonPath("$[0].fileName").value("november-exits.csv"));
+
+        mockMvc.perform(get("/credit-life-schemes/" + scheme + "/exits/" + submissionId + "/rows")
+                .with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].reasonCode").doesNotExist())
+            /*
+             * THE BALANCE IS MONEY ON THE WIRE, never a bare number.
+             *
+             * This endpoint returned the domain view straight out, so the BigDecimal serialised as
+             * 450000 -- no currency, no decimal string -- and the console, reading the Money object
+             * this contract promises, rendered "undefined undefined" in the column.
+             *
+             * The assertion above passed throughout. It checked that a reason code was ABSENT and
+             * never looked at a field that was present, and the only row it ever sent carried 0.00
+             * -- so the test exercised the endpoint without exercising what was broken.
+             */
+            .andExpect(jsonPath("$[0].outstandingBalanceAtExit.amount").value("450000.00"))
+            .andExpect(jsonPath("$[0].outstandingBalanceAtExit.currencyCode").value("TZS"));
+
+        // A DIFFERENT subject accepts. Using the same one would prove the endpoint exists while
+        // proving nothing about the two-person rule the actor claim is there to enforce.
+        mockMvc.perform(post("/credit-life-schemes/" + scheme + "/exits/" + submissionId + "/acceptance")
+                .with(staff("staff.two")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("ACCEPTED"))
+            .andExpect(jsonPath("$.exitedCount").value(1));
+
+        // The request filter clears TenantContext on its way out, so a policyApi read made
+        // AFTER a MockMvc call has to re-establish it.
+        TenantContext.set(tenantId);
+        assertThat(statusOf(0)).isEqualTo(MemberStatus.EXITED);
+    }
+
+    @Test
+    void theActorComesFromTheTokenSoTheSubmitterCannotAcceptTheirOwnFile() throws Exception {
+        // The refusal lives in ExitApiImpl; this asserts the CONTROLLER feeds it a real identity.
+        // A controller that passed a literal, or read the wrong claim, would silently turn two
+        // people into one and the rule would be decoration.
+        var upload = mockMvc.perform(multipart("/credit-life-schemes/" + scheme + "/exits")
+                .file(exitsFile("november-exits.csv", reference(0) + ",2026-11-03,SETTLED_EARLY,0.00\n"))
+                .with(staff("staff.one")))
+            .andExpect(status().isCreated())
+            .andReturn();
+        String submissionId = objectMapper.readTree(upload.getResponse().getContentAsString())
+            .path("submissionId").asText();
+
+        mockMvc.perform(post("/credit-life-schemes/" + scheme + "/exits/" + submissionId + "/acceptance")
+                .with(staff("staff.one")))
+            .andExpect(status().is4xxClientError());
+
+        // The request filter clears TenantContext on its way out, so a policyApi read made
+        // AFTER a MockMvc call has to re-establish it.
+        TenantContext.set(tenantId);
+        assertThat(statusOf(0)).isEqualTo(MemberStatus.ACTIVE);
+    }
+
+    @Test
+    void anExitsUploadRefusesACustomerToken() throws Exception {
+        mockMvc.perform(multipart("/credit-life-schemes/" + scheme + "/exits")
+                .file(exitsFile("november-exits.csv", reference(0) + ",2026-11-03,SETTLED_EARLY,0.00\n"))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void theReportIsServedAsADownloadNamedAfterItsSubmission() throws Exception {
+        // The report is the deliverable: it is the only place a lender learns which exits were
+        // refused and why.
+        var upload = mockMvc.perform(multipart("/credit-life-schemes/" + scheme + "/exits")
+                .file(exitsFile("november-exits.csv", reference(0) + ",2026-11-03,SETTLED_EARLY,0.00\n"))
+                .with(staff("staff.one")))
+            .andExpect(status().isCreated())
+            .andReturn();
+        String submissionId = objectMapper.readTree(upload.getResponse().getContentAsString())
+            .path("submissionId").asText();
+
+        mockMvc.perform(get("/credit-life-schemes/" + scheme + "/exits/" + submissionId + "/report")
+                .with(staff("staff.one")))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Type", containsString("text/csv")))
+            .andExpect(header().string("Content-Disposition", containsString(submissionId)));
     }
 }

@@ -295,6 +295,19 @@ public interface PolicyApi {
     GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy);
 
     /**
+     * As above, also recording WHAT the scheme was issued on and BY WHOM (policy V24).
+     *
+     * @param underwritingCaseId the decided group case this scheme came from, or null on the
+     *     exception route. Recorded on the scheme, and a second scheme from one case is refused
+     *     ({@link PolicyAlreadyIssuedForCaseException}) -- the same one-case-one-policy rule an
+     *     individual policy has always had, and schemes never did.
+     * @param issuedByName the issuer's display name from their token: the underwriter of record
+     *     for a scheme set up from agreed terms. Null for automatic issuance.
+     */
+    GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy,
+                                     UUID underwritingCaseId, String issuedByName);
+
+    /**
      * A scheme's configuration and current totals.
      *
      * @throws PolicyNotFoundException if no such policy exists in this tenant
@@ -314,6 +327,17 @@ public interface PolicyApi {
      *     id filter — searching a 500-life roll for one person is otherwise impossible
      *     without paging the whole schedule by eye.
      */
+    /**
+     * One member of a scheme, by id -- built exactly as {@link #listMembers} builds a row.
+     *
+     * <p>For a screen that holds a member id and needs the person: finance's transfer queue
+     * knows a claim, and the claim knows only the member's id. The roll could be searched by
+     * name or reference but not by id, so the queue could say which claim it paid but not whose.
+     *
+     * @throws InvalidPolicyStateException if the policy is not a scheme or the member is not on it
+     */
+    PolicyMemberView getMember(String policyNumber, UUID policyMemberId);
+
     Page<PolicyMemberView> listMembers(String policyNumber, MemberStatus status, String q,
                                         Pageable pageable);
 
@@ -328,6 +352,67 @@ public interface PolicyApi {
      *     policy is not in force, or the input does not match the scheme's basis
      */
     PolicyMemberView addMember(String policyNumber, MemberInput member, String addedBy);
+
+    /**
+     * Move a scheme's free cover limit, restating every member's cover against the new one.
+     *
+     * <p><b>Raising it is the case this exists for.</b> A limit is typed once at set-up, and a
+     * wrong one covers every borrower for a fraction of their loan and opens an underwriting case
+     * for each of them. Until this, the only remedy was a second scheme.
+     *
+     * <p><b>An amendment may not REDUCE anybody's cover</b>, and is refused naming how many
+     * members it would. Lowering a limit below live cover would leave borrowers part-uninsured
+     * from a date nobody told them about, and on a book of several hundred it would mint an
+     * underwriting case per person. Lowering is allowed where it caps nobody who is not already
+     * capped — which is the honest half of the case, since it only binds members yet to come.
+     *
+     * <p>{@code newLimit} null means the scheme has no limit at all: a real design, and never the
+     * same as zero.
+     *
+     * @return the scheme as it now stands, with its restated total
+     */
+    GroupSchemeView amendFreeCoverLimit(String policyNumber, java.math.BigDecimal newLimit,
+                                         String reason, String amendedBy);
+
+    /** What recording a member's evidence decision did. */
+    enum MemberEvidenceResult {
+        /** The excess was granted: covered up to the full benefit from today. */
+        GRANTED,
+        /** The excess was refused: covered up to the free cover limit, as before. */
+        REFUSED,
+        /** Nothing to decide any more -- the member left, or a raised limit already covers them. */
+        NOT_NEEDED
+    }
+
+    /**
+     * Apply an underwriter's decision on a scheme member's free-cover-limit evidence case.
+     *
+     * <p>Until this existed an accepted evidence case issued the member a separate single-life
+     * policy on the scheme's product, and the member's own record stayed EVIDENCE_REQUIRED with
+     * the excess never granted; a decline recorded nothing. Granting writes a NEW effective-dated
+     * benefit row -- what the member was covered for yesterday is what a claim dated yesterday
+     * pays -- restates the scheme total and tells regreporting. Refusing leaves cover at the limit
+     * and records the decision. Either way an endorsement says who decided and on which case.
+     *
+     * <p>The premium does not move: a scheme's premium was agreed for its schedule and changes at
+     * renewal, which is why underwriting refuses a loading on an evidence case.
+     *
+     * @return {@link MemberEvidenceResult#NOT_NEEDED} when the member is no longer waiting on this
+     *     case -- exited, or brought within a raised limit -- in which case nothing is written
+     * @throws InvalidPolicyStateException if the member is not on this scheme
+     */
+    MemberEvidenceResult recordMemberEvidenceDecision(String policyNumber, UUID policyMemberId, UUID caseId,
+                                                      boolean accepted, String decidedBy);
+
+    /**
+     * The scheme member an evidence case was opened for, found from the member's side. For cases
+     * opened before underwriting V11 recorded it on the case itself; empty if no member (still)
+     * points at the case.
+     */
+    java.util.Optional<MemberRef> findMemberAwaitingEvidence(UUID caseId);
+
+    /** A scheme member, by the two ids that name one. */
+    record MemberRef(String policyNumber, UUID policyMemberId) {}
 
     /**
      * Take one life off a scheme, for a reason other than a claim the insurer paid.
@@ -395,6 +480,9 @@ public interface PolicyApi {
                                     PromoteMemberRequest identity, String promotedBy);
 
     PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy);
+
+    /** As above, naming the issuer from their token (policy V24) -- see issueGroupScheme's overload. */
+    PolicyView issuePolicy(UUID underwritingCaseId, IssueRequest request, String issuedBy, String issuedByName);
     PolicyView applyEndorsement(String policyNumber, EndorsementInput request, String appliedBy);
     void replaceBeneficiaries(String policyNumber, List<BeneficiaryInput> beneficiaries, String changedBy);
 
@@ -587,4 +675,39 @@ public interface PolicyApi {
      */
     void dischargeForSettledClaim(String policyNumber, UUID policyMemberId, LocalDate dateOfEvent,
                                    UUID claimId, String dischargedBy);
+
+    /**
+     * Claims telling policy that a death claim on this member is open -- registered, or reopened
+     * from a rejection -- and not yet paid.
+     *
+     * <p>Policy cannot see claims: claims depends on policy, never the reverse. So between a death
+     * being reported and its claim being paid, the member read as an ordinary live loan, and an
+     * exits file could take them off cover first with the wrong reason and a refund a death never
+     * earns. Recording it here lets the roll say so and lets the exit paths refuse (V23).
+     *
+     * <p>A no-op for a member who has already left: a late claim for somebody who died while
+     * covered is legitimate, and their exit is already on the record.
+     *
+     * @throws InvalidPolicyStateException if the member is not on this scheme
+     */
+    void recordOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId);
+
+    /**
+     * Correct who earns commission on a scheme, from now on.
+     *
+     * <p>On credit life the commission belongs to the lender (spec 2.8), but a scheme could only
+     * ever get its agent at issuance -- and there, whoever registered the lender's party won. So
+     * GRP-B6CE9639 came to carry an individual agent, with no way to put it right.
+     *
+     * <p>Forward only: accruals already booked stay with whoever earned them. Publishes
+     * {@code policy.AgentOfRecordChanged}, which distribution follows and audit records.
+     *
+     * @param agentOfRecordId a real agent in this tenant, or null for a direct scheme
+     * @throws UnknownAgentOfRecordException if it names no agent
+     * @throws InvalidPolicyStateException if the policy is not a scheme
+     */
+    PolicyView changeSchemeAgentOfRecord(String policyNumber, UUID agentOfRecordId, String reason, String changedBy);
+
+    /** The death claim was rejected. Clears only THAT claim; a no-op if another is recorded. */
+    void clearOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId);
 }

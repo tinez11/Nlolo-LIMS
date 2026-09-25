@@ -4,14 +4,24 @@ import { type FieldErrors, useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
+import { PartyName } from '@/components/PartyName';
 import { Receipt } from '@/components/Receipt';
-import { formatMoney } from '@/lib/money';
+import { selectDetail, usePolicyStore } from '@/store/policyStore';
+import { cn } from '@/lib/cn';
+import { compareAmounts, formatMoney, subtractAmounts } from '@/lib/money';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
-import { selectDecidingSettlement, useClaimStore } from '@/store/claimStore';
+import {
+  selectAssessments,
+  selectClaimableCover,
+  selectDecidingSettlement,
+  useClaimStore,
+} from '@/store/claimStore';
+import { assessorName } from './assessorName';
 import {
   blankApproveDecision,
-  blankRejectDecision,
-  settlementDecisionFormSchema,
+  switchDecision,
+  recommendationExceedsCover,
+  settlementDecisionSchema,
   toApiRequest,
   type SettlementDecisionFormValues,
 } from './settlementDecisionForm';
@@ -31,10 +41,32 @@ import { Input, Textarea } from '@/components/ui/input';
  * branches, matching RegisterClaimPage's own claim-type switcher: the two
  * branches share no fields, so there is nothing to preserve across a toggle.
  */
-export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
+export function ClaimSettlementPanel({
+  claimId,
+  policyNumber,
+  onScheme,
+}: {
+  claimId: string;
+  policyNumber: string;
+  /** The claim names a member: a group or credit-life scheme, where one life leaves and the
+   *  contract stays -- so "the policy closes" would be false. */
+  onScheme: boolean;
+}) {
+  const loadPolicy = usePolicyStore((s) => s.loadDetail);
+  const policy = usePolicyStore(selectDetail(policyNumber));
+  // Unknown until the policy loads. Approving waits for it: guessing "not credit life" would ask
+  // for a payee the backend then refuses, and guessing "credit life" would send none where one
+  // is required.
+  const productCategory = policy.data?.productCategory ?? null;
+  const creditLife = productCategory === 'CREDIT_LIFE';
+  const lenderPartyId = creditLife ? (policy.data?.policyholderPartyId ?? null) : null;
   const decideSettlement = useClaimStore((s) => s.decideSettlement);
   const resetDecideSettlement = useClaimStore((s) => s.resetDecideSettlement);
   const deciding = useClaimStore(selectDecidingSettlement(claimId));
+  const loadClaimableCover = useClaimStore((s) => s.loadClaimableCover);
+  const loadAssessments = useClaimStore((s) => s.loadAssessments);
+  const coverResource = useClaimStore(selectClaimableCover(claimId));
+  const assessmentsResource = useClaimStore(selectAssessments(claimId));
   // Minted once for the lifetime of this panel, reused across retries -- same
   // idiom as RegisterClaimPage, even though this key is only load-bearing on
   // approval (see api/claims.ts's decideSettlement doc).
@@ -42,22 +74,67 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
 
   useEffect(() => {
     resetDecideSettlement(claimId);
+    void loadClaimableCover(claimId);
+    void loadAssessments(claimId);
+    void loadPolicy(policyNumber);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claimId]);
+  }, [claimId, policyNumber]);
+
+  const cover = coverResource.data?.claimableCover ?? null;
+  // Newest first, so [0] is the most recent assessment -- the one a second
+  // assessor wrote after the first, if there were two.
+  const latestAssessment = assessmentsResource.data?.[0] ?? null;
+  const recommended = latestAssessment?.recommendedAmount ?? null;
 
   const {
     register,
     handleSubmit,
     watch,
     reset,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<SettlementDecisionFormValues>({
-    resolver: zodResolver(settlementDecisionFormSchema),
+    resolver: zodResolver(settlementDecisionSchema(cover, !creditLife)),
     defaultValues: blankApproveDecision(),
   });
 
   // eslint-disable-next-line react-hooks/incompatible-library -- see RegisterClaimPage
   const approved = watch('approved');
+
+  /*
+    Both reads land AFTER this form mounts, so the starting amount cannot be a
+    `defaultValue` -- it has to be written in when it arrives.
+
+    `reset`, not `setValue`: reset also clears the dirty flag, so the prefilled
+    figure is the form's BASELINE rather than looking like an edit somebody
+    already made and might be expected to justify.
+
+    Two guards, and both are load-bearing. `isDirty` stops a slow read
+    overwriting something already typed -- the one behaviour that would be worse
+    than no prefill at all. `approved` stops it resurrecting the approve branch
+    under somebody who has moved to Reject while the reads were in flight.
+  */
+  useEffect(() => {
+    if (isDirty || !approved) return;
+    if (!recommended && !cover) return;
+    reset(blankApproveDecision(recommended, cover));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommended?.amount, recommended?.currencyCode, cover?.amount, cover?.currencyCode]);
+
+  /*
+    Derived from what is rendered right now, never stored in state -- the lint
+    rule against synchronous setState in an effect exists for exactly this, and
+    a stored copy would go stale on the keystroke after it was computed.
+
+    `compareAmounts` returns NaN for a half-typed amount, and `< 0` is false for
+    NaN, so nothing is claimed while somebody is still typing.
+  */
+  const typedAmount = watch('approvedAmount');
+  const shortfall = (() => {
+    if (!approved || !cover || typeof typedAmount !== 'string') return null;
+    if (!(compareAmounts(typedAmount, cover.amount) < 0)) return null;
+    const difference = subtractAmounts(cover.amount, typedAmount);
+    return difference ? formatMoney({ amount: difference, currencyCode: cover.currencyCode }) : null;
+  })();
 
   /**
    * Validation runs FIRST, then the confirmation.
@@ -70,7 +147,7 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
   const [pending, setPending] = useState<SettlementDecisionFormValues | null>(null);
 
   async function commit(values: SettlementDecisionFormValues) {
-    await decideSettlement(claimId, toApiRequest(values), attempt);
+    await decideSettlement(claimId, toApiRequest(values, creditLife), attempt);
     if (useClaimStore.getState().decidingSettlement[claimId]?.status === 'success') {
       setPending(null);
     }
@@ -113,33 +190,70 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
 
   return (
     <form className="space-y-3 p-4" onSubmit={(e) => void handleSubmit(setPending)(e)}>
-      <div className="flex items-center gap-1.5">
-        <Button
-          type="button"
-          size="sm"
-          variant={approved ? 'primary' : 'outline'}
-          onClick={() => reset(blankApproveDecision())}
+      {/*
+        A CHOICE of which decision to record, not an action -- nothing is sent from here.
+        These were two buttons styled like the submit button, one labelled "Approve" beside an
+        "Approve claim", so which one approved was a guess. A labelled radiogroup, the same
+        pattern as the claim form's policy chooser, says what it is to sight and to a screen
+        reader alike.
+      */}
+      <div className="flex items-center gap-2">
+        <span id={`decision-${claimId}`} className="text-xs font-medium text-muted-foreground">
+          Decision
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby={`decision-${claimId}`}
+          className="inline-flex rounded-md border border-border p-0.5"
         >
-          Approve
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={!approved ? 'primary' : 'outline'}
-          onClick={() => reset(blankRejectDecision())}
-        >
-          Reject
-        </Button>
+          {(['approve', 'reject'] as const).map((choice) => {
+            const selected = (choice === 'approve') === approved;
+            return (
+              <button
+                key={choice}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => {
+                  const next = switchDecision(choice, approved, recommended, cover);
+                  if (next) reset(next);
+                }}
+                className={cn(
+                  'rounded px-3 py-1 text-xs transition-colors',
+                  selected ? 'bg-selected font-medium ring-1 ring-border-strong ring-inset' : 'hover:bg-hover',
+                )}
+              >
+                {choice === 'approve' ? 'Approve' : 'Reject'}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {approved ? (
         <>
           <div className="grid grid-cols-[1fr_auto] gap-2">
-            <FormField label="Approved amount" error={fieldError(errors, 'approvedAmount')}>
-              <Input
-                placeholder="1500000.00"
-                {...register('approvedAmount')}
-              />
+            <FormField
+              label="Approved amount"
+              error={fieldError(errors, 'approvedAmount')}
+              /*
+                The ceiling, BEFORE anything is typed.
+
+                This field used to be blank with a `placeholder="1500000.00"` --
+                an invented number that was the only figure on screen, so it is
+                what people entered and then had rejected by a 422 quoting a
+                different one. The limit was always knowable; nothing published
+                it.
+              */
+              hint={
+                cover
+                  ? `Covered for ${formatMoney(cover)} — the most this claim can pay`
+                  : coverResource.status === 'error'
+                    ? 'Could not read what this claim is covered for; the amount will be checked on submission'
+                    : undefined
+              }
+            >
+              <Input {...register('approvedAmount')} />
             </FormField>
             <FormField label="Currency" error={fieldError(errors, 'approvedCurrency')}>
               <Input
@@ -148,12 +262,75 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
               />
             </FormField>
           </div>
-          <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
-            <Input
-              placeholder="Mobile-money destination"
-              {...register('payeeRef')}
-            />
-          </FormField>
+
+          {/*
+            Under, not over. Over is refused outright by the schema and by
+            Claim.approve behind it.
+
+            Paying LESS than the cover is a legitimate decision -- a partial
+            disability award, a balance already partly repaid outside the
+            schedule -- so it is not blocked. It is also exactly what a typo
+            looks like, which is why the shortfall is stated in money rather
+            than left for somebody to notice by subtracting two numbers.
+          */}
+          {shortfall && (
+            <p className="text-xs text-status-warning-fg">
+              {shortfall} less than this claim is covered for.
+              {recommended && ' Change it only on a finding that justifies paying less.'}
+            </p>
+          )}
+
+          {/*
+            Where the starting number came from. A prefilled field that does not
+            say why is a number somebody is being asked to trust blind, and this
+            one carries a colleague's judgement.
+          */}
+          {latestAssessment && cover && recommendationExceedsCover(recommended, cover) ? (
+            // An assessment recorded before the backend bounded recommendations. Starting from
+            // it would open the form already refusing its own value, so it starts at the cover
+            // -- and says so, because silently replacing a colleague's figure is its own harm.
+            <p className="text-xs text-status-warning-fg">
+              The latest assessment, by {assessorName(latestAssessment)}, recommended{' '}
+              {formatMoney(latestAssessment.recommendedAmount)}, more than the{' '}
+              {formatMoney(cover)} this claim is covered for. Starting at the cover, the most it
+              can pay.
+            </p>
+          ) : (
+            latestAssessment && (
+              <p className="text-xs text-muted-foreground">
+                Starts at {formatMoney(latestAssessment.recommendedAmount)}, recommended by{' '}
+                <span className="font-medium">{assessorName(latestAssessment)}</span>. Change it if you
+                have a finding they did not.
+              </p>
+            )
+          )}
+          {creditLife ? (
+            /*
+              NOT a field. The insurer deals only with the lender (client answer 3.6), who is
+              the claimant and the policyholder (spec 2.9) -- there is no payee to choose. This
+              was a "Mobile-money destination" box, so finance was sent EFTs to "mobile" and
+              "i approve", and whoever approved could have typed any account at all.
+            */
+            <div className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
+              <p>
+                Pays{' '}
+                {lenderPartyId ? (
+                  <PartyName partyId={lenderPartyId} className="font-medium" />
+                ) : (
+                  'the lender'
+                )}
+                , the lender who holds this scheme, by bank transfer.
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                Finance makes the transfer to the lender&rsquo;s account and records it under Finance
+                &rarr; Bank transfers.
+              </p>
+            </div>
+          ) : (
+            <FormField label="Payee reference" error={fieldError(errors, 'payeeRef')}>
+              <Input placeholder="Mobile-money destination" {...register('payeeRef')} />
+            </FormField>
+          )}
         </>
       ) : (
         <FormField label="Rejection reason (optional)">
@@ -185,7 +362,18 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
                 <strong>
                   {pending.approvedCurrency.toUpperCase()} {pending.approvedAmount}
                 </strong>{' '}
-                to <strong>{pending.payeeRef}</strong>.
+                to{' '}
+                {creditLife ? (
+                  <>
+                    <strong>
+                      {lenderPartyId ? <PartyName partyId={lenderPartyId} /> : 'the lender'}
+                    </strong>{' '}
+                    by bank transfer
+                  </>
+                ) : (
+                  <strong>{pending.payeeRef}</strong>
+                )}
+                .
               </>
             ) : (
               <>
@@ -215,7 +403,11 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
           */
           reversal={
             pending.approved
-              ? 'Money moves, and the policy closes permanently — reopening this claim later will not reverse the closure or restart billing.'
+              ? onScheme
+                ? // A scheme is not discharged by one death: this life leaves when the claim
+                  // settles, and everybody else stays insured (PolicyApiImpl.dischargeForSettledClaim).
+                  'Money moves, and this life leaves the scheme when the claim settles — the scheme and everyone else on it stay in force.'
+                : 'Money moves, and the policy closes permanently — reopening this claim later will not reverse the closure or restart billing.'
               : 'A claims manager can reopen a rejected claim, but this decision stays on the record.'
           }
           // Never the arming button's own words: "Reject claim" twice, a click
@@ -226,7 +418,13 @@ export function ClaimSettlementPanel({ claimId }: { claimId: string }) {
           onCancel={() => setPending(null)}
         />
       ) : (
-        <Button type="submit" size="sm" variant="primary" disabled={deciding.status === 'loading'}>
+        <Button
+          type="submit"
+          size="sm"
+          variant="primary"
+          // Approving waits for the policy: whether a payee is asked for depends on it.
+          disabled={deciding.status === 'loading' || (approved && productCategory === null)}
+        >
           {approved ? 'Approve claim' : 'Reject claim'}
         </Button>
       )}

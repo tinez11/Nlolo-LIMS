@@ -30,6 +30,10 @@ paths:
   /policies/manual-issue:
     post:
       summary: Manually issue a policy (staff exception path only)
+      description: >-
+        Single-life policies only. A GROUP_LIFE or CREDIT_LIFE product answers 422
+        `NOT_A_SINGLE_LIFE_PRODUCT`: issued here it would be a group contract with no member
+        schedule, covering nobody. Schemes are issued through their own set-up.
       security:
         - staffAuth: []
       requestBody:
@@ -515,6 +519,87 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /group-schemes/{policyNumber}/agent-of-record:
+    post:
+      summary: Correct who earns commission on a scheme, from now on (staff -- FINANCE_OFFICER or ADMIN)
+      description: >-
+        On credit life the commission belongs to the lender (spec 2.8), but a scheme could only get
+        its agent at issuance, where whoever registered the lender's party won. Forward only:
+        accruals already booked stay with whoever earned them. Publishes
+        policy.AgentOfRecordChanged, which distribution follows and audit records.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                agentOfRecordId:
+                  type: [string, "null"]
+                  format: uuid
+                  description: The agent who earns from now on; null makes the scheme direct.
+                reason: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: The policy is not a scheme.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: agentOfRecordId names no agent in this tenant (UNKNOWN_AGENT_OF_RECORD).
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /group-schemes/{policyNumber}/members/{policyMemberId}:
+    get:
+      summary: One member of a scheme, by id (staff)
+      description: >-
+        Built exactly as a row of the roll. For a screen that holds a member id and needs the
+        person -- finance's bank-transfer queue knows a claim, and a claim knows only its
+        member's id; the roll could be searched by name or reference but not by id.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { type: string }
+        - name: policyMemberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyMemberView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: The policy is not a scheme, or no member with that id is on it.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /group-schemes/{policyNumber}/members:
     get:
       summary: One page of a scheme's member schedule
@@ -599,7 +684,9 @@ paths:
         '409':
           description: >-
             Already an active member, the scheme is not in force, the join date is in the future
-            or before commencement, or the inputs do not match the scheme's benefit basis.
+            or before commencement, the inputs do not match the scheme's benefit basis, the
+            member is outside the product's entry age or loan term, or the scheme is credit
+            life — borrowers join only through an enrolment file a second person accepts.
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -655,6 +742,230 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 
+    get:
+      summary: Every enrolment submission this scheme has had, newest first
+      description: >-
+        Every other read here needs a submissionId, which the upload flow has and a console
+        page opening on a scheme does not. Without this there is no way to reach the report of
+        a file sent last month.
+
+
+        Empty rather than 404 for a scheme that has had none: that is the normal state of a
+        scheme on its first day, not an error.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: Newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EnrolmentSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /credit-life-schemes/{policyNumber}/exits:
+    post:
+      summary: Submit a lender's monthly exits file. Takes nobody off cover.
+      description: >-
+        The loans that ended -- repaid early, refinanced, written off or cancelled -- and the
+        cover that comes off with them. Every row is judged and recorded, and NOBODY leaves
+        cover until a second staff user accepts the submission.
+
+
+        CSV or XLSX, the same as the enrolment upload. This was CSV-only on the argument that an
+        exits file is a short list from a loan system, so a second format would buy a second set
+        of numeric-coercion traps for nobody. That missed the thing that matters: the file carries
+        an exit_date, and a CSV cannot survive Excel, which rewrites dates on open and again on
+        save. Two real enrolment files were refused entire that way before that side moved to a
+        workbook; this side was exposed to the identical failure and had merely not been reached.
+
+
+        The coercion traps were already handled -- XlsxToCsv is what both paths read a workbook
+        through, and the exits service has always called it. Only the controller refused one.
+
+
+        One submission may be in flight per scheme at a time.
+
+
+        THIS SURFACE DID NOT EXIST until 2026-09-23. The feature was built complete -- parser,
+        state machine, pro-rata refund, commission clawback -- and shipped with no controller,
+        so no HTTP client could run a lender's monthly file at all.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The exits file as CSV -- member reference, exit date, reason, outstanding balance.
+      responses:
+        '201':
+          description: Judged. Nobody leaves cover until this submission is accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >-
+            Not a credit-life scheme, a submission is already awaiting acceptance, or the file
+            is unreadable as a whole.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: Every exits submission this scheme has had, newest first
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: Newest first. Empty for a scheme that has had none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}:
+    get:
+      summary: One exits submission and where it stands
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The submission.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}/rows:
+    get:
+      summary: Every row of an exits file, with its outcome
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: One entry per row of the uploaded file.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ExitRowView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}/acceptance:
+    post:
+      summary: A second person turns the judged rows into actual exits
+      description: >-
+        This is what takes cover away, refunds unearned premium and claws back the commission
+        it earned. The accepting user must be a DIFFERENT person from the submitter.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Accepted. The good rows are off cover.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}/withdrawal:
+    post:
+      summary: Withdraw a submission nobody should accept
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Withdrawn. The scheme is free to receive a corrected file.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExitSubmissionView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+
+  /credit-life-schemes/{policyNumber}/exits/{submissionId}/report:
+    get:
+      summary: The report that goes back to the lender, as CSV
+      description: >-
+        The only place a lender learns which exits were refused and why. Served as a download
+        because it is read in the spreadsheet the file came from, beside the rows it judges.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The report.
+          content:
+            text/csv:
+              schema: { type: string }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
   /credit-life-schemes/{policyNumber}/enrolments/{submissionId}:
     get:
       summary: One submission and where it stands
@@ -767,6 +1078,169 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 
+  /group-schemes/{policyNumber}/free-cover-limit:
+    put:
+      summary: Move a scheme's free cover limit, restating every member's cover against it
+      description: >-
+        The ONLY term on a group scheme that can be amended, and the restriction is the domain's
+        rather than this endpoint's. An interest method and a repayment frequency were used to
+        count every existing member's schedule; a premium rate was used to CHARGE them, and their
+        refund is computed from what they paid. Restating any of those rewrites history. A free
+        cover limit was used for neither -- it decides how much of a benefit is covered TODAY,
+        cover is effective-dated, and moving the limit writes new rows from today rather than
+        altering what was true yesterday.
+
+
+        RAISING IT IS THE CASE THIS EXISTS FOR. A limit is typed once at set-up, and a wrong one
+        insures every borrower for a fraction of their loan and opens an underwriting case for
+        each of them. Until this existed the only remedy was a second scheme.
+
+
+        AN AMENDMENT MAY NOT REDUCE ANYBODY'S COVER and is refused with a 409 naming how many
+        members it would. Lowering below live cover would leave borrowers part-uninsured from a
+        date nobody told them about. Lowering is allowed where it caps nobody already on the roll,
+        which is the honest half of the case: it binds only members yet to come.
+
+
+        Omitting `fclAmount` means the scheme has NO limit -- a real design, and never the same as
+        zero, which would send every borrower to underwriting.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                fclAmount:
+                  description: >-
+                    Omit for a scheme with no limit at all. Zero is refused rather than accepted
+                    and reinterpreted.
+                  type: [string, "null"]
+                  pattern: '^\d+(\.\d{1,2})?$'
+                reason:
+                  description: >-
+                    Required. A limit is a term agreed with a lender, so an amendment with no
+                    stated reason is an unexplained change to what every borrower is covered for.
+                  type: string
+                  minLength: 1
+      responses:
+        '200':
+          description: OK -- the scheme as it now stands, with its restated total
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupSchemeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >-
+            The limit would reduce somebody's cover, or it is the limit the scheme already has.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+
+  /credit-life-schemes/{policyNumber}/template:
+    get:
+      summary: The enrolment file this scheme's lender fills in, with a worked example
+      description: >-
+        The header row, generated from the parser that reads it so the two cannot disagree, plus
+        the scheme's OWN opening borrower as an example row.
+
+
+        Scoped to the scheme rather than the product, although the columns are identical for
+        every lender. A header row plus a page of prose is not how anybody learns a file format;
+        the borrower somebody typed into the set-up form, echoed back in the file they are about
+        to send, answers what the prose was trying to. And when the lender's portal lands, "the
+        template" has to mean their scheme's.
+
+
+        The example row is safe to return unchanged: it names a loan already on cover, and the
+        judge refuses a row whose borrower, date of birth, disbursement date and principal match
+        an existing member -- so it comes back ALREADY_ENROLLED rather than insuring anybody
+        twice. That is why a REAL borrower can be shown here where an invented one could not.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK -- CSV, served as an attachment
+          content:
+            text/csv:
+              schema: { type: string }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+
+  /credit-life-schemes/{policyNumber}/exits-template.xlsx:
+    get:
+      summary: The monthly exits file as a spreadsheet, with its instructions sheet
+      description: >-
+        The one to send a lender who works in Excel. A CSV cannot survive it -- Excel rewrites
+        dates on open and again on save -- and this file carries an exit_date, so it was exposed
+        to the failure that refused two real enrolment files before that side moved to a workbook.
+
+
+        The workbook also carries a "How to fill this in" sheet, which is the only way the format
+        rules reach the lender at all: the console column guide is on a staff screen they never
+        see, and nothing delivers it for them.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK -- an XLSX workbook, served as an attachment
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+
+  /credit-life-schemes/{policyNumber}/exits-template:
+    get:
+      summary: The monthly exits file this scheme's lender fills in, with an example row
+      description: >-
+        Header row generated by `ExitCsvParser`, plus an example whose `member_reference` quotes
+        this scheme's prefix with sequence 000000 -- a reference the sequence can never mint,
+        since it starts at one.
+
+
+        That asymmetry with the enrolment template is deliberate. An enrolment example defends
+        itself: returned unchanged it duplicates a covered loan and is refused. An exits example
+        does not -- a real reference with a real date would take a living borrower off cover,
+        refund their premium and claw back the commission, and every one of those looks correct
+        downstream. So the shape is shown and the member is not.
+
+
+        `member_reference` is REQUIRED here where it is optional on an enrolment file: an
+        enrolment may name a new borrower, an exit cannot.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: OK -- CSV, served as an attachment
+          content:
+            text/csv:
+              schema: { type: string }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+
   /credit-life-schemes/{policyNumber}/enrolments/{submissionId}/report:
     get:
       summary: The rejection report that goes back to the lender
@@ -794,6 +1268,56 @@ paths:
 
 components:
   schemas:
+    ExitSubmissionView:
+      type: object
+      description: >-
+        One monthly exits file and where it stands. Structurally the twin of
+        EnrolmentSubmissionView and differing in exactly one field -- exitedCount where that
+        has enrolledCount -- because the two flows share a shape and not a meaning.
+      properties:
+        submissionId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        status: { type: string, enum: [PENDING, ACCEPTED, WITHDRAWN] }
+        fileName: { type: string }
+        rowCount: { type: integer }
+        exitedCount:
+          type: integer
+          description: Zero until the submission is accepted. Submitting takes nobody off cover.
+        rejectedCount: { type: integer }
+        submittedBy: { type: string }
+        submittedAt: { type: string, format: date-time }
+        acceptedBy: { type: [string, 'null'] }
+        acceptedAt: { type: [string, 'null'], format: date-time }
+    ExitRowView:
+      type: object
+      description: >-
+        One row of an exits file, with what the platform made of it. Field-for-field from
+        policy/api/ExitRowView.java -- the first draft of this schema invented rowNumber,
+        reason-as-the-enum and outstandingBalance, none of which the record has, which is a spec
+        that lies about the API it documents.
+      properties:
+        lineNumber:
+          type: integer
+          description: The line in the lender's own file. 1 is the header.
+        memberReference: { type: [string, 'null'] }
+        exitDate: { type: [string, 'null'], format: date }
+        exitReason:
+          type: [string, 'null']
+          enum: [SETTLED_EARLY, REFINANCED, WRITTEN_OFF, CANCELLED, null]
+          description: Why the loan ended. A settled claim never arrives on this file.
+        outstandingBalanceAtExit: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        outcome: { type: string, enum: [EXITED, REJECTED] }
+        reasonCode:
+          type: [string, 'null']
+          enum: [MISSING_REQUIRED_FIELD, MALFORMED_VALUE, UNKNOWN_MEMBER_REFERENCE, DUPLICATE_REFERENCE, ALREADY_EXITED, EXIT_BEFORE_COVER_STARTED, UNKNOWN_EXIT_REASON, DEATH_CLAIM_IN_PROGRESS, null]
+          description: Why this row was refused. Absent on a row that will exit.
+        reason:
+          type: [string, 'null']
+          description: The refusal in words, beside the code.
+        policyMemberId:
+          type: [string, 'null']
+          format: uuid
+          description: The member this row exits.
     EnrolmentSubmissionView:
       description: >-
         A lender's submitted schedule. enrolledCount is zero until the submission is
@@ -840,6 +1364,23 @@ components:
           format: uuid
           nullable: true
           description: The member this row became, written at acceptance.
+        memberReference:
+          description: >-
+            The reference the INSURER minted for this borrower, written at acceptance. Carried by
+            EnrolmentRowView since enrolment was built and never declared here, so no generated
+            client had the field and the console could not read one -- which is why its rows table
+            said member references live only in the report. True of this contract, false of the
+            data.
+          type: [string, "null"]
+        premiumAmount:
+          description: >-
+            What this borrower was charged, null on a refused row because nothing is charged for
+            somebody who was not enrolled. Money, never a bare number: this endpoint returned the
+            domain view directly until 2026-09-24, and its sibling on the exits side reached the
+            browser as a raw JSON figure with no currency, rendering as "undefined undefined".
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
 
     BeneficiaryOfView:
       description: >-
@@ -985,6 +1526,25 @@ components:
             that also answers on /group-schemes/{policyNumber}.
           type: [string, "null"]
           enum: [TERM_LIFE, ENDOWMENT, WHOLE_LIFE, ANNUITY, UNIT_LINKED, GROUP_LIFE, EDUCATION_SAVINGS, CREDIT_LIFE, null]
+        underwritingCaseId:
+          description: >-
+            The decided underwriting case this policy — or scheme — was issued from. Null on an
+            exception route with no case behind it, and on policies older than the rule.
+          type: [string, "null"]
+          format: uuid
+        issuanceBasis:
+          description: >-
+            Why it was issued outside the ordinary proposal, decision and first premium
+            (MIGRATION, UNDERWRITING_OVERRIDE, ...). Null for ordinary new business.
+          type: [string, "null"]
+        issuanceReason:
+          description: The issuer's own words for an exception-route issuance. Null otherwise.
+          type: [string, "null"]
+        issuedByName:
+          description: >-
+            Who issued it, by name from their token — for a credit-life scheme set up from agreed
+            terms, the underwriter of record. Null for automatic issuance and older policies.
+          type: [string, "null"]
     IssueGroupSchemeRequest:
       description: >-
         No sumAssured field, deliberately: a scheme's sum assured is the total of its members'
@@ -1014,7 +1574,7 @@ components:
             SACCO, funeral and credit-linked cover; salary multiple is the standard for formal
             employer schemes; graded splits by staff category.
           type: string
-          enum: [FLAT, SALARY_MULTIPLE, GRADED]
+          enum: [FLAT, SALARY_MULTIPLE, GRADED, AMORTISING_LOAN]
         flatBenefitAmount:
           description: >-
             A bare decimal string against this scheme's `currency`, not a JSON number and not
@@ -1044,14 +1604,33 @@ components:
           items: { $ref: '#/components/schemas/GroupSchemeGradeInput' }
         openingSchedule:
           description: >-
-            At least one life. A scheme issued empty would have a sum assured of nil, which
-            policy_sum_assured_positive rejects -- a contract insuring nobody for nothing is
-            not a policy.
+            The lives the scheme opens with. REQUIRED to be non-empty on every basis but
+            AMORTISING_LOAN, and the difference is the shape of the contract rather than a
+            convenience.
+
+
+            An employer scheme's schedule IS the contract: agreed and signed as a whole, so one
+            insuring nobody for nothing is not a policy. A credit-life scheme is an agreement with
+            a lender -- the rate, the free cover limit, the interest method -- and it exists before
+            any borrower does; the book arrives monthly by file and never stops. Forcing a borrower
+            in at set-up made somebody type a life they then met again on the member roll without
+            recognising them.
+
+
+            Not expressed as `minItems` because the rule depends on `benefitBasis`, which JSON
+            Schema cannot condition on here; the service refuses with a message naming the basis.
           type: array
-          minItems: 1
           items: { $ref: '#/components/schemas/GroupMemberInput' }
         premium: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        premiumFrequency:
+          description: >-
+            SINGLE is REQUIRED on an AMORTISING_LOAN scheme and refused on every other basis,
+            and its absence here was not cosmetic: a credit-life premium is charged once per
+            borrower when their loan is written, the service refuses any cycle outright
+            ("a cycle here would bill the master policy for..."), and the only value this
+            product accepts could not be expressed by a generated client at all.
+          type: string
+          enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE]
         commencementDate:
           description: >-
             When the scheme's risk starts. Backdating is normal -- a schedule reaches the
@@ -1076,7 +1655,49 @@ components:
             manual-issue path every issuance is an exception that must name itself; here the
             ordinary case is an offer, and omitting it says exactly that.
           type: [string, "null"]
-          enum: [NEW_BUSINESS, MIGRATION, CONVERSION, REINSTATEMENT, UNDERWRITING_OVERRIDE, null]
+          # Matched to policy/api/IssuanceBasis. NEW_BUSINESS was listed here and does not
+          # exist -- a client that sent it got a 400 from a value this contract promised --
+          # and GUARANTEED_ISSUE exists and was missing. Ordinary new business is the NULL
+          # case, which is what made the invented value look plausible.
+          enum: [MIGRATION, CONVERSION, REINSTATEMENT, UNDERWRITING_OVERRIDE, GUARANTEED_ISSUE, null]
+        interestMethod:
+          description: >-
+            This and the two fields below belong to AMORTISING_LOAN and no other benefit basis,
+            and all three were absent from this request entirely until 2026-09-23 -- which made
+            credit life unreachable over HTTP however complete the domain behind it was.
+
+
+            FLAT_RATE is the answer for both real lender files. Cover declines straight-line, so
+            the method is never read to value a claim, but the scheme records what it was
+            written on.
+          type: [string, "null"]
+          enum: [FLAT_RATE, REDUCING_BALANCE, null]
+        repaymentFrequency:
+          description: >-
+            How often the borrower repays -- the schedule the declining cover follows. Only
+            MONTHLY and QUARTERLY exist; SEMI_ANNUALLY and ANNUALLY were listed here and are
+            not values of policy/api/RepaymentFrequency, so a client following this contract
+            would have been refused by the enum converter.
+          type: [string, "null"]
+          enum: [MONTHLY, QUARTERLY, null]
+        premiumRatePercent:
+          description: >-
+            Per-lender and negotiable; 0.4% and 0.5% are the two quoted. Charged once per
+            borrower on the amount they borrowed, not on the declining balance.
+          type: [number, "null"]
+          minimum: 0.0001
+        underwritingCaseId:
+          description: >-
+            The group case this scheme is issued on. REQUIRED for a GROUP_LIFE (employer)
+            scheme — as manual issue requires one for a single life — and refused with 409 when
+            absent, when it is not a group proposal by this employer on this product version, or
+            when a scheme already came from it. Not required for CREDIT_LIFE, which an
+            underwriter sets up from agreed terms; their name is recorded as underwriter of record.
+          type: [string, "null"]
+          format: uuid
+      # The three above are not in this list for the same reason flatBenefitAmount and
+      # salaryMultiple are not: which fields a scheme requires depends on its benefitBasis,
+      # OpenAPI cannot express that here, and the service refuses with a message naming the basis.
       required: [policyholderPartyId, productVersionId, benefitBasis, currency, openingSchedule, premium]
     GroupSchemeGradeInput:
       type: object
@@ -1114,7 +1735,59 @@ components:
             commencement date. Backdating is allowed; a future date is refused.
           type: [string, "null"]
           format: date
-      required: [memberPartyId]
+        memberType:
+          description: >-
+            PARTY for a person the platform already knows, FREEFORM for a name on a lender's
+            schedule. Absent means PARTY, which is what every caller before credit life meant.
+          type: [string, "null"]
+          enum: [PARTY, FREEFORM, null]
+        memberName:
+          description: Required on a FREEFORM member and ignored on a PARTY one.
+          type: [string, "null"]
+          maxLength: 200
+        memberDateOfBirth: { type: [string, "null"], format: date }
+        loanAccountNumber:
+          description: >-
+            The lender's own reference, optional since policy/V16 -- neither real lender holds
+            one, which is why the insurer mints the member reference instead.
+          type: [string, "null"]
+          maxLength: 50
+        loanTerms:
+          description: >-
+            Required on an AMORTISING_LOAN scheme and rejected on any other. Optional here
+            because the condition belongs to the scheme, and the service answers it.
+          allOf: [{ $ref: '#/components/schemas/LoanTermsInput' }]
+      # NO required LIST, deliberately. memberPartyId used to be the only entry, required
+      # unconditionally, and that made a whole product unreachable over HTTP: a credit-life
+      # member is a LOAN, carried FREEFORM with a name and a date of birth and no party row at
+      # all, because a lender's file of several hundred borrowers cannot mint a party per row.
+      # The real rule -- a PARTY member needs an id, a FREEFORM member needs a name -- is
+      # conditional on memberType, like every other conditional rule on this request, and the
+      # service answers it.
+    LoanTermsInput:
+      description: >-
+        The loan a credit-life member IS. On this product a member is not a person with a loan
+        attached; the member is the loan, and the amount insured is derived from these terms,
+        declining straight-line over the term.
+      type: object
+      required: [principalAmount, annualInterestRatePercent, termMonths, repaymentFrequency, disbursementDate, firstRepaymentDate]
+      properties:
+        principalAmount:
+          description: A bare decimal string. What the borrower borrowed, not what they still owe.
+          type: string
+          pattern: '^(?!0+(\.0{1,2})?$)\d+(\.\d{1,2})?$'
+        annualInterestRatePercent:
+          description: >-
+            Zero is the normal case and a true statement rather than a missing value: cover
+            declines straight-line, so no rate is ever read to value a claim, and both real
+            lender files charge premium on the disbursed amount.
+          type: number
+          minimum: 0
+        termMonths: { type: integer, minimum: 1 }
+        # Same correction as the scheme-level field above: RepaymentFrequency has two values.
+        repaymentFrequency: { type: string, enum: [MONTHLY, QUARTERLY] }
+        disbursementDate: { type: string, format: date }
+        firstRepaymentDate: { type: string, format: date }
     GroupSchemeView:
       type: object
       properties:
@@ -1123,7 +1796,10 @@ components:
         status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
-        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED] }
+        # AMORTISING_LOAN is credit life: the member IS a loan and the amount insured is the
+        # declining balance. It was missing from both enums here while schemes were being issued
+        # with it, so the generated client could not even express the value the server returns.
+        benefitBasis: { type: string, enum: [FLAT, SALARY_MULTIPLE, GRADED, AMORTISING_LOAN] }
         flatBenefit:
           description: Null unless the basis is FLAT.
           allOf:
@@ -1202,6 +1878,72 @@ components:
             distinguishable from one restated at renewal without opening the history.
           type: [string, "null"]
           format: date
+        memberType:
+          description: >-
+            PARTY for a life the platform holds a party record for, FREEFORM for a name on a
+            lender's schedule.
+          type: [string, "null"]
+          enum: [PARTY, FREEFORM, null]
+        memberName:
+          description: >-
+            The insured life's name where there is no party row to look it up from. Present on
+            every credit-life borrower and absent on a PARTY member, whose name comes from the
+            party record.
+
+
+            This field and the three below existed on PolicyMemberView.java and were absent from
+            this schema, so no client could read them. The consequence was not cosmetic: a
+            credit-life scheme's member roll rendered an em dash for every borrower, because the
+            only name it could reach was through memberPartyId, which a FREEFORM member does not
+            have. A roll whose whole purpose is answering "is this person covered" could not name
+            a single person on it.
+          type: [string, "null"]
+          maxLength: 200
+        memberReference:
+          description: >-
+            The reference the INSURER minted for this member, CL-<scheme>-<seq>. The lender
+            quotes it back on later files, and it is how an exits file names who is leaving.
+          type: [string, "null"]
+        loanAccountNumber:
+          description: The lender's own reference, optional since policy/V16.
+          type: [string, "null"]
+        exitReason:
+          description: Why this member left. Null while they are still on cover.
+          type: [string, "null"]
+          enum: [CLAIM_SETTLED, SETTLED_EARLY, REFINANCED, WRITTEN_OFF, CANCELLED, null]
+        outstandingBalanceAtExit:
+          description: >-
+            What the borrower still owed when they left, as the lender reported it. Null on a
+            claim-settled exit and on any non-credit-life member.
+          oneOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          nullable: true
+        openDeathClaimId:
+          description: >-
+            A death claim on this life that is registered and not yet paid. The member is still
+            ACTIVE -- they leave cover when it settles, dated to the death -- and while this is
+            set an exits file cannot take them off, since the claim decides how they leave. Null
+            when there is none.
+          type: [string, "null"]
+          format: uuid
+        arrivedOnSubmissionId:
+          description: >-
+            The enrolment file this member arrived on, so a console can link from the roll to the
+            submission that put them on cover. NULL when they did not arrive on one -- a member of
+            the opening schedule, or one added singly on an employer scheme.
+          type: [string, "null"]
+          format: uuid
+        arrivedOnFileName:
+          description: >-
+            That file's name, as the lender sent it. Null for the same reasons as above, and the
+            console renders the absence rather than leaving a blank that reads as missing data.
+
+
+            This exists because of a question the roll could not answer: "three names, and I
+            uploaded two." The third was typed at set-up, and nothing distinguished it. It is also
+            the operational form of the same question -- on which file did you put this borrower
+            on cover? -- which is what a lender asks in a dispute.
+          type: [string, "null"]
     PolicyMemberPage:
       type: object
       properties:

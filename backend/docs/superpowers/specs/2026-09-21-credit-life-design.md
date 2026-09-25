@@ -50,6 +50,23 @@ and the same three answers govern them.
 exclusions (R1), per-scheme limits and aggregation (R2), and a cession that can follow a
 changing sum assured (R3). That is a reinsurance build, not a credit-life one.
 
+**Decision, 2026-09-25: build later. Recorded here for reference.** Reviewed against the dev
+data: no scheme has ever been ceded (the ten "group" cessions are single-life policies issued on
+a group product, with no member schedule), and the four settled credit-life claims recovered
+nothing. So the insurer retains **100% of every borrower's risk, up to the free cover limit
+each** (600,000,000 today). The build was deliberately deferred, not forgotten:
+
+- It needs the actual scheme treaty terms from the reinsurer before design starts -- R1-R3 are
+  what a treaty *may* contain, not what this insurer's treaty *does* contain.
+- Until then the console states it: the credit-life scheme page shows "Reinsurance: Not
+  reinsured -- the insurer retains 100% of this scheme's risk", so nobody assumes cover exists.
+- `reinsurance.PolicyEventListener` keeps skipping `GROUP_LIFE` and `CREDIT_LIFE`, asserted by
+  `CessionEndToEndTest.aGroupSchemeIsNotCededBecauseItsSumAssuredIsManyLivesNotOne`.
+
+When it is picked up, the shape it needs is a cession that follows a declining balance -- derived
+on demand, as `claimableCover` is -- plus per-scheme exposure limits, and a recovery on a scheme
+claim computed from the member's cover at the date of death rather than the scheme total.
+
 ### 0b. §6 of the requirements table is NOT COMING — closed 2026-09-23
 
 First requested 2026-09-03 and chased six times. The client has now said it will not be
@@ -506,6 +523,13 @@ doing the uploads; the product works end to end without the portal.
 - **The commission engine has three broken links in dev**, and §2.8 makes them blocking
   rather than background: the close sweep was never applied so payout 409s, zero `OVERRIDE`
   rules exist, and 19 of 134 products have a plan.
+  **Update 2026-09-25:** the close sweep is installed in dev. The lender is now the agent of
+  record by default at set-up (the registering agent no longer overrides it on credit life),
+  a scheme's agent can be corrected forward-only, and the rate is set **per lender** as a
+  percentage on the lender's own agent -- so no product-wide plan is needed. Commission applies
+  from the change onward; files accepted before it were deliberately not backfilled. Still
+  open: `OVERRIDE` rules (credit life earns no overrides by design, §2.8), and the platform
+  still has no way to install the scheduled sweeps in any environment but by hand.
 
 ---
 

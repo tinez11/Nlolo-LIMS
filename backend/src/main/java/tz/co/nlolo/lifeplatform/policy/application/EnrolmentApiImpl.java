@@ -36,6 +36,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import tz.co.nlolo.lifeplatform.policy.domain.LenderTemplateXlsx;
+import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
+import tz.co.nlolo.lifeplatform.party.api.PartyApi;
+import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
 
 /**
  * Bulk enrolment: read a lender's file, judge every row, and enrol nobody until a second
@@ -55,6 +62,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     private final GroupSchemeRepository groupSchemeRepository;
     private final PolicyRepository policyRepository;
     private final PolicyMemberRepository policyMemberRepository;
+    private final PartyApi partyApi;
     private final PolicyApi policyApi;
     private final ProductApi productApi;
     private final DocumentApi documentApi;
@@ -66,12 +74,14 @@ public class EnrolmentApiImpl implements EnrolmentApi {
                              PolicyRepository policyRepository,
                              PolicyMemberRepository policyMemberRepository,
                              PolicyApi policyApi, ProductApi productApi, DocumentApi documentApi,
+                             PartyApi partyApi,
                              ApplicationEventPublisher eventPublisher) {
         this.submissionRepository = submissionRepository;
         this.rowRepository = rowRepository;
         this.groupSchemeRepository = groupSchemeRepository;
         this.policyRepository = policyRepository;
         this.policyMemberRepository = policyMemberRepository;
+        this.partyApi = partyApi;
         this.policyApi = policyApi;
         this.productApi = productApi;
         this.documentApi = documentApi;
@@ -250,16 +260,35 @@ public class EnrolmentApiImpl implements EnrolmentApi {
         return toView(findSubmission(submissionId, TenantContext.get()));
     }
 
+    /**
+     * The scheme's submission history. Uses the repository's
+     * {@code findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc}, which existed with no caller
+     * until now — the ordering it already declared is the one this needs, so it is used rather
+     * than a second finder added beside it.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<EnrolmentSubmissionView> listSubmissions(String policyNumber) {
+        return submissionRepository
+            .findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc(TenantContext.get(), policyNumber)
+            .stream().map(EnrolmentApiImpl::toView).toList();
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<EnrolmentRowView> listRows(UUID submissionId) {
         UUID tenantId = TenantContext.get();
-        findSubmission(submissionId, tenantId); // not-found rather than an empty list
+        EnrolmentSubmission submission = findSubmission(submissionId, tenantId);
+        String currency = groupSchemeRepository
+            .findByPolicyNumberAndTenantId(submission.getPolicyNumber(), tenantId)
+            .map(GroupScheme::getCurrency)
+            .orElse(null);
         return rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)
             .stream()
             .map(row -> new EnrolmentRowView(row.getLineNumber(), row.getLoanAccountNumber(),
                 row.getBorrowerFullName(), row.getOutcome(), row.getReasonCode(), row.getReason(),
-                row.getPolicyMemberId(), row.getMemberReference(), row.getPremiumAmount()))
+                row.getPolicyMemberId(), row.getMemberReference(), row.getPremiumAmount(),
+                currency))
             .toList();
     }
 
@@ -267,6 +296,123 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     @Transactional(readOnly = true)
     public String renderReport(UUID submissionId) {
         return EnrolmentReportRenderer.toCsv(listRows(submissionId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String renderTemplate(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        // The EARLIEST member, which on a scheme set up through the console is the opening
+        // borrower somebody typed into the form. Echoing their own entry back is the whole point:
+        // the file they are about to send is the file they already filled in once.
+        //
+        // The sort must be TOTAL -- a bulk upload gives every row the same joinedOn, and this
+        // asks for exactly one row out of a paged query.
+        Pageable earliest = PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "joinedOn")
+            .and(Sort.by(Sort.Direction.ASC, "policyMemberId")));
+        List<PolicyMember> members = policyMemberRepository
+            .findByTenantIdAndPolicyNumberAndStatus(tenantId, policyNumber, "ACTIVE", earliest)
+            .getContent();
+
+        StringBuilder csv = new StringBuilder(EnrolmentCsvParser.templateCsv());
+        for (PolicyMember member : members) {
+            LoanTerms terms = member.getLoanTerms();
+            if (terms == null) {
+                // No loan, nothing to demonstrate. A half-filled row teaches the wrong shape.
+                continue;
+            }
+            /*
+             * A PARTY MEMBER'S NAME LIVES IN party, NOT ON THE MEMBER ROW, and skipping those was
+             * a real defect rather than a tidy guard. The first scheme a person set up this way
+             * had its opening borrower above the free cover limit, so the platform referred them
+             * for evidence and PROMOTED them to a registered party -- correct behaviour, and it
+             * left memberName null. The template then fell back to a bare header, on the one
+             * scheme whose owner most needed to see a filled row, and the file they sent back had
+             * every date in Excel's own format and was refused entire.
+             */
+            String name = member.getMemberName();
+            LocalDate born = member.getMemberDateOfBirth();
+            if ((name == null || born == null) && member.getMemberPartyId() != null) {
+                PartyDetailView party = partyApi.getPartyDetail(member.getMemberPartyId());
+                name = name != null ? name : party.displayName();
+                born = born != null ? born : party.dateOfBirth();
+            }
+            if (name == null || born == null) {
+                continue;
+            }
+            csv.append(String.join(",",
+                    csvValue(member.getMemberReference()),
+                    csvValue(name),
+                    born.toString(),
+                    "", "", "",
+                    terms.principalAmount().toPlainString(),
+                    String.valueOf(terms.termMonths()),
+                    terms.disbursementDate().toString(),
+                    csvValue(member.getLoanAccountNumber())))
+                .append('\n');
+        }
+        return csv.toString();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] renderTemplateXlsx(String policyNumber) {
+        // Built from the same example the CSV template uses, so the two cannot describe different
+        // borrowers -- and parsed back by the same reader either way.
+        return LenderTemplateXlsx.enrolment(exampleRowFor(policyNumber));
+    }
+
+    /**
+     * The scheme's earliest active borrower, as an example, or null if it has none to show.
+     *
+     * <p>Shared by both templates. Split out when the spreadsheet arrived rather than duplicated,
+     * because a CSV and an XLSX that demonstrated DIFFERENT borrowers would be the same class of
+     * defect the generated header was introduced to prevent.
+     */
+    private LenderTemplateXlsx.EnrolmentExample exampleRowFor(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Pageable earliest = PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "joinedOn")
+            .and(Sort.by(Sort.Direction.ASC, "policyMemberId")));
+        for (PolicyMember member : policyMemberRepository
+                .findByTenantIdAndPolicyNumberAndStatus(tenantId, policyNumber, "ACTIVE", earliest)
+                .getContent()) {
+            LoanTerms terms = member.getLoanTerms();
+            if (terms == null) {
+                continue;
+            }
+            String name = member.getMemberName();
+            LocalDate born = member.getMemberDateOfBirth();
+            if ((name == null || born == null) && member.getMemberPartyId() != null) {
+                PartyDetailView party = partyApi.getPartyDetail(member.getMemberPartyId());
+                name = name != null ? name : party.displayName();
+                born = born != null ? born : party.dateOfBirth();
+            }
+            if (name == null || born == null) {
+                continue;
+            }
+            return new LenderTemplateXlsx.EnrolmentExample(member.getMemberReference(), name, born,
+                terms.principalAmount(), terms.termMonths(), terms.disbursementDate(),
+                member.getLoanAccountNumber());
+        }
+        return null;
+    }
+
+    /**
+     * A value safe to sit in a CSV cell.
+     *
+     * <p>A borrower's name is the one field here a lender wrote, and real exports carry commas in
+     * them -- "Mwinyi, Amina H." is an ordinary way for a bank to hold a name. Emitting it raw
+     * would shift every column after it and hand back a template the parser that generated it
+     * cannot read.
+     */
+    private static String csvValue(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        if (raw.contains(",") || raw.contains("\"") || raw.contains("\n")) {
+            return '"' + raw.replace("\"", "\"\"") + '"';
+        }
+        return raw;
     }
 
     /**

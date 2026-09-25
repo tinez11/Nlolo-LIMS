@@ -101,6 +101,16 @@ public class PolicyEventListener {
             // one handler serves both. See its javadoc for why the projection is a delta.
             case "policy.GroupMemberAdded" -> withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupMemberAdded"));
             case "policy.GroupMemberExited" -> withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupMemberExited"));
+            // A free cover limit moving changes the scheme's total with NO member joining or
+            // leaving. Without this branch the running sum assured would quietly diverge from the
+            // book on every amendment -- the same staleness member movement was added to close,
+            // arriving through a door that did not exist when it was.
+            case "policy.GroupSchemeFreeCoverLimitAmended" ->
+                withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupSchemeFreeCoverLimitAmended"));
+            // The same door again: an underwriter granting a member's excess raises the total
+            // with nobody joining or leaving.
+            case "policy.GroupMemberEvidenceGranted" ->
+                withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupMemberEvidenceGranted"));
             // policy.PolicySuspended: deliberately no case -- see class javadoc.
             default -> { /* not regreporting-relevant here */ }
         }

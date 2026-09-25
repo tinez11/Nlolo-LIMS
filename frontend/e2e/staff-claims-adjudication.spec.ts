@@ -112,8 +112,18 @@ test.describe('staff claims adjudication', () => {
     await expect(assessorPage.getByRole('heading', { name: 'Submit an assessment' })).toBeVisible();
     await expect(assessorPage.getByRole('heading', { name: 'Decide settlement' })).not.toBeVisible();
 
+    // The recommendation opens at the claim's cover -- the 2,000,000 sum assured, read from
+    // GET /claims/{id}/claimable-cover -- and says so, rather than a blank field with an
+    // invented placeholder.
+    await expect(assessorPage.getByLabel('Recommended amount')).toHaveValue('2000000.00');
+    await expect(assessorPage.getByText('Covered for TZS 2,000,000.00 — the most this claim can pay'))
+      .toBeVisible();
+
+    // Recommend LESS than the cover, so every figure below is distinguishable: if the manager's
+    // form opened at the cover instead of this recommendation, or the record showed the sum
+    // assured instead of the decided amount, 1,500,000 is what would be missing.
     await assessorPage.getByLabel('Findings').fill('Standard risk, no adverse findings');
-    await assessorPage.getByLabel('Recommended amount').fill('2000000.00');
+    await assessorPage.getByLabel('Recommended amount').fill('1500000.00');
     await assessorPage.getByRole('button', { name: 'Submit assessment' }).click();
     await expect(assessorPage.getByText('Under assessment')).toBeVisible({ timeout: 15_000 });
     await assessorContext.close();
@@ -126,8 +136,27 @@ test.describe('staff claims adjudication', () => {
     await expect(managerPage.getByRole('heading', { name: 'Decide settlement' })).toBeVisible();
     await expect(managerPage.getByRole('heading', { name: 'Submit an assessment' })).not.toBeVisible();
 
-    // Approve is the default branch.
-    await managerPage.getByLabel('Approved amount').fill('2000000.00');
+    // Separation of duties means this manager never saw the assessment -- so it is shown to them,
+    // findings and all, and the amount they are asked to approve starts from it.
+    await expect(managerPage.getByText('TZS 1,500,000.00 recommended')).toBeVisible();
+    await expect(managerPage.getByText('Standard risk, no adverse findings')).toBeVisible();
+    // Named as a person, from the assessor's own token -- this used to print their Keycloak
+    // subject, a uuid, in both places.
+    await expect(managerPage.getByText(/^Daudi Assessor · /)).toBeVisible();
+    await expect(managerPage.getByText(/recommended by Daudi Assessor\./)).toBeVisible();
+
+    // Approve is the default branch, prefilled with the recommendation -- NOT the 2,000,000 cover
+    // -- and nothing is typed into it: the decision stands on the assessor's figure.
+    await expect(managerPage.getByLabel('Approved amount')).toHaveValue('1500000.00');
+
+    // Changing your mind and coming back keeps the figure. Switching to Approve used to reset the
+    // form to blank, and nothing refilled it.
+    await managerPage.getByRole('radio', { name: 'Reject' }).click();
+    await managerPage.getByRole('radio', { name: 'Approve' }).click();
+    await expect(managerPage.getByRole('radio', { name: 'Approve' })).toHaveAttribute('aria-checked', 'true');
+    await expect(managerPage.getByLabel('Approved amount')).toHaveValue('1500000.00');
+    await expect(managerPage.getByText(/TZS 500,000\.00 less than this claim is covered for/))
+      .toBeVisible();
     await managerPage.getByLabel('Payee reference').fill('MOBILE-MONEY-E2E-1');
     await managerPage.getByRole('button', { name: 'Approve claim' }).click();
 
@@ -158,8 +187,9 @@ test.describe('staff claims adjudication', () => {
     // Reload from scratch -- proves this is a real Postgres row.
     await managerPage.reload();
     await expect(managerPage.getByText('Settled', { exact: true })).toBeVisible();
-    // The decided amount is on the record, not just the status.
-    await expect(managerPage.getByText('TZS 2,000,000.00')).toBeVisible();
+    // The decided amount is on the record, not just the status. Exact, because the Assessments
+    // panel on the same page also names this figure ("TZS 1,500,000.00 recommended").
+    await expect(managerPage.getByText('TZS 1,500,000.00', { exact: true })).toBeVisible();
 
 
     await managerContext.close();
@@ -191,7 +221,10 @@ test.describe('staff claims adjudication', () => {
     const managerPage = await managerContext.newPage();
     await managerPage.goto(`/staff/claims/${claimId}`);
 
-    await managerPage.getByRole('button', { name: 'Reject', exact: true }).click();
+    // A choice, not an action: the decision control is a radiogroup, and nothing is sent until
+    // "Reject claim" and its confirmation below.
+    await managerPage.getByRole('radio', { name: 'Reject' }).click();
+    await expect(managerPage.getByRole('radio', { name: 'Reject' })).toHaveAttribute('aria-checked', 'true');
     await managerPage.getByLabel('Rejection reason (optional)').fill('Insufficient evidence');
     await managerPage.getByRole('button', { name: 'Reject claim' }).click();
 

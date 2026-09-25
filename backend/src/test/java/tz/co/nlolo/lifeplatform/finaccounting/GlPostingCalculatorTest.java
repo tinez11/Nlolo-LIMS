@@ -49,6 +49,17 @@ class GlPostingCalculatorTest {
         assertThat(accountFor(entry, PostingDirection.CR)).isEqualTo(PostingRule.UNEARNED_PREMIUM);
     }
 
+    /** A premium credit is the invoice posting run backwards, for the part given back. It had no
+     * rule, so billing showed a lender 4,200 credited while the ledger went on carrying the whole
+     * invoice as receivable. */
+    @Test
+    void aPremiumCreditReversesTheReceivableAgainstUnearnedPremium() {
+        JournalEntry entry = calc("billing.PremiumRefundDue", "4200.00").orElseThrow();
+        assertThat(accountFor(entry, PostingDirection.DR)).isEqualTo(PostingRule.UNEARNED_PREMIUM);
+        assertThat(accountFor(entry, PostingDirection.CR)).isEqualTo(PostingRule.PREMIUM_RECEIVABLE);
+        assertThat(entry.isBalanced()).isTrue();
+    }
+
     @Test
     void premiumCollectedSettlesTheReceivableAgainstCash() {
         JournalEntry entry = calc("billing.PremiumCollected", "15000.00").orElseThrow();

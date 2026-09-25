@@ -14,7 +14,9 @@ import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaimDetail, useClaimStore } from '@/store/claimStore';
+import { AssessmentHistoryPanel } from './AssessmentHistoryPanel';
 import { ClaimAssessmentPanel } from './ClaimAssessmentPanel';
+import { ClaimPaymentPanel } from './ClaimPaymentPanel';
 import { ClaimDetailsFields } from './ClaimDetailsFields';
 import { ClaimReopenPanel } from './ClaimReopenPanel';
 import { ClaimSettlementPanel } from './ClaimSettlementPanel';
@@ -123,10 +125,30 @@ export function ClaimDetailPage() {
                       </Link>
                     }
                   />
+                  {/*
+                    The note used to read "Re-derived on every read, not a stored
+                    column", which is true and is a fact about the database, not
+                    about this claim. A claims manager deciding a death claim needs
+                    to know what the flag MEANS and how much weight to put on it.
+
+                    And the weight is genuinely different for a group scheme: no
+                    scheme carries an underwriting case id -- issueGroupScheme never
+                    records one, not even for a scheme issued from a decided group
+                    case -- so contestability cannot be measured at all there and
+                    the check fails closed to "requires review". Every group claim
+                    is therefore flagged, permanently. Saying so is the difference
+                    between a flag somebody weighs and a flag everybody clicks past.
+                  */}
                   <Field
                     label="Contestability"
                     value={claim.requiresContestabilityReview ? 'Requires review' : 'Clear'}
-                    note="Re-derived on every read, not a stored column"
+                    note={
+                      claim.requiresContestabilityReview
+                        ? claim.policyMemberId
+                          ? 'Always flagged on a scheme — cover here is not individually underwritten, so the window cannot be measured'
+                          : 'Inside the non-disclosure window, or the window could not be established'
+                        : 'Outside the non-disclosure window on the date of event'
+                    }
                   />
                 </dl>
               </Panel>
@@ -160,7 +182,11 @@ export function ClaimDetailPage() {
               title="Decide settlement"
               subtitle="Approve or reject -- distinct from assessing."
             >
-              <ClaimSettlementPanel claimId={claimId} />
+              <ClaimSettlementPanel
+                claimId={claimId}
+                policyNumber={claim.policyNumber}
+                onScheme={!!claim.policyMemberId}
+              />
             </Panel>
           )}
 
@@ -169,6 +195,32 @@ export function ClaimDetailPage() {
               <ClaimReopenPanel claimId={claimId} wasSettled={claim.status === 'SETTLED'} />
             </Panel>
           )}
+
+          {/* Above Evidence, and shown to assessors and managers alike. The manager
+              deciding this claim did not assess it -- the platform forbids it -- so
+              this is the only place their colleague's reasoning appears. It sits
+              next to the decision form for that reason, not at the bottom with the
+              attachments. */}
+          {(roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER) && (
+            <Panel
+              title="Assessments"
+              subtitle="What the assessors found, and what they recommended paying"
+            >
+              <AssessmentHistoryPanel claimId={claimId} />
+            </Panel>
+          )}
+
+          {/* Once approved, where the money is. Shown to the claims staff who decided it and to
+              finance who pay it; payee and rail are internal, so not to anybody else. */}
+          {(roles.CLAIMS_ASSESSOR || roles.CLAIMS_MANAGER || roles.FINANCE_OFFICER) &&
+            (claim.status === 'APPROVED' ||
+              claim.status === 'SETTLEMENT_REQUESTED' ||
+              claim.status === 'SETTLED' ||
+              claim.status === 'REOPENED') && (
+              <Panel title="Payment" subtitle="Where the settlement is, and who it is waiting on">
+                <ClaimPaymentPanel claimId={claimId} claimStatus={claim.status} />
+              </Panel>
+            )}
 
           <Panel title="Evidence" subtitle="Photos, certificates, and reports attached to this claim">
             <EvidencePanel claimId={claimId} canAttach={claim.status !== 'SETTLED'} />

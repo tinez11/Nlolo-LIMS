@@ -12,6 +12,7 @@ import tz.co.nlolo.lifeplatform.policy.domain.ExitSubmission;
 import tz.co.nlolo.lifeplatform.policy.domain.ExitSubmissionRow;
 import tz.co.nlolo.lifeplatform.policy.domain.GroupScheme;
 import tz.co.nlolo.lifeplatform.policy.domain.PolicyMember;
+import tz.co.nlolo.lifeplatform.policy.domain.LenderTemplateXlsx;
 import tz.co.nlolo.lifeplatform.policy.domain.XlsxToCsv;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.ExitSubmissionRepository;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.ExitSubmissionRowRepository;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.time.LocalDate;
 
 /**
  * Bulk exits: read a lender's file, judge every row, and take nobody off cover until a second
@@ -189,6 +191,16 @@ public class ExitApiImpl implements ExitApi {
                     + " (" + member.getExitReason() + "). No further action was taken.");
         }
 
+        if (member.getOpenDeathClaimId() != null) {
+            // The same verdict exitMember reaches, here so the whole file is judged before anybody
+            // leaves cover. Worded for the LENDER, who reads this on the report: in practice this
+            // is them reporting a death we already know about, by the only channel they have.
+            return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
+                row.memberReference(), ExitRejection.DEATH_CLAIM_IN_PROGRESS,
+                row.memberReference() + " has a death claim in progress. They come off cover when the"
+                    + " claim is paid, dated to the date of death, so no exit is needed for this loan.");
+        }
+
         if (claimed.contains(row.memberReference())) {
             return ExitSubmissionRow.rejected(tenantId, submissionId, row.lineNumber(),
                 row.memberReference(), ExitRejection.DUPLICATE_REFERENCE,
@@ -264,16 +276,36 @@ public class ExitApiImpl implements ExitApi {
         return toView(findSubmission(submissionId, TenantContext.get()));
     }
 
+    /**
+     * The scheme's exits history. Uses the repository's
+     * {@code findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc}, which existed with no caller
+     * until now — the ordering it already declared is the one this needs.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<ExitSubmissionView> listSubmissions(String policyNumber) {
+        return submissionRepository
+            .findByTenantIdAndPolicyNumberOrderBySubmittedAtDesc(TenantContext.get(), policyNumber)
+            .stream().map(this::toView).toList();
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<ExitRowView> listRows(UUID submissionId) {
         UUID tenantId = TenantContext.get();
-        findSubmission(submissionId, tenantId); // not-found rather than an empty list
+        ExitSubmission submission = findSubmission(submissionId, tenantId);
+        // The scheme, for its currency alone. An amount with no currency is not money, and the
+        // row's balance had been reaching the browser as a bare number.
+        String currency = groupSchemeRepository
+            .findByPolicyNumberAndTenantId(submission.getPolicyNumber(), tenantId)
+            .map(GroupScheme::getCurrency)
+            .orElse(null);
         return rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)
             .stream()
             .map(row -> new ExitRowView(row.getLineNumber(), row.getMemberReference(),
                 row.getExitDate(), row.getExitReason(), row.getOutstandingBalanceAtExit(),
-                row.getOutcome(), row.getReasonCode(), row.getReason(), row.getPolicyMemberId()))
+                row.getOutcome(), row.getReasonCode(), row.getReason(), row.getPolicyMemberId(),
+                currency))
             .toList();
     }
 
@@ -281,6 +313,33 @@ public class ExitApiImpl implements ExitApi {
     @Transactional(readOnly = true)
     public String renderReport(UUID submissionId) {
         return ExitReportRenderer.toCsv(listRows(submissionId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String renderTemplate(String policyNumber) {
+        /*
+         * An example reference the sequence can NEVER have minted: member references run from
+         * 000001, so 000000 names nobody on any scheme, ever.
+         *
+         * That is the whole safety argument, and it is why this template differs from the
+         * enrolment one. There a REAL borrower can be shown, because returning the row unchanged
+         * duplicates a covered loan and is refused. Here a real reference with a real date would
+         * take a living borrower off cover, refund their premium and claw back the commission --
+         * and every one of those is a correct-looking consequence of a row nobody meant to send.
+         */
+        String example = "CL-" + policyNumber.replace("GRP-", "") + "-000000";
+        return ExitCsvParser.templateCsv()
+            + String.join(",", example, LocalDate.now().toString(), "SETTLED_EARLY", "") + "\n";
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] renderTemplateXlsx(String policyNumber) {
+        // The same synthetic reference as the CSV above, so the two templates cannot describe
+        // different things -- and neither of them names a real member.
+        return LenderTemplateXlsx.exits(
+            "CL-" + policyNumber.replace("GRP-", "") + "-000000", LocalDate.now());
     }
 
     private ExitSubmission findSubmission(UUID submissionId, UUID tenantId) {

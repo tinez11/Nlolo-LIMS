@@ -2,6 +2,7 @@ package tz.co.nlolo.lifeplatform.billing.infrastructure;
 
 import tz.co.nlolo.lifeplatform.billing.api.FieldReceiptNotFoundException;
 import tz.co.nlolo.lifeplatform.billing.api.InvoiceNotFoundException;
+import tz.co.nlolo.lifeplatform.billing.api.NothingOwedException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,11 @@ public class BillingExceptionHandler {
     @ExceptionHandler(InvoiceNotFoundException.class)
     public ProblemDetail handleNotFound(InvoiceNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "INVOICE_NOT_FOUND");
+    }
+
+    @ExceptionHandler(NothingOwedException.class)
+    public ProblemDetail handleNothingOwed(NothingOwedException ex) {
+        return problem(HttpStatus.CONFLICT, ex.getMessage(), "NOTHING_OWED");
     }
 
     private static ProblemDetail problem(HttpStatus status, String detail, String errorCode) {

@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.policy.infrastructure;
 import tz.co.nlolo.lifeplatform.policy.api.BeneficiaryValidationException;
 import tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException;
 import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
+import tz.co.nlolo.lifeplatform.policy.api.NotASingleLifeProductException;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyAlreadyIssuedForCaseException;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyNotFoundException;
 import tz.co.nlolo.lifeplatform.policy.api.UnknownAgentOfRecordException;
@@ -48,6 +49,11 @@ public class PolicyExceptionHandler {
     @ExceptionHandler(BeneficiaryValidationException.class)
     public ProblemDetail handleBeneficiaryValidation(BeneficiaryValidationException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "BENEFICIARY_VALIDATION_FAILED");
+    }
+
+    @ExceptionHandler(NotASingleLifeProductException.class)
+    public ProblemDetail handleNotASingleLifeProduct(NotASingleLifeProductException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "NOT_A_SINGLE_LIFE_PRODUCT");
     }
 
     @ExceptionHandler(InsufficientLoanValueException.class)

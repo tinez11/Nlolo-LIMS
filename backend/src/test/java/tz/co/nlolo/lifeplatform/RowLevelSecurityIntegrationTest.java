@@ -74,6 +74,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             // M2 additions (final-review finding 4): prove RLS actually isolates tenants
             // on product/underwriting tables too, not merely that the CREATE POLICY SQL
             // reads correctly.
@@ -98,6 +99,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata
@@ -130,6 +132,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
@@ -138,6 +141,7 @@ class RowLevelSecurityIntegrationTest {
             // generateInvoicesAhead) would otherwise fail against a table missing this column.
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
+            "db-migrations/billing/V6__premium_credit.sql",
             // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.
@@ -1125,7 +1129,7 @@ class RowLevelSecurityIntegrationTest {
         underwritingApi.decide(caseId,
             new tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi.DecisionInput(
                 tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null, "Fixture: standard acceptance"),
-            "underwriter1", false);
+            "decider1", false);
     }
 
     private void bumpCashValue(String policyNumber, String cashValue) throws Exception {

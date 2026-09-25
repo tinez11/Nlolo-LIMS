@@ -3,6 +3,7 @@
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimAssessmentView;
+import tz.co.nlolo.lifeplatform.claims.api.ClaimCoverView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimEvidenceView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimNotFoundException;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimDeclineReason;
@@ -44,6 +45,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -109,6 +111,15 @@ public class ClaimsApiImpl implements ClaimsApi {
         //    blank key would otherwise silently disable claims/V3's dedup index for that call.
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ClaimValidationException("A registration idempotency key is required to register a claim");
+        }
+
+        // 0a. A replay of the SAME key is the same registration and returns it. Checked before
+        //     anything else now, not only by catching the unique index below: the one-death-
+        //     claim-per-life rule further down would otherwise refuse a retry as a duplicate of
+        //     itself.
+        Optional<Claim> replay = claimRepository.findByTenantIdAndRegistrationIdempotencyKey(tenantId, idempotencyKey);
+        if (replay.isPresent()) {
+            return toView(replay.get(), deriveContestabilityReview(replay.get()));
         }
 
         // 1. Claimant must exist. PartyNotFoundException propagates as-is (404 at the boundary).
@@ -207,6 +218,24 @@ public class ClaimsApiImpl implements ClaimsApi {
                 + " has no positive cover to claim against on " + request.dateOfEvent());
         }
 
+        // 3a. ONE DEATH CLAIM PER LIFE.
+        //
+        //     Found in dev: three death claims on one credit-life borrower, all approved, TZS
+        //     1,640,000 against 800,000 of cover, each with its own EFT waiting for finance.
+        //     Nothing stopped the second or the third. The life stays on cover until a claim
+        //     SETTLES -- rightly, the exit is then backdated to the death -- so for every day
+        //     between registration and payment, a second claim passes every check above.
+        //     Individual policies have the same window: the policy closes on settlement, not
+        //     on registration.
+        //
+        //     This reverses an earlier, recorded choice that two keys meant two claims. It is
+        //     narrower than what that choice warned against: one DEATH claim per LIFE, not one
+        //     claim per policy. A rejected claim does not count -- it can be reopened, and a new
+        //     claim is the other legitimate path after a refusal.
+        if (request.claimType() == ClaimType.DEATH) {
+            refuseASecondDeathClaim(tenantId, request.policyNumber(), request.policyMemberId(), null);
+        }
+
         // 4. Contestability. Fails CLOSED on an unknown answer, or on any failure reaching
         //    underwriting -- see requiresContestabilityReview's own javadoc.
         boolean requiresContestabilityReview = requiresContestabilityReview(policy, request.dateOfEvent());
@@ -238,6 +267,13 @@ public class ClaimsApiImpl implements ClaimsApi {
         try {
             requiresNewTransactionTemplate.executeWithoutResult(status -> {
                 claimRepository.saveAndFlush(claim);
+                // Tell policy, in the same transaction, that this life has died and is not yet
+                // paid for -- so the roll says so and no exits file takes them off cover first.
+                // Policy cannot find this out itself; it does not depend on claims.
+                if (claim.getClaimType() == ClaimType.DEATH && claim.getPolicyMemberId() != null) {
+                    policyApi.recordOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(),
+                        claim.getClaimId());
+                }
                 // Payload matches api/asyncapi-events.yaml's ClaimRegisteredPayload field-for-field
                 // (claimId, policyNumber, claimantPartyId, claimType, dateOfEvent), plus one field
                 // ClaimRegisteredPayload does not declare: requiresContestabilityReview. The
@@ -300,15 +336,33 @@ public class ClaimsApiImpl implements ClaimsApi {
     @Override
     @Transactional
     public ClaimAssessmentView submitAssessment(UUID claimId, String findings, BigDecimal recommendedAmount,
-                                                 String recommendedCurrency, boolean fraudIndicator, String assessedBy) {
+                                                 String recommendedCurrency, boolean fraudIndicator, String assessedBy,
+                                                 String assessorName) {
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
+
+        // The same ceiling decideSettlement bounds the approval with, from the same call. Only the
+        // APPROVAL used to be bounded, so an assessor could record a figure no manager could ever
+        // approve -- and the refusal then landed on a different person in a different session,
+        // looking at a colleague's recommendation they could not act on. Amount only, exactly as
+        // Claim.approve compares it. Resolved only when there is an amount to bound: a
+        // recommendation is optional, and an assessment without one must not start failing on a
+        // cover read it never needed.
+        if (recommendedAmount != null) {
+            ClaimableCoverView claimable = policyApi.claimableCover(
+                claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
+                claim.getClaimType().name());
+            if (recommendedAmount.compareTo(claimable.amount()) > 0) {
+                throw new ClaimValidationException("Recommended amount " + recommendedAmount
+                    + " exceeds the " + claimable.amount() + " this claim is covered for");
+            }
+        }
 
         // REGISTERED or REOPENED -> UNDER_ASSESSMENT; a no-op if already UNDER_ASSESSMENT
         // (second/third assessor on the same claim), throws from any other status.
         claim.beginAssessment();
 
-        ClaimAssessment assessment = new ClaimAssessment(tenantId, claimId, assessedBy, findings,
+        ClaimAssessment assessment = new ClaimAssessment(tenantId, claimId, assessedBy, assessorName, findings,
             recommendedAmount, recommendedCurrency, fraudIndicator);
         claimAssessmentRepository.save(assessment);
 
@@ -320,6 +374,32 @@ public class ClaimsApiImpl implements ClaimsApi {
             Map.of("claimId", claimId, "fraudIndicator", fraudIndicator)));
 
         return toAssessmentView(assessment);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ClaimAssessmentView> listAssessments(UUID claimId) {
+        UUID tenantId = TenantContext.get();
+        // Same guard as listEvidence: an unknown or cross-tenant claimId must 404 rather than
+        // return an empty list, which would read as "this claim was never assessed".
+        findOrThrow(claimId, tenantId);
+
+        return claimAssessmentRepository.findByClaimIdAndTenantIdOrderByCreatedAtDesc(claimId, tenantId)
+            .stream()
+            .map(this::toAssessmentView)
+            .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ClaimCoverView claimableCover(UUID claimId) {
+        Claim claim = findOrThrow(claimId, TenantContext.get());
+        // The SAME call decideSettlement makes, with the same four arguments off the same stored
+        // facts. Not a re-implementation of the rule and not an approximation of it: if this and
+        // the ceiling could disagree, showing it would be worse than showing nothing.
+        ClaimableCoverView cover = policyApi.claimableCover(claim.getPolicyNumber(),
+            claim.getPolicyMemberId(), claim.getDateOfEvent(), claim.getClaimType().name());
+        return new ClaimCoverView(cover.amount(), cover.currencyCode());
     }
 
     @Override
@@ -364,7 +444,32 @@ public class ClaimsApiImpl implements ClaimsApi {
         }
 
         if (approved) {
-            if (payeeRef == null || payeeRef.isBlank()) {
+            // The backstop for pairs registered before the rule at registration existed -- the
+            // money step is the one that must not happen twice. Any OTHER non-rejected death
+            // claim on this life refuses this approval, whichever of them was registered first:
+            // choosing between them is a person's decision, made by rejecting one.
+            if (claim.getClaimType() == ClaimType.DEATH) {
+                refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+            }
+            PolicyView policy = policyApi.getPolicy(claim.getPolicyNumber());
+            boolean creditLife = "CREDIT_LIFE".equals(policy.productCategory());
+            if (creditLife) {
+                // ON CREDIT LIFE THERE IS NO PAYEE TO CHOOSE. The insurer deals only with the
+                // lender (client answer 3.6), and the lender is the claimant and the policyholder
+                // (spec 2.9) -- "claimant and payee are the same entity". This used to be a free
+                // text box labelled "Mobile-money destination", so the EFTs finance was asked to
+                // make read "mobile" and "i approve"; worse, whoever approved could have typed any
+                // account at all. A supplied value is refused rather than ignored, so a client
+                // still sending one learns it was never going to be used.
+                if (payeeRef != null && !payeeRef.isBlank()) {
+                    throw new ClaimValidationException("A credit-life claim pays the lender who holds "
+                        + claim.getPolicyNumber() + "; a payee cannot be supplied for it");
+                }
+                // The lender by name and scheme -- what finance needs to know whose account to
+                // pay. The account itself is held by finance, out of band, as the spec leaves it.
+                payeeRef = partyApi.getParty(policy.policyholderPartyId()).displayName()
+                    + " — policyholder of " + claim.getPolicyNumber();
+            } else if (payeeRef == null || payeeRef.isBlank()) {
                 throw new ClaimValidationException("A payee reference is required to approve a claim");
             }
             if (idempotencyKey == null || idempotencyKey.isBlank()) {
@@ -438,9 +543,7 @@ public class ClaimsApiImpl implements ClaimsApi {
                        // takes a particular rail is a fact about the product, and payment has
                        // no business knowing what credit life is. Every other publisher omits
                        // the key and gets MOBILE_MONEY, which is what they have always had.
-                       "disbursementMethod", "CREDIT_LIFE".equals(
-                           policyApi.getPolicy(claim.getPolicyNumber()).productCategory())
-                           ? "EFT" : "MOBILE_MONEY",
+                       "disbursementMethod", creditLife ? "EFT" : "MOBILE_MONEY",
                        "idempotencyKey", idempotencyKey)));
         } else {
             settlementDecisionRepository.save(new SettlementDecision(tenantId, claimId, decidedBy, false,
@@ -476,6 +579,11 @@ public class ClaimsApiImpl implements ClaimsApi {
             } else {
                 claim.reject();
             }
+            // No longer an open death claim: the member reads as an ordinary live life again,
+            // and an exits file may take them off cover.
+            if (claim.getClaimType() == ClaimType.DEATH && claim.getPolicyMemberId() != null) {
+                policyApi.clearOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+            }
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimRejected", tenantId,
                 Map.of("claimId", claimId, "reason", rejectionReason == null ? "" : rejectionReason)));
         }
@@ -493,17 +601,32 @@ public class ClaimsApiImpl implements ClaimsApi {
     public void reopenClaim(UUID claimId, String reason, String reopenedBy) {
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
+        boolean fromRejected = claim.getStatus() == ClaimStatus.REJECTED;
+
+        // A rejected death claim coming back is a live death claim again, so it must not become
+        // the SECOND one on this life -- somebody may have registered a fresh claim after the
+        // rejection, which is the other legitimate path.
+        if (fromRejected && claim.getClaimType() == ClaimType.DEATH) {
+            refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+        }
 
         // REJECTED or SETTLED -> REOPENED; a no-op if already REOPENED, throws from any other
         // status. Deliberately does not clear the prior approvedAmount (Claim.reopen's own doc).
         claim.reopen();
+
+        // Open again on the member. Only from REJECTED: a claim reopened from SETTLED has already
+        // taken its life off cover, and there is no cover left to mark.
+        if (fromRejected && claim.getClaimType() == ClaimType.DEATH && claim.getPolicyMemberId() != null) {
+            policyApi.recordOpenDeathClaim(claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+        }
 
         log.info("Claim {} reopened by {}: {}", claimId, reopenedBy, reason);
     }
 
     @Override
     @Transactional
-    public ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy) {
+    public ClaimEvidenceView attachEvidence(UUID claimId, String documentRef, String description, String uploadedBy,
+                                            String uploadedByName) {
         UUID tenantId = TenantContext.get();
         Claim claim = findOrThrow(claimId, tenantId);
 
@@ -519,7 +642,8 @@ public class ClaimsApiImpl implements ClaimsApi {
         // DocumentNotFoundException propagates as-is, mapped to 404 by DocumentExceptionHandler.
         documentApi.getMetadata(documentRef);
 
-        ClaimEvidence evidence = new ClaimEvidence(tenantId, claimId, documentRef, description, uploadedBy);
+        ClaimEvidence evidence = new ClaimEvidence(tenantId, claimId, documentRef, description, uploadedBy,
+            uploadedByName);
         claimEvidenceRepository.save(evidence);
 
         return toEvidenceView(evidence);
@@ -557,8 +681,32 @@ public class ClaimsApiImpl implements ClaimsApi {
      */
     private boolean requiresContestabilityReview(PolicyView policy, LocalDate dateOfEvent) {
         if (policy.underwritingCaseId() == null) {
-            log.warn("Policy {} has no underwriting case id (issued before M6); treating claim as "
-                + "within the contestability window and flagging for review", policy.policyNumber());
+            /*
+             * THIS BRANCH IS NOT THE EDGE CASE IT WAS WRITTEN AS.
+             *
+             * It used to log "issued before M6", which reads as a handful of legacy rows. It is
+             * not: PolicyApiImpl.issueGroupScheme passes null for underwritingCaseId
+             * unconditionally, and so does the listener that issues a scheme FROM a decided
+             * group case -- that case id is recorded only in a free-text issuance note. So EVERY
+             * group scheme has no case, and every claim on one lands here.
+             *
+             * On the dev database that is 121 of 121 schemes against 0 of 406 individual
+             * policies. The console shows "Contestability: Requires review" on every single
+             * group claim, permanently, which is a flag carrying no information -- the failure
+             * mode where staff learn to click past a warning because it is always lit.
+             *
+             * Fail-closed is still correct and is deliberately kept: being wrong this way costs
+             * a manual review, being wrong the other way approves a possibly non-disclosed
+             * claim. What is wrong is the DERIVATION, not the default. A group member's
+             * contestability window should run from the date THIS life's cover started -- the
+             * member's joinedOn -- not from a scheme-level underwriting decision that does not
+             * exist. Fixing that changes when claims are flagged for review, which is a
+             * compliance-weight business rule and not something to slip into a UI change.
+             */
+            log.warn("Policy {} has no underwriting case id, so contestability cannot be measured;"
+                + " flagging for review. Expected on every group scheme -- issueGroupScheme never"
+                + " records one -- and on individual policies issued before M6",
+                policy.policyNumber());
             return true;
         }
         try {
@@ -599,6 +747,34 @@ public class ClaimsApiImpl implements ClaimsApi {
         return coverStart.plusMonths(monthsOf(reason, windows));
     }
 
+    /**
+     * Refuses when another non-rejected DEATH claim exists on this life: the same member of a
+     * scheme, or -- on individual business, where no member is named -- the same policy.
+     *
+     * @param self the claim being decided, excluded from the search; null at registration
+     * @throws ClaimValidationException at registration (422: the request is what is wrong)
+     * @throws InvalidClaimStateException at approval (409: it conflicts with recorded state)
+     */
+    private void refuseASecondDeathClaim(UUID tenantId, String policyNumber, UUID policyMemberId, UUID self) {
+        List<Claim> deathClaims = policyMemberId != null
+            ? claimRepository.findByTenantIdAndPolicyNumberAndPolicyMemberIdAndClaimTypeAndStatusNotOrderByCreatedAtAsc(
+                tenantId, policyNumber, policyMemberId, ClaimType.DEATH, ClaimStatus.REJECTED)
+            : claimRepository.findByTenantIdAndPolicyNumberAndPolicyMemberIdIsNullAndClaimTypeAndStatusNotOrderByCreatedAtAsc(
+                tenantId, policyNumber, ClaimType.DEATH, ClaimStatus.REJECTED);
+        Claim other = deathClaims.stream().filter(c -> !c.getClaimId().equals(self)).findFirst().orElse(null);
+        if (other == null) {
+            return;
+        }
+        String life = policyMemberId != null ? "member " + policyMemberId + " of " + policyNumber : policyNumber;
+        String message = "A death claim already exists for this life (" + life + "): claim "
+            + other.getClaimId() + ", " + other.getStatus() + ". A life is paid for once -- reject one of"
+            + " them to proceed with the other.";
+        if (self == null) {
+            throw new ClaimValidationException(message);
+        }
+        throw new InvalidClaimStateException(message);
+    }
+
     private Claim findOrThrow(UUID claimId, UUID tenantId) {
         return claimRepository.findByClaimIdAndTenantId(claimId, tenantId)
             .orElseThrow(() -> new ClaimNotFoundException("Claim " + claimId + " not found"));
@@ -613,12 +789,14 @@ public class ClaimsApiImpl implements ClaimsApi {
 
     private ClaimAssessmentView toAssessmentView(ClaimAssessment assessment) {
         return new ClaimAssessmentView(assessment.getClaimAssessmentId(), assessment.getClaimId(),
-            assessment.getAssessor(), assessment.getFindings(), assessment.getRecommendedAmount(),
+            assessment.getAssessor(), assessment.getAssessorName(), assessment.getFindings(),
+            assessment.getRecommendedAmount(),
             assessment.getRecommendedCurrency(), assessment.isFraudIndicator(), assessment.getCreatedAt());
     }
 
     private ClaimEvidenceView toEvidenceView(ClaimEvidence evidence) {
         return new ClaimEvidenceView(evidence.getClaimEvidenceId(), evidence.getClaimId(), evidence.getDocumentRef(),
-            evidence.getDescription(), evidence.getUploadedBy(), evidence.getUploadedAt());
+            evidence.getDescription(), evidence.getUploadedBy(), evidence.getUploadedByName(),
+            evidence.getUploadedAt());
     }
 }

@@ -69,7 +69,8 @@ public class PartyController {
             request.employerName(),
             request.nationality(),
             request.address() != null ? request.address().toAddress() : Address.none());
-        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject(), registeringAgentPartyId(jwt, authentication));
+        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject(), registrarName(jwt),
+            registeringAgentPartyId(jwt, authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
@@ -111,6 +112,11 @@ public class PartyController {
         }
     }
 
+    /** The registrar's name for the client record -- a label; agent scoping compares the subject. */
+    private static String registrarName(Jwt jwt) {
+        return tz.co.nlolo.lifeplatform.TokenNames.displayName(jwt);
+    }
+
     @PostMapping("/parties/corporates")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PartyView> registerCorporate(@Valid @RequestBody RegisterCorporateRequest request,
@@ -119,7 +125,7 @@ public class PartyController {
         PartyView view = partyApi.registerCorporate(request.registeredName(), request.registrationNumber(),
             request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
             request.contactInfo() != null ? request.contactInfo().email() : null,
-            jwt.getSubject(), registeringAgentPartyId(jwt, authentication));
+            jwt.getSubject(), registrarName(jwt), registeringAgentPartyId(jwt, authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 

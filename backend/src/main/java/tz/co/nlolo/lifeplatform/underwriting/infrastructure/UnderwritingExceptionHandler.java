@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.underwriting.infrastructure;
 import tz.co.nlolo.lifeplatform.underwriting.api.SeniorUnderwriterApprovalRequiredException;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseAlreadyDecidedException;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseNotFoundException;
+import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingSeparationOfDutiesException;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingValidationException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -49,6 +50,16 @@ public class UnderwritingExceptionHandler {
     public ProblemDetail handleSeniorApprovalRequired(SeniorUnderwriterApprovalRequiredException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
         problem.setProperty("errorCode", "SENIOR_UNDERWRITER_APPROVAL_REQUIRED");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
+
+    /** 403 for the same reason as the senior sign-off: the fix is a different person, not a
+     * different request. */
+    @ExceptionHandler(UnderwritingSeparationOfDutiesException.class)
+    public ProblemDetail handleSeparationOfDuties(UnderwritingSeparationOfDutiesException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problem.setProperty("errorCode", "UNDERWRITING_SEPARATION_OF_DUTIES");
         problem.setProperty("traceId", UUID.randomUUID().toString());
         return problem;
     }

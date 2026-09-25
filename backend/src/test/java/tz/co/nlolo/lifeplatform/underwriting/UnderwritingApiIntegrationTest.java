@@ -44,6 +44,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -55,6 +56,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/product/V11__frequency_loading.sql",
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
+            "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
@@ -65,6 +67,7 @@ class UnderwritingApiIntegrationTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql");
     }
 
@@ -310,11 +313,11 @@ class UnderwritingApiIntegrationTest {
 
         UnderwritingCaseView decided = underwritingApi.decide(caseId,
             new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Agrees with the engine"),
-            "underwriter1", false);
+            "decider1", false);
 
         assertEquals(UnderwritingCaseStatus.DECIDED, decided.status());
         assertEquals(DecisionOutcome.ACCEPT, decided.decisionOutcome());
-        assertEquals("underwriter1", decided.decisionDecidedBy());
+        assertEquals("decider1", decided.decisionDecidedBy());
         assertFalse(decided.decisionOverrodeRecommendation());
     }
 
@@ -325,7 +328,7 @@ class UnderwritingApiIntegrationTest {
         assertThrows(SeniorUnderwriterApprovalRequiredException.class, () ->
             underwritingApi.decide(caseId,
                 new UnderwritingApi.DecisionInput(DecisionOutcome.DECLINED, null, "Adverse family history disclosed off-system"),
-                "underwriter1", false));
+                "decider1", false));
 
         assertEquals(UnderwritingCaseStatus.IN_REVIEW, underwritingApi.getCase(caseId).status(),
             "a refused override must leave the case exactly as it was");
@@ -348,11 +351,11 @@ class UnderwritingApiIntegrationTest {
     void aDecidedCaseCannotBeDecidedTwice() {
         UUID caseId = assessedCase();
         underwritingApi.decide(caseId,
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Agreed"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Agreed"), "decider1", false);
 
         assertThrows(UnderwritingCaseAlreadyDecidedException.class, () ->
             underwritingApi.decide(caseId,
-                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Again"), "underwriter1", false));
+                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Again"), "decider1", false));
     }
 
     @Test
@@ -361,7 +364,7 @@ class UnderwritingApiIntegrationTest {
 
         assertThrows(UnderwritingValidationException.class, () ->
             underwritingApi.decide(caseId,
-                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Nothing assessed"), "underwriter1", false));
+                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Nothing assessed"), "decider1", false));
     }
 
     @Test
@@ -370,7 +373,7 @@ class UnderwritingApiIntegrationTest {
 
         assertThrows(UnderwritingValidationException.class, () ->
             underwritingApi.decide(caseId,
-                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "   "), "underwriter1", false));
+                new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "   "), "decider1", false));
     }
 
     /** Mirrors chk_loading_only_when_loaded, so the caller gets a sentence and not a 500. */
@@ -406,7 +409,7 @@ class UnderwritingApiIntegrationTest {
     void checkContestabilityIsTrueImmediatelyAfterDecision() {
         UUID caseId = assessedCase();
         underwritingApi.decide(caseId,
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "decider1", false);
         assertTrue(underwritingApi.checkContestability(caseId, LocalDate.now()));
     }
 
@@ -414,7 +417,7 @@ class UnderwritingApiIntegrationTest {
     void checkContestabilityIsFalseAfterTheWindowElapses() {
         UUID caseId = assessedCase();
         underwritingApi.decide(caseId,
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "decider1", false);
         // TZ_CONTESTABILITY_MONTHS seed value is 24 (placeholder, see refdata migration comment).
         assertFalse(underwritingApi.checkContestability(caseId, LocalDate.now().plusMonths(25)));
     }
@@ -557,19 +560,74 @@ class UnderwritingApiIntegrationTest {
             "an uncovered age contributes 1.0, exactly as an unmatched band always has");
     }
 
+    // ---- An individual case insures one person ----------------------------------------------
+    //
+    // This used to be `anApplicantWithNoRecordedDateOfBirthRatesNeutrally`, which opened an
+    // individual case with a CORPORATE party as its own life assured and asserted it rated.
+    // That was the defect: a company cannot be underwritten as a life, and exactly that case --
+    // on a GROUP_LIFE product -- was issued in dev as a single-life policy covering nobody. A
+    // group scheme is underwritten through the group path, which skips age rating by design.
+
     @Test
-    void anApplicantWithNoRecordedDateOfBirthRatesNeutrally() {
-        // A CORPORATE or GROUP applicant genuinely has no date of birth, and a group scheme
-        // must still be underwritable. Age simply does not contribute.
-        var applicant = partyApi.registerCorporate("Age Rated Corporate " + UUID.randomUUID().toString().substring(0, 8),
+    void aCorporateCannotBeTheLifeAssuredOfAnIndividualCase() {
+        var corporate = partyApi.registerCorporate("Not A Life " + UUID.randomUUID().toString().substring(0, 8),
             "REG-" + UUID.randomUUID().toString().substring(0, 8), "+255712345004", null, "test");
         UUID productId = publishAgeRatedProduct();
         var snapshot = productApi.getActiveSnapshot(productId, LocalDate.now());
-        UUID caseId = underwritingApi.openCase(applicant.partyId(), productId, snapshot.productVersionId(),
-            new BigDecimal("1000000"), "TZS", null, "agent1").caseId();
 
-        assertEquals(DecisionOutcome.ACCEPT, underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL,
-            "Normal findings", new BigDecimal("10"), "underwriter1").recommendationOutcome());
+        UnderwritingValidationException refused = assertThrows(UnderwritingValidationException.class, () ->
+            underwritingApi.openCase(corporate.partyId(), productId, snapshot.productVersionId(),
+                new BigDecimal("1000000"), "TZS", null, "agent1"));
+        assertTrue(refused.getMessage().contains("must be a person"), refused.getMessage());
+    }
+
+    @Test
+    void aGroupOrCreditLifeProductIsNotProposedAsASingleLife() {
+        var applicant = partyApi.registerIndividual("Single Life Applicant", LocalDate.of(1990, 1, 1), "+255712345005", null, "test");
+        for (ProductCategory category : List.of(ProductCategory.GROUP_LIFE, ProductCategory.CREDIT_LIFE)) {
+            var product = productApi.createProduct("UW-" + category.name().charAt(0) + "-" + UUID.randomUUID().toString().substring(0, 8),
+                "Scheme Product", category, "TZS", "actuary");
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "18-99", BigDecimal.ONE, 18, 99),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null, ANY_FILING, "actuary");
+            var snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+
+            UnderwritingValidationException refused = assertThrows(UnderwritingValidationException.class, () ->
+                underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(),
+                    new BigDecimal("1000000"), "TZS", null, "agent1"));
+            assertTrue(refused.getMessage().contains("not proposed as a single life"), refused.getMessage());
+        }
+    }
+
+    // ---- Separation of duties ----------------------------------------------------------------
+
+    @Test
+    void theUnderwriterWhoAssessedACaseCannotDecideIt() {
+        UUID caseId = assessedCase(); // assessed by underwriter1
+
+        UnderwritingSeparationOfDutiesException refused = assertThrows(UnderwritingSeparationOfDutiesException.class, () ->
+            underwritingApi.decide(caseId, new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Mine"),
+                "underwriter1", false));
+        assertTrue(refused.getMessage().contains("assessed"), refused.getMessage());
+        // A senior is bound by it too: seniority is about overriding the engine, not about
+        // marking one's own work.
+        assertThrows(UnderwritingSeparationOfDutiesException.class, () ->
+            underwritingApi.decide(caseId, new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Mine"),
+                "underwriter1", true));
+        assertEquals(UnderwritingCaseStatus.IN_REVIEW, underwritingApi.getCase(caseId).status());
+    }
+
+    @Test
+    void theUserWhoOpenedACaseCannotDecideIt() {
+        UUID caseId = openTestCase(new BigDecimal("1000000")); // opened by agent1
+        underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
+
+        UnderwritingSeparationOfDutiesException refused = assertThrows(UnderwritingSeparationOfDutiesException.class, () ->
+            underwritingApi.decide(caseId, new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Mine"),
+                "agent1", false));
+        assertTrue(refused.getMessage().contains("opened"), refused.getMessage());
     }
 
     @Test
@@ -582,7 +640,7 @@ class UnderwritingApiIntegrationTest {
         UUID caseId = openTestCase(new BigDecimal("1000000"));
         underwritingApi.submitAssessment(caseId, AssessmentType.MEDICAL, "Normal findings", new BigDecimal("10"), "underwriter1");
         UnderwritingCaseView firstDecision = underwritingApi.decide(caseId,
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "decider1", false);
         assertEquals(UnderwritingCaseStatus.DECIDED, firstDecision.status());
         assertEquals(DecisionOutcome.ACCEPT, firstDecision.decisionOutcome());
         // Re-read through getCase (a DB round-trip) rather than comparing against
@@ -617,7 +675,7 @@ class UnderwritingApiIntegrationTest {
             "Inconclusive -- awaiting specialist report", new BigDecimal("95"), "underwriter1");
         UnderwritingCaseView postponed = underwritingApi.decide(caseId,
             new UnderwritingApi.DecisionInput(DecisionOutcome.POSTPONED, null, "Awaiting a specialist report"),
-            "underwriter1", false);
+            "decider1", false);
         assertEquals(DecisionOutcome.POSTPONED, postponed.decisionOutcome());
         assertEquals(UnderwritingCaseStatus.DECIDED, postponed.status());
 
@@ -632,7 +690,7 @@ class UnderwritingApiIntegrationTest {
 
         UnderwritingCaseView accepted = underwritingApi.decide(caseId,
             new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Specialist report resolves it"),
-            "underwriter2", false);
+            "decider2", false);
         assertEquals(DecisionOutcome.ACCEPT, accepted.decisionOutcome());
     }
 
@@ -676,7 +734,7 @@ class UnderwritingApiIntegrationTest {
         // In line with the recommendation, so no senior is needed to record it.
         underwritingApi.decide(caseId,
             new UnderwritingApi.DecisionInput(DecisionOutcome.DECLINED, null, "Risk outside appetite"),
-            "underwriter1", false);
+            "decider1", false);
         assertEquals(DecisionOutcome.DECLINED, underwritingApi.getCase(caseId).decisionOutcome());
 
         assertThrows(UnderwritingCaseAlreadyDecidedException.class, () ->
@@ -739,7 +797,7 @@ class UnderwritingApiIntegrationTest {
         // is exactly where it is today.
         UUID caseId = assessedCase();
         underwritingApi.decide(caseId,
-            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "underwriter1", false);
+            new UnderwritingApi.DecisionInput(DecisionOutcome.ACCEPT, null, "Standard risk"), "decider1", false);
         assertEquals(DecisionOutcome.ACCEPT, underwritingApi.getCase(caseId).decisionOutcome());
 
         underwritingApi.recordDisclosures(caseId, twoAnswers(), "claims.assessor");

@@ -30,6 +30,7 @@ the host (see gotcha 2 below for why).
 ```bash
 cd infra && docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit && cd ..
 scripts/migrate.sh local          # nothing applies schema automatically -- see below
+scripts/configure-db.sh local     # partitions + every pg_cron job; safe to re-run, any time
 export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64"
 ./mvnw -B -o spring-boot:run -Dspring-boot.run.profiles=local
 scripts/seed-dev-data.sh          # in a second terminal, once the app is up
@@ -52,7 +53,15 @@ docker compose --profile tools down -v   # -v drops the named volumes, including
 docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit
 cd ..
 scripts/migrate.sh local
+scripts/configure-db.sh local
 ```
+
+**Do not skip `configure-db.sh`.** It installs what the numbered migrations cannot: pg_partman's
+monthly partitions and every scheduled job (billing sweep, commission close, offer expiry and
+reminders, loan interest). Without it nothing fails at startup -- the work simply never happens,
+and the monthly ledgers run out of partitions at the end of the last hand-written month. Unlike
+`migrate.sh` it is idempotent, so re-run it whenever a `_post-migration` file changes. The
+backend's health endpoint reports anything it finds missing (`scheduledJobs`).
 
 `down -v` removes `postgres-data`, `redis-data`, and `minio-data` — Postgres schema, cached
 sessions, and uploaded documents all go with it. There is no partial-reset option; the compose

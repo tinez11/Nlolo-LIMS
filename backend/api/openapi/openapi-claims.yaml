@@ -141,6 +141,86 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: >
+            recommendedAmount exceeds what this claim is covered for (GET
+            /claims/{claimId}/claimable-cover) — the same ceiling the approval is bounded by, so a
+            recommendation no manager could approve is refused where it is written.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: List this claim's assessments, newest first (staff — CLAIMS_ASSESSOR or CLAIMS_MANAGER)
+      description: >
+        Separation of duties means the person deciding a settlement is never the person who
+        assessed it. Without this read they could not see the findings, the recommended amount or
+        the fraud indicator behind the decision they are being asked to make.
+
+
+        Staff only, and narrower than GET /claims/{claimId}: findings are internal, and
+        fraudIndicator is a scrutiny signal about the claimant that must never travel back to
+        them. No customersAuth or agentsAuth.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ClaimAssessmentView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /claims/{claimId}/claimable-cover:
+    get:
+      summary: The most this claim may pay (staff — CLAIMS_ASSESSOR or CLAIMS_MANAGER)
+      description: >
+        The ceiling an approval is bounded by, resolved from the claim's own stored facts — its
+        policy, its member, its date of event — by exactly the call the settlement decision
+        makes. On a group scheme that is the member's covered amount on the date of event, which
+        for credit life is the declining loan balance; on individual business the policy's sum
+        assured.
+
+
+        Exists so the figure can be shown BEFORE an amount is typed. It was previously reachable
+        only by exceeding it and reading the 422.
+
+
+        Not a field on ClaimView: the underlying resolution THROWS when a member was not covered
+        on the date of event, and GET /claims builds a ClaimView per row, so deriving it there
+        would let one unclaimable claim break the whole queue.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: claimId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimCoverView' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: >
+            The claim's own facts no longer resolve to cover — e.g. the benefit's coverage was
+            deactivated after the claim was registered. Registration runs the same resolution, so
+            a claim reaches this only when its policy changed underneath it. A 409 (policy's
+            INVALID_POLICY_STATE), not a 422: nothing in this request can be corrected.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /claims/{claimId}/settlement-decision:
     post:
       summary: Approve or reject the claim (staff — CLAIMS_MANAGER role only; distinct from CLAIMS_ASSESSOR)
@@ -173,7 +253,12 @@ paths:
                 rejectionReason: { type: [string, "null"] }
                 payeeRef:
                   type: [string, "null"]
-                  description: "Mobile-money destination for the payout. Required when approved is true; ignored (may be null) when approved is false"
+                  description: >
+                    Mobile-money destination for the payout. Required when approved is true;
+                    ignored (may be null) when approved is false. On a CREDIT_LIFE claim it must be
+                    ABSENT: the lender is the claimant and the policyholder, so the payout goes to
+                    them by bank transfer and the platform names them itself — a supplied value
+                    is refused with a 422.
       responses:
         '202':
           description: >
@@ -196,7 +281,7 @@ paths:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
         '422':
-          description: "approved is true but payeeRef or Idempotency-Key is missing/blank, or the same person both assessed and is deciding this claim (separation of duties)"
+          description: "approved is true but payeeRef or Idempotency-Key is missing/blank, or a payeeRef was supplied on a CREDIT_LIFE claim, or the same person both assessed and is deciding this claim (separation of duties)"
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -388,24 +473,54 @@ components:
           description: "Scrutiny/reporting signal only — does not itself reject the claim (Deliverable 3 Rev 2, Cl1)"
     ClaimAssessmentView:
       type: object
-      required: [claimAssessmentId, claimId, assessor, findings, recommendedAmount, fraudIndicator, createdAt]
+      required: [claimAssessmentId, claimId, assessor, assessorName, findings, recommendedAmount, fraudIndicator, createdAt]
       properties:
         claimAssessmentId: { type: string, format: uuid }
         claimId: { type: string, format: uuid }
-        assessor: { type: string }
+        assessor:
+          type: string
+          description: >-
+            The assessor's identity-provider subject. What separation of duties compares
+            against the decider — an identifier, not something to show a person.
+        assessorName:
+          type: [string, "null"]
+          description: >-
+            The assessor's display name, captured from their token when the assessment was
+            written. NULL on assessments recorded before it was captured — there is no name to
+            recover for those, and the subject is not one.
         findings: { type: string }
         recommendedAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         fraudIndicator: { type: boolean }
         createdAt: { type: string, format: date-time }
+    ClaimCoverView:
+      type: object
+      required: [claimableCover]
+      properties:
+        claimableCover:
+          allOf:
+            - $ref: 'openapi-common.yaml#/components/schemas/Money'
+          description: >
+            The most this claim may pay. On credit life this is the outstanding loan balance on
+            the date of event and therefore declines every month — a figure quoted last week is
+            not the figure today.
     ClaimEvidenceView:
       type: object
-      required: [claimEvidenceId, claimId, documentRef, uploadedBy, uploadedAt]
+      required: [claimEvidenceId, claimId, documentRef, uploadedBy, uploadedByName, uploadedAt]
       properties:
         claimEvidenceId: { type: string, format: uuid }
         claimId: { type: string, format: uuid }
         documentRef: { type: string }
         description: { type: [string, "null"] }
-        uploadedBy: { type: string }
+        uploadedBy:
+          type: string
+          description: >-
+            The uploader's identity-provider subject — an identifier, not something to show a
+            person.
+        uploadedByName:
+          type: [string, "null"]
+          description: >-
+            The uploader's display name, captured from their token at upload — the claimant,
+            their agent, or staff. NULL on evidence attached before it was captured.
         uploadedAt: { type: string, format: date-time }
     ClaimView:
       type: object

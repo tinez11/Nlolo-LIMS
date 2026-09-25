@@ -33,6 +33,9 @@ import {
   selectClientCases,
   selectClientClaims,
   selectClientPolicies,
+  isSchemeCategory,
+  selectClientSchemeKinds,
+  type SchemeCheck,
   selectClientSchemeMembers,
   useClientRecordStore,
 } from '@/store/clientRecord';
@@ -133,13 +136,44 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
    */
   const isOrganisation = party?.partyType === 'CORPORATE' || party?.partyType === 'GROUP';
 
-  // Derived from the policies panel's own page. `useMemo` keeps the array identity
-  // stable so the members effect below does not re-fire on every render.
-  const schemes = useMemo(
-    () => (policies.data?.items ?? []).filter((p) => p.productCategory === 'GROUP_LIFE'),
+  // CANDIDATES from the policies panel's own page, by category -- group life AND credit life,
+  // since a lender's credit-life book is a scheme too and used to be invisible here. Then
+  // CONFIRMED one by one: a group product was once proposable as a single life, and a policy
+  // issued that way has the category and no schedule, so offering its "member roll" could only
+  // fail. `useMemo` keeps identities stable so the effects below do not re-fire every render.
+  const candidates = useMemo(
+    () => (policies.data?.items ?? []).filter((p) => isSchemeCategory(p.productCategory)),
     [policies.data],
   );
-  const soleSchemeNumber = schemes.length === 1 ? schemes[0]?.policyNumber : undefined;
+  const candidateKey = candidates.map((p) => p.policyNumber ?? '').join(',');
+  const schemeKinds = useClientRecordStore(selectClientSchemeKinds(partyId));
+  const loadSchemeKinds = useClientRecordStore((s) => s.loadSchemeKinds);
+  useEffect(() => {
+    if (partyId && candidateKey) void loadSchemeKinds(partyId, candidateKey.split(','));
+  }, [partyId, candidateKey, loadSchemeKinds]);
+
+  const kinds = schemeKinds.data;
+  // Until the check lands every candidate counts as a scheme, so the panel does not flicker
+  // empty; an UNKNOWN (null) stays a scheme, and only the server's "not a group scheme" moves one.
+  const schemes = useMemo(
+    () => candidates.filter((p) => kinds?.[p.policyNumber ?? '']?.isScheme !== false),
+    [candidates, kinds],
+  );
+  const notSchemes = useMemo(
+    () => candidates.filter((p) => kinds?.[p.policyNumber ?? '']?.isScheme === false),
+    [candidates, kinds],
+  );
+  // An employer's scheme and a lender's are shown differently. An employer's members are its
+  // people, and previewing them is the "who does this company cover" answer. A lender's are
+  // BORROWERS -- the lender's customers, not ours, deliberately kept out of the client register
+  // until a claim (credit-life design §2.2) -- so the lender's record names the scheme and how
+  // many lives it covers, and the borrowers stay on the scheme's own page.
+  const employerSchemes = useMemo(() => schemes.filter((p) => p.productCategory !== 'CREDIT_LIFE'), [schemes]);
+  const creditLifeSchemes = useMemo(() => schemes.filter((p) => p.productCategory === 'CREDIT_LIFE'), [schemes]);
+  // Only once confirmed, so the roll is never requested for a policy that cannot have one.
+  const soleSchemeNumber =
+    kinds && employerSchemes.length === 1 ? employerSchemes[0]?.policyNumber : undefined;
+  const lenderOnly = creditLifeSchemes.length > 0 && employerSchemes.length === 0;
 
   useEffect(() => {
     // Only for the single-scheme case: with two or more there is no one roll to
@@ -232,31 +266,39 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                     {...(party.kycVerifiedAt ? {} : { note: 'No decision recorded yet.' })}
                   />
                   <Field label="Registered" value={formatInstant(party.createdAt) || '—'} />
-                  <Field
-                    label="Registered by"
-                    value={<span className="font-mono text-xs">{party.createdBy ?? '—'}</span>}
-                    note="The account that created this record — who the client relationship belongs to."
-                  />
                   {/*
-                    WHO GETS PAID ON THIS CLIENT'S BUSINESS. Distinct from "Registered by"
-                    above, which is a login and resolves to nobody in particular: this is an
-                    agent, and policy binds it as the agent of record at issuance, so it is
-                    what commission accrues against. Shown only when there is one — a client
-                    staff registered has none, and an em dash beside a money question reads
-                    as data the platform lost.
+                    ONE ROW, NEVER A LOGIN ID. `createdBy` is a Keycloak subject -- a uuid
+                    nothing on this platform can name -- and it used to be printed raw here,
+                    beside a second "Introduced by" row that named the same agent. An agent
+                    registration links to the agent, who is also who commission accrues to;
+                    anyone else is named from the token at registration (party V5), and an
+                    older record that could not be named exactly says so rather than guessing.
                   */}
-                  {party.registeredByPartyId && (
+                  {party.registeredByPartyId ? (
                     <Field
-                      label="Introduced by"
+                      label="Registered by"
                       value={
-                        <Link
-                          className="hover:underline"
-                          to={`/staff/parties/${party.registeredByPartyId}`}
-                        >
-                          <PartyName partyId={party.registeredByPartyId} />
-                        </Link>
+                        <span>
+                          <Link
+                            className="hover:underline"
+                            to={`/staff/parties/${party.registeredByPartyId}`}
+                          >
+                            {party.createdByName ?? <PartyName partyId={party.registeredByPartyId} />}
+                          </Link>
+                          <span className="text-muted-foreground"> · agent</span>
+                        </span>
                       }
                       note="The agent who brought this client in. Commission on their policies accrues to this agent."
+                    />
+                  ) : (
+                    <Field
+                      label="Registered by"
+                      value={party.createdByName ?? 'Name not recorded'}
+                      note={
+                        party.createdByName
+                          ? 'Who entered this record. No agent introduced this client, so their business is direct.'
+                          : 'Registered before names were kept. No agent introduced this client.'
+                      }
                     />
                   )}
                   <Field label="Client id" value={<span className="font-mono text-xs">{partyId}</span>} />
@@ -360,18 +402,23 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
           an individual -- so a type-only gate would have hidden real cover from the
           record of the person who holds it.
         */}
-        {(isOrganisation || schemes.length > 0) && (
+        {(isOrganisation || candidates.length > 0) && (
           <Panel
-            title="Group schemes"
+            title={lenderOnly ? 'Credit-life schemes' : 'Group schemes'}
             subtitle={
-              schemes.length === 1
-                ? 'The scheme this client holds, and who is covered under it.'
-                : 'Master policies this client holds. Open one for its member schedule.'
+              lenderOnly
+                ? "Schemes this lender holds. Its borrowers are listed on each scheme's own page."
+                : employerSchemes.length === 1
+                  ? 'The scheme this client holds, and who is covered under it.'
+                  : 'Master policies this client holds. Open one for its member schedule.'
             }
           >
             <SchemeList
               resource={policies}
-              schemes={schemes}
+              schemes={employerSchemes}
+              creditLifeSchemes={creditLifeSchemes}
+              lives={kinds}
+              notSchemes={notSchemes}
               partyId={partyId}
               onRetry={() => void loadPolicies(partyId)}
             />
@@ -592,11 +639,21 @@ function PolicyList({
 function SchemeList({
   resource,
   schemes,
+  creditLifeSchemes,
+  lives,
+  notSchemes,
   partyId,
   onRetry,
 }: {
   resource: Resource<Page<PolicyView>>;
+  /** Employer schemes: the one-scheme case previews its members. */
   schemes: PolicyView[];
+  /** A lender's schemes: named and counted, never listed borrower by borrower. */
+  creditLifeSchemes: PolicyView[];
+  /** The scheme check per policy number, for the credit-life lives-on-cover count. */
+  lives: Record<string, SchemeCheck> | null | undefined;
+  /** Group/credit-life policies the server says carry no scheme -- issued as a single life. */
+  notSchemes: PolicyView[];
   partyId: string;
   onRetry: () => void;
 }) {
@@ -605,7 +662,17 @@ function SchemeList({
   return (
     <PanelState resource={resource} onRetry={onRetry} empty="No group scheme on this client.">
       {() => {
-        if (schemes.length === 0) return null;
+        if (schemes.length === 0 && creditLifeSchemes.length === 0 && notSchemes.length === 0) {
+          return <p className="px-4 py-3 text-xs text-muted-foreground">No group scheme on this client.</p>;
+        }
+        if (schemes.length === 0) {
+          return (
+            <>
+              <CreditLifeRows schemes={creditLifeSchemes} lives={lives} />
+              <NotSchemeRows policies={notSchemes} />
+            </>
+          );
+        }
 
         const sole = schemes.length === 1 ? schemes[0] : undefined;
         const soleNumber = sole?.policyNumber;
@@ -666,7 +733,14 @@ function SchemeList({
                           className="flex items-baseline justify-between gap-3 py-1 text-xs"
                         >
                           <span className="min-w-0 truncate">
-                            <PartyName partyId={m.memberPartyId ?? ''} />
+                            {/* A FREEFORM member has a name and no client record; resolving
+                                a party id it does not have rendered an empty row. The scheme
+                                page already does this (GroupSchemePage). */}
+                            {m.memberPartyId ? (
+                              <PartyName partyId={m.memberPartyId} />
+                            ) : (
+                              (m.memberName ?? '—')
+                            )}
                           </span>
                           <span className="shrink-0 text-muted-foreground">
                             {m.gradeCode && <span className="mr-2">{m.gradeCode}</span>}
@@ -689,10 +763,76 @@ function SchemeList({
                 )}
               </div>
             )}
+            <CreditLifeRows schemes={creditLifeSchemes} lives={lives} />
+            <NotSchemeRows policies={notSchemes} />
           </div>
         );
       }}
     </PanelState>
+  );
+}
+
+/**
+ * A lender's credit-life schemes: one row each, lives on cover and status, linking to the
+ * scheme's own page. No borrower is named here. They are the lender's customers, held as
+ * FREEFORM members precisely so they never enter our client register until a claim, and
+ * listing them on the lender's record would put them in it by the back door.
+ */
+function CreditLifeRows({
+  schemes,
+  lives,
+}: {
+  schemes: PolicyView[];
+  lives: Record<string, SchemeCheck> | null | undefined;
+}) {
+  if (schemes.length === 0) return null;
+  return (
+    <div className="border-t border-border pb-1">
+      {schemes.map((scheme) => {
+        const onCover = lives?.[scheme.policyNumber ?? '']?.activeMemberCount ?? null;
+        return (
+          <LinkRow
+            key={scheme.policyNumber}
+            to={`../../credit-life-schemes/${encodeURIComponent(scheme.policyNumber ?? '')}`}
+            left={<span className="font-mono">{scheme.policyNumber}</span>}
+            right={
+              <>
+                {onCover !== null && (
+                  <span className="mr-2 tabular-nums">{onCover.toLocaleString()} on cover</span>
+                )}
+                {scheme.status ? <StatusBadge kind="policy" value={scheme.status} /> : '—'}
+              </>
+            }
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * A group or credit-life policy that is not a scheme: issued down the single-life path, so it
+ * has the product and no member schedule, and covers nobody. Said plainly rather than hidden
+ * -- it is a real contract on the client's record, and the fix is someone's to make -- and
+ * linked to the POLICY, since there is no schedule to link to.
+ */
+function NotSchemeRows({ policies }: { policies: PolicyView[] }) {
+  if (policies.length === 0) return null;
+  return (
+    <div className="border-t border-border">
+      {policies.map((p) => (
+        <LinkRow
+          key={p.policyNumber}
+          to={`../../policies/${encodeURIComponent(p.policyNumber ?? '')}`}
+          left={<span className="font-mono">{p.policyNumber}</span>}
+          right={
+            <span className="text-status-warning-fg">
+              Group product issued as a single-life policy — covers no members
+            </span>
+          }
+        />
+      ))}
+    </div>
   );
 }
 

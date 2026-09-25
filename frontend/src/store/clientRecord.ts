@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { listCases } from '@/api/underwriting';
 import { searchClaims } from '@/api/claims';
 import { beneficiaryOf } from '@/api/policies';
-import { listSchemeMembers, searchPolicies } from '@/api/policies';
+import { getGroupScheme, listSchemeMembers, searchPolicies } from '@/api/policies';
+import type { ApiError } from '@/lib/apiError';
 import { listAgents } from '@/api/distribution';
 import type {
   AgentView,
@@ -69,6 +70,16 @@ interface ClientRecordState {
    * of five hundred with a pager agreeing.
    */
   schemeMembers: Keyed<Page<PolicyMemberView>>;
+  /**
+   * For each of this client's GROUP_LIFE / CREDIT_LIFE policies, whether it really is a
+   * scheme: true when it has one, false when the server says it is "not a group scheme"
+   * (409), null when the check itself failed and nothing is known.
+   *
+   * The category alone cannot say. A group product used to be proposable as a single life,
+   * and in dev thirteen were issued that way -- one policy, no member schedule, covering
+   * nobody -- so a category-only test offered a member roll that could only 409.
+   */
+  schemeKinds: Keyed<Record<string, SchemeCheck>>;
 
   loadPolicies: (partyId: string) => Promise<void>;
   loadClaims: (partyId: string) => Promise<void>;
@@ -76,6 +87,28 @@ interface ClientRecordState {
   loadBeneficiaryOf: (partyId: string) => Promise<void>;
   loadAgentRecords: (partyId: string) => Promise<void>;
   loadSchemeMembers: (partyId: string, policyNumber: string) => Promise<void>;
+  loadSchemeKinds: (partyId: string, policyNumbers: string[]) => Promise<void>;
+}
+
+/**
+ * What the scheme read said about one candidate policy. `isScheme` as described on
+ * `schemeKinds`; `activeMemberCount` is the lives on cover, so a credit-life row can say how
+ * many borrowers it covers without listing any of them. Null when not known.
+ */
+export interface SchemeCheck {
+  isScheme: boolean | null;
+  activeMemberCount: number | null;
+}
+
+/** Whether one policy is a scheme. Never rejects: a failed check is an unknown, not a panel error. */
+async function checkScheme(policyNumber: string): Promise<SchemeCheck> {
+  try {
+    const scheme = await getGroupScheme(policyNumber);
+    return { isScheme: true, activeMemberCount: scheme.activeMemberCount ?? null };
+  } catch (cause) {
+    // Already an ApiError -- the http interceptor normalises every rejection.
+    return { isScheme: (cause as ApiError).status === 409 ? false : null, activeMemberCount: null };
+  }
 }
 
 export const useClientRecordStore = create<ClientRecordState>((set, getState) => ({
@@ -85,6 +118,7 @@ export const useClientRecordStore = create<ClientRecordState>((set, getState) =>
   beneficiaryOf: {},
   agentRecords: {},
   schemeMembers: {},
+  schemeKinds: {},
 
   loadPolicies: (partyId) =>
     track(
@@ -139,6 +173,19 @@ export const useClientRecordStore = create<ClientRecordState>((set, getState) =>
       (next) => set((s) => ({ schemeMembers: { ...s.schemeMembers, [partyId]: next } })),
       () => listSchemeMembers(policyNumber, { pageSize: SCHEME_MEMBER_PREVIEW }),
     ),
+
+  // One read per candidate, in parallel. A client holds a handful of scheme-category policies
+  // at most, and this is the only way to tell a scheme from a group product issued as one life.
+  loadSchemeKinds: (partyId, policyNumbers) =>
+    track(
+      `client.schemeKinds.${partyId}`,
+      getState().schemeKinds[partyId] ?? idle<Record<string, SchemeCheck>>(),
+      (next) => set((s) => ({ schemeKinds: { ...s.schemeKinds, [partyId]: next } })),
+      async () => {
+        const kinds = await Promise.all(policyNumbers.map(checkScheme));
+        return Object.fromEntries(policyNumbers.map((n, i) => [n, kinds[i] ?? { isScheme: null, activeMemberCount: null }]));
+      },
+    ),
 }));
 
 export const selectClientPolicies = (partyId: string) => (s: ClientRecordState) =>
@@ -153,3 +200,10 @@ export const selectClientAgentRecords = (partyId: string) => (s: ClientRecordSta
   s.agentRecords[partyId] ?? idle<Page<AgentView>>();
 export const selectClientSchemeMembers = (partyId: string) => (s: ClientRecordState) =>
   s.schemeMembers[partyId] ?? idle<Page<PolicyMemberView>>();
+export const selectClientSchemeKinds = (partyId: string) => (s: ClientRecordState) =>
+  s.schemeKinds[partyId] ?? idle<Record<string, SchemeCheck>>();
+
+/** The categories whose policies may carry a member schedule. */
+export function isSchemeCategory(category: string | null | undefined): boolean {
+  return category === 'GROUP_LIFE' || category === 'CREDIT_LIFE';
+}

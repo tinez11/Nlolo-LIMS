@@ -61,6 +61,7 @@ class ClaimControllerValidationContractTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -83,6 +84,7 @@ class ClaimControllerValidationContractTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
             "db-migrations/policy/V4__underwriting_case_id.sql",
@@ -91,11 +93,14 @@ class ClaimControllerValidationContractTest {
             "db-migrations/policy/V7__life_assured.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
-            "db-migrations/claims/V6__exclusion_decline.sql");
+            "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql");
     }
 
     @Autowired private MockMvc mockMvc;

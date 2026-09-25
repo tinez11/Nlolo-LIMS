@@ -131,6 +131,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -152,6 +153,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -169,6 +171,8 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
+            "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
@@ -176,6 +180,8 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V6__disbursement_method.sql");
@@ -256,7 +262,7 @@ class ClaimSettlementEndToEndTest {
             ClaimType.DEATH, LocalDate.now().minusDays(1),
             new DeathClaimDetails("Natural causes", "Dar es Salaam", LocalDate.now().minusDays(1), "Dr. Test"));
         UUID claimId = claimsApi.registerClaim(request, regKey, "claims-staff").claimId();
-        claimsApi.submitAssessment(claimId, "Consistent with cause of death", new BigDecimal("2000000"), "TZS", false, assessor);
+        claimsApi.submitAssessment(claimId, "Consistent with cause of death", new BigDecimal("2000000"), "TZS", false, assessor, null);
         return claimId;
     }
 
@@ -441,7 +447,7 @@ class ClaimSettlementEndToEndTest {
             new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test")),
             "e2e-group-reg-01", "clerk");
         claimsApi.submitAssessment(claim.claimId(), "Findings", new BigDecimal("5000000.00"),
-            "TZS", false, "assessor-group-01");
+            "TZS", false, "assessor-group-01", null);
         claimsApi.decideSettlement(claim.claimId(), true, new BigDecimal("5000000.00"), "TZS", null,
             "MPESA-0712000099", "e2e-group-settle-01", "manager-group-01");
 

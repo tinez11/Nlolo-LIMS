@@ -71,6 +71,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -93,6 +94,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
+            "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             "db-migrations/policy/V3__premium_fields.sql",
@@ -113,11 +115,15 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/policy/V19__enrolment_premium.sql",
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
+            "db-migrations/policy/V23__member_open_death_claim.sql",
+            "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
             "db-migrations/claims/V5__claim_policy_member.sql",
             "db-migrations/claims/V6__exclusion_decline.sql",
+            "db-migrations/claims/V7__claim_assessment_assessor_name.sql",
+            "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             // The settlement rail. A credit-life payout takes the EFT rail, which calls no
             // gateway at all -- so proving the whole chain here needs the payment schema and
             // nothing else: no WireMock, no aggregator, no stub. That is the rail being what
@@ -282,7 +288,7 @@ class CreditLifeClaimEndToEndTest {
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true,
             new BigDecimal("1000000.00"), "TZS", null,
-            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, "bank-account-1", idem(), "assessor.two"))
+            ClaimDeclineReason.SUICIDE_WITHIN_EXCLUSION, null, idem(), "assessor.two"))
             .isInstanceOf(ClaimValidationException.class)
             .hasMessageContaining("APPROVED");
     }
@@ -391,8 +397,25 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
 
         assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, PRINCIPAL, "TZS",
-            null, "LENDER-ACCT", idem(), "claims.manager"))
-            .isInstanceOf(RuntimeException.class);
+            null, null, idem(), "claims.manager"))
+            // The CEILING refused it -- pinned, so a payee rule firing first cannot pass this.
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("covered for");
+
+        assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
+    }
+
+    /** The insurer deals only with the lender (client answer 3.6), who is the claimant and the
+     * policyholder (spec 2.9). A payee typed into a credit-life approval was never a real choice
+     * -- in dev they read "mobile" and "i approve" -- and could have named any account at all. */
+    @Test
+    void aCreditLifeApprovalRefusesATypedPayee() {
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
+
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claimId, true, new BigDecimal("1600000.00"),
+            "TZS", null, "0712345678", idem(), "claims.manager"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("pays the lender");
 
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.UNDER_ASSESSMENT);
     }
@@ -413,17 +436,51 @@ class CreditLifeClaimEndToEndTest {
             bigScheme, member, bankPartyId, ClaimType.DEATH, DISBURSED,
             new DeathClaimDetails("Natural causes", "Dar es Salaam", DISBURSED, "Dr Mwakalinga")),
             idem(), "claims.clerk");
-        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one");
-        claimsApi.decideSettlement(claim.claimId(), true, FCL, "TZS", null,
-            "LENDER-ACCT", idem(), "claims.manager");
+        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one", null);
 
+        // The 200,000,000 above the limit is uninsured, which is the point -- proved by the
+        // platform refusing to settle for the whole debt. On the SAME claim, first: this used to
+        // register a second death claim on the same borrower to show it, and one death claim per
+        // life now refuses that registration outright.
+        assertThatThrownBy(() -> claimsApi.decideSettlement(claim.claimId(), true, ABOVE_FCL, "TZS",
+            null, null, idem(), "claims.manager"))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining("covered for");
+
+        claimsApi.decideSettlement(claim.claimId(), true, FCL, "TZS", null,
+            null, idem(), "claims.manager");
         assertThat(claimsApi.getClaim(claim.claimId()).approvedAmount()).isEqualByComparingTo(FCL);
-        // And the 200,000,000 above the limit is uninsured, which is the point -- proved by the
-        // platform refusing to settle for the whole debt rather than by the number above alone.
-        UUID second = assessedClaimOn(bigScheme, member, DISBURSED.plusDays(1));
-        assertThatThrownBy(() -> claimsApi.decideSettlement(second, true, ABOVE_FCL, "TZS",
-            null, "LENDER-ACCT", idem(), "claims.manager"))
-            .isInstanceOf(RuntimeException.class);
+    }
+
+    /** Rejecting the death claim clears it from the member; reopening it records it again. */
+    @Test
+    void theOpenDeathClaimFollowsTheClaimThroughRejectionAndReopening() {
+        UUID claimId = assessedClaimAt(DISBURSED.plusMonths(6));
+        assertThat(borrower().openDeathClaimId()).isEqualTo(claimId);
+
+        claimsApi.decideSettlement(claimId, false, null, null, "documents were forged",
+            null, null, idem(), "claims.manager");
+        assertThat(borrower().openDeathClaimId())
+            .as("a rejected claim is not in progress; the borrower reads as a live loan again")
+            .isNull();
+
+        claimsApi.reopenClaim(claimId, "new evidence", "claims.manager");
+        assertThat(borrower().openDeathClaimId()).isEqualTo(claimId);
+    }
+
+    private PolicyMemberView borrower() {
+        return policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10)).getContent().get(0);
+    }
+
+    /** One death claim per life, on the product where it was found: three approved claims on one
+     * borrower in dev, 1,640,000 against 800,000 of cover. */
+    @Test
+    void aSecondDeathClaimOnTheSameBorrowerIsRefused() {
+        UUID first = assessedClaimAt(DISBURSED.plusMonths(6));
+
+        assertThatThrownBy(() -> assessedClaimAt(DISBURSED.plusMonths(6)))
+            .isInstanceOf(ClaimValidationException.class)
+            .hasMessageContaining(first.toString());
     }
 
     // ---- and then the loan comes off cover -----------------------------------
@@ -438,14 +495,21 @@ class CreditLifeClaimEndToEndTest {
         // Nothing is settled yet, and that is the EFT rail working: the money has not moved, so
         // the claim has not. A mobile-money claim would already be SETTLED by this line.
         assertThat(claimsApi.getClaim(claimId).status()).isEqualTo(ClaimStatus.SETTLEMENT_REQUESTED);
-        assertThat(policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10))
-            .getContent().get(0).status()).isEqualTo(MemberStatus.ACTIVE);
+        PolicyMemberView awaitingPayment = policyApi.listMembers(scheme, null, null, PageRequest.of(0, 10))
+            .getContent().get(0);
+        assertThat(awaitingPayment.status()).isEqualTo(MemberStatus.ACTIVE);
+        // Still on cover -- but the roll now says why: a death claim is open on this life. Before
+        // V23 this row was indistinguishable from a live loan.
+        assertThat(awaitingPayment.openDeathClaimId()).isEqualTo(claimId);
 
         DisbursementInstruction eft = disbursementRepository
             .findByIdempotencyKeyAndTenantId(settlementKey, TenantContext.get())
             .orElseThrow(() -> new AssertionError("No disbursement was recorded for the settlement"));
         assertThat(eft.getStatus()).isEqualTo("AWAITING_EXECUTION");
         assertThat(eft.getMethod()).isEqualTo("EFT");
+        // The lender, named by the platform -- nobody typed a destination. Finance reads who to
+        // pay and on which scheme; the account itself they hold, out of band (spec 2.9).
+        assertThat(eft.getPayeeRef()).isEqualTo("Lender Co — policyholder of " + scheme);
 
         paymentApiImpl.markEftExecuted(eft.getDisbursementId(), "FT26092300881", "finance-officer-asha");
 
@@ -455,6 +519,9 @@ class CreditLifeClaimEndToEndTest {
             .getContent().get(0);
         assertThat(exited.status()).isEqualTo(MemberStatus.EXITED);
         assertThat(exited.leftOn()).isEqualTo(DISBURSED.plusMonths(6));
+        assertThat(exited.exitReason()).isEqualTo(ExitReason.CLAIM_SETTLED);
+        // The settlement's own exit closed the open claim in the same write.
+        assertThat(exited.openDeathClaimId()).isNull();
         // No refund: the premium was fully earned the moment the insurer paid. Refunding it would
         // pay the claim and give back the money that funded it. PolicyApiImpl.addRefundDetail
         // returns before computing anything for a CLAIM_SETTLED exit; MemberExitIntegrationTest
@@ -467,7 +534,7 @@ class CreditLifeClaimEndToEndTest {
             scheme, borrowerMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
             new DeathClaimDetails("Under investigation", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
             idem(), "claims.clerk");
-        claimsApi.submitAssessment(claim.claimId(), "investigating", null, null, false, "assessor.one");
+        claimsApi.submitAssessment(claim.claimId(), "investigating", null, null, false, "assessor.one", null);
         return claim.claimId();
     }
 
@@ -482,17 +549,8 @@ class CreditLifeClaimEndToEndTest {
         UUID claimId = assessedClaimAt(dateOfEvent);
         settlementKey = idem();
         claimsApi.decideSettlement(claimId, true, expected, "TZS", null,
-            "LENDER-ACCT", settlementKey, "claims.manager");
+            null, settlementKey, "claims.manager");
         return claimId;
-    }
-
-    private UUID assessedClaimOn(String policyNumber, UUID policyMemberId, LocalDate dateOfEvent) {
-        ClaimView claim = claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(
-            policyNumber, policyMemberId, bankPartyId, ClaimType.DEATH, dateOfEvent,
-            new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr Mwakalinga")),
-            idem(), "claims.clerk");
-        claimsApi.submitAssessment(claim.claimId(), "verified", null, null, false, "assessor.one");
-        return claim.claimId();
     }
 
     private String idem() { return "idem-" + UUID.randomUUID(); }

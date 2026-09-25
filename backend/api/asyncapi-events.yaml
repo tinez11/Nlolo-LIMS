@@ -235,6 +235,14 @@ channels:
       would double-count every scheme at issuance.
     publish:
       message: { $ref: '#/components/messages/GroupMemberAdded' }
+  policy.GroupMemberEvidenceGranted:
+    description: >
+      Producer: policy (PolicyApiImpl.recordMemberEvidenceDecision, reached from the underwriting
+      decision listener). Consumers: regreporting, audit. The scheme total rises with nobody
+      joining or leaving, so regreporting's running sum assured must hear of it. A REFUSED excess
+      publishes nothing: cover stays at the limit and no total moves.
+    publish:
+      message: { $ref: '#/components/messages/GroupMemberEvidenceGranted' }
   policy.GroupMemberExited:
     description: >
       Producer: policy (PolicyApiImpl.exitOneMember, reached from dischargeForSettledClaim and
@@ -255,6 +263,15 @@ channels:
       of force -- a consumer that also acted on the zero would remove the same cover twice.
     publish:
       message: { $ref: '#/components/messages/GroupMemberExited' }
+  policy.AgentOfRecordChanged:
+    description: >
+      Producer: policy (PolicyApiImpl.changeSchemeAgentOfRecord) -- staff corrected who earns
+      commission on a scheme. Consumers: distribution (the projection accrual reads follows it),
+      audit (who changed where commission money goes, and why).
+      FORWARD ONLY. Accruals already booked stay with the agent who earned them; a consumer must
+      not re-attribute history from this event.
+    publish:
+      message: { $ref: '#/components/messages/AgentOfRecordChanged' }
   policy.SurrenderPayoutRequested:
     description: "Producer: policy. Consumer: payment (request/confirm pattern)."
     publish:
@@ -544,6 +561,8 @@ components:
     PolicySurrendered: { messageId: PolicySurrendered, name: PolicySurrendered, payload: { $ref: '#/components/schemas/PolicySurrenderedPayload' } }
     GroupMemberAdded: { messageId: GroupMemberAdded, name: GroupMemberAdded, payload: { $ref: '#/components/schemas/GroupMemberAddedPayload' } }
     GroupMemberExited: { messageId: GroupMemberExited, name: GroupMemberExited, payload: { $ref: '#/components/schemas/GroupMemberExitedPayload' } }
+    GroupMemberEvidenceGranted: { messageId: GroupMemberEvidenceGranted, name: GroupMemberEvidenceGranted, payload: { $ref: '#/components/schemas/GroupMemberEvidenceGrantedPayload' } }
+    AgentOfRecordChanged: { messageId: AgentOfRecordChanged, name: AgentOfRecordChanged, payload: { $ref: '#/components/schemas/AgentOfRecordChangedPayload' } }
     SurrenderPayoutRequested: { messageId: SurrenderPayoutRequested, name: SurrenderPayoutRequested, payload: { $ref: '#/components/schemas/SurrenderPayoutRequestedPayload' } }
     MaturityPayoutRequested: { messageId: MaturityPayoutRequested, name: MaturityPayoutRequested, payload: { $ref: '#/components/schemas/MaturityPayoutRequestedPayload' } }
     LoanOriginated: { messageId: LoanOriginated, name: LoanOriginated, payload: { $ref: '#/components/schemas/LoanOriginatedPayload' } }
@@ -778,6 +797,18 @@ components:
             # The scheme's total AFTER this member. regreporting's whole input: it projects the
             # delta between this and the total it last recorded.
             schemeTotalCovered: {type: object}
+    AgentOfRecordChangedPayload:
+      type: object
+      required: [policyNumber, reason, changedBy]
+      properties:
+        policyNumber: { type: string }
+        previousAgentOfRecordId: { type: [string, "null"], format: uuid }
+        agentOfRecordId:
+          type: [string, "null"]
+          format: uuid
+          description: Null means the scheme is now direct -- nobody earns on its next file.
+        reason: { type: string }
+        changedBy: { type: string }
     GroupMemberExitedPayload:
       description: >
         reason is CLAIM_SETTLED for every occurrence today. The field exists anyway because a
@@ -789,6 +820,16 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { policyNumber: {type: string}, policyMemberId: {type: string, format: uuid}, leftOn: {type: string, format: date}, reason: {type: string, enum: [CLAIM_SETTLED]}, schemeTotalCovered: {type: object} }
+    GroupMemberEvidenceGrantedPayload:
+      description: >
+        An underwriter accepted a scheme member's free-cover-limit evidence case, so the member is
+        now covered for their full benefit. schemeTotalCovered is the scheme total AFTER the grant;
+        joinedOn is the date the extended cover starts (the name matches the other scheme-total
+        events so one consumer handler serves all of them).
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, policyMemberId: {type: string, format: uuid}, underwritingCaseId: {type: string, format: uuid}, joinedOn: {type: string, format: date}, schemeTotalCovered: {type: object} }
     SurrenderPayoutRequestedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

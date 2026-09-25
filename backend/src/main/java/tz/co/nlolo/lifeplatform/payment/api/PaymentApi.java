@@ -42,4 +42,14 @@ public interface PaymentApi {
      * on {@code PaymentApiImpl} reached only from payment's own controller.
      */
     List<DisbursementStatusView> listAwaitingEftExecution();
+
+    /**
+     * Every payout instructed for one thing -- a claim settlement, say -- newest first.
+     *
+     * <p>A claim reached SETTLEMENT_REQUESTED and the claim page said nothing more: whether money
+     * had moved, by which rail, to whom, or -- on an EFT -- that it was waiting on a finance
+     * officer the claims manager could not see. Newest first and a list rather than one row,
+     * because a failed payout sends the claim back to APPROVED and a re-approval instructs again.
+     */
+    List<DisbursementStatusView> listDisbursementsFor(String purpose, String sourceRef);
 }

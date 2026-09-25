@@ -1,9 +1,11 @@
 package tz.co.nlolo.lifeplatform.policy.infrastructure;
 
+import tz.co.nlolo.lifeplatform.TokenNames;
 import tz.co.nlolo.lifeplatform.distribution.api.DistributionApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
+import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
 import tz.co.nlolo.lifeplatform.product.api.ProductSnapshotView;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -76,6 +78,11 @@ public class PolicyController {
     @PreAuthorize("hasRole('REALM_STAFF')")
     public ResponseEntity<PolicyResponseDto> manualIssue(@Valid @RequestBody ManualIssueRequestDto request, @AuthenticationPrincipal Jwt jwt) {
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(request.productVersionId());
+        // The backstop to underwriting's own refusal at openCase: a case opened before that
+        // check existed can still carry a group product, and this screen must not finish the job.
+        if (snapshot.category() == ProductCategory.GROUP_LIFE || snapshot.category() == ProductCategory.CREDIT_LIFE) {
+            throw new NotASingleLifeProductException(snapshot.category().name());
+        }
         List<PolicyApi.BeneficiaryInput> beneficiaries = request.beneficiaries() != null
             ? request.beneficiaries().stream().map(BeneficiaryInputDto::toApiInput).toList() : List.of();
         PolicyApi.IssueRequest issueRequest = new PolicyApi.IssueRequest(request.policyholderPartyId(), snapshot.productId(), request.productVersionId(),
@@ -89,7 +96,8 @@ public class PolicyController {
             // -- the underwriting-decision listener, group schemes -- is ordinary new business
             // and waits for its first premium.
             request.issuanceBasis());
-        PolicyView view = policyApi.issuePolicy(request.underwritingCaseId(), issueRequest, jwt.getSubject());
+        PolicyView view = policyApi.issuePolicy(request.underwritingCaseId(), issueRequest, jwt.getSubject(),
+            TokenNames.displayName(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyResponseDto.from(view));
     }
 
@@ -195,8 +203,41 @@ public class PolicyController {
         // could name a version belonging to a different product, and the service would
         // then check the category of one and issue against the other.
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(request.productVersionId());
-        GroupSchemeView view = policyApi.issueGroupScheme(request.toApiRequest(snapshot.productId()), jwt.getSubject());
+        // AN EMPLOYER SCHEME NEEDS ITS UNDERWRITING CASE, exactly as manual issue does for a single
+        // life. This route used to put a 500-life scheme on risk with no case at all. Credit life
+        // is the exception by decision: set up by an underwriter from agreed terms, with their
+        // name kept as its record (policy V24) -- recorded on every route regardless.
+        if (snapshot.category() == ProductCategory.GROUP_LIFE && request.underwritingCaseId() == null) {
+            throw new InvalidPolicyStateException("An employer scheme is issued on its underwriting case:"
+                + " name the group case (underwritingCaseId) this scheme was proposed and assessed on");
+        }
+        GroupSchemeView view = policyApi.issueGroupScheme(request.toApiRequest(snapshot.productId()), jwt.getSubject(),
+            request.underwritingCaseId(), TokenNames.displayName(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(GroupSchemeResponseDto.from(view));
+    }
+
+    /**
+     * Move the free cover limit on a live scheme.
+     *
+     * <p><b>The only term on a scheme that can be amended</b>, and the restriction is the domain's
+     * rather than this endpoint's: an interest method and a repayment frequency were used to count
+     * every existing member's schedule, and a premium rate was used to CHARGE them, so restating
+     * any of those rewrites history. See {@code GroupScheme.amendFreeCoverLimit}.
+     *
+     * <p>UNDERWRITER, matching issuance: this decides how much of every borrower's loan is
+     * insured, which is the same act as setting it in the first place.
+     */
+    @PutMapping("/group-schemes/{policyNumber}/free-cover-limit")
+    @PreAuthorize("hasRole('UNDERWRITER')")
+    public ResponseEntity<GroupSchemeResponseDto> amendFreeCoverLimit(
+            @PathVariable String policyNumber,
+            @Valid @RequestBody AmendFreeCoverLimitRequestDto request,
+            @AuthenticationPrincipal Jwt jwt) {
+        java.math.BigDecimal limit = request.fclAmount() == null || request.fclAmount().isBlank()
+            ? null
+            : new java.math.BigDecimal(request.fclAmount());
+        return ResponseEntity.ok(GroupSchemeResponseDto.from(
+            policyApi.amendFreeCoverLimit(policyNumber, limit, request.reason(), jwt.getSubject())));
     }
 
     @GetMapping("/group-schemes/{policyNumber}")
@@ -234,6 +275,29 @@ public class PolicyController {
     }
 
     /**
+     * Correct who earns commission on a scheme, from now on. FINANCE_OFFICER or ADMIN, the same
+     * as onboarding the agent and setting their rate: this decides where commission money goes.
+     */
+    @PostMapping("/group-schemes/{policyNumber}/agent-of-record")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<PolicyResponseDto> changeAgentOfRecord(@PathVariable String policyNumber,
+            @Valid @RequestBody ChangeAgentOfRecordRequestDto request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(PolicyResponseDto.from(policyApi.changeSchemeAgentOfRecord(
+            policyNumber, request.agentOfRecordId(), request.reason(), jwt.getSubject())));
+    }
+
+    /**
+     * One member, by id. REALM_STAFF, the same as the roll it is a row of: finance reads it to
+     * say whose death a bank transfer settles, and holds only the member id the claim carries.
+     */
+    @GetMapping("/group-schemes/{policyNumber}/members/{policyMemberId}")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyMemberResponseDto> getMember(@PathVariable String policyNumber,
+                                                             @PathVariable UUID policyMemberId) {
+        return ResponseEntity.ok(PolicyMemberResponseDto.from(policyApi.getMember(policyNumber, policyMemberId)));
+    }
+
+    /**
      * Admit one life to an in-force scheme.
      *
      * <p>UNDERWRITER for the same reason issuing the scheme is: this accepts a new life onto a
@@ -244,6 +308,14 @@ public class PolicyController {
     @PreAuthorize("hasRole('UNDERWRITER')")
     public ResponseEntity<PolicyMemberResponseDto> addMember(@PathVariable String policyNumber,
             @Valid @RequestBody GroupMemberInputDto request, @AuthenticationPrincipal Jwt jwt) {
+        // A BORROWER JOINS BY FILE, NEVER ONE AT A TIME. A credit-life row admitted here skipped
+        // everything the enrolment pipeline does -- the duplicate-loan and date checks, and above
+        // all the second person who must accept every submission (credit-life design 2.10) -- on
+        // one underwriter's word. The file path calls addMember itself, below this endpoint.
+        if (policyApi.getGroupScheme(policyNumber).benefitBasis() == BenefitBasis.AMORTISING_LOAN) {
+            throw new InvalidPolicyStateException(policyNumber + " is a credit-life scheme: borrowers join"
+                + " through an enrolment file, which a second person accepts, not one at a time");
+        }
         PolicyMemberView view = policyApi.addMember(policyNumber, request.toApiInput(), jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).body(PolicyMemberResponseDto.from(view));
     }

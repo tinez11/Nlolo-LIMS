@@ -2,7 +2,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from 'react-oidc-context';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import type { InvoiceView } from '@/api/types';
+import { Link } from 'react-router-dom';
+import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView } from '@/api/types';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
@@ -11,9 +12,10 @@ import { FormField } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
-import { formatMoney } from '@/lib/money';
+import { compareAmounts, formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import {
+  selectDetail,
   selectInvoices,
   selectRequestingPayment,
   selectWaivingInvoice,
@@ -25,6 +27,9 @@ import {
   toApiRequest as toPaymentApiRequest,
   type RequestPaymentFormValues,
 } from './requestPaymentForm';
+import { hasMovement, owesSomething } from './invoiceReconciliation';
+import { exitReasonLabel } from './memberStanding';
+import { useInvoiceReconciliation, type CreditLine } from './useInvoiceReconciliation';
 import {
   blankWaiveInvoiceForm,
   toApiRequest as toWaiverApiRequest,
@@ -51,6 +56,10 @@ import { Input } from '@/components/ui/input';
 export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
   const loadInvoices = usePolicyStore((s) => s.loadInvoices);
   const invoices = usePolicyStore(selectInvoices(policyNumber));
+  const category = usePolicyStore(selectDetail(policyNumber)).data?.productCategory;
+  const isScheme = category === 'CREDIT_LIFE' || category === 'GROUP_LIFE';
+  // Credits and the monthly file behind each invoice -- see useInvoiceReconciliation.
+  const reconciliation = useInvoiceReconciliation(policyNumber, isScheme);
 
   useEffect(() => {
     void loadInvoices(policyNumber);
@@ -72,13 +81,29 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
           key={invoice.invoiceId ?? JSON.stringify(invoice)}
           policyNumber={policyNumber}
           invoice={invoice}
+          credits={reconciliation.creditsByInvoice[invoice.invoiceId ?? ''] ?? []}
+          file={
+            invoice.enrolmentSubmissionId
+              ? (reconciliation.filesById[invoice.enrolmentSubmissionId] ?? null)
+              : null
+          }
         />
       ))}
     </div>
   );
 }
 
-function InvoiceRow({ policyNumber, invoice }: { policyNumber: string; invoice: InvoiceView }) {
+function InvoiceRow({
+  policyNumber,
+  invoice,
+  credits,
+  file,
+}: {
+  policyNumber: string;
+  invoice: InvoiceView;
+  credits: CreditLine[];
+  file: EnrolmentSubmissionView | null;
+}) {
   const [action, setAction] = useState<'waive' | 'payment' | null>(null);
   // Mirrors the endpoint exactly: REALM_STAFF and (FINANCE_OFFICER or ADMIN).
   const canWaive = canSeeFinance(readIdentity(useAuth().user?.access_token));
@@ -98,8 +123,31 @@ function InvoiceRow({ policyNumber, invoice }: { policyNumber: string; invoice: 
             )}
           </span>
         </div>
-        <span className="shrink-0 text-sm font-medium">{formatMoney(invoice.amount)}</span>
+        {/* What is OWED leads. This used to be the charged amount alone, so an invoice with
+            4,200 credited back read 13,800 when 9,600 was due. */}
+        <span className="shrink-0 text-right">
+          <span className="block text-sm font-medium">
+            {formatMoney(invoice.balanceDue ?? invoice.amount)}
+          </span>
+          {invoice.balanceDue && invoice.balanceDue.amount !== invoice.amount?.amount && (
+            <span className="block text-[11px] text-muted-foreground">due of {formatMoney(invoice.amount)} charged</span>
+          )}
+        </span>
       </div>
+
+      {/* Which monthly file this invoice charged, so it can be traced to its borrowers. */}
+      {invoice.enrolmentSubmissionId && (
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          Charged by{' '}
+          <Link to={`/staff/credit-life-schemes/${policyNumber}`} className="underline hover:text-foreground">
+            {file?.fileName ?? 'a monthly enrolment file'}
+          </Link>
+          {file?.acceptedAt && <> · accepted {formatDate(file.acceptedAt)}</>}
+          {file?.enrolledCount != null && <> · {file.enrolledCount} borrower{file.enrolledCount === 1 ? '' : 's'}</>}
+        </p>
+      )}
+
+      <InvoiceReconciliationLines invoice={invoice} credits={credits} />
 
       {invoice.gracePeriodEndsAt && (
         <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -121,14 +169,18 @@ function InvoiceRow({ policyNumber, invoice }: { policyNumber: string; invoice: 
               Waive
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className={canWaive ? undefined : '-ml-2'}
-            onClick={() => setAction('payment')}
-          >
-            Request payment
-          </Button>
+          {/* Only while something is owed. The request asks for the balance due, and the
+              backend refuses one on an invoice payments and credits already cover. */}
+          {owesSomething(invoice) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className={canWaive ? undefined : '-ml-2'}
+              onClick={() => setAction('payment')}
+            >
+              Request payment
+            </Button>
+          )}
         </div>
       )}
 
@@ -147,6 +199,47 @@ function InvoiceRow({ policyNumber, invoice }: { policyNumber: string; invoice: 
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Charged, less each credit (with WHO it was for and why), less paid, equals owed -- written out,
+ * so an invoice can be checked against the monthly files line by line. Only rendered once the
+ * invoice has moved; an untouched invoice owes exactly what it says.
+ */
+function InvoiceReconciliationLines({ invoice, credits }: { invoice: InvoiceView; credits: CreditLine[] }) {
+  if (!hasMovement(invoice) && credits.length === 0) return null;
+  return (
+    <dl className="mt-1.5 space-y-0.5 rounded-md bg-surface-muted px-2.5 py-1.5 text-[11px]">
+      <div className="flex justify-between gap-2">
+        <dt className="text-muted-foreground">Charged</dt>
+        <dd className="font-mono">{formatMoney(invoice.amount)}</dd>
+      </div>
+      {credits.map(({ credit, member }) => (
+        <div key={credit.creditId} className="flex justify-between gap-2">
+          <dt className="text-muted-foreground">
+            Credited · {member?.memberName ?? 'a member'}
+            {member?.memberReference && ` (${member.memberReference})`}
+            {' · '}
+            {exitReasonLabel(credit.exitReason as PolicyMemberView['exitReason'])?.toLowerCase() ??
+              credit.exitReason}
+            {' · '}
+            {formatDate(credit.exitDate)}
+          </dt>
+          <dd className="font-mono">−{formatMoney(credit.amount)}</dd>
+        </div>
+      ))}
+      {invoice.amountPaid && compareAmounts(invoice.amountPaid.amount, '0.00') > 0 && (
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted-foreground">Paid</dt>
+          <dd className="font-mono">−{formatMoney(invoice.amountPaid)}</dd>
+        </div>
+      )}
+      <div className="flex justify-between gap-2 border-t border-border pt-0.5 font-medium">
+        <dt>Balance due</dt>
+        <dd className="font-mono">{formatMoney(invoice.balanceDue ?? invoice.amount)}</dd>
+      </div>
+    </dl>
   );
 }
 

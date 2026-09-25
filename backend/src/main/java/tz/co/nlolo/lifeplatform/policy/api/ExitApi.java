@@ -48,6 +48,44 @@ public interface ExitApi {
     /** Every row in the lender's own line order. */
     List<ExitRowView> listRows(UUID submissionId);
 
+    /**
+     * Every exits file this scheme has had, newest first.
+     *
+     * <p>Same reason as the enrolment equivalent: every other operation here takes a
+     * {@code submissionId} the caller is assumed to already hold, which is true of the upload
+     * flow and false of anybody arriving at a scheme cold.
+     *
+     * <p>Empty, never an exception, for a scheme that has had none.
+     */
+    List<ExitSubmissionView> listSubmissions(String policyNumber);
+
     /** The report that goes back to the lender, as CSV. */
     String renderReport(UUID submissionId);
+
+    /**
+     * The blank exits file this scheme's lender fills in, with an example row.
+     *
+     * <p><b>The example quotes a reference that cannot exist</b> — the scheme's own prefix with
+     * sequence zero, where the sequence starts at one — and that asymmetry with the enrolment
+     * template is deliberate rather than an inconsistency. An enrolment example defends itself:
+     * returned unchanged it duplicates an existing loan and is refused. An exits example does
+     * not. A real reference with a real date, returned unchanged, would take a living borrower
+     * off cover, and nothing downstream would question it.
+     *
+     * <p>So the shape is shown and the member is not: the lender sees exactly what a reference
+     * looks like, and the row is refused as naming no member on this scheme.
+     */
+    String renderTemplate(String policyNumber);
+
+    /**
+     * The same exits file as a spreadsheet, and the one to send a lender who works in Excel.
+     *
+     * <p>Added later than the enrolment workbook and for the reason that one was: a CSV cannot
+     * survive Excel, which rewrites a date when it opens one and again when it saves it. The exits
+     * file carries an {@code exit_date}, so it was exposed to exactly the failure that refused two
+     * real enrolment files -- it had simply not been reached yet.
+     *
+     * <p>The service has always accepted an uploaded workbook; only the controller refused one.
+     */
+    byte[] renderTemplateXlsx(String policyNumber);
 }
