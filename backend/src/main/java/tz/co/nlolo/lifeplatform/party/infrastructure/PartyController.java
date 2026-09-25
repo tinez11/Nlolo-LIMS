@@ -69,7 +69,8 @@ public class PartyController {
             request.employerName(),
             request.nationality(),
             request.address() != null ? request.address().toAddress() : Address.none());
-        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject(), registeringAgentPartyId(jwt, authentication));
+        PartyView view = partyApi.registerIndividual(registration, jwt.getSubject(), registrarName(jwt),
+            registeringAgentPartyId(jwt, authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 
@@ -111,6 +112,21 @@ public class PartyController {
         }
     }
 
+    /**
+     * How to name the registrar on the client record: {@code name}, else {@code preferred_username},
+     * else null. The same rule as claims' {@code ClaimController.displayName}, which party may not
+     * reach. Only ever a label -- the SUBJECT is what agent scoping compares.
+     */
+    private static String registrarName(Jwt jwt) {
+        for (String claim : new String[] {"name", "preferred_username"}) {
+            String value = jwt.getClaimAsString(claim);
+            if (value != null && !value.isBlank()) {
+                return value.strip();
+            }
+        }
+        return null;
+    }
+
     @PostMapping("/parties/corporates")
     @PreAuthorize("hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PartyView> registerCorporate(@Valid @RequestBody RegisterCorporateRequest request,
@@ -119,7 +135,7 @@ public class PartyController {
         PartyView view = partyApi.registerCorporate(request.registeredName(), request.registrationNumber(),
             request.contactInfo() != null ? request.contactInfo().phoneNumber() : null,
             request.contactInfo() != null ? request.contactInfo().email() : null,
-            jwt.getSubject(), registeringAgentPartyId(jwt, authentication));
+            jwt.getSubject(), registrarName(jwt), registeringAgentPartyId(jwt, authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
     }
 

@@ -158,9 +158,10 @@ test.describe('staff clients register', () => {
     await page.goto(`/staff/parties/${partyId}`);
     await expectStaffShellReady(page);
 
-    // Registered BY an agent, so the record says who — distinct from "Registered by" above it,
-    // which is a login id and resolves to nobody in particular.
-    await expect(page.getByText('Introduced by')).toBeVisible({ timeout: 15_000 });
+    // Registered BY an agent, so the record names them -- one row, linking to the agent, where
+    // it used to print the registering login's uuid beside a separate "Introduced by" row.
+    await expect(page.getByRole('link', { name: 'Juma Senior' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('· agent')).toBeVisible();
 
     // Verify them first, so the correction below has something to preserve. Same sequence as
     // staff-party-kyc.spec.ts, which is where this interaction is actually specified.

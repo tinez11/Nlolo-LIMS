@@ -33,24 +33,37 @@ import { dmy } from './dates';
 
 test.describe('staff credit-life scheme', () => {
   /**
-   * The lender's own client record lists its credit-life scheme and previews the roll.
+   * The lender's own client record names its credit-life scheme -- and names no borrower.
    *
-   * It did not: the Group schemes panel counted GROUP_LIFE policies only, so a lender -- whose
-   * whole relationship with the insurer IS its credit-life book -- showed no scheme at all.
+   * Two defects, both on this record. The Group schemes panel counted GROUP_LIFE only, so a
+   * lender showed no scheme at all. Then, once it did, it previewed the "members": borrowers held
+   * as FREEFORM names with no client record, so every row was a blank beside "Active". Borrowers
+   * are the lender's customers and stay out of our register until a claim, so the lender's record
+   * says how many lives the scheme covers and sends the reader to the scheme for who they are.
    */
-  test("a lender's client record lists its credit-life scheme and who is on it", async ({ page }) => {
+  test("a lender's client record names its credit-life scheme and lists no borrower", async ({ page }) => {
     test.slow();
     const { policyNumber, lenderPartyId } = await seedCreditLifeScheme();
 
     await page.goto(`/staff/parties/${lenderPartyId}`);
-    // A fresh lender per run, so this is its ONLY scheme and the roll is previewed inline.
     const panel = page
       .locator('section')
-      .filter({ has: page.getByRole('heading', { name: 'Group schemes' }) });
+      .filter({ has: page.getByRole('heading', { name: 'Credit-life schemes' }) });
     await expect(panel.getByText(policyNumber)).toBeVisible({ timeout: 20_000 });
-    // The one opening borrower, from the real member roll -- not "could not load".
-    await expect(panel.getByText('1 member')).toBeVisible({ timeout: 20_000 });
-    await expect(panel.getByText('Could not load the member schedule.')).toHaveCount(0);
+    // The one opening borrower, counted from the scheme itself -- and not named.
+    await expect(panel.getByText('1 on cover')).toBeVisible({ timeout: 20_000 });
+    await expect(panel.getByText('Amina Hassan Mwinyi')).toHaveCount(0);
+    await expect(panel.getByText('Group members')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Group schemes' })).toHaveCount(0);
+
+    // Registered over the API as staff.admin, so the record names them rather than a login id.
+    await expect(page.getByText('Asha Admin')).toBeVisible();
+
+    // The row goes to the credit-life scheme's own page, where the borrowers are.
+    await panel.getByText(policyNumber).click();
+    await expect(page).toHaveURL(new RegExp(`/staff/credit-life-schemes/${policyNumber}$`), {
+      timeout: 15_000,
+    });
   });
 
   test('an uploaded schedule enrols nobody until a second person accepts it', async ({ page }) => {
@@ -283,7 +296,10 @@ test.describe('staff credit-life scheme', () => {
     await expect(page).toHaveURL(/\/staff\/credit-life-schemes\/GRP-[A-Z0-9]+$/, {
       timeout: 30_000,
     });
-    await expect(page.getByText(fixtures.lenderName)).toBeVisible({ timeout: 20_000 });
+    // First: the page names its lender in the header AND in the Commission panel, where the lender
+    // is who earns. Unqualified, this failed only when that panel happened to load before the
+    // assertion ran -- an intermittent strict-mode failure that read like a broken page.
+    await expect(page.getByText(fixtures.lenderName).first()).toBeVisible({ timeout: 20_000 });
     // In force on arrival, and therefore able to take a file — which is the whole point of the
     // issuance-basis default above.
     await expect(page.getByText('Active', { exact: true })).toBeVisible();

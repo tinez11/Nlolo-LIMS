@@ -57,4 +57,10 @@ public record PartyDetailView(
      * policy's agent of record — which is what makes the registering agent's commission real.
      * Party cannot resolve it itself: it may not depend on distribution.
      */
-    UUID registeredByPartyId) {}
+    UUID registeredByPartyId,
+    /**
+     * Who {@code createdBy} is, by name, captured from their token at registration (V5) -- so
+     * the client record can say "Registered by Juma Senior" rather than print a subject. Null
+     * for older rows whose registrar could not be named exactly.
+     */
+    String createdByName) {}

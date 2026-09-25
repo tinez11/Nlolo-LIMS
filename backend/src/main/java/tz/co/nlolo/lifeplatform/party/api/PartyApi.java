@@ -41,6 +41,14 @@ public interface PartyApi {
                                   UUID registeredByAgentPartyId);
 
     /**
+     * As above, also naming the registrar -- {@code registeredByName} is their display name from
+     * the registering token, so the client record can say who registered it (V5). The HTTP
+     * registration is the caller; fixtures keep the overload above and record no name.
+     */
+    PartyView registerIndividual(IndividualRegistration registration, String registeredBy,
+                                  String registeredByName, UUID registeredByAgentPartyId);
+
+    /**
      * The pre-Build-1 registration: name, date of birth, contact details.
      *
      * <p>Kept as an overload because roughly fifty callers -- almost all of them test
@@ -67,6 +75,11 @@ public interface PartyApi {
     /** @see #registerIndividual(IndividualRegistration, String, UUID) — an employer is brought in by an agent too. */
     PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber,
                                  String email, String registeredBy, UUID registeredByAgentPartyId);
+
+    /** @see #registerIndividual(IndividualRegistration, String, String, UUID) */
+    PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber,
+                                 String email, String registeredBy, String registeredByName,
+                                 UUID registeredByAgentPartyId);
 
     /**
      * Correct what the platform has recorded about a person.

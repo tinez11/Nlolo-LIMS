@@ -79,7 +79,7 @@ interface ClientRecordState {
    * and in dev thirteen were issued that way -- one policy, no member schedule, covering
    * nobody -- so a category-only test offered a member roll that could only 409.
    */
-  schemeKinds: Keyed<Record<string, boolean | null>>;
+  schemeKinds: Keyed<Record<string, SchemeCheck>>;
 
   loadPolicies: (partyId: string) => Promise<void>;
   loadClaims: (partyId: string) => Promise<void>;
@@ -90,14 +90,24 @@ interface ClientRecordState {
   loadSchemeKinds: (partyId: string, policyNumbers: string[]) => Promise<void>;
 }
 
+/**
+ * What the scheme read said about one candidate policy. `isScheme` as described on
+ * `schemeKinds`; `activeMemberCount` is the lives on cover, so a credit-life row can say how
+ * many borrowers it covers without listing any of them. Null when not known.
+ */
+export interface SchemeCheck {
+  isScheme: boolean | null;
+  activeMemberCount: number | null;
+}
+
 /** Whether one policy is a scheme. Never rejects: a failed check is an unknown, not a panel error. */
-async function isScheme(policyNumber: string): Promise<boolean | null> {
+async function checkScheme(policyNumber: string): Promise<SchemeCheck> {
   try {
-    await getGroupScheme(policyNumber);
-    return true;
+    const scheme = await getGroupScheme(policyNumber);
+    return { isScheme: true, activeMemberCount: scheme.activeMemberCount ?? null };
   } catch (cause) {
     // Already an ApiError -- the http interceptor normalises every rejection.
-    return (cause as ApiError).status === 409 ? false : null;
+    return { isScheme: (cause as ApiError).status === 409 ? false : null, activeMemberCount: null };
   }
 }
 
@@ -169,11 +179,11 @@ export const useClientRecordStore = create<ClientRecordState>((set, getState) =>
   loadSchemeKinds: (partyId, policyNumbers) =>
     track(
       `client.schemeKinds.${partyId}`,
-      getState().schemeKinds[partyId] ?? idle<Record<string, boolean | null>>(),
+      getState().schemeKinds[partyId] ?? idle<Record<string, SchemeCheck>>(),
       (next) => set((s) => ({ schemeKinds: { ...s.schemeKinds, [partyId]: next } })),
       async () => {
-        const kinds = await Promise.all(policyNumbers.map(isScheme));
-        return Object.fromEntries(policyNumbers.map((n, i) => [n, kinds[i] ?? null]));
+        const kinds = await Promise.all(policyNumbers.map(checkScheme));
+        return Object.fromEntries(policyNumbers.map((n, i) => [n, kinds[i] ?? { isScheme: null, activeMemberCount: null }]));
       },
     ),
 }));
@@ -191,7 +201,7 @@ export const selectClientAgentRecords = (partyId: string) => (s: ClientRecordSta
 export const selectClientSchemeMembers = (partyId: string) => (s: ClientRecordState) =>
   s.schemeMembers[partyId] ?? idle<Page<PolicyMemberView>>();
 export const selectClientSchemeKinds = (partyId: string) => (s: ClientRecordState) =>
-  s.schemeKinds[partyId] ?? idle<Record<string, boolean | null>>();
+  s.schemeKinds[partyId] ?? idle<Record<string, SchemeCheck>>();
 
 /** The categories whose policies may carry a member schedule. */
 export function isSchemeCategory(category: string | null | undefined): boolean {

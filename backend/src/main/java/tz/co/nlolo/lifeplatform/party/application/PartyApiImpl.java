@@ -84,6 +84,13 @@ public class PartyApiImpl implements PartyApi {
     @Transactional
     public PartyView registerIndividual(IndividualRegistration registration, String registeredBy,
                                          UUID registeredByAgentPartyId) {
+        return registerIndividual(registration, registeredBy, null, registeredByAgentPartyId);
+    }
+
+    @Override
+    @Transactional
+    public PartyView registerIndividual(IndividualRegistration registration, String registeredBy,
+                                         String registeredByName, UUID registeredByAgentPartyId) {
         validatePhone(registration.phoneNumber());
         UUID tenantId = TenantContext.get();
 
@@ -103,9 +110,9 @@ public class PartyApiImpl implements PartyApi {
             // is generated in memory, so a plain save() would not reach the database until
             // the surrounding transaction commits and the violation would surface far from
             // here.
-            party = document.recorded()
-                ? partyRepository.saveAndFlush(Party.newIndividual(tenantId, registration, registeredBy, registeredByAgentPartyId))
-                : partyRepository.save(Party.newIndividual(tenantId, registration, registeredBy, registeredByAgentPartyId));
+            Party toSave = Party.newIndividual(tenantId, registration, registeredBy, registeredByAgentPartyId)
+                .namedRegistrar(registeredByName);
+            party = document.recorded() ? partyRepository.saveAndFlush(toSave) : partyRepository.save(toSave);
         } catch (DataIntegrityViolationException ex) {
             if (document.recorded()) {
                 throw new DuplicateIdentityDocumentException(document.type());
@@ -127,6 +134,15 @@ public class PartyApiImpl implements PartyApi {
     @Transactional
     public PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber,
                                         String email, String registeredBy, UUID registeredByAgentPartyId) {
+        return registerCorporate(registeredName, registrationNumber, phoneNumber, email, registeredBy, null,
+            registeredByAgentPartyId);
+    }
+
+    @Override
+    @Transactional
+    public PartyView registerCorporate(String registeredName, String registrationNumber, String phoneNumber,
+                                        String email, String registeredBy, String registeredByName,
+                                        UUID registeredByAgentPartyId) {
         validatePhone(phoneNumber);
         UUID tenantId = TenantContext.get();
         if (partyRepository.findByTenantIdAndRegistrationNumber(tenantId, registrationNumber).isPresent()) {
@@ -143,7 +159,8 @@ public class PartyApiImpl implements PartyApi {
             // queue -- it doesn't hit the DB until the surrounding @Transactional proxy commits, which is
             // after this method (and this catch block) has already returned. saveAndFlush forces the INSERT
             // to execute synchronously, right here, so a real unique-constraint violation is actually caught.
-            party = partyRepository.saveAndFlush(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy, registeredByAgentPartyId));
+            party = partyRepository.saveAndFlush(Party.newCorporate(tenantId, registeredName, registrationNumber, phoneNumber, email, registeredBy, registeredByAgentPartyId)
+                .namedRegistrar(registeredByName));
         } catch (DataIntegrityViolationException e) {
             // ONLY ux_party_corporate_regno means a duplicate. Reporting every integrity
             // violation as one sends the reader hunting for a corporate party that does
@@ -196,7 +213,8 @@ public class PartyApiImpl implements PartyApi {
             party.getCreatedBy(),
             party.getSex(), party.getSmokerStatus(), party.getIdentityDocument(),
             party.getOccupation(), party.getOccupationClass(), party.getEmployerName(),
-            party.getNationality(), party.getAddress(), party.getRegisteredByPartyId());
+            party.getNationality(), party.getAddress(), party.getRegisteredByPartyId(),
+            party.getCreatedByName());
     }
 
     @Override

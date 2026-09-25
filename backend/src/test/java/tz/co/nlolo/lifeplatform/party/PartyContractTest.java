@@ -60,6 +60,7 @@ class PartyContractTest {
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
+            "db-migrations/party/V5__registered_by_name.sql",
             // GET /parties/{id}/documents reads document.document_record through DocumentApi, so
             // this class now needs the document schema too -- without it the endpoint 500s on a
             // missing relation, which is exactly how it first failed.
@@ -133,6 +134,40 @@ class PartyContractTest {
                     """))
             .andExpect(status().isOk())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * The client record names who registered it, from their token, instead of a login id.
+     *
+     * <p>{@code createdBy} is a Keycloak subject nothing on the platform can name, and the console
+     * printed it raw. The name is taken at registration -- {@code name}, else
+     * {@code preferred_username} -- and the subject is kept beside it, because agent scoping still
+     * compares the subject. Both halves are asserted, against the spec.
+     */
+    @Test
+    void theRegistrarIsNamedFromTheirTokenAndTheSubjectIsKept() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String created = mockMvc.perform(post("/parties/corporates")
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.subject("staff-subject-1").claim("name", "Asha Admin")
+                        .claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"registeredName":"Named Registrar Ltd","registrationNumber":"REG-NAMED-01","contactInfo":{}}
+                    """))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String partyId = created.replaceAll(".*\"partyId\"\\s*:\\s*\"([0-9a-f-]{36})\".*", "$1");
+
+        mockMvc.perform(get("/parties/" + partyId)
+                .with(jwt()
+                    .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.createdByName").value("Asha Admin"))
+            .andExpect(jsonPath("$.createdBy").value("staff-subject-1"));
     }
 
     /**
