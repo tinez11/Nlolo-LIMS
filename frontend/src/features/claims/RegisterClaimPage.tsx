@@ -26,6 +26,7 @@ import {
 import { PartyName } from '@/components/PartyName';
 import { Input, Select } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { CheckboxField } from '@/components/ui/checkbox';
 
 /**
  * `POST /claims` is one of only six endpoints on the platform that HARD-REQUIRES
@@ -457,10 +458,7 @@ export function RegisterClaimPage() {
                   )}
                 />
               </FormField>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <input type="checkbox" {...register('details.permanent')} />
-                Permanent
-              </label>
+              <CheckboxField label="Permanent" {...register('details.permanent')} />
               <FormField label="Impairment percent" error={detailError('impairmentPercent')}>
                 <div className="flex items-center gap-1">
                   <Input

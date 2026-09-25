@@ -17,6 +17,7 @@ import {
 } from './submitClaimAssessmentForm';
 import { Input, Textarea } from '@/components/ui/input';
 import { InlineError } from '@/components/InlineError';
+import { CheckboxField } from '@/components/ui/checkbox';
 
 /**
  * `POST /claims/{claimId}/assessments` -- `CLAIMS_ASSESSOR` role only, rendered
@@ -121,10 +122,7 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
           </FormField>
         </div>
 
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" {...register('fraudIndicator')} />
-          Flag for fraud review
-        </label>
+        <CheckboxField label="Flag for fraud review" {...register('fraudIndicator')} />
 
         {submitting.status === 'error' && submitting.error && (
           <InlineError error={submitting.error} />

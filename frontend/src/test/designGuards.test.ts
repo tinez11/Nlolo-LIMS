@@ -95,6 +95,12 @@ describe('design guards', () => {
     expect(offenders(/text-\[(?:[0-9]|1[01])(?:\.\d+)?px\]/)).toEqual([]);
   });
 
+  it('draws every checkbox with the Checkbox primitive', () => {
+    expect(
+      offenders(/type="checkbox"/, (path) => path.endsWith('/components/ui/checkbox.tsx')),
+    ).toEqual([]);
+  });
+
   it('never dims text with an alpha colour', () => {
     // `text-status-success-fg/80` at 11px was ~4.49:1 -- a pass on the page, a fail in the
     // arithmetic. Alpha on TEXT hides a contrast failure; a solid token cannot.
