@@ -1407,6 +1407,17 @@ public class PolicyApiImpl implements PolicyApi {
                 .ifPresent(existing -> {
                     throw new PolicyAlreadyIssuedForCaseException(underwritingCaseId, existing.getPolicyNumber());
                 });
+            // The case must be THIS scheme's: a group case, proposed by this employer, on this
+            // product version. Naming any real case would satisfy "there is a case" and prove
+            // nothing about this contract.
+            var underwritten = underwritingApi.getCase(underwritingCaseId);
+            if (!underwritten.groupScheme()
+                    || !request.policyholderPartyId().equals(underwritten.applicantPartyId())
+                    || !request.productVersionId().equals(underwritten.productVersionId())) {
+                throw new InvalidPolicyStateException("Underwriting case " + underwritingCaseId
+                    + " is not a group proposal by this employer on this product version, so it cannot"
+                    + " stand behind this scheme");
+            }
         }
         partyApi.getParty(request.policyholderPartyId()); // the employer must exist
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());

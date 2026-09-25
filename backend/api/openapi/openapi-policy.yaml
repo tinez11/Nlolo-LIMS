@@ -1686,6 +1686,15 @@ components:
             borrower on the amount they borrowed, not on the declining balance.
           type: [number, "null"]
           minimum: 0.0001
+        underwritingCaseId:
+          description: >-
+            The group case this scheme is issued on. REQUIRED for a GROUP_LIFE (employer)
+            scheme — as manual issue requires one for a single life — and refused with 409 when
+            absent, when it is not a group proposal by this employer on this product version, or
+            when a scheme already came from it. Not required for CREDIT_LIFE, which an
+            underwriter sets up from agreed terms; their name is recorded as underwriter of record.
+          type: [string, "null"]
+          format: uuid
       # The three above are not in this list for the same reason flatBenefitAmount and
       # salaryMultiple are not: which fields a scheme requires depends on its benefitBasis,
       # OpenAPI cannot express that here, and the service refuses with a message naming the basis.

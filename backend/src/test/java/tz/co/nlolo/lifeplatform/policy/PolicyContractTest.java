@@ -128,6 +128,27 @@ class PolicyContractTest {
     @Autowired private PartyApi partyApi;
     @Autowired private ProductApi productApi;
     @Autowired private PolicyApi policyApi;
+    @Autowired private tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi underwritingApi;
+
+    /**
+     * The group case an employer scheme is issued on. POST /group-schemes refuses a GROUP_LIFE
+     * scheme without one -- the same rule manual issue has for a single life -- and it must be a
+     * group proposal by this employer on this product version.
+     */
+    private UUID groupCase(UUID tenantId, UUID employer, ProductFixture product, UUID life) {
+        TenantContext.set(tenantId);
+        try {
+            return underwritingApi.openCase(employer, product.productId(), product.productVersionId(), null,
+                new tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal(
+                    tz.co.nlolo.lifeplatform.underwriting.api.GroupBenefitBasis.FLAT, new BigDecimal("5000000.00"),
+                    null, null, "TZS", List.of(),
+                    List.of(new tz.co.nlolo.lifeplatform.underwriting.api.GroupProposal.MemberLine(life, null, null)),
+                    new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null),
+                "uw-opener").caseId();
+        } finally {
+            TenantContext.clear();
+        }
+    }
 
     /**
      * Issues a real, persisted policy directly through {@code PolicyApi} (bypassing HTTP, same
@@ -258,13 +279,13 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
                      "benefitBasis":"SALARY_MULTIPLE","salaryMultiple":3,"fclAmount":"30000000.00",
                      "currency":"TZS",
                      "openingSchedule":[{"memberPartyId":"%s","salaryAmount":"1000000.00"}],
                      "premium":{"amount":"900000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY",
                      "issuanceBasis":"MIGRATION"}
-                    """.formatted(employer, product.productVersionId(), member)))
+                    """.formatted(groupCase(tenantId, employer, product, member), employer, product.productVersionId(), member)))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         String policyNumber = JsonPath.read(scheme, "$.policyNumber");
@@ -1124,6 +1145,52 @@ class PolicyContractTest {
      * must be able to check whether a life was covered when a death is reported — that is what
      * {@code idx_policy_member_party} exists for.
      */
+    /**
+     * An employer scheme goes on risk on its underwriting case, as a single life does on manual
+     * issue. This route used to issue a 500-life scheme with no case at all -- and a case must be
+     * THIS scheme's, or naming one proves nothing.
+     */
+    @Test
+    void anEmployerSchemeNeedsItsOwnGroupCase() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID employer = staffRegisteredPerson(tenantId, "8111");
+        UUID otherEmployer = staffRegisteredPerson(tenantId, "8112");
+        UUID member = staffRegisteredPerson(tenantId, "8113");
+        ProductFixture product = publishProduct(tenantId, "GRP-CASE-01", "GROUP_LIFE");
+        var underwriter = jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+            .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
+        String body = """
+            {%s"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+             "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
+             "openingSchedule":[{"memberPartyId":"%s"}],
+             "premium":{"amount":"1200000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY",
+             "issuanceBasis":"MIGRATION","reasonForManualIssue":"Scheme in force with the previous insurer"}
+            """;
+
+        // No case at all.
+        mockMvc.perform(post("/group-schemes").with(underwriter).contentType(MediaType.APPLICATION_JSON)
+                .content(body.formatted("", employer, product.productVersionId(), member)))
+            .andExpect(status().isConflict())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("underwriting case")));
+
+        // Somebody else's case.
+        UUID someoneElses = groupCase(tenantId, otherEmployer, product, member);
+        mockMvc.perform(post("/group-schemes").with(underwriter).contentType(MediaType.APPLICATION_JSON)
+                .content(body.formatted("\"underwritingCaseId\":\"" + someoneElses + "\",", employer,
+                    product.productVersionId(), member)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("not a group proposal by this employer")));
+
+        // Its own case: issued, and the scheme records it.
+        UUID own = groupCase(tenantId, employer, product, member);
+        mockMvc.perform(post("/group-schemes").with(underwriter).contentType(MediaType.APPLICATION_JSON)
+                .content(body.formatted("\"underwritingCaseId\":\"" + own + "\",", employer,
+                    product.productVersionId(), member)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
     @Test
     void onlyAnUnderwriterMayPutASchemeOnRiskButAnyStaffMayReadOne() throws Exception {
         UUID tenantId = UUID.randomUUID();
@@ -1131,12 +1198,12 @@ class PolicyContractTest {
         UUID member = staffRegisteredPerson(tenantId, "8102");
         ProductFixture product = publishProduct(tenantId, "GRP-ROLE-01", "GROUP_LIFE");
         String body = """
-            {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+            {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
              "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
              "openingSchedule":[{"memberPartyId":"%s"}],
              "premium":{"amount":"1200000.00","currencyCode":"TZS"},
              "premiumFrequency":"ANNUALLY","reasonForManualIssue":"Role gate test"}
-            """.formatted(employer, product.productVersionId(), member);
+            """.formatted(groupCase(tenantId, employer, product, member), employer, product.productVersionId(), member);
 
         // A plain staff token cannot open a scheme.
         mockMvc.perform(post("/group-schemes")
@@ -1187,12 +1254,12 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
                      "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
                      "openingSchedule":[{"memberPartyId":"%s"},{"memberPartyId":"%s"}],
                      "premium":{"amount":"1200000.00","currencyCode":"TZS"},
                      "premiumFrequency":"ANNUALLY","reasonForManualIssue":"Contract test scheme"}
-                    """.formatted(employer, product.productVersionId(), memberOne, memberTwo)))
+                    """.formatted(groupCase(tenantId, employer, product, memberOne), employer, product.productVersionId(), memberOne, memberTwo)))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             // Derived from the two-life schedule, not supplied by the caller.
@@ -1240,13 +1307,13 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
                      "benefitBasis":"SALARY_MULTIPLE","salaryMultiple":3,"fclAmount":"30000000.00",
                      "currency":"TZS",
                      "openingSchedule":[{"memberPartyId":"%s","salaryAmount":"20000000.00"}],
                      "premium":{"amount":"900000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY",
                      "issuanceBasis":"MIGRATION"}
-                    """.formatted(employer, product.productVersionId(), founding)))
+                    """.formatted(groupCase(tenantId, employer, product, founding), employer, product.productVersionId(), founding)))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.membersRequiringEvidence").value(1))
@@ -1317,11 +1384,11 @@ class PolicyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
                      "benefitBasis":"FLAT","flatBenefitAmount":"5000000.00","currency":"TZS",
                      "openingSchedule":[{"memberPartyId":"%s"},{"memberPartyId":"%s"}],
                      "premium":{"amount":"600000.00","currencyCode":"TZS"},"premiumFrequency":"ANNUALLY"}
-                    """.formatted(employer, product.productVersionId(), first, second)))
+                    """.formatted(groupCase(tenantId, employer, product, first), employer, product.productVersionId(), first, second)))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         return JsonPath.read(scheme, "$.policyNumber");
@@ -1544,17 +1611,25 @@ class PolicyContractTest {
 
         // @NotEmpty on the DTO, so this is a 422 from Bean Validation rather than the
         // service's own 409 -- both refuse it, and the earlier one gives a field name.
+        //
+        // A REAL case is named, on purpose: this asserts only a 4xx, and without one the
+        // request would now be refused for having no underwriting case -- passing while
+        // proving nothing about an empty schedule.
+        UUID caseLife = staffRegisteredPerson(tenantId, "8202");
+        UUID caseId = groupCase(tenantId, employer, product, caseLife);
         mockMvc.perform(post("/group-schemes")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
+                    {"underwritingCaseId":"%s","policyholderPartyId":"%s","productVersionId":"%s","agentOfRecordId":null,
                      "benefitBasis":"FLAT","flatBenefitAmount":"1000000.00","currency":"TZS",
                      "openingSchedule":[],
                      "premium":{"amount":"100000.00","currencyCode":"TZS"}}
-                    """.formatted(employer, product.productVersionId())))
-            .andExpect(status().is4xxClientError());
+                    """.formatted(caseId, employer, product.productVersionId())))
+            .andExpect(status().is4xxClientError())
+            .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.not(
+                org.hamcrest.Matchers.containsString("underwriting case"))));
     }
     // --- GET /policies?relatedPartyId (the claims desk's question) --------------------------
     //

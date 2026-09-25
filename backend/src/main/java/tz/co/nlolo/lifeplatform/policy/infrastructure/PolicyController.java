@@ -203,10 +203,16 @@ public class PolicyController {
         // could name a version belonging to a different product, and the service would
         // then check the category of one and issue against the other.
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(request.productVersionId());
-        // No case on this route, so the underwriter who set the scheme up IS its record: their
-        // name is kept on the scheme beside the basis and reason (policy V24), for compliance.
+        // AN EMPLOYER SCHEME NEEDS ITS UNDERWRITING CASE, exactly as manual issue does for a single
+        // life. This route used to put a 500-life scheme on risk with no case at all. Credit life
+        // is the exception by decision: set up by an underwriter from agreed terms, with their
+        // name kept as its record (policy V24) -- recorded on every route regardless.
+        if (snapshot.category() == ProductCategory.GROUP_LIFE && request.underwritingCaseId() == null) {
+            throw new InvalidPolicyStateException("An employer scheme is issued on its underwriting case:"
+                + " name the group case (underwritingCaseId) this scheme was proposed and assessed on");
+        }
         GroupSchemeView view = policyApi.issueGroupScheme(request.toApiRequest(snapshot.productId()), jwt.getSubject(),
-            null, TokenNames.displayName(jwt));
+            request.underwritingCaseId(), TokenNames.displayName(jwt));
         return ResponseEntity.status(HttpStatus.CREATED).body(GroupSchemeResponseDto.from(view));
     }
 

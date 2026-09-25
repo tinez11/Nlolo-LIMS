@@ -103,7 +103,17 @@ public record IssueGroupSchemeRequestDto(
      */
     InterestMethod interestMethod,
     RepaymentFrequency repaymentFrequency,
-    @DecimalMin("0.0001") BigDecimal premiumRatePercent) {
+    @DecimalMin("0.0001") BigDecimal premiumRatePercent,
+    /**
+     * The group case this scheme is issued on. REQUIRED for an employer (GROUP_LIFE) scheme --
+     * the same rule manual issue has for a single life: nothing goes on risk on this route
+     * without an underwriting case behind it. It must be a group proposal by this employer on
+     * this product version, and one that no scheme came from yet.
+     *
+     * <p>Not required for credit life, whose scheme is set up by an underwriter from terms agreed
+     * with the lender; their name is recorded as its underwriter of record instead.
+     */
+    UUID underwritingCaseId) {
 
     public PolicyApi.IssueGroupSchemeRequest toApiRequest(UUID productId) {
         return new PolicyApi.IssueGroupSchemeRequest(
