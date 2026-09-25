@@ -636,6 +636,22 @@ public interface PolicyApi {
      */
     void recordOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId);
 
+    /**
+     * Correct who earns commission on a scheme, from now on.
+     *
+     * <p>On credit life the commission belongs to the lender (spec 2.8), but a scheme could only
+     * ever get its agent at issuance -- and there, whoever registered the lender's party won. So
+     * GRP-B6CE9639 came to carry an individual agent, with no way to put it right.
+     *
+     * <p>Forward only: accruals already booked stay with whoever earned them. Publishes
+     * {@code policy.AgentOfRecordChanged}, which distribution follows and audit records.
+     *
+     * @param agentOfRecordId a real agent in this tenant, or null for a direct scheme
+     * @throws UnknownAgentOfRecordException if it names no agent
+     * @throws InvalidPolicyStateException if the policy is not a scheme
+     */
+    PolicyView changeSchemeAgentOfRecord(String policyNumber, UUID agentOfRecordId, String reason, String changedBy);
+
     /** The death claim was rejected. Clears only THAT claim; a no-op if another is recorded. */
     void clearOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId);
 }

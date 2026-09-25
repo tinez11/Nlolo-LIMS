@@ -258,6 +258,18 @@ public class PolicyController {
     }
 
     /**
+     * Correct who earns commission on a scheme, from now on. FINANCE_OFFICER or ADMIN, the same
+     * as onboarding the agent and setting their rate: this decides where commission money goes.
+     */
+    @PostMapping("/group-schemes/{policyNumber}/agent-of-record")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<PolicyResponseDto> changeAgentOfRecord(@PathVariable String policyNumber,
+            @Valid @RequestBody ChangeAgentOfRecordRequestDto request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(PolicyResponseDto.from(policyApi.changeSchemeAgentOfRecord(
+            policyNumber, request.agentOfRecordId(), request.reason(), jwt.getSubject())));
+    }
+
+    /**
      * One member, by id. REALM_STAFF, the same as the roll it is a row of: finance reads it to
      * say whose death a bank transfer settles, and holds only the member id the claim carries.
      */

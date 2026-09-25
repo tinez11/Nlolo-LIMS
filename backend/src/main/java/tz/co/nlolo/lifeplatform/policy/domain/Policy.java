@@ -228,6 +228,15 @@ public class Policy {
     public UUID getProductVersionId() { return productVersionId; }
     public String getProductCategory() { return productCategory; }
     public UUID getAgentOfRecordId() { return agentOfRecordId; }
+
+    /**
+     * Who earns commission on this contract from now on. Changes nothing already earned -- an
+     * accrual is booked against the agent of record at the moment it is earned -- so a correction
+     * applies to the next file, not the last one.
+     */
+    public void changeAgentOfRecord(UUID agentOfRecordId) {
+        this.agentOfRecordId = agentOfRecordId;
+    }
     public String getStatus() { return status; }
     public LocalDate getIssueDate() { return issueDate; }
     public BigDecimal getSumAssuredAmount() { return sumAssuredAmount; }

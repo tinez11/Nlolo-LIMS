@@ -109,6 +109,21 @@ export function listInvoices(policyNumber: string): Promise<InvoiceView[]> {
 }
 
 /**
+ * `POST /group-schemes/{n}/agent-of-record` -- FINANCE_OFFICER/ADMIN. Who earns commission on a
+ * scheme from now on; accruals already booked stay where they are. Null makes it direct.
+ */
+export function changeSchemeAgentOfRecord(
+  policyNumber: string,
+  agentOfRecordId: string | null,
+  reason: string,
+): Promise<PolicyView> {
+  return post<PolicyView>(`/group-schemes/${encodeURIComponent(policyNumber)}/agent-of-record`, {
+    agentOfRecordId,
+    reason,
+  });
+}
+
+/**
  * `GET /policies/{n}/credits` -- premium credited back to members who left early, oldest first.
  * The other half of an invoice: without it a lender was shown 13,800 due when 9,600 was.
  */

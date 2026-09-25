@@ -11,6 +11,8 @@ import java.util.UUID;
 public interface CommissionAccrualRepository extends JpaRepository<CommissionAccrual, UUID> {
     List<CommissionAccrual> findByStatementIdAndTenantId(UUID statementId, UUID tenantId);
     List<CommissionAccrual> findByTenantIdAndAgentIdAndPeriod(UUID tenantId, UUID agentId, String period);
+    /** What one policy has earned, and clawed back, oldest first. */
+    List<CommissionAccrual> findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(UUID tenantId, String policyNumber);
     /** Clawback target lookup: the unreversed FIRST_YEAR accrual for a policy. */
     List<CommissionAccrual> findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(
         UUID tenantId, String policyNumber, TierType tierType);

@@ -1198,6 +1198,36 @@ class PolicyContractTest {
      * still return the member the caller wanted, so each case pins the row that must be
      * ABSENT and the total that must have shrunk.
      */
+    /** Correcting who earns commission on a scheme is finance's. A real agent needs distribution,
+     * so that path and the unknown-agent refusal are asserted in CreditLifeCommissionTest; here the
+     * gate, and "direct" through HTTP against the spec. */
+    @Test
+    void changingASchemesAgentOfRecordIsFinances() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String policyNumber = schemeWithTwoNamedMembers(tenantId, "GRP-AOR-01", "86",
+            namedPerson(tenantId, "Eliya Agent Scheme", "8601"), namedPerson(tenantId, "Fadhili Agent Scheme", "8602"));
+        String body = "{\"agentOfRecordId\":\"" + UUID.randomUUID() + "\",\"reason\":\"The lender earns\"}";
+
+        mockMvc.perform(post("/group-schemes/" + policyNumber + "/agent-of-record")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_UNDERWRITER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        // The unknown-agent refusal needs distribution's tables, which this class does not apply;
+        // CreditLifeCommissionTest asserts it. Direct is a legitimate answer, and clears it.
+        mockMvc.perform(post("/group-schemes/" + policyNumber + "/agent-of-record")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"agentOfRecordId\":null,\"reason\":\"Sold direct\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
     /** One member by id, as the roll shows them -- what finance's transfer queue reads to say
      * whose death a payment settles, holding only the id a claim carries. */
     @Test

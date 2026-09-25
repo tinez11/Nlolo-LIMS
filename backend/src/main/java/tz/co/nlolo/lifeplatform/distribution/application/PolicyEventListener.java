@@ -120,6 +120,7 @@ public class PolicyEventListener {
             // proposal would mean paying agents for people who may never pay, then clawing it
             // back off them when the offer expires.
             case "policy.PolicyActivated" -> withTenant(envelope, this::handlePolicyActivated);
+            case "policy.AgentOfRecordChanged" -> withTenant(envelope, this::handleAgentOfRecordChanged);
             case "policy.PolicyLapsed" -> withTenant(envelope, this::handlePolicyLapsed);
             // Credit life: commission follows the money that actually came in, file by file,
             // and goes back when any of it is refunded.
@@ -276,6 +277,23 @@ public class PolicyEventListener {
      * OPEN; there, {@code persistAccrual}'s own recompute (of what is, in that case, the one and
      * only affected statement) already reflects both rows net.
      */
+    /**
+     * A scheme's agent of record was corrected. The projection is what accrual reads, so it
+     * follows -- and only it: accruals already booked stay with whoever earned them.
+     */
+    private void handleAgentOfRecordChanged(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String policyNumber = (String) payload.get("policyNumber");
+        UUID agentId = (UUID) payload.get("agentOfRecordId");
+        policyProjectionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).ifPresentOrElse(
+            projection -> {
+                projection.changeAgent(agentId);
+                policyProjectionRepository.save(projection);
+            },
+            () -> log.info("Agent of record changed on {} which has no distribution projection row -- "
+                + "nothing to follow", policyNumber));
+    }
+
     private void handlePolicyLapsed(Map<String, Object> payload) {
         UUID tenantId = TenantContext.get();
         String policyNumber = (String) payload.get("policyNumber");

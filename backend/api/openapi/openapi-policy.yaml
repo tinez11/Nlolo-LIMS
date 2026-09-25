@@ -515,6 +515,55 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /group-schemes/{policyNumber}/agent-of-record:
+    post:
+      summary: Correct who earns commission on a scheme, from now on (staff -- FINANCE_OFFICER or ADMIN)
+      description: >-
+        On credit life the commission belongs to the lender (spec 2.8), but a scheme could only get
+        its agent at issuance, where whoever registered the lender's party won. Forward only:
+        accruals already booked stay with whoever earned them. Publishes
+        policy.AgentOfRecordChanged, which distribution follows and audit records.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                agentOfRecordId:
+                  type: [string, "null"]
+                  format: uuid
+                  description: The agent who earns from now on; null makes the scheme direct.
+                reason: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: The policy is not a scheme.
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: agentOfRecordId names no agent in this tenant (UNKNOWN_AGENT_OF_RECORD).
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /group-schemes/{policyNumber}/members/{policyMemberId}:
     get:
       summary: One member of a scheme, by id (staff)

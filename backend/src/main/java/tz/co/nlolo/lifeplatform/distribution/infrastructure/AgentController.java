@@ -22,11 +22,13 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
@@ -194,6 +196,26 @@ public class AgentController {
         enforceAgentReadAccess(agentId, jwt, authentication);
         CommissionPlanView view = distributionApi.getApplicablePlan(agentId, productId);
         return ResponseEntity.ok(CommissionPlanResponseDto.from(view));
+    }
+
+    /**
+     * Set the percentage this agent earns -- per lender on credit life, where the rate is agreed
+     * with each. FINANCE_OFFICER or ADMIN: this decides how much commission money is owed.
+     */
+    @PutMapping("/agents/{agentId}/commission-rate")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<CommissionPlanResponseDto> setCommissionRate(@PathVariable UUID agentId,
+            @Valid @RequestBody SetCommissionRateRequestDto request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(CommissionPlanResponseDto.from(distributionApi.setAgentCommissionRate(
+            agentId, request.productId(), new BigDecimal(request.ratePercent()), jwt.getSubject())));
+    }
+
+    /** What one policy has earned, and clawed back -- the scheme page reads this. Staff only. */
+    @GetMapping("/commission-accruals")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<List<CommissionAccrualResponseDto>> listAccrualsForPolicy(@RequestParam String policyNumber) {
+        return ResponseEntity.ok(distributionApi.listAccrualsForPolicy(policyNumber).stream()
+            .map(CommissionAccrualResponseDto::from).toList());
     }
 
     @GetMapping("/agents/{agentId}/commission-statements")

@@ -359,6 +359,37 @@ public class DistributionApiImpl implements DistributionApi {
         return toCommissionPlanView(plan, savedRules);
     }
 
+    @Override
+    @Transactional
+    public CommissionPlanView setAgentCommissionRate(UUID agentId, UUID productId, BigDecimal ratePercent,
+                                                     String setBy) {
+        UUID tenantId = TenantContext.get();
+        AgentProfile agent = agentProfileRepository.findByAgentIdAndTenantId(agentId, tenantId)
+            .orElseThrow(() -> new AgentNotFoundException("Agent " + agentId + " not found"));
+        if (ratePercent == null || ratePercent.signum() <= 0 || ratePercent.compareTo(new BigDecimal("100")) > 0) {
+            throw new DistributionValidationException("A commission rate is a percentage above 0 and at most 100; got "
+                + ratePercent);
+        }
+        if (ratePercent.stripTrailingZeros().scale() > 2) {
+            throw new DistributionValidationException("A commission rate is stated to two decimal places at most; got "
+                + ratePercent.toPlainString());
+        }
+        // Stored as the fraction the calculator multiplies premium by: 12.5% is 0.1250.
+        BigDecimal rate = ratePercent.divide(new BigDecimal("100"), 4, java.math.RoundingMode.UNNECESSARY);
+        CommissionPlanView plan = createCommissionPlan(productId,
+            List.of(new CommissionRuleInput(TierType.FIRST_YEAR, rate, null, null)), setBy);
+        agent.setCommissionPlanId(plan.commissionPlanId());
+        agentProfileRepository.save(agent);
+        return plan;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommissionAccrualView> listAccrualsForPolicy(String policyNumber) {
+        return commissionAccrualRepository.findByTenantIdAndPolicyNumberOrderByCreatedAtAsc(TenantContext.get(), policyNumber)
+            .stream().map(this::toAccrualView).toList();
+    }
+
     /** Each rule must be rate-XOR-flat, with flatCurrency paired to flatAmount, and whichever of
      * the two is present must be positive -- so the domain rejects a malformed rule before V2's
      * own {@code commission_rule_rate_xor_flat}/{@code commission_rule_flat_currency_paired}/

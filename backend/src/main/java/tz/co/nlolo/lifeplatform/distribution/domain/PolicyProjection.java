@@ -79,6 +79,9 @@ public class PolicyProjection {
     public void markFirstInvoiceCollected(UUID invoiceId) { this.firstInvoiceId = invoiceId; }
     public void markLapsed(Instant lapsedAt) { this.lapsedAt = lapsedAt; }
 
+    /** policy.AgentOfRecordChanged: whoever earns on this contract's NEXT accrual. */
+    public void changeAgent(UUID agentId) { this.agentId = agentId; }
+
     /** True when {@code invoiceId} is this policy's first collection, INCLUDING a redelivery of
      * it -- the distinction that makes the RENEWAL guard idempotent. */
     public boolean isFirstCollection(UUID invoiceId) {

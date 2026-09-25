@@ -115,6 +115,29 @@ public interface DistributionApi {
     AgentView reactivateAgent(UUID agentId, String reactivatedBy);
 
     CommissionPlanView createCommissionPlan(UUID productId, List<CommissionRuleInput> rules, String createdBy);
+
+    /**
+     * The commission rate ONE agent earns, as a percentage of premium -- a new plan with a single
+     * FIRST_YEAR rule, attached to the agent so it wins over any product-wide plan.
+     *
+     * <p>For credit life, where the rate is agreed per lender (client answer 3.1: "adjustable per
+     * lender") and a single premium means FIRST_YEAR fires once per file and RENEWAL never.
+     * Nothing could attach a plan to an agent before: the lookup honoured an agent's own plan
+     * and no path ever set one.
+     *
+     * <p>Replacing a rate creates a new plan and repoints the agent; the old plan stays, so what
+     * earlier accruals were calculated under can still be read. Forward only, like every
+     * commission change: nothing already accrued is recalculated.
+     *
+     * <p>An agent's own plan applies to whatever they sell. A lender sells its own scheme, so
+     * that is the scheme's rate; an agent selling several products would need product rules.
+     *
+     * @param ratePercent greater than 0 and at most 100, to two decimal places (12.5 is 12.5%)
+     */
+    CommissionPlanView setAgentCommissionRate(UUID agentId, UUID productId, BigDecimal ratePercent, String setBy);
+
+    /** Every accrual and clawback booked on one policy, oldest first -- what it has earned whom. */
+    List<CommissionAccrualView> listAccrualsForPolicy(String policyNumber);
     CommissionPlanView getApplicablePlan(UUID agentId, UUID productId);
 
     List<CommissionStatementView> listStatements(UUID agentId, String period);

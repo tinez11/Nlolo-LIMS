@@ -1,4 +1,4 @@
-import { get, post } from '@/lib/http';
+import { get, post, put } from '@/lib/http';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   AgentView,
@@ -142,6 +142,23 @@ export function listCommissionStatements(
     `/agents/${encodeURIComponent(agentId)}/commission-statements`,
     period ? { params: { period } } : undefined,
   );
+}
+
+/**
+ * `PUT /agents/{id}/commission-rate` -- FINANCE_OFFICER/ADMIN. The percentage of premium this
+ * agent earns, as typed ("12.5" is 12.5%); stored as a plan attached to the agent. On credit life
+ * the rate is agreed per lender. Forward only.
+ */
+export function setCommissionRate(agentId: string, productId: string, ratePercent: string): Promise<CommissionPlanView> {
+  return put<CommissionPlanView>(`/agents/${encodeURIComponent(agentId)}/commission-rate`, {
+    productId,
+    ratePercent,
+  });
+}
+
+/** `GET /commission-accruals?policyNumber=` -- staff. What one policy has earned, and clawed back. */
+export function listPolicyAccruals(policyNumber: string): Promise<CommissionAccrualView[]> {
+  return get<CommissionAccrualView[]>('/commission-accruals', { params: { policyNumber } });
 }
 
 export function listAccruals(agentId: string, statementId: string): Promise<CommissionAccrualView[]> {

@@ -58,6 +58,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -664,6 +665,70 @@ class DistributionContractTest {
             .andExpect(jsonPath("$[0].tierType").value("FIRST_YEAR"))
             .andExpect(jsonPath("$[0].amount.amount").value("10000.00"))
             .andExpect(jsonPath("$[0].reversesAccrualId").doesNotExist());
+    }
+
+    // ============================================================================================
+    // PUT /agents/{agentId}/commission-rate, GET /commission-accruals
+    // ============================================================================================
+
+    /** A per-lender rate, typed as a percentage and stored as the fraction the calculator uses. */
+    @Test
+    void setCommissionRateReturns200WithThePlanNowAttached() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-RATE");
+        Agent agent = onboardAgent(tenantId, "RATE-200", null);
+
+        mockMvc.perform(put("/agents/{agentId}/commission-rate", agent.agentId())
+                .with(financeStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productId\":\"" + productId + "\",\"ratePercent\":\"12.5\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.rules[0].tierType").value("FIRST_YEAR"))
+            .andExpect(jsonPath("$.rules[0].rate").value("0.1250"));
+
+        // And it is the plan that now applies to this agent.
+        mockMvc.perform(get("/agents/{agentId}/commission-plan", agent.agentId())
+                .queryParam("productId", productId.toString())
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.rules[0].rate").value("0.1250"));
+    }
+
+    /** Deciding how much commission is owed is finance's, not any staff member's. */
+    @Test
+    void setCommissionRateReturns403ForAnUnderwriter() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-RATE-403");
+        Agent agent = onboardAgent(tenantId, "RATE-403", null);
+
+        mockMvc.perform(put("/agents/{agentId}/commission-rate", agent.agentId())
+                .with(underwriterStaffOf(tenantId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productId\":\"" + productId + "\",\"ratePercent\":\"10\"}"))
+            .andExpect(status().isForbidden())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void listAccrualsForAPolicyReturnsWhatItHasEarned() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createActiveProduct(tenantId, "DIST-CT-POLACCR");
+        createPlan(tenantId, productId);
+        Agent agent = onboardAgent(tenantId, "POLACCR", null);
+        UUID statementId = statementFor(tenantId, productId, agent.agentId(), "POLACCR");
+        TenantContext.set(tenantId);
+        String policyNumber = distributionApi.listAccruals(statementId).get(0).policyNumber();
+        TenantContext.clear();
+
+        mockMvc.perform(get("/commission-accruals").queryParam("policyNumber", policyNumber)
+                .with(financeStaffOf(tenantId)))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(SpecTypeConformance.matchesDeclaredTypes(SPEC_PATH, "CommissionAccrualView"))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].policyNumber").value(policyNumber))
+            .andExpect(jsonPath("$[0].agentId").value(agent.agentId().toString()));
     }
 
     // ============================================================================================

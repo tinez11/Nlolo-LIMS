@@ -44,7 +44,9 @@ test.describe('staff credit-life scheme', () => {
     await expect(page.getByRole('heading', { name: policyNumber })).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText(lenderName)).toBeVisible();
+    // The page names its lender -- in the header, and again in the Commission panel, where the
+    // lender is who earns. First is the header.
+    await expect(page.getByText(lenderName).first()).toBeVisible();
 
     /*
      * THE ROLL BEFORE ACCEPTANCE. One life: the opening borrower the scheme was issued with.

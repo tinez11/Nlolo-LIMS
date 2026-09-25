@@ -86,6 +86,15 @@ describe('toIssueRequest', () => {
     expect(toIssueRequest(valid()).openingSchedule).toEqual([]);
   });
 
+  it('names the lender as the agent when the lender is a registered agent', () => {
+    // On credit life the lender earns the commission (spec 2.8). This was null always.
+    expect(toIssueRequest(valid(), 'lender-agent-1').agentOfRecordId).toBe('lender-agent-1');
+  });
+
+  it('issues direct when the lender is not an agent yet -- not a missing field', () => {
+    expect(toIssueRequest(valid()).agentOfRecordId).toBeNull();
+  });
+
   it('always sends SINGLE, the only premium frequency this product accepts', () => {
     // The service refuses any cycle on an AMORTISING_LOAN scheme outright -- a credit-life
     // premium is charged once per borrower when their loan is written. There is no field for

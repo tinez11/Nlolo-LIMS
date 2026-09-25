@@ -39,6 +39,7 @@ import {
   useCreditLifeStore,
 } from '@/store/creditLifeStore';
 import { selectScheme, usePolicyStore } from '@/store/policyStore';
+import { CommissionPanel } from './CommissionPanel';
 import { FreeCoverLimitEditor } from './FreeCoverLimitEditor';
 import { SubmissionsPanel, type SubmissionRow } from './SubmissionsPanel';
 
@@ -251,6 +252,16 @@ export function CreditLifeSchemePage() {
                   note="Covered to the limit; the excess needs evidence nobody has supplied."
                 />
                 <Field label="Commenced" value={formatDate(data?.commencementDate)} />
+                {/* Said, not assumed. Schemes are not ceded (credit-life spec 0a): the treaty
+                    model cannot express a scheme treaty -- classes of business, per-scheme
+                    limits, a cession that follows a declining balance -- so the insurer keeps
+                    every borrower's risk, up to the free cover limit each. Deferred to a
+                    reinsurance build of its own. */}
+                <Field
+                  label="Reinsurance"
+                  value="Not reinsured"
+                  note="The insurer retains 100% of this scheme's risk. Schemes are not ceded until the treaty model can express a scheme treaty."
+                />
               </dl>
               {/* The premium rate and interest method this scheme was issued with are NOT here,
                   and that is the platform's limit rather than an editorial choice: GroupSchemeView
@@ -269,6 +280,9 @@ export function CreditLifeSchemePage() {
                   a roll of hundreds.
                 </p>
               </div>
+            </Panel>
+            <Panel title="Commission" subtitle="Who earns on each file, at what rate">
+              <CommissionPanel policyNumber={policyNumber} />
             </Panel>
           </>
         }

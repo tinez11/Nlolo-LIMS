@@ -984,6 +984,30 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     @Transactional
+    public PolicyView changeSchemeAgentOfRecord(String policyNumber, UUID agentOfRecordId, String reason,
+                                                String changedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        findSchemeOrThrow(policyNumber, tenantId);
+        if (reason == null || reason.isBlank()) {
+            throw new InvalidPolicyStateException("Changing who earns commission on a scheme needs a reason");
+        }
+        UUID previous = policy.getAgentOfRecordId();
+        policy.changeAgentOfRecord(requireRealAgent(agentOfRecordId));
+        policyRepository.save(policy);
+
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("policyNumber", policyNumber);
+        payload.put("previousAgentOfRecordId", previous);
+        payload.put("agentOfRecordId", agentOfRecordId);
+        payload.put("reason", reason.strip());
+        payload.put("changedBy", changedBy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.AgentOfRecordChanged", tenantId, payload));
+        return toView(policy);
+    }
+
+    @Override
+    @Transactional
     public void clearOpenDeathClaim(String policyNumber, UUID policyMemberId, UUID claimId) {
         PolicyMember member = memberOnSchemeOrThrow(policyNumber, policyMemberId);
         member.clearOpenDeathClaim(claimId);
@@ -1474,9 +1498,19 @@ public class PolicyApiImpl implements PolicyApi {
         // flag applies -- no sequence generator is wired here yet.
         String policyNumber = "GRP-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 
+        // ON CREDIT LIFE THE AGENT IS WHO WAS CHOSEN, never whoever registered the lender.
+        // agentOfRecordFor lets the policyholder's registering agent win over the caller -- right
+        // for individual business, where the introducing agent earns the sale -- but a lender is
+        // a corporate client somebody typed in once, and the commission belongs to the LENDER
+        // (spec 2.8). That rule is how an individual agent came to sit on GRP-B6CE9639 and would
+        // have taken every file's commission, had any plan existed.
+        UUID agentOfRecordId = category == ProductCategory.CREDIT_LIFE
+            ? requireRealAgent(request.agentOfRecordId())
+            : agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId());
+
         Policy policy = new Policy(policyNumber, tenantId, request.policyholderPartyId(), request.productId(),
             request.productVersionId(), snapshot.category().name(),
-            agentOfRecordFor(request.policyholderPartyId(), request.agentOfRecordId()),
+            agentOfRecordId,
             total, request.currency(), request.premiumAmount(), request.premiumCurrency(),
             request.premiumFrequency(), null, issuedBy);
         policy.applyTerm(commencement, request.policyTermMonths(), null);

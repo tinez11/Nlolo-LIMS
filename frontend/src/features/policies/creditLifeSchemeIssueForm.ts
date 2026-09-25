@@ -156,13 +156,19 @@ export function creditLifeSchemeIssueFormSchema(today: string = todayIso()) {
  * a party record for, and minting one per borrower would put a KYC obligation on a life whose
  * cover the lender owns.
  */
-export function toIssueRequest(values: CreditLifeSchemeIssueFormValues): IssueGroupSchemeRequest {
+export function toIssueRequest(
+  values: CreditLifeSchemeIssueFormValues,
+  /**
+   * The LENDER's own agent, when the lender is registered as one -- on credit life the lender
+   * earns the commission (spec 2.8). Null is a direct scheme, not a missing field. This used to
+   * be null always, and the backend then bound whoever had registered the lender instead.
+   */
+  lenderAgentId: string | null = null,
+): IssueGroupSchemeRequest {
   return {
     policyholderPartyId: values.policyholderPartyId.trim(),
     productVersionId: values.productVersionId.trim(),
-    // Present-but-nullable, matching manual issue: a scheme sold direct has no broker, which is
-    // not the same as a missing field.
-    agentOfRecordId: null,
+    agentOfRecordId: lenderAgentId,
     benefitBasis: 'AMORTISING_LOAN',
     ...(values.fclAmount ? { fclAmount: values.fclAmount.trim() } : {}),
     currency: values.currency.trim().toUpperCase(),

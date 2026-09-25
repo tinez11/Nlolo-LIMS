@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { listAgents } from '@/api/distribution';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -81,6 +82,31 @@ export function IssueCreditLifeSchemePage() {
 
   const productId = useWatch({ control, name: 'productId' });
   const issuanceBasis = useWatch({ control, name: 'issuanceBasis' });
+  const lenderPartyId = useWatch({ control, name: 'policyholderPartyId' });
+
+  /*
+    Is the lender a registered agent? If so the scheme is issued with the lender earning its
+    commission (spec 2.8). Stored WITH the party it answers for, and read back only while that is
+    still the lender chosen -- so picking another lender never shows the last one's answer, and
+    nothing is reset synchronously inside an effect.
+  */
+  const [lenderAgentLookup, setLenderAgentLookup] = useState<{ partyId: string; agentId: string | null } | null>(null);
+  useEffect(() => {
+    if (!lenderPartyId) return;
+    let cancelled = false;
+    void listAgents({ partyId: lenderPartyId })
+      .then((page) => page.items[0]?.agentId ?? null)
+      .catch(() => null)
+      .then((agentId) => {
+        if (!cancelled) setLenderAgentLookup({ partyId: lenderPartyId, agentId });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lenderPartyId]);
+  const lenderAgentId =
+    lenderAgentLookup && lenderAgentLookup.partyId === lenderPartyId ? lenderAgentLookup.agentId : null;
+  const lenderAgentKnown = !!lenderAgentLookup && lenderAgentLookup.partyId === lenderPartyId;
 
   // CREDIT_LIFE only. The service refuses any other category with a 409, and letting somebody
   // pick a term-life product and be told afterwards is the version of this that wastes a form.
@@ -109,7 +135,7 @@ export function IssueCreditLifeSchemePage() {
    * first enrolment file.
    */
   async function onSubmit(values: CreditLifeSchemeIssueFormValues) {
-    await issueScheme(toIssueRequest(values));
+    await issueScheme(toIssueRequest(values, lenderAgentId));
     const result = usePolicyStore.getState().issuingScheme;
     if (result.status === 'success' && result.data?.policyNumber) {
       navigate(`/staff/credit-life-schemes/${encodeURIComponent(result.data.policyNumber)}`);
@@ -153,6 +179,13 @@ export function IssueCreditLifeSchemePage() {
               claim on it — a credit-life payout settles the borrower&rsquo;s debt, so it goes to
               the lender rather than to a family.
             </p>
+            {lenderPartyId && lenderAgentKnown && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {lenderAgentId
+                  ? 'Commission: paid to the lender, a registered agent. Its rate is set on the scheme page.'
+                  : 'Commission: the lender is not a registered agent yet, so the scheme starts direct. Register it and set its rate on the scheme page.'}
+              </p>
+            )}
           </FormField>
 
           <FormField
