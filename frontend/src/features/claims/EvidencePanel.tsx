@@ -116,6 +116,19 @@ function UploadForm({ claimId }: { claimId: string }) {
     onDrop: (accepted) => {
       if (accepted[0]) void submit(accepted[0]);
     },
+    // The root stops being a keyboard control, so the file input can be the only one.
+    //
+    // react-dropzone's default is a `role="presentation"` div carrying `tabIndex={0}` and its
+    // own Enter/Space handler -- focusable, and announced as nothing at all. Naming it by
+    // giving it `role="button"` was the obvious fix and was WRONG: the library nests the
+    // `<input type="file">` INSIDE that root, styled `{ height: 0, width: 0, opacity: 0,
+    // display: "block" }` rather than `display: none`, so it stays focusable and in the
+    // accessibility tree. A button containing a focusable control is axe's
+    // `nested-interactive`, which is exactly what the committed baseline caught.
+    //
+    // `noKeyboard` drops the root's tabIndex (source: `!disabled && !noKeyboard ? {tabIndex: 0}
+    // : {}`), leaving it a pure drop target. Dragging and clicking still work.
+    noKeyboard: true,
   });
 
   async function submit(file: File) {
@@ -137,25 +150,25 @@ function UploadForm({ claimId }: { claimId: string }) {
       </FormField>
 
       <div
-        {...getRootProps({
-          // react-dropzone's own root is `role="presentation"` with `tabIndex={0}`: focusable,
-          // and announced as nothing at all. It already wires Enter and Space to open the file
-          // picker, so this element behaves exactly like a button and simply was never named
-          // one -- a keyboard user landed on it and heard silence. `getRootProps` honours a
-          // role passed in, which is why this is a merge and not a spread-and-override: the
-          // role has to REPLACE presentation, and an aria-label on a presentational element is
-          // ignored outright.
-          role: 'button',
-          'aria-label': 'Attach evidence',
-          'aria-disabled': attaching.status === 'loading' || undefined,
-        })}
+        {...getRootProps()}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed border-border px-4 py-6 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+          // `focus-within`, not `focus-visible`: the thing that takes focus is the input, which
+          // is 0x0 and transparent by the library's own styling, so it can carry no visible
+          // indicator of its own. The ring goes on the box a person can actually see.
+          'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed border-border px-4 py-6 text-center transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent',
           isDragActive ? 'border-accent bg-hover' : 'hover:bg-hover',
           attaching.status === 'loading' && 'pointer-events-none opacity-60',
         )}
       >
-        <input {...getInputProps()} disabled={attaching.status === 'loading'} />
+        {/* The one interactive element here, and the one that was unreachable before. The
+            library gives it `tabIndex: -1` and the generic name "file upload"; both are
+            overridden, so it is in the tab order and says what it attaches to. A focused file
+            input opens the picker on Enter or Space natively, which is why dropping the root's
+            keyboard handling costs nothing. */}
+        <input
+          {...getInputProps({ tabIndex: 0, 'aria-label': 'Attach evidence' })}
+          disabled={attaching.status === 'loading'}
+        />
         <UploadCloud className="size-5 text-muted-foreground" aria-hidden />
         {/* A live region, because this is the only thing that reports the upload. It was a
             plain paragraph swapping its own text, which a screen reader never revisits, so
