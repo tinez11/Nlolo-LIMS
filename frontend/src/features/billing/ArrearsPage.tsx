@@ -264,7 +264,7 @@ export function ArrearsPage() {
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
             <FilterChip
               label="Open"
               active={resolved === false}
