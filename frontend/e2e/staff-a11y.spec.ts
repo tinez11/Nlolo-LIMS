@@ -39,7 +39,15 @@ type Counts = Record<string, number>;
 test.use({ storageState: 'e2e/.auth/staff-admin.json' });
 
 test('no accessibility violation beyond the recorded baseline', async ({ page }) => {
-  test.slow();
+  // Six minutes, set explicitly rather than by test.slow(), because this one test now sweeps
+  // TWENTY-ONE pages: seventeen registers plus all four record shapes, each of which is a fresh
+  // navigation, a wait for the data to land, and a full axe pass. It started at eight and grew a
+  // lane at a time; test.slow()'s 180s was enough until this lane added five routes, and the
+  // budget is the thing that should move rather than the coverage.
+  //
+  // It also walks three registers to FIND their records, since ids are minted per run and a
+  // literal would rot the way three e2e fixtures already have.
+  test.setTimeout(360_000);
   const found: Counts = {};
 
   // The tabbed record joins the sweep, found rather than written down: policy numbers are
@@ -68,11 +76,15 @@ test('no accessibility violation beyond the recorded baseline', async ({ page })
   await expect(page).toHaveURL(/\/staff\/treaties\/[0-9a-f-]{36}$/);
   const treatyRecord = new URL(page.url()).pathname;
 
-  // The fourth record shape, and the last: two columns with a pinned rail AND tabs. Read off
-  // the clients table, where a row's own link carries the party id -- unlike the claim and
-  // treaty registers, whose first column is a type and a name, so those two go through a drawer.
+  // The fourth record shape, and the last: two columns with a pinned rail AND tabs.
+  //
+  // Reached by activating a row, like the claim record -- not by reading a link out of the
+  // table. The clients register has no id in any cell, and its rows are `onRowActivate`
+  // buttons rather than links. Its caption is "Individual clients", not "Clients": the two
+  // client registers are captioned apart on purpose, because the split between individuals and
+  // organisations is the thing that register exists to make.
   await page.goto('/staff/clients/individuals');
-  const firstClient = page.getByRole('table', { name: 'Clients' }).getByRole('link').first();
+  const firstClient = page.getByRole('table', { name: 'Individual clients' }).getByRole('button').first();
   await expect(firstClient).toBeVisible({ timeout: 30_000 });
   await firstClient.click();
   await expect(page).toHaveURL(/\/staff\/parties\/[0-9a-f-]{36}$/, { timeout: 30_000 });
