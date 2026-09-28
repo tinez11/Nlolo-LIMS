@@ -4,6 +4,7 @@ import { Paperclip, UploadCloud } from 'lucide-react';
 import { downloadClaimEvidence } from '@/api/claims';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { FormField } from '@/components/FormField';
+import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { formatInstant } from '@/lib/dates';
@@ -43,7 +44,7 @@ export function EvidencePanel({ claimId, canAttach }: { claimId: string; canAtta
         <UploadForm claimId={claimId} />
       ) : (
         <p className="px-4 pt-3 text-xs text-muted-foreground">
-          This claim is SETTLED -- reopen it before attaching new evidence.
+          This claim is settled — reopen it before attaching new evidence.
         </p>
       )}
       {renderList()}
@@ -136,16 +137,30 @@ function UploadForm({ claimId }: { claimId: string }) {
       </FormField>
 
       <div
-        {...getRootProps()}
+        {...getRootProps({
+          // react-dropzone's own root is `role="presentation"` with `tabIndex={0}`: focusable,
+          // and announced as nothing at all. It already wires Enter and Space to open the file
+          // picker, so this element behaves exactly like a button and simply was never named
+          // one -- a keyboard user landed on it and heard silence. `getRootProps` honours a
+          // role passed in, which is why this is a merge and not a spread-and-override: the
+          // role has to REPLACE presentation, and an aria-label on a presentational element is
+          // ignored outright.
+          role: 'button',
+          'aria-label': 'Attach evidence',
+          'aria-disabled': attaching.status === 'loading' || undefined,
+        })}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed border-border px-4 py-6 text-center transition-colors',
+          'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed border-border px-4 py-6 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
           isDragActive ? 'border-accent bg-hover' : 'hover:bg-hover',
           attaching.status === 'loading' && 'pointer-events-none opacity-60',
         )}
       >
         <input {...getInputProps()} disabled={attaching.status === 'loading'} />
-        <UploadCloud className="size-5 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">
+        <UploadCloud className="size-5 text-muted-foreground" aria-hidden />
+        {/* A live region, because this is the only thing that reports the upload. It was a
+            plain paragraph swapping its own text, which a screen reader never revisits, so
+            the one state a person waits through was the one state never announced. */}
+        <p className="text-xs text-muted-foreground" aria-live="polite">
           {attaching.status === 'loading'
             ? 'Uploading…'
             : isDragActive
@@ -162,11 +177,7 @@ function UploadForm({ claimId }: { claimId: string }) {
         </p>
       )}
 
-      {attaching.status === 'error' && attaching.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {attaching.error.detail ?? attaching.error.title}
-        </p>
-      )}
+      {attaching.status === 'error' && attaching.error && <InlineError error={attaching.error} />}
     </div>
   );
 }
