@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ClaimRecoveryView } from '@/api/types';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
+import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
@@ -74,15 +75,15 @@ function RecoveryRow({ claimId, recovery }: { claimId: string; recovery: ClaimRe
           <Button
             size="sm"
             variant="outline"
-            disabled={confirming.status === 'loading'}
+            pending={confirming.status === 'loading'}
             onClick={() => void confirmRecovery(claimId, recovery.recoveryId, attempt)}
           >
-            {confirming.status === 'loading' ? 'Confirming…' : 'Confirm recovery'}
+            Confirm recovery
           </Button>
           {confirming.status === 'error' && confirming.error && (
-            <p role="alert" className="mt-1 text-xs text-status-danger-fg">
-              {confirming.error.detail ?? confirming.error.title}
-            </p>
+            <div className="mt-1">
+              <InlineError error={confirming.error} />
+            </div>
           )}
         </div>
       )}

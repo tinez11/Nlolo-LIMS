@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { AccountType, ChartOfAccountView } from '@/api/types';
 import { FilterChip } from '@/components/FilterChip';
+import { InlineError } from '@/components/InlineError';
 import { PageHeader } from '@/components/PageHeader';
 import { CountLine } from '@/components/StatCards';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
@@ -541,10 +542,13 @@ function AccountRowActions({
         <Button size="sm" variant="ghost" onClick={() => onOpen('edit')}>
           Rename
         </Button>
+        {/* `retiring` decides the label, not the request's state: Retire and Restore are two
+            different acts, and which one is on offer depends on the account, not on whether
+            something is in flight. `pending` is what says in-flight. */}
         <Button
           size="sm"
           variant="ghost"
-          disabled={busy}
+          pending={busy}
           onClick={() =>
             void setAccountStatus(account.accountCode, retiring ? 'INACTIVE' : 'ACTIVE')
           }
@@ -557,9 +561,7 @@ function AccountRowActions({
       </span>
 
       {settingStatus.status === 'error' && settingStatus.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {settingStatus.error.detail ?? settingStatus.error.title}
-        </p>
+        <InlineError error={settingStatus.error} />
       )}
     </>
   );

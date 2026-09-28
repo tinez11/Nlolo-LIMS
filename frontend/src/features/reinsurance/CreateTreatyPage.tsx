@@ -165,8 +165,8 @@ export function CreateTreatyPage() {
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={creating.status === 'loading'}>
-            {creating.status === 'loading' ? 'Creating…' : 'Create treaty'}
+          <Button type="submit" variant="primary" pending={creating.status === 'loading'}>
+            Create treaty
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">

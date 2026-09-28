@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import type { ChartOfAccountView } from '@/api/types';
 import { FormField } from '@/components/FormField';
+import { InlineError } from '@/components/InlineError';
 import { Panel } from '@/components/Panel';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
@@ -117,15 +118,11 @@ export function CreateAccountForm({ onDone }: { onDone: () => void }) {
           />
         </FormField>
 
-        {creating.status === 'error' && creating.error && (
-          <p role="alert" className="text-xs text-status-danger-fg">
-            {creating.error.detail ?? creating.error.title}
-          </p>
-        )}
+        {creating.status === 'error' && creating.error && <InlineError error={creating.error} />}
 
         <div className="flex items-center gap-1.5">
-          <Button type="submit" size="sm" variant="primary" disabled={creating.status === 'loading'}>
-            {creating.status === 'loading' ? 'Creating…' : 'Create account'}
+          <Button type="submit" size="sm" variant="primary" pending={creating.status === 'loading'}>
+            Create account
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={onDone}>
             Cancel
@@ -180,15 +177,11 @@ export function UpdateAccountForm({
         <Textarea inputSize="sm" className="min-h-16" {...register('description')} />
       </FormField>
 
-      {updating.status === 'error' && updating.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {updating.error.detail ?? updating.error.title}
-        </p>
-      )}
+      {updating.status === 'error' && updating.error && <InlineError error={updating.error} />}
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" variant="primary" disabled={updating.status === 'loading'}>
-          {updating.status === 'loading' ? 'Renaming…' : 'Rename'}
+        <Button type="submit" size="sm" variant="primary" pending={updating.status === 'loading'}>
+          Rename
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel
@@ -231,21 +224,17 @@ export function DeleteAccountForm({
         retire it instead.
       </p>
 
-      {deleting.status === 'error' && deleting.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {deleting.error.detail ?? deleting.error.title}
-        </p>
-      )}
+      {deleting.status === 'error' && deleting.error && <InlineError error={deleting.error} />}
 
       <div className="flex items-center gap-1.5">
         <Button
           type="button"
           size="sm"
           variant="danger"
-          disabled={deleting.status === 'loading'}
+          pending={deleting.status === 'loading'}
           onClick={() => void onConfirm()}
         >
-          {deleting.status === 'loading' ? 'Deleting…' : 'Delete account'}
+          Delete account
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel
