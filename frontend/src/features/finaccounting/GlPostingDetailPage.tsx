@@ -1,14 +1,15 @@
-import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
-import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectJournalEntryDetail, useFinaccountingStore } from '@/store/finaccountingStore';
+
+/** Where this record lives. GL postings are staff-only -- there is no agents mount. */
+const BREADCRUMB = [{ label: 'GL postings', to: '/staff/gl-postings' }];
 
 /**
  * The "acts" half of drawer-previews-page-acts, though there is nothing to
@@ -36,20 +37,25 @@ export function GlPostingDetailPage() {
 
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={detail.error} onRetry={() => void loadDetail(journalEntryId)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too. A record that fails to load used to lose its
+            heading and its way out along with its data, so the reader was left holding an
+            error panel with nothing above it -- and it looked like a different console from
+            the one that appears when the same record loads. */}
+        <PageHeader breadcrumb={BREADCRUMB} title="Journal entry" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadDetail(journalEntryId)} />
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        // Replaces a ghost button with a back arrow that sat in its own strip ABOVE the bar,
+        // doing a breadcrumb's job while pushing the sticky bar 44px down every record.
+        breadcrumb={BREADCRUMB}
         title={entry?.sourceEvent ?? 'Journal entry'}
         description={entry?.policyNumber ? <span className="font-mono text-xs">{entry.policyNumber}</span> : undefined}
       />
@@ -94,13 +100,3 @@ export function GlPostingDetailPage() {
   );
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to=".." relative="path">
-        <ArrowLeft />
-        All GL postings
-      </Link>
-    </Button>
-  );
-}

@@ -1,15 +1,16 @@
-import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
-import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectReturnDetail, useRegreportingStore } from '@/store/regreportingStore';
 import { ReturnLinesList } from './ReturnLinesList';
+
+/** Where this record lives. Regulatory returns are staff-only. */
+const BREADCRUMB = [{ label: 'Regulatory returns', to: '/staff/regulatory-returns' }];
 
 /**
  * The "acts" half of drawer-previews-page-acts, though there is nothing to
@@ -36,23 +37,28 @@ export function RegulatoryReturnDetailPage() {
 
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={detail.error} onRetry={() => void loadDetail(returnId)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too, so a return that fails to load keeps its
+            heading and its way out instead of leaving the reader an error panel with nothing
+            above it. */}
+        <PageHeader breadcrumb={BREADCRUMB} title="Regulatory return" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadDetail(returnId)} />
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        // Replaces a ghost button with a back arrow in its own strip above the bar.
+        breadcrumb={BREADCRUMB}
         title={view?.returnType ?? 'Regulatory return'}
         description={view?.period}
-        actions={view?.status && <StatusBadge kind="regulatoryReturn" value={view.status} />}
+        // `status`, not `actions`: a status is what the record IS, and `actions` is where a
+        // control goes. The two are not interchangeable slots.
+        status={view?.status && <StatusBadge kind="regulatoryReturn" value={view.status} />}
       />
 
       {view && (
@@ -90,13 +96,3 @@ export function RegulatoryReturnDetailPage() {
   );
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to=".." relative="path">
-        <ArrowLeft />
-        All regulatory returns
-      </Link>
-    </Button>
-  );
-}

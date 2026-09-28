@@ -1,5 +1,4 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { type FieldErrors, useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
@@ -66,16 +65,14 @@ export function CreateTreatyPage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to=".." relative="path">
-            <ArrowLeft />
-            All treaties
-          </Link>
-        </Button>
-      </div>
-
-      <PageHeader title="New treaty" description="Staff/finance only." />
+      <PageHeader
+        // Replaces a ghost button with a back arrow in its own strip above the bar. The form's
+        // own Cancel link stays: abandoning a draft is a different offer from navigating away,
+        // and the person is in the middle of one when they want it.
+        breadcrumb={[{ label: 'Treaties', to: '/staff/treaties' }]}
+        title="New treaty"
+        description="Staff/finance only."
+      />
 
       <form className="max-w-xl space-y-4 px-6 pb-8" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
         <FormField label="Reinsurer name" error={errors.reinsurerName?.message}>
@@ -168,8 +165,8 @@ export function CreateTreatyPage() {
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={creating.status === 'loading'}>
-            {creating.status === 'loading' ? 'Creating…' : 'Create treaty'}
+          <Button type="submit" variant="primary" pending={creating.status === 'loading'}>
+            Create treaty
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">

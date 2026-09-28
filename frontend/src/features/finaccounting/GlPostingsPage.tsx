@@ -104,7 +104,10 @@ export function GlPostingsPage() {
     {
       key: 'sourceEvent',
       header: 'Source event',
-      render: (e) => <span className="font-mono text-xs">{e.sourceEvent}</span>,
+      // Bold, like every other register's first column: what produced an entry is the thing a
+      // person scans a ledger for, and it is the only column here that identifies the row --
+      // period, amount and account all repeat across hundreds of entries.
+      render: (e) => <span className="font-mono text-xs font-medium">{e.sourceEvent}</span>,
     },
     {
       key: 'period',
