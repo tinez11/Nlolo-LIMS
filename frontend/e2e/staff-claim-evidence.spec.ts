@@ -27,6 +27,20 @@ const MINIMAL_PNG = Buffer.from(
 
 test.describe('staff claim evidence', () => {
   test('attaches, lists, and views a real evidence file end to end', async ({ page }) => {
+    // MEASURED AT 39.8s ALONE, against the 60s default. That is 20s of headroom for a test
+    // that issues a policy through manual issue, registers a claim, uploads a real JPEG to
+    // MinIO and downloads it back -- and it spends every one of those 20s the moment anything
+    // else is running: inside a five-file run it timed out at exactly 60s, on whatever step
+    // happened to be in flight when the clock ran out.
+    //
+    // Not a regression, and it is worth writing down HOW that was established, because the
+    // failure looked exactly like one. The same test on `main` measures 40.5s -- slower, not
+    // faster -- and `staff-role-gates`, which touches none of these screens, runs 2.4m on this
+    // branch against 3.0m on `main`. The suite simply has no headroom here.
+    //
+    // test.slow() triples the budget. Nine tests in this same set already take it for less
+    // work; this one does more than any of them and was the only one still on the default.
+    test.slow();
     // Issue a fresh ACTIVE policy, then register a DEATH claim against it --
     // the only seeded policy is SURRENDERED (staff-claims.spec.ts's own note),
     // so a fresh one is the only way to reach a real, non-SETTLED claim.

@@ -70,7 +70,11 @@ async function findNotInForcePolicy(page: Page): Promise<string> {
 async function firstClaimRow(page: Page) {
   const table = page.getByRole('table', { name: 'Claims' });
   const empty = page.getByText('No claims yet');
-  await expect(table.or(empty)).toBeVisible();
+  // 20s, not the 10s default, matching every other wait in this file. The register is paged, so
+  // the request is bounded -- but there are 152 claims behind it now and the first paint has to
+  // wait for the fetch. It cleared 10s by 2.3s on a quiet machine and blew through it inside a
+  // five-file run, which is not a margin worth defending.
+  await expect(table.or(empty)).toBeVisible({ timeout: 20_000 });
   if (await empty.isVisible()) return null;
   const row = table.getByRole('button').first();
   await expect(row).toBeVisible();
