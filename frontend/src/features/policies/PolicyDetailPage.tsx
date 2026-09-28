@@ -7,6 +7,7 @@ import { useAuth } from 'react-oidc-context';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import type { Realm } from '@/auth/realms';
 import { PageHeader } from '@/components/PageHeader';
+import { InlineError } from '@/components/InlineError';
 import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
 import { ProductName } from '@/components/ProductName';
@@ -613,9 +614,7 @@ function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: (
       </FormField>
 
       {suspending.status === 'error' && suspending.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {suspending.error.detail ?? suspending.error.title}
-        </p>
+        <InlineError error={suspending.error} />
       )}
 
       <div className="flex items-center gap-1.5">
@@ -643,9 +642,7 @@ function ResumeAction({ policyNumber }: { policyNumber: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {resuming.status === 'error' && resuming.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {resuming.error.detail ?? resuming.error.title}
-        </p>
+        <InlineError error={resuming.error} />
       )}
       <Button size="sm" pending={resuming.status === 'loading'} onClick={() => void resumePolicy(policyNumber)}>
         <Play />
@@ -671,9 +668,7 @@ function ReinstateAction({ policyNumber }: { policyNumber: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {reinstating.status === 'error' && reinstating.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {reinstating.error.detail ?? reinstating.error.title}
-        </p>
+        <InlineError error={reinstating.error} />
       )}
       {armed ? (
         <ConfirmAct

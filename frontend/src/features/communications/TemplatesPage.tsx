@@ -3,6 +3,7 @@ import { useAuth } from 'react-oidc-context';
 import type { NotificationTemplateView } from '@/api/types';
 import { readIdentity } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
+import { InlineError } from '@/components/InlineError';
 import { Panel } from '@/components/Panel';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -128,9 +129,7 @@ function TemplateRow({ template, canEdit }: { template: NotificationTemplateView
             onChange={(e) => setBody(e.target.value)}
           />
           {rewording.status === 'error' && rewording.error && (
-            <p role="alert" className="text-xs text-status-danger-fg">
-              {rewording.error.detail ?? 'Could not save this wording.'}
-            </p>
+            <InlineError error={rewording.error} />
           )}
           <div className="flex gap-2">
             <Button size="sm" variant="primary" disabled={busy} onClick={() => void save()}>

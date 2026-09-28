@@ -6,6 +6,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { DEFAULT_MEMBER_PAGE_SIZE } from '@/api/policies';
 import type { BenefitBasis, GroupSchemeView, MemberStatus, PolicyMemberView } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
+import { InlineError } from '@/components/InlineError';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
@@ -789,9 +790,7 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
       )}
 
       {adding.status === 'error' && adding.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {adding.error.detail ?? adding.error.title}
-        </p>
+        <InlineError error={adding.error} />
       )}
 
       <div className="flex items-center gap-1.5">

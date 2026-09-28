@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
+import { InlineError } from '@/components/InlineError';
 import { Field } from '@/components/Field';
 import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
@@ -208,9 +209,7 @@ function SuspendAction({ agentId }: { agentId: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {suspending.status === 'error' && suspending.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {suspending.error.detail ?? suspending.error.title}
-        </p>
+        <InlineError error={suspending.error} />
       )}
       <Button size="sm" pending={suspending.status === 'loading'} onClick={() => void suspendAgent(agentId)}>
         <Pause />
@@ -233,9 +232,7 @@ function ReactivateAction({ agentId }: { agentId: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {reactivating.status === 'error' && reactivating.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {reactivating.error.detail ?? reactivating.error.title}
-        </p>
+        <InlineError error={reactivating.error} />
       )}
       <Button size="sm" pending={reactivating.status === 'loading'} onClick={() => void reactivateAgent(agentId)}>
         <Play />

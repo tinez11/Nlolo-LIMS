@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Link, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
+import { InlineError } from '@/components/InlineError';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
@@ -1244,9 +1245,7 @@ function KycPanel({
       </div>
 
       {uploading.status === 'error' && uploading.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {uploading.error.detail ?? uploading.error.title}
-        </p>
+        <InlineError error={uploading.error} />
       )}
 
       {documentRef && (
@@ -1309,9 +1308,7 @@ function KycPanel({
             </div>
           )}
           {deciding.status === 'error' && deciding.error && (
-            <p role="alert" className="text-xs text-status-danger-fg">
-              {deciding.error.detail ?? deciding.error.title}
-            </p>
+            <InlineError error={deciding.error} />
           )}
         </div>
       )}

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { LoanView, Money } from '@/api/types';
 import { StatusBadge } from '@/components/StatusBadge';
+import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatMoney } from '@/lib/money';
@@ -236,9 +237,7 @@ function OriginateLoanForm({
           available loan value, or says the policy is not in force. Both are more
           useful than anything this form could say on its own. */}
       {originating.status === 'error' && originating.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {originating.error.detail ?? originating.error.title}
-        </p>
+        <InlineError error={originating.error} />
       )}
 
       <p className="text-xs text-muted-foreground">
@@ -309,9 +308,7 @@ function RepaymentForm({
       </FormField>
 
       {repaying.status === 'error' && repaying.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {repaying.error.detail ?? repaying.error.title}
-        </p>
+        <InlineError error={repaying.error} />
       )}
 
       <p className="text-xs text-muted-foreground">

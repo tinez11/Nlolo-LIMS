@@ -1,6 +1,7 @@
 import { Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { InlineError } from '@/components/InlineError';
 import { ErrorPanel } from '@/components/states';
 import { FormField } from '@/components/FormField';
 import { formatInstant } from '@/lib/dates';
@@ -167,9 +168,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
         ))}
 
         {recording.status === 'error' && recording.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {recording.error.detail ?? recording.error.title}
-          </div>
+          <InlineError error={recording.error} />
         )}
 
         <div className="flex items-center gap-2">

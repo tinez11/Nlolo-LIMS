@@ -5,6 +5,7 @@ import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { PREMIUM_FREQUENCIES } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
+import { InlineError } from '@/components/InlineError';
 import { FormField } from '@/components/FormField';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -512,9 +513,7 @@ export function IssueGroupSchemePage() {
         </fieldset>
 
         {issuing.status === 'error' && issuing.error && (
-          <p role="alert" className="text-xs text-status-danger-fg">
-            {issuing.error.detail ?? issuing.error.title}
-          </p>
+          <InlineError error={issuing.error} />
         )}
 
         <div className="flex items-center gap-2 border-t border-border pt-4">

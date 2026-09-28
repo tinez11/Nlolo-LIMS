@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { CommissionStatementView } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { InlineError } from '@/components/InlineError';
 import { Receipt } from '@/components/Receipt';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -228,9 +229,7 @@ function PayoutForm({
             <p className="mt-1 text-xs text-status-danger-fg">{errors.payeeRef.message}</p>
           )}
           {requesting.status === 'error' && requesting.error && (
-            <p role="alert" className="mt-1 text-xs text-status-danger-fg">
-              {requesting.error.detail ?? requesting.error.title}
-            </p>
+            <InlineError error={requesting.error} />
           )}
         </div>
         {!pending && (
