@@ -88,8 +88,14 @@ test.describe('staff policies', () => {
 
     await expect(page).toHaveURL(new RegExp(`/staff/policies/${policyNumber}`));
     await expect(page.getByRole('heading', { name: policyNumber })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Invoices' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Loans' })).toBeVisible();
+    // Coverage, not Invoices: the record is tabbed now and this assertion exists to prove
+    // the drawer led to the FULL record rather than another summary. Coverage is what the
+    // default tab opens on, and it is the thing the drawer deliberately does not carry.
+    await expect(page.getByRole('heading', { name: 'Coverage' })).toBeVisible();
+    // The registers are one click away rather than one scroll. Asserting the TAB exists is
+    // the same proof the old `Loans` heading gave -- that this is the record and not the
+    // preview -- without reaching into a section this test is not about.
+    await expect(page.getByRole('tab', { name: 'Loans' })).toBeVisible();
   });
 
   test('the deferred surrender action is disabled, not merely broken', async ({ page }) => {

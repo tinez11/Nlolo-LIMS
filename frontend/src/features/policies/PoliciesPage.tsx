@@ -255,7 +255,9 @@ export function PoliciesPage({
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
+          {/* `gap-y-2` because this row wraps: the chips are 32px tall now, and at phone
+              width the search box drops to its own line hard against them without it. */}
+          <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
             <FilterChip
               label="All"
               active={status === undefined}

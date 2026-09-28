@@ -248,8 +248,8 @@ function OriginateLoanForm({
       </p>
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" disabled={originating.status === 'loading'}>
-          {originating.status === 'loading' ? 'Requesting…' : 'Take a loan'}
+        <Button type="submit" size="sm" pending={originating.status === 'loading'}>
+          Take a loan
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel
@@ -320,8 +320,8 @@ function RepaymentForm({
       </p>
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" disabled={repaying.status === 'loading'}>
-          {repaying.status === 'loading' ? 'Recording…' : 'Record repayment'}
+        <Button type="submit" size="sm" pending={repaying.status === 'loading'}>
+          Record repayment
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel

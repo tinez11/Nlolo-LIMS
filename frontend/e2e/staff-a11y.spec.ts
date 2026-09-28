@@ -33,7 +33,14 @@ test('no accessibility violation beyond the recorded baseline', async ({ page })
   test.slow();
   const found: Counts = {};
 
-  for (const route of ROUTES) {
+  // The tabbed record joins the sweep, found rather than written down: policy numbers are
+  // minted per run, so a literal would rot the way three e2e fixtures already have.
+  await page.goto('/staff/policies');
+  const firstPolicy = page.getByRole('table', { name: 'Policies' }).getByRole('button').first();
+  await expect(firstPolicy).toBeVisible({ timeout: 30_000 });
+  const policyRecord = `/staff/policies/${(await firstPolicy.textContent())?.trim()}`;
+
+  for (const route of [...ROUTES, policyRecord]) {
     await page.goto(route);
     await expect(page.locator('h1')).toBeVisible({ timeout: 30_000 });
     // Let the first data fetch land, so axe sees the table rather than a skeleton. Not

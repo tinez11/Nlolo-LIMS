@@ -34,3 +34,16 @@ test('capture review screenshots', async ({ page }) => {
     }
   }
 });
+
+test('capture the tabbed policy record', async ({ page }) => {
+  test.skip(!process.env.CAPTURE, 'set CAPTURE=1 to write review screenshots');
+  test.slow();
+  await page.goto('/staff/policies');
+  await page.getByRole('table', { name: 'Policies' }).getByRole('button').first().click();
+  await page.getByRole('dialog').getByRole('link', { name: /full detail/i }).click();
+  await expect(page.getByRole('tablist')).toBeVisible({ timeout: 30_000 });
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: `test-results/visual/${viewport.name}-policy-record.png` });
+  }
+});

@@ -20,7 +20,6 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectCoverage,
   selectDetail,
-  selectInvoices,
   selectReinstating,
   selectResuming,
   selectSuspending,
@@ -42,6 +41,8 @@ import {
 } from './suspendPolicyForm';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
+import type { ReactNode } from 'react';
+import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { Input } from '@/components/ui/input';
 
 /**
@@ -76,8 +77,6 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   }, [policyNumber, loadDetail, loadCoverage]);
 
   const policy = detail.data;
-  // Loaded by the Invoices panel on this same page; read here only to count them.
-  const invoiceCount = usePolicyStore(selectInvoices(policyNumber)).data?.length ?? 0;
 
   // isInitialLoad, not a 'loading'-only check: the load fires from an effect that
   // runs AFTER first render, so status is briefly 'idle' -- a 'loading'-only check
@@ -97,18 +96,20 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        // The breadcrumb replaces the back link that used to sit above this bar: it says
+        // where the record lives as well as offering the way out, and it rides the sticky
+        // bar instead of scrolling away with the first panel.
+        breadcrumb={[{ label: 'Policies', to: `/${realm}/policies` }]}
         title={policyNumber}
         description={
           policy?.productId ? <ProductName productId={policy.productId} /> : undefined
         }
+        // Beside the title, not in `actions`: a status is what the record IS, and actions
+        // are what you can do to it. They sat in one row and read as a toolbar of four.
+        status={policy?.status ? <StatusBadge kind="policy" value={policy.status} /> : undefined}
         actions={
           <>
-            {policy?.status && <StatusBadge kind="policy" value={policy.status} />}
             {/* Only on a scheme, and only in the staff console -- the members
                 endpoint is staff-only, so an agent following this link would get a
                 403 rather than a page. A group policy read here answers "one
@@ -146,92 +147,168 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       />
 
       {/*
-        Rebalanced rather than reordered. The rail was carrying five panels -- the
-        record, the lifecycle actions, coverage, beneficiaries and reinsurance --
-        against two in the wide column, so three quarters of this page lived in 320px
-        while two tables had 1fr to themselves.
+        Two columns, and the split is the point: the rail is the record, the tabs are the
+        work. The rail holds only what a reader needs WHILE working in another tab -- who,
+        how much, which product, when, who issued it -- and everything that is a register or
+        an act is a tab.
 
-        Nothing takes `emphasis` here, deliberately. Unlike a claim or an underwriting
-        case, this page is not opened to perform one act: most visits are somebody
-        looking up an invoice. Lifecycle still leaves the rail -- suspending a policy
-        is not a marginal note -- but it sits after the record it acts on rather than
-        being promoted above it.
+        This replaces a vertical ordering argument that tabs made obsolete. The old stack ran
+        bounded panels before unbounded ones so a twenty-row invoice ledger could not bury
+        the beneficiary editor below the fold; there is no fold to fall below now, and no
+        panel sits after another. What survives of that reasoning is the rule for the RAIL,
+        which is still 320px and still has to stay short.
 
-        ORDER: the bounded panels come before the unbounded ones. Beneficiaries is a
-        handful of rows and a term of the contract; Invoices and Loans are ledgers
-        that grow for the life of the policy, and this one is already twenty rows
-        deep. Leading with a ledger buries everything after it -- put concretely, it
-        put the beneficiary editor and its party picker below the fold of a page that
-        keeps getting longer, which broke reaching them at all rather than merely
-        making it tedious.
+        Nothing takes `emphasis`, deliberately. Unlike a claim or an underwriting case, this
+        page is not opened to perform one act -- most visits are somebody looking something
+        up -- so promoting one panel would mis-state why the reader is here.
       */}
       <DetailLayout record={renderRecord()}>
-        {/*
-          First, above everything else, and not a badge.
-
-          "Is this person covered?" is the single most important thing this page answers, and
-          since cover began waiting for the first premium the status alone no longer answers it
-          for a reader who does not already know the rule. PROPOSED looks like a normal status;
-          nothing about the word tells you the customer is uninsured, or what would change that.
-        */}
-        {policy?.status === 'PROPOSED' && (
-          <Panel title="Not yet on cover">
-            <p className="px-4 pb-4 text-xs text-muted-foreground">
-              This is an offer, not a policy in force. Cover starts when the first premium
-              clears — until then no claim can be settled against it. The invoices below are
-              what the customer pays to accept.
-            </p>
-          </Panel>
-        )}
-        {policy?.status === 'NOT_TAKEN_UP' && (
-          <Panel title="Offer expired unpaid">
-            <p className="px-4 pb-4 text-xs text-muted-foreground">
-              This offer was never taken up: no first premium arrived within the offer window, so
-              it closed. Cover never started, which is why this is not a lapse — it does not
-              count against persistency. A new application is needed to insure this person.
-            </p>
-          </Panel>
-        )}
-
-        <Panel title="Beneficiaries">
-          {policy && (
-            <BeneficiariesPanel policyNumber={policyNumber} beneficiaries={policy.beneficiaries ?? []} />
-          )}
-        </Panel>
-
-        {/* Directly under the cover panels, because it answers their follow-up question. An
-            offer that is "not yet on cover" immediately raises "does the customer know?", and
-            the honest answer is a SENT row with a timestamp or a FAILED row with a reason. */}
-        <Panel title="Messages" subtitle="What this customer has been told about this policy">
-          <MessagesPanel policyNumber={policyNumber} />
-        </Panel>
-
-        <Panel title="Invoices" subtitle="All invoices for this policy">
-          <InvoicesPanel policyNumber={policyNumber} />
-        </Panel>
-
-        <Panel title="Loans" subtitle="Policy loans taken against cash value">
-          <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
-        </Panel>
-
-        {canSeeReinsurance && policy && (
-          <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
-            <CessionsPanel policyNumber={policyNumber} />
-          </Panel>
-        )}
-
-        {/* Suspend/resume/reinstate are all hasRole('REALM_STAFF') only -- shown only
-            in the staff console, not just left to always-403 on click, the same
-            "don't render a button that can never work for this session" discipline
-            the deferred surrender action already follows above. */}
-        {isStaff && policy && (
-          <Panel title="Lifecycle">
-            <LifecycleActions policyNumber={policyNumber} status={policy.status} />
-          </Panel>
-        )}
+        <RecordTabs label="Policy sections" tabs={policyTabs()} />
       </DetailLayout>
     </>
   );
+
+  /**
+   * The record's sections, act-first.
+   *
+   * Overview is what this contract covers, what state it is in, and what can be done about
+   * it -- never a register. It is BUILT rather than declared because two of its three panels
+   * are conditional: the offer explanation only for PROPOSED / NOT_TAKEN_UP, and Lifecycle
+   * only in the staff console. Coverage is unconditional, which is what guarantees `tabs[0]`
+   * always has content -- an agent on an ACTIVE policy would otherwise open onto nothing.
+   *
+   * No tab carries a count: `TabDef.count` is for a number the page ALREADY HOLDS, and this
+   * page holds none of them -- each register fetches its own inside its panel.
+   */
+  function policyTabs(): TabDef[] {
+    // Coverage leads Overview, and it moved here OUT of the record rail deliberately. The
+    // rail is for the facts you need while working in another tab -- who, how much, which
+    // product, when. What the policy actually INSURES is not a reference fact, it is the
+    // first thing a reader came for, and at 320px it was a benefits list in a margin. It
+    // also means Overview always has content, so the default tab is never empty.
+    const overview: ReactNode[] = [
+      <Panel key="coverage" title="Coverage" subtitle="Active benefits as of today">
+        {renderCoverage()}
+      </Panel>,
+    ];
+
+    /*
+      First, above everything else, and not a badge.
+
+      "Is this person covered?" is the single most important thing this page answers, and
+      since cover began waiting for the first premium the status alone no longer answers it
+      for a reader who does not already know the rule. PROPOSED looks like a normal status;
+      nothing about the word tells you the customer is uninsured, or what would change that.
+    */
+    if (policy?.status === 'PROPOSED') {
+      overview.push(
+        <Panel key="not-yet" title="Not yet on cover">
+          <p className="px-4 pb-4 text-xs text-muted-foreground">
+            This is an offer, not a policy in force. Cover starts when the first premium
+            clears — until then no claim can be settled against it. The invoices under Billing
+            are what the customer pays to accept.
+          </p>
+        </Panel>,
+      );
+    }
+    if (policy?.status === 'NOT_TAKEN_UP') {
+      overview.push(
+        <Panel key="expired" title="Offer expired unpaid">
+          <p className="px-4 pb-4 text-xs text-muted-foreground">
+            This offer was never taken up: no first premium arrived within the offer window, so
+            it closed. Cover never started, which is why this is not a lapse — it does not
+            count against persistency. A new application is needed to insure this person.
+          </p>
+        </Panel>,
+      );
+    }
+    // Suspend/resume/reinstate are all hasRole('REALM_STAFF') only -- shown only in the staff
+    // console, not just left to always-403 on click, the same "don't render a button that can
+    // never work for this session" discipline the deferred surrender action already follows.
+    if (isStaff && policy) {
+      overview.push(
+        <Panel key="lifecycle" title="Lifecycle">
+          <LifecycleActions policyNumber={policyNumber} status={policy.status} />
+        </Panel>,
+      );
+    }
+
+    const tabs: TabDef[] = [
+      {
+        value: 'overview',
+        label: 'Overview',
+        content: <div className="space-y-5 pt-5">{overview}</div>,
+      },
+    ];
+
+    tabs.push(
+      {
+        value: 'beneficiaries',
+        label: 'Beneficiaries',
+        content: (
+          <div className="pt-5">
+            <Panel title="Beneficiaries">
+              {policy && (
+                <BeneficiariesPanel
+                  policyNumber={policyNumber}
+                  beneficiaries={policy.beneficiaries ?? []}
+                />
+              )}
+            </Panel>
+          </div>
+        ),
+      },
+      {
+        value: 'billing',
+        label: 'Billing',
+        content: (
+          <div className="pt-5">
+            <Panel title="Invoices" subtitle="All invoices for this policy">
+              <InvoicesPanel policyNumber={policyNumber} />
+            </Panel>
+          </div>
+        ),
+      },
+      {
+        value: 'loans',
+        label: 'Loans',
+        content: (
+          <div className="pt-5">
+            <Panel title="Loans" subtitle="Policy loans taken against cash value">
+              <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
+            </Panel>
+          </div>
+        ),
+      },
+      {
+        value: 'messages',
+        label: 'Messages',
+        content: (
+          <div className="pt-5">
+            <Panel title="Messages" subtitle="What this customer has been told about this policy">
+              <MessagesPanel policyNumber={policyNumber} />
+            </Panel>
+          </div>
+        ),
+      },
+    );
+
+    if (canSeeReinsurance && policy) {
+      tabs.push({
+        value: 'reinsurance',
+        label: 'Reinsurance',
+        content: (
+          <div className="pt-5">
+            <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
+              <CessionsPanel policyNumber={policyNumber} />
+            </Panel>
+          </div>
+        ),
+      });
+    }
+
+    return tabs;
+  }
 
   function renderRecord() {
     return (
@@ -265,9 +342,15 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 <Field
                   label="Premium"
                   value="Charged per monthly file"
-                  note={`Single premium per borrower at the scheme's rate, invoiced when a file is accepted${
-                    invoiceCount ? ` — ${invoiceCount} invoice${invoiceCount === 1 ? '' : 's'} so far, see Invoices` : ''
-                  }.`}
+                  // No count any more, and it had to go rather than be moved. It read
+                  // `invoices.data?.length`, and the ONLY caller of `loadInvoices` on the
+                  // platform is InvoicesPanel -- which mounts when the Billing tab is
+                  // opened. So from the moment this record grew tabs the clause was absent
+                  // on every arrival and appeared only after a detour through Billing. A
+                  // count that is usually missing is worse than no count; the pointer to
+                  // where the invoices actually are is the half that was carrying its
+                  // weight, and it now names the tab rather than a panel that moved.
+                  note="Single premium per borrower at the scheme's rate, invoiced when a file is accepted — see Billing."
                 />
               ) : (
                 <Field
@@ -399,9 +482,6 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           )}
         </Panel>
 
-        <Panel title="Coverage" subtitle="Active benefits as of today">
-          {renderCoverage()}
-        </Panel>
       </>
     );
   }
@@ -425,7 +505,12 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         {active.map((c, index) => (
           <Field
             key={`${c.benefitType ?? 'benefit'}-${index}`}
-            label={c.benefitType ? c.benefitType.replace(/_/g, ' ').toLowerCase() : 'Benefit'}
+            // `humanizeStatus`, not a bare lowercase: this rendered "death" and "critical
+            // illness" in a column of sentence-cased labels, which was easy to miss in a
+            // 320px rail and is not once Coverage leads the Overview tab. It is also the
+            // one humaniser on the platform, so a benefit type gains an acronym the day the
+            // backend adds one without this line needing to know.
+            label={c.benefitType ? humanizeStatus(c.benefitType) : 'Benefit'}
             value={formatMoney(c.sumAssured)}
           />
         ))}

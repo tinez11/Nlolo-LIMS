@@ -103,6 +103,10 @@ test.describe('staff reinsurance', () => {
     await page.getByRole('button', { name: 'Issue policy' }).click();
     await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
 
+    // Cessions are a tab on the record now, and the poll below reloads -- which preserves
+    // the query string, so landing on the tab once here is enough.
+    await page.goto(`${page.url()}?tab=reinsurance`);
+
     // Cession is a same-transaction, event-driven side effect of PolicyIssued
     // -- normally visible immediately, polled defensively rather than assumed.
     //

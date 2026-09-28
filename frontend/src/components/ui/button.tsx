@@ -48,9 +48,12 @@ export type ButtonProps =
        * The request this button started is in flight. Disables it AND says so to assistive
        * tech, where a bare `disabled` reports only "unavailable", never "working".
        *
-       * Forms on this console still hand-roll the guard as
-       * `disabled={x.status === 'loading'}` plus a label swap; the screen plans move them
-       * onto this prop one surface at a time. It is the destination, not yet the practice.
+       * It also removes the label swap those forms hand-rolled ("Saving…" / "Save"): a
+       * button whose NAME changes mid-flight is a different control to a screen reader and
+       * to every test that locates it, and the spinner already says the same thing.
+       *
+       * Adopted on the policy surfaces; the remaining lanes move onto it as they are
+       * rebuilt, so `disabled={x.status === 'loading'}` still appears elsewhere.
        */
       pending?: boolean;
     })

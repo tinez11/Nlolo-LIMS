@@ -245,7 +245,9 @@ test.describe('staff underwriting', () => {
     // past the commencement date the proposal asked for.
     await expect(page.getByText('Matures')).toBeVisible();
 
-    // And the nomination taken on the proposal is a beneficiary on the contract.
+    // And the nomination taken on the proposal is a beneficiary on the contract -- one tab
+    // along, since the record's registers each have their own now.
+    await page.getByRole('tab', { name: 'Beneficiaries' }).click();
     await expect(page.getByText('The estate')).toBeVisible();
   });
 
