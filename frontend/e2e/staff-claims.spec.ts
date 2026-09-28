@@ -84,7 +84,7 @@ test.describe('staff claims', () => {
 
     const row = await firstClaimRow(page);
     expect(row).not.toBeNull();
-    await expect(row!).toContainText('DEATH');
+    await expect(row!).toContainText('Death');
   });
 
   test('the tenant_id claim reaches the backend for a paged, real endpoint', async ({ page }) => {
@@ -115,7 +115,7 @@ test.describe('staff claims', () => {
     expect(row).not.toBeNull();
     await row!.click();
 
-    const drawer = page.getByRole('dialog', { name: 'DEATH' });
+    const drawer = page.getByRole('dialog', { name: 'Death' });
     await expect(drawer).toBeVisible();
     // The exact fields policyWithRealClaim wrote, read back off a real Postgres row.
     await expect(drawer).toContainText('Natural causes');
@@ -128,7 +128,7 @@ test.describe('staff claims', () => {
 
     await drawer.getByRole('link', { name: /full detail/i }).click();
     await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/);
-    await expect(page.getByRole('heading', { name: 'DEATH' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Death' })).toBeVisible();
     await expect(page.getByText('Natural causes')).toBeVisible();
   });
 

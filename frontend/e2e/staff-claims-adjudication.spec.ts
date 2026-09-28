@@ -77,9 +77,9 @@ test.describe('staff claims adjudication', () => {
     // whole <tr> -- DataTable's own comment on why (a screen-reader-reachable
     // action, not a click handler nothing can find).
     await page.goto('/staff/claims');
-    await page.getByRole('row').filter({ hasText: 'DEATH' }).first().getByRole('button').click();
+    await page.getByRole('row').filter({ hasText: 'Death' }).first().getByRole('button').click();
     await page.getByRole('link', { name: 'Full detail' }).click();
-    await expect(page.getByRole('heading', { name: 'DEATH' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Death' })).toBeVisible();
 
     await expect(page.getByRole('heading', { name: 'Submit an assessment' })).not.toBeVisible();
     await expect(page.getByRole('heading', { name: 'Decide settlement' })).not.toBeVisible();

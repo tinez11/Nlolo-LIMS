@@ -13,6 +13,7 @@ import { GatePanel } from '@/components/GatePanel';
 import { claimGates } from '@/gates/claimGates';
 import { ClaimPolicyChooser } from './ClaimPolicyChooser';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
+import { humanizeStatus } from '@/lib/status';
 import { POLICY_NUMBER_PATTERN } from '@/lib/patterns';
 import { useClaimStore } from '@/store/claimStore';
 import { selectCoverage, selectDetail, selectMembers, usePolicyStore } from '@/store/policyStore';
@@ -406,7 +407,7 @@ export function RegisterClaimPage() {
           >
             {CLAIM_TYPES.map((type) => (
               <option key={type} value={type}>
-                {type}
+                {humanizeStatus(type)}
               </option>
             ))}
           </Select>

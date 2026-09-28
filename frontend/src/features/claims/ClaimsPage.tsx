@@ -11,6 +11,7 @@ import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
+import { humanizeStatus } from '@/lib/status';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useClaimStore } from '@/store/claimStore';
@@ -116,7 +117,7 @@ export function ClaimsPage({
     {
       key: 'claimType',
       header: 'Type',
-      render: (c) => <span className="font-medium">{c.claimType}</span>,
+      render: (c) => <span className="font-medium">{humanizeStatus(c.claimType)}</span>,
     },
     {
       key: 'status',
