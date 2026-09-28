@@ -121,8 +121,8 @@ function RegisterIndividualForm() {
         <InlineError error={registering.error} />
       )}
 
-      <Button type="submit" variant="primary" disabled={registering.status === 'loading'}>
-        {registering.status === 'loading' ? 'Registering…' : 'Register individual'}
+      <Button type="submit" variant="primary" pending={registering.status === 'loading'}>
+        Register individual
       </Button>
     </form>
   );
@@ -198,8 +198,8 @@ function RegisterCorporateForm() {
         <InlineError error={registering.error} />
       )}
 
-      <Button type="submit" variant="primary" disabled={registering.status === 'loading'}>
-        {registering.status === 'loading' ? 'Registering…' : 'Register corporate'}
+      <Button type="submit" variant="primary" pending={registering.status === 'loading'}>
+        Register corporate
       </Button>
     </form>
   );

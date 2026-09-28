@@ -634,12 +634,17 @@ export function IssuePolicyPage() {
           <Button
             type="submit"
             variant="primary"
-            disabled={issuing.status === 'loading' || blocked}
+            // The two reasons this button is unavailable are kept apart. `blocked` means a check
+            // above has not passed and no amount of waiting will change it -- the `title` below
+            // says which. `pending` means the request is running. Collapsing them into one
+            // `disabled` said "working" about a button refused for a reason the person can fix.
+            pending={issuing.status === 'loading'}
+            disabled={blocked}
             {...(blocked
               ? { title: 'A check above must pass before this policy can be issued' }
               : {})}
           >
-            {issuing.status === 'loading' ? 'Issuing…' : 'Issue policy'}
+            Issue policy
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">

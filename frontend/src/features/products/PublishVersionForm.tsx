@@ -808,8 +808,8 @@ export function PublishVersionForm({
         <InlineError error={publishing.error} />
       )}
 
-      <Button type="submit" variant="primary" disabled={publishing.status === 'loading'}>
-        {publishing.status === 'loading' ? 'Publishing…' : 'Publish version'}
+      <Button type="submit" variant="primary" pending={publishing.status === 'loading'}>
+        Publish version
       </Button>
     </form>
   );

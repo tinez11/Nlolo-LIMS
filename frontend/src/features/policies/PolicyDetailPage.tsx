@@ -619,8 +619,8 @@ function SuspendForm({ policyNumber, onDone }: { policyNumber: string; onDone: (
       )}
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" variant="primary" disabled={suspending.status === 'loading'}>
-          {suspending.status === 'loading' ? 'Suspending…' : 'Suspend policy'}
+        <Button type="submit" size="sm" variant="primary" pending={suspending.status === 'loading'}>
+          Suspend policy
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel
@@ -647,9 +647,9 @@ function ResumeAction({ policyNumber }: { policyNumber: string }) {
           {resuming.error.detail ?? resuming.error.title}
         </p>
       )}
-      <Button size="sm" disabled={resuming.status === 'loading'} onClick={() => void resumePolicy(policyNumber)}>
+      <Button size="sm" pending={resuming.status === 'loading'} onClick={() => void resumePolicy(policyNumber)}>
         <Play />
-        {resuming.status === 'loading' ? 'Resuming…' : 'Resume'}
+        Resume
       </Button>
     </div>
   );

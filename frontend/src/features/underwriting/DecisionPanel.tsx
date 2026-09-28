@@ -178,9 +178,13 @@ export function DecisionPanel({
             <Button
               type="submit"
               variant="primary"
-              disabled={blockedByRank || deciding.status === 'loading'}
+              // Kept apart on purpose: `blockedByRank` is a separation-of-duties refusal, which
+              // no amount of waiting resolves, while `pending` is the request in flight. One
+              // `disabled` carrying both told a blocked underwriter the platform was working.
+              pending={deciding.status === 'loading'}
+              disabled={blockedByRank}
             >
-              {deciding.status === 'loading' ? 'Recording…' : 'Record decision'}
+              Record decision
             </Button>
           </form>
         )}

@@ -518,8 +518,8 @@ export function IssueGroupSchemePage() {
         )}
 
         <div className="flex items-center gap-2 border-t border-border pt-4">
-          <Button type="submit" variant="primary" disabled={issuing.status === 'loading'}>
-            {issuing.status === 'loading' ? 'Proposing…' : 'Propose scheme'}
+          <Button type="submit" variant="primary" pending={issuing.status === 'loading'}>
+            Propose scheme
           </Button>
           <Button asChild type="button" variant="ghost">
             <Link to="/staff/policies">Cancel</Link>

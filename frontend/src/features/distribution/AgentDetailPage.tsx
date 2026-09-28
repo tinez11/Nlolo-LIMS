@@ -212,9 +212,9 @@ function SuspendAction({ agentId }: { agentId: string }) {
           {suspending.error.detail ?? suspending.error.title}
         </p>
       )}
-      <Button size="sm" disabled={suspending.status === 'loading'} onClick={() => void suspendAgent(agentId)}>
+      <Button size="sm" pending={suspending.status === 'loading'} onClick={() => void suspendAgent(agentId)}>
         <Pause />
-        {suspending.status === 'loading' ? 'Suspending…' : 'Suspend'}
+        Suspend
       </Button>
     </div>
   );
@@ -237,9 +237,9 @@ function ReactivateAction({ agentId }: { agentId: string }) {
           {reactivating.error.detail ?? reactivating.error.title}
         </p>
       )}
-      <Button size="sm" disabled={reactivating.status === 'loading'} onClick={() => void reactivateAgent(agentId)}>
+      <Button size="sm" pending={reactivating.status === 'loading'} onClick={() => void reactivateAgent(agentId)}>
         <Play />
-        {reactivating.status === 'loading' ? 'Reactivating…' : 'Reactivate'}
+        Reactivate
       </Button>
     </div>
   );

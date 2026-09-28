@@ -317,8 +317,8 @@ export function IssueCreditLifeSchemePage() {
           {issuing.status === 'error' && issuing.error && <ErrorPanel error={issuing.error} />}
 
           <div className="flex items-center gap-2 border-t border-border pt-3">
-            <Button type="submit" disabled={issuing.status === 'loading'}>
-              {issuing.status === 'loading' ? 'Setting up…' : 'Set up the scheme'}
+            <Button type="submit" pending={issuing.status === 'loading'}>
+              Set up the scheme
             </Button>
             <p className="text-xs text-muted-foreground">
               Lands on the scheme&rsquo;s monthly files, ready for the first enrolment.

@@ -127,8 +127,8 @@ export function CreateProductPage() {
                 </InlineError>
               )}
 
-              <Button type="submit" variant="primary" disabled={creating.status === 'loading'}>
-                {creating.status === 'loading' ? 'Creating…' : 'Create product'}
+              <Button type="submit" variant="primary" pending={creating.status === 'loading'}>
+                Create product
               </Button>
             </form>
           ) : (

@@ -160,8 +160,8 @@ export function OnboardAgentPage() {
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={onboarding.status === 'loading'}>
-            {onboarding.status === 'loading' ? 'Onboarding…' : 'Onboard agent'}
+          <Button type="submit" variant="primary" pending={onboarding.status === 'loading'}>
+            Onboard agent
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">

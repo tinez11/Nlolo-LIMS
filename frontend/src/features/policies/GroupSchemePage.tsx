@@ -795,9 +795,9 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
       )}
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" variant="primary" disabled={adding.status === 'loading'}>
+        <Button type="submit" size="sm" variant="primary" pending={adding.status === 'loading'}>
           <Plus />
-          {adding.status === 'loading' ? 'Adding…' : 'Add member'}
+          Add member
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel

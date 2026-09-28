@@ -399,8 +399,8 @@ export function OpenUnderwritingCasePage() {
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={opening.status === 'loading'}>
-            {opening.status === 'loading' ? 'Opening…' : 'Open case'}
+          <Button type="submit" variant="primary" pending={opening.status === 'loading'}>
+            Open case
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">

@@ -343,7 +343,7 @@ export function UnderwritingCaseDetailPage() {
                 ceremony. The confirmation belongs on the decision, which is where the
                 consequence now lives.
               */}
-              <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
+              <Button type="submit" variant="primary" pending={submitting.status === 'loading'}>
                 {isPostponed ? 'Submit further evidence' : 'Submit assessment'}
               </Button>
             </form>
@@ -440,10 +440,10 @@ export function UnderwritingCaseDetailPage() {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={referring.status === 'loading'}
+                pending={referring.status === 'loading'}
                 onClick={() => void referCase(caseId)}
               >
-                {referring.status === 'loading' ? 'Referring…' : 'Refer to senior underwriter'}
+                Refer to senior underwriter
               </Button>
               {referring.status === 'error' && referring.error && (
                 <p className="mt-2 text-xs text-status-danger-fg">
