@@ -77,7 +77,7 @@ test.describe('staff credit-life invoices', () => {
       await http.dispose();
     }
 
-    await page.goto(`/staff/policies/${policyNumber}`);
+    await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
 
     // The summary no longer quotes the set-up figure as the premium.
     await expect(page.getByText('Charged per monthly file')).toBeVisible({ timeout: 30_000 });

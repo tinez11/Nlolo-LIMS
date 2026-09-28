@@ -88,7 +88,17 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
     match is furniture, and on a fresh policy every invoice is DUE.
   */
   const present = [...new Set(rows.map((r) => r.status).filter(Boolean))] as string[];
-  const shown = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows;
+  /*
+    The filter is only honoured while the status it names still exists, and that is a real
+    trap rather than defensive coding. Waiving is the one action here that MOVES an invoice
+    between statuses: filter to DUE on a policy holding {DUE, WAIVED}, waive the last DUE
+    one, and `present` collapses to a single status -- so the chip row below unmounts while
+    `statusFilter` still says 'DUE', stranding the reader on an empty list with no control
+    left to clear it. Deriving the effective filter from what is actually there means the
+    view falls back to All the moment its status is gone.
+  */
+  const effective = statusFilter && present.includes(statusFilter) ? statusFilter : null;
+  const shown = effective ? rows.filter((r) => r.status === effective) : rows;
 
   return (
     <div>
@@ -96,7 +106,7 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
         <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-4 py-2.5">
           <FilterChip
             label="All"
-            active={statusFilter === null}
+            active={effective === null}
             onClick={() => setStatusFilter(null)}
           />
           {present.map((value) => (
@@ -104,7 +114,7 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
               key={value}
               label={<StatusBadge kind="invoice" value={value} />}
               bare
-              active={statusFilter === value}
+              active={effective === value}
               onClick={() => setStatusFilter(value)}
             />
           ))}
@@ -114,7 +124,7 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
       {shown.length === 0 ? (
         <EmptyState
           title="None with that status"
-          description="Every invoice on this policy is at a different stage."
+          description="Choose All above to see every invoice on this policy."
         />
       ) : (
         <div className="divide-y divide-border">

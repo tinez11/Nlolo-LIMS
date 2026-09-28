@@ -80,7 +80,9 @@ test.describe('staff communications', () => {
     await page.getByRole('button', { name: 'Issue policy' }).click();
     await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
 
-    // The panel, on the page somebody would actually be looking at.
+    // The panel, on the page somebody would actually be looking at -- reached by clicking
+    // its tab, which is how they would get there.
+    await page.getByRole('tab', { name: 'Messages' }).click();
     await expect(page.getByRole('heading', { name: 'Messages' })).toBeVisible({ timeout: 20_000 });
 
     // TWO rows, not one, and asserting the count is the point rather than a workaround for a
@@ -99,7 +101,7 @@ test.describe('staff communications', () => {
     // PolicyIssued and PolicyActivated fire together.
     const policyNumber = await issueRealPolicy(page, 'E2E communications in-force fixture');
 
-    await page.goto(`/staff/policies/${policyNumber}`);
+    await page.goto(`/staff/policies/${policyNumber}?tab=messages`);
     await expect(page.getByRole('heading', { name: 'Messages' })).toBeVisible({ timeout: 20_000 });
     // Two again -- SMS and email -- for the same reason as the test above.
     await expect(page.getByText('Cover started')).toHaveCount(2, { timeout: 20_000 });

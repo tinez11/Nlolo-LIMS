@@ -20,7 +20,6 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import {
   selectCoverage,
   selectDetail,
-  selectInvoices,
   selectReinstating,
   selectResuming,
   selectSuspending,
@@ -78,8 +77,6 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   }, [policyNumber, loadDetail, loadCoverage]);
 
   const policy = detail.data;
-  // Loaded by the Invoices panel on this same page; read here only to count them.
-  const invoiceCount = usePolicyStore(selectInvoices(policyNumber)).data?.length ?? 0;
 
   // isInitialLoad, not a 'loading'-only check: the load fires from an effect that
   // runs AFTER first render, so status is briefly 'idle' -- a 'loading'-only check
@@ -150,24 +147,20 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       />
 
       {/*
-        Rebalanced rather than reordered. The rail was carrying five panels -- the
-        record, the lifecycle actions, coverage, beneficiaries and reinsurance --
-        against two in the wide column, so three quarters of this page lived in 320px
-        while two tables had 1fr to themselves.
+        Two columns, and the split is the point: the rail is the record, the tabs are the
+        work. The rail holds only what a reader needs WHILE working in another tab -- who,
+        how much, which product, when, who issued it -- and everything that is a register or
+        an act is a tab.
 
-        Nothing takes `emphasis` here, deliberately. Unlike a claim or an underwriting
-        case, this page is not opened to perform one act: most visits are somebody
-        looking up an invoice. Lifecycle still leaves the rail -- suspending a policy
-        is not a marginal note -- but it sits after the record it acts on rather than
-        being promoted above it.
+        This replaces a vertical ordering argument that tabs made obsolete. The old stack ran
+        bounded panels before unbounded ones so a twenty-row invoice ledger could not bury
+        the beneficiary editor below the fold; there is no fold to fall below now, and no
+        panel sits after another. What survives of that reasoning is the rule for the RAIL,
+        which is still 320px and still has to stay short.
 
-        ORDER: the bounded panels come before the unbounded ones. Beneficiaries is a
-        handful of rows and a term of the contract; Invoices and Loans are ledgers
-        that grow for the life of the policy, and this one is already twenty rows
-        deep. Leading with a ledger buries everything after it -- put concretely, it
-        put the beneficiary editor and its party picker below the fold of a page that
-        keeps getting longer, which broke reaching them at all rather than merely
-        making it tedious.
+        Nothing takes `emphasis`, deliberately. Unlike a claim or an underwriting case, this
+        page is not opened to perform one act -- most visits are somebody looking something
+        up -- so promoting one panel would mis-state why the reader is here.
       */}
       <DetailLayout record={renderRecord()}>
         <RecordTabs label="Policy sections" tabs={policyTabs()} />
@@ -244,7 +237,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
       {
         value: 'overview',
         label: 'Overview',
-        content: <div className="space-y-5 px-6 pt-5 pb-8">{overview}</div>,
+        content: <div className="space-y-5 pt-5">{overview}</div>,
       },
     ];
 
@@ -253,7 +246,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         value: 'beneficiaries',
         label: 'Beneficiaries',
         content: (
-          <div className="px-6 pt-5 pb-8">
+          <div className="pt-5">
             <Panel title="Beneficiaries">
               {policy && (
                 <BeneficiariesPanel
@@ -269,7 +262,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         value: 'billing',
         label: 'Billing',
         content: (
-          <div className="px-6 pt-5 pb-8">
+          <div className="pt-5">
             <Panel title="Invoices" subtitle="All invoices for this policy">
               <InvoicesPanel policyNumber={policyNumber} />
             </Panel>
@@ -280,7 +273,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         value: 'loans',
         label: 'Loans',
         content: (
-          <div className="px-6 pt-5 pb-8">
+          <div className="pt-5">
             <Panel title="Loans" subtitle="Policy loans taken against cash value">
               <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
             </Panel>
@@ -291,7 +284,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         value: 'messages',
         label: 'Messages',
         content: (
-          <div className="px-6 pt-5 pb-8">
+          <div className="pt-5">
             <Panel title="Messages" subtitle="What this customer has been told about this policy">
               <MessagesPanel policyNumber={policyNumber} />
             </Panel>
@@ -305,7 +298,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         value: 'reinsurance',
         label: 'Reinsurance',
         content: (
-          <div className="px-6 pt-5 pb-8">
+          <div className="pt-5">
             <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
               <CessionsPanel policyNumber={policyNumber} />
             </Panel>
@@ -349,9 +342,15 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 <Field
                   label="Premium"
                   value="Charged per monthly file"
-                  note={`Single premium per borrower at the scheme's rate, invoiced when a file is accepted${
-                    invoiceCount ? ` — ${invoiceCount} invoice${invoiceCount === 1 ? '' : 's'} so far, see Invoices` : ''
-                  }.`}
+                  // No count any more, and it had to go rather than be moved. It read
+                  // `invoices.data?.length`, and the ONLY caller of `loadInvoices` on the
+                  // platform is InvoicesPanel -- which mounts when the Billing tab is
+                  // opened. So from the moment this record grew tabs the clause was absent
+                  // on every arrival and appeared only after a detour through Billing. A
+                  // count that is usually missing is worse than no count; the pointer to
+                  // where the invoices actually are is the half that was carrying its
+                  // weight, and it now names the tab rather than a panel that moved.
+                  note="Single premium per borrower at the scheme's rate, invoiced when a file is accepted — see Billing."
                 />
               ) : (
                 <Field

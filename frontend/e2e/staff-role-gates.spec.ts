@@ -67,7 +67,7 @@ test.describe('waiving a premium is finance-only', () => {
     // may waive a premium.
     test.slow();
     const policyNumber = await issueRealPolicy(page, 'E2E role-gates fixture');
-    await page.goto(`/staff/policies/${policyNumber}`);
+    await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
     await expect(page.getByRole('heading', { name: 'Invoices' })).toBeVisible({ timeout: 30_000 });
 
     // Request payment stays open to everyone -- asking a customer to pay takes nothing away
@@ -90,7 +90,7 @@ test.describe('waiving a premium is offered to finance', () => {
     // may waive a premium.
     test.slow();
     const policyNumber = await issueRealPolicy(page, 'E2E role-gates fixture');
-    await page.goto(`/staff/policies/${policyNumber}`);
+    await page.goto(`/staff/policies/${policyNumber}?tab=billing`);
     await expect(page.getByRole('heading', { name: 'Invoices' })).toBeVisible({ timeout: 30_000 });
 
     await expect(page.getByRole('button', { name: 'Waive', exact: true }).first()).toBeVisible({

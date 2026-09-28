@@ -57,7 +57,12 @@ export function RecordTabs({
     >
       <TabsPrimitive.List
         aria-label={label}
-        className="sticky top-[var(--pagebar-h,0px)] z-10 flex gap-5 overflow-x-auto border-b border-border bg-background px-6"
+        // No horizontal padding of its own: this mounts INSIDE the caller's layout -- on the
+        // policy record, inside `DetailLayout`'s own `px-6` grid -- and carrying a second
+        // gutter put the tabs 48px from the edge while the record rail beside them sat at
+        // 24px, with the sticky rule stopping short of both. The caller owns the gutter; the
+        // bar owns only its stickiness and its rule.
+        className="sticky top-[var(--pagebar-h,0px)] z-10 flex gap-5 overflow-x-auto border-b border-border bg-background"
       >
         {tabs.map((tab) => (
           <TabsPrimitive.Trigger

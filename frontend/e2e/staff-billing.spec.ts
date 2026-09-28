@@ -60,10 +60,10 @@ test.describe('staff billing', () => {
 
     // Premium invoices are pre-generated 12 months ahead at issuance -- a
     // fresh policy already has at least one real invoice row to act on.
-    await expect(page.getByRole('button', { name: 'Waive' }).first()).toBeVisible({
+    await expect(page.getByRole('button', { name: 'Waive', exact: true }).first()).toBeVisible({
       timeout: 15_000,
     });
-    await page.getByRole('button', { name: 'Waive' }).first().click();
+    await page.getByRole('button', { name: 'Waive', exact: true }).first().click();
     await page.getByLabel('Reason').fill('E2E goodwill waiver, hardship case');
     await page.getByRole('button', { name: 'Waive invoice' }).click();
 
@@ -88,7 +88,7 @@ test.describe('staff billing', () => {
       if (req.method() === 'POST' && req.url().endsWith('/waiver')) requestFired = true;
     });
 
-    await page.getByRole('button', { name: 'Waive' }).first().click();
+    await page.getByRole('button', { name: 'Waive', exact: true }).first().click();
     await page.getByLabel('Reason').fill('too short');
     await page.getByRole('button', { name: 'Waive invoice' }).click();
 
