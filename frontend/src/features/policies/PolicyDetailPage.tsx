@@ -42,6 +42,8 @@ import {
 } from './suspendPolicyForm';
 import { Panel } from '@/components/Panel';
 import { DetailLayout } from '@/components/DetailLayout';
+import type { ReactNode } from 'react';
+import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { Input } from '@/components/ui/input';
 
 /**
@@ -168,72 +170,152 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         making it tedious.
       */}
       <DetailLayout record={renderRecord()}>
-        {/*
-          First, above everything else, and not a badge.
-
-          "Is this person covered?" is the single most important thing this page answers, and
-          since cover began waiting for the first premium the status alone no longer answers it
-          for a reader who does not already know the rule. PROPOSED looks like a normal status;
-          nothing about the word tells you the customer is uninsured, or what would change that.
-        */}
-        {policy?.status === 'PROPOSED' && (
-          <Panel title="Not yet on cover">
-            <p className="px-4 pb-4 text-xs text-muted-foreground">
-              This is an offer, not a policy in force. Cover starts when the first premium
-              clears — until then no claim can be settled against it. The invoices below are
-              what the customer pays to accept.
-            </p>
-          </Panel>
-        )}
-        {policy?.status === 'NOT_TAKEN_UP' && (
-          <Panel title="Offer expired unpaid">
-            <p className="px-4 pb-4 text-xs text-muted-foreground">
-              This offer was never taken up: no first premium arrived within the offer window, so
-              it closed. Cover never started, which is why this is not a lapse — it does not
-              count against persistency. A new application is needed to insure this person.
-            </p>
-          </Panel>
-        )}
-
-        <Panel title="Beneficiaries">
-          {policy && (
-            <BeneficiariesPanel policyNumber={policyNumber} beneficiaries={policy.beneficiaries ?? []} />
-          )}
-        </Panel>
-
-        {/* Directly under the cover panels, because it answers their follow-up question. An
-            offer that is "not yet on cover" immediately raises "does the customer know?", and
-            the honest answer is a SENT row with a timestamp or a FAILED row with a reason. */}
-        <Panel title="Messages" subtitle="What this customer has been told about this policy">
-          <MessagesPanel policyNumber={policyNumber} />
-        </Panel>
-
-        <Panel title="Invoices" subtitle="All invoices for this policy">
-          <InvoicesPanel policyNumber={policyNumber} />
-        </Panel>
-
-        <Panel title="Loans" subtitle="Policy loans taken against cash value">
-          <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
-        </Panel>
-
-        {canSeeReinsurance && policy && (
-          <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
-            <CessionsPanel policyNumber={policyNumber} />
-          </Panel>
-        )}
-
-        {/* Suspend/resume/reinstate are all hasRole('REALM_STAFF') only -- shown only
-            in the staff console, not just left to always-403 on click, the same
-            "don't render a button that can never work for this session" discipline
-            the deferred surrender action already follows above. */}
-        {isStaff && policy && (
-          <Panel title="Lifecycle">
-            <LifecycleActions policyNumber={policyNumber} status={policy.status} />
-          </Panel>
-        )}
+        <RecordTabs label="Policy sections" tabs={policyTabs()} />
       </DetailLayout>
     </>
   );
+
+  /**
+   * The record's sections, act-first.
+   *
+   * Overview is what this contract covers, what state it is in, and what can be done about
+   * it -- never a register. It is BUILT rather than declared because two of its three panels
+   * are conditional: the offer explanation only for PROPOSED / NOT_TAKEN_UP, and Lifecycle
+   * only in the staff console. Coverage is unconditional, which is what guarantees `tabs[0]`
+   * always has content -- an agent on an ACTIVE policy would otherwise open onto nothing.
+   *
+   * No tab carries a count: `TabDef.count` is for a number the page ALREADY HOLDS, and this
+   * page holds none of them -- each register fetches its own inside its panel.
+   */
+  function policyTabs(): TabDef[] {
+    // Coverage leads Overview, and it moved here OUT of the record rail deliberately. The
+    // rail is for the facts you need while working in another tab -- who, how much, which
+    // product, when. What the policy actually INSURES is not a reference fact, it is the
+    // first thing a reader came for, and at 320px it was a benefits list in a margin. It
+    // also means Overview always has content, so the default tab is never empty.
+    const overview: ReactNode[] = [
+      <Panel key="coverage" title="Coverage" subtitle="Active benefits as of today">
+        {renderCoverage()}
+      </Panel>,
+    ];
+
+    /*
+      First, above everything else, and not a badge.
+
+      "Is this person covered?" is the single most important thing this page answers, and
+      since cover began waiting for the first premium the status alone no longer answers it
+      for a reader who does not already know the rule. PROPOSED looks like a normal status;
+      nothing about the word tells you the customer is uninsured, or what would change that.
+    */
+    if (policy?.status === 'PROPOSED') {
+      overview.push(
+        <Panel key="not-yet" title="Not yet on cover">
+          <p className="px-4 pb-4 text-xs text-muted-foreground">
+            This is an offer, not a policy in force. Cover starts when the first premium
+            clears — until then no claim can be settled against it. The invoices under Billing
+            are what the customer pays to accept.
+          </p>
+        </Panel>,
+      );
+    }
+    if (policy?.status === 'NOT_TAKEN_UP') {
+      overview.push(
+        <Panel key="expired" title="Offer expired unpaid">
+          <p className="px-4 pb-4 text-xs text-muted-foreground">
+            This offer was never taken up: no first premium arrived within the offer window, so
+            it closed. Cover never started, which is why this is not a lapse — it does not
+            count against persistency. A new application is needed to insure this person.
+          </p>
+        </Panel>,
+      );
+    }
+    // Suspend/resume/reinstate are all hasRole('REALM_STAFF') only -- shown only in the staff
+    // console, not just left to always-403 on click, the same "don't render a button that can
+    // never work for this session" discipline the deferred surrender action already follows.
+    if (isStaff && policy) {
+      overview.push(
+        <Panel key="lifecycle" title="Lifecycle">
+          <LifecycleActions policyNumber={policyNumber} status={policy.status} />
+        </Panel>,
+      );
+    }
+
+    const tabs: TabDef[] = [
+      {
+        value: 'overview',
+        label: 'Overview',
+        content: <div className="space-y-5 px-6 pt-5 pb-8">{overview}</div>,
+      },
+    ];
+
+    tabs.push(
+      {
+        value: 'beneficiaries',
+        label: 'Beneficiaries',
+        content: (
+          <div className="px-6 pt-5 pb-8">
+            <Panel title="Beneficiaries">
+              {policy && (
+                <BeneficiariesPanel
+                  policyNumber={policyNumber}
+                  beneficiaries={policy.beneficiaries ?? []}
+                />
+              )}
+            </Panel>
+          </div>
+        ),
+      },
+      {
+        value: 'billing',
+        label: 'Billing',
+        content: (
+          <div className="px-6 pt-5 pb-8">
+            <Panel title="Invoices" subtitle="All invoices for this policy">
+              <InvoicesPanel policyNumber={policyNumber} />
+            </Panel>
+          </div>
+        ),
+      },
+      {
+        value: 'loans',
+        label: 'Loans',
+        content: (
+          <div className="px-6 pt-5 pb-8">
+            <Panel title="Loans" subtitle="Policy loans taken against cash value">
+              <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
+            </Panel>
+          </div>
+        ),
+      },
+      {
+        value: 'messages',
+        label: 'Messages',
+        content: (
+          <div className="px-6 pt-5 pb-8">
+            <Panel title="Messages" subtitle="What this customer has been told about this policy">
+              <MessagesPanel policyNumber={policyNumber} />
+            </Panel>
+          </div>
+        ),
+      },
+    );
+
+    if (canSeeReinsurance && policy) {
+      tabs.push({
+        value: 'reinsurance',
+        label: 'Reinsurance',
+        content: (
+          <div className="px-6 pt-5 pb-8">
+            <Panel title="Reinsurance" subtitle="Cessions this policy's own coverage produced">
+              <CessionsPanel policyNumber={policyNumber} />
+            </Panel>
+          </div>
+        ),
+      });
+    }
+
+    return tabs;
+  }
 
   function renderRecord() {
     return (
@@ -401,9 +483,6 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           )}
         </Panel>
 
-        <Panel title="Coverage" subtitle="Active benefits as of today">
-          {renderCoverage()}
-        </Panel>
       </>
     );
   }
@@ -427,7 +506,12 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
         {active.map((c, index) => (
           <Field
             key={`${c.benefitType ?? 'benefit'}-${index}`}
-            label={c.benefitType ? c.benefitType.replace(/_/g, ' ').toLowerCase() : 'Benefit'}
+            // `humanizeStatus`, not a bare lowercase: this rendered "death" and "critical
+            // illness" in a column of sentence-cased labels, which was easy to miss in a
+            // 320px rail and is not once Coverage leads the Overview tab. It is also the
+            // one humaniser on the platform, so a benefit type gains an acronym the day the
+            // backend adds one without this line needing to know.
+            label={c.benefitType ? humanizeStatus(c.benefitType) : 'Benefit'}
             value={formatMoney(c.sumAssured)}
           />
         ))}

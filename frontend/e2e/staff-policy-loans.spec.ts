@@ -20,6 +20,9 @@ async function openFirstPolicyDetail(page: Page): Promise<boolean> {
   await expect(row).toBeVisible();
   await row.click();
   await page.getByRole('dialog').getByRole('link', { name: /full detail/i }).click();
+  // Loans is a tab on the record now. Clicked rather than deep-linked, because this helper
+  // exists to walk the way a person actually gets here.
+  await page.getByRole('tab', { name: 'Loans' }).click();
   await expect(page.getByRole('heading', { name: 'Loans' })).toBeVisible();
   return true;
 }

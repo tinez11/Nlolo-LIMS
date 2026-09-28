@@ -86,7 +86,9 @@ test.describe('staff beneficiaries edit', () => {
     // put a shared record back the way it found it.
     test.slow();
     const policyNumber = await issueRealPolicy(page, 'E2E beneficiaries fixture');
-    await page.goto(`/staff/policies/${policyNumber}`);
+    // The record is tabbed now, and its registers each live on their own tab. Deep-linked
+    // rather than clicked: this beforeEach is setup, not the journey under test.
+    await page.goto(`/staff/policies/${policyNumber}?tab=beneficiaries`);
     await expect(page.getByRole('heading', { name: 'Beneficiaries' })).toBeVisible();
   });
 

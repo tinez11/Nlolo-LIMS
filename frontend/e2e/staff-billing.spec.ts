@@ -22,6 +22,11 @@ import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting'
  */
 
 async function issueRealPolicyWithInvoices(page: Page): Promise<string> {
+  // Every test here builds its own policy through the real manual-issue flow, which alone
+  // runs 40-58s against the real stack -- the two that passed before the record grew tabs did
+  // so at 57.7s and 43.5s, inside a 60s budget. Opening the Billing tab pushed the first one
+  // over. The fixture is what is slow, so the fixture is what declares it.
+  test.slow();
   // Manual issue names a real, unissued case now. The policyholder and product come from it
   // by prefill, so this no longer picks them by hand -- the sum assured still does, because
   // the case view @JsonIgnores it and the console genuinely cannot see it.
@@ -36,7 +41,13 @@ async function issueRealPolicyWithInvoices(page: Page): Promise<string> {
   await page.getByLabel('Reason for manual issue').fill('E2E billing fixture');
   await page.getByRole('button', { name: 'Issue policy' }).click();
   await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
-  return page.url().split('/').pop() as string;
+  const policyNumber = page.url().split('/').pop() as string;
+
+  // Invoices live on the record's Billing tab now. Every test in this file acts on an
+  // invoice, so the fixture lands on that tab rather than each test opening it.
+  await page.getByRole('tab', { name: 'Billing' }).click();
+  await expect(page.getByRole('heading', { name: 'Invoices' })).toBeVisible({ timeout: 15_000 });
+  return policyNumber;
 }
 
 test.describe('staff billing', () => {
