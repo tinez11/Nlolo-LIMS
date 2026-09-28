@@ -14,9 +14,24 @@ const files = [];
 const rows = [];
 for (const f of files) {
   const s = readFileSync(f, 'utf8');
-  const renaming = (s.match(/status === 'loading' \?/g) ?? []).length;
-  const rawAlert = (s.match(/role="alert"/g) ?? []).length;
-  const backLink = /ArrowLeft/.test(s) ? 1 : 0;
+  // Line by line, exactly as the guard tests it. Scanning the whole file instead lets `\s*`
+  // span a newline, which matches a dropzone's multi-line status paragraph -- a live region
+  // reporting "Uploading…" or "Drop the file", which is correct and is not a button label.
+  const renaming = s
+    .split(/\r?\n/)
+    .filter((line) => /status === 'loading'\s*\?\s*'/.test(line)).length;
+  // The ApiError shape, over a window of lines -- NOT every role="alert". Eight alerts on this
+  // console are correct (form validation, strings from useState, one server-stored issuance
+  // reason), and an earlier version of this script counted those, plus two comments explaining
+  // why one of them is right. It reported ten defects where there were none, which is the
+  // opposite of what a measurement is for. Matches `designGuards.test.ts`, which is the
+  // authority; this script exists to show the shape of the work, not to define it.
+  const lines = s.split(/\r?\n/);
+  const rawAlert = lines.filter((_l, i) => {
+    const window = lines.slice(i, i + 5).join(' ');
+    return /role="alert"/.test(window) && /\.detail \?\?/.test(window) && /role="alert"/.test(lines[i]);
+  }).length;
+  const backLink = /<ArrowLeft[\s/>]/.test(s) ? 1 : 0;
   const hasHeader = /<PageHeader/.test(s);
   const hasCrumb = /breadcrumb=/.test(s);
   if (renaming || rawAlert || backLink) {

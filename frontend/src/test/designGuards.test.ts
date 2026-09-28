@@ -152,6 +152,13 @@ describe('design guards', () => {
     // Three of the eighteen also hid a SECOND condition in the same expression -- a failed
     // check, a separation-of-duties refusal, an empty form -- so the button claimed to be
     // working when it was refusing for a reason no waiting would resolve.
+    //
+    // A KNOWN AND DELIBERATE LIMIT: this is line-based, so a ternary broken across lines slips
+    // through. That is the right trade rather than a gap to close. All eighteen were written on
+    // one line, and the multi-line form is what a dropzone's live region legitimately uses --
+    // "Uploading…" / "Drop the file" / "Drag a file here" is status text, not a label, and no
+    // regex can tell it from a button's without reading structure. A rule that failed on that
+    // would be switched off, and then it would catch nothing at all.
     expect(offenders(/status === 'loading'\s*\?\s*'/)).toEqual([]);
   });
 
