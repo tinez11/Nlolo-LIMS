@@ -97,18 +97,20 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        // The breadcrumb replaces the back link that used to sit above this bar: it says
+        // where the record lives as well as offering the way out, and it rides the sticky
+        // bar instead of scrolling away with the first panel.
+        breadcrumb={[{ label: 'Policies', to: `/${realm}/policies` }]}
         title={policyNumber}
         description={
           policy?.productId ? <ProductName productId={policy.productId} /> : undefined
         }
+        // Beside the title, not in `actions`: a status is what the record IS, and actions
+        // are what you can do to it. They sat in one row and read as a toolbar of four.
+        status={policy?.status ? <StatusBadge kind="policy" value={policy.status} /> : undefined}
         actions={
           <>
-            {policy?.status && <StatusBadge kind="policy" value={policy.status} />}
             {/* Only on a scheme, and only in the staff console -- the members
                 endpoint is staff-only, so an agent following this link would get a
                 403 rather than a page. A group policy read here answers "one
