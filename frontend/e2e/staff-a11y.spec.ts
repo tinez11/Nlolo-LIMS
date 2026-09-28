@@ -21,6 +21,10 @@ const ROUTES = [
   '/staff/arrears',
   '/staff/field-receipts',
   '/staff/gl-postings',
+  '/staff/chart-of-accounts',
+  '/staff/treaties',
+  '/staff/regulatory-returns',
+  '/staff/bank-transfers',
   '/staff/products',
 ];
 
@@ -50,7 +54,16 @@ test('no accessibility violation beyond the recorded baseline', async ({ page })
   await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/);
   const claimRecord = new URL(page.url()).pathname;
 
-  for (const route of [...ROUTES, policyRecord, claimRecord]) {
+  // The third record shape: two columns, a pinned rail and no tab or section bar. Reached
+  // through its drawer for the same reason the claim record is -- the treaties table's first
+  // column is a reinsurer's name, so no cell carries an id to build a URL from.
+  await page.goto('/staff/treaties');
+  await page.getByRole('table', { name: 'Treaties' }).getByRole('button').first().click();
+  await page.getByRole('link', { name: /full detail/i }).click();
+  await expect(page).toHaveURL(/\/staff\/treaties\/[0-9a-f-]{36}$/);
+  const treatyRecord = new URL(page.url()).pathname;
+
+  for (const route of [...ROUTES, policyRecord, claimRecord, treatyRecord]) {
     await page.goto(route);
     await expect(page.locator('h1')).toBeVisible({ timeout: 30_000 });
     // Let the first data fetch land, so axe sees the table rather than a skeleton. Not
