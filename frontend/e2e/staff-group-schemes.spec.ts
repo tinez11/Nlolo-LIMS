@@ -168,6 +168,11 @@ test.describe('staff group schemes', () => {
     await policyholderLink.click();
     await expect(page).toHaveURL(/\/staff\/parties\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
+    // The client record's work column is tabs, and schemes share the Policies tab with the
+    // policies register -- they answer one question, and the schemes panel is derived from the
+    // policies page already loaded. Staff land on KYC, so this opens the one it needs.
+    await page.getByRole('tab', { name: 'Policies', exact: true }).click();
+
     const schemesPanel = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Group schemes' }) });
