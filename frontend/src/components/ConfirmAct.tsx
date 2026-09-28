@@ -114,15 +114,23 @@ export function ConfirmAct({
       <div className="mt-3 flex items-center gap-1.5">
         {/* The confirming button carries the VERB, never "Confirm" or "Yes".
             Two identical-looking buttons a click apart is how a second click
-            becomes as automatic as the first. */}
+            becomes as automatic as the first.
+
+            And it keeps that verb while the request is in flight. It used to
+            become "Working…", which throws away the one thing the step exists to
+            state at the exact moment the person is watching it, and makes the
+            button a different control to a screen reader and to every locator
+            that looks for it. `pending` says the same thing with a spinner and
+            `aria-busy`, which is what "working" means to assistive tech. */}
         <Button
           type="button"
           size="sm"
           variant={tone === 'danger' ? 'danger' : 'primary'}
-          disabled={busy || confirmDisabled}
+          pending={busy}
+          disabled={confirmDisabled}
           onClick={onConfirm}
         >
-          {busy ? 'Working…' : confirmLabel}
+          {confirmLabel}
         </Button>
         <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
           Cancel

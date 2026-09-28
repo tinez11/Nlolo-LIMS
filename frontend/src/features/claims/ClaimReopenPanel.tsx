@@ -66,8 +66,8 @@ export function ClaimReopenPanel({ claimId, wasSettled }: { claimId: string; was
         <InlineError error={reopening.error} />
       )}
 
-      <Button type="submit" size="sm" variant="primary" disabled={reopening.status === 'loading'}>
-        {reopening.status === 'loading' ? 'Reopening…' : 'Reopen claim'}
+      <Button type="submit" size="sm" variant="primary" pending={reopening.status === 'loading'}>
+        Reopen claim
       </Button>
     </form>
   );

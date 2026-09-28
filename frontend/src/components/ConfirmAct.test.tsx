@@ -61,8 +61,12 @@ describe('ConfirmAct', () => {
     const user = userEvent.setup();
     const { onConfirm } = renderConfirm({ busy: true });
 
-    const confirm = screen.getByRole('button', { name: 'Working…' });
+    // Still "Pay out", not "Working…". A button that renames itself mid-flight is a
+    // different control to a screen reader and to every locator looking for it, and it
+    // drops the verb at the moment the person most needs to read it back.
+    const confirm = screen.getByRole('button', { name: 'Pay out' });
     expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-busy', 'true');
     await user.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
     // Cancel is disabled too: backing out mid-flight would hide a request that

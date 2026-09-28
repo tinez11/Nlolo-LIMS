@@ -520,8 +520,8 @@ export function RegisterClaimPage() {
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={registering.status === 'loading'}>
-            {registering.status === 'loading' ? 'Registering…' : 'Register claim'}
+          <Button type="submit" variant="primary" pending={registering.status === 'loading'}>
+            Register claim
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">
