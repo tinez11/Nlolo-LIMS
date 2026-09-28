@@ -5,6 +5,9 @@ import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policyloan.api.*;
 import tz.co.nlolo.lifeplatform.product.api.*;
+import tz.co.nlolo.lifeplatform.underwriting.api.BeneficiaryNomination;
+import tz.co.nlolo.lifeplatform.underwriting.api.NominationType;
+import tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.UnderwritingCaseView;
 import org.junit.jupiter.api.AfterEach;
@@ -26,12 +29,14 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
 /**
@@ -96,10 +101,21 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/underwriting/V4__proposal_identity.sql",
             "db-migrations/underwriting/V5__explicit_decision.sql",
             "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
+            // V7 was never in this list. Harmless while it only rewrote V1's three policies into
+            // the NULLIF form (identical behaviour once app.current_tenant_id is set, which every
+            // test below does set), but it left this class asserting against a schema whose
+            // underwriting policies were spelled differently from the ones that ship. Added now so
+            // proposalBeneficiaryIsTenantIsolatedUnderRls below exercises V12's policy beside the
+            // same fail-closed neighbours production has, rather than beside V1's raising form.
+            "db-migrations/underwriting/V7__rls_fail_closed.sql",
             "db-migrations/underwriting/V8__rating_multiplier.sql",
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
+            // The fix this list's last test proves: V6 created proposal_beneficiary with a
+            // tenant_id and no policy, and V1's ALTER DEFAULT PRIVILEGES granted app_role full
+            // access to it anyway.
+            "db-migrations/underwriting/V12__proposal_beneficiary_rls.sql",
             "db-migrations/policy/V1__create_policy_schema.sql",
             "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
             // M3 (Task 6) additions: policyLoanIsTenantIsolatedUnderRls below needs refdata
@@ -1112,6 +1128,89 @@ class RowLevelSecurityIntegrationTest {
     }
 
     /**
+     * underwriting/V12's fix: proposal_beneficiary was the one table on this platform carrying a
+     * tenant_id and no policy, while V1's ALTER DEFAULT PRIVILEGES granted app_role full access to
+     * it the moment V6 created it.
+     *
+     * <p>An isolation test rather than a catalog check, and deliberately not only the coverage
+     * sweep in {@code TenantTableRlsCoverageIntegrationTest}. That sweep proves a policy EXISTS.
+     * V7's whole lesson is that a policy can exist, be granted, read correctly, and still not
+     * filter -- the raising form returned no rows by accident, not by design. Only two tenants and
+     * a restricted connection prove this one separates them.
+     *
+     * <p>@Order(13), last in the class: {@code openCaseForCurrentTenant} adds two more rows each to
+     * product.product_definition and underwriting.underwriting_case, which would inflate the
+     * blanket COUNT(*) assertions in @Order(2) and @Order(3) if this ran ahead of them. Same
+     * hazard @Order(5) documents for itself.
+     */
+    @Test
+    @Order(13)
+    void proposalBeneficiaryIsTenantIsolatedUnderRls() throws Exception {
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+
+        // FREEFORM rather than PARTY: a freeform designee is a name written on the form, so the
+        // nomination needs no second party registered per tenant, and the designee string is
+        // itself the thing this test reads back to prove which tenant's row it got.
+        TenantContext.set(tenantA);
+        UUID caseIdA = openCaseForCurrentTenant("RLS-PB-A", "7", nominating("Tenant A Nominee"));
+
+        TenantContext.set(tenantB);
+        openCaseForCurrentTenant("RLS-PB-B", "8", nominating("Tenant B Nominee"));
+
+        try (Connection superuserConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = superuserConnection.createStatement();
+             ResultSet resultSet = statement.executeQuery(
+                 "SELECT COUNT(*) FROM underwriting.proposal_beneficiary")) {
+            resultSet.next();
+            assertThat(resultSet.getInt(1)).isEqualTo(2);
+        }
+
+        try (Connection restrictedConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = restrictedConnection.createStatement()) {
+            statement.execute("SET ROLE app_role");
+            statement.execute("SET app.current_tenant_id = '" + tenantA + "'");
+            try (ResultSet resultSet = statement.executeQuery(
+                    "SELECT freeform_designee, case_id FROM underwriting.proposal_beneficiary")) {
+                assertThat(resultSet.next()).isTrue();
+                assertThat(resultSet.getString(1)).isEqualTo("Tenant A Nominee");
+                assertThat(resultSet.getString(2)).isEqualTo(caseIdA.toString());
+                assertThat(resultSet.next()).isFalse();
+            }
+
+            // proposal_beneficiary_tenant_isolation carries no WITH CHECK, so Postgres applies its
+            // USING expression to writes as well as reads. Both directions of that are asserted,
+            // because a USING-only policy reads like a read-side rule and the two failure modes it
+            // hides are opposite: one lets a tenant plant a row in another's book, the other blocks
+            // the application's own nomination and breaks every proposal on the platform.
+            //
+            // The write the app actually makes. app_role is what the running console connects as
+            // (SPRING_DATASOURCE_USERNAME in docker-compose), so if V12 refused this, openCase
+            // would start failing in dev the moment the migration landed.
+            statement.execute("INSERT INTO underwriting.proposal_beneficiary "
+                + "(tenant_id, case_id, beneficiary_type, freeform_designee, share_percent) "
+                + "VALUES ('" + tenantA + "', '" + caseIdA + "', 'FREEFORM', 'Written by app_role', 100)");
+
+            // The write no tenant may make.
+            assertThatThrownBy(() -> statement.execute(
+                "INSERT INTO underwriting.proposal_beneficiary "
+                    + "(tenant_id, case_id, beneficiary_type, freeform_designee, share_percent) "
+                    + "VALUES ('" + tenantB + "', '" + caseIdA + "', 'FREEFORM', 'Smuggled', 100)"))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("row-level security");
+        }
+    }
+
+    /** A proposal naming one freeform beneficiary for the whole benefit. */
+    private static ProposalDetails nominating(String designee) {
+        return new ProposalDetails(null, null, null, null, null, null, null,
+            List.of(new BeneficiaryNomination(NominationType.FREEFORM, null, designee,
+                new java.math.BigDecimal("100"), true)));
+    }
+
+    /**
      * policy.policy_account.cash_value_amount starts at ZERO at issuance (PolicyApiImpl has no
      * premium-accrual path yet) -- bumped directly here, exactly as PolicyLoanApiIntegrationTest's
      * own issuePolicyWithCashValue helper does, or originateLoan would reject every amount with
@@ -1140,6 +1239,10 @@ class RowLevelSecurityIntegrationTest {
     }
 
     private UUID openCaseForCurrentTenant(String productCode, String phoneSuffixDigit) {
+        return openCaseForCurrentTenant(productCode, phoneSuffixDigit, ProposalDetails.selfInsured());
+    }
+
+    private UUID openCaseForCurrentTenant(String productCode, String phoneSuffixDigit, ProposalDetails proposal) {
         PartyView applicant = partyApi.registerIndividual("RLS Test Applicant", LocalDate.of(1990, 1, 1), "+25571200000" + phoneSuffixDigit, null, "test");
         ProductSummaryView product = productApi.createProduct(productCode, "RLS Test Product", ProductCategory.TERM_LIFE, "TZS", "actuary");
         productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
@@ -1149,6 +1252,6 @@ class RowLevelSecurityIntegrationTest {
             null, ANY_FILING, "actuary");
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
         return underwritingApi.openCase(applicant.partyId(), product.productId(), snapshot.productVersionId(),
-            new java.math.BigDecimal("1000000"), "TZS", null, "agent1").caseId();
+            new java.math.BigDecimal("1000000"), "TZS", null, proposal, "agent1").caseId();
     }
 }
