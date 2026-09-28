@@ -26,6 +26,11 @@ const ROUTES = [
   '/staff/regulatory-returns',
   '/staff/bank-transfers',
   '/staff/products',
+  '/staff/clients/organisations',
+  '/staff/agents',
+  '/staff/notifications/messages',
+  '/staff/notifications/templates',
+  '/staff/audit-log',
 ];
 
 const BASELINE = 'e2e/a11y-baseline.json';
@@ -63,7 +68,17 @@ test('no accessibility violation beyond the recorded baseline', async ({ page })
   await expect(page).toHaveURL(/\/staff\/treaties\/[0-9a-f-]{36}$/);
   const treatyRecord = new URL(page.url()).pathname;
 
-  for (const route of [...ROUTES, policyRecord, claimRecord, treatyRecord]) {
+  // The fourth record shape, and the last: two columns with a pinned rail AND tabs. Read off
+  // the clients table, where a row's own link carries the party id -- unlike the claim and
+  // treaty registers, whose first column is a type and a name, so those two go through a drawer.
+  await page.goto('/staff/clients/individuals');
+  const firstClient = page.getByRole('table', { name: 'Clients' }).getByRole('link').first();
+  await expect(firstClient).toBeVisible({ timeout: 30_000 });
+  await firstClient.click();
+  await expect(page).toHaveURL(/\/staff\/parties\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+  const clientRecord = new URL(page.url()).pathname;
+
+  for (const route of [...ROUTES, policyRecord, claimRecord, treatyRecord, clientRecord]) {
     await page.goto(route);
     await expect(page.locator('h1')).toBeVisible({ timeout: 30_000 });
     // Let the first data fetch land, so axe sees the table rather than a skeleton. Not
