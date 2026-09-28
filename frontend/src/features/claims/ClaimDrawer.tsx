@@ -8,6 +8,7 @@ import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader } from '@/components/ui/sheet';
 import { formatDate } from '@/lib/dates';
+import { humanizeStatus } from '@/lib/status';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectClaimDetail, useClaimStore } from '@/store/claimStore';
@@ -38,7 +39,7 @@ export function ClaimDrawer({ claimId, onClose }: { claimId: string | null; onCl
     >
       <SheetContent aria-label="Claim preview">
         <SheetHeader
-          title={claim?.claimType ?? 'Claim'}
+          title={claim?.claimType ? humanizeStatus(claim.claimType) : 'Claim'}
           subtitle={claim?.status ? undefined : 'Loading details'}
           action={claim?.status ? <StatusBadge kind="claim" value={claim.status} /> : undefined}
         />

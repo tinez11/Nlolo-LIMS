@@ -24,3 +24,7 @@ npm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Incremental typecheck state. `npx tsc -b` writes it on every run; it is a cache of
+# whose-file-is-newer and means nothing on another machine.
+tsconfig.tsbuildinfo

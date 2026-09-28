@@ -11,6 +11,7 @@ import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
+import { humanizeStatus } from '@/lib/status';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useClaimStore } from '@/store/claimStore';
@@ -116,7 +117,7 @@ export function ClaimsPage({
     {
       key: 'claimType',
       header: 'Type',
-      render: (c) => <span className="font-medium">{c.claimType}</span>,
+      render: (c) => <span className="font-medium">{humanizeStatus(c.claimType)}</span>,
     },
     {
       key: 'status',
@@ -124,12 +125,15 @@ export function ClaimsPage({
       render: (c) => (
         <span className="flex items-center gap-1.5">
           <StatusBadge kind="claim" value={c.status} />
+          {/* A `title` attribute used to carry the whole meaning of these two letters. It is
+              not reachable by keyboard, is announced inconsistently at best, and never appears
+              on touch at all -- so on a phone this column said "CR" and nothing else. The
+              abbreviation stays for the sighted reader scanning a column of them; the sentence
+              is in the accessible name for everyone, and now reaches the row's own text. */}
           {c.requiresContestabilityReview && (
-            <span
-              className="text-xs text-status-warning-fg"
-              title="Falls inside the policy's contestability window"
-            >
+            <span className="text-xs text-status-warning-fg">
               CR
+              <span className="sr-only"> — falls inside the policy&apos;s contestability window</span>
             </span>
           )}
         </span>
@@ -241,7 +245,10 @@ export function ClaimsPage({
 
       <div className="px-6 pb-6">
         <div className="rounded-lg border border-border bg-surface">
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2.5">
+          {/* `gap-y-2` because this row wraps, and it wraps sooner here than on the policies
+              register: there are more claim statuses than policy statuses, and the chips are
+              32px tall, so without it the search box lands hard against them. */}
+          <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-3 py-2.5">
             <FilterChip
               label="All"
               active={status === undefined}

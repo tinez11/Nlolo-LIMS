@@ -4,6 +4,7 @@ import { Paperclip, UploadCloud } from 'lucide-react';
 import { downloadClaimEvidence } from '@/api/claims';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { FormField } from '@/components/FormField';
+import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { formatInstant } from '@/lib/dates';
@@ -43,7 +44,7 @@ export function EvidencePanel({ claimId, canAttach }: { claimId: string; canAtta
         <UploadForm claimId={claimId} />
       ) : (
         <p className="px-4 pt-3 text-xs text-muted-foreground">
-          This claim is SETTLED -- reopen it before attaching new evidence.
+          This claim is settled — reopen it before attaching new evidence.
         </p>
       )}
       {renderList()}
@@ -115,6 +116,19 @@ function UploadForm({ claimId }: { claimId: string }) {
     onDrop: (accepted) => {
       if (accepted[0]) void submit(accepted[0]);
     },
+    // The root stops being a keyboard control, so the file input can be the only one.
+    //
+    // react-dropzone's default is a `role="presentation"` div carrying `tabIndex={0}` and its
+    // own Enter/Space handler -- focusable, and announced as nothing at all. Naming it by
+    // giving it `role="button"` was the obvious fix and was WRONG: the library nests the
+    // `<input type="file">` INSIDE that root, styled `{ height: 0, width: 0, opacity: 0,
+    // display: "block" }` rather than `display: none`, so it stays focusable and in the
+    // accessibility tree. A button containing a focusable control is axe's
+    // `nested-interactive`, which is exactly what the committed baseline caught.
+    //
+    // `noKeyboard` drops the root's tabIndex (source: `!disabled && !noKeyboard ? {tabIndex: 0}
+    // : {}`), leaving it a pure drop target. Dragging and clicking still work.
+    noKeyboard: true,
   });
 
   async function submit(file: File) {
@@ -138,14 +152,28 @@ function UploadForm({ claimId }: { claimId: string }) {
       <div
         {...getRootProps()}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed border-border px-4 py-6 text-center transition-colors',
+          // `focus-within`, not `focus-visible`: the thing that takes focus is the input, which
+          // is 0x0 and transparent by the library's own styling, so it can carry no visible
+          // indicator of its own. The ring goes on the box a person can actually see.
+          'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed border-border px-4 py-6 text-center transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent',
           isDragActive ? 'border-accent bg-hover' : 'hover:bg-hover',
           attaching.status === 'loading' && 'pointer-events-none opacity-60',
         )}
       >
-        <input {...getInputProps()} disabled={attaching.status === 'loading'} />
-        <UploadCloud className="size-5 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">
+        {/* The one interactive element here, and the one that was unreachable before. The
+            library gives it `tabIndex: -1` and the generic name "file upload"; both are
+            overridden, so it is in the tab order and says what it attaches to. A focused file
+            input opens the picker on Enter or Space natively, which is why dropping the root's
+            keyboard handling costs nothing. */}
+        <input
+          {...getInputProps({ tabIndex: 0, 'aria-label': 'Attach evidence' })}
+          disabled={attaching.status === 'loading'}
+        />
+        <UploadCloud className="size-5 text-muted-foreground" aria-hidden />
+        {/* A live region, because this is the only thing that reports the upload. It was a
+            plain paragraph swapping its own text, which a screen reader never revisits, so
+            the one state a person waits through was the one state never announced. */}
+        <p className="text-xs text-muted-foreground" aria-live="polite">
           {attaching.status === 'loading'
             ? 'Uploading…'
             : isDragActive
@@ -162,11 +190,7 @@ function UploadForm({ claimId }: { claimId: string }) {
         </p>
       )}
 
-      {attaching.status === 'error' && attaching.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {attaching.error.detail ?? attaching.error.title}
-        </p>
-      )}
+      {attaching.status === 'error' && attaching.error && <InlineError error={attaching.error} />}
     </div>
   );
 }

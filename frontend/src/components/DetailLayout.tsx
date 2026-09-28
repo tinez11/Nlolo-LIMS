@@ -41,10 +41,15 @@ export function DetailLayout({ record, children }: { record?: ReactNode; childre
     const node = rail.current;
     if (!node) return;
     const measure = () => {
+      const style = getComputedStyle(document.documentElement);
+      // Both sticky bars, not just the page bar. On the claim record a section bar sits under
+      // the page bar, and a rail measured against the page bar alone is given 34px of space
+      // that is already covered -- which pins a rail that does not fit, the exact failure
+      // `shouldPin` exists to prevent. Unset everywhere else, so `|| 0` keeps those pages
+      // computing precisely what they computed before.
       const offset =
-        Number.parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue('--pagebar-h'),
-        ) || 0;
+        (Number.parseFloat(style.getPropertyValue('--pagebar-h')) || 0) +
+        (Number.parseFloat(style.getPropertyValue('--sectionbar-h')) || 0);
       setPinned(shouldPin(node.offsetHeight, window.innerHeight, offset));
     };
     const observer = new ResizeObserver(measure);
@@ -55,8 +60,12 @@ export function DetailLayout({ record, children }: { record?: ReactNode; childre
     // computed against a stale, smaller offset, which pins a rail into a space that no
     // longer fits it and puts its last rows permanently below the fold: the exact failure
     // `shouldPin` exists to prevent.
-    const bar = document.querySelector('[data-pagebar]');
-    if (bar) observer.observe(bar);
+    // The section bar is watched for the same reason, and it is the one that APPEARS: the
+    // claim record only knows its sections once the claim has loaded, so the bar arrives after
+    // the first paint and the rail has to re-measure when it does.
+    for (const bar of document.querySelectorAll('[data-pagebar], [data-sectionbar]')) {
+      observer.observe(bar);
+    }
     window.addEventListener('resize', measure);
     return () => {
       observer.disconnect();
@@ -75,7 +84,8 @@ export function DetailLayout({ record, children }: { record?: ReactNode; childre
           ref={rail}
           className={cn(
             'space-y-5 lg:self-start',
-            pinned && 'lg:sticky lg:top-[calc(var(--pagebar-h,0px)+1rem)]',
+            pinned &&
+              'lg:sticky lg:top-[calc(var(--pagebar-h,0px)+var(--sectionbar-h,0px)+1rem)]',
           )}
         >
           {record}

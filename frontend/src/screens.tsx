@@ -496,7 +496,7 @@ const AGENTS_SCREENS: Screen[] = [
     ),
     reach: { group: 'my-business', label: 'Claims', icon: ScrollText },
   },
-  { path: 'claims/:claimId', element: <ClaimDetailPage />, reach: 'drill-in' },
+  { path: 'claims/:claimId', element: <ClaimDetailPage realm="agents" />, reach: 'drill-in' },
   // Clients an agent REGISTERED, which is not the same set as their book: a client
   // they registered may be written by another agent, and their book contains
   // policyholders they never registered. The scoping is the server's -- GET /parties

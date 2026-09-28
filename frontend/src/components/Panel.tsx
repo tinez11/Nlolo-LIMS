@@ -47,6 +47,10 @@ export function Panel({
    * An anchor target for `SectionNav`, on the pages that must stay one scroll. The scroll
    * margin below clears the sticky page bar and the section bar under it, so a jumped-to
    * panel lands below both rather than behind them.
+   *
+   * Both heights are read from the custom properties those two bars publish. This used to
+   * hardcode 3.5rem for the section bar, written before the bar had a single call site; the
+   * bar measures 34px, so every jump would have landed 22px low.
    */
   id?: string;
   title: string;
@@ -58,7 +62,7 @@ export function Panel({
     <section
       id={id}
       className={cn(
-        'scroll-mt-[calc(var(--pagebar-h,0px)+3.5rem)] rounded-lg border bg-surface',
+        'scroll-mt-[calc(var(--pagebar-h,0px)+var(--sectionbar-h,0px)+1rem)] rounded-lg border bg-surface',
         emphasis ? 'border-border-strong' : 'border-border',
       )}
     >

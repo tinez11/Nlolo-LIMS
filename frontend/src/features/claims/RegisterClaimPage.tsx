@@ -1,10 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { CLAIM_TYPES, type PolicyMemberView } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
+import { Panel } from '@/components/Panel';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { GatePanel } from '@/components/GatePanel';
 import { claimGates } from '@/gates/claimGates';
 import { ClaimPolicyChooser } from './ClaimPolicyChooser';
 import { startMutation, type MutationAttempt } from '@/lib/idempotency';
+import { humanizeStatus } from '@/lib/status';
 import { POLICY_NUMBER_PATTERN } from '@/lib/patterns';
 import { useClaimStore } from '@/store/claimStore';
 import { selectCoverage, selectDetail, selectMembers, usePolicyStore } from '@/store/policyStore';
@@ -221,21 +222,32 @@ export function RegisterClaimPage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to=".." relative="path">
-            <ArrowLeft />
-            All claims
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        breadcrumb={[{ label: 'Claims', to: '/staff/claims' }]}
+        title="Register a claim"
+        description="Replaces nothing — this always creates a new claim."
+      />
 
-      <PageHeader title="Register a claim" description="Replaces nothing -- this always creates a new claim." />
+      {/*
+        Three groups, not fourteen fields in a row. This was the longest form on the platform
+        and it ran claimant, policy, member, date, type and up to four type-specific questions
+        as one flat column, with nothing on screen saying a new subject had started -- so the
+        only way to know how much was left was to scroll to the bottom.
 
+        `Panel`, not `<fieldset>`: this console has one grouping primitive and its heading is
+        an `<h2>` under the page's single `<h1>`. A second grouping idiom for one screen is how
+        two idioms become five.
+
+        No `emphasis` on any of them. The Panel doc is explicit that emphasis is one per page
+        and only where the page exists to perform an act; here all three ARE the act, and
+        promoting every panel promotes none of them.
+      */}
       <form
-        className="max-w-xl space-y-4 px-6 pb-8"
+        className="max-w-xl space-y-5 px-6 pb-8 pt-5"
         onSubmit={(e) => void handleSubmit(onSubmit)(e)}
       >
+        <Panel title="Who and which policy">
+        <div className="space-y-4 p-4">
         {/* Claimant BEFORE policy, which is the order the conversation actually happens in:
             somebody arrives and says who they are, not which contract number they hold. It is
             also the only order in which the policy field can be a list rather than a guess. */}
@@ -367,7 +379,11 @@ export function RegisterClaimPage() {
           </FormField>
           </>
         )}
+        </div>
+        </Panel>
 
+        <Panel title="The event">
+        <div className="space-y-4 p-4">
         <FormField label="Date of event" error={errors.dateOfEvent?.message}>
           <Controller
             control={control}
@@ -406,13 +422,20 @@ export function RegisterClaimPage() {
           >
             {CLAIM_TYPES.map((type) => (
               <option key={type} value={type}>
-                {type}
+                {humanizeStatus(type)}
               </option>
             ))}
           </Select>
         </FormField>
+        </div>
+        </Panel>
 
-        <div className="rounded-md border border-border p-3">
+        {claimType && (
+        <Panel
+          title="Details"
+          subtitle={`Specific to a ${humanizeStatus(claimType).toLowerCase()} claim`}
+        >
+        <div className="p-4">
           {claimType === 'DEATH' && (
             <div className="space-y-3">
               <FormField label="Cause of death" error={detailError('causeOfDeath')}>
@@ -510,6 +533,8 @@ export function RegisterClaimPage() {
             </FormField>
           )}
         </div>
+        </Panel>
+        )}
 
         {/* A 422 here (e.g. "Policy POL-X was not in force on <date>") is a real,
             whole-request business rejection, not a per-field error -- same shape
@@ -519,8 +544,8 @@ export function RegisterClaimPage() {
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={registering.status === 'loading'}>
-            {registering.status === 'loading' ? 'Registering…' : 'Register claim'}
+          <Button type="submit" variant="primary" pending={registering.status === 'loading'}>
+            Register claim
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">

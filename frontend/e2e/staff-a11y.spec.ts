@@ -40,7 +40,17 @@ test('no accessibility violation beyond the recorded baseline', async ({ page })
   await expect(firstPolicy).toBeVisible({ timeout: 30_000 });
   const policyRecord = `/staff/policies/${(await firstPolicy.textContent())?.trim()}`;
 
-  for (const route of [...ROUTES, policyRecord]) {
+  // And the one-scroll record with a section bar, which is the other structural shape on the
+  // platform and so has to be swept too. Reached through the drawer rather than read off the
+  // table, because the claims register's first column is the claim TYPE -- there is no id in
+  // any cell to build a URL from, and the drawer's own link is the only route a person has.
+  await page.goto('/staff/claims');
+  await page.getByRole('table', { name: 'Claims' }).getByRole('button').first().click();
+  await page.getByRole('link', { name: /full detail/i }).click();
+  await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/);
+  const claimRecord = new URL(page.url()).pathname;
+
+  for (const route of [...ROUTES, policyRecord, claimRecord]) {
     await page.goto(route);
     await expect(page.locator('h1')).toBeVisible({ timeout: 30_000 });
     // Let the first data fetch land, so axe sees the table rather than a skeleton. Not

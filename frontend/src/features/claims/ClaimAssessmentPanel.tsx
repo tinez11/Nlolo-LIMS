@@ -128,8 +128,8 @@ export function ClaimAssessmentPanel({ claimId }: { claimId: string }) {
           <InlineError error={submitting.error} />
         )}
 
-        <Button type="submit" size="sm" variant="primary" disabled={submitting.status === 'loading'}>
-          {submitting.status === 'loading' ? 'Submitting…' : 'Submit assessment'}
+        <Button type="submit" size="sm" variant="primary" pending={submitting.status === 'loading'}>
+          Submit assessment
         </Button>
       </form>
 

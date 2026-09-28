@@ -70,7 +70,11 @@ async function findNotInForcePolicy(page: Page): Promise<string> {
 async function firstClaimRow(page: Page) {
   const table = page.getByRole('table', { name: 'Claims' });
   const empty = page.getByText('No claims yet');
-  await expect(table.or(empty)).toBeVisible();
+  // 20s, not the 10s default, matching every other wait in this file. The register is paged, so
+  // the request is bounded -- but there are 152 claims behind it now and the first paint has to
+  // wait for the fetch. It cleared 10s by 2.3s on a quiet machine and blew through it inside a
+  // five-file run, which is not a margin worth defending.
+  await expect(table.or(empty)).toBeVisible({ timeout: 20_000 });
   if (await empty.isVisible()) return null;
   const row = table.getByRole('button').first();
   await expect(row).toBeVisible();
@@ -84,7 +88,7 @@ test.describe('staff claims', () => {
 
     const row = await firstClaimRow(page);
     expect(row).not.toBeNull();
-    await expect(row!).toContainText('DEATH');
+    await expect(row!).toContainText('Death');
   });
 
   test('the tenant_id claim reaches the backend for a paged, real endpoint', async ({ page }) => {
@@ -115,7 +119,7 @@ test.describe('staff claims', () => {
     expect(row).not.toBeNull();
     await row!.click();
 
-    const drawer = page.getByRole('dialog', { name: 'DEATH' });
+    const drawer = page.getByRole('dialog', { name: 'Death' });
     await expect(drawer).toBeVisible();
     // The exact fields policyWithRealClaim wrote, read back off a real Postgres row.
     await expect(drawer).toContainText('Natural causes');
@@ -128,7 +132,7 @@ test.describe('staff claims', () => {
 
     await drawer.getByRole('link', { name: /full detail/i }).click();
     await expect(page).toHaveURL(/\/staff\/claims\/[0-9a-f-]{36}$/);
-    await expect(page.getByRole('heading', { name: 'DEATH' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Death' })).toBeVisible();
     await expect(page.getByText('Natural causes')).toBeVisible();
   });
 
