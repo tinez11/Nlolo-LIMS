@@ -8,6 +8,7 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, TableSkeleton } from '@/components/states';
 import { FormField } from '@/components/FormField';
+import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
 import { formatInstant } from '@/lib/dates';
 import { isInitialLoad, isEmpty } from '@/store/createResourceSlice';
@@ -164,15 +165,11 @@ function GenerateReturnForm({ onDone }: { onDone: (returnId?: string) => void })
         </FormField>
       </div>
 
-      {generating.status === 'error' && generating.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {generating.error.detail ?? generating.error.title}
-        </p>
-      )}
+      {generating.status === 'error' && generating.error && <InlineError error={generating.error} />}
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" variant="primary" disabled={generating.status === 'loading'}>
-          {generating.status === 'loading' ? 'Generating…' : 'Generate'}
+        <Button type="submit" size="sm" variant="primary" pending={generating.status === 'loading'}>
+          Generate
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => onDone()}>
           Cancel
