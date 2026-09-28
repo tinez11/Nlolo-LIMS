@@ -264,6 +264,31 @@ Espresso's white-on-grey pill is 1.06:1 and leans on the shadow alone. Espresso
 sizes controls at 28px; this console stays at 32/36px and lifts every control to
 44px under `pointer-coarse`, which catches a touch laptop as well as a phone.
 
+### Two shapes for a record, and the rule for choosing
+
+A record with many sections gets one of exactly two structures, and the choice is
+decided by **how the work is done, not by how much of it there is**.
+
+**Tabs (`RecordTabs`)** — when the sections are separate jobs done by separate
+people, and nobody needs two of them at once. A policy's beneficiaries, invoices,
+loans, messages and cessions are five such jobs, so four stay unmounted and load
+when opened. The tab lives in the URL, so a section can be linked to and Back
+still works.
+
+**A section bar (`SectionNav`)** — when the sections must stay on one scroll,
+because a person reads one while writing another. A claim is the case: an assessor
+reads the death certificate *while* writing the findings that cite it, so tabs
+would put the evidence one click from the form quoting it. Nothing is hidden; the
+bar only makes the fifth section a jump instead of a drag, and says which one you
+are in.
+
+Both stick under the page bar, so three things now compete for the top of the
+viewport. Each publishes its own height — `--pagebar-h`, `--sectionbar-h` — and
+everything that must clear them reads both: `Panel`'s scroll margin, so a jumped-to
+panel lands below them rather than behind them, and `DetailLayout`'s pinned record
+rail. A page with no section bar leaves `--sectionbar-h` unset, and the
+`var(…, 0px)` fallback is what keeps every one of those pages unchanged.
+
 ## Colors
 
 An achromatic ink-on-paper base carrying six low-chroma status hues, which are
