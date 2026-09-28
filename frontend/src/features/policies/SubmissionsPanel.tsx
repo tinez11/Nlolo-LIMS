@@ -193,7 +193,7 @@ export function SubmissionsPanel({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2">
         <button
           type="button"
-          className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+          className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-50"
           disabled={downloading === TEMPLATE}
           onClick={() => void download(TEMPLATE, onDownloadTemplate, 'template')}
         >
@@ -207,7 +207,7 @@ export function SubmissionsPanel({
         {onDownloadTemplateCsv && (
           <button
             type="button"
-            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
             disabled={downloading === TEMPLATE_CSV}
             onClick={() => void download(TEMPLATE_CSV, onDownloadTemplateCsv, 'template')}
           >
@@ -356,7 +356,7 @@ export function SubmissionsPanel({
                         `downloadEnrolmentReport` for what that actually produced. */}
                     <button
                       type="button"
-                      className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+                      className="text-xs underline underline-offset-2 hover:text-foreground disabled:opacity-50"
                       disabled={downloading === s.submissionId}
                       onClick={() =>
                         void download(s.submissionId, () => onDownloadReport(s.submissionId), 'report')

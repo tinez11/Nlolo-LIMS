@@ -248,8 +248,8 @@ function EditForm({
       )}
 
       <div className="mt-3 flex items-center gap-2">
-        <Button type="submit" size="sm" variant="primary" disabled={saving.status === 'loading'}>
-          {saving.status === 'loading' ? 'Saving…' : 'Save'}
+        <Button type="submit" size="sm" variant="primary" pending={saving.status === 'loading'}>
+          Save
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onCancel} disabled={saving.status === 'loading'}>
           Cancel

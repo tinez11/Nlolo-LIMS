@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView } from '@/api/types';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
+import { FilterChip } from '@/components/FilterChip';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { ConfirmAct } from '@/components/ConfirmAct';
@@ -60,6 +61,8 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
   const isScheme = category === 'CREDIT_LIFE' || category === 'GROUP_LIFE';
   // Credits and the monthly file behind each invoice -- see useInvoiceReconciliation.
   const reconciliation = useInvoiceReconciliation(policyNumber, isScheme);
+  // Declared before the early returns below, as every hook must be.
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
   useEffect(() => {
     void loadInvoices(policyNumber);
@@ -74,9 +77,48 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
     return <EmptyState title="No invoices" description="Nothing has been billed on this policy." />;
   }
 
+  /*
+    Filtered HERE rather than by refetching with a `status` param, and not paged at all.
+    `GET /policies/{n}/invoices` takes no page/pageSize and does not need one: a policy's
+    invoices are pre-generated about twelve months ahead, so the whole list is bounded by
+    construction and already in hand. A pager over a fully-downloaded array would lie about
+    the network, and a refetch per chip would be a round trip for data on the screen.
+
+    Only the statuses actually present get a chip. A row of six filters where four can never
+    match is furniture, and on a fresh policy every invoice is DUE.
+  */
+  const present = [...new Set(rows.map((r) => r.status).filter(Boolean))] as string[];
+  const shown = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows;
+
   return (
-    <div className="divide-y divide-border">
-      {rows.map((invoice) => (
+    <div>
+      {present.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5 gap-y-2 border-b border-border px-4 py-2.5">
+          <FilterChip
+            label="All"
+            active={statusFilter === null}
+            onClick={() => setStatusFilter(null)}
+          />
+          {present.map((value) => (
+            <FilterChip
+              key={value}
+              label={<StatusBadge kind="invoice" value={value} />}
+              bare
+              active={statusFilter === value}
+              onClick={() => setStatusFilter(value)}
+            />
+          ))}
+        </div>
+      )}
+
+      {shown.length === 0 ? (
+        <EmptyState
+          title="None with that status"
+          description="Every invoice on this policy is at a different stage."
+        />
+      ) : (
+        <div className="divide-y divide-border">
+          {shown.map((invoice) => (
         <InvoiceRow
           key={invoice.invoiceId ?? JSON.stringify(invoice)}
           policyNumber={policyNumber}
@@ -86,9 +128,11 @@ export function InvoicesPanel({ policyNumber }: { policyNumber: string }) {
             invoice.enrolmentSubmissionId
               ? (reconciliation.filesById[invoice.enrolmentSubmissionId] ?? null)
               : null
-          }
-        />
-      ))}
+              }
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -391,8 +435,8 @@ function PaymentRequestForm({
       )}
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" disabled={requesting.status === 'loading'}>
-          {requesting.status === 'loading' ? 'Requesting…' : 'Request payment'}
+        <Button type="submit" size="sm" pending={requesting.status === 'loading'}>
+          Request payment
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel
