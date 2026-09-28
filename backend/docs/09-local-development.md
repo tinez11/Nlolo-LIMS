@@ -29,6 +29,7 @@ the host (see gotcha 2 below for why).
 
 ```bash
 cd infra && docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit && cd ..
+cd infra && docker compose up minio-init && cd ..   # one-shot: creates the four buckets
 scripts/migrate.sh local          # nothing applies schema automatically -- see below
 scripts/configure-db.sh local     # partitions + every pg_cron job; safe to re-run, any time
 export JAVA_HOME="/c/Users/USER/.vscode/extensions/redhat.java-1.55.0-win32-x64/jre/21.0.11-win32-x86_64"
@@ -51,10 +52,25 @@ cd infra && docker compose --profile tools up -d pgadmin && cd ..
 cd infra
 docker compose --profile tools down -v   # -v drops the named volumes, including postgres-data
 docker compose up -d postgres keycloak minio redis mock-mobile-money mailpit
+docker compose up minio-init             # DO NOT SKIP -- see below
 cd ..
 scripts/migrate.sh local
 scripts/configure-db.sh local
 ```
+
+**Do not skip `minio-init`.** `-v` drops `minio-data`, and the four buckets
+(`policy-documents`, `kyc-evidence`, `underwriting-evidence`, `claim-evidence`) go with it.
+Nothing in the application recreates them -- there is no `makeBucket` call anywhere in the Java
+code, by design, because a service that creates its own storage on demand hides a
+misconfiguration instead of reporting it. `minio-init` is a one-shot `minio/mc` container that
+exists precisely for this and is the only thing that makes them.
+
+Both command lists above omitted it until 2026-09-28, which is a real trap rather than a
+cosmetic gap: **every other step succeeds without it.** Migrations apply, the seeder runs to
+completion, the console loads, and the failure surfaces much later as an upload that silently
+never lands -- `staff-party-kyc` waiting on "Evidence uploaded:" that never appears. Same shape
+as the `configure-db.sh` warning above, and for the same reason: nothing fails at startup, the
+work simply never happens.
 
 **Do not skip `configure-db.sh`.** It installs what the numbered migrations cannot: pg_partman's
 monthly partitions and every scheduled job (billing sweep, commission close, offer expiry and

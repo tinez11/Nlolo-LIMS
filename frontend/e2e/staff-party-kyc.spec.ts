@@ -27,6 +27,18 @@ test.describe('staff party KYC verification', () => {
   test('reaches the party by drilling in from a policy, then drives a real reject-then-verify round trip', async ({
     page,
   }) => {
+    // SITS ON THE 60s BOUNDARY AND FLIPS EITHER WAY, EVEN RUN ALONE -- measured 2026-09-28:
+    // two consecutive solo runs, one pass and one timeout, with nothing else on the machine.
+    // It opens an underwriting case, issues a policy through manual issue, drills into the
+    // party, then pushes TWO separate PNGs through MinIO because a reject and a verify each
+    // re-check evidence the way a real workflow does.
+    //
+    // test.slow() triples the budget. Ten other tests in this suite already take it for less
+    // work, and a test that decides its own outcome on machine load is worse than a slow one:
+    // it teaches whoever reads the report to discount red, which is how a real failure gets
+    // waved through.
+    test.slow();
+
     // Manual issue names a real, unissued case now. The policyholder and product
     // come from it by prefill, so this no longer picks them by hand. The sum assured
     // still does: the case view @JsonIgnores it, so the console cannot read it.
