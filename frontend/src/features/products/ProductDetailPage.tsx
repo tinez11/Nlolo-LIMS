@@ -1,6 +1,5 @@
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { canAuthorProducts, readIdentity } from '@/auth/claims';
 import type { BaseRate, VersionRatingView } from '@/api/types';
@@ -92,17 +91,20 @@ export function ProductDetailPage() {
 
   if (list.status === 'error' && list.error && list.data === null) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={list.error} onRetry={() => void loadList()} />
-      </div>
+      <>
+        {/* The bar renders on the error path too, so a record that fails to load keeps its
+            heading and its way out instead of leaving a bare panel. */}
+        <PageHeader breadcrumb={[{ label: 'Products', to: '/staff/products' }]} title="Product" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={list.error} onRetry={() => void loadList()} />
+        </div>
+      </>
     );
   }
 
   if (!product) {
     return (
       <div className="px-6 pt-6">
-        <BackLink />
         <div className="mt-4 rounded-lg border border-border bg-surface px-6 py-10 text-center">
           <p className="text-sm font-medium">Not found among active products</p>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -116,11 +118,8 @@ export function ProductDetailPage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Products', to: '/staff/products' }]}
         title={product.productName ?? productId}
         description={
           product.productCode ? <span className="font-mono text-xs">{product.productCode}</span> : undefined
@@ -637,14 +636,4 @@ function FactorSection({
   );
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to=".." relative="path">
-        <ArrowLeft />
-        All products
-      </Link>
-    </Button>
-  );
-}
 

@@ -1,4 +1,3 @@
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -190,6 +189,17 @@ export function CreditLifeSchemePage() {
   return (
     <>
       <PageHeader
+        /*
+          Two crumbs, because a scheme genuinely sits under a contract: Policies, then the
+          policy this scheme belongs to. What this replaces was a "Policy record" link with a
+          back arrow parked in `actions` -- navigation dressed as a control, and in the slot
+          reserved for the things a person can DO to the record. The relationship it was
+          expressing is exactly what a breadcrumb is for, so it moves rather than disappearing.
+        */
+        breadcrumb={[
+          { label: 'Policies', to: '/staff/policies' },
+          { label: policyNumber, to: `/staff/policies/${encodeURIComponent(policyNumber)}` },
+        ]}
         title={
           <span className="flex flex-wrap items-center gap-2">
             {policyNumber}
@@ -205,15 +215,6 @@ export function CreditLifeSchemePage() {
               <span className="text-subtle-foreground">{NO_VALUE}</span>
             )}
           </span>
-        }
-        actions={
-          <Link
-            to={`/staff/policies/${encodeURIComponent(policyNumber)}`}
-            className="inline-flex items-center gap-1.5 text-sm underline underline-offset-2"
-          >
-            <ArrowLeft className="size-4" aria-hidden />
-            Policy record
-          </Link>
         }
       />
 

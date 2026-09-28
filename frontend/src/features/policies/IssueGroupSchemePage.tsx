@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
@@ -156,16 +156,8 @@ export function IssueGroupSchemePage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to="/staff/policies">
-            <ArrowLeft />
-            All policies
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Propose a group scheme"
         description="An underwriter decides it, and cover starts when the employer&apos;s first premium clears."
       />

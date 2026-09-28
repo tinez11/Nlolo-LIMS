@@ -1,7 +1,7 @@
-import { ArrowLeft, Check, FileCheck, X } from 'lucide-react';
+import { Check, FileCheck, X } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
@@ -84,7 +84,6 @@ const ACCEPTED_EVIDENCE_TYPES = {
  */
 export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents' } = {}) {
   const { partyId = '' } = useParams();
-  const navigate = useNavigate();
   const detail = usePartyStore(selectParty(partyId));
   const loadParty = usePartyStore((s) => s.loadParty);
   const documents = usePartyStore(selectPartyDocuments(partyId));
@@ -217,25 +216,30 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   // panel has to be reachable rather than assumed impossible.
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink onClick={() => navigate(-1)} />
-        <ErrorPanel error={detail.error} onRetry={() => void loadParty(partyId)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too. A client that fails to load used to lose its
+            heading and its way out along with its data -- and a 403 here is a real outcome for
+            an agents-realm caller who reached a client they did not register, so this is a path
+            people actually land on rather than a theoretical one. */}
+        <PageHeader breadcrumb={clientBreadcrumb(realm, undefined)} title="Client" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadParty(partyId)} />
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink onClick={() => navigate(-1)} />
-      </div>
-
       <PageHeader
+        breadcrumb={clientBreadcrumb(realm, party?.partyType)}
         title={party?.displayName ?? 'Client'}
         description={party?.partyType ? <span>{partyTypeLabel(party.partyType)}</span> : undefined}
+        // `status`, not `actions`: a KYC status is what the record IS. The Correct details
+        // link stays in `actions`, which is where a control belongs.
+        status={party?.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
         actions={
           <span className="flex items-center gap-2">
-            {party?.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
             {/*
               Staff only, and absent entirely in the agents realm rather than present and
               refused: an agent who can see the button reasonably concludes the record is
@@ -1316,17 +1320,21 @@ function KycPanel({
 }
 
 /**
- * Goes back to wherever the caller actually came from -- unlike every other
- * detail page's BackLink, a party is reached from four different contexts
- * (policy/claim/underwriting/agent), so there is no single "all X" list this
- * could point at.
+ * Where this record lives, which is not the same question as where the reader came from.
+ *
+ * The back link this replaces went to history instead of a route, and its comment gave a real
+ * reason: a party is reached from a policy, a claim, an underwriting case or an agent record,
+ * so there is no single "all X" list to point at. That argument holds for a BACK button and
+ * not for a breadcrumb -- a crumb says where the record sits in the console, and a party does
+ * sit somewhere. It sits in the client register, which is split by type, so the crumb is split
+ * the same way rather than guessing one of the two.
+ *
+ * Browser Back still does what the old control did, for the reader who wanted that instead.
  */
-function BackLink({ onClick }: { onClick: () => void }) {
-  return (
-    <Button variant="ghost" size="sm" className="-ml-2" onClick={onClick}>
-      <ArrowLeft />
-      Back
-    </Button>
-  );
+function clientBreadcrumb(realm: 'staff' | 'agents', partyType: PartyDetailView['partyType']) {
+  if (realm === 'agents') return [{ label: 'My clients', to: '/agents/clients' }];
+  return partyType === 'CORPORATE' || partyType === 'GROUP'
+    ? [{ label: 'Corporate/Group', to: '/staff/clients/organisations' }]
+    : [{ label: 'Individuals', to: '/staff/clients/individuals' }];
 }
 

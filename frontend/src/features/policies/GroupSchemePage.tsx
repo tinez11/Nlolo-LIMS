@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Plus, Upload, UserPlus } from 'lucide-react';
+import { Plus, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch, Controller } from 'react-hook-form';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -115,10 +115,14 @@ export function GroupSchemePage() {
 
   if (scheme.data === null && scheme.status === 'error' && scheme.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={scheme.error} onRetry={() => void loadScheme(policyNumber)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too, so a record that fails to load keeps its
+            heading and its way out instead of leaving a bare panel. */}
+        <PageHeader breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]} title="Scheme" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={scheme.error} onRetry={() => void loadScheme(policyNumber)} />
+        </div>
+      </>
     );
   }
 
@@ -145,11 +149,8 @@ export function GroupSchemePage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title={policyNumber}
         description={
           data?.policyholderPartyId ? (
@@ -632,16 +633,6 @@ function describeBasis(scheme: GroupSchemeView): string {
   }
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to="/staff/policies">
-        <ArrowLeft />
-        All policies
-      </Link>
-    </Button>
-  );
-}
 
 
 /**

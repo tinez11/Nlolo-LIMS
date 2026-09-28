@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { PRODUCT_CATEGORIES, type ProductCategory } from '@/api/types';
 import { canAuthorProducts, readIdentity } from '@/auth/claims';
@@ -59,15 +59,6 @@ export function CreateProductPage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to=".." relative="path">
-            <ArrowLeft />
-            All products
-          </Link>
-        </Button>
-      </div>
-
       {/* Refused BEFORE the form, not on submit. This page fetches nothing on mount, so
           without this a staff member without ADMIN would fill in a product code, a name, a
           category and a currency, and learn only at the end that they may not do this. */}
@@ -77,6 +68,7 @@ export function CreateProductPage() {
 
       {canAuthor && (<>
       <PageHeader
+        breadcrumb={[{ label: 'Products', to: '/staff/products' }]}
         title="New product"
         description="Two steps: define the product, then publish a version -- a product with no version is invisible everywhere else in this console."
       />

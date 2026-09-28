@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -214,16 +214,8 @@ export function IssuePolicyPage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to=".." relative="path">
-            <ArrowLeft />
-            All policies
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Issue a policy"
         description="The staff exception path -- outside the normal underwriting-decision pipeline."
       />

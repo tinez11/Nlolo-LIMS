@@ -1,4 +1,4 @@
-import { ArrowLeft, Pause, Play } from 'lucide-react';
+import { Pause, Play } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
@@ -60,19 +60,19 @@ export function AgentDetailPage() {
 
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={detail.error} onRetry={() => void loadAgent(agentId)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too, so a record that fails to load keeps its
+            heading and its way out instead of leaving a bare panel. */}
+        <PageHeader breadcrumb={[{ label: 'Agents', to: '/staff/agents' }]} title="Agent" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadAgent(agentId)} />
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       {/*
         The licence number stays the title -- an agent IS a licence here, the register is
         keyed by it and `GET /agents?q=` matches on it. What the byline said was the agent's
@@ -83,6 +83,7 @@ export function AgentDetailPage() {
         already loaded, so its partyId costs no second request.
       */}
       <PageHeader
+        breadcrumb={[{ label: 'Agents', to: '/staff/agents' }]}
         title={agent?.licenseNumber ?? 'Agent'}
         description={
           <span className="flex flex-wrap items-baseline gap-x-2">
@@ -164,16 +165,6 @@ export function AgentDetailPage() {
   }
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to="../new" relative="path">
-        <ArrowLeft />
-        Onboard another agent
-      </Link>
-    </Button>
-  );
-}
 
 /**
  * `POST /agents/{n}/suspend`/`reactivate` -- `AgentProfile.setLicenseStatus`

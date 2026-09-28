@@ -1,5 +1,4 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { listAgents } from '@/api/distribution';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -144,16 +143,8 @@ export function IssueCreditLifeSchemePage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to="/staff/policies">
-            <ArrowLeft />
-            All policies
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Set up a credit-life scheme"
         description="A lender's book. The terms are agreed once here; the borrowers arrive every month on a file."
       />

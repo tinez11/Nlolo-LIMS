@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -126,16 +126,8 @@ export function OpenUnderwritingCasePage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to=".." relative="path">
-            <ArrowLeft />
-            Back
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Underwriting', to: '/staff/underwriting' }]}
         title="Open an underwriting case"
         description="Browsable afterward from the Underwriting queue -- but a policy later issued from it never re-exposes this case's id."
       />

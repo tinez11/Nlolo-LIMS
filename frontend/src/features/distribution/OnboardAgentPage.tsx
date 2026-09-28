@@ -1,4 +1,3 @@
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -65,16 +64,8 @@ export function OnboardAgentPage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to=".." relative="path">
-            <ArrowLeft />
-            Back
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Agents', to: '/staff/agents' }]}
         title="Onboard an agent"
         description="Staff/finance only. The party must already have KYC status VERIFIED."
       />
