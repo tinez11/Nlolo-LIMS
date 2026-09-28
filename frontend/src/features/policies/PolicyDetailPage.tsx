@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Ban, Pause, Play, RotateCcw, Users } from 'lucide-react';
+import { Ban, Pause, Play, RotateCcw, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
@@ -87,10 +87,20 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={detail.error} onRetry={() => void loadDetail(policyNumber)} />
-      </div>
+      <>
+        {/* Plan 2 gave the SUCCESS branch a breadcrumb and left this one rendering the ghost
+            back link it replaced, so a policy that failed to load looked like a different
+            console from one that loaded -- no heading, no bar, and the old affordance. The
+            error path is exactly where a person most needs to know where they are and how to
+            leave. */}
+        <PageHeader
+          breadcrumb={[{ label: 'Policies', to: `/${realm}/policies` }]}
+          title={policyNumber}
+        />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadDetail(policyNumber)} />
+        </div>
+      </>
     );
   }
 
@@ -520,16 +530,6 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to=".." relative="path">
-        <ArrowLeft />
-        All policies
-      </Link>
-    </Button>
-  );
-}
 
 /**
  * `POST /policies/{n}/suspend`/`resume`/`reinstate` -- staff only, all three

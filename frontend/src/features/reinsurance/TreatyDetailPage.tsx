@@ -1,13 +1,11 @@
-import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import type { CessionView } from '@/api/types';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock, TableSkeleton } from '@/components/states';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
-import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -17,6 +15,9 @@ import {
   selectTreatyUtilisation,
   useReinsuranceStore,
 } from '@/store/reinsuranceStore';
+
+/** Where this record lives. Treaties are staff-only, under the finance group. */
+const BREADCRUMB = [{ label: 'Treaties', to: '/staff/treaties' }];
 
 /**
  * The "acts" half of drawer-previews-page-acts, though there is nothing to
@@ -44,23 +45,26 @@ export function TreatyDetailPage() {
 
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={detail.error} onRetry={() => void loadDetail(treatyId)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too, so a treaty that fails to load keeps its
+            heading and its way out rather than leaving a bare error panel. */}
+        <PageHeader breadcrumb={BREADCRUMB} title="Treaty" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadDetail(treatyId)} />
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        // Replaces a ghost button with a back arrow in its own strip above the bar.
+        breadcrumb={BREADCRUMB}
         title={treaty?.reinsurerName ?? 'Treaty'}
         description={treaty?.treatyType?.replace(/_/g, ' ')}
-        actions={treaty?.status && <StatusBadge kind="treaty" value={treaty.status} />}
+        // `status`, not `actions`: a status is what the record IS.
+        status={treaty?.status && <StatusBadge kind="treaty" value={treaty.status} />}
       />
 
       {treaty && (
@@ -201,13 +205,3 @@ function TreatyCessions({ treatyId }: { treatyId: string }) {
   );
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to=".." relative="path">
-        <ArrowLeft />
-        All treaties
-      </Link>
-    </Button>
-  );
-}
