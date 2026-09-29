@@ -163,17 +163,28 @@ describe('the senior underwriter gate', () => {
   });
 
   /**
-   * Matches the server: a case with no recommendation has nothing to disagree with, so a
-   * junior may decide it freely.
+   * This test used to assert the opposite, on a premise that was simply wrong: "a case with no
+   * recommendation has nothing to disagree with, so a junior may decide it freely." The server
+   * does not let ANYBODY decide such a case -- `UnderwritingApiImpl.decide` refuses a case with
+   * no assessment, and no recommendation means no assessment, because the engine runs on every
+   * assessment and all four of its paths return an outcome.
+   *
+   * The panel said the same thing in as many words ("You can still decide"), so the screen
+   * invited an underwriter to fill the form and then handed them a raw validation error.
    */
-  it('does not treat a case with no recommendation as an override', async () => {
-    const user = userEvent.setup();
+  it('withholds the form until an assessment exists, rather than inviting a refusal', () => {
     renderPanel({ view: { recommendationOutcome: null } });
 
-    await user.selectOptions(screen.getByLabelText('Decision'), 'DECLINED');
+    expect(screen.queryByLabelText('Decision')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record decision' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Record an assessment first/)).toBeInTheDocument();
+  });
 
-    expect(screen.queryByText(/a senior underwriter has to record it/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Record decision' })).toBeEnabled();
+  it('no longer claims an unassessed case can be decided', () => {
+    renderPanel({ view: { recommendationOutcome: null, recommendationReason: null } });
+
+    expect(screen.getByText(/No recommendation yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/You can\s+still decide/)).not.toBeInTheDocument();
   });
 });
 

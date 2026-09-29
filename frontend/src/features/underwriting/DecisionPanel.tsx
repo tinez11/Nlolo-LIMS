@@ -113,6 +113,13 @@ export function DecisionPanel({
   const override = isOverride(outcome, recommendation);
   const blockedByRank = override && !isSenior;
   const conflict = separationOfDutiesConflict(view, callerSubject);
+  /*
+    No recommendation means no assessment, and the inference is sound in that direction:
+    `submitAssessment` calls `recordRecommendation` unconditionally, and the engine's four
+    return paths all carry an outcome. So a case that has been assessed always has a
+    recommendation, and a case with none has never been assessed.
+  */
+  const awaitingAssessment = recommendation == null;
 
   if (!canDecide) return null;
 
@@ -147,8 +154,8 @@ export function DecisionPanel({
             </>
           ) : (
             <p className="text-xs text-muted-foreground">
-              No recommendation yet — the engine runs when an assessment is submitted. You can
-              still decide, and it will not count as an override.
+              No recommendation yet — the engine runs when an assessment is submitted, and this
+              case cannot be decided until one is.
             </p>
           )}
         </div>
@@ -166,6 +173,23 @@ export function DecisionPanel({
             You {conflict === 'opened' ? 'opened this case' : 'recorded an assessment on this case'},
             so another underwriter must decide it. Separation of duties: whoever takes or assesses
             a proposal does not also accept it.
+          </p>
+        ) : awaitingAssessment ? (
+          /*
+            Withheld, like the separation-of-duties branch above, rather than offered and
+            refused. `UnderwritingApiImpl.decide` throws "there is nothing to decide on" when a
+            case carries no assessment -- "accepted, nothing assessed" is not a decision anyone
+            can defend later -- and this panel used to say the opposite in as many words: "You
+            can still decide, and it will not count as an override." The second half was true
+            and the first was not, so an underwriter filled the form, submitted, and got a raw
+            validation error for doing exactly what the screen invited.
+          */
+          <p
+            role="status"
+            className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
+          >
+            Record an assessment first. A case with no evidence on it cannot be decided — an
+            acceptance nobody assessed is not a decision that can be defended later.
           </p>
         ) : (
           <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
