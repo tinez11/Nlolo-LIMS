@@ -189,6 +189,20 @@ public class Policy {
             throw new IllegalArgumentException(
                 "Premium-paying term cannot exceed the policy term");
         }
+        // A contract paid ONCE cannot have a paying term of several months, and the two had
+        // been free to disagree: policies exist carrying MONTHLY with a paying term of 1, which
+        // reads as "monthly instalments, paid for one month" and is neither. Nothing anywhere
+        // refused it, because each field is independently valid.
+        //
+        // Only the SINGLE direction is enforced here. The recurring direction -- that MONTHLY
+        // over a twelve-month term ought to pay for twelve of them -- is a real gap too, but
+        // rejecting it now would invalidate policies already written, so it stays a known one.
+        if ("SINGLE".equals(premiumFrequency)
+                && premiumPayingTermMonths != null && premiumPayingTermMonths != 1) {
+            throw new IllegalArgumentException(
+                "A SINGLE premium is charged once, so its premium-paying term must be 1 month "
+                    + "(or absent), not " + premiumPayingTermMonths);
+        }
 
         this.commencementDate = commencementDate;
         this.policyTermMonths = policyTermMonths;

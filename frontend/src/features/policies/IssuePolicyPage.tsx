@@ -3,7 +3,12 @@ import { useEffect } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
-import { isSingleLifeProduct, ISSUANCE_BASES, PREMIUM_FREQUENCIES } from '@/api/types';
+import {
+  isSingleLifeProduct,
+  ISSUANCE_BASES,
+  PREMIUM_FREQUENCIES,
+  PREMIUM_FREQUENCY_LABELS,
+} from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -403,7 +408,7 @@ export function IssuePolicyPage() {
           >
             {PREMIUM_FREQUENCIES.map((f) => (
               <option key={f} value={f}>
-                {f}
+                {PREMIUM_FREQUENCY_LABELS[f]}
               </option>
             ))}
           </Select>

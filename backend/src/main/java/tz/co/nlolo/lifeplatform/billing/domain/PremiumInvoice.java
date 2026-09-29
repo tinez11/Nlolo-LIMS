@@ -101,6 +101,31 @@ public class PremiumInvoice {
         return invoice;
     }
 
+    /**
+     * A retail single premium: one charge for one contract, due when cover begins.
+     *
+     * <p>Belongs to neither a cycle nor a file, and that is the point — it never recurs, and
+     * nobody is enrolled against it. Its origin is the {@code policyNumber} every invoice
+     * already carries, which is why {@code chk_premium_invoice_at_most_one_origin} permits
+     * both id columns to be null while still refusing both to be set.
+     *
+     * <p>Its own factory for the same reason {@link #forEnrolmentFile} has one: the three
+     * kinds differ in what they MEAN, not in which field happens to be populated, and none of
+     * them should be creatable by accident.
+     */
+    public static PremiumInvoice forPolicyInception(UUID tenantId, String policyNumber,
+                                                     LocalDate dueDate, BigDecimal amount,
+                                                     String currency, LocalDate gracePeriodEndsAt) {
+        PremiumInvoice invoice = new PremiumInvoice();
+        invoice.tenantId = tenantId;
+        invoice.policyNumber = policyNumber;
+        invoice.dueDate = dueDate;
+        invoice.amount = amount;
+        invoice.currency = currency;
+        invoice.gracePeriodEndsAt = gracePeriodEndsAt;
+        return invoice;
+    }
+
     // No markOverdue()/markInGrace() here -- unlike waive() (the REST-triggered staff action
     // below), DUE/IN_GRACE -> OVERDUE and DUE -> IN_GRACE are exclusively performed by
     // billing.sweep_billing_state()'s own SQL UPDATE statements, which write these columns

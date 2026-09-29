@@ -314,6 +314,15 @@ public class PolicyApiImpl implements PolicyApi {
         // customer to pay by a date, and must NOT tell that to somebody whose migrated policy is
         // already in force -- and it may not depend on policy to find out which it is looking at.
         payload.put("status", policy.getStatus());
+        // Whether lives are enrolled against this contract, which decides where its premium
+        // comes from and therefore whether billing may charge the policy for it.
+        //
+        // Carried because a consumer cannot ask and must not guess. Billing used to key that
+        // decision on the FREQUENCY alone -- SINGLE meant "raise nothing" -- which was right
+        // while the only single-premium contract was a credit-life master policy, billed file
+        // by file. A retail single premium is also SINGLE and must be charged once, here, to
+        // the customer. Frequency cannot tell those apart; this can.
+        payload.put("groupScheme", false);
         putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
@@ -1678,6 +1687,9 @@ public class PolicyApiImpl implements PolicyApi {
         // Load-bearing downstream: communication's offerMade branches on exactly this key, so
         // an employer now receives the offer message and its deadline. That is the point.
         payload.put("status", policy.getStatus());
+        // True, and load-bearing for billing: a scheme's premium arrives per accepted enrolment
+        // file, so the master policy itself is never charged. See issuePolicy's own note.
+        payload.put("groupScheme", true);
         putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 

@@ -407,7 +407,35 @@ export const BENEFIT_CALCULATION_METHOD_LABELS: Record<BenefitCalculationMethod,
 };
 export type PremiumFrequency = NonNullable<PolicyView['premiumFrequency']>;
 
-export const PREMIUM_FREQUENCIES: readonly PremiumFrequency[] = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'];
+export const PREMIUM_FREQUENCIES: readonly PremiumFrequency[] = [
+  'MONTHLY',
+  'QUARTERLY',
+  'ANNUALLY',
+  'SINGLE',
+];
+
+/**
+ * How a premium reads BESIDE its amount — "TZS 10,625 /month", "TZS 125,000 once".
+ *
+ * A map rather than string surgery on the enum, because the surgery does not survive SINGLE.
+ * The registers derived this by stripping a trailing "LY" and lowercasing, which turns
+ * MONTHLY into "month" and SINGLE into "single" — and "TZS 125,000 /single" says nothing a
+ * reader wants. A single premium is not a rate per period; it is the whole price, once.
+ */
+export const PREMIUM_FREQUENCY_SUFFIXES: Record<PremiumFrequency, string> = {
+  MONTHLY: '/month',
+  QUARTERLY: '/quarter',
+  ANNUALLY: '/year',
+  SINGLE: 'once',
+};
+
+/** The frequency as a noun, for a picker or a label: "Single premium", not "SINGLE". */
+export const PREMIUM_FREQUENCY_LABELS: Record<PremiumFrequency, string> = {
+  MONTHLY: 'Monthly',
+  QUARTERLY: 'Quarterly',
+  ANNUALLY: 'Annually',
+  SINGLE: 'Single premium',
+};
 
 /** Why a policy is being issued by hand. Required on manual issue. */
 export type IssuanceBasis = NonNullable<ManualIssueRequest['issuanceBasis']>;

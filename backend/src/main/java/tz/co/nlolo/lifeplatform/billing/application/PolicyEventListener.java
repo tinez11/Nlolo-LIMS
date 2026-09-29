@@ -84,10 +84,12 @@ public class PolicyEventListener {
         String premiumCurrency = (String) premium.get("currencyCode");
         String premiumFrequency = (String) payload.get("premiumFrequency");
 
-        // A single-premium contract is not billed on a cycle, so it gets no schedule and no
-        // invoices generated ahead of it.
+        // A single-premium contract is not billed on a cycle, so it never gets a schedule --
+        // billing_schedule's own CHECK admits only MONTHLY, QUARTERLY and ANNUALLY. What it
+        // gets INSTEAD depends on where its premium comes from, and those are two different
+        // contracts that share one frequency.
         //
-        // Without this guard a credit-life master policy produced a BillingSchedule and twelve
+        // Without this branch a credit-life master policy produced a BillingSchedule and twelve
         // PremiumInvoice rows for whatever premium figure the caller of issueGroupScheme
         // happened to type. Those then fell due, aged into arrears, and dunned the lender for
         // money the contract never asked for. Its real premium arrives per accepted enrolment
@@ -97,8 +99,23 @@ public class PolicyEventListener {
         // business knowing what credit life is, and a category test would miss the next
         // single-premium product while this catches it.
         if ("SINGLE".equals(premiumFrequency)) {
-            log.info("Policy {} is single-premium -- no billing schedule; its premium is raised "
-                + "when there is something to charge for", policyNumber);
+            // Lives enrolled against it, or one contract for one customer. That is the whole
+            // distinction, and it is a structural fact about the contract rather than a
+            // product name -- which is why policy states it on the event and billing reads it
+            // instead of inferring a category it should not know about.
+            boolean groupScheme = Boolean.TRUE.equals(payload.get("groupScheme"));
+            if (groupScheme) {
+                log.info("Policy {} is a single-premium scheme -- no billing schedule; its premium "
+                    + "is raised per accepted enrolment file", policyNumber);
+                return;
+            }
+
+            // A RETAIL single premium, which nothing charged until now. The policy was written,
+            // the premium was rated and stored on it, and no invoice was ever raised against
+            // it: the customer owed money the platform never asked for, and the cover ran
+            // regardless. One charge, due the day cover begins.
+            billingApiImpl.raisePolicyInceptionInvoice(TenantContext.get(), policyNumber,
+                productVersionId, issueDate, premiumAmount, premiumCurrency);
             return;
         }
 

@@ -1147,6 +1147,42 @@ class ProductApiIntegrationTest {
      * / 12 = 12,666.666... -> 12,666.67, rounded HALF_UP once at the end.
      */
     @Test
+    void quoteASinglePremiumChargesTheWholeAnnualFigureOnceAndDividesByNothing() {
+        // The landmine this proves is disarmed: PremiumFrequency.SINGLE carries
+        // instalmentsPerYear() == 0 BY DESIGN -- "dividing by this value throws, which is the
+        // correct outcome" -- and quotePremium divided by it unconditionally. Quoting a single
+        // premium threw ArithmeticException rather than pricing anything.
+        UUID productId = pricedProduct("TERM-SINGLE", new BigDecimal("15.2000"));
+
+        ProductApi.PremiumQuoteView quote = productApi.quotePremium(
+            quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.SINGLE));
+
+        // The whole price, once. 10,000,000 / 1000 * 15.2 = 152,000, and no division follows.
+        assertThat(quote.instalmentAmount()).isEqualByComparingTo(new BigDecimal("152000.00"));
+        assertThat(quote.annualAfterFrequencyLoading()).isEqualByComparingTo(new BigDecimal("152000.00"));
+        // 0, not 1. A 1 would read as "annually" to any arithmetic that divides by it, which is
+        // precisely how a single-premium contract gets put back onto a billing cycle.
+        assertEquals(0, quote.instalmentsPerYear());
+    }
+
+    @Test
+    void aSinglePremiumCarriesNoFrequencyLoading() {
+        // A loading prices the cost of spreading payment across the year. A single premium
+        // spreads nothing -- the whole amount is held from day one, which is better for the
+        // insurer than annually, not worse -- so loading it would be charging for a service
+        // the customer did not take.
+        UUID productId = pricedProduct("TERM-SINGLE-NOLOAD", new BigDecimal("15.2000"));
+
+        ProductApi.PremiumQuoteView single = productApi.quotePremium(
+            quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.SINGLE));
+        ProductApi.PremiumQuoteView annually = productApi.quotePremium(
+            quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.ANNUALLY));
+
+        assertThat(single.frequencyLoadingPercent()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(single.instalmentAmount()).isEqualByComparingTo(annually.instalmentAmount());
+    }
+
+    @Test
     void quotePremiumComputesFromTheBaseRateAndReturnsItsDerivation() {
         UUID productId = pricedProduct("TERM-Q1", new BigDecimal("15.2000"));
         ProductApi.PremiumQuoteView quote =

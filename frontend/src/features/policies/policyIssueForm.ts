@@ -74,7 +74,7 @@ export const policyIssueFormSchema = z.object({
   sumAssuredCurrency: currency(),
   premiumAmount: amount(),
   premiumCurrency: currency(),
-  premiumFrequency: z.enum(['MONTHLY', 'QUARTERLY', 'ANNUALLY']),
+  premiumFrequency: z.enum(['MONTHLY', 'QUARTERLY', 'ANNUALLY', 'SINGLE']),
   agentOfRecordId: optionalUuid(),
   // Blank means self-insured. The backend resolves that to the policyholder rather than
   // storing a null, so an issued policy always answers "whose life is this".
@@ -121,6 +121,19 @@ export const policyIssueFormSchema = z.object({
         code: 'custom',
         path: ['premiumPayingTermMonths'],
         message: 'Cannot be longer than the policy term',
+      });
+    }
+
+    // Mirrors the SINGLE arm of Policy.applyTerm. A premium charged once cannot be paid
+    // across several months, and the two fields were free to disagree: the policies already
+    // in the dev database carry MONTHLY with a paying term of 1, which reads as "monthly
+    // instalments, paid for one month" and is neither. Caught here so it is a field message
+    // rather than a 400 from the domain after the form has been filled in.
+    if (values.premiumFrequency === 'SINGLE' && paying !== '' && Number(paying) !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['premiumPayingTermMonths'],
+        message: 'A single premium is charged once, so this must be 1 month (or left blank)',
       });
     }
 

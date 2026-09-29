@@ -520,6 +520,63 @@ public class BillingApiImpl implements BillingApi {
     }
 
     /**
+     * The one charge a retail single-premium policy ever raises, due when its cover begins.
+     *
+     * <p>Separate from {@link #raiseSinglePremiumInvoice} rather than a null submission id on
+     * it, because the two answer different questions. That one charges a LENDER for a file of
+     * borrowers and dedupes on the file; this charges a CUSTOMER for their own contract and
+     * dedupes on the policy. Folding them together would have given the retail path the
+     * lender's payment term and the lender's grace reasoning, neither of which applies.
+     *
+     * <p>The grace window comes from the product, exactly as a scheduled invoice's does: an
+     * unpaid retail premium lapses one ordinary policy, which is the situation the product's
+     * own grace period was written for. (The enrolment path deliberately does NOT read it —
+     * see its comment — because a lender's unpaid file is a collections matter, not a lapse.)
+     *
+     * <p>Due on the issue date itself, not issue + a payment term. A single premium buys cover
+     * that starts now; a due date after commencement would mean the insurer carries risk it has
+     * not been paid for and cannot dun anybody for, which is the shape of the gap this method
+     * exists to close.
+     *
+     * @param issueDate the policy's OWN issue date, off the event. Never {@code now()}:
+     *     {@code ux_premium_invoice_policy_inception} includes due_date because the table is
+     *     partitioned on it, so the guarantee against double-charging a redelivered
+     *     {@code policy.PolicyIssued} holds only while a redelivery recomputes the same date.
+     */
+    @Transactional
+    UUID raisePolicyInceptionInvoice(UUID tenantId, String policyNumber, UUID productVersionId,
+                                      LocalDate issueDate, BigDecimal amount, String currency) {
+        ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(productVersionId);
+        LocalDate graceEnd = issueDate.plusDays(snapshot.gracePeriodDays());
+
+        // Asked before inserting, for the reason raiseSinglePremiumInvoice sets out at length:
+        // a failed statement poisons the whole Postgres transaction, so nothing can be read
+        // back inside a catch block. A policy that already has an inception invoice has been
+        // issued once and told to billing twice.
+        boolean alreadyRaised = premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId).stream()
+            .anyMatch(existing -> existing.getBillingScheduleId() == null
+                && existing.getEnrolmentSubmissionId() == null);
+        if (alreadyRaised) {
+            log.info("Policy {} already carries its inception invoice -- redelivered PolicyIssued, "
+                + "not charging it again", policyNumber);
+            return null;
+        }
+
+        PremiumInvoice invoice = premiumInvoiceRepository.save(
+            PremiumInvoice.forPolicyInception(tenantId, policyNumber, issueDate, amount, currency, graceEnd));
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceGenerated", tenantId,
+            Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", policyNumber,
+                   "dueDate", issueDate.toString(),
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
+
+        log.info("Raised inception invoice {} of {} {} for single-premium policy {}",
+            invoice.getInvoiceId(), amount.toPlainString(), currency, policyNumber);
+        return invoice.getInvoiceId();
+    }
+
+    /**
      * Give back the premium a departing borrower paid for cover they never got.
      *
      * <p>A NEW row, never a reduction of the invoice it reverses. The invoice says what was

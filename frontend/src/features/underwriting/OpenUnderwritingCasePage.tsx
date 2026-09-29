@@ -10,8 +10,7 @@ import { PartyName } from '@/components/PartyName';
 import { AgentPicker } from '@/components/AgentPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
-import { isSingleLifeProduct, PREMIUM_FREQUENCIES } from '@/api/types';
-import { humanizeStatus } from '@/lib/status';
+import { isSingleLifeProduct, PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { BeneficiaryRow } from '@/features/policies/BeneficiaryRow';
 import { blankBeneficiaryRow } from '@/features/policies/beneficiaryForm';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -322,7 +321,7 @@ export function OpenUnderwritingCasePage() {
                 <option value="">Not stated</option>
                 {PREMIUM_FREQUENCIES.map((f) => (
                   <option key={f} value={f}>
-                    {humanizeStatus(f)}
+                    {PREMIUM_FREQUENCY_LABELS[f]}
                   </option>
                 ))}
               </Select>

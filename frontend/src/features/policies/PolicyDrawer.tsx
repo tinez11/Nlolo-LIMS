@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
+import { PREMIUM_FREQUENCY_SUFFIXES } from '@/api/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
@@ -75,7 +76,7 @@ export function PolicyDrawer({
                     {formatMoney(policy.premium)}
                     {policy.premiumFrequency && (
                       <span className="ml-1 text-xs text-subtle-foreground">
-                        {policy.premiumFrequency.toLowerCase()}
+                        {PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency]}
                       </span>
                     )}
                   </>

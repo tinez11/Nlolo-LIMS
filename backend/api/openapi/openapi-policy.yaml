@@ -1424,7 +1424,10 @@ components:
             the failure is invisible to whoever issued the policy.
           type: [string, "null"]
           format: uuid
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE is charged once, at inception, and never again. It takes a
+        # `premiumPayingTermMonths` of 1 (or null) and is refused with anything else: a
+        # contract paid once cannot have a paying term of several months.
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         beneficiaries:
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryInput' }
@@ -1502,7 +1505,9 @@ components:
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cashValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         premium: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE included so a single-premium policy is readable: a view that cannot express
+        # the frequency a policy was written on refuses to render it at all.
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         beneficiaries:
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryInput' }

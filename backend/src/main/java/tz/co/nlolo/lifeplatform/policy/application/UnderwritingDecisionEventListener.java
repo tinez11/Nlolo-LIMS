@@ -93,17 +93,23 @@ public class UnderwritingDecisionEventListener {
     /**
      * How many premium instalments a year, for turning an annual premium into one.
      *
-     * <p>Mirrors {@code policy.policy}'s own CHECK, which admits exactly MONTHLY, QUARTERLY and
-     * ANNUALLY. An unrecognised value falls back to monthly rather than throwing: this runs in
-     * an AFTER_COMMIT listener that swallows its exceptions to a log line, so throwing here
+     * <p>Mirrors {@code policy.policy}'s own CHECK, which admits MONTHLY, QUARTERLY, ANNUALLY
+     * and SINGLE. An unrecognised value falls back to monthly rather than throwing: this runs
+     * in an AFTER_COMMIT listener that swallows its exceptions to a log line, so throwing here
      * would silently issue no policy at all — a far worse outcome than an instalment computed
      * on the commonest frequency. The CHECK refuses the write anyway if the value is genuinely
      * bad, which surfaces it loudly instead.
+     *
+     * <p>SINGLE returns 0, matching {@code PremiumFrequency.SINGLE}, and the caller MUST branch
+     * on it rather than divide. It is not folded into the {@code default} because a single
+     * premium divided by twelve is a twelfth of the price, written to a live contract, with
+     * nothing anywhere to notice.
      */
     private static int instalmentsPerYear(String premiumFrequency) {
         return switch (premiumFrequency) {
             case "QUARTERLY" -> 4;
             case "ANNUALLY" -> 1;
+            case "SINGLE" -> 0;
             default -> 12;
         };
     }
@@ -412,8 +418,14 @@ public class UnderwritingDecisionEventListener {
                 BigDecimal loadedAnnualPremium = frequencyLoading.applyTo(
                     annualPremium, PremiumFrequency.valueOf(premiumFrequency));
 
-                BigDecimal instalmentPremium = loadedAnnualPremium.divide(
-                    BigDecimal.valueOf(instalmentsPerYear(premiumFrequency)), 2, RoundingMode.HALF_UP);
+                // SINGLE is charged once, so the instalment IS the loaded annual figure. It
+                // branches rather than dividing by the 0 that says "this contract has no
+                // instalments", which would throw inside an AFTER_COMMIT listener and issue
+                // nothing at all.
+                int instalments = instalmentsPerYear(premiumFrequency);
+                BigDecimal instalmentPremium = instalments == 0
+                    ? loadedAnnualPremium.setScale(2, RoundingMode.HALF_UP)
+                    : loadedAnnualPremium.divide(BigDecimal.valueOf(instalments), 2, RoundingMode.HALF_UP);
 
                 // THE FORMULA CHECKS ITS OWN OUTPUT, because one of its inputs was nil and the
                 // only thing that noticed was a CHECK constraint three layers down.

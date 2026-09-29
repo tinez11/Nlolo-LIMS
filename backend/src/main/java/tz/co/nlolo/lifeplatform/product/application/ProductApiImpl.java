@@ -419,9 +419,18 @@ public class ProductApiImpl implements ProductApi {
         FrequencyLoading loading = version.getFrequencyLoading();
         BigDecimal loadedAnnual = loading.applyTo(annual, input.frequency());
 
+        // SINGLE branches rather than divides. `instalmentsPerYear` is 0 for it BY DESIGN --
+        // there is no recurring period, and dividing by that value throws, which is the
+        // correct outcome for any caller reaching for a per-instalment figure on a contract
+        // that has none. The single premium is the whole loaded annual figure, charged once.
+        //
+        // That equivalence holds because this input carries no term and every single-premium
+        // product the platform sells today runs twelve months. A longer-term single premium
+        // is NOT this number and must not be quoted here until the input carries a term.
         int instalments = input.frequency().instalmentsPerYear();
-        BigDecimal instalment = loadedAnnual
-            .divide(BigDecimal.valueOf(instalments), 2, java.math.RoundingMode.HALF_UP);
+        BigDecimal instalment = input.frequency() == PremiumFrequency.SINGLE
+            ? loadedAnnual.setScale(2, java.math.RoundingMode.HALF_UP)
+            : loadedAnnual.divide(BigDecimal.valueOf(instalments), 2, java.math.RoundingMode.HALF_UP);
 
         return new PremiumQuoteView(versionId, input.sumAssuredCurrency(),
             ageAtEntry, cell.getAgeFrom(), cell.getAgeTo(), cell.getRatePerMille(),

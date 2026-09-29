@@ -466,7 +466,16 @@ components:
         sex: { type: string, enum: [FEMALE, MALE] }
         smokerStatus: { type: string, enum: [SMOKER, NON_SMOKER, UNKNOWN] }
         occupationClass: { type: string }
-        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE carries no frequency loading -- a loading prices the cost of spreading
+        # payment across the year, and a single premium spreads nothing. Its instalment is
+        # the whole loaded annual figure, charged once, so `instalmentsPerYear` comes back 0
+        # rather than 1: there is no recurring period, and a 1 would read as "annually" to
+        # any arithmetic that divides by it.
+        #
+        # The annual figure IS the single premium only while the cover term is twelve months.
+        # This input carries no term, so a longer-term single premium is not expressible here
+        # and must not be quoted through this endpoint until it is.
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         asOf:
           description: Selects the product version. Defaults to today.
           type: [string, "null"]
@@ -497,7 +506,9 @@ components:
         annualAfterFactors: { type: number }
         frequencyLoadingPercent: { type: number }
         annualAfterFrequencyLoading: { type: number }
-        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # 0 for SINGLE, and the instalment beside it is then the whole premium. See the
+        # request schema's own note.
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         instalmentsPerYear: { type: integer }
         instalmentAmount: { type: number }
     VersionRatingView:

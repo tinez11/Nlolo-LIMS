@@ -116,6 +116,7 @@ class BillingContractTest {
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",
+            "db-migrations/billing/V7__policy_inception_invoice.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

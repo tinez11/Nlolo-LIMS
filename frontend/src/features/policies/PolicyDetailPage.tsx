@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { InlineError } from '@/components/InlineError';
 import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
+import { PREMIUM_FREQUENCY_SUFFIXES } from '@/api/types';
 import { ProductName } from '@/components/ProductName';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
@@ -371,7 +372,7 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                       {formatMoney(policy.premium)}
                       {policy.premiumFrequency && (
                         <span className="ml-1 text-xs text-subtle-foreground">
-                          {policy.premiumFrequency.toLowerCase()}
+                          {PREMIUM_FREQUENCY_SUFFIXES[policy.premiumFrequency]}
                         </span>
                       )}
                     </>

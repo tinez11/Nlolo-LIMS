@@ -148,7 +148,8 @@ class SinglePremiumIntegrationTest {
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
-            "db-migrations/billing/V6__premium_credit.sql");
+            "db-migrations/billing/V6__premium_credit.sql",
+            "db-migrations/billing/V7__policy_inception_invoice.sql");
 
         // The container never runs compose's minio-init job, so the buckets are made here.
         MinioClient minio = MinioClient.builder()
@@ -176,9 +177,16 @@ class SinglePremiumIntegrationTest {
 
     private UUID tenantId;
 
+    /**
+     * Published once per test, lazily, so the retail cases share one version within a test and
+     * the redelivery case can name the same one the policy was written on.
+     */
+    private GroupProduct singlePremiumProductCache;
+
     @BeforeEach
     void setTenant() {
         tenantId = UUID.randomUUID();
+        singlePremiumProductCache = null;
         TenantContext.set(tenantId);
     }
 
@@ -199,6 +207,67 @@ class SinglePremiumIntegrationTest {
             .findByPolicyNumberAndTenantId(scheme.policyNumber(), tenantId)).isEmpty();
         assertThat(premiumInvoiceRepository
             .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId)).isEmpty();
+    }
+
+    @Test
+    void aRetailSinglePremiumRaisesOneInvoiceDueTheDayCoverBegins() {
+        // The gap this closes, and it was not a small one: SINGLE meant "raise nothing" for
+        // EVERY contract, because the only single-premium product was a credit-life master
+        // policy billed file by file. A retail single premium is also SINGLE -- so the policy
+        // was written, the premium was rated and stored on it, and no invoice was ever raised.
+        // The customer owed money the platform never asked for, and cover ran regardless.
+        PolicyView policy = issueRetailSinglePremium(new BigDecimal("125000.00"));
+
+        // No schedule: billing_schedule's own CHECK admits only MONTHLY, QUARTERLY, ANNUALLY.
+        assertThat(billingScheduleRepository
+            .findByPolicyNumberAndTenantId(policy.policyNumber(), tenantId)).isEmpty();
+
+        List<PremiumInvoice> invoices = premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(policy.policyNumber(), tenantId);
+        assertThat(invoices).hasSize(1);
+        PremiumInvoice only = invoices.get(0);
+        assertThat(only.getAmount()).isEqualByComparingTo(new BigDecimal("125000.00"));
+        // Due the day cover begins. A due date later than commencement would mean the insurer
+        // carries risk it has not been paid for and cannot dun anybody for.
+        assertThat(only.getDueDate()).isEqualTo(LocalDate.now());
+        // Belongs to neither a cycle nor a file. Its origin is the policy itself, which is
+        // what chk_premium_invoice_at_most_one_origin was relaxed to permit.
+        assertThat(only.getBillingScheduleId()).isNull();
+        assertThat(only.getEnrolmentSubmissionId()).isNull();
+    }
+
+    @Test
+    void aRedeliveredIssuanceDoesNotChargeTheCustomerTwice() {
+        // policy.PolicyIssued is consumed by an AFTER_COMMIT listener, and an AFTER_COMMIT
+        // listener gets redelivered. Guarded in Java AND by ux_premium_invoice_policy_inception,
+        // whose exactness depends on the due date coming from the policy's own issue date
+        // rather than now() -- so calling the method twice must find the first invoice.
+        PolicyView policy = issueRetailSinglePremium(new BigDecimal("125000.00"));
+
+        billingApiImpl.raisePolicyInceptionInvoice(tenantId, policy.policyNumber(),
+            singlePremiumProduct().productVersionId(), LocalDate.now(),
+            new BigDecimal("125000.00"), "TZS");
+
+        assertThat(premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(policy.policyNumber(), tenantId)).hasSize(1);
+    }
+
+    @Test
+    void aSinglePremiumMayNotBePaidAcrossSeveralMonths() {
+        // The two fields were free to disagree, and the dev database holds the proof: policies
+        // carrying MONTHLY with a premium-paying term of 1, which reads as "monthly
+        // instalments, paid for one month" and is neither. This is the SINGLE arm of that.
+        GroupProduct product = singlePremiumProduct();
+        UUID applicant = person("Single Premium Applicant");
+
+        assertThatThrownBy(() -> policyApi.issuePolicy(null,
+            new PolicyApi.IssueRequest(applicant, product.productId(), product.productVersionId(),
+                new BigDecimal("5000000.00"), "TZS", new BigDecimal("125000.00"), "TZS",
+                "SINGLE", null, List.of(), "single premium paying-term test",
+                LocalDate.now(), 12, 6, null, null),
+            "test-staff"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("charged once");
     }
 
     @Test
@@ -739,6 +808,31 @@ class SinglePremiumIntegrationTest {
 
     private List<PolicyApi.MemberInput> oneEmployee() {
         return List.of(new PolicyApi.MemberInput(person("Employee"), null, null, null));
+    }
+
+    /**
+     * A retail single-premium policy: one life, one contract, one charge.
+     *
+     * <p>Deliberately a TERM_LIFE product and an individual issuance, so nothing about this
+     * test passes because of a credit-life code path. It is the case the SINGLE guard used to
+     * swallow.
+     */
+    private PolicyView issueRetailSinglePremium(BigDecimal premium) {
+        GroupProduct product = singlePremiumProduct();
+        return policyApi.issuePolicy(null,
+            new PolicyApi.IssueRequest(person("Single Premium Customer"), product.productId(),
+                product.productVersionId(), new BigDecimal("5000000.00"), "TZS",
+                premium, "TZS", "SINGLE", null, List.of(), "retail single premium test",
+                LocalDate.now(), 12, 1, null, null),
+            "test-staff");
+    }
+
+    /** A TERM_LIFE product for the retail single-premium cases, published once per test. */
+    private GroupProduct singlePremiumProduct() {
+        if (singlePremiumProductCache == null) {
+            singlePremiumProductCache = publish(ProductCategory.TERM_LIFE, "SP-" + CODE_SEQ.incrementAndGet());
+        }
+        return singlePremiumProductCache;
     }
 
     private GroupProduct creditLifeProduct() {

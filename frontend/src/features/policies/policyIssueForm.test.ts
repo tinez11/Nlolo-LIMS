@@ -132,9 +132,56 @@ describe('policyIssueFormSchema', () => {
   });
 
   it('accepts every premium frequency the spec declares', () => {
-    for (const premiumFrequency of ['MONTHLY', 'QUARTERLY', 'ANNUALLY'] as const) {
+    for (const premiumFrequency of ['MONTHLY', 'QUARTERLY', 'ANNUALLY', 'SINGLE'] as const) {
       expect(policyIssueFormSchema.safeParse({ ...valid(), premiumFrequency }).success).toBe(true);
     }
+  });
+
+  /**
+   * SINGLE was unreachable from this console until the whole path was opened: the dropdown,
+   * this schema, the generated types and the quote endpoint's own enum all stopped at
+   * ANNUALLY, so a single-premium product could be priced by the backend and never sold.
+   */
+  it('accepts a single premium paid once over a twelve-month term', () => {
+    const result = policyIssueFormSchema.safeParse({
+      ...valid(),
+      premiumFrequency: 'SINGLE' as const,
+      commencementDate: '2026-09-29',
+      policyTermMonths: '12',
+      premiumPayingTermMonths: '1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('refuses a single premium spread across several months', () => {
+    // Mirrors the SINGLE arm of Policy.applyTerm. The two fields were free to disagree, and
+    // the dev database holds the proof: policies carrying MONTHLY with a paying term of 1,
+    // which reads as "monthly instalments, paid for one month" and is neither.
+    const result = policyIssueFormSchema.safeParse({
+      ...valid(),
+      premiumFrequency: 'SINGLE' as const,
+      commencementDate: '2026-09-29',
+      policyTermMonths: '12',
+      premiumPayingTermMonths: '6',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((i) => i.path.join('.'))).toContain('premiumPayingTermMonths');
+      expect(result.error.issues.map((i) => i.message).join(' ')).toMatch(/charged once/);
+    }
+  });
+
+  it('leaves a blank paying term alone on a single premium', () => {
+    // Absent is not the same as wrong: the backend accepts a null paying term, and the form
+    // must not invent a 1 the user did not type.
+    const result = policyIssueFormSchema.safeParse({
+      ...valid(),
+      premiumFrequency: 'SINGLE' as const,
+      commencementDate: '2026-09-29',
+      policyTermMonths: '12',
+      premiumPayingTermMonths: '',
+    });
+    expect(result.success).toBe(true);
   });
 });
 
