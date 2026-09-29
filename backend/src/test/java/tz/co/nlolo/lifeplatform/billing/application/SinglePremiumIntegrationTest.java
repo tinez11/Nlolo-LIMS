@@ -270,6 +270,40 @@ class SinglePremiumIntegrationTest {
             .hasMessageContaining("charged once");
     }
 
+    /**
+     * A scheme paid ONCE for a year of cover is charged once, like any other contract.
+     *
+     * <p>The distinction billing needs is not "is this a group scheme" -- that was this flag's
+     * first shape, and under it a family or employer scheme bought with a single yearly
+     * contribution would have been issued and then charged nobody, because SINGLE plus
+     * group-ness meant "raise nothing". It is "does the premium arrive per enrolment file",
+     * which only a loan-basis scheme does.
+     */
+    @Test
+    void aSchemePaidOnceForItsYearIsInvoicedAtInceptionLikeAnyOtherContract() {
+        GroupSchemeView scheme = issueEmployerScheme("SINGLE");
+
+        assertThat(billingScheduleRepository
+            .findByPolicyNumberAndTenantId(scheme.policyNumber(), tenantId)).isEmpty();
+
+        List<PremiumInvoice> invoices = premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId);
+        assertThat(invoices).hasSize(1);
+        assertThat(invoices.get(0).getEnrolmentSubmissionId()).isNull();
+        assertThat(invoices.get(0).getBillingScheduleId()).isNull();
+    }
+
+    @Test
+    void aCreditLifeSchemeIsStillNeverChargedEvenThoughItIsAlsoSinglePremium() {
+        // The other side of the same distinction: both are SINGLE, and only this one is billed
+        // file by file. If this ever starts raising an invoice, a lender is being charged twice
+        // -- once here for a figure nobody agreed, and again per accepted file.
+        GroupSchemeView scheme = issueCreditLifeScheme(new BigDecimal("0.5000"));
+
+        assertThat(premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(scheme.policyNumber(), tenantId)).isEmpty();
+    }
+
     @Test
     void anOrdinaryGroupSchemeStillBillsOnItsCycleAsItAlwaysDid() {
         // The guard is on the FREQUENCY, not on the product category. An employer scheme must
@@ -781,11 +815,15 @@ class SinglePremiumIntegrationTest {
     }
 
     private GroupSchemeView issueEmployerScheme() {
+        return issueEmployerScheme("ANNUALLY");
+    }
+
+    private GroupSchemeView issueEmployerScheme(String premiumFrequency) {
         GroupProduct product = groupProduct();
         return policyApi.issueGroupScheme(new PolicyApi.IssueGroupSchemeRequest(
             person("Employer Co"), product.productId(), product.productVersionId(), null,
             BenefitBasis.FLAT, new BigDecimal("1000000.00"), null, null, "TZS", null, oneEmployee(),
-            new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null,
+            new BigDecimal("1200000.00"), "TZS", premiumFrequency, LocalDate.now(), null,
             "group onboarding", IssuanceBasis.MIGRATION), "staff-1");
     }
 

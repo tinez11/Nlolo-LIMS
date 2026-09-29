@@ -99,14 +99,19 @@ public class PolicyEventListener {
         // business knowing what credit life is, and a category test would miss the next
         // single-premium product while this catches it.
         if ("SINGLE".equals(premiumFrequency)) {
-            // Lives enrolled against it, or one contract for one customer. That is the whole
-            // distinction, and it is a structural fact about the contract rather than a
-            // product name -- which is why policy states it on the event and billing reads it
-            // instead of inferring a category it should not know about.
-            boolean groupScheme = Boolean.TRUE.equals(payload.get("groupScheme"));
-            if (groupScheme) {
-                log.info("Policy {} is a single-premium scheme -- no billing schedule; its premium "
-                    + "is raised per accepted enrolment file", policyNumber);
+            // Where the premium COMES FROM, which is the whole distinction, and a structural
+            // fact about the contract rather than a product name -- which is why policy states
+            // it on the event and billing reads it instead of inferring a category it should
+            // not know about.
+            //
+            // Not "is it a group scheme". That was this flag's first shape and it was wrong: a
+            // family or employer scheme paid once for a year of cover is a group scheme whose
+            // premium does NOT arrive file by file, and keying on group-ness would have issued
+            // it and then charged nobody -- the same silence this branch exists to end.
+            boolean premiumPerEnrolment = Boolean.TRUE.equals(payload.get("premiumPerEnrolment"));
+            if (premiumPerEnrolment) {
+                log.info("Policy {} is billed per enrolment file -- no schedule and no charge "
+                    + "against the policy itself", policyNumber);
                 return;
             }
 

@@ -524,7 +524,9 @@ components:
               salaryAmount: { type: [string, "null"] }
         premiumAmount: { type: string }
         premiumCurrency: { type: string }
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE included: a family or employer scheme bought with one contribution for a
+        # year of cover is a group scheme whose premium does not arrive per enrolment file.
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
     GroupProposal:
@@ -565,7 +567,9 @@ components:
             would read is the employer's. Carried verbatim to issuance.
           type: string
         premiumCurrency: { type: string }
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE included: a family or employer scheme bought with one contribution for a
+        # year of cover is a group scheme whose premium does not arrive per enrolment file.
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
     BeneficiaryNomination:

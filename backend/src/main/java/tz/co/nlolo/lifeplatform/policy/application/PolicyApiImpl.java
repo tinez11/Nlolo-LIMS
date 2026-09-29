@@ -314,15 +314,17 @@ public class PolicyApiImpl implements PolicyApi {
         // customer to pay by a date, and must NOT tell that to somebody whose migrated policy is
         // already in force -- and it may not depend on policy to find out which it is looking at.
         payload.put("status", policy.getStatus());
-        // Whether lives are enrolled against this contract, which decides where its premium
-        // comes from and therefore whether billing may charge the policy for it.
+        // Whether this contract's premium arrives per accepted enrolment file instead of from
+        // the policy, which is the only thing billing needs to decide whether it may charge.
         //
         // Carried because a consumer cannot ask and must not guess. Billing used to key that
         // decision on the FREQUENCY alone -- SINGLE meant "raise nothing" -- which was right
         // while the only single-premium contract was a credit-life master policy, billed file
         // by file. A retail single premium is also SINGLE and must be charged once, here, to
         // the customer. Frequency cannot tell those apart; this can.
-        payload.put("groupScheme", false);
+        //
+        // An individual policy is never enrolment-billed: there is nobody to enrol.
+        payload.put("premiumPerEnrolment", false);
         putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
@@ -1687,9 +1689,16 @@ public class PolicyApiImpl implements PolicyApi {
         // Load-bearing downstream: communication's offerMade branches on exactly this key, so
         // an employer now receives the offer message and its deadline. That is the point.
         payload.put("status", policy.getStatus());
-        // True, and load-bearing for billing: a scheme's premium arrives per accepted enrolment
-        // file, so the master policy itself is never charged. See issuePolicy's own note.
-        payload.put("groupScheme", true);
+        // Load-bearing for billing, and NOT simply "is this a group scheme" -- that was the
+        // first version of this flag and it was wrong. Only a loan-basis scheme is billed per
+        // accepted enrolment file; `chk_group_scheme_rate_iff_loan_basis` is the proof, tying
+        // AMORTISING_LOAN to the premium rate the file is charged at. An employer or family
+        // scheme carries an AGREED premium on the policy, so it is billed from the policy like
+        // any other contract -- and if that premium is SINGLE, it is one charge at inception.
+        //
+        // Keyed on "is it enrolment-billed" rather than the basis name for the reason billing
+        // already documents: billing has no business knowing what credit life is.
+        payload.put("premiumPerEnrolment", request.benefitBasis() == BenefitBasis.AMORTISING_LOAN);
         putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 

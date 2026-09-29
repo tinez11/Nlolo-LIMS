@@ -3,7 +3,7 @@ import { Plus, X } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
-import { PREMIUM_FREQUENCIES } from '@/api/types';
+import { PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
 import { InlineError } from '@/components/InlineError';
 import { FormField } from '@/components/FormField';
@@ -478,7 +478,7 @@ export function IssueGroupSchemePage() {
               >
                 {PREMIUM_FREQUENCIES.map((f) => (
                   <option key={f} value={f}>
-                    {f}
+                    {PREMIUM_FREQUENCY_LABELS[f]}
                   </option>
                 ))}
               </Select>
