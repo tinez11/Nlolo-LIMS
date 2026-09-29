@@ -114,12 +114,20 @@ export function DecisionPanel({
   const blockedByRank = override && !isSenior;
   const conflict = separationOfDutiesConflict(view, callerSubject);
   /*
-    No recommendation means no assessment, and the inference is sound in that direction:
-    `submitAssessment` calls `recordRecommendation` unconditionally, and the engine's four
-    return paths all carry an outcome. So a case that has been assessed always has a
-    recommendation, and a case with none has never been assessed.
+    The evidence itself, not the recommendation derived from it.
+
+    This gate first asked whether a recommendation existed, on the reasoning that an assessed
+    case always has one. That is false, and false precisely where it matters: `recommendFromEvidence`
+    returns early for a GROUP SCHEME -- "no engine opinion on a group scheme, and this is a
+    decision rather than a gap", because the age band it would resolve belongs to a company. A
+    scheme case therefore carries assessments and no recommendation for ever, and the gate made
+    every one of them permanently undecidable.
+
+    `assessedBy` is the fact, and it is already on the wire for the separation-of-duties check
+    beside it: "identity-provider subjects of everyone who recorded an assessment on the case".
+    Empty means nothing has been assessed, which is the one thing `decide` actually refuses.
   */
-  const awaitingAssessment = recommendation == null;
+  const awaitingAssessment = (view.assessedBy ?? []).length === 0;
 
   if (!canDecide) return null;
 
@@ -154,8 +162,14 @@ export function DecisionPanel({
             </>
           ) : (
             <p className="text-xs text-muted-foreground">
-              No recommendation yet — the engine runs when an assessment is submitted, and this
-              case cannot be decided until one is.
+              {awaitingAssessment
+                ? 'No recommendation yet — the engine runs when an assessment is submitted.'
+                : /*
+                     Assessed, and still no advice: this is a group scheme, where the engine
+                     deliberately has no opinion. Saying "not yet" here would be waiting for
+                     something that is never coming.
+                   */
+                  'No recommendation on a scheme — the engine rates one life from one age band, and the age it would read is the employer’s. Decide it on the evidence; it will not count as an override.'}
             </p>
           )}
         </div>

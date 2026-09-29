@@ -21,6 +21,10 @@ const decidedCase = (over: Partial<UnderwritingCaseView> = {}): UnderwritingCase
     status: 'IN_REVIEW',
     recommendationOutcome: 'ACCEPT',
     recommendationReason: 'Standard risk profile',
+    // Assessed by SOMEBODY ELSE, which is the ordinary state of a case that is ready to be
+    // decided: the panel withholds the form until there is evidence, and separation of duties
+    // means the person deciding is never the person who assessed.
+    assessedBy: ['another-underwriter-sub'],
     ...over,
   }) as UnderwritingCaseView;
 
@@ -55,7 +59,7 @@ describe('the engine recommendation', () => {
   });
 
   it('says plainly when there is none, rather than rendering an empty box', () => {
-    renderPanel({ view: { recommendationOutcome: null, recommendationReason: null } });
+    renderPanel({ view: { recommendationOutcome: null, recommendationReason: null, assessedBy: [] } });
     expect(screen.getByText(/No recommendation yet/)).toBeInTheDocument();
   });
 });
@@ -173,7 +177,7 @@ describe('the senior underwriter gate', () => {
    * invited an underwriter to fill the form and then handed them a raw validation error.
    */
   it('withholds the form until an assessment exists, rather than inviting a refusal', () => {
-    renderPanel({ view: { recommendationOutcome: null } });
+    renderPanel({ view: { recommendationOutcome: null, assessedBy: [] } });
 
     expect(screen.queryByLabelText('Decision')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Record decision' })).not.toBeInTheDocument();
@@ -181,10 +185,42 @@ describe('the senior underwriter gate', () => {
   });
 
   it('no longer claims an unassessed case can be decided', () => {
-    renderPanel({ view: { recommendationOutcome: null, recommendationReason: null } });
+    renderPanel({ view: { recommendationOutcome: null, recommendationReason: null, assessedBy: [] } });
 
     expect(screen.getByText(/No recommendation yet/)).toBeInTheDocument();
     expect(screen.queryByText(/You can\s+still decide/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * A GROUP SCHEME is assessed and never gets a recommendation, for ever.
+   *
+   * `recommendFromEvidence` returns early for one -- "no engine opinion on a group scheme, and
+   * this is a decision rather than a gap", because the age band it would resolve belongs to a
+   * company rather than a life. An earlier version of this gate asked whether a recommendation
+   * existed and so made every scheme case permanently undecidable, which is the opposite of
+   * the documented intent: "an underwriter settles a scheme without a senior being demanded for
+   * departing from advice that was never given."
+   */
+  it('lets an assessed scheme be decided even though the engine will never advise on it', () => {
+    renderPanel({
+      view: {
+        groupScheme: true,
+        recommendationOutcome: null,
+        recommendationReason: null,
+        assessedBy: ['another-underwriter-sub'],
+      },
+    });
+
+    expect(screen.getByLabelText('Decision')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record decision' })).toBeEnabled();
+    expect(screen.getByText(/No recommendation on a scheme/)).toBeInTheDocument();
+  });
+
+  it('withholds the form on an unassessed case whatever the recommendation says', () => {
+    renderPanel({ view: { recommendationOutcome: null, assessedBy: [] } });
+
+    expect(screen.queryByLabelText('Decision')).not.toBeInTheDocument();
+    expect(screen.getByText(/Record an assessment first/)).toBeInTheDocument();
   });
 });
 
