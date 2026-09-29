@@ -73,8 +73,14 @@ public record OpenCaseRequest(
      * Not an enum on this record, unlike {@code AssessmentType} above, because the value is
      * carried to {@code policy.policy.premium_frequency} as a string and its authority is that
      * column's CHECK. Minting a second enum here would create two places to add a frequency.
+     *
+     * <p>And this regex is the third, which is the lesson: the comment above says the CHECK is
+     * the authority, yet SINGLE was admitted by that CHECK, by the enum, by the OpenAPI schema
+     * and by the console, and still failed here with a bare "Request validation failed" and no
+     * field named. Any frequency added to {@code policy_premium_frequency_check} must be added
+     * to this pattern in the same change.
      */
-    @Pattern(regexp = "MONTHLY|QUARTERLY|ANNUALLY") String premiumFrequency,
+    @Pattern(regexp = "MONTHLY|QUARTERLY|ANNUALLY|SINGLE") String premiumFrequency,
 
     List<@Valid BeneficiaryNominationDto> beneficiaries) {
 

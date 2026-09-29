@@ -18,6 +18,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -71,6 +72,7 @@ class UnderwritingContractTest {
             "db-migrations/underwriting/V9__group_proposal.sql",
             "db-migrations/underwriting/V10__issuance_failure.sql",
             "db-migrations/underwriting/V11__member_evidence_case.sql",
+            "db-migrations/underwriting/V13__single_premium_frequency.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
@@ -396,6 +398,40 @@ class UnderwritingContractTest {
             .andExpect(jsonPath("$.premiumPayingTermMonths").value(60))
             .andExpect(jsonPath("$.premiumFrequency").value("QUARTERLY"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    /**
+     * Every frequency the policy CHECK admits is accepted HERE too.
+     *
+     * <p>Written because SINGLE was not. It was admitted by {@code
+     * policy_premium_frequency_check}, by {@code PremiumFrequency}, by this module's own
+     * OpenAPI schema and by the console, and was still refused by a {@code @Pattern} on
+     * {@link tz.co.nlolo.lifeplatform.underwriting.infrastructure.OpenCaseRequest} that nobody
+     * had a reason to look at. The failure surfaced as a bare "Request validation failed" with
+     * a trace id that is generated per response and never logged, so it could not be looked up
+     * either. Looping over the frequencies means the next one added cannot repeat that.
+     */
+    @Test
+    void everyPremiumFrequencyTheColumnAdmitsIsAcceptedWhenOpeningACase() throws Exception {
+        for (String frequency : List.of("MONTHLY", "QUARTERLY", "ANNUALLY", "SINGLE")) {
+            UUID tenantId = UUID.randomUUID();
+            UUID applicantId = registerTestApplicant(tenantId);
+            ProductFixture product = publishTestProduct(tenantId);
+
+            mockMvc.perform(post("/underwriting/cases")
+                    .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                        .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""
+                        {"applicantPartyId":"%s","productId":"%s","productVersionId":"%s",
+                         "sumAssured":{"amount":"1000000.00","currencyCode":"TZS"},
+                         "requestedTermMonths":12,"premiumFrequency":"%s",
+                         "beneficiaries":[{"type":"FREEFORM","freeformDesignee":"The estate","sharePercent":100}]}
+                        """.formatted(applicantId, product.productId(), product.productVersionId(), frequency)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.premiumFrequency").value(frequency))
+                .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        }
     }
 
     /**
