@@ -36,11 +36,60 @@ test('the May file invoices the lender exactly what their own sheet says', async
     const token = await staffToken(http, 'staff.admin');
     const { lenderPartyId, productId, productVersionId } = await seedCreditLifeFixtures(http, token);
 
+    /*
+     * The lender IS the agent. Spec 2.8: on credit life only the lender earns, and there is a
+     * backstop that refuses commission when the scheme's agent of record is anybody else --
+     * five schemes were set up naming the individual who registered the lender, and it stops
+     * them collecting.
+     */
+    // A corporate lender is KYC-verified like anybody else before it can be an agent.
+    const evidence = await http.post(`${API}/parties/${lenderPartyId}/kyc-evidence`, {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        file: {
+          name: 'certificate-of-incorporation.png',
+          mimeType: 'image/png',
+          buffer: Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'base64',
+          ),
+        },
+      },
+    });
+    expect(evidence.ok(), `kyc evidence -> ${evidence.status()}`).toBeTruthy();
+    const verified = await http.post(`${API}/parties/${lenderPartyId}/kyc`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { status: 'VERIFIED', evidenceDocumentRef: (await evidence.json()).documentRef },
+    });
+    expect(verified.ok(), `kyc -> ${verified.status()} ${await verified.text()}`).toBeTruthy();
+
+    const agentResponse = await http.post(`${API}/agents`, {
+      headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': `bumaco-${Date.now()}` },
+      data: {
+        partyId: lenderPartyId,
+        licenseNumber: `LIC-BUMACO-${Date.now().toString().slice(-6)}`,
+        licenseExpiryDate: '2027-12-31',
+      },
+    });
+    expect(agentResponse.ok(), `agent -> ${agentResponse.status()} ${await agentResponse.text()}`)
+      .toBeTruthy();
+    const agent = await agentResponse.json();
+    console.log(`lender agent ${agent.agentId}`);
+
+    // 0.1500, NOT 15. The rate is a FRACTION -- CommissionCalculator does
+    // `premium.multiply(rule.getRate())` -- so a 15 here would accrue 1,665,000 on this file.
+    const plan = await http.post(`${API}/commission-plans`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { productId, rules: [{ tierType: 'FIRST_YEAR', rate: '0.1500' }] },
+    });
+    expect(plan.ok(), `plan -> ${plan.status()} ${await plan.text()}`).toBeTruthy();
+
     // The scheme as Bumaco's terms actually are: 0.6%, charged flat on what was disbursed.
     const schemeResponse = await http.post(`${API}/group-schemes`, {
       headers: { Authorization: `Bearer ${token}` },
       data: {
         policyholderPartyId: lenderPartyId,
+        agentOfRecordId: agent.agentId,
         productId,
         productVersionId,
         benefitBasis: 'AMORTISING_LOAN',
@@ -101,6 +150,24 @@ test('the May file invoices the lender exactly what their own sheet says', async
     expect(list).toHaveLength(1);
     // The number on the lender's own sheet.
     expect(Number(list[0].amount.amount ?? list[0].amount)).toBeCloseTo(111000, 2);
+
+    /*
+     * And the OTHER number on it: 111,000 gross, 16,650 commission, 94,350 net.
+     *
+     * The invoice stays GROSS and the commission accrues separately -- the lender owes the whole
+     * premium and earns its commission as an agent, which are two movements rather than one net
+     * figure. Their sheet nets them, so the insurer's invoice and the lender's remittance advice
+     * will not match on their face; that is an accounting shape to agree, not a defect.
+     */
+    const accruals = await (
+      await http.get(`${API}/commission-accruals?policyNumber=${policyNumber}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json();
+    console.log(`accruals: ${JSON.stringify(accruals)}`);
+    const accrued = accruals as { amount: { amount: string } }[];
+    const total = accrued.reduce((sum, a) => sum + Number(a.amount.amount ?? a.amount), 0);
+    expect(total).toBeCloseTo(16650, 2);
   } finally {
     await http.dispose();
   }
