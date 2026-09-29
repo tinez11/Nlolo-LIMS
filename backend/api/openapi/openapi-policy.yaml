@@ -1689,10 +1689,34 @@ components:
           enum: [MONTHLY, QUARTERLY, null]
         premiumRatePercent:
           description: >-
-            Per-lender and negotiable; 0.4% and 0.5% are the two quoted. Charged once per
-            borrower on the amount they borrowed, not on the declining balance.
+            Per-lender and negotiable; 0.5% and 0.6% are the two the real schedules carry.
+            Charged once per borrower, always on the amount they borrowed rather than on a
+            declining balance — what varies between lenders is not the base but how the rate
+            is applied to it, which `premiumBasis` states.
           type: [number, "null"]
           minimum: 0.0001
+        premiumBasis:
+          description: >-
+            How the rate becomes money. Required with `premiumRatePercent` and refused without
+            it, because a rate without a basis does not say what to do with itself.
+
+
+            `FLAT_ON_PRINCIPAL` charges the rate once on the disbursed amount and ignores the
+            term: a two-month loan costs what a twelve-month loan of the same size costs.
+            `PER_ANNUM_ON_PRINCIPAL` multiplies it by the term in years.
+            `ANNUAL_ON_DECLINING_BALANCE` charges it once per policy year on the principal still
+            outstanding when that year begins, straight-line, and sums them.
+
+
+            All three are a SINGLE premium charged at enrolment. The third walks years to reach
+            its figure because that is how the lender's own schedule presents it, not because
+            anything is invoiced annually.
+
+
+            No default. The three agree exactly on a twelve-month loan and diverge on every
+            other term, so a wrong basis is silent on an annual book and large on a short one.
+          type: [string, "null"]
+          enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, null]
         underwritingCaseId:
           description: >-
             The group case this scheme is issued on. REQUIRED for a GROUP_LIFE (employer)

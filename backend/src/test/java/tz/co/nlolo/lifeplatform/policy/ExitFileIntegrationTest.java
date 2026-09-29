@@ -137,6 +137,7 @@ class ExitFileIntegrationTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/policy/V21__exit_submission.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
@@ -463,7 +464,7 @@ class ExitFileIntegrationTest {
             BenefitBasis.AMORTISING_LOAN, null, null, new BigDecimal("600000000.00"), "TZS",
             null, borrowers, new BigDecimal("52000.00"), "TZS", "SINGLE",
             LocalDate.of(2026, 6, 1), null, "credit life onboarding", IssuanceBasis.MIGRATION,
-            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, new BigDecimal("0.5000")),
+            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
             "staff-1").policyNumber();
     }
 

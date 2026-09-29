@@ -135,6 +135,7 @@ class EnrolmentIntegrationTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -221,7 +222,8 @@ class EnrolmentIntegrationTest {
             "onboarding", IssuanceBasis.MIGRATION,
             loan ? InterestMethod.FLAT_RATE : null,
             loan ? RepaymentFrequency.MONTHLY : null,
-            loan ? new BigDecimal("0.5000") : null), "staff-setup").policyNumber();
+            loan ? new BigDecimal("0.5000") : null,
+            loan ? CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL : null), "staff-setup").policyNumber();
     }
 
     private UUID person(String name) {
@@ -619,7 +621,8 @@ class EnrolmentIntegrationTest {
             new BigDecimal("52000.00"), "TZS", "SINGLE",
             LocalDate.of(2026, 6, 1), null, "onboarding", IssuanceBasis.MIGRATION,
             InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY,
-            new BigDecimal("0.5000")), "staff-setup").policyNumber();
+            new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
+            "staff-setup").policyNumber();
     }
 
     /** As above, but the opening borrower joins TODAY -- so their benefit row is already dated today. */
@@ -643,7 +646,8 @@ class EnrolmentIntegrationTest {
             BenefitBasis.AMORTISING_LOAN, null, null, fclAmount, "TZS", null, List.of(opening),
             new BigDecimal("52000.00"), "TZS", "SINGLE", today, null, "onboarding",
             IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY,
-            new BigDecimal("0.5000")), "staff-setup").policyNumber();
+            new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
+            "staff-setup").policyNumber();
     }
     /** A credit-life scheme issued with NO borrowers -- the shape a lender relationship starts in. */
     private String issueEmptyCreditLifeScheme() {
@@ -681,7 +685,8 @@ class EnrolmentIntegrationTest {
             LocalDate.of(2026, 6, 1), null, "onboarding", IssuanceBasis.MIGRATION,
             loan ? InterestMethod.FLAT_RATE : null,
             loan ? RepaymentFrequency.MONTHLY : null,
-            loan ? new BigDecimal("0.5000") : null), "staff-setup").policyNumber();
+            loan ? new BigDecimal("0.5000") : null,
+            loan ? CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL : null), "staff-setup").policyNumber();
     }
 
     private PolicyMemberView onlyMemberOf(String policyNumber) {

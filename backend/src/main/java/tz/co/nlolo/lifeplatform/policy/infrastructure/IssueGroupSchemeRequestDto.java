@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.policy.api.CreditLifePremiumBasis;
 import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
 import tz.co.nlolo.lifeplatform.policy.api.InterestMethod;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
@@ -105,6 +106,12 @@ public record IssueGroupSchemeRequestDto(
     RepaymentFrequency repaymentFrequency,
     @DecimalMin("0.0001") BigDecimal premiumRatePercent,
     /**
+     * How that rate is charged. Required alongside it on a credit-life scheme, and refused on
+     * any other basis -- {@code PolicyApiImpl} enforces both, and
+     * {@code chk_group_scheme_premium_basis_iff_rate} is the backstop.
+     */
+    CreditLifePremiumBasis premiumBasis,
+    /**
      * The group case this scheme is issued on. REQUIRED for an employer (GROUP_LIFE) scheme --
      * the same rule manual issue has for a single life: nothing goes on risk on this route
      * without an underwriting case behind it. It must be a group proposal by this employer on
@@ -124,7 +131,7 @@ public record IssueGroupSchemeRequestDto(
             new BigDecimal(premium.amount()), premium.currencyCode(),
             premiumFrequency != null && !premiumFrequency.isBlank() ? premiumFrequency : "ANNUALLY",
             commencementDate, policyTermMonths, reasonForManualIssue, issuanceBasis,
-            interestMethod, repaymentFrequency, premiumRatePercent);
+            interestMethod, repaymentFrequency, premiumRatePercent, premiumBasis);
     }
 
     private static BigDecimal decimal(String amount) {

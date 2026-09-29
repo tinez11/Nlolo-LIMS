@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.policy.api.CreditLifePremiumBasis;
 import tz.co.nlolo.lifeplatform.policy.api.InterestMethod;
 import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
 import tz.co.nlolo.lifeplatform.policy.api.LoanTerms;
@@ -116,6 +117,7 @@ class PolicyContractTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -367,7 +369,8 @@ class PolicyContractTest {
                     new LoanTerms(new BigDecimal("1000000.00"), BigDecimal.ZERO, 12, RepaymentFrequency.MONTHLY,
                         java.time.LocalDate.of(2026, 6, 5), java.time.LocalDate.of(2026, 7, 5)))),
                 new BigDecimal("5000.00"), "TZS", "SINGLE", java.time.LocalDate.of(2026, 6, 1), null,
-                "contract test lender", IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, new BigDecimal("0.5000")),
+                "contract test lender", IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, new BigDecimal("0.5000"),
+                CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
             "staff-1").policyNumber();
         TenantContext.clear();
 

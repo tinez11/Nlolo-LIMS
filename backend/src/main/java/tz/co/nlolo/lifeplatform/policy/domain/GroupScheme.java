@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.policy.api.CreditLifePremiumBasis;
 import tz.co.nlolo.lifeplatform.policy.api.InterestMethod;
 import tz.co.nlolo.lifeplatform.policy.api.RepaymentFrequency;
 
@@ -89,6 +90,17 @@ public class GroupScheme {
     @Column(name = "premium_rate_percent")
     private BigDecimal premiumRatePercent;
 
+    /**
+     * What the rate MEANS, which the rate alone does not say.
+     *
+     * <p>Present exactly when the rate is — {@code chk_group_scheme_premium_basis_iff_rate}.
+     * Two real lenders read the same percentage three different ways; see
+     * {@link CreditLifePremiumBasis}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "premium_basis")
+    private CreditLifePremiumBasis premiumBasis;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -107,14 +119,15 @@ public class GroupScheme {
                         BigDecimal flatBenefitAmount, BigDecimal salaryMultiple,
                         BigDecimal fclAmount, String currency, String createdBy) {
         this(policyNumber, tenantId, benefitBasis, flatBenefitAmount, salaryMultiple,
-            fclAmount, currency, null, null, null, createdBy);
+            fclAmount, currency, null, null, null, null, createdBy);
     }
 
     public GroupScheme(String policyNumber, UUID tenantId, BenefitBasis benefitBasis,
                         BigDecimal flatBenefitAmount, BigDecimal salaryMultiple,
                         BigDecimal fclAmount, String currency,
                         InterestMethod interestMethod, RepaymentFrequency repaymentFrequency,
-                        BigDecimal premiumRatePercent, String createdBy) {
+                        BigDecimal premiumRatePercent, CreditLifePremiumBasis premiumBasis,
+                        String createdBy) {
         // Mirrors group_scheme_basis_parameter_present. The database is the guarantee;
         // this exists so a violation arrives as a domain error naming the problem rather
         // than as a constraint violation from three layers down.
@@ -146,11 +159,21 @@ public class GroupScheme {
                     throw new IllegalArgumentException(
                         "A credit-life scheme must state the premium rate its lender agreed");
                 }
+                // A rate without a basis does not say what to do with itself, and the two real
+                // lenders read the same number differently: one charges it flat on the disbursed
+                // amount whatever the term, the other once per policy year on the balance still
+                // outstanding. Refused rather than defaulted -- a default would price one
+                // lender on another's agreement, in silence, and be out by half on a short loan.
+                if (premiumBasis == null) {
+                    throw new IllegalArgumentException(
+                        "A credit-life scheme must state how its rate is charged: flat on the "
+                            + "disbursed amount, per annum on it, or per year on the declining balance");
+                }
             }
         }
         if (benefitBasis != BenefitBasis.AMORTISING_LOAN
                 && (interestMethod != null || repaymentFrequency != null
-                    || premiumRatePercent != null)) {
+                    || premiumRatePercent != null || premiumBasis != null)) {
             throw new IllegalArgumentException(
                 "An interest method, a repayment cadence and a premium rate belong only on a "
                     + "credit-life scheme");
@@ -172,6 +195,7 @@ public class GroupScheme {
         this.interestMethod = interestMethod;
         this.repaymentFrequency = repaymentFrequency;
         this.premiumRatePercent = premiumRatePercent;
+        this.premiumBasis = premiumBasis;
         this.createdAt = Instant.now();
         this.createdBy = createdBy;
     }
@@ -216,6 +240,7 @@ public class GroupScheme {
     public InterestMethod getInterestMethod() { return interestMethod; }
     public RepaymentFrequency getRepaymentFrequency() { return repaymentFrequency; }
     public BigDecimal getPremiumRatePercent() { return premiumRatePercent; }
+    public CreditLifePremiumBasis getPremiumBasis() { return premiumBasis; }
     public Instant getCreatedAt() { return createdAt; }
     public String getCreatedBy() { return createdBy; }
 }

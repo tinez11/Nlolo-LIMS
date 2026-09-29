@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.policy.domain;
 
+import tz.co.nlolo.lifeplatform.policy.api.CreditLifePremiumBasis;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -47,6 +49,29 @@ public final class CreditLifePremium {
      * @param ratePercent percent PER ANNUM — the scheme's rate, so 0.5000 means 0.5%
      */
     public static BigDecimal forLoan(BigDecimal principal, int termMonths, BigDecimal ratePercent) {
+        return forLoan(principal, termMonths, ratePercent, CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL);
+    }
+
+    /**
+     * The single premium one loan is charged at enrolment, on the basis its scheme agreed.
+     *
+     * <p>Three bases, because two real lenders priced two different ways and neither was the
+     * one formula here. See {@link CreditLifePremiumBasis} for whose is whose; the worked
+     * numbers that pin each of them live in {@code CreditLifePremiumTest}, taken from the
+     * clients' own schedules rather than invented.
+     *
+     * <p>Every basis charges ONCE, at enrolment. The declining-balance basis reaches its figure
+     * by walking policy years, which is how the lender's spreadsheet presents it, but the sum
+     * is a single premium like the others — one file, one invoice, no arrears.
+     *
+     * @param principal the amount DISBURSED, not the balance outstanding
+     * @param termMonths the loan's own term
+     * @param ratePercent percent — the scheme's rate, so 0.5000 means 0.5%. Per annum on the
+     *     two per-annum bases; the whole price on {@code FLAT_ON_PRINCIPAL}
+     * @param basis how that rate becomes money
+     */
+    public static BigDecimal forLoan(BigDecimal principal, int termMonths, BigDecimal ratePercent,
+                                      CreditLifePremiumBasis basis) {
         if (principal == null || principal.signum() <= 0) {
             throw new IllegalArgumentException("A loan with no principal cannot be priced");
         }
@@ -57,12 +82,46 @@ public final class CreditLifePremium {
             throw new IllegalArgumentException(
                 "A premium rate of " + ratePercent + " would write free cover");
         }
-        BigDecimal years = new BigDecimal(termMonths)
-            .divide(MONTHS_PER_YEAR, WORKING_SCALE, RoundingMode.HALF_UP);
-        return principal
-            .multiply(ratePercent).divide(PERCENT, WORKING_SCALE, RoundingMode.HALF_UP)
-            .multiply(years)
-            .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        if (basis == null) {
+            throw new IllegalArgumentException(
+                "A loan cannot be priced without knowing what its scheme's rate means; see "
+                    + "CreditLifePremiumBasis");
+        }
+
+        BigDecimal rate = ratePercent.divide(PERCENT, WORKING_SCALE, RoundingMode.HALF_UP);
+
+        return switch (basis) {
+            case FLAT_ON_PRINCIPAL -> principal.multiply(rate)
+                .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+
+            case PER_ANNUM_ON_PRINCIPAL -> {
+                BigDecimal years = new BigDecimal(termMonths)
+                    .divide(MONTHS_PER_YEAR, WORKING_SCALE, RoundingMode.HALF_UP);
+                yield principal.multiply(rate).multiply(years)
+                    .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            }
+
+            // One charge per policy year, each on what is still outstanding when that year
+            // begins. Straight-line, so the outstanding share at the start of year y is the
+            // months still to run over the whole term -- year 1 is the full principal, because
+            // nothing has been repaid yet.
+            //
+            // Summed at WORKING_SCALE and rounded once at the end, like the other two: rounding
+            // each year to the cent first would drift on a five-year loan, and the lender's own
+            // sheet carries its yearly figures to ten decimal places precisely because it does
+            // not round them either.
+            case ANNUAL_ON_DECLINING_BALANCE -> {
+                BigDecimal term = new BigDecimal(termMonths);
+                BigDecimal total = BigDecimal.ZERO;
+                for (int monthsRemaining = termMonths; monthsRemaining > 0; monthsRemaining -= 12) {
+                    BigDecimal outstanding = principal
+                        .multiply(new BigDecimal(monthsRemaining))
+                        .divide(term, WORKING_SCALE, RoundingMode.HALF_UP);
+                    total = total.add(outstanding.multiply(rate));
+                }
+                yield total.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            }
+        };
     }
 
     /**

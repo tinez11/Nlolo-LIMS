@@ -148,6 +148,7 @@ class ReinsuranceContractTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/reinsurance/V1__create_reinsurance_schema.sql",
             "db-migrations/reinsurance/V2__grants_rls_money_checks_reinsurer_and_projection.sql",
             "db-migrations/reinsurance/V4__projection_product_category.sql",

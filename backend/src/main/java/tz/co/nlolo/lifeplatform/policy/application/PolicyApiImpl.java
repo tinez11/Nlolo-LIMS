@@ -1495,7 +1495,7 @@ public class PolicyApiImpl implements PolicyApi {
                 "A credit-life scheme must state how often its lender's loans repay");
         }
         if (!loanBasis && (request.interestMethod() != null || request.repaymentFrequency() != null
-                || request.premiumRatePercent() != null)) {
+                || request.premiumRatePercent() != null || request.premiumBasis() != null)) {
             throw new InvalidPolicyStateException(
                 "An interest method, a repayment cadence and a premium rate belong only on a "
                     + "credit-life scheme");
@@ -1508,6 +1508,17 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException(
                 "A credit-life scheme must state the premium rate its lender agreed; the rate is "
                     + "negotiated per lender, so there is no default to fall back on");
+        }
+        // And what that rate MEANS, which it does not say by itself. Both real lenders price on
+        // the full disbursed amount and agree about nothing else: one charges the rate flat
+        // whatever the term, the other once per policy year on the balance still outstanding.
+        // A default here would price one lender on the other's agreement in silence -- and be
+        // out by two thirds on a two-month loan, which is the shape of error nobody reads a
+        // spreadsheet closely enough to catch.
+        if (loanBasis && request.premiumBasis() == null) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme must state how its rate is charged: flat on the disbursed "
+                    + "amount, per annum on it, or per year on the declining balance");
         }
         // Checked here and not only in the GroupScheme constructor because the consequence is
         // in a different module: billing reacts to PolicyIssued by generating a schedule and a
@@ -1637,7 +1648,7 @@ public class PolicyApiImpl implements PolicyApi {
         groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),
             request.flatBenefitAmount(), request.salaryMultiple(), request.fclAmount(),
             request.currency(), request.interestMethod(), request.repaymentFrequency(),
-            request.premiumRatePercent(), issuedBy));
+            request.premiumRatePercent(), request.premiumBasis(), issuedBy));
         if (request.benefitBasis() == BenefitBasis.GRADED) {
             request.grades().forEach(g -> groupSchemeGradeRepository.save(
                 new GroupSchemeGrade(tenantId, policyNumber, g.gradeCode(), g.benefitAmount())));

@@ -215,7 +215,11 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             // a rate on the loan. Charging the capped amount would quietly discount exactly
             // the borrowers whose excess risk sent them to underwriting.
             BigDecimal memberPremium = CreditLifePremium.forLoan(
-                judged.loanPrincipalAmount(), judged.loanTermMonths(), scheme.getPremiumRatePercent());
+                judged.loanPrincipalAmount(), judged.loanTermMonths(), scheme.getPremiumRatePercent(),
+                // The scheme's own basis, never a default. Two lenders read the same percentage
+                // differently, and the difference is invisible on a twelve-month loan and large
+                // on any other.
+                scheme.getPremiumBasis());
             row.becameMember(member.policyMemberId(), member.memberReference(), memberPremium);
             premiumTotal = premiumTotal.add(memberPremium);
             enrolled++;

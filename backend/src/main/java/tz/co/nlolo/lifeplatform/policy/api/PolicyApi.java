@@ -242,7 +242,21 @@ public interface PolicyApi {
                                      * <p>Required on AMORTISING_LOAN and rejected on every other
                                      * basis, like {@code interestMethod} above it.
                                      */
-                                    BigDecimal premiumRatePercent) {
+                                    BigDecimal premiumRatePercent,
+                                    /**
+                                     * What that rate MEANS, which the rate alone does not say.
+                                     *
+                                     * <p>Both real client schedules price on the full disbursed
+                                     * amount and agree about nothing else: one charges the rate
+                                     * flat whatever the term, the other once per policy year on
+                                     * the balance still outstanding. A single formula matched
+                                     * neither, and was out by half on a two-month loan.
+                                     *
+                                     * <p>Required on AMORTISING_LOAN and rejected elsewhere, like
+                                     * the rate it qualifies. Never defaulted: a default prices one
+                                     * lender on another's agreement without saying so.
+                                     */
+                                    CreditLifePremiumBasis premiumBasis) {
 
         /** A credit-life scheme, which states both how and how often its loans repay. */
         public IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
@@ -253,13 +267,14 @@ public interface PolicyApi {
                                         BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
                                         LocalDate commencementDate, Integer policyTermMonths,
                                         String reasonForManualIssue, IssuanceBasis issuanceBasis,
-                                        InterestMethod interestMethod, BigDecimal premiumRatePercent) {
+                                        InterestMethod interestMethod, BigDecimal premiumRatePercent,
+                                        CreditLifePremiumBasis premiumBasis) {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
                 reasonForManualIssue, issuanceBasis, interestMethod,
                 interestMethod == null ? null : RepaymentFrequency.MONTHLY,
-                premiumRatePercent);
+                premiumRatePercent, premiumBasis);
         }
 
         /** Any scheme but credit life, which is the only basis that has an interest method. */
@@ -274,7 +289,7 @@ public interface PolicyApi {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
-                reasonForManualIssue, issuanceBasis, null, null, null);
+                reasonForManualIssue, issuanceBasis, null, null, null, null);
         }
     }
 

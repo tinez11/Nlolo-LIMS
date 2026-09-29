@@ -119,6 +119,7 @@ class GroupSchemeIntegrationTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -677,7 +678,8 @@ class GroupSchemeIntegrationTest {
             // commencement belongs to whatever arrangement preceded this contract.
             LocalDate.of(2026, 6, 1), null,
             "credit life onboarding", IssuanceBasis.MIGRATION, interestMethod,
-            basis == BenefitBasis.AMORTISING_LOAN ? new BigDecimal("0.5000") : null);
+            basis == BenefitBasis.AMORTISING_LOAN ? new BigDecimal("0.5000") : null,
+            basis == BenefitBasis.AMORTISING_LOAN ? CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL : null);
     }
 
     /** LOLC's real shape: 10,400,000 over 18 months, disbursed 2026-06-30, no rate given. */

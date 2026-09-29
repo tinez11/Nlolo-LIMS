@@ -42,6 +42,28 @@ export const INTEREST_METHODS = ['FLAT_RATE', 'REDUCING_BALANCE'] as const;
 export const LOAN_REPAYMENT_FREQUENCIES = ['MONTHLY', 'QUARTERLY'] as const;
 
 /**
+ * How a lender's agreed rate turns into money. Ordered with the commonest real basis first.
+ *
+ * The three agree exactly on a twelve-month loan and diverge on every other term, which is
+ * why the labels carry a worked example rather than a name: picking the wrong one is silent
+ * on an annual book and large on a short one.
+ */
+export const CREDIT_LIFE_PREMIUM_BASES = [
+  'FLAT_ON_PRINCIPAL',
+  'PER_ANNUM_ON_PRINCIPAL',
+  'ANNUAL_ON_DECLINING_BALANCE',
+] as const;
+
+export const CREDIT_LIFE_PREMIUM_BASIS_LABELS: Record<
+  (typeof CREDIT_LIFE_PREMIUM_BASES)[number],
+  string
+> = {
+  FLAT_ON_PRINCIPAL: 'Flat on the disbursed amount, whatever the term',
+  PER_ANNUM_ON_PRINCIPAL: 'Per year, on the disbursed amount',
+  ANNUAL_ON_DECLINING_BALANCE: 'Per year, on the balance still outstanding',
+};
+
+/**
  * The bases that start cover at once — the only ones that leave a usable scheme today.
  *
  * The other two (`UNDERWRITING_OVERRIDE`, `GUARANTEED_ISSUE`) are real and are deliberately not
@@ -59,6 +81,7 @@ export interface CreditLifeSchemeIssueFormValues {
   interestMethod: (typeof INTEREST_METHODS)[number];
   repaymentFrequency: (typeof LOAN_REPAYMENT_FREQUENCIES)[number];
   premiumRatePercent: string;
+  premiumBasis: (typeof CREDIT_LIFE_PREMIUM_BASES)[number];
   premiumAmount: string;
   premiumCurrency: string;
   commencementDate: string;
@@ -77,6 +100,9 @@ export function blankCreditLifeSchemeIssueForm(): CreditLifeSchemeIssueFormValue
     interestMethod: 'FLAT_RATE',
     repaymentFrequency: 'MONTHLY',
     premiumRatePercent: '',
+    // No default that prices anybody: the lender's own agreement decides this, and the
+    // three bases are indistinguishable on a twelve-month loan.
+    premiumBasis: 'FLAT_ON_PRINCIPAL',
     premiumAmount: '',
     premiumCurrency: 'TZS',
     commencementDate: '',
@@ -111,6 +137,7 @@ export function creditLifeSchemeIssueFormSchema(today: string = todayIso()) {
         .refine((v) => v === '' || Number(v) >= 0.01, 'Free cover limit must be at least 0.01'),
       interestMethod: z.enum(INTEREST_METHODS),
       repaymentFrequency: z.enum(LOAN_REPAYMENT_FREQUENCIES),
+      premiumBasis: z.enum(CREDIT_LIFE_PREMIUM_BASES),
       premiumRatePercent: z
         .string()
         .trim()
@@ -180,6 +207,7 @@ export function toIssueRequest(
     interestMethod: values.interestMethod,
     repaymentFrequency: values.repaymentFrequency,
     premiumRatePercent: Number(values.premiumRatePercent),
+    premiumBasis: values.premiumBasis,
     /*
      * NO OPENING SCHEDULE, and the empty array is deliberate rather than an omission.
      *

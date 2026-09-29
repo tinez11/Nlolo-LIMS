@@ -141,6 +141,7 @@ class SinglePremiumIntegrationTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
@@ -341,7 +342,7 @@ class SinglePremiumIntegrationTest {
                 product.productVersionId(), null, BenefitBasis.FLAT, new BigDecimal("1000000.00"),
                 null, null, "TZS", null, oneEmployee(),
                 new BigDecimal("1200000.00"), "TZS", "ANNUALLY", LocalDate.now(), null,
-                "group onboarding", IssuanceBasis.MIGRATION, null, null, new BigDecimal("0.5000")),
+                "group onboarding", IssuanceBasis.MIGRATION, null, null, new BigDecimal("0.5000"), null),
             "staff-1"))
             .isInstanceOf(InvalidPolicyStateException.class)
             .hasMessageContaining("only on a credit-life scheme");
@@ -811,7 +812,7 @@ class SinglePremiumIntegrationTest {
             // Commences before the loans it covers: a lender scheme is signed first and then
             // fed monthly files of loans disbursed under it.
             LocalDate.of(2026, 6, 1), null, "credit life onboarding", IssuanceBasis.MIGRATION,
-            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, ratePercent);
+            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, ratePercent, CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL);
     }
 
     private GroupSchemeView issueEmployerScheme() {

@@ -117,6 +117,7 @@ class CreditLifeClaimEndToEndTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -582,7 +583,7 @@ class CreditLifeClaimEndToEndTest {
                     DISBURSED, DISBURSED.plusMonths(1)))),
             new BigDecimal("52000.00"), "TZS", "SINGLE",
             LocalDate.of(2026, 6, 1), null, "credit life onboarding", IssuanceBasis.MIGRATION,
-            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, new BigDecimal("0.5000")),
+            InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY, new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
             "staff-1").policyNumber();
     }
 

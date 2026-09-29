@@ -137,6 +137,7 @@ class CommissionAccrualEndToEndTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
         try (Connection connection = DriverManager.getConnection(
