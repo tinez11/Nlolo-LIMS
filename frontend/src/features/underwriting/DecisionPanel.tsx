@@ -1,6 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { UnderwritingCaseView } from '@/api/types';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { Panel } from '@/components/Panel';
 import { Button } from '@/components/ui/button';
@@ -17,6 +19,33 @@ import {
   type DecideFormInput,
   type DecideFormValues,
 } from './decideForm';
+
+/** Ties the separation-of-duties refusal to the button it explains. */
+const BLOCKED_BY_RANK_ID = 'decision-blocked-by-rank';
+
+/** The outcome in real words, with the loading if there is one. */
+function consequenceOf(values: DecideFormValues) {
+  const label = DECISION_OUTCOMES.find((o) => o.value === values.outcome)?.label ?? values.outcome;
+  if (values.outcome === 'LOADED') {
+    return (
+      <>
+        Accept this risk with a loading of <strong>{values.loadingPercent}%</strong>, and issue the
+        policy.
+      </>
+    );
+  }
+  if (values.outcome === 'ACCEPT') {
+    return <>Accept this risk and issue the policy.</>;
+  }
+  if (values.outcome === 'DECLINED') {
+    return <>Refuse this risk. No policy is issued.</>;
+  }
+  return (
+    <>
+      Record <strong>{label}</strong>. No policy is issued.
+    </>
+  );
+}
 
 /**
  * Where an underwriter decides the case.
@@ -65,6 +94,18 @@ export function DecisionPanel({
     resolver: zodResolver(decideFormSchema),
     defaultValues: blankDecideForm(),
   });
+
+  /*
+    The decision is held here between the submit and the second, deliberate click.
+
+    It was the one comparably consequential act on the platform with no confirmation:
+    claim settlement, EFT execution, reinstatement and KYC all go through `ConfirmAct`,
+    while an underwriter decided a life in a single click from a select that may still
+    be carrying its previous value. A decided case is closed to further evidence unless
+    it was POSTPONED (`UnderwritingCaseAlreadyDecidedException`), so a mis-click is not
+    trivially undoable, and on ACCEPT/LOADED it issues the policy.
+  */
+  const [pending, setPending] = useState<DecideFormValues | null>(null);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- see RegisterClaimPage
   const outcome = watch('outcome');
@@ -127,7 +168,7 @@ export function DecisionPanel({
             a proposal does not also accept it.
           </p>
         ) : (
-          <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => onDecide(toApiRequest(v)))(e)}>
+          <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
             <FormField label="Decision" error={errors.outcome?.message}>
               <Select {...register('outcome')}>
                 {/* No loading on a member's evidence case -- one member of a scheme has no
@@ -156,6 +197,7 @@ export function DecisionPanel({
 
             {blockedByRank && (
               <p
+                id={BLOCKED_BY_RANK_ID}
                 role="status"
                 className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
               >
@@ -175,17 +217,72 @@ export function DecisionPanel({
               <InlineError error={deciding.error} />
             )}
 
-            <Button
-              type="submit"
-              variant="primary"
-              // Kept apart on purpose: `blockedByRank` is a separation-of-duties refusal, which
-              // no amount of waiting resolves, while `pending` is the request in flight. One
-              // `disabled` carrying both told a blocked underwriter the platform was working.
-              pending={deciding.status === 'loading'}
-              disabled={blockedByRank}
-            >
-              Record decision
-            </Button>
+            {pending ? (
+              <ConfirmAct
+                heading={
+                  pending.outcome === 'DECLINED'
+                    ? 'Decline this risk?'
+                    : pending.outcome === 'POSTPONED'
+                      ? 'Postpone this case?'
+                      : 'Record this acceptance?'
+                }
+                tone={pending.outcome === 'DECLINED' ? 'danger' : 'primary'}
+                consequence={consequenceOf(pending)}
+                /*
+                  Facts about the backend, not caution. `UnderwritingApiImpl` refuses a second
+                  decision on any decided case that is not POSTPONED, and
+                  `UnderwritingDecisionEventListener` issues the policy on ACCEPT and LOADED
+                  only -- DECLINED and POSTPONED never issue.
+                */
+                reversal={
+                  pending.outcome === 'POSTPONED' ? (
+                    <>
+                      A postponed case can be decided again once new evidence arrives, so this
+                      one is recoverable.
+                    </>
+                  ) : (
+                    <>
+                      Nothing here can undo it: the case closes to further evidence, and only a
+                      postponement can be decided a second time.
+                    </>
+                  )
+                }
+                /*
+                  Deliberately not "Record decision" again. Two buttons with the same
+                  accessible name, one replacing the other, is a confirmation a person can
+                  click through on muscle memory -- and the naming pattern here is the one
+                  `ClaimSettlementPanel` already sets, where "Approve claim" is confirmed by
+                  "Approve and pay".
+                */
+                confirmLabel={
+                  pending.outcome === 'DECLINED'
+                    ? 'Decline the risk'
+                    : pending.outcome === 'POSTPONED'
+                      ? 'Postpone the case'
+                      : 'Record the acceptance'
+                }
+                busy={deciding.status === 'loading'}
+                onConfirm={() => onDecide(toApiRequest(pending))}
+                onCancel={() => setPending(null)}
+              />
+            ) : (
+              <Button
+                type="submit"
+                variant="primary"
+                // Kept apart on purpose: `blockedByRank` is a separation-of-duties refusal, which
+                // no amount of waiting resolves, while `pending` is the request in flight. One
+                // `disabled` carrying both told a blocked underwriter the platform was working.
+                pending={deciding.status === 'loading'}
+                disabled={blockedByRank}
+                // The refusal above explains this button, so it is named as the button's
+                // description rather than left to sit near it. `title` was the pattern here and
+                // reaches nobody: a disabled button is not focusable, so neither a keyboard user
+                // nor a screen reader ever got the reason.
+                aria-describedby={blockedByRank ? BLOCKED_BY_RANK_ID : undefined}
+              >
+                Record decision
+              </Button>
+            )}
           </form>
         )}
       </div>

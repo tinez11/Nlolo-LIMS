@@ -338,6 +338,7 @@ test.describe('staff underwriting', () => {
       await senior.getByLabel('Decision').selectOption({ label: 'Postpone — more evidence needed' });
       await senior.getByLabel('Reason').fill('Awaiting the specialist report');
       await senior.getByRole('button', { name: 'Record decision' }).click();
+      await senior.getByRole('button', { name: 'Postpone the case' }).click();
       await expect(senior.getByText('Postponed', { exact: true })).toBeVisible({ timeout: 15_000 });
     });
 

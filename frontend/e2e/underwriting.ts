@@ -34,12 +34,27 @@ export async function assess(page: Page, findings: string, riskScore: string): P
   await expect(page.getByText(/The rules engine recommends/)).toBeVisible({ timeout: 15_000 });
 }
 
-/** Records the decision on the case currently on screen. */
+/**
+ * Records the decision on the case currently on screen.
+ *
+ * Two clicks, because the decision is confirmed: a decided case is closed to further evidence
+ * unless it was POSTPONED, and an acceptance issues the policy. The confirming button carries
+ * the outcome's own verb rather than repeating "Record decision", so this maps the outcome to
+ * it instead of clicking the same name twice.
+ */
 export async function decide(page: Page, outcomeLabel: string, reason: string): Promise<void> {
   await page.getByLabel('Decision').selectOption({ label: outcomeLabel });
   await page.getByLabel('Reason').fill(reason);
   await page.getByRole('button', { name: 'Record decision' }).click();
+  await page.getByRole('button', { name: confirmLabelFor(outcomeLabel) }).click();
   await expect(page.getByRole('heading', { name: 'Decision', exact: true })).toBeVisible({ timeout: 15_000 });
+}
+
+/** The confirming button's label for an outcome, mirroring `DecisionPanel`. */
+export function confirmLabelFor(outcomeLabel: string): string {
+  if (outcomeLabel.startsWith('Decline')) return 'Decline the risk';
+  if (outcomeLabel.startsWith('Postpone')) return 'Postpone the case';
+  return 'Record the acceptance';
 }
 
 /**

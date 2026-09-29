@@ -68,9 +68,63 @@ describe('the senior underwriter gate', () => {
     await user.type(screen.getByLabelText('Reason'), 'Agrees with the recommendation');
     await user.click(screen.getByRole('button', { name: 'Record decision' }));
 
+    // The submit arms the confirmation; nothing is decided until the second click.
+    expect(onDecide).not.toHaveBeenCalled();
+    expect(screen.getByText('Record this acceptance?')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Record the acceptance' }));
+
     expect(onDecide).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'ACCEPT', reason: 'Agrees with the recommendation' }),
     );
+  });
+
+  /**
+   * The decision was the one comparably consequential act with no confirmation: a decided case
+   * is closed to further evidence unless it was POSTPONED, and on an acceptance it issues the
+   * policy. The confirmation has to state which of those is about to happen.
+   */
+  it('states the consequence and the absence of a way back before deciding', async () => {
+    const user = userEvent.setup();
+    const { onDecide } = renderPanel({ isSenior: true });
+
+    await user.selectOptions(screen.getByLabelText('Decision'), 'DECLINED');
+    await user.type(screen.getByLabelText('Reason'), 'Adverse history disclosed off-system');
+    await user.click(screen.getByRole('button', { name: 'Record decision' }));
+
+    expect(screen.getByText('Decline this risk?')).toBeInTheDocument();
+    expect(screen.getByText(/No policy is issued/)).toBeInTheDocument();
+    expect(screen.getByText(/the case closes to further evidence/)).toBeInTheDocument();
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it('lets the underwriter back out of the confirmation without deciding', async () => {
+    const user = userEvent.setup();
+    const { onDecide } = renderPanel();
+
+    await user.type(screen.getByLabelText('Reason'), 'Agrees with the recommendation');
+    await user.click(screen.getByRole('button', { name: 'Record decision' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onDecide).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Record decision' })).toBeEnabled();
+  });
+
+  /**
+   * A postponement is the one outcome that can be decided again, so saying "nothing can undo
+   * this" there would be the overstatement `ConfirmAct` exists to prevent.
+   */
+  it('tells the truth about a postponement being recoverable', async () => {
+    const user = userEvent.setup();
+    // Senior: postponing departs from the ACCEPT recommendation, so a junior is blocked
+    // before any confirmation is reached.
+    renderPanel({ isSenior: true });
+
+    await user.selectOptions(screen.getByLabelText('Decision'), 'POSTPONED');
+    await user.type(screen.getByLabelText('Reason'), 'Awaiting the medical report');
+    await user.click(screen.getByRole('button', { name: 'Record decision' }));
+
+    expect(screen.getByText(/can be decided again once new evidence arrives/)).toBeInTheDocument();
   });
 
   it('blocks a junior departing from it, and says who can', async () => {
@@ -103,6 +157,7 @@ describe('the senior underwriter gate', () => {
 
     await user.type(screen.getByLabelText('Reason'), 'Adverse history disclosed off-system');
     await user.click(screen.getByRole('button', { name: 'Record decision' }));
+    await user.click(screen.getByRole('button', { name: 'Decline the risk' }));
 
     expect(onDecide).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'DECLINED' }));
   });

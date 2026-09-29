@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, X } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, useFieldArray, useWatch, Controller } from 'react-hook-form';
 import {
   BENEFIT_CALCULATION_METHODS,
@@ -10,6 +10,7 @@ import {
   RATING_FACTOR_TYPES,
   type ProductCategory,
 } from '@/api/types';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
@@ -129,6 +130,14 @@ export function PublishVersionForm({
   const benefitRows = useWatch({ control, name: 'benefitSchedule' });
   const fundDefinitions = useFieldArray({ control, name: 'fundDefinitions' });
 
+  /*
+    Held between the submit and the second, deliberate click. Publishing retires the version
+    that is active now and repoints every subsequent policy at these rates -- a compliance-grade
+    act with no retraction -- and it was the one such act on the platform reached in a single
+    click, while claim settlement, EFT execution and reinstatement all confirm.
+  */
+  const [pending, setPending] = useState<PublishVersionFormValues | null>(null);
+
   async function onSubmit(values: PublishVersionFormValues) {
     await publishVersion(productId, toApiRequest(values));
     if (useProductStore.getState().publishing[productId]?.status === 'success') {
@@ -137,7 +146,7 @@ export function PublishVersionForm({
   }
 
   return (
-    <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+    <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="IFRS measurement model">
           <Select
@@ -808,9 +817,38 @@ export function PublishVersionForm({
         <InlineError error={publishing.error} />
       )}
 
-      <Button type="submit" variant="primary" pending={publishing.status === 'loading'}>
-        Publish version
-      </Button>
+      {pending ? (
+        <ConfirmAct
+          heading="Publish this version?"
+          consequence={
+            <>
+              Make this the active version from <strong>{pending.effectiveDate}</strong>. Every
+              policy priced from then on uses these rates, and the version that is active now is
+              retired.
+            </>
+          }
+          /*
+            A fact about the backend, not caution: `ProductApi.publishVersion` retires every
+            currently-ACTIVE version before inserting the new one, and there is no operation
+            that retracts a published version.
+          */
+          reversal={
+            <>
+              Nothing here retracts it. Correcting a published price means publishing a further
+              version, and any policy written in the meantime keeps the price it was sold at.
+            </>
+          }
+          // Distinct from the trigger, for the reason given in DecisionPanel.
+          confirmLabel="Publish and make active"
+          busy={publishing.status === 'loading'}
+          onConfirm={() => void onSubmit(pending)}
+          onCancel={() => setPending(null)}
+        />
+      ) : (
+        <Button type="submit" variant="primary" pending={publishing.status === 'loading'}>
+          Publish version
+        </Button>
+      )}
     </form>
   );
 }
