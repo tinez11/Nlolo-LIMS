@@ -110,6 +110,7 @@ class MemberExitIntegrationTest {
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V25__credit_life_premium_basis.sql",
+            "db-migrations/policy/V26__enrolment_stated_premium.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

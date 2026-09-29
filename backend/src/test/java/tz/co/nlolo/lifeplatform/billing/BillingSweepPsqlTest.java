@@ -63,7 +63,8 @@ class BillingSweepPsqlTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
-            "db-migrations/policy/V25__credit_life_premium_basis.sql");
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
+            "db-migrations/policy/V26__enrolment_stated_premium.sql");
 
         String fullFile = Files.readString(Path.of("db-migrations/_post-migration/configure-billing-sweep.sql"));
         String functionOnly = fullFile.substring(0, fullFile.indexOf("-- Every 15 minutes"));

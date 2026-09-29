@@ -1,5 +1,8 @@
 package tz.co.nlolo.lifeplatform.policy.application;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +59,8 @@ import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
  */
 @Service
 public class EnrolmentApiImpl implements EnrolmentApi {
+
+    private static final Logger log = LoggerFactory.getLogger(EnrolmentApiImpl.class);
 
     private final EnrolmentSubmissionRepository submissionRepository;
     private final EnrolmentSubmissionRowRepository rowRepository;
@@ -225,7 +230,34 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             enrolled++;
         }
 
-        submission.accept(acceptedBy, enrolled, premiumTotal);
+        // What the LENDER'S OWN FILE said, summed across the rows that stated it, so the two
+        // totals can be compared afterwards. Summed over the rows the insurer actually charged
+        // for -- comparing our six enrolled loans against their twenty stated ones would report
+        // a variance that is really a rejection count, and bury the discrepancy worth seeing.
+        //
+        // Null, not zero, when no row carried a premium column: a file that stated nothing
+        // reconciles against nothing, and zero would read as "they said it was free".
+        BigDecimal statedTotal = null;
+        for (EnrolmentSubmissionRow row :
+                rowRepository.findByTenantIdAndSubmissionIdOrderByLineNumberAsc(tenantId, submissionId)) {
+            if (row.getOutcome() == RowOutcome.REJECTED) continue;
+            BigDecimal stated = row.getStatedPremiumAmount();
+            if (stated == null) continue;
+            statedTotal = statedTotal == null ? stated : statedTotal.add(stated);
+        }
+
+        submission.accept(acceptedBy, enrolled, premiumTotal, statedTotal);
+
+        BigDecimal variance = submission.premiumVariance();
+        if (variance != null && variance.signum() != 0) {
+            // Logged, not refused. A variance is the thing a reconciliation is FOR, and
+            // bouncing a lender's whole month over one is worse than invoicing ours and saying
+            // so: the insurer prices the cover, and their figure is evidence rather than an
+            // instruction. It is on the submission for the console to show.
+            log.warn("Submission {} on scheme {}: the insurer charges {} and the lender's file "
+                + "stated {} -- a variance of {}. The invoice is the insurer's figure.",
+                submissionId, submission.getPolicyNumber(), premiumTotal, statedTotal, variance);
+        }
 
         // Acceptance published NOTHING before this. So no other module could learn that a file
         // had been accepted, and the premium it earned was charged to nobody -- the master
@@ -619,6 +651,7 @@ public class EnrolmentApiImpl implements EnrolmentApi {
     private static EnrolmentSubmissionView toView(EnrolmentSubmission s) {
         return new EnrolmentSubmissionView(s.getSubmissionId(), s.getPolicyNumber(), s.getStatus(),
             s.getFileName(), s.getRowCount(), s.getEnrolledCount(), s.getRejectedCount(),
-            s.getSubmittedBy(), s.getSubmittedAt(), s.getAcceptedBy(), s.getAcceptedAt());
+            s.getSubmittedBy(), s.getSubmittedAt(), s.getAcceptedBy(), s.getAcceptedAt(),
+            s.getPremiumTotal(), s.getStatedPremiumTotal(), s.premiumVariance());
     }
 }

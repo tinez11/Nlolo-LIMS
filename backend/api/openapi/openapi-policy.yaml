@@ -1339,6 +1339,28 @@ components:
         submittedAt: { type: string, format: date-time }
         acceptedBy: { type: string, nullable: true }
         acceptedAt: { type: string, format: date-time, nullable: true }
+        premiumTotal:
+          description: >-
+            What the insurer charges for this file, and the figure its invoice is built from.
+            Null until the submission is accepted.
+          type: [number, "null"]
+        statedPremiumTotal:
+          description: >-
+            What the LENDER's own file said, summed across the rows the insurer charged for.
+            Null where the file carried no premium column, which is legitimate and is NOT the
+            same as stating zero — both real schedules carry one, and it used to be discarded.
+          type: [number, "null"]
+        premiumVariance:
+          description: >-
+            `premiumTotal` less `statedPremiumTotal`, or null where there is nothing to compare.
+            Positive means the lender is invoiced MORE than their own file predicted.
+
+
+            Returned rather than left to the caller to subtract, so two clients cannot disagree
+            about the sign of a reconciliation. A variance never blocks acceptance: the insurer
+            prices the cover and the lender's figure is evidence, not an instruction — bouncing a
+            whole month over a disagreement would be worse than invoicing and saying so.
+          type: [number, "null"]
 
     EnrolmentRowView:
       description: >-

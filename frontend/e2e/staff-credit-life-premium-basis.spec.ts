@@ -15,15 +15,19 @@ const API = 'http://localhost:8080';
  * billing, which is the part a unit test cannot reach.
  */
 
-/** The file as the lender sent it, mapped to the five columns the parser requires. */
+/**
+ * The file as the lender sent it, carrying THEIR premium column as well as the five the
+ * parser requires. Those figures price nothing — the insurer charges from the scheme's own
+ * rate and basis — they are read so the two sides can be reconciled.
+ */
 const MAY_FILE = [
-  'borrower_full_name,borrower_date_of_birth,loan_principal_amount,loan_term_months,disbursement_date',
-  'JULIUS MBASHANGO MALUNDE,1960-05-12,1500000.00,4,2026-05-18',
-  'GAUDENCE PETTER CHAMI,1966-04-23,6000000.00,12,2026-05-18',
-  'AGATHA ALBERT SENDWA,1966-07-15,1000000.00,6,2026-05-18',
-  'CONSTANTINE LEONARD MALIPESA,1962-09-20,1000000.00,2,2026-05-18',
-  'SHAMTE SAID KIPAGATA,1970-07-02,4000000.00,6,2026-05-30',
-  'VULFRIDA JOHN MSELLE,1989-07-07,5000000.00,12,2026-05-30',
+  'borrower_full_name,borrower_date_of_birth,loan_principal_amount,loan_term_months,disbursement_date,lender_premium_amount',
+  'JULIUS MBASHANGO MALUNDE,1960-05-12,1500000.00,4,2026-05-18,9000.00',
+  'GAUDENCE PETTER CHAMI,1966-04-23,6000000.00,12,2026-05-18,36000.00',
+  'AGATHA ALBERT SENDWA,1966-07-15,1000000.00,6,2026-05-18,6000.00',
+  'CONSTANTINE LEONARD MALIPESA,1962-09-20,1000000.00,2,2026-05-18,6000.00',
+  'SHAMTE SAID KIPAGATA,1970-07-02,4000000.00,6,2026-05-30,24000.00',
+  'VULFRIDA JOHN MSELLE,1989-07-07,5000000.00,12,2026-05-30,30000.00',
 ].join('\n');
 
 test('the May file invoices the lender exactly what their own sheet says', async () => {
@@ -77,6 +81,14 @@ test('the May file invoices the lender exactly what their own sheet says', async
     expect(accept.ok(), `accept -> ${accept.status()} ${await accept.text()}`).toBeTruthy();
     const accepted = await accept.json();
     console.log(`accepted: ${JSON.stringify(accepted)}`);
+
+    // THE RECONCILIATION. The lender's own figures are read, summed and compared -- they used
+    // to be discarded, so a file whose premium disagreed with ours was invoiced in silence.
+    // Here they agree, and the agreement is the thing being evidenced: a zero variance that
+    // nobody recorded is indistinguishable from never having looked.
+    expect(Number(accepted.premiumTotal)).toBeCloseTo(111000, 2);
+    expect(Number(accepted.statedPremiumTotal)).toBeCloseTo(111000, 2);
+    expect(Number(accepted.premiumVariance)).toBeCloseTo(0, 2);
 
     const invoices = await (
       await http.get(`${API}/policies/${policyNumber}/invoices`, {

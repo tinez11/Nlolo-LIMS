@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.policy.api;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -22,4 +23,25 @@ public record EnrolmentSubmissionView(UUID submissionId,
                                        String submittedBy,
                                        Instant submittedAt,
                                        String acceptedBy,
-                                       Instant acceptedAt) {}
+                                       Instant acceptedAt,
+                                       /**
+                                        * What the insurer charged for this file, and the figure
+                                        * its invoice is built from. Null until acceptance.
+                                        */
+                                       BigDecimal premiumTotal,
+                                       /**
+                                        * What the LENDER's own file said, or null where it
+                                        * carried no premium column — which is legitimate, and
+                                        * different from stating zero.
+                                        */
+                                       BigDecimal statedPremiumTotal,
+                                       /**
+                                        * The first less the second, or null where there is
+                                        * nothing to compare. Positive means the lender is
+                                        * invoiced more than their file predicted.
+                                        *
+                                        * <p>Returned rather than left to the caller so two
+                                        * clients cannot subtract it in two directions and
+                                        * disagree about the sign of a reconciliation.
+                                        */
+                                       BigDecimal premiumVariance) {}

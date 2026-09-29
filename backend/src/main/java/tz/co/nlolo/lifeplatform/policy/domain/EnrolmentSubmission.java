@@ -76,6 +76,16 @@ public class EnrolmentSubmission {
     @Column(name = "premium_total")
     private BigDecimal premiumTotal;
 
+    /**
+     * What the LENDER's own file said the total was, or null where it carried no premium
+     * column. Summed across the rows that stated one, enrolled or not.
+     *
+     * <p>The other side of the reconciliation {@code premiumTotal} is one side of. Stored even
+     * when the two agree, because the agreement is the thing being evidenced.
+     */
+    @Column(name = "stated_premium_total")
+    private BigDecimal statedPremiumTotal;
+
     protected EnrolmentSubmission() {}
 
     public EnrolmentSubmission(UUID tenantId, String policyNumber, String documentRef,
@@ -142,6 +152,12 @@ public class EnrolmentSubmission {
      *     than left null.
      */
     public void accept(String acceptedBy, int enrolledCount, BigDecimal premiumTotal) {
+        accept(acceptedBy, enrolledCount, premiumTotal, null);
+    }
+
+    /** @param statedPremiumTotal what the lender's file said, or null if it said nothing. */
+    public void accept(String acceptedBy, int enrolledCount, BigDecimal premiumTotal,
+                        BigDecimal statedPremiumTotal) {
         requireAcceptableBy(acceptedBy);
         if (premiumTotal == null || premiumTotal.signum() < 0) {
             throw new IllegalArgumentException(
@@ -152,6 +168,7 @@ public class EnrolmentSubmission {
         this.acceptedAt = Instant.now();
         this.enrolledCount = enrolledCount;
         this.premiumTotal = premiumTotal;
+        this.statedPremiumTotal = statedPremiumTotal;
     }
 
     /**
@@ -183,4 +200,16 @@ public class EnrolmentSubmission {
     public String getAcceptedBy() { return acceptedBy; }
     public Instant getAcceptedAt() { return acceptedAt; }
     public BigDecimal getPremiumTotal() { return premiumTotal; }
+    public BigDecimal getStatedPremiumTotal() { return statedPremiumTotal; }
+
+    /**
+     * What the insurer charged LESS what the lender expected, or null where they said nothing.
+     *
+     * <p>Positive means the lender is invoiced more than their own file predicted, which is the
+     * direction worth arguing about first.
+     */
+    public BigDecimal premiumVariance() {
+        return premiumTotal == null || statedPremiumTotal == null
+            ? null : premiumTotal.subtract(statedPremiumTotal);
+    }
 }

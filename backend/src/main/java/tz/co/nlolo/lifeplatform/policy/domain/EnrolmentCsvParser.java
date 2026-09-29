@@ -52,6 +52,15 @@ public final class EnrolmentCsvParser {
     public static final String LOAN_TERM_MONTHS = "loan_term_months";
     public static final String DISBURSEMENT_DATE = "disbursement_date";
 
+    /**
+     * THEIRS, not ours: what the lender says this loan costs to insure.
+     *
+     * <p>Optional, and never used to price anything -- the insurer prices the cover from the
+     * scheme's own rate and basis. It is read so the two can be COMPARED, because a file
+     * whose premium column is silently discarded reconciles against nothing.
+     */
+    public static final String LENDER_PREMIUM_AMOUNT = "lender_premium_amount";
+
     /** Ours, not theirs: blank on a new borrower, quoted back for an existing one. */
     public static final String MEMBER_REFERENCE = "member_reference";
 
@@ -94,7 +103,7 @@ public final class EnrolmentCsvParser {
         return String.join(",",
             MEMBER_REFERENCE, BORROWER_FULL_NAME, BORROWER_DATE_OF_BIRTH, BORROWER_SEX,
             BORROWER_NATIONAL_ID, BORROWER_PHONE, LOAN_PRINCIPAL_AMOUNT, LOAN_TERM_MONTHS,
-            DISBURSEMENT_DATE, LOAN_ACCOUNT_NUMBER) + "\n";
+            DISBURSEMENT_DATE, LOAN_ACCOUNT_NUMBER, LENDER_PREMIUM_AMOUNT) + "\n";
     }
 
     /** The five a lender must fill, for a console that has to say which they are. */
@@ -192,6 +201,20 @@ public final class EnrolmentCsvParser {
                 EnrolmentRejection.MALFORMED_VALUE, e.getMessage()));
         }
 
+        // The lender's own premium, if they sent one. Read separately and AFTER the five that
+        // matter, because a row must not be refused over it: this figure prices nothing, and a
+        // file that cannot be read because the counterparty's own column is malformed would be
+        // a rejection nobody benefits from. Unreadable means absent, and absent means the row
+        // reconciles against nothing -- which is what it did for every file until now.
+        BigDecimal statedPremium;
+        try {
+            String stated = cell(record, headers, LENDER_PREMIUM_AMOUNT);
+            statedPremium = stated == null || stated.isBlank()
+                ? null : amount(stated, LENDER_PREMIUM_AMOUNT);
+        } catch (UnreadableValue e) {
+            statedPremium = null;
+        }
+
         // Two identical rows in ONE file, caught by the loan itself because the lender has
         // no identifier to give: who, born when, borrowed how much, on what day. The same
         // composite the scheme is checked against, applied within the file first so a
@@ -212,7 +235,7 @@ public final class EnrolmentCsvParser {
             cell(record, headers, BORROWER_SEX),
             cell(record, headers, BORROWER_NATIONAL_ID),
             cell(record, headers, BORROWER_PHONE),
-            principal, termMonths, disbursedOn));
+            principal, termMonths, disbursedOn, statedPremium));
     }
 
     /** Carries the column name and the offending value, which is what a lender needs. */
