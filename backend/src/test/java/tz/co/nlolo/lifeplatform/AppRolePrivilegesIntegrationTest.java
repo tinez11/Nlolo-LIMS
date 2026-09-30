@@ -121,6 +121,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             // M2 additions (final-review finding 4): product/underwriting's GRANT/RLS SQL
             // read correct by inspection but were never exercised under the real app_role
@@ -180,8 +181,6 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
-            "db-migrations/policy/V25__credit_life_premium_basis.sql",
-            "db-migrations/policy/V26__enrolment_stated_premium.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",

@@ -1328,7 +1328,10 @@ public class PolicyApiImpl implements PolicyApi {
             .orElseGet(() -> partyApi.registerIndividual(new IndividualRegistration(
                 member.getMemberName(), member.getMemberDateOfBirth(), identity.phoneNumber(),
                 null, identity.sex(), null, identity.identityDocument(),
-                null, null, null, null, null), promotedBy).partyId());
+                // No client reference: this party is minted from a claim on a freeform scheme
+                // member, and the lender's own number for them -- if they have one -- is not on
+                // the enrolment file. Inventing one here would reconcile nothing.
+                null, null, null, null, null, null), promotedBy).partyId());
 
         try {
             member.promoteAtClaim(partyId, promotedBy);

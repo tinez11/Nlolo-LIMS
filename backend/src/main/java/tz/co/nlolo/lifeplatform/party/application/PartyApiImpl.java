@@ -213,7 +213,8 @@ public class PartyApiImpl implements PartyApi {
             party.getCreatedBy(),
             party.getSex(), party.getSmokerStatus(), party.getIdentityDocument(),
             party.getOccupation(), party.getOccupationClass(), party.getEmployerName(),
-            party.getNationality(), party.getAddress(), party.getRegisteredByPartyId(),
+            party.getNationality(), party.getAddress(), party.getClientReference(),
+            party.getRegisteredByPartyId(),
             party.getCreatedByName());
     }
 

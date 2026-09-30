@@ -52,6 +52,12 @@ export const registerIndividualFormSchema = z
 
     idType: optionalEnum(ID_TYPES),
     idNumber: z.string().trim().max(50, 'Cannot exceed 50 characters'),
+    /**
+     * The insurer's own reference for this client. Optional by design: it is for reconciling
+     * against the book the business already keeps, and an agent who has no such number is
+     * registering a complete client, not an incomplete one.
+     */
+    clientReference: z.string().trim().max(50, 'Cannot exceed 50 characters'),
 
     occupation: z.string().trim().max(120, 'Cannot exceed 120 characters'),
     occupationClass: z.string().trim().max(30, 'Cannot exceed 30 characters'),
@@ -84,6 +90,35 @@ export const registerIndividualFormSchema = z
         message: 'Enter the number on the document',
       });
     }
+
+    /*
+      SEX IS REQUIRED, and it is not a form preference.
+
+      The pricing pipeline REFUSES to price a life whose sex is unrecorded -- deliberately, so
+      that nothing is priced on a guess -- and registration is the only place it can be
+      captured. Every client registered without it is a policy that cannot be quoted later,
+      discovered at the point of sale rather than here.
+    */
+    if (values.sex === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['sex'],
+        message: 'Required — a policy cannot be priced for a life whose sex is unrecorded',
+      });
+    }
+
+    /*
+      And an identity document, because a client nobody can identify cannot be KYC-verified,
+      and an unverifiable client cannot hold a policy. Asked for at registration rather than
+      discovered at verification, where the agent who took the details has moved on.
+    */
+    if (!hasType && !hasNumber) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['idType'],
+        message: 'Required — a client must be identifiable to be KYC-verified',
+      });
+    }
   });
 
 export type RegisterIndividualFormValues = z.infer<typeof registerIndividualFormSchema>;
@@ -98,6 +133,7 @@ export function blankRegisterIndividualForm(): RegisterIndividualFormValues {
     smokerStatus: '',
     idType: '',
     idNumber: '',
+    clientReference: '',
     occupation: '',
     occupationClass: '',
     employerName: '',
@@ -177,6 +213,7 @@ export function toApiRequest(values: RegisterIndividualFormValues): RegisterIndi
     ...(values.occupationClass && { occupationClass: values.occupationClass }),
     ...(values.employerName && { employerName: values.employerName }),
     ...(values.nationality && { nationality: values.nationality.toUpperCase() }),
+    ...(values.clientReference && { clientReference: values.clientReference }),
     ...(Object.keys(address).length > 0 && { address }),
   };
 }

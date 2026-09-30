@@ -68,7 +68,8 @@ public class PartyController {
             request.occupationClass(),
             request.employerName(),
             request.nationality(),
-            request.address() != null ? request.address().toAddress() : Address.none());
+            request.address() != null ? request.address().toAddress() : Address.none(),
+            request.clientReference());
         PartyView view = partyApi.registerIndividual(registration, jwt.getSubject(), registrarName(jwt),
             registeringAgentPartyId(jwt, authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(view);
@@ -160,7 +161,8 @@ public class PartyController {
             request.occupationClass(),
             request.employerName(),
             request.nationality(),
-            request.address() != null ? request.address().toAddress() : Address.none());
+            request.address() != null ? request.address().toAddress() : Address.none(),
+            request.clientReference());
         return ResponseEntity.ok(partyApi.amendIndividual(partyId, amended, jwt.getSubject()));
     }
 
@@ -316,10 +318,32 @@ public class PartyController {
      * that controller's shape exactly (allowlist via the now-shared
      * {@link AllowedDocumentContentTypes}, {@code ownerContext} scoped to this owning aggregate).
      */
+    /*
+     * AGENTS may upload, and only for a client they registered -- the same rule
+     * {@code getParty} enforces, checked below rather than in the expression because the owner
+     * is a property of the party, not of the token.
+     *
+     * <p>Uploading is not verifying. The agent who took the documents supplies them and a staff
+     * member decides whether they are good, which is the separation underwriting and claims both
+     * insist on and the one place KYC did not have it: the same person uploaded and verified.
+     * {@code POST /parties/{id}/kyc} stays staff-only for exactly that reason.
+     */
     @PostMapping(value = "/parties/{partyId}/kyc-evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_STAFF') or hasRole('REALM_AGENTS')")
     public ResponseEntity<KycEvidenceUploadResponseDto> uploadKycEvidence(@PathVariable UUID partyId,
-            @RequestPart("file") MultipartFile file, @AuthenticationPrincipal Jwt jwt) {
+            @RequestPart("file") MultipartFile file, @AuthenticationPrincipal Jwt jwt,
+            Authentication authentication) {
+        // Same ownership rule as getParty, and checked the same way: the owner is a property of
+        // the PARTY, so it cannot be expressed in the @PreAuthorize above. Without this an agent
+        // could file documents against any client in the tenant -- a narrower hole than reading
+        // them, but a hole that writes.
+        boolean isAgent = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .anyMatch("ROLE_REALM_AGENTS"::equals);
+        if (isAgent && !jwt.getSubject().equals(partyApi.getPartyDetail(partyId).createdBy())) {
+            throw new AccessDeniedException(
+                "Access denied: agent may only file KYC evidence for a client they registered");
+        }
         String contentType = AllowedDocumentContentTypes.normalizeOrThrow(file.getContentType());
         String documentRef;
         try {

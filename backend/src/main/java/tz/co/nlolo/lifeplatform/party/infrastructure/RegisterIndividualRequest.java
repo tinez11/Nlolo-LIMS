@@ -50,4 +50,10 @@ public record RegisterIndividualRequest(
     @Pattern(regexp = "^[A-Za-z]{2}$", message = "Nationality must be an ISO 3166-1 alpha-2 code, e.g. TZ")
     String nationality,
 
-    @Valid AddressRequest address) {}
+    @Valid AddressRequest address,
+
+    /**
+     * The insurer's own reference for this client. Optional, supplied rather than minted, and
+     * unique per tenant where present.
+     */
+    @Size(max = 50) String clientReference) {}

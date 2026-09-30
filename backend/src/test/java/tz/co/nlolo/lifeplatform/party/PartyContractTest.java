@@ -61,6 +61,7 @@ class PartyContractTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             // GET /parties/{id}/documents reads document.document_record through DocumentApi, so
             // this class now needs the document schema too -- without it the endpoint 500s on a
             // missing relation, which is exactly how it first failed.

@@ -46,6 +46,10 @@ public class Party {
     @Column(name = "registration_number")
     private String registrationNumber;
 
+    /** The insurer's own reference for this client, supplied by whoever registered them. */
+    @Column(name = "client_reference")
+    private String clientReference;
+
     @Column(name = "phone_number")
     private String phoneNumber;
 
@@ -173,6 +177,7 @@ public class Party {
         party.occupationClass = registration.occupationClass();
         party.employerName = registration.employerName();
         party.nationality = registration.nationality();
+        party.clientReference = registration.clientReference();
 
         Address address = registration.address();
         party.addressLine = address.line();
@@ -297,6 +302,7 @@ public class Party {
     public String getDisplayName() { return displayName; }
     public KycStatus getKycStatus() { return kycStatus; }
     public String getRegistrationNumber() { return registrationNumber; }
+    public String getClientReference() { return clientReference; }
 
     // Read by PartyApiImpl.getPartyDetail alone. These columns have been stored since V1 and were
     // simply never exposed -- PartyView carries four fields, so a registered date of birth, phone

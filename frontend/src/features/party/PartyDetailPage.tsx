@@ -291,6 +291,20 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                     />
                   )}
                   <Field label="Nationality" value={party.nationality ?? '—'} />
+                  {/*
+                    Selectable and monospaced like the ID above it, because the only thing
+                    anybody does with this number is copy it into another system.
+                  */}
+                  <Field
+                    label="Client reference"
+                    value={
+                      party.clientReference ? (
+                        <span className="font-mono text-xs select-all">{party.clientReference}</span>
+                      ) : (
+                        '—'
+                      )
+                    }
+                  />
                   <Field
                     label="KYC decided"
                     value={party.kycVerifiedAt ? formatInstant(party.kycVerifiedAt) : '—'}
