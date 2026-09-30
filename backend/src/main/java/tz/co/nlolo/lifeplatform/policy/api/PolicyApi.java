@@ -628,6 +628,15 @@ public interface PolicyApi {
      */
     void expirePolicy(String policyNumber);
 
+    /**
+     * Recompute a savings policy's cash value from the product's cash-value table, given premiums
+     * are paid to {@code paidToDate} (null = nothing paid yet). A no-op for a policy whose version
+     * carries no cash-value config -- pure protection has no cash value. Called on each collected
+     * premium. Idempotent: the value is a function of the contract at its policy year, set from the
+     * table, so recomputing yields the same number.
+     */
+    void recalculateCashValue(String policyNumber, LocalDate paidToDate);
+
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
     void markMatured(String policyNumber, String maturedBy);
 

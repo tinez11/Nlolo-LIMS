@@ -642,7 +642,7 @@ public class PolicyApiImpl implements PolicyApi {
         // RESERVED rows for this policy -- self-healing the crash case (reserved, then crashed
         // before confirm/release) on the next real access instead of on a fixed wall-clock timer.
         loanValueReservationRepository.expireStaleReservations(policyNumber, tenantId, Instant.now());
-        findPolicyOrThrow(policyNumber, tenantId);
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         PolicyAccount account = policyAccountRepository.lockByPolicyNumber(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
 
@@ -650,7 +650,11 @@ public class PolicyApiImpl implements PolicyApi {
         // pulling every RESERVED row into memory and reducing client-side -- same result,
         // one fewer place computing "sum of currently-RESERVED amounts" for this policy.
         BigDecimal currentlyReserved = loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId);
-        BigDecimal available = account.availableLoanValue(currentlyReserved);
+        // Cap the borrowable amount at the product's loan-to-value percent, read from the policy's
+        // OWN version (step 1 -- the M3 simplification that ignored it is closed). A null percent
+        // means the whole cash value is borrowable.
+        BigDecimal ltvPercent = productApi.getSnapshotByVersionId(policy.getProductVersionId()).maxLoanToValuePercent();
+        BigDecimal available = account.availableLoanValue(currentlyReserved, ltvPercent);
         if (amount.compareTo(available) > 0) {
             throw new InsufficientLoanValueException(
                 "Requested " + amount + " " + currency + " exceeds available loan value " + available + " for policy " + policyNumber);
@@ -831,6 +835,67 @@ public class PolicyApiImpl implements PolicyApi {
             Map.of("policyNumber", policyNumber,
                    "maturityDate", policy.getMaturityDate().toString(),
                    "expiredAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional
+    public void recalculateCashValue(String policyNumber, LocalDate paidToDate) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+
+        // Not a savings product: no config, no cash value, nothing to do. This is how a pure-
+        // protection policy (every product before this step) stays untouched.
+        var config = productApi.getCashValueConfig(policy.getProductVersionId());
+        if (config.isEmpty()) {
+            return;
+        }
+
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+
+        LocalDate start = policy.getCommencementDate() != null ? policy.getCommencementDate() : policy.getIssueDate();
+        int completedYears = (paidToDate == null || start == null || paidToDate.isBefore(start))
+            ? 0
+            : Period.between(start, paidToDate).getYears();
+
+        BigDecimal newCashValue;
+        if (completedYears < config.get().minYearsForValue()) {
+            // Before the minimum term a savings policy has no value -- the early premiums cover the
+            // cost of setting the contract up. Zero, not a table lookup.
+            newCashValue = BigDecimal.ZERO;
+        } else {
+            // Age at entry, for an age-banded scale. Null where the scale is not age-banded, which
+            // avoids the party read entirely for the common single-scale table.
+            Integer ageAtEntry = ageAtEntryFor(policy, start);
+            BigDecimal perMille = productApi
+                .resolveCashValuePerMille(policy.getProductVersionId(), completedYears, ageAtEntry)
+                .orElse(null);
+            if (perMille == null) {
+                // A savings version with no row for a year past its minimum is a table gap -- a
+                // configuration fault, not a reason to wipe a value already earned. Leave it and say so.
+                log.warn("Policy {} reached cash-value year {} but version {} has no cash-value row for it;"
+                        + " cash value left unchanged", policyNumber, completedYears, policy.getProductVersionId());
+                return;
+            }
+            newCashValue = policy.getSumAssuredAmount()
+                .multiply(perMille)
+                .divide(BigDecimal.valueOf(1000), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        account.restateCashValue(newCashValue);
+        policyAccountRepository.save(account);
+    }
+
+    /** The life assured's age when cover started, or null when it cannot be derived -- an unbanded
+     * cash-value scale ignores it, so a missing date of birth does not block valuation. */
+    private Integer ageAtEntryFor(Policy policy, LocalDate start) {
+        if (start == null) {
+            return null;
+        }
+        UUID lifeId = policy.getLifeAssuredPartyId() != null
+            ? policy.getLifeAssuredPartyId() : policy.getPolicyholderPartyId();
+        LocalDate dob = partyApi.getPartyDetail(lifeId).dateOfBirth();
+        return dob != null ? Period.between(dob, start).getYears() : null;
     }
 
     @Override

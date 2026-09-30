@@ -44,6 +44,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -95,6 +96,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -1506,6 +1508,85 @@ class PolicyApiIntegrationTest {
         // issueDate is "today" -> 0 months in force -> matches the first band (0 <= 0 < 12) -> 10% charge
         // charge = 100000 * 10 / 100 = 10000; quotedValue = 100000 - 10000 = 90000
         assertEquals(0, new BigDecimal("90000").compareTo(quote.quotedValueAmount()));
+    }
+
+    /** Seed a cash-value config + scale for a version, so a policy on it can be valued (step 1). */
+    private void seedCashValue(UUID tenantId, UUID versionId) {
+        TenantContext.set(tenantId);
+        // The test connects as the table owner, so RLS is bypassed and tenant_id is set explicitly.
+        jdbcTemplate.update("INSERT INTO product.cash_value_config "
+            + "(product_version_id, tenant_id, basis_reference, basis_date, paid_up_basis, min_years_for_value) "
+            + "VALUES (?, ?, 'TEST-BASIS-2026', '2026-01-01', 'PROPORTIONATE', 2)", versionId, tenantId);
+        // Year 2 -> 200 per 1,000; year 3 -> 300. Unbanded (any entry age).
+        jdbcTemplate.update("INSERT INTO product.cash_value_table "
+            + "(tenant_id, product_version_id, policy_year, cash_value_per_mille) VALUES (?, ?, 2, 200)", tenantId, versionId);
+        jdbcTemplate.update("INSERT INTO product.cash_value_table "
+            + "(tenant_id, product_version_id, policy_year, cash_value_per_mille) VALUES (?, ?, 3, 300)", tenantId, versionId);
+    }
+
+    @Test
+    void aSavingsPolicysCashValueFollowsTheTableAndBacksALoan() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-CV-01");
+        seedCashValue(tenantId, fixture.productVersionId());
+
+        // A policy that commenced three years ago on this savings version, sum assured 2,000,000.
+        TenantContext.set(tenantId);
+        LocalDate commencement = LocalDate.now().minusYears(3);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "cash value test", commencement, 240, null, null, null);
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(policyNumber);
+
+        // One year paid: below the 2-year minimum, so no value yet.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(1));
+        assertEquals(0, BigDecimal.ZERO.compareTo(
+            policyAccountRepository.findById(policyNumber).orElseThrow().getCashValueAmount()));
+
+        // Two years paid: year-2 scale, 2,000,000 * 200 / 1000 = 400,000.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(2));
+        assertEquals(0, new BigDecimal("400000.00").compareTo(
+            policyAccountRepository.findById(policyNumber).orElseThrow().getCashValueAmount()));
+
+        // Three years paid: year-3 scale, 600,000.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(3));
+        assertEquals(0, new BigDecimal("600000.00").compareTo(
+            policyAccountRepository.findById(policyNumber).orElseThrow().getCashValueAmount()));
+
+        // The cash value now backs a loan -- the loan module reads exactly this field, which was
+        // 0 for every policy until this step. No LTV on this version, so the whole 600,000 is
+        // borrowable: 700,000 is refused, and 500,000 reserves.
+        assertThrows(tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException.class, () ->
+            policyApi.reserveLoanValue(policyNumber, new BigDecimal("700000.00"), "TZS", Duration.ofMinutes(10)));
+        assertThat(policyApi.reserveLoanValue(policyNumber, new BigDecimal("500000.00"), "TZS", Duration.ofMinutes(10)))
+            .isNotNull();
+    }
+
+    @Test
+    void theLoanToValuePercentCapsWhatCanBeBorrowedAgainstCashValue() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-CV-LTV");
+        seedCashValue(tenantId, fixture.productVersionId());
+        // Cap this version's loan-to-value at 50%.
+        TenantContext.set(tenantId);
+        jdbcTemplate.update("UPDATE product.product_version SET max_loan_to_value_percent = 50 WHERE product_version_id = ?",
+            fixture.productVersionId());
+
+        LocalDate commencement = LocalDate.now().minusYears(3);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "ltv test", commencement, 240, null, null, null);
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(policyNumber);
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(3)); // cash value 600,000
+
+        // 50% of 600,000 = 300,000 borrowable: 350,000 is refused (it would be allowed without the
+        // cap, since cash value is 600,000), and 300,000 reserves.
+        assertThrows(tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException.class, () ->
+            policyApi.reserveLoanValue(policyNumber, new BigDecimal("350000.00"), "TZS", Duration.ofMinutes(10)));
+        assertThat(policyApi.reserveLoanValue(policyNumber, new BigDecimal("300000.00"), "TZS", Duration.ofMinutes(10)))
+            .isNotNull();
     }
 
     @Test

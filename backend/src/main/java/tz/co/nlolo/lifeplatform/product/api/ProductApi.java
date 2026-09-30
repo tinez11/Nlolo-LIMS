@@ -426,4 +426,31 @@ public interface ProductApi {
      * resolveRatingMultiplier).
      */
     ProductSnapshotView getSnapshotByVersionId(UUID productVersionId);
+
+    /**
+     * A version's cash-value configuration, present only for a savings product (V17). Its presence
+     * is how a caller tells a savings contract from pure protection: {@code policy} reads it on each
+     * premium to decide whether to value the policy at all, and {@code min years} gates when a value
+     * first exists.
+     */
+    record CashValueConfigView(String basisReference, java.time.LocalDate basisDate,
+                               String paidUpBasis, int minYearsForValue) {}
+
+    /** The cash-value configuration for {@code productVersionId}, or empty for a non-savings product. */
+    Optional<CashValueConfigView> getCashValueConfig(UUID productVersionId);
+
+    /**
+     * The cash value per 1,000 of sum assured at {@code policyYear} for a life entering at
+     * {@code ageAtEntry} (null where the scale is not age-banded). Empty when the version has no
+     * cash-value table, or no row for that year/age -- a gap the actuary did not price, which the
+     * caller must treat as "no value", never as zero-by-default masquerading as priced.
+     */
+    Optional<BigDecimal> resolveCashValuePerMille(UUID productVersionId, int policyYear, Integer ageAtEntry);
+
+    /**
+     * The paid-up sum assured per 1,000 at {@code policyYear}/{@code ageAtEntry}, for the TABLE
+     * paid-up basis. Empty when no row applies or the row carries no paid-up scale (the version uses
+     * the PROPORTIONATE basis, which needs no table).
+     */
+    Optional<BigDecimal> resolvePaidUpPerMille(UUID productVersionId, int policyYear, Integer ageAtEntry);
 }

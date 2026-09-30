@@ -360,18 +360,26 @@ public class BillingApiImpl implements BillingApi {
             // overpayment leaves amountPaid above the premium due, and commission must follow the
             // premium, not the surplus. (This method has always ignored both arguments beyond
             // applyPayment's running total; the invoice is the authoritative record.)
-            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId,
-                Map.of("invoiceId", invoiceId,
-                       "policyNumber", invoice.getPolicyNumber(),
-                       // WHO paid, not just what was paid. Carried because the consumer that
-                       // needs it most cannot look it up: communication thanks the customer for
-                       // this payment and may not depend on policy. An event naming only the
-                       // contract would reach it with nobody to tell -- the same gap
-                       // policy.PolicyNotTakenUp had, and closed the same way.
-                       "policyholderPartyId", policyApi.getPolicy(invoice.getPolicyNumber()).policyholderPartyId(),
-                       "amount", Map.of("amount", invoice.getAmount().toPlainString(),
-                                        "currencyCode", invoice.getCurrency()),
-                       "collectedAt", Instant.now().toString())));
+            Map<String, Object> collected = new java.util.HashMap<>();
+            collected.put("invoiceId", invoiceId);
+            collected.put("policyNumber", invoice.getPolicyNumber());
+            // WHO paid, not just what was paid. Carried because the consumer that needs it most
+            // cannot look it up: communication thanks the customer for this payment and may not
+            // depend on policy. An event naming only the contract would reach it with nobody to
+            // tell -- the same gap policy.PolicyNotTakenUp had, and closed the same way.
+            collected.put("policyholderPartyId", policyApi.getPolicy(invoice.getPolicyNumber()).policyholderPartyId());
+            // The invoice's OWN amount, not the arguments -- see the note above.
+            collected.put("amount", Map.of("amount", invoice.getAmount().toPlainString(),
+                "currencyCode", invoice.getCurrency()));
+            collected.put("collectedAt", Instant.now().toString());
+            // How far premiums are paid, with no gap, from the first due date -- the input a
+            // cash-value policy needs to know which policy year it has reached. Billing owns the
+            // invoices, so it is the only module that can compute contiguity honestly; null when
+            // even the first invoice is unpaid (an out-of-order payment). A HashMap because the
+            // payload now carries a nullable value, which Map.of forbids.
+            LocalDate paidToDate = contiguousPaidToDate(invoice.getPolicyNumber(), tenantId);
+            collected.put("paidToDate", paidToDate != null ? paidToDate.toString() : null);
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId, collected));
         }
         return toView(invoice);
     }
@@ -700,6 +708,27 @@ public class BillingApiImpl implements BillingApi {
         // generateInvoicesAhead is measured forward from where invoicing currently stands rather
         // than from a fixed issue date -- each roll adds another year (bounded by the paying end).
         generateInvoicesAhead(schedule.getTenantId(), schedule, productVersionId, schedule.getNextDueDate());
+    }
+
+    /**
+     * The furthest due date to which premiums are paid without a gap, from the earliest invoice.
+     * PAID and WAIVED both count -- a waived instalment does not break cover -- and the run stops at
+     * the first invoice that is neither. Null when even the first invoice is unpaid.
+     *
+     * <p>A cash-value policy's worth turns on completed premium years, so what matters is not "was
+     * this one paid" but "paid up to when, unbroken". Only billing can answer that, because only
+     * billing holds the invoices.
+     */
+    private LocalDate contiguousPaidToDate(String policyNumber, UUID tenantId) {
+        LocalDate paidTo = null;
+        for (PremiumInvoice inv : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
+            if ("PAID".equals(inv.getStatus()) || "WAIVED".equals(inv.getStatus())) {
+                paidTo = inv.getDueDate();
+            } else {
+                break;
+            }
+        }
+        return paidTo;
     }
 
     private void generateInvoicesAhead(UUID tenantId, BillingSchedule schedule, UUID productVersionId, LocalDate fromDate) {

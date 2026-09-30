@@ -25,16 +25,21 @@ public class ProductApiImpl implements ProductApi {
     private final BenefitScheduleEntryRepository benefitScheduleEntryRepository;
     private final FundDefinitionRepository fundDefinitionRepository;
     private final BaseRateRepository baseRateRepository;
+    private final CashValueEntryRepository cashValueEntryRepository;
+    private final CashValueConfigRepository cashValueConfigRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
-                           FundDefinitionRepository fundDefinitionRepository, BaseRateRepository baseRateRepository) {
+                           FundDefinitionRepository fundDefinitionRepository, BaseRateRepository baseRateRepository,
+                           CashValueEntryRepository cashValueEntryRepository, CashValueConfigRepository cashValueConfigRepository) {
         this.productDefinitionRepository = productDefinitionRepository;
         this.productVersionRepository = productVersionRepository;
         this.ratingFactorRepository = ratingFactorRepository;
         this.benefitScheduleEntryRepository = benefitScheduleEntryRepository;
         this.fundDefinitionRepository = fundDefinitionRepository;
         this.baseRateRepository = baseRateRepository;
+        this.cashValueEntryRepository = cashValueEntryRepository;
+        this.cashValueConfigRepository = cashValueConfigRepository;
     }
 
     @Override
@@ -944,6 +949,28 @@ public class ProductApiImpl implements ProductApi {
         return baseRateRepository
             .findApplicable(productVersionId, ageAtEntry, sex.name(), smokerStatus.name(), termMonths)
             .map(BaseRate::getRatePerMille);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<CashValueConfigView> getCashValueConfig(UUID productVersionId) {
+        return cashValueConfigRepository.findById(productVersionId)
+            .map(c -> new CashValueConfigView(c.getBasisReference(), c.getBasisDate(),
+                c.getPaidUpBasis(), c.getMinYearsForValue()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> resolveCashValuePerMille(UUID productVersionId, int policyYear, Integer ageAtEntry) {
+        return cashValueEntryRepository.findApplicable(productVersionId, policyYear, ageAtEntry)
+            .map(CashValueEntry::getCashValuePerMille);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> resolvePaidUpPerMille(UUID productVersionId, int policyYear, Integer ageAtEntry) {
+        return cashValueEntryRepository.findApplicable(productVersionId, policyYear, ageAtEntry)
+            .map(CashValueEntry::getPaidUpPerMille);
     }
 
     @Override
