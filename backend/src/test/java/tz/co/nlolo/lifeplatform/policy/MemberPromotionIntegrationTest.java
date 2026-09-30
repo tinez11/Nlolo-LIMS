@@ -114,6 +114,10 @@ class MemberPromotionIntegrationTest {
             "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/policy/V26__enrolment_stated_premium.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

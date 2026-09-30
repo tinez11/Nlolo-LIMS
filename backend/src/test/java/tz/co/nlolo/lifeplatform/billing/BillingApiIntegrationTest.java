@@ -131,6 +131,8 @@ class BillingApiIntegrationTest {
             "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V27__expired_status.sql",
             "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",

@@ -109,6 +109,10 @@ class PolicyClaimClosureTest {
             "db-migrations/policy/V26__enrolment_stated_premium.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
