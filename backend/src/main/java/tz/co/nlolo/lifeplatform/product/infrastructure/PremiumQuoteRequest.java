@@ -30,4 +30,7 @@ public record PremiumQuoteRequest(
     @NotNull SmokerStatus smokerStatus,
     @NotNull String occupationClass,
     @NotNull PremiumFrequency frequency,
-    LocalDate asOf) {}
+    LocalDate asOf,
+    // The policy term the quote is for (V16). Optional: null prices against unbanded rates only and
+    // is refused on a term-banded version -- the same rule issuance follows.
+    @Positive Integer policyTermMonths) {}

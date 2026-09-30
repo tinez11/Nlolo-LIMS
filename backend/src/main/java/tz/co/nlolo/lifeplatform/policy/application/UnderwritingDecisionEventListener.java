@@ -225,7 +225,11 @@ public class UnderwritingDecisionEventListener {
                 // sign-off. So an unrecorded sex still refuses below.
                 life.smokerStatus() != null
                     ? tz.co.nlolo.lifeplatform.product.api.SmokerStatus.valueOf(life.smokerStatus().name())
-                    : tz.co.nlolo.lifeplatform.product.api.SmokerStatus.UNKNOWN)
+                    : tz.co.nlolo.lifeplatform.product.api.SmokerStatus.UNKNOWN,
+                // The term the applicant asked for, so a term-banded version prices this contract on
+                // the right band (V16). Null for a product that does not term; a term-banded version
+                // then finds no cell and refuses, which is correct -- it was not priced for "no term".
+                decidedCase.requestedTermMonths())
             .orElseThrow(() -> new IllegalStateException("Product version "
                 + decidedCase.productVersionId() + " has no base rate for age " + ageAtEntry
                 + ", sex " + life.sex() + ", smoker status "

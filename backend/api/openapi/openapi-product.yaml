@@ -446,6 +446,16 @@ components:
           description: Annual rate per 1,000 of sum assured.
           type: number
           exclusiveMinimum: 0
+        termFromMonths:
+          description: >-
+            Optional lower bound of the policy term this rate is for (V16). Both term bounds
+            together or neither; both null means the rate applies to any term.
+          type: integer
+          minimum: 1
+        termToMonths:
+          description: Optional upper bound of the policy term, inclusive.
+          type: integer
+          minimum: 1
     PremiumQuoteRequest:
       description: >-
         Takes dateOfBirth, never a precomputed age: entry age is the input a
@@ -473,13 +483,19 @@ components:
         # any arithmetic that divides by it.
         #
         # The annual figure IS the single premium only while the cover term is twelve months.
-        # This input carries no term, so a longer-term single premium is not expressible here
-        # and must not be quoted through this endpoint until it is.
+        # A single premium over a longer policyTermMonths is refused (422) rather than quoted at
+        # the wrong number, until a single-premium basis is added.
         frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         asOf:
           description: Selects the product version. Defaults to today.
           type: [string, "null"]
           format: date
+        policyTermMonths:
+          description: >-
+            The policy term the quote is for (V16). Optional: null prices against unbanded rates
+            only and is refused on a term-banded version, the same rule issuance follows.
+          type: integer
+          minimum: 1
     PremiumQuoteView:
       description: >-
         The premium AND its derivation. The breakdown is returned because

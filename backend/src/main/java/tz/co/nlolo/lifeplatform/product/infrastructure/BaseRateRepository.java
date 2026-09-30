@@ -34,11 +34,13 @@ public interface BaseRateRepository extends JpaRepository<BaseRate, UUID> {
           and b.sex = :sex
           and b.smokerStatus = :smokerStatus
           and :age between b.ageFrom and b.ageTo
+          and (b.termFromMonths is null or :term between b.termFromMonths and b.termToMonths)
         """)
     Optional<BaseRate> findApplicable(@Param("productVersionId") UUID productVersionId,
                                       @Param("age") int age,
                                       @Param("sex") String sex,
-                                      @Param("smokerStatus") String smokerStatus);
+                                      @Param("smokerStatus") String smokerStatus,
+                                      @Param("term") Integer termMonths);
 
     boolean existsByProductVersionId(UUID productVersionId);
 }

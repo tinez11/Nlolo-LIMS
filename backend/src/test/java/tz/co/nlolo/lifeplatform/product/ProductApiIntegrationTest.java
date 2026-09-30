@@ -70,7 +70,8 @@ class ProductApiIntegrationTest {
             // as "duplicate product code", because createProduct reports every
             // DataIntegrityViolationException that way. See the note on that test.
             "db-migrations/product/V14__credit_life_category.sql",
-            "db-migrations/product/V15__exclusion_periods.sql");
+            "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql");
     }
 
     @BeforeEach
@@ -1123,6 +1124,72 @@ class ProductApiIntegrationTest {
                 assertThat(f.band()).isEqualTo("5000000");
                 assertThat(f.multiplier()).isEqualByComparingTo(new BigDecimal("1.5000"));
             });
+    }
+
+    @Test
+    void aTermBandedVersionPricesEachTermOnItsOwnRateAndRefusesAnUnpricedTerm() {
+        ProductSummaryView product = productApi.createProduct("TERM-V16-BANDED", "Term-banded",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        // Same age/sex/smoker, two term bands at different rates -- the point of V16.
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 40, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("8.0000"), 1, 120),
+                    new ProductApi.BaseRateInput(18, 40, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("14.0000"), 121, 360),
+                    // Both sexes are required by rejectUncoveredEntryAges; FEMALE bands mirror MALE's terms.
+                    new ProductApi.BaseRateInput(18, 40, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("6.0000"), 1, 120),
+                    new ProductApi.BaseRateInput(18, 40, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("11.0000"), 121, 360)),
+            new EligibilityBounds(18, 40, null, null, null, null), ANY_FILING, "actuary@nlolo.co.tz");
+
+        // A 10-year (120mo) term prices on the 8.0 band: 1,000,000 / 1000 * 8.0 = 8,000 annual / 12.
+        ProductApi.PremiumQuoteView shortTerm = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(30),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now(), 120));
+        assertThat(shortTerm.instalmentAmount()).isEqualByComparingTo(new BigDecimal("666.67"));
+
+        // A 20-year (240mo) term prices on the 14.0 band -- a different, higher number.
+        ProductApi.PremiumQuoteView longTerm = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(30),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now(), 240));
+        assertThat(longTerm.instalmentAmount()).isEqualByComparingTo(new BigDecimal("1166.67"));
+
+        // A term no band covers (30 years = 360mo is the edge; 361 is past it) is refused, not
+        // priced at a fallback -- the actuary did not price it.
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(30),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now(), 361)));
+
+        // And a quote with no term at all cannot match a banded row, so it too is refused.
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(30),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now(), null)));
+    }
+
+    @Test
+    void publishRefusesAnUnbandedRateOverlappingATermBandedOneForTheSameCell() {
+        ProductSummaryView product = productApi.createProduct("TERM-V16-OVERLAP", "Overlapping terms",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
+                        new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null,
+                // An unbanded row (any term) cannot coexist with a banded one for the same cell.
+                List.of(new ProductApi.BaseRateInput(18, 40, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("8.0000")),
+                        new ProductApi.BaseRateInput(18, 40, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("14.0000"), 121, 360)),
+                new EligibilityBounds(18, 40, null, null, null, null), ANY_FILING, "actuary@nlolo.co.tz"));
+        assertThat(thrown.getMessage()).contains("overlap");
+    }
+
+    @Test
+    void aSinglePremiumOverTwelveMonthsIsRefused() {
+        UUID productId = pricedProduct("TERM-V16-SINGLE", new BigDecimal("10.0000"));
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.SINGLE, LocalDate.now(), 24)));
     }
 
     /** An amount no band covers is neutral, matching issuance -- above retention is a soft flag. */

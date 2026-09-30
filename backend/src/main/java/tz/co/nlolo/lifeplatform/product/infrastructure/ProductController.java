@@ -97,7 +97,7 @@ public class ProductController {
                 ? request.fundDefinitions().stream().map(f -> new ProductApi.FundInput(f.fundCode(), f.currentNav())).collect(Collectors.toList())
                 : null,
             request.baseRates() != null
-                ? request.baseRates().stream().map(b -> new ProductApi.BaseRateInput(b.ageFrom(), b.ageTo(), b.sex(), b.smokerStatus(), b.ratePerMille())).collect(Collectors.toList())
+                ? request.baseRates().stream().map(b -> new ProductApi.BaseRateInput(b.ageFrom(), b.ageTo(), b.sex(), b.smokerStatus(), b.ratePerMille(), b.termFromMonths(), b.termToMonths())).collect(Collectors.toList())
                 : List.of(),
             // Never null downstream: an omitted block means an unbounded version, which is
             // a real design rather than a missing answer.
@@ -161,7 +161,7 @@ public class ProductController {
         return ResponseEntity.ok(productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             productId, request.sumAssuredAmount(), request.sumAssuredCurrency(), request.dateOfBirth(),
             request.sex(), request.smokerStatus(), request.occupationClass(),
-            request.frequency(), request.asOf())));
+            request.frequency(), request.asOf(), request.policyTermMonths())));
     }
 
     /**

@@ -291,7 +291,7 @@ public class ProductApiImpl implements ProductApi {
             for (BaseRateInput input : baseRates) {
                 baseRateRepository.save(new BaseRate(tenantId, version.getProductVersionId(),
                     input.ageFrom(), input.ageTo(), input.sex().name(), input.smokerStatus().name(),
-                    input.ratePerMille()));
+                    input.ratePerMille(), input.termFromMonths(), input.termToMonths()));
             }
         }
         // Written from the validated definitions above, not from the raw inputs -- so a row can
@@ -389,10 +389,24 @@ public class ProductApiImpl implements ProductApi {
             throw new PremiumNotQuotableException("Date of birth " + input.dateOfBirth() + " is after " + asOf);
         }
 
+        // A SINGLE premium is one charge for a term the rate table does not span: rate_per_mille is
+        // an ANNUAL rate, so a single premium is only the annual figure while the term is twelve
+        // months. A longer single-premium term needs its own declared basis and is refused here
+        // rather than quoted at a wrong number (the existing comment lower down said so; now it is
+        // enforced).
+        if (input.frequency() == PremiumFrequency.SINGLE
+                && input.policyTermMonths() != null && input.policyTermMonths() > 12) {
+            throw new PremiumNotQuotableException("A single premium over a " + input.policyTermMonths()
+                + "-month term cannot be priced from an annual rate table; single premiums are"
+                + " supported only up to twelve months of cover until a single-premium basis is added");
+        }
+
         BaseRate cell = baseRateRepository
-            .findApplicable(versionId, ageAtEntry, input.sex().name(), input.smokerStatus().name())
+            .findApplicable(versionId, ageAtEntry, input.sex().name(), input.smokerStatus().name(), input.policyTermMonths())
             .orElseThrow(() -> new PremiumNotQuotableException("No base rate for age " + ageAtEntry
-                + ", " + input.sex() + ", " + input.smokerStatus() + " on product version " + versionId));
+                + ", " + input.sex() + ", " + input.smokerStatus()
+                + (input.policyTermMonths() != null ? ", term " + input.policyTermMonths() + " months" : ", no term")
+                + " on product version " + versionId));
 
         BigDecimal annualBase = input.sumAssuredAmount()
             .divide(new BigDecimal("1000"), java.math.MathContext.DECIMAL64)
@@ -450,7 +464,8 @@ public class ProductApiImpl implements ProductApi {
 
         List<BaseRateInput> rates = baseRateRepository.findByProductVersionId(versionId).stream()
             .map(r -> new BaseRateInput(r.getAgeFrom(), r.getAgeTo(), Sex.valueOf(r.getSex()),
-                SmokerStatus.valueOf(r.getSmokerStatus()), r.getRatePerMille()))
+                SmokerStatus.valueOf(r.getSmokerStatus()), r.getRatePerMille(),
+                r.getTermFromMonths(), r.getTermToMonths()))
             .toList();
         List<RatingFactorInput> factors = ratingFactorRepository.findByProductVersionId(versionId).stream()
             // Bounds included, both kinds: this is the read an actuary reviews a version's
@@ -749,15 +764,42 @@ public class ProductApiImpl implements ProductApi {
                 throw new InvalidProductVersionException(
                     "Base rate band " + a.ageFrom() + "-" + a.ageTo() + " ends before it begins");
             }
+            // Both term bounds together, or neither -- mirrors base_rate_term_range_shape.
+            if ((a.termFromMonths() == null) != (a.termToMonths() == null)) {
+                throw new InvalidProductVersionException(
+                    "A base rate term band needs both a from and a to month, or neither");
+            }
+            if (a.termFromMonths() != null && (a.termFromMonths() < 1 || a.termToMonths() < a.termFromMonths())) {
+                throw new InvalidProductVersionException(
+                    "Base rate term band " + a.termFromMonths() + "-" + a.termToMonths() + " months is not a range");
+            }
             for (BaseRateInput b : baseRates) {
                 if (a == b || a.sex() != b.sex() || a.smokerStatus() != b.smokerStatus()) continue;
-                if (a.ageFrom() <= b.ageTo() && b.ageFrom() <= a.ageTo()) {
-                    throw new InvalidProductVersionException("Base rate bands " + a.ageFrom() + "-" + a.ageTo()
-                        + " and " + b.ageFrom() + "-" + b.ageTo() + " overlap for " + a.sex() + "/" + a.smokerStatus()
-                        + " -- an age in both would price differently depending on row order");
+                // Two cells collide only if BOTH their age ranges AND their term ranges overlap. An
+                // unbanded row (null term) overlaps every term, so it cannot coexist with any other
+                // row for the same age/sex/smoker -- which is what keeps findApplicable to one match.
+                boolean ageOverlap = a.ageFrom() <= b.ageTo() && b.ageFrom() <= a.ageTo();
+                if (ageOverlap && termRangesOverlap(a, b)) {
+                    throw new InvalidProductVersionException("Base rate cells " + a.ageFrom() + "-" + a.ageTo()
+                        + termLabel(a) + " and " + b.ageFrom() + "-" + b.ageTo() + termLabel(b)
+                        + " overlap for " + a.sex() + "/" + a.smokerStatus()
+                        + " -- an age and term in both would price differently depending on row order");
                 }
             }
         }
+    }
+
+    /** Null term = any term, so it overlaps everything; otherwise the two month ranges intersect. */
+    private static boolean termRangesOverlap(BaseRateInput a, BaseRateInput b) {
+        if (a.termFromMonths() == null || b.termFromMonths() == null) {
+            return true;
+        }
+        return a.termFromMonths() <= b.termToMonths() && b.termFromMonths() <= a.termToMonths();
+    }
+
+    private static String termLabel(BaseRateInput r) {
+        return r.termFromMonths() == null ? " (any term)"
+            : " (" + r.termFromMonths() + "-" + r.termToMonths() + "mo)";
     }
 
     /**
@@ -895,12 +937,12 @@ public class ProductApiImpl implements ProductApi {
      */
     @Override
     public Optional<BigDecimal> resolveBaseRatePerMille(UUID productVersionId, int ageAtEntry,
-                                                         Sex sex, SmokerStatus smokerStatus) {
+                                                         Sex sex, SmokerStatus smokerStatus, Integer termMonths) {
         if (sex == null || smokerStatus == null) {
             return Optional.empty();
         }
         return baseRateRepository
-            .findApplicable(productVersionId, ageAtEntry, sex.name(), smokerStatus.name())
+            .findApplicable(productVersionId, ageAtEntry, sex.name(), smokerStatus.name(), termMonths)
             .map(BaseRate::getRatePerMille);
     }
 

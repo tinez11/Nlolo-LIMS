@@ -67,7 +67,17 @@ public interface ProductApi {
      * a premium is computed FROM; {@link RatingFactorInput}'s multipliers apply on
      * top for occupation class and sum-assured band.
      */
-    record BaseRateInput(int ageFrom, int ageTo, Sex sex, SmokerStatus smokerStatus, BigDecimal ratePerMille) {}
+    /**
+     * One base-rate cell. {@code termFromMonths}/{@code termToMonths} band the rate by policy term
+     * (V16): both null = any term (the pre-term-banding shape), both set = a term within [from, to]
+     * inclusive. The 5-arg form is kept so every existing unbanded call site reads unchanged.
+     */
+    record BaseRateInput(int ageFrom, int ageTo, Sex sex, SmokerStatus smokerStatus, BigDecimal ratePerMille,
+                         Integer termFromMonths, Integer termToMonths) {
+        public BaseRateInput(int ageFrom, int ageTo, Sex sex, SmokerStatus smokerStatus, BigDecimal ratePerMille) {
+            this(ageFrom, ageTo, sex, smokerStatus, ratePerMille, null, null);
+        }
+    }
 
     /**
      * What a premium is quoted for. Money arrives as amount + currency rather than
@@ -87,10 +97,22 @@ public interface ProductApi {
      * <p>{@code occupationClass} and {@code smokerStatus} are still ASSERTED by the caller: no
      * party record is read on this path.
      */
+    /**
+     * {@code policyTermMonths} is the term the quote is for (V16). Optional: null means "no term"
+     * (whole life, an annuity), which prices only against unbanded rates and is refused on a
+     * term-banded version. The 8-arg form is kept so existing unbanded call sites read unchanged.
+     */
     record PremiumQuoteInput(UUID productId, BigDecimal sumAssuredAmount, String sumAssuredCurrency,
                              LocalDate dateOfBirth, Sex sex, SmokerStatus smokerStatus,
                              String occupationClass,
-                             PremiumFrequency frequency, LocalDate asOf) {}
+                             PremiumFrequency frequency, LocalDate asOf, Integer policyTermMonths) {
+        public PremiumQuoteInput(UUID productId, BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                                 LocalDate dateOfBirth, Sex sex, SmokerStatus smokerStatus,
+                                 String occupationClass, PremiumFrequency frequency, LocalDate asOf) {
+            this(productId, sumAssuredAmount, sumAssuredCurrency, dateOfBirth, sex, smokerStatus,
+                occupationClass, frequency, asOf, null);
+        }
+    }
 
     /** One multiplier that was applied, in the order it was applied. */
     record AppliedFactor(FactorType factorType, String band, BigDecimal multiplier) {}
@@ -377,7 +399,7 @@ public interface ProductApi {
      *                     genuinely has nothing to assert.
      */
     Optional<BigDecimal> resolveBaseRatePerMille(UUID productVersionId, int ageAtEntry,
-                                                  Sex sex, SmokerStatus smokerStatus);
+                                                  Sex sex, SmokerStatus smokerStatus, Integer termMonths);
 
     /**
      * The AGE multiplier for an applicant of {@code age}, resolved by RANGE rather than by
