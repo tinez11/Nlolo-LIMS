@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.party.infrastructure;
 import tz.co.nlolo.lifeplatform.AllowedDocumentContentTypes;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
+import tz.co.nlolo.lifeplatform.party.api.PartyValidationException;
 import tz.co.nlolo.lifeplatform.party.api.Address;
 import tz.co.nlolo.lifeplatform.party.api.GroupMembershipView;
 import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
@@ -56,6 +57,7 @@ public class PartyController {
     public ResponseEntity<PartyView> registerIndividual(@Valid @RequestBody RegisterIndividualRequest request,
                                                           @AuthenticationPrincipal Jwt jwt,
                                                           Authentication authentication) {
+        requireFullPersonRecordFromAgents(request, authentication);
         IndividualRegistration registration = new IndividualRegistration(
             request.fullName(),
             request.dateOfBirth(),
@@ -114,6 +116,47 @@ public class PartyController {
     }
 
     /** The registrar's name for the client record -- a label; agent scoping compares the subject. */
+    /**
+     * An agent registering a client must record their sex and an identity document.
+     *
+     * <p><b>Sex is not a form preference.</b> The pricing pipeline REFUSES to price a life whose
+     * sex is unrecorded — deliberately, so nothing is priced on a guess — and registration is
+     * the only place it can be captured. A client registered without it is a policy that cannot
+     * be quoted, discovered at the point of sale rather than here. An identity document is the
+     * same argument one step later: a client nobody can identify cannot be KYC-verified, and an
+     * unverifiable client cannot hold a policy.
+     *
+     * <p><b>Agents only, and that is a limit rather than an oversight.</b> The rule was asked
+     * for about the agent path, which is where new business is written. A customer registering
+     * themselves is not selling anything yet, and staff registering a client are often
+     * correcting a record rather than opening one — forcing either through the same gate would
+     * block a legitimate act to enforce a rule about a different one. It does mean a client
+     * registered by staff can still reach quoting without a sex; that surfaces there, refused,
+     * where it is at least visible.
+     *
+     * <p>Mirrors the console's own rule in {@code registerIndividualForm}, so the same
+     * submission is refused with or without the form in front of it.
+     */
+    private static void requireFullPersonRecordFromAgents(RegisterIndividualRequest request,
+                                                           Authentication authentication) {
+        boolean isAgent = authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .anyMatch("ROLE_REALM_AGENTS"::equals);
+        if (!isAgent) {
+            return;
+        }
+        if (request.sex() == null) {
+            throw new PartyValidationException(
+                "An agent must record the client's sex: a policy cannot be priced for a life "
+                    + "whose sex is unrecorded");
+        }
+        if (request.idType() == null || request.idNumber() == null || request.idNumber().isBlank()) {
+            throw new PartyValidationException(
+                "An agent must record an identity document: a client who cannot be identified "
+                    + "cannot be KYC-verified");
+        }
+    }
+
     private static String registrarName(Jwt jwt) {
         return tz.co.nlolo.lifeplatform.TokenNames.displayName(jwt);
     }

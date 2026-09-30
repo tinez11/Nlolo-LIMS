@@ -93,7 +93,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Amina Hassan","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345678","email":"amina@example.tz"}}
+                    {"fullName":"Amina Hassan","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45678-00001-11","contactInfo":{"phoneNumber":"+255712345678","email":"amina@example.tz"}}
                     """))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
@@ -119,7 +119,7 @@ class PartyContractTest {
                 .with(staff)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Amend Me","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345699"}}
+                    {"fullName":"Amend Me","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45699-00001-11","contactInfo":{"phoneNumber":"+255712345699"}}
                     """))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
@@ -342,7 +342,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Staff Assisted Walkin","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345694","email":"walkin@example.tz"}}
+                    {"fullName":"Staff Assisted Walkin","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45694-00001-11","contactInfo":{"phoneNumber":"+255712345694","email":"walkin@example.tz"}}
                     """))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
@@ -386,7 +386,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Get Party Contract Test","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345690","email":"getparty@example.tz"}}
+                    {"fullName":"Get Party Contract Test","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45690-00001-11","contactInfo":{"phoneNumber":"+255712345690","email":"getparty@example.tz"}}
                     """))
             .andExpect(status().isCreated())
             .andReturn();
@@ -403,12 +403,75 @@ class PartyContractTest {
     // --- GET /parties/{partyId}: the full record, and who may read it ------------------------
 
     /** Registers as {@code subject}, returning the new party's id. */
+    /**
+     * An agent must record a sex, because nothing can price a life without one.
+     *
+     * <p>Enforced on the server and not only in the form, so the rule survives a direct call.
+     * The refusal is a 422 rather than a 400: the request was understood and rejected on a rule
+     * about people, not malformed.
+     */
+    @Test
+    void anAgentRegisteringWithoutASexIsRefused() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("agent-no-sex").claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"No Sex Recorded","dateOfBirth":"1990-05-12",
+                     "idType":"NATIONAL_ID","idNumber":"19900512-77777-00001-11",
+                     "contactInfo":{"phoneNumber":"+255712347777"}}
+                    """))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("PARTY_VALIDATION_FAILED"));
+    }
+
+    @Test
+    void anAgentRegisteringWithoutAnIdentityDocumentIsRefused() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("agent-no-id").claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"No Id Recorded","dateOfBirth":"1990-05-12","sex":"MALE",
+                     "contactInfo":{"phoneNumber":"+255712347778"}}
+                    """))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.errorCode").value("PARTY_VALIDATION_FAILED"));
+    }
+
+    /**
+     * And the limit of the rule, stated so nobody widens it by accident: it is about the AGENT
+     * path, where new business is written. A customer registering themselves is not selling
+     * anything yet, and staff are often correcting a record rather than opening one.
+     */
+    @Test
+    void aCustomerRegisteringThemselvesIsNotHeldToTheAgentsRule() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        mockMvc.perform(post("/parties/individuals")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_CUSTOMERS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"fullName":"Self Registered","dateOfBirth":"1990-05-12",
+                     "contactInfo":{"phoneNumber":"+255712347779"}}
+                    """))
+            .andExpect(status().isCreated());
+    }
+
     private String registerAs(UUID tenantId, String subject, String fullName, String phone) throws Exception {
         MvcResult result = mockMvc.perform(post("/parties/individuals")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
                     .jwt(builder -> builder.subject(subject).claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
+                // Sex and an identity document are REQUIRED of an agent as of 2026-09-30: nothing
+                // can price a life whose sex is unrecorded, and a client who cannot be identified
+                // cannot be KYC-verified. The ID number is derived from the phone so each fixture
+                // gets its own -- ux_party_individual_identity refuses two clients sharing one.
                 .content("{\"fullName\":\"" + fullName + "\",\"dateOfBirth\":\"1990-05-12\","
+                    + "\"sex\":\"FEMALE\",\"idType\":\"NATIONAL_ID\","
+                    + "\"idNumber\":\"19900512-" + phone.substring(phone.length() - 5) + "-00001-11\","
                     + "\"contactInfo\":{\"phoneNumber\":\"" + phone + "\",\"email\":\"scoped@example.tz\"}}"))
             .andExpect(status().isCreated())
             .andReturn();
@@ -511,7 +574,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Kyc Contract Test","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345691","email":"kyc@example.tz"}}
+                    {"fullName":"Kyc Contract Test","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45691-00001-11","contactInfo":{"phoneNumber":"+255712345691","email":"kyc@example.tz"}}
                     """))
             .andExpect(status().isCreated())
             .andReturn();
@@ -579,7 +642,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantA.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Tenant A Party","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345678","email":"a@example.tz"}}
+                    {"fullName":"Tenant A Party","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45678-00001-11","contactInfo":{"phoneNumber":"+255712345678","email":"a@example.tz"}}
                     """))
             .andExpect(status().isCreated())
             .andReturn();
@@ -641,7 +704,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Request 1 Party","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345678","email":"r1@example.tz"}}
+                    {"fullName":"Request 1 Party","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45678-00001-11","contactInfo":{"phoneNumber":"+255712345678","email":"r1@example.tz"}}
                     """))
             .andExpect(status().isCreated());
         // At this point, TenantContextFilter's finally-block has run and
@@ -845,7 +908,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Zawadi Search Fixture","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345695"}}
+                    {"fullName":"Zawadi Search Fixture","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45695-00001-11","contactInfo":{"phoneNumber":"+255712345695"}}
                     """))
             .andExpect(status().isCreated());
 
@@ -872,7 +935,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Baraka Combo Fixture Pending","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345696"}}
+                    {"fullName":"Baraka Combo Fixture Pending","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45696-00001-11","contactInfo":{"phoneNumber":"+255712345696"}}
                     """))
             .andExpect(status().isCreated());
         String verifiedResponse = mockMvc.perform(post("/parties/individuals")
@@ -880,7 +943,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Baraka Combo Fixture Verified","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345697"}}
+                    {"fullName":"Baraka Combo Fixture Verified","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45697-00001-11","contactInfo":{"phoneNumber":"+255712345697"}}
                     """))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
@@ -1077,7 +1140,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.subject(agentASubject).claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Scoping Query Fixture Agent A","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345698"}}
+                    {"fullName":"Scoping Query Fixture Agent A","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45698-00001-11","contactInfo":{"phoneNumber":"+255712345698"}}
                     """))
             .andExpect(status().isCreated());
         mockMvc.perform(post("/parties/individuals")
@@ -1085,7 +1148,7 @@ class PartyContractTest {
                     .jwt(builder -> builder.subject(agentBSubject).claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"fullName":"Scoping Query Fixture Agent B","dateOfBirth":"1990-05-12","contactInfo":{"phoneNumber":"+255712345699"}}
+                    {"fullName":"Scoping Query Fixture Agent B","dateOfBirth":"1990-05-12","sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"19900512-45699-00001-11","contactInfo":{"phoneNumber":"+255712345699"}}
                     """))
             .andExpect(status().isCreated());
 

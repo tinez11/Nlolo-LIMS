@@ -100,8 +100,9 @@ class PartyKycEvidenceUploadTest {
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .content("""
                     {"fullName":"Kyc Evidence Upload Test","dateOfBirth":"1990-05-12",
+                     "sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"%s",
                      "contactInfo":{"phoneNumber":"+255712345699"}}
-                    """))
+                    """.formatted("19900512-" + UUID.randomUUID().toString().substring(0, 5) + "-00001-11")))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         return UUID.fromString(JsonPath.read(response, "$.partyId"));

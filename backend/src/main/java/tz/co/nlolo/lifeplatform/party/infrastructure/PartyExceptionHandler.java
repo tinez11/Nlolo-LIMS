@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.party.infrastructure;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateIdentityDocumentException;
 import tz.co.nlolo.lifeplatform.party.api.DuplicateRegistrationNumberException;
 import tz.co.nlolo.lifeplatform.party.api.PartyNotFoundException;
+import tz.co.nlolo.lifeplatform.party.api.PartyValidationException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -46,6 +47,12 @@ import java.util.UUID;
 @RestControllerAdvice
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class PartyExceptionHandler {
+
+    /** Understood and refused on a rule, not malformed -- 422, like distribution's own. */
+    @ExceptionHandler(PartyValidationException.class)
+    public ProblemDetail handleValidation(PartyValidationException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), "PARTY_VALIDATION_FAILED");
+    }
 
     @ExceptionHandler(PartyNotFoundException.class)
     public ProblemDetail handleNotFound(PartyNotFoundException ex) {
