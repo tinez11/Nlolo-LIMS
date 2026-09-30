@@ -98,6 +98,7 @@ class BillingCustomerPaymentTest {
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",
             "db-migrations/billing/V7__policy_inception_invoice.sql",
+            "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 

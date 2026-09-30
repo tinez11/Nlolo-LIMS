@@ -7,7 +7,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
-import tz.co.nlolo.lifeplatform.claims.api.MaturityClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -79,7 +79,7 @@ import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
  * established convention, not something a compiler or a structural test enforces for test code;
  * see below) validates against a REAL, in-force policy, which in turn needs a real product and
  * applicant -- {@code buildFixture}/{@code
- * issuePolicy}/{@code registerMaturityClaim} below are copied verbatim from {@code
+ * issuePolicy}/{@code registerFixtureClaim} below are copied verbatim from {@code
  * ClaimsContractTest}'s own identically-named helpers for exactly that reason, not reinvented.
  * {@code party::api}/{@code product::api}/{@code policy::api}/{@code claims::api} are all
  * NAMED-INTERFACE ({@code .api}) packages -- this is a design choice made to follow established
@@ -248,14 +248,16 @@ class DocumentContractTest {
         return policyNumber;
     }
 
-    /** MATURITY needs no assessment to exist as a REGISTERED claim -- the only state this class's
-     * evidence-download test needs. */
-    private UUID registerMaturityClaim(UUID tenantId, UUID claimantId, String policyNumber) {
+    /** A REGISTERED claim -- the only state this class's evidence-download test needs. DEATH, not
+     * MATURITY: a maturity claim is now only claimable once the policy has reached its maturity
+     * date, and this fixture's policy has no term. DEATH registers cleanly on the active policy and
+     * stays REGISTERED. */
+    private UUID registerFixtureClaim(UUID tenantId, UUID claimantId, String policyNumber) {
         TenantContext.set(tenantId);
         LocalDate dateOfEvent = LocalDate.now().minusDays(1);
         ClaimView view = claimsApi.registerClaim(
-            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.MATURITY, dateOfEvent,
-                new MaturityClaimDetails(dateOfEvent)),
+            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.DEATH, dateOfEvent,
+                new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test")),
             "dct-reg-" + UUID.randomUUID(), "claims-staff-fixture");
         TenantContext.clear();
         return view.claimId();
@@ -355,7 +357,7 @@ class DocumentContractTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "DOCUMENT-CT-EVIDENCE-01");
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID claimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
         byte[] evidenceContent = "owning-customer-evidence-bytes".getBytes();
         String evidenceRef = attachEvidence(tenantId, claimId, evidenceContent);
 

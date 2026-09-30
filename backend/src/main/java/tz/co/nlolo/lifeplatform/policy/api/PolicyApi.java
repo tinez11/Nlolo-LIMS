@@ -621,6 +621,13 @@ public interface PolicyApi {
      */
     void expireOffer(String policyNumber);
 
+    /**
+     * A termed policy carrying no maturity benefit ran out its term. Moves it to EXPIRED and
+     * publishes {@code policy.PolicyExpired}. Terminal; idempotent on repeat (a closed policy is
+     * left alone and no event is published). Called by {@code CoverExpiryDrain}.
+     */
+    void expirePolicy(String policyNumber);
+
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
     void markMatured(String policyNumber, String maturedBy);
 

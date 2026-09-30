@@ -401,6 +401,112 @@ public class Policy {
     }
 
     /**
+     * The zone a policy's DATES are read in. Lapse and suspension are stamped as instants, and a
+     * lapse at 01:00 in Dar es Salaam is still the previous day in UTC -- so a death on the day of
+     * a lapse would be judged against the wrong date for three hours of every night. Named, not
+     * {@code systemDefault()}, for the reason {@code OfferReminderDispatcher} gives for the same
+     * constant: the answer must not depend on how the host happens to be configured.
+     */
+    private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
+
+    /**
+     * Was this contract providing cover on {@code day}? The one date-bounded answer on the
+     * platform, and the question a claim actually asks.
+     *
+     * <p>{@link #isInForce()} answers something else -- whether cover is running TODAY -- and was
+     * being asked in its place. That was wrong in both directions: a death years after a term
+     * ended read as covered because nothing had changed the status, and a death that happened
+     * before a lapse, reported after it, was refused because the status had changed. The second
+     * is the commonest late death claim there is, because dunning lapses a deceased life's policy
+     * on its own.
+     *
+     * <p>The upper bound is the maturity date: a term's cover ends as that date begins. Within the
+     * term, a LAPSED or SUSPENDED contract was on risk until the day it lapsed or was suspended,
+     * and EXPIRED was on risk for the whole term -- expiry records that the term closed, not that
+     * cover failed.
+     *
+     * <p><b>The lower bound is the commencement date when one is recorded, and nothing when it is
+     * not.</b> A deliberately backdated or future-dated contract carries a commencement, and cover
+     * before it is no cover -- provable, so refused. A normally issued policy carries no
+     * commencement (cover starts at activation, and the platform stamps no date for that), so there
+     * is no recorded cover-start to refuse against; the issue date is administrative, not the
+     * moment risk began, and asserting a boundary the platform does not truly record is exactly
+     * what this class must not do. The console still advises on the issue date at intake. This is
+     * unchanged from the behaviour before this method existed, which never lower-bounded at all.
+     *
+     * <p><b>Known limit.</b> A REINSTATED policy keeps its {@code lapsedAt} and records no
+     * reinstatement date, so the gap between the two cannot be told apart from cover. It is
+     * treated as on risk throughout, which is what the platform did before this method existed.
+     */
+    public boolean wasOnRiskOn(LocalDate day) {
+        if (day == null) {
+            return false;
+        }
+        if (commencementDate != null && day.isBefore(commencementDate)) {
+            return false;
+        }
+        if (maturityDate != null && !day.isBefore(maturityDate)) {
+            return false;
+        }
+        return switch (status) {
+            case "ACTIVE", "REINSTATED", "EXPIRED" -> true;
+            case "LAPSED" -> lapsedAt != null && day.isBefore(lapsedAt.atZone(CIVIL_ZONE).toLocalDate());
+            case "SUSPENDED" -> suspendedAt != null
+                && day.isBefore(suspendedAt.atZone(CIVIL_ZONE).toLocalDate());
+            // PROPOSED and NOT_TAKEN_UP were never on risk; MATURED and SURRENDERED are closed.
+            default -> false;
+        };
+    }
+
+    /**
+     * The last date a premium can fall due: start plus the premium-paying term, or the policy
+     * term where no shorter paying term was agreed. Null where the contract does not term at
+     * all -- whole life, an annually renewable scheme -- which billing reads as "no end".
+     *
+     * <p>Computed here and carried on {@code policy.PolicyIssued}, because billing may not read
+     * this module's tables and must not re-derive a contractual date on its own.
+     */
+    public LocalDate premiumPayingUntil() {
+        Integer months = premiumPayingTermMonths != null ? premiumPayingTermMonths : policyTermMonths;
+        LocalDate start = commencementDate != null ? commencementDate : issueDate;
+        if (months == null || start == null) {
+            return null;
+        }
+        return start.plusMonths(months);
+    }
+
+    /** Whether {@link #expire()} would succeed on {@code today}. Asked first, for the reason {@link #canLapse()} gives. */
+    public boolean canExpire(LocalDate today) {
+        return maturityDate != null && !today.isBefore(maturityDate)
+            && ("ACTIVE".equals(status) || "REINSTATED".equals(status) || "SUSPENDED".equals(status));
+    }
+
+    /**
+     * The term ran out. Terminal: nothing reinstates an EXPIRED policy, because reinstatement
+     * revives a LAPSED one and a term that has ended has nothing left to revive.
+     *
+     * <p>Not MATURED. A term policy that reaches its end pays nothing -- that is what term
+     * insurance is -- while MATURED says a maturity benefit was settled. A policy that carries a
+     * maturity benefit is never expired; the sweep that calls this skips it.
+     *
+     * <p>Already EXPIRED is a satisfied post-condition and returns silently, so a second drain
+     * instance racing the first does nothing rather than failing.
+     */
+    public void expire(LocalDate today) {
+        // Any terminal status is a satisfied post-condition -- MATURED and SURRENDERED as well as
+        // EXPIRED -- so a policy that closed between the drain selecting it and this call is left
+        // alone rather than throwing. Same shape as mature()/terminateForSettledClaim().
+        if (isClosed()) {
+            return;
+        }
+        if (!canExpire(today)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " cannot expire on " + today
+                + " (status " + status + ", maturity date " + maturityDate + ")");
+        }
+        this.status = "EXPIRED";
+    }
+
+    /**
      * A MATURITY claim settled, or the policy reached term. Terminal.
      *
      * <p><b>Accepted source states: ACTIVE, REINSTATED, LAPSED, SUSPENDED</b> (see
@@ -451,8 +557,21 @@ public class Policy {
      * the same fix isolated that call -- it rolled back the claim's own SETTLED transition after
      * the money had already left. Nothing is gained by failing here: the goal is already met.
      */
+    /**
+     * Whether the contract has ended -- MATURED, SURRENDERED or EXPIRED. Public so the service's
+     * "suppress the repeat event" checks ask the aggregate rather than restate the list, which is
+     * how adding EXPIRED would otherwise have announced a maturity that never happened.
+     */
+    public boolean isClosed() {
+        return alreadyClosed();
+    }
+
     private boolean alreadyClosed() {
-        return "MATURED".equals(status) || "SURRENDERED".equals(status);
+        // EXPIRED too. A death during the term, settled after the term ended, discharges cover on
+        // a policy that has already stopped being invoiced -- the goal closure exists for is
+        // met, and throwing here would do it inside claims' settlement listener, after the money
+        // had left. The policy keeps EXPIRED, which is the truer record of how it ended.
+        return "MATURED".equals(status) || "SURRENDERED".equals(status) || "EXPIRED".equals(status);
     }
 
     /**

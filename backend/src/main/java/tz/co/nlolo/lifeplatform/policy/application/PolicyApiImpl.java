@@ -325,6 +325,11 @@ public class PolicyApiImpl implements PolicyApi {
         //
         // An individual policy is never enrolment-billed: there is nobody to enrol.
         payload.put("premiumPerEnrolment", false);
+        // The last date a premium can fall due, so billing stops raising invoices at the end of
+        // the contract instead of a fixed twelve months in. Null where the policy does not term
+        // (whole life, an annually renewable scheme) -- billing reads that as "no end". Computed
+        // by the aggregate after applyTerm, because billing may not read policy's tables.
+        putPremiumPayingUntil(payload, policy);
         putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
@@ -480,7 +485,10 @@ public class PolicyApiImpl implements PolicyApi {
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         PolicyAccount account = policyAccountRepository.findById(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
-        ProductSnapshotView snapshot = productApi.getActiveSnapshot(policy.getProductId(), LocalDate.now());
+        // The version THIS POLICY was sold under, not the one on sale today. A surrender charge is a
+        // contractual term: republishing the product with a harsher schedule must not reach back
+        // into contracts already written, and reading the active version did exactly that.
+        ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
 
         BigDecimal chargePercent = resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(), policy.getIssueDate());
         BigDecimal charge = account.getCashValueAmount().multiply(chargePercent).divide(new BigDecimal("100"));
@@ -594,11 +602,18 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     public boolean isPolicyInForce(String policyNumber, LocalDate asOf) {
-        // asOf is accepted (matches the OpenAPI query param and Po3's signature) but not
-        // otherwise consulted -- this is a pure "is this policy currently ACTIVE-or-REINSTATED"
-        // status read, not a date-bounded coverage-window computation (that's
-        // getCoverageStatus's job, which separately filters `active` Coverage rows). Flagged.
-        return findPolicyOrThrow(policyNumber, TenantContext.get()).isInForce();
+        // Now genuinely date-bounded: "was this policy on risk on asOf", answered by
+        // Policy.wasOnRiskOn. It used to ignore asOf and read today's status, which claims
+        // registration relied on and which its own KNOWN GAP comment described -- a death before a
+        // lapse, reported after it, was refused, and a death after a term ended was accepted.
+        //
+        // policyloan passes today and asks "can this policy take a loan"; for a live policy the
+        // answer is unchanged, and for a termed policy past its maturity date it is now correctly
+        // false -- there is no cover left to lend against.
+        // asOf is optional on the in-force endpoint (a bare "is it on risk now"); an absent one
+        // means today. wasOnRiskOn(null) is false by contract, so the default is applied here.
+        LocalDate day = asOf != null ? asOf : LocalDate.now();
+        return findPolicyOrThrow(policyNumber, TenantContext.get()).wasOnRiskOn(day);
     }
 
     @Override
@@ -785,10 +800,37 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " lapsed " + monthsSinceLapse
                 + " months ago, exceeding the " + windowMonths + "-month reinstatement window (TZ_REINSTATEMENT_WINDOW_MONTHS, a PLACEHOLDER pending B1 sign-off)");
         }
+        // A term that has already ended has nothing to revive. Reinstatement brings a lapsed
+        // policy back onto risk, and there is no risk to resume once the maturity date has passed
+        // -- the policy should be EXPIRED, not reinstated into a window that is over.
+        if (policy.getMaturityDate() != null && !LocalDate.now().isBefore(policy.getMaturityDate())) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " reached its maturity date "
+                + policy.getMaturityDate() + " and cannot be reinstated into a term that has ended");
+        }
         policy.reinstate();
         policyRepository.save(policy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyReinstated", tenantId,
             Map.of("policyNumber", policyNumber, "reinstatedAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional
+    public void expirePolicy(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // Already EXPIRED (a second drain instance racing the first) returns silently and
+        // publishes nothing -- Policy.expire() no-ops, and announcing an expiry that did not
+        // happen would terminate a billing schedule twice. The @Version on the aggregate is what
+        // makes the winning write exclusive; this suppresses the loser's event.
+        if (policy.isClosed()) {
+            return;
+        }
+        policy.expire(LocalDate.now());
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyExpired", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "maturityDate", policy.getMaturityDate().toString(),
+                   "expiredAt", Instant.now().toString())));
     }
 
     @Override
@@ -801,7 +843,7 @@ public class PolicyApiImpl implements PolicyApi {
         // status alone, so publishing PolicyMatured for it would announce a transition that did not
         // happen. "Already closed" is the condition that suppresses the event, exactly as "already
         // in MY target status" did before the guards were widened.
-        boolean alreadyClosed = "MATURED".equals(policy.getStatus()) || "SURRENDERED".equals(policy.getStatus());
+        boolean alreadyClosed = policy.isClosed();
         policy.mature();
         policyRepository.save(policy);
         if (alreadyClosed) {
@@ -978,7 +1020,7 @@ public class PolicyApiImpl implements PolicyApi {
     private void closeAsSurrendered(Policy policy, UUID claimId, UUID tenantId) {
         // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning
         // as markMatured above (a policy already MATURED stays MATURED, so no PolicySurrendered).
-        boolean alreadyClosed = "SURRENDERED".equals(policy.getStatus()) || "MATURED".equals(policy.getStatus());
+        boolean alreadyClosed = policy.isClosed();
         policy.terminateForSettledClaim();
         policyRepository.save(policy);
         if (alreadyClosed) {
@@ -1431,6 +1473,16 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("issuedByName", policy.getIssuedByName());
     }
 
+    /**
+     * Put the paying-end date on a PolicyIssued payload, as an ISO string or null. A HashMap
+     * carries the null (unlike {@code Map.of}), so billing reads an absent or null value as "this
+     * contract does not end" -- the correct reading for whole life and annually renewable schemes.
+     */
+    private static void putPremiumPayingUntil(Map<String, Object> payload, Policy policy) {
+        LocalDate payingUntil = policy.premiumPayingUntil();
+        payload.put("premiumPayingUntil", payingUntil != null ? payingUntil.toString() : null);
+    }
+
     @Override
     @Transactional
     public GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy,
@@ -1713,6 +1765,9 @@ public class PolicyApiImpl implements PolicyApi {
         // Keyed on "is it enrolment-billed" rather than the basis name for the reason billing
         // already documents: billing has no business knowing what credit life is.
         payload.put("premiumPerEnrolment", request.benefitBasis() == BenefitBasis.AMORTISING_LOAN);
+        // See the individual issue path: null on a scheme with no term (credit-life masters, an
+        // annually renewable group scheme), a date on a fixed-term one so billing stops at term end.
+        putPremiumPayingUntil(payload, policy);
         putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 

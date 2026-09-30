@@ -129,6 +129,8 @@ class BillingApiIntegrationTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
@@ -140,6 +142,8 @@ class BillingApiIntegrationTest {
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",
             "db-migrations/billing/V7__policy_inception_invoice.sql",
+            "db-migrations/billing/V8__schedule_premium_paying_until.sql",
+            "db-migrations/billing/V9__schedules_due_for_invoicing.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // M5 final-review fix wave: V3's callback resolvers and V4's widened status CHECK
@@ -229,6 +233,135 @@ class BillingApiIntegrationTest {
         // Cover starts with the first premium. This fixture needs a policy on risk.
         policyApi.activateOnFirstPremium(issuedPolicyNumber);
         return issuedPolicyNumber;
+    }
+
+    /** Issue a termed policy commencing today, so billing has a paying-end to stop at (D1). */
+    private String issueTermedDirectly(UUID tenantId, Fixture fixture, BigDecimal premiumAmount,
+                                        String premiumFrequency, int termMonths) {
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", premiumAmount, "TZS", premiumFrequency, null, List.of(), "Direct issuance test",
+            LocalDate.now(), termMonths, null, null, null);
+        String issuedPolicyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
+    }
+
+    /** A policy whose term ran out today: commenced a year ago on a 12-month term (D2 expiry). */
+    private String issueMaturedDirectly(UUID tenantId, Fixture fixture) {
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("1000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Direct issuance test",
+            LocalDate.now().minusMonths(12), 12, null, null, null);
+        String issuedPolicyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
+    }
+
+    @Test
+    void expiringAMaturedPolicyMovesItToExpiredAndStopsBilling() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILL-EXPIRE");
+        String policyNumber = issueMaturedDirectly(tenantId, fixture);
+
+        TenantContext.set(tenantId);
+        assertThat(billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE"))
+            .isPresent();
+
+        // The selector picks a matured term policy that carries no maturity benefit.
+        assertThat(policyNumbersDueToExpire()).contains(policyNumber);
+
+        eventRecorder.clear();
+        policyApi.expirePolicy(policyNumber);
+
+        TenantContext.set(tenantId);
+        assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.EXPIRED);
+        assertThat(eventRecorder.ofType("policy.PolicyExpired")).hasSize(1);
+        // Billing stops: the schedule is terminated by the PolicyExpired listener.
+        assertThat(billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "TERMINATED"))
+            .isPresent();
+        // And it is no longer offered for expiry.
+        assertThat(policyNumbersDueToExpire()).doesNotContain(policyNumber);
+    }
+
+    @Test
+    void aMaturedPolicyThatCarriesAMaturityBenefitIsNotSweptToExpired() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILL-NO-EXPIRE");
+        String policyNumber = issueMaturedDirectly(tenantId, fixture);
+
+        // A maturity benefit means the policy matures (pays), it does not expire. Simulate one by
+        // adding an active MATURITY coverage row -- issuance would write it for an endowment.
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement setTenant = connection.prepareStatement("SELECT set_config('app.current_tenant_id', ?, false)")) {
+            setTenant.setString(1, tenantId.toString());
+            setTenant.execute();
+            try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO policy.coverage (tenant_id, policy_number, benefit_type, sum_assured_amount, sum_assured_currency, active) "
+                    + "VALUES (?, ?, 'MATURITY', 1000000, 'TZS', true)")) {
+                insert.setObject(1, tenantId);
+                insert.setString(2, policyNumber);
+                insert.executeUpdate();
+            }
+        }
+
+        // The selector's NOT EXISTS clause excludes it: the expiry drain leaves it for maturity.
+        assertThat(policyNumbersDueToExpire()).doesNotContain(policyNumber);
+    }
+
+    /** The expiry selector's output, read directly -- the ids CoverExpiryDrain would act on. */
+    private List<String> policyNumbersDueToExpire() throws Exception {
+        List<String> result = new java.util.ArrayList<>();
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement select = connection.prepareStatement("SELECT policy_number FROM policy.policies_due_to_expire()");
+             var rs = select.executeQuery()) {
+            while (rs.next()) {
+                result.add(rs.getString(1));
+            }
+        }
+        return result;
+    }
+
+    @Test
+    void aSixMonthPolicyIsBilledForSixMonthsNotTwelve() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILL-6MO");
+        String policyNumber = issueTermedDirectly(tenantId, fixture, new BigDecimal("40000.00"), "MONTHLY", 6);
+
+        TenantContext.set(tenantId);
+        List<PremiumInvoice> invoices = premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId);
+        // Due one month after issue through the sixth month: six invoices, not the twelve the
+        // fixed horizon would have raised. The paying end (commencement + 6) is the bound.
+        assertThat(invoices).hasSize(6);
+        assertThat(invoices).allSatisfy(i ->
+            assertThat(i.getDueDate()).isBeforeOrEqualTo(LocalDate.now().plusMonths(6)));
+    }
+
+    @Test
+    void rollForwardExtendsBillingUpToThePayingEndAndThenStops() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "BILL-ROLL");
+        // The recorder is shared across the class; clear it so the event count below is this
+        // policy's alone (12 raised at issue + 12 rolled forward = 24).
+        eventRecorder.clear();
+        // 24-month term: the horizon caps the first batch at 12, leaving 12 to roll forward.
+        String policyNumber = issueTermedDirectly(tenantId, fixture, new BigDecimal("40000.00"), "MONTHLY", 24);
+
+        TenantContext.set(tenantId);
+        BillingSchedule schedule = billingScheduleRepository.findByPolicyNumberAndTenantId(policyNumber, tenantId).get(0);
+        assertThat(premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)).hasSize(12);
+
+        // The drain would call this once the schedule's due date entered the horizon; here it is
+        // driven directly. It raises the next batch, bounded by the paying end (commencement + 24).
+        billingApiImpl.rollForward(schedule.getBillingScheduleId());
+        assertThat(premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)).hasSize(24);
+
+        // A second call raises nothing: the schedule's next due date has passed the paying end.
+        billingApiImpl.rollForward(schedule.getBillingScheduleId());
+        assertThat(premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)).hasSize(24);
+
+        // Every roll published an invoice-generated event, the one finaccounting posts against.
+        assertThat(eventRecorder.ofType("billing.PremiumInvoiceGenerated")).hasSize(24);
     }
 
     @Test

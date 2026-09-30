@@ -8,7 +8,7 @@ import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
 import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
-import tz.co.nlolo.lifeplatform.claims.api.MaturityClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.DisabilityClaimDetails;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
@@ -236,14 +236,18 @@ class ClaimsContractTest {
         return view.claimId();
     }
 
-    /** MATURITY needs no assessment to reach SETTLEMENT_REQUESTED/SETTLED, but here it is used
-     * simply as a REGISTERED claim for the evidence tests, which need no particular claim type. */
-    private UUID registerMaturityClaim(UUID tenantId, UUID claimantId, String policyNumber) {
+    /** A REGISTERED claim for the evidence and listing tests, which need no particular claim type.
+     * DISABILITY, deliberately: a maturity claim is now only claimable once the policy has reached
+     * its maturity date (these fixtures issue no-term policies), and DEATH would collide with the
+     * one-death-claim-per-life rule in the listing test, which files a real DEATH claim alongside
+     * this one. DISABILITY has neither constraint, the fixture product authors it, and it stays
+     * REGISTERED -- exactly what these fixtures want. */
+    private UUID registerFixtureClaim(UUID tenantId, UUID claimantId, String policyNumber) {
         TenantContext.set(tenantId);
         LocalDate dateOfEvent = LocalDate.now().minusDays(1);
         ClaimView view = claimsApi.registerClaim(
-            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.MATURITY, dateOfEvent,
-                new MaturityClaimDetails(dateOfEvent)),
+            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.DISABILITY, dateOfEvent,
+                new DisabilityClaimDetails("Permanent disability", dateOfEvent, true, new BigDecimal("100"))),
             "ct-reg-" + UUID.randomUUID(), "claims-staff-fixture");
         TenantContext.clear();
         return view.claimId();
@@ -565,7 +569,7 @@ class ClaimsContractTest {
 
         // Two claims on one policy, of DIFFERENT types: one death claim per life now refuses a
         // second DEATH here, and this test is about the status filter, not the claim type.
-        UUID registeredClaimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID registeredClaimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
         UUID underAssessmentClaimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
         submitAssessmentDirectly(tenantId, underAssessmentClaimId, "assessor-list-fixture");
 
@@ -973,7 +977,7 @@ class ClaimsContractTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-01");
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID claimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
 
         // openApi().isValid(SPEC_PATH) is deliberately omitted on this POST: verified empirically
         // that com.atlassian.oai.validator's MockMvc adapter cannot introspect a multipart/
@@ -1010,7 +1014,7 @@ class ClaimsContractTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-NAME");
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID claimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
 
         // No openApi() matcher on the multipart POST -- see the 201 test above.
         mockMvc.perform(multipart("/claims/" + claimId + "/evidence")
@@ -1040,7 +1044,7 @@ class ClaimsContractTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-02");
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID claimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
 
         // openApi().isValid(SPEC_PATH) omitted here too -- same multipart-body-introspection
         // limitation as the 201 test above, verified the same way.

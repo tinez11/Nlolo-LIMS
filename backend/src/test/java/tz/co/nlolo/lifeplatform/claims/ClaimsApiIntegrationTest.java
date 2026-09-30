@@ -178,6 +178,20 @@ class ClaimsApiIntegrationTest {
         return issuedPolicyNumber;
     }
 
+    /**
+     * A policy that has reached its maturity date today: commenced a year ago on a 12-month term.
+     * A maturity claim is only claimable once the term is up, which registration now enforces.
+     */
+    private String issueMaturedPolicy(UUID tenantId, Fixture fixture) {
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims IT test",
+            LocalDate.now().minusMonths(12), 12, null, null, null);
+        String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
+    }
+
     private ClaimsApi.RegisterClaimRequest deathRequest(String policyNumber, UUID claimantId, LocalDate dateOfEvent) {
         return new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.DEATH, dateOfEvent,
             new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test"));
@@ -454,7 +468,9 @@ class ClaimsApiIntegrationTest {
     void approvalWithoutAnyAssessmentSucceedsForMaturity() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-IT-MATURITY-01");
-        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        // A maturity claim is only claimable on a policy that has reached its maturity date, which
+        // registration now enforces. This fixture matures today.
+        String policyNumber = issueMaturedPolicy(tenantId, fixture);
 
         TenantContext.set(tenantId);
         UUID claimId = claimsApi.registerClaim(maturityRequest(policyNumber, fixture.applicantId(), LocalDate.now()),

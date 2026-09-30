@@ -191,6 +191,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",
             "db-migrations/billing/V7__policy_inception_invoice.sql",
+            "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             // M6 (Task 1) additions: appRoleCanReadWriteAndUpdateAClaim below needs claims' own
             // schema/grants -- V1 alone had zero GRANT statements anywhere in the file (again),
             // the exact M1/M5 failure mode this class exists to catch, and RLS on only 1 of its

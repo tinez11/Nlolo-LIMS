@@ -28,6 +28,11 @@ export const STATUS_MAPS = {
     // started -- which is the whole reason this is not LAPSED. Colouring it as a failure would
     // put it in the same visual bucket as the lapses it was deliberately kept out of.
     NOT_TAKEN_UP: 'neutral',
+    // A term policy that ran its full term and paid nothing, as term cover does. Neutral, beside
+    // SURRENDERED and NOT_TAKEN_UP: it is a clean, expected ending, not a failure. MATURED stays
+    // success because a maturity benefit was actually paid; EXPIRED paid nothing, so it is not
+    // dressed as a good outcome, only as an uneventful one.
+    EXPIRED: 'neutral',
   },
 
   // claims/api/ClaimStatus.java

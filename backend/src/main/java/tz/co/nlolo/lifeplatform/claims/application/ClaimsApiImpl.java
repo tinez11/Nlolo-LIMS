@@ -125,31 +125,53 @@ public class ClaimsApiImpl implements ClaimsApi {
         // 1. Claimant must exist. PartyNotFoundException propagates as-is (404 at the boundary).
         partyApi.getParty(request.claimantPartyId());
 
-        // 2. Policy must exist, and must be in force. PolicyNotFoundException propagates as-is.
+        // 2. Policy must exist, and must have been ON RISK ON THE DATE OF THE EVENT.
+        //    PolicyNotFoundException propagates as-is.
         //
-        //    KNOWN GAP, stated accurately here because the comment that used to sit on these lines
-        //    described the intended contract as if it were the implemented one (M6 final-review I3).
-        //    What SHOULD hold is "in force ON THE DATE OF THE EVENT" -- a death claim filed after
-        //    the policy lapsed is still valid if the death itself preceded the lapse. What ACTUALLY
-        //    happens is a "currently ACTIVE-or-REINSTATED" status read: PolicyApiImpl
-        //    .isPolicyInForce accepts asOf and, by its own comment there, never consults it. The
-        //    dateOfEvent below is therefore passed for the contract's sake and ignored downstream.
-        //
-        //    CONSEQUENCE: a legitimate claim registered after the policy has lapsed -- including
-        //    after billing's dunning lapses it automatically at level >= 5, which a deceased
-        //    policyholder's unpaid premiums cause -- is rejected with a 422 here, the exact opposite
-        //    of the intended rule. Staff must reinstate the policy before the claim can be filed.
-        //
-        //    NOT fixed in claims, deliberately: the fix is a date-bounded coverage query inside
-        //    policy (was the policy in force at date D, using lapsedAt/issueDate and the coverage
-        //    rows), which is policy's own scope and a behaviour change for every existing caller of
-        //    isPolicyInForce. Tracked as an open policy follow-up. Do not "fix" it here by widening
-        //    the check to accept lapsed policies unconditionally -- that would let a claim be filed
-        //    for an event that genuinely happened after coverage ended.
+        //    This was the KNOWN GAP: isPolicyInForce ignored its date and read today's status, so a
+        //    death after a term ended was accepted and -- the worse half -- a death BEFORE a lapse,
+        //    reported after it, was refused, forcing staff to reinstate the policy just to file the
+        //    claim. Dunning lapses a deceased life's policy on its own, so that was the commonest
+        //    late death claim there is. isPolicyInForce is now genuinely date-bounded
+        //    (Policy.wasOnRiskOn), and the check below asks the real question.
         PolicyView policy = policyApi.getPolicy(request.policyNumber());
-        if (!policyApi.isPolicyInForce(request.policyNumber(), request.dateOfEvent())) {
-            throw new ClaimValidationException("Policy " + request.policyNumber()
-                + " was not in force on " + request.dateOfEvent());
+
+        // On a SCHEME, cover is per member: a member joins and leaves on their own dates, and
+        // claimableCover below enforces "covered on the date of event" against the member schedule
+        // (raising InvalidPolicyStateException "was not covered on"). The policy-level date check
+        // must not pre-empt that with a coarser answer -- the scheme itself is on risk while any
+        // member is. So for a scheme we only confirm the scheme has not itself ended, as the
+        // pre-D2 check did, and leave the date-of-event judgement to the member schedule.
+        boolean scheme = "GROUP_LIFE".equals(policy.productCategory())
+            || "CREDIT_LIFE".equals(policy.productCategory());
+        if (scheme) {
+            if (!policyApi.isPolicyInForce(request.policyNumber(), LocalDate.now())) {
+                throw new ClaimValidationException("Scheme " + request.policyNumber()
+                    + " is not in force");
+            }
+        } else {
+            // A MATURITY claim is the survival payout, not a loss, and only claimable once the term
+            // has run: before the maturity date there is nothing to mature, and a policy with no
+            // maturity date carries no maturity benefit at all. The on-risk question for a maturity
+            // is "was cover running to the very end", asked of the day before maturity (cover ends
+            // as that date begins -- see Policy.wasOnRiskOn).
+            LocalDate onRiskDay = request.dateOfEvent();
+            if (request.claimType() == ClaimType.MATURITY) {
+                if (policy.maturityDate() == null) {
+                    throw new ClaimValidationException("Policy " + request.policyNumber()
+                        + " has no maturity date, so it carries no maturity benefit to claim");
+                }
+                if (request.dateOfEvent().isBefore(policy.maturityDate())) {
+                    throw new ClaimValidationException("Policy " + request.policyNumber()
+                        + " does not mature until " + policy.maturityDate()
+                        + "; a maturity claim cannot be filed for " + request.dateOfEvent());
+                }
+                onRiskDay = policy.maturityDate().minusDays(1);
+            }
+            if (!policyApi.isPolicyInForce(request.policyNumber(), onRiskDay)) {
+                throw new ClaimValidationException("Policy " + request.policyNumber()
+                    + " was not on risk on " + onRiskDay);
+            }
         }
 
         // 2a. ON CREDIT LIFE, THE CLAIMANT IS THE LENDER -- who is also the policyholder.

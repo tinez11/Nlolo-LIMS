@@ -7,36 +7,31 @@ import type { Gate } from './types';
  * What can honestly be said about cover at claim intake.
  *
  * The question that matters is "was this policy providing the claimed cover on
- * the day the event happened". **This platform cannot answer it**, and the gates
- * below are shaped around that fact rather than around the endpoint that looks
- * like it should.
+ * the day the event happened". The backend now answers the date-bounded part of
+ * it — `GET /policies/{n}/in-force?asOf=` calls `Policy.wasOnRiskOn`, which reads
+ * the commencement, the maturity date and the lapse/suspension dates — and
+ * refuses a claim registered for a day the policy was not on risk. So the whole
+ * judgement lives on the server, and the submit surfaces it.
  *
- * `GET /policies/{n}/coverage-status?asOf=` accepts the date, echoes it back in
- * the response, and ignores it: `PolicyApiImpl.getCoverageStatus` queries
- * `findByPolicyNumberAndActiveTrue`, a boolean flag with no date bound. Verified
- * three ways — two dates 25 years apart return byte-identical coverage on a
- * policy issued in 2026; the source computes `effectiveAsOf` only to put it in
- * the response; and `policy.coverage` has no `effective_from`/`effective_to`
- * columns at all, so no per-benefit history exists to query. (A comment on
- * `isPolicyInForce` excuses its own ignored `asOf` by delegating date-bounded
- * work to `getCoverageStatus`. That delegation is false.)
+ * These gates prove, ahead of that submit, the parts a `PolicyView` carries and
+ * nothing more:
  *
- * So these gates use only facts that are real:
- *
- * 1. `issueDate` from `PolicyView` — a date of event before it means risk had
- *    not commenced. Hard, and genuinely date-bounded.
- * 2. Today's `status` — not a coverage-on-the-day answer, but an honest flag: if
- *    the policy is not currently in force, whether cover was running on the day
- *    needs a person, because no lapse date is recorded anywhere. Soft, because a
- *    lapsed policy must route a claim to investigation, never auto-refuse it —
- *    refusing without verifying the lapse notices were provably sent is how an
- *    insurer ends up in front of a regulator.
+ * 1. `issueDate` — a date of event before it means risk had not commenced. Hard,
+ *    genuinely date-bounded.
+ * 2. `maturityDate` — a term policy's cover ends as its maturity date begins, so
+ *    a non-maturity event on or after it fell outside the term. Hard. And a
+ *    MATURITY claim is only claimable once that date is reached, on a policy that
+ *    has one at all. Hard.
  * 3. The benefit set from `coverage-status` — date-inert, so it answers "does
- *    this policy carry this benefit", and is labelled that way rather than as
- *    "carried it on the day".
- *
- * Closing gap 2 properly needs coverage dates in the backend; it is recorded in
- * the M13 design spec's open items.
+ *    this policy carry this benefit", labelled as current rather than as-at-the-
+ *    day. (`coverage-status` still ignores its `asOf`: `policy.coverage` has no
+ *    effective dates, so no per-benefit history exists to query. Only `in-force`
+ *    became date-aware.)
+ * 4. A **soft** note when today's status is not plainly in force: the lapse and
+ *    suspension dates are not on `PolicyView`, so whether cover was running on the
+ *    day is the server's call at submit, not one this gate can make. It flags the
+ *    claim for that check; it never refuses it, because a lapsed policy must route
+ *    to investigation, never auto-refuse.
  */
 export interface ClaimGateInput {
   policy: PolicyView | null;
@@ -68,20 +63,58 @@ export function claimGates({ policy, coverage, claimType, dateOfEvent }: ClaimGa
     });
   }
 
+  // The maturity window, from the one date PolicyView carries for it.
+  if (policy?.maturityDate) {
+    if (claimType === 'MATURITY') {
+      const reached = isOnOrAfter(dateOfEvent, policy.maturityDate);
+      gates.push({
+        ok: reached,
+        hard: true,
+        title: 'The policy has reached maturity',
+        detail: reached
+          ? `Matured ${formatDate(policy.maturityDate)}`
+          : `The policy does not mature until ${formatDate(policy.maturityDate)}, after ${onTheDay} — there is nothing to mature yet`,
+      });
+    } else {
+      const withinTerm = !isOnOrAfter(dateOfEvent, policy.maturityDate);
+      gates.push({
+        ok: withinTerm,
+        hard: true,
+        title: 'The event falls within the policy term',
+        detail: withinTerm
+          ? `Cover runs to ${formatDate(policy.maturityDate)}`
+          : `The term ended ${formatDate(policy.maturityDate)}, on or before ${onTheDay} — cover had already run out`,
+      });
+    }
+  } else if (claimType === 'MATURITY') {
+    // No maturity date means no maturity benefit; the server refuses this outright.
+    gates.push({
+      ok: false,
+      hard: true,
+      title: 'The policy has reached maturity',
+      detail: 'This policy carries no maturity date, so there is no maturity benefit to claim',
+    });
+  }
+
   if (policy?.status) {
-    // A MATURED policy claiming MATURITY is the normal, expected path, not a flag.
-    const expected =
+    // Plainly in force today needs no flag. Otherwise the lapse/suspension date — which
+    // PolicyView does not carry — decides whether cover was running on the day, and that is the
+    // server's call at submit (Policy.wasOnRiskOn). Soft: it routes the claim to that check, it
+    // does not pre-empt it. MATURED/EXPIRED are handled by the term gate above, so they are not
+    // re-flagged here.
+    const plainlyInForce =
       policy.status === 'ACTIVE' ||
       policy.status === 'REINSTATED' ||
-      (policy.status === 'MATURED' && claimType === 'MATURITY');
-    gates.push({
-      ok: expected,
-      hard: false,
-      title: 'Coverage on the day can be read from the record',
-      detail: expected
-        ? `The policy is ${policy.status.toLowerCase()} and no coverage history is in question`
-        : `The policy is ${policy.status.toLowerCase()} today, and the platform records no date for that change — whether cover was running on ${onTheDay} must be verified by a person. This flags the claim for investigation; it does not refuse it.`,
-    });
+      policy.status === 'MATURED' ||
+      policy.status === 'EXPIRED';
+    if (!plainlyInForce) {
+      gates.push({
+        ok: false,
+        hard: false,
+        title: 'Cover on the day is confirmed on submit',
+        detail: `The policy is ${policy.status.toLowerCase()} today. Whether it was on risk on ${onTheDay} is checked against its lapse and suspension dates when the claim is registered; this flags it for that check and does not refuse it.`,
+      });
+    }
   }
 
   if (coverage && claimType) {

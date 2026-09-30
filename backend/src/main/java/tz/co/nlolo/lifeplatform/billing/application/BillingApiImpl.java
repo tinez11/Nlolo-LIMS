@@ -407,9 +407,11 @@ public class BillingApiImpl implements BillingApi {
 
     @Transactional
     void generateScheduleForNewPolicy(UUID tenantId, String policyNumber, UUID productVersionId,
-                                       LocalDate issueDate, BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency) {
+                                       LocalDate issueDate, BigDecimal premiumAmount, String premiumCurrency,
+                                       String premiumFrequency, LocalDate premiumPayingUntil) {
         LocalDate firstDueDate = nextPeriodStart(issueDate, premiumFrequency);
-        BillingSchedule schedule = new BillingSchedule(tenantId, policyNumber, premiumFrequency, premiumAmount, premiumCurrency, firstDueDate);
+        BillingSchedule schedule = new BillingSchedule(tenantId, policyNumber, premiumFrequency, premiumAmount,
+            premiumCurrency, firstDueDate, premiumPayingUntil);
         billingScheduleRepository.save(schedule);
         generateInvoicesAhead(tenantId, schedule, productVersionId, issueDate);
     }
@@ -434,6 +436,26 @@ public class BillingApiImpl implements BillingApi {
         billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
             .ifPresent(schedule -> {
                 schedule.suspend();
+                billingScheduleRepository.save(schedule);
+            });
+    }
+
+    /**
+     * The policy's term ran out (policy.PolicyExpired). Terminate the schedule so no further
+     * invoice is raised against a contract that has ended.
+     *
+     * <p>Terminated rather than suspended: suspension is a hold that resumes, and an expired term
+     * never does. A SUSPENDED schedule is terminated here too -- an expired policy that happened to
+     * be on hold still stops being billed. Only ACTIVE or SUSPENDED are touched; a schedule already
+     * TERMINATED (a single-premium contract never had one at all) is left as it is, so the handler
+     * is idempotent on a repeated event.
+     */
+    @Transactional
+    void terminateScheduleForExpiry(UUID tenantId, String policyNumber) {
+        billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
+            .or(() -> billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "SUSPENDED"))
+            .ifPresent(schedule -> {
+                schedule.terminate();
                 billingScheduleRepository.save(schedule);
             });
     }
@@ -647,10 +669,55 @@ public class BillingApiImpl implements BillingApi {
             amount.toPlainString(), currency, policyNumber, policyMemberId, exitDate, exitReason);
     }
 
+    /**
+     * Raise the next batch of invoices for one schedule whose pre-created ones are running low.
+     * Called by {@code InvoiceRollForward} for each schedule {@code schedules_due_for_invoicing()}
+     * returns.
+     *
+     * <p>Takes a write lock on the row first, which is the exactly-once guarantee: two drain
+     * instances both selected this schedule, but the second blocks here until the first commits,
+     * then re-reads a {@code nextDueDate} already advanced past the horizon and generates nothing.
+     * A schedule no longer ACTIVE (terminated by expiry or a claim between selection and this call)
+     * is left alone.
+     *
+     * <p>The product version comes from the policy this schedule bills -- billing already depends
+     * on {@code policy::api} -- because the schedule row does not carry it and
+     * {@code generateInvoicesAhead} needs the grace-period days.
+     */
+    @Transactional
+    public void rollForward(UUID scheduleId) {
+        BillingSchedule schedule = billingScheduleRepository.findByIdForUpdate(scheduleId).orElse(null);
+        if (schedule == null || !"ACTIVE".equals(schedule.getStatus()) || schedule.getNextDueDate() == null) {
+            return;
+        }
+        // Already reached the end of the contract between selection and now: nothing to raise.
+        if (schedule.getPremiumPayingUntil() != null
+                && schedule.getNextDueDate().isAfter(schedule.getPremiumPayingUntil())) {
+            return;
+        }
+        UUID productVersionId = policyApi.getPolicy(schedule.getPolicyNumber()).productVersionId();
+        // fromDate = the schedule's own next due date, so the twelve-month horizon in
+        // generateInvoicesAhead is measured forward from where invoicing currently stands rather
+        // than from a fixed issue date -- each roll adds another year (bounded by the paying end).
+        generateInvoicesAhead(schedule.getTenantId(), schedule, productVersionId, schedule.getNextDueDate());
+    }
+
     private void generateInvoicesAhead(UUID tenantId, BillingSchedule schedule, UUID productVersionId, LocalDate fromDate) {
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(productVersionId);
         LocalDate cursor = schedule.getNextDueDate();
+        // Stop at the twelve-month horizon OR the end of the contract, whichever comes first. The
+        // horizon bounds how far ahead invoices are pre-created (the roll-forward drain extends
+        // them later); the paying end bounds the contract itself, so a 6-month policy gets six
+        // invoices and a limited-pay policy is not billed past its paying term. A null paying end
+        // means the contract does not term -- whole life, an annually renewable scheme -- and only
+        // the horizon applies. The bound is INCLUSIVE: billing's first invoice falls one period
+        // after issue (premium in arrears), so a 12-month monthly policy is due issue+1..issue+12,
+        // and excluding the endpoint would drop the final month.
         LocalDate horizon = fromDate.plusMonths(SCHEDULE_HORIZON_MONTHS);
+        LocalDate payingEnd = schedule.getPremiumPayingUntil();
+        if (payingEnd != null && payingEnd.isBefore(horizon)) {
+            horizon = payingEnd;
+        }
         List<PremiumInvoice> toCreate = new ArrayList<>();
         while (!cursor.isAfter(horizon)) {
             LocalDate graceEnd = cursor.plusDays(snapshot.gracePeriodDays());

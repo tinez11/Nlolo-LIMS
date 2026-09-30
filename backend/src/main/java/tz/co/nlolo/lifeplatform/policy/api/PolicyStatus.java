@@ -8,4 +8,4 @@ package tz.co.nlolo.lifeplatform.policy.api;
  * <p>NOT_TAKEN_UP is deliberately not LAPSED. Lapsing is what happens to an in-force policy whose
  * premiums stop, and a contract that was never on risk does not belong in the lapse figures.
  */
-public enum PolicyStatus { PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP }
+public enum PolicyStatus { PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED }

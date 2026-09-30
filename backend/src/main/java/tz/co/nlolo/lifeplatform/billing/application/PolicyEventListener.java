@@ -50,6 +50,7 @@ public class PolicyEventListener {
             case "policy.PolicyEndorsed" -> withTenant(envelope, this::handlePolicyEndorsed);
             case "policy.PolicySuspended" -> withTenant(envelope, this::handlePolicySuspended);
             case "policy.PolicyResumed" -> withTenant(envelope, this::handlePolicyResumed);
+            case "policy.PolicyExpired" -> withTenant(envelope, this::handlePolicyExpired);
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
             case "policy.GroupMemberExited" -> withTenant(envelope, this::handleGroupMemberExited);
             default -> { /* not billing-relevant */ }
@@ -124,8 +125,14 @@ public class PolicyEventListener {
             return;
         }
 
+        // The end of the contract, so billing stops there instead of a fixed twelve months in.
+        // Absent or null on a policy that does not term -- whole life, an annually renewable
+        // scheme -- which the schedule reads as "no end".
+        String payingUntilRaw = (String) payload.get("premiumPayingUntil");
+        LocalDate premiumPayingUntil = payingUntilRaw != null ? LocalDate.parse(payingUntilRaw) : null;
+
         billingApiImpl.generateScheduleForNewPolicy(TenantContext.get(), policyNumber, productVersionId,
-            issueDate, premiumAmount, premiumCurrency, premiumFrequency);
+            issueDate, premiumAmount, premiumCurrency, premiumFrequency, premiumPayingUntil);
     }
 
     private void handlePolicyEndorsed(Map<String, Object> payload) {
@@ -139,6 +146,11 @@ public class PolicyEventListener {
     private void handlePolicySuspended(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
         billingApiImpl.pauseScheduleForSuspension(TenantContext.get(), policyNumber);
+    }
+
+    private void handlePolicyExpired(Map<String, Object> payload) {
+        String policyNumber = (String) payload.get("policyNumber");
+        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
     }
 
     /**

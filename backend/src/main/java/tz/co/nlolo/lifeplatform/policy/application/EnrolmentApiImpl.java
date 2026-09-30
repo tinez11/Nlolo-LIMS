@@ -505,7 +505,10 @@ public class EnrolmentApiImpl implements EnrolmentApi {
             this.tenantId = tenantId;
             this.policyNumber = policyNumber;
             this.commencement = policy.getCommencementDate();
-            this.bounds = productApi.getActiveSnapshot(policy.getProductId(), LocalDate.now())
+            // The scheme's OWN version. A lender's file is judged against the terms the scheme was
+            // written on; a later version of the product with tighter age bounds would otherwise
+            // start rejecting borrowers on a contract that never agreed to them.
+            this.bounds = productApi.getSnapshotByVersionId(policy.getProductVersionId())
                 .eligibility();
         }
 

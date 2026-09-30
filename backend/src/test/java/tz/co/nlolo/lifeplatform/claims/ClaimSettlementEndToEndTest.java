@@ -258,6 +258,20 @@ class ClaimSettlementEndToEndTest {
         return issuedPolicyNumber;
     }
 
+    /**
+     * A policy that has reached its maturity date today: commenced a year ago on a 12-month term.
+     * A maturity claim is only claimable once the term is up, which registration now enforces.
+     */
+    private String issueMaturedPolicy(UUID tenantId, Fixture fixture) {
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims E2E test",
+            LocalDate.now().minusMonths(12), 12, null, null, null);
+        String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
+    }
+
     /** Registers, assesses, and returns a fresh DEATH claim id, ready to approve. */
     private UUID registerAndAssessDeathClaim(UUID tenantId, Fixture fixture, String policyNumber, String regKey, String assessor) {
         TenantContext.set(tenantId);
@@ -539,7 +553,9 @@ class ClaimSettlementEndToEndTest {
 
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-SETTLE-MATURITY");
-        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        // A maturity claim is only claimable on a policy that has reached its maturity date, which
+        // the registration now enforces. This fixture matures today.
+        String policyNumber = issueMaturedPolicy(tenantId, fixture);
         UUID claimId = registerMaturityClaim(tenantId, fixture, policyNumber, "e2e-maturity-reg-01");
         String settleKey = "e2e-settle-maturity-" + claimId;
 

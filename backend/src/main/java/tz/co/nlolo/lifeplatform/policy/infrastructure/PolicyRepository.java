@@ -82,4 +82,20 @@ public interface PolicyRepository extends JpaRepository<Policy, String> {
     @Query("SELECT p.policyNumber FROM Policy p WHERE p.tenantId = :tenantId AND p.agentOfRecordId IN :agentOfRecordIds")
     List<String> findPolicyNumbersByTenantIdAndAgentOfRecordIdIn(@Param("tenantId") UUID tenantId,
                                                                   @Param("agentOfRecordIds") Collection<UUID> agentOfRecordIds);
+
+    /**
+     * Termed policies past their maturity date that carry no maturity benefit, across every
+     * tenant, for {@code CoverExpiryDrain}.
+     *
+     * <p>Through {@code policy.policies_due_to_expire()} rather than a derived query, for the same
+     * reason {@code communication.pending_reminders()} exists: the drain runs on a schedule with
+     * no request and no ambient tenant, so an ordinary tenant-scoped query returns nothing. The
+     * function is SECURITY DEFINER and returns ONLY {@code [policy_number, tenant_id]} -- no party,
+     * no money -- and the drain sets the tenant per row and reads the rest under RLS.
+     *
+     * @return rows of {@code [policy_number, tenant_id]}.
+     */
+    @Query(value = "SELECT policy_number, tenant_id FROM policy.policies_due_to_expire()",
+        nativeQuery = true)
+    List<Object[]> findDueToExpireAcrossTenants();
 }
