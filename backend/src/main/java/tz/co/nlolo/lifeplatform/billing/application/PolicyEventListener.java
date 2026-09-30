@@ -51,6 +51,7 @@ public class PolicyEventListener {
             case "policy.PolicySuspended" -> withTenant(envelope, this::handlePolicySuspended);
             case "policy.PolicyResumed" -> withTenant(envelope, this::handlePolicyResumed);
             case "policy.PolicyExpired" -> withTenant(envelope, this::handlePolicyExpired);
+            case "policy.PolicyMadePaidUp" -> withTenant(envelope, this::handlePolicyMadePaidUp);
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
             case "policy.GroupMemberExited" -> withTenant(envelope, this::handleGroupMemberExited);
             default -> { /* not billing-relevant */ }
@@ -150,6 +151,12 @@ public class PolicyEventListener {
 
     private void handlePolicyExpired(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
+        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
+    }
+
+    private void handlePolicyMadePaidUp(Map<String, Object> payload) {
+        String policyNumber = (String) payload.get("policyNumber");
+        // Paid-up means no premium falls due again -- the same schedule termination as expiry.
         billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
     }
 

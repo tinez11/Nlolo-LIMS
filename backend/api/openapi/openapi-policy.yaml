@@ -107,7 +107,7 @@ paths:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         - name: status
           in: query
-          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED] }
+          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
         - name: q
           in: query
           description: Free-text, case-insensitive substring match against policyNumber.
@@ -248,6 +248,31 @@ paths:
       responses:
         '200':
           description: Policy reinstated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/paid-up:
+    post:
+      summary: Make a savings policy paid-up
+      description: >
+        The customer stops paying and keeps reduced cover. The sum assured drops to the paid-up
+        figure -- proportionate to the premium term completed, or from the product's paid-up table --
+        the coverage a claim pays against is restated, the status becomes PAID_UP (in force, no
+        premium due) and billing stops. 409 when the policy is not a savings product, not in a
+        convertible status (ACTIVE, REINSTATED or LAPSED), or has no value yet. Not a lapse: no
+        commission is clawed back.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: Policy made paid-up
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PolicyView' }
@@ -1522,7 +1547,7 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         agentOfRecordId: { type: [string, "null"], format: uuid }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
         issueDate: { type: string, format: date }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cashValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
@@ -1846,7 +1871,7 @@ components:
       properties:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
         # AMORTISING_LOAN is credit life: the member IS a loan and the amount insured is the

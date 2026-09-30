@@ -375,6 +375,14 @@ public class PolicyController {
         return ResponseEntity.ok(PolicyResponseDto.from(policyApi.getPolicy(policyNumber)));
     }
 
+    /** Make a savings policy paid-up: reduced cover, no further premium. 409 INVALID_POLICY_STATE
+     * when the policy is not a savings product, not in a convertible status, or has no value yet. */
+    @PostMapping("/policies/{policyNumber}/paid-up")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<PolicyResponseDto> makePaidUp(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(PolicyResponseDto.from(policyApi.makePaidUp(policyNumber, jwt.getSubject())));
+    }
+
     @GetMapping("/policies/{policyNumber}/surrender-value")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<Map<String, Object>> getSurrenderValue(@PathVariable String policyNumber, @AuthenticationPrincipal Jwt jwt, Authentication authentication) {

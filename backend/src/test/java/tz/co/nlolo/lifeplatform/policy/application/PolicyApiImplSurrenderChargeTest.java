@@ -27,6 +27,7 @@ class PolicyApiImplSurrenderChargeTest {
         null, null, null, null, null, null, // policy, account, endorsement, beneficiary, coverage, reservation
         null, null, null, null,             // group scheme, grades, members, member benefits
         null,                               // enrolment rows (refund detail on an exit)
+        null,                               // policy value (cash-value / paid-to-date)
         null, null, null, null, null, null, // party, product, refdata, distribution, underwriting, events
         new ObjectMapper());
 

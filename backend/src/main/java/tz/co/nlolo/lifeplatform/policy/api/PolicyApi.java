@@ -637,6 +637,16 @@ public interface PolicyApi {
      */
     void recalculateCashValue(String policyNumber, LocalDate paidToDate);
 
+    /**
+     * Make a savings policy paid-up: the customer stops paying, cover reduces, no premium falls due
+     * again (guide §21.3). Reduces the sum assured to the paid-up figure -- proportionate to the
+     * premium term completed, or from the product's paid-up table -- restates the coverage a claim
+     * pays against, moves the policy to PAID_UP, and terminates its billing schedule. Refused on a
+     * policy with no cash-value config, or before the minimum term when there is no value yet.
+     * Returns the resulting view. Not a lapse: no commission is clawed back.
+     */
+    PolicyView makePaidUp(String policyNumber, String madePaidUpBy);
+
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
     void markMatured(String policyNumber, String maturedBy);
 

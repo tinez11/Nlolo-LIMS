@@ -69,6 +69,7 @@ public class PolicyApiImpl implements PolicyApi {
      * and which file charged them. Read-only here -- EnrolmentApiImpl owns writing these rows.
      */
     private final EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository;
+    private final PolicyValueRepository policyValueRepository;
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
@@ -83,6 +84,7 @@ public class PolicyApiImpl implements PolicyApi {
                           GroupSchemeRepository groupSchemeRepository, GroupSchemeGradeRepository groupSchemeGradeRepository,
                           PolicyMemberRepository policyMemberRepository, PolicyMemberBenefitRepository policyMemberBenefitRepository,
                           EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository,
+                          PolicyValueRepository policyValueRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
@@ -97,6 +99,7 @@ public class PolicyApiImpl implements PolicyApi {
         this.policyMemberRepository = policyMemberRepository;
         this.policyMemberBenefitRepository = policyMemberBenefitRepository;
         this.enrolmentSubmissionRowRepository = enrolmentSubmissionRowRepository;
+        this.policyValueRepository = policyValueRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
@@ -819,6 +822,87 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     @Transactional
+    public PolicyView makePaidUp(String policyNumber, String madePaidUpBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+
+        var config = productApi.getCashValueConfig(policy.getProductVersionId());
+        if (config.isEmpty()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " is not a savings product, so it has no value to make paid-up");
+        }
+        if (!policy.canMakePaidUp()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " must be ACTIVE, REINSTATED or LAPSED to be made paid-up (current status)");
+        }
+
+        LocalDate start = policy.getCommencementDate() != null ? policy.getCommencementDate() : policy.getIssueDate();
+        LocalDate paidToDate = policyValueRepository.findById(policyNumber)
+            .map(PolicyValue::getPaidToDate).orElse(null);
+        int completedYears = (paidToDate == null || start == null || paidToDate.isBefore(start))
+            ? 0 : Period.between(start, paidToDate).getYears();
+        if (completedYears < config.get().minYearsForValue()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " has only " + completedYears
+                + " full years paid; it has no value until " + config.get().minYearsForValue()
+                + ", so it cannot be made paid-up");
+        }
+
+        BigDecimal originalSumAssured = policy.getSumAssuredAmount();
+        BigDecimal paidUpSumAssured = "TABLE".equals(config.get().paidUpBasis())
+            ? paidUpFromTable(policy, completedYears, start, originalSumAssured)
+            : paidUpProportionate(policy, start, paidToDate, originalSumAssured);
+
+        // The claim pays against the coverage rows, so they carry the reduced figure. An endorsement
+        // records the change for audit -- the sanctioned way an individual sum assured moves.
+        coverageRepository.findByPolicyNumberAndActiveTrue(policyNumber)
+            .forEach(c -> { c.restateSumAssured(paidUpSumAssured); coverageRepository.save(c); });
+        endorsementRepository.save(new Endorsement(tenantId, policyNumber, "PAID_UP", LocalDate.now(),
+            Map.of("originalSumAssured", originalSumAssured.toPlainString(),
+                   "paidUpSumAssured", paidUpSumAssured.toPlainString(),
+                   "basis", config.get().paidUpBasis()),
+            madePaidUpBy));
+
+        policy.makePaidUp(paidUpSumAssured);
+        policyRepository.save(policy);
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyMadePaidUp", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "paidUpSumAssured", Map.of("amount", paidUpSumAssured.toPlainString(),
+                        "currencyCode", policy.getSumAssuredCurrency()),
+                   "madePaidUpAt", Instant.now().toString())));
+        return toView(policy);
+    }
+
+    /** Paid-up sum assured on the PROPORTIONATE basis: original x months paid / months payable. */
+    private BigDecimal paidUpProportionate(Policy policy, LocalDate start, LocalDate paidToDate, BigDecimal original) {
+        Integer payable = policy.getPremiumPayingTermMonths() != null
+            ? policy.getPremiumPayingTermMonths() : policy.getPolicyTermMonths();
+        if (payable == null || payable <= 0) {
+            throw new InvalidPolicyStateException("Policy " + policy.getPolicyNumber()
+                + " has no premium-paying term, so a proportionate paid-up value cannot be computed;"
+                + " this product needs a paid-up table (TABLE basis)");
+        }
+        long monthsPaid = start != null && paidToDate != null
+            ? Math.max(0, java.time.temporal.ChronoUnit.MONTHS.between(start, paidToDate)) : 0;
+        // Cap at the payable term: a policy paid ahead does not become MORE than fully paid-up.
+        long capped = Math.min(monthsPaid, payable);
+        return original.multiply(BigDecimal.valueOf(capped))
+            .divide(BigDecimal.valueOf(payable), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /** Paid-up sum assured on the TABLE basis: original x paid-up per-mille / 1000 for the year. */
+    private BigDecimal paidUpFromTable(Policy policy, int completedYears, LocalDate start, BigDecimal original) {
+        Integer ageAtEntry = ageAtEntryFor(policy, start);
+        BigDecimal perMille = productApi
+            .resolvePaidUpPerMille(policy.getProductVersionId(), completedYears, ageAtEntry)
+            .orElseThrow(() -> new InvalidPolicyStateException("Policy " + policy.getPolicyNumber()
+                + " uses the TABLE paid-up basis but its version has no paid-up figure for policy year "
+                + completedYears));
+        return original.multiply(perMille).divide(BigDecimal.valueOf(1000), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    @Override
+    @Transactional
     public void expirePolicy(String policyNumber) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
@@ -849,6 +933,14 @@ public class PolicyApiImpl implements PolicyApi {
         if (config.isEmpty()) {
             return;
         }
+
+        // Record how far premiums are paid, for a savings policy only. paid_to_date is what paid-up
+        // reads to compute the proportion of the premium term completed, and it also lets a later
+        // read reproduce this cash value without another billing round-trip.
+        PolicyValue policyValue = policyValueRepository.findById(policyNumber)
+            .orElseGet(() -> new PolicyValue(policyNumber, tenantId, paidToDate));
+        policyValue.restatePaidToDate(paidToDate);
+        policyValueRepository.save(policyValue);
 
         PolicyAccount account = policyAccountRepository.findById(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));

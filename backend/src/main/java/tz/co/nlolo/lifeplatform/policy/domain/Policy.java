@@ -397,7 +397,9 @@ public class Policy {
     }
 
     public boolean isInForce() {
-        return "ACTIVE".equals(status) || "REINSTATED".equals(status);
+        // PAID_UP is in force: the customer stopped paying but keeps (reduced) cover. Only the
+        // premium stops, not the cover.
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status) || "PAID_UP".equals(status);
     }
 
     /**
@@ -449,7 +451,7 @@ public class Policy {
             return false;
         }
         return switch (status) {
-            case "ACTIVE", "REINSTATED", "EXPIRED" -> true;
+            case "ACTIVE", "REINSTATED", "EXPIRED", "PAID_UP" -> true;
             case "LAPSED" -> lapsedAt != null && day.isBefore(lapsedAt.atZone(CIVIL_ZONE).toLocalDate());
             case "SUSPENDED" -> suspendedAt != null
                 && day.isBefore(suspendedAt.atZone(CIVIL_ZONE).toLocalDate());
@@ -504,6 +506,33 @@ public class Policy {
                 + " (status " + status + ", maturity date " + maturityDate + ")");
         }
         this.status = "EXPIRED";
+    }
+
+    /** Whether {@link #makePaidUp} would succeed. In force or lapsed-with-value can convert. */
+    public boolean canMakePaidUp() {
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status) || "LAPSED".equals(status);
+    }
+
+    /**
+     * The customer stops paying and keeps reduced cover (guide §21.3). The sum assured drops to the
+     * paid-up figure the service computed, and the status becomes PAID_UP -- in force, no premium
+     * due. Accepted from ACTIVE, REINSTATED (still paying) and LAPSED (a non-forfeiture conversion
+     * of a policy that fell into arrears but has value).
+     *
+     * <p>Reduces the aggregate's own sum assured directly, unlike {@link #restateSumAssured} which
+     * refuses anything but a scheme: paid-up IS the sanctioned way an individual policy's sum
+     * assured moves, so it is expressed here rather than routed around that guard.
+     */
+    public void makePaidUp(BigDecimal paidUpSumAssured) {
+        if (!canMakePaidUp()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " must be ACTIVE, REINSTATED or LAPSED to be made paid-up (current: " + status + ")");
+        }
+        if (paidUpSumAssured == null || paidUpSumAssured.signum() <= 0) {
+            throw new IllegalArgumentException("A paid-up sum assured must be positive, was: " + paidUpSumAssured);
+        }
+        this.sumAssuredAmount = paidUpSumAssured;
+        this.status = "PAID_UP";
     }
 
     /**

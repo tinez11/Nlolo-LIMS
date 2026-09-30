@@ -108,6 +108,8 @@ describe('STATUS_MAPS coverage', () => {
         'NOT_TAKEN_UP',
         // A term policy that ran its full term and paid nothing (product step 0).
         'EXPIRED',
+        // The customer stopped paying and keeps reduced cover (product step 1).
+        'PAID_UP',
         'PROPOSED',
         'REINSTATED',
         'SURRENDERED',

@@ -33,6 +33,9 @@ export const STATUS_MAPS = {
     // success because a maturity benefit was actually paid; EXPIRED paid nothing, so it is not
     // dressed as a good outcome, only as an uneventful one.
     EXPIRED: 'neutral',
+    // The customer stopped paying and keeps reduced cover. Active: it is in force, cover is running
+    // -- only the premium stopped. Beside ACTIVE and REINSTATED, not a warning or a failure.
+    PAID_UP: 'active',
   },
 
   // claims/api/ClaimStatus.java

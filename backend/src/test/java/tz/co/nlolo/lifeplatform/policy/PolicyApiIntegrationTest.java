@@ -124,6 +124,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
@@ -1561,6 +1562,47 @@ class PolicyApiIntegrationTest {
             policyApi.reserveLoanValue(policyNumber, new BigDecimal("700000.00"), "TZS", Duration.ofMinutes(10)));
         assertThat(policyApi.reserveLoanValue(policyNumber, new BigDecimal("500000.00"), "TZS", Duration.ofMinutes(10)))
             .isNotNull();
+    }
+
+    @Test
+    void makingASavingsPolicyPaidUpReducesCoverAndStopsPremiums() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-PU-01");
+        seedCashValue(tenantId, fixture.productVersionId());
+
+        // Commenced 3 years ago, 20-year cover, premiums payable over 10 years (120 months).
+        TenantContext.set(tenantId);
+        LocalDate commencement = LocalDate.now().minusYears(3);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "paid-up test", commencement, 240, 120, null, null);
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(policyNumber);
+        // Premiums paid to 3 years in: records paid_to_date, which paid-up reads.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(3));
+
+        PolicyView paidUp = policyApi.makePaidUp(policyNumber, "finance-officer");
+
+        // Proportionate: 2,000,000 * 36 months paid / 120 payable = 600,000, and the policy is now
+        // PAID_UP -- in force, no premium due.
+        assertEquals(PolicyStatus.PAID_UP, paidUp.status());
+        assertEquals(0, new BigDecimal("600000.00").compareTo(paidUp.sumAssuredAmount()));
+        assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+        // The coverage a claim pays against carries the reduced figure.
+        assertThat(policyApi.getCoverageStatus(policyNumber, null).activeCoverages())
+            .allSatisfy(c -> assertEquals(0, new BigDecimal("600000.00").compareTo(c.sumAssuredAmount())));
+        // Already paid-up: not convertible again.
+        assertThrows(InvalidPolicyStateException.class, () -> policyApi.makePaidUp(policyNumber, "finance-officer"));
+    }
+
+    @Test
+    void paidUpIsRefusedOnANonSavingsPolicy() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "PROTECTION-PU");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        policyApi.activateOnFirstPremium(policyNumber);
+        // No cash-value config on this version -> nothing to make paid-up.
+        assertThrows(InvalidPolicyStateException.class, () -> policyApi.makePaidUp(policyNumber, "finance-officer"));
     }
 
     @Test
