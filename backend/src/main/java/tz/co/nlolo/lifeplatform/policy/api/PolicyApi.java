@@ -647,6 +647,30 @@ public interface PolicyApi {
      */
     PolicyView makePaidUp(String policyNumber, String madePaidUpBy);
 
+    /** A surrender in flight. Status is REQUESTED, APPROVED, PAID, FAILED or IN_DOUBT. */
+    record SurrenderRequestView(java.util.UUID surrenderRequestId, String policyNumber, String status,
+                                BigDecimal quotedValueAmount, String quotedValueCurrency,
+                                String requestedBy, String approvedBy) {}
+
+    /**
+     * Request a customer surrender: quote the value, check the policy can be surrendered (in force,
+     * paid-up or lapsed-with-value, past the minimum term, no outstanding loan, no other surrender in
+     * flight), and record a REQUESTED surrender for a second person to approve. Does not stop cover.
+     */
+    SurrenderRequestView requestSurrender(String policyNumber, String payeeRef, String requestedBy);
+
+    /**
+     * Approve a surrender, by someone other than the requester. Cover stops as of the approval date
+     * (user decision Q2), billing stops, and the payout is requested through the disbursement rail.
+     */
+    SurrenderRequestView approveSurrender(java.util.UUID surrenderRequestId, String approvedBy);
+
+    /** The surrender payout succeeded; mark the request PAID. Idempotent. Called by the payment listener. */
+    void markSurrenderPaid(java.util.UUID surrenderRequestId, java.util.UUID disbursementId);
+
+    /** The surrender payout failed; mark the request FAILED. Cover stays stopped. Called by the payment listener. */
+    void markSurrenderFailed(java.util.UUID surrenderRequestId);
+
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
     void markMatured(String policyNumber, String maturedBy);
 

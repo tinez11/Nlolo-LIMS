@@ -114,6 +114,7 @@ public class PaymentRequestListener {
             case "billing.PaymentRequested" -> withTenant(envelope, this::handlePremiumCollection);
             case "claims.ClaimSettlementRequested" -> withTenant(envelope, this::handleClaimSettlement);
             case "distribution.CommissionPayoutRequested" -> withTenant(envelope, this::handleCommissionPayout);
+            case "policy.SurrenderPayoutRequested" -> withTenant(envelope, this::handleSurrenderPayout);
             default -> { /* not payment-relevant */ }
         }
     }
@@ -220,6 +221,22 @@ public class PaymentRequestListener {
         disbursementId.ifPresentOrElse(
             id -> submitDisbursement(tenantId, id, payeeRef, money),
             () -> log.info("Dropping duplicate CommissionPayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
+    }
+
+    /** A customer surrender payout. Structurally identical to {@link #handleClaimSettlement}, with
+     *  the surrender request id as the source reference and purpose SURRENDER_PAYOUT (an
+     *  already-allowed value in disbursement_instruction.purpose). */
+    private void handleSurrenderPayout(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String idempotencyKey = requireKey(payload);
+        String surrenderRequestId = (String) payload.get("surrenderRequestId");
+        String payeeRef = (String) payload.get("payeeRef");
+        Money money = money(payload);
+        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
+            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), "SURRENDER_PAYOUT", surrenderRequestId));
+        disbursementId.ifPresentOrElse(
+            id -> submitDisbursement(tenantId, id, payeeRef, money),
+            () -> log.info("Dropping duplicate SurrenderPayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 
     private void handlePremiumCollection(Map<String, Object> payload) {

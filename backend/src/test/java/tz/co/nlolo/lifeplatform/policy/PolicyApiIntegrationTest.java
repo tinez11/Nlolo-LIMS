@@ -125,6 +125,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
@@ -1751,5 +1752,68 @@ class PolicyApiIntegrationTest {
         assertThat(auditRows).hasSize(1);
         JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
         assertThat(payload.path("policyNumber").asText()).isEqualTo(policyNumber);
+    }
+
+    @Test
+    void surrenderRequestAndApprovalByADifferentUserSurrendersThePolicy() {
+        // Two-person rule: the requester may not also approve. Test the happy path (two different
+        // users) and the same-user rejection in one fixture to avoid spinning up two Postgres
+        // contexts. Setup mirrors makingASavingsPolicyPaidUpReducesCoverAndStopsPremiums above.
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-SURR-01");
+        seedCashValue(tenantId, fixture.productVersionId());
+
+        TenantContext.set(tenantId);
+        LocalDate commencement = LocalDate.now().minusYears(3);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "surrender test", commencement, 240, null, null, null);
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(policyNumber);
+        // Three years paid: year-3 scale gives 600,000 cash value, well above zero.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(3));
+
+        // Step 1: request a surrender. Returns a REQUESTED surrender with the quoted value.
+        PolicyApi.SurrenderRequestView req = policyApi.requestSurrender(policyNumber, "MPESA-0712345678", "alice");
+        assertEquals("REQUESTED", req.status());
+        assertEquals(policyNumber, req.policyNumber());
+        assertEquals(0, new BigDecimal("600000.00").compareTo(req.quotedValueAmount()));
+        assertEquals("alice", req.requestedBy());
+        // Cover is still in force during REQUESTED state.
+        assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+
+        // Two-person rule: alice cannot approve her own request.
+        UUID requestId = req.surrenderRequestId();
+        assertThrows(InvalidPolicyStateException.class, () -> policyApi.approveSurrender(requestId, "alice"));
+
+        // Step 2: a different officer approves. Cover stops as of today (Q2 decision).
+        PolicyApi.SurrenderRequestView approved = policyApi.approveSurrender(requestId, "bob");
+        assertEquals("APPROVED", approved.status());
+        assertEquals("bob", approved.approvedBy());
+
+        // The policy is now SURRENDERED and no longer in force.
+        assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());
+        assertFalse(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+
+        // A second surrender request on the same policy is refused (no in-flight surrender allowed
+        // AND the policy is no longer in a surrenderable state).
+        assertThrows(InvalidPolicyStateException.class,
+            () -> policyApi.requestSurrender(policyNumber, "MPESA-0712345678", "carol"));
+    }
+
+    @Test
+    void surrenderIsRefusedBeforeTheMinimumYears() {
+        // min_years_for_value is 2 (seeded by seedCashValue). A policy issued today has not passed
+        // the minimum and must be refused immediately -- before any cash value exists.
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-SURR-02");
+        seedCashValue(tenantId, fixture.productVersionId());
+
+        TenantContext.set(tenantId);
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        policyApi.activateOnFirstPremium(policyNumber);
+        // Cash value is zero (no recalculate call) -- minimum-years gate fires first.
+        assertThrows(InvalidPolicyStateException.class,
+            () -> policyApi.requestSurrender(policyNumber, "MPESA-0712345678", "requester"));
     }
 }

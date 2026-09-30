@@ -396,21 +396,31 @@ public class PolicyController {
     }
 
     /**
-     * DEFERRED CHOREOGRAPHY (plan header) -- Camunda 7 is EOL, Camunda 8 needs a paid licence
-     * and a cross-tenant leak review against this platform's ThreadLocal TenantContext. Real,
-     * routable, correctly-secured (matches openapi-policy.yaml's customersAuth/agentsAuth/
-     * staffAuth triad exactly) endpoint that returns 501, not 404 and not omitted.
+     * Request a customer surrender (step 1, task 4). Was a deferred 501; the payout now runs through
+     * the disbursement rail, event-driven, so no workflow engine is needed. Staff-only and split into
+     * request/approve, because money leaves the company and the two must be different people. 409 on
+     * an ineligible policy, 404 if it does not exist.
      */
     @PostMapping("/policies/{policyNumber}/surrender")
-    @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
-    public ResponseEntity<ProblemDetail> surrenderPolicy(@PathVariable String policyNumber,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
-            @RequestBody(required = false) Map<String, Object> body) {
-        return notImplementedChoreography();
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<SurrenderRequestResponseDto> requestSurrender(@PathVariable String policyNumber,
+            @Valid @RequestBody SurrenderRequestDto request, @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(SurrenderRequestResponseDto.from(
+            policyApi.requestSurrender(policyNumber, request.payeeRef(), jwt.getSubject())));
     }
 
-    /** Same deferred-choreography seam as surrenderPolicy above -- nothing to poll without a
-     * process engine. */
+    /** Approve a surrender, by someone other than the requester. Cover stops and the payout is sent. */
+    @PostMapping("/surrender-requests/{surrenderRequestId}/approve")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<SurrenderRequestResponseDto> approveSurrender(@PathVariable UUID surrenderRequestId,
+            @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(SurrenderRequestResponseDto.from(
+            policyApi.approveSurrender(surrenderRequestId, jwt.getSubject())));
+    }
+
+    /** The process-status poll from the old deferred-choreography design. Kept as a 501: there is
+     * no long-running process now -- surrender completes through events -- so there is nothing to
+     * poll, but the routable endpoint stays rather than 404. */
     @GetMapping("/policies/{policyNumber}/processes/{processInstanceId}")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<ProblemDetail> getProcessStatus(@PathVariable String policyNumber, @PathVariable String processInstanceId) {

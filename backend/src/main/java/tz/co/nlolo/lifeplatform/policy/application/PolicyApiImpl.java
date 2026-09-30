@@ -70,6 +70,7 @@ public class PolicyApiImpl implements PolicyApi {
      */
     private final EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository;
     private final PolicyValueRepository policyValueRepository;
+    private final SurrenderRequestRepository surrenderRequestRepository;
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
@@ -85,6 +86,7 @@ public class PolicyApiImpl implements PolicyApi {
                           PolicyMemberRepository policyMemberRepository, PolicyMemberBenefitRepository policyMemberBenefitRepository,
                           EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository,
                           PolicyValueRepository policyValueRepository,
+                          SurrenderRequestRepository surrenderRequestRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
@@ -100,6 +102,7 @@ public class PolicyApiImpl implements PolicyApi {
         this.policyMemberBenefitRepository = policyMemberBenefitRepository;
         this.enrolmentSubmissionRowRepository = enrolmentSubmissionRowRepository;
         this.policyValueRepository = policyValueRepository;
+        this.surrenderRequestRepository = surrenderRequestRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
@@ -899,6 +902,123 @@ public class PolicyApiImpl implements PolicyApi {
                 + " uses the TABLE paid-up basis but its version has no paid-up figure for policy year "
                 + completedYears));
         return original.multiply(perMille).divide(BigDecimal.valueOf(1000), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    @Override
+    @Transactional
+    public SurrenderRequestView requestSurrender(String policyNumber, String payeeRef, String requestedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        if (payeeRef == null || payeeRef.isBlank()) {
+            throw new IllegalArgumentException("A surrender needs a payee reference");
+        }
+        if (!policy.canSurrender()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " cannot be surrendered from its current status");
+        }
+        if (surrenderRequestRepository.findLive(policyNumber, tenantId).isPresent()) {
+            throw new InvalidPolicyStateException("A surrender is already in flight for policy " + policyNumber);
+        }
+
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+
+        // No outstanding loan (user decision Q1): the loan must be repaid first. The encumbrance on
+        // the account is the outstanding-loan marker policy can see without reaching into policyloan.
+        if (account.getLoanEncumbranceAmount().signum() > 0) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " has an outstanding loan of "
+                + account.getLoanEncumbranceAmount() + "; it must be repaid before the policy can be surrendered");
+        }
+        if (loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId).signum() > 0) {
+            throw new InvalidPolicyStateException("A loan reservation is in flight on policy " + policyNumber
+                + "; it must resolve before the policy can be surrendered");
+        }
+
+        // Past the minimum term, and with a value. minYears comes from the policy's own version.
+        var config = productApi.getCashValueConfig(policy.getProductVersionId());
+        if (config.isPresent()) {
+            LocalDate start = policy.getCommencementDate() != null ? policy.getCommencementDate() : policy.getIssueDate();
+            LocalDate paidToDate = policyValueRepository.findById(policyNumber).map(PolicyValue::getPaidToDate).orElse(null);
+            int completedYears = (paidToDate == null || start == null || paidToDate.isBefore(start))
+                ? 0 : Period.between(start, paidToDate).getYears();
+            if (completedYears < config.get().minYearsForValue()) {
+                throw new InvalidPolicyStateException("Policy " + policyNumber + " has no value until "
+                    + config.get().minYearsForValue() + " years, so it cannot be surrendered");
+            }
+        }
+        if (account.getCashValueAmount().signum() <= 0) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " has no cash value to surrender");
+        }
+
+        // Quote off the policy's OWN version (step 0 D3): cash value less the surrender charge.
+        ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
+        BigDecimal chargePercent = resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(), policy.getIssueDate());
+        BigDecimal charge = account.getCashValueAmount().multiply(chargePercent).divide(new BigDecimal("100"));
+        BigDecimal quoted = account.getCashValueAmount().subtract(charge);
+        if (quoted.signum() <= 0) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " has no positive surrender value after charges");
+        }
+
+        SurrenderRequest request = new SurrenderRequest(tenantId, policyNumber, quoted,
+            account.getCashValueCurrency(), payeeRef, requestedBy);
+        surrenderRequestRepository.save(request);
+        return toSurrenderView(request);
+    }
+
+    @Override
+    @Transactional
+    public SurrenderRequestView approveSurrender(UUID surrenderRequestId, String approvedBy) {
+        UUID tenantId = TenantContext.get();
+        SurrenderRequest request = surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
+            .orElseThrow(() -> new SurrenderRequestNotFoundException(surrenderRequestId));
+        Policy policy = findPolicyOrThrow(request.getPolicyNumber(), tenantId);
+
+        // Two-person rule enforced in approve(); cover stops as of today (Q2).
+        request.approve(approvedBy);
+        policy.surrender(LocalDate.now());
+        surrenderRequestRepository.save(request);
+        policyRepository.save(policy);
+
+        // Billing stops and regreporting projects the surrender.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,
+            Map.of("policyNumber", request.getPolicyNumber(), "surrenderedAt", Instant.now().toString())));
+        // The payout, through the disbursement rail. The surrender request id is both the source
+        // reference and the idempotency key -- one payout per approval.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPayoutRequested", tenantId,
+            Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                   "idempotencyKey", surrenderRequestId.toString(),
+                   "policyNumber", request.getPolicyNumber(),
+                   "payeeRef", request.getPayeeRef(),
+                   "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
+                        "currencyCode", request.getQuotedValueCurrency()))));
+        return toSurrenderView(request);
+    }
+
+    /** The payout succeeded. Marks the request PAID. Idempotent: only an APPROVED request advances. */
+    @Override
+    @Transactional
+    public void markSurrenderPaid(UUID surrenderRequestId, UUID disbursementId) {
+        UUID tenantId = TenantContext.get();
+        surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
+            .filter(r -> "APPROVED".equals(r.getStatus()))
+            .ifPresent(r -> { r.markPaid(disbursementId); surrenderRequestRepository.save(r); });
+        // GL posting (Dr surrender benefits / Cr cash) is deferred: the chart has no surrender-benefit
+        // account yet, and PostingRule cleanly does nothing without a rule. The money has moved.
+    }
+
+    /** The payout failed. Marks the request FAILED. Cover stays stopped (Q2): a failed payout does
+     *  not restore cover; the surrender can be re-paid with a new idempotency key. */
+    @Override
+    @Transactional
+    public void markSurrenderFailed(UUID surrenderRequestId) {
+        UUID tenantId = TenantContext.get();
+        surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
+            .filter(r -> "APPROVED".equals(r.getStatus()))
+            .ifPresent(r -> { r.markFailed(); surrenderRequestRepository.save(r); });
+    }
+
+    private SurrenderRequestView toSurrenderView(SurrenderRequest r) {
+        return new SurrenderRequestView(r.getSurrenderRequestId(), r.getPolicyNumber(), r.getStatus(),
+            r.getQuotedValueAmount(), r.getQuotedValueCurrency(), r.getRequestedBy(), r.getApprovedBy());
     }
 
     @Override

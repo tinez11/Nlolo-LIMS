@@ -304,47 +304,64 @@ paths:
                   quotedAt: { type: string, format: date-time }
   /policies/{policyNumber}/surrender:
     post:
-      summary: Initiate policy surrender (asynchronous — loan-netting choreography)
+      summary: Request a customer surrender
       description: >
-        Returns 202 immediately; the actual net-of-loan disbursement completes via the
-        Camunda process described in Deliverable 3 Rev 2 §12. Poll the returned
-        processInstanceId via GET /policies/{policyNumber}/processes/{processInstanceId}.
+        Quotes the surrender value (cash value less the surrender charge), checks the policy can be
+        surrendered (in force, paid-up or lapsed-with-value, past the minimum term, no outstanding
+        loan, no other surrender in flight) and records a REQUESTED surrender for a second person to
+        approve. Does not stop cover. Staff-only, because money leaves the company and request and
+        approval must be different people.
       security:
-        - customersAuth: [profile]
-        - agentsAuth: [agent]
         - staffAuth: []
       parameters:
         - name: policyNumber
           in: path
           required: true
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
-        - $ref: 'openapi-common.yaml#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: [payeeRef]
               properties:
                 payeeRef: { type: string, description: "Mobile money / bank payout destination" }
       responses:
-        '202':
-          description: Surrender process started
+        '200':
+          description: Surrender requested, awaiting approval
           content:
             application/json:
-              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProcessStatus' }
+              schema: { $ref: '#/components/schemas/SurrenderRequest' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409':
-          description: Policy not in a surrenderable state, or a LoanValueReservation is currently RESERVED
+          description: Policy not surrenderable, has an outstanding loan, or a surrender is already in flight
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
-        '501':
-          description: >
-            Surrender/maturity loan-netting choreography is deferred pending a workflow-engine
-            decision (Camunda 7 is EOL; Camunda 8 needs a paid licence and a cross-tenant leak
-            review) -- this endpoint is real, routable, and correctly secured, but returns 501
-            instead of 202 until that engine is chosen. Interim state, not the intended eventual
-            behaviour (see the 202/409 responses above).
+  /surrender-requests/{surrenderRequestId}/approve:
+    post:
+      summary: Approve a surrender (by someone other than the requester)
+      description: >
+        Cover stops as of the approval date, billing stops, and the payout is sent through the
+        disbursement rail. 409 if the requester tries to approve their own surrender, or the request
+        is not awaiting approval.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: surrenderRequestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Surrender approved, payout requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurrenderRequest' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Not awaiting approval, or approver is the requester
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -1295,6 +1312,17 @@ paths:
 
 components:
   schemas:
+    SurrenderRequest:
+      description: A customer surrender in flight.
+      type: object
+      required: [surrenderRequestId, policyNumber, status, quotedValue]
+      properties:
+        surrenderRequestId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED, IN_DOUBT] }
+        quotedValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        requestedBy: { type: [string, "null"] }
+        approvedBy: { type: [string, "null"] }
     ExitSubmissionView:
       type: object
       description: >-

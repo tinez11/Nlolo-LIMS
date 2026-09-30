@@ -97,6 +97,11 @@ public class Policy {
     @Column(name = "maturity_date")
     private LocalDate maturityDate;
 
+    // When a customer surrender took effect (V30). Cover stops on this date; a death before it is
+    // covered, on or after it is not. Null on a policy surrendered by a settled claim.
+    @Column(name = "surrender_effective_date")
+    private LocalDate surrenderEffectiveDate;
+
     @Column(name = "suspended_at")
     private Instant suspendedAt;
 
@@ -455,7 +460,10 @@ public class Policy {
             case "LAPSED" -> lapsedAt != null && day.isBefore(lapsedAt.atZone(CIVIL_ZONE).toLocalDate());
             case "SUSPENDED" -> suspendedAt != null
                 && day.isBefore(suspendedAt.atZone(CIVIL_ZONE).toLocalDate());
-            // PROPOSED and NOT_TAKEN_UP were never on risk; MATURED and SURRENDERED are closed.
+            // A customer-surrendered policy was on risk until its effective date; a claim-terminated
+            // one carries no such date (cover was discharged by the claim) and is off risk.
+            case "SURRENDERED" -> surrenderEffectiveDate != null && day.isBefore(surrenderEffectiveDate);
+            // PROPOSED and NOT_TAKEN_UP were never on risk; MATURED is closed.
             default -> false;
         };
     }
@@ -534,6 +542,30 @@ public class Policy {
         this.sumAssuredAmount = paidUpSumAssured;
         this.status = "PAID_UP";
     }
+
+    /** Whether a customer surrender would be accepted: in force, paid-up, or lapsed-with-value. */
+    public boolean canSurrender() {
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status)
+            || "PAID_UP".equals(status) || "LAPSED".equals(status);
+    }
+
+    /**
+     * Customer surrender takes effect (step 1, task 4; user decision Q2 -- cover stops at approval).
+     * The status becomes SURRENDERED and the effective date is recorded, so wasOnRiskOn can tell a
+     * death before it (covered) from one on or after it (not). Distinct from
+     * {@link #terminateForSettledClaim()}, which also reaches SURRENDERED but through a claim and
+     * carries no surrender date.
+     */
+    public void surrender(LocalDate effectiveDate) {
+        if (!canSurrender()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " cannot be surrendered from status " + status);
+        }
+        this.status = "SURRENDERED";
+        this.surrenderEffectiveDate = effectiveDate;
+    }
+
+    public LocalDate getSurrenderEffectiveDate() { return surrenderEffectiveDate; }
 
     /**
      * A MATURITY claim settled, or the policy reached term. Terminal.

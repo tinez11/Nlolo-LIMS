@@ -85,6 +85,8 @@ class PolicyContractTest {
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -120,6 +122,10 @@ class PolicyContractTest {
             "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V25__credit_life_premium_basis.sql",
             "db-migrations/policy/V26__enrolment_stated_premium.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/audit/V1__create_audit_schema.sql");
     }
 
@@ -831,11 +837,10 @@ class PolicyContractTest {
     }
 
     @Test
-    void surrenderPolicyReturns501WithChoreographyNotImplemented() throws Exception {
-        // Decision 2: a real, routable, correctly-secured endpoint that returns 501, not 404
-        // and not omitted -- this is the falsifiable proof of that decision, not prose. Both
-        // paths now carry a documented 501 response in openapi-policy.yaml, so this validates
-        // against the contract too.
+    void surrenderRequestReturns409WhenThePolicyHasNoValue() throws Exception {
+        // Surrender is real now, not a 501 (product step 1). A plain term policy has no cash value,
+        // so a surrender request against it is refused with a 409 -- a real, routable, contract-valid
+        // response, which is the falsifiable proof the endpoint does something rather than stub.
         UUID tenantId = UUID.randomUUID();
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-09");
 
@@ -846,9 +851,9 @@ class PolicyContractTest {
                 .content("""
                     {"payeeRef":"MPESA-0712345678"}
                     """))
-            .andExpect(status().isNotImplemented())
+            .andExpect(status().isConflict())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(jsonPath("$.errorCode").value("CHOREOGRAPHY_NOT_IMPLEMENTED"))
+            .andExpect(jsonPath("$.errorCode").value("INVALID_POLICY_STATE"))
             .andExpect(jsonPath("$.traceId").exists());
     }
 

@@ -52,6 +52,7 @@ public class PolicyEventListener {
             case "policy.PolicyResumed" -> withTenant(envelope, this::handlePolicyResumed);
             case "policy.PolicyExpired" -> withTenant(envelope, this::handlePolicyExpired);
             case "policy.PolicyMadePaidUp" -> withTenant(envelope, this::handlePolicyMadePaidUp);
+            case "policy.PolicySurrendered" -> withTenant(envelope, this::handlePolicySurrendered);
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
             case "policy.GroupMemberExited" -> withTenant(envelope, this::handleGroupMemberExited);
             default -> { /* not billing-relevant */ }
@@ -157,6 +158,13 @@ public class PolicyEventListener {
     private void handlePolicyMadePaidUp(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
         // Paid-up means no premium falls due again -- the same schedule termination as expiry.
+        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
+    }
+
+    private void handlePolicySurrendered(Map<String, Object> payload) {
+        String policyNumber = (String) payload.get("policyNumber");
+        // A surrendered policy is off risk; no further premium is due. Same schedule termination.
+        // Fires for a claim-terminated surrender too, which should equally stop being invoiced.
         billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
     }
 
