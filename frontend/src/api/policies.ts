@@ -91,6 +91,42 @@ export async function searchPolicies(params: PolicySearchParams = {}): Promise<P
   };
 }
 
+export interface MaturingSearchParams {
+  /** Inclusive, `YYYY-MM-DD`. The server refuses a `to` before its `from` with a 400. */
+  from: string;
+  to: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * `GET /policies/maturing` -- finance's cash planning list (product step 2).
+ *
+ * In-force policies only, maturity date then policy number. It returns no TOTAL, deliberately: a
+ * sum across currencies is a number with no meaning and this platform does not convert, so nothing
+ * here invents one either.
+ */
+export async function searchMaturing(params: MaturingSearchParams): Promise<Page<PolicyView>> {
+  const page = params.page ?? 0;
+  const pageSize = Math.min(params.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+
+  const body = await get<{
+    items?: PolicyView[];
+    page?: { page?: number; pageSize?: number; totalElements?: number };
+  }>('/policies/maturing', {
+    params: { from: params.from, to: params.to, page, pageSize },
+  });
+
+  return {
+    items: body.items ?? [],
+    page: {
+      page: body.page?.page ?? page,
+      pageSize: body.page?.pageSize ?? pageSize,
+      totalElements: body.page?.totalElements ?? 0,
+    },
+  };
+}
+
 export function getPolicy(policyNumber: string): Promise<PolicyView> {
   return get<PolicyView>(`/policies/${encodeURIComponent(policyNumber)}`);
 }

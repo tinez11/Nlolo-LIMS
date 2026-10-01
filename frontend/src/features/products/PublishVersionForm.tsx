@@ -20,6 +20,9 @@ import {
   blankCashValueRow,
   blankFundRow,
   CASH_VALUE_CATEGORIES,
+  FREE_LOOK_CATEGORIES,
+  SCHEDULED_CATEGORIES,
+  blankPayoutRow,
   blankBaseRateBand,
   blankRatingFactorRow,
   doubleCountedFactorMessage,
@@ -117,9 +120,19 @@ export function PublishVersionForm({
       cashValuePaidUpBasis: '',
       cashValueMinYears: '',
       cashValueRows: [],
+      freeLookDays: '',
+      proofOfLifeIntervalMonths: '',
+      survivalBenefitsDeductedFromDeath: '',
+      deathBenefitPremiumPercent: '',
+      payoutRows: [],
     },
   });
   const cashValueRows = useFieldArray({ control, name: 'cashValueRows' });
+  const payoutRows = useFieldArray({ control, name: 'payoutRows' });
+  // Which kinds are on the form right now, so the two conditional terms appear the moment a row
+  // needs them. Watched rather than read off `payoutRows.fields`, which useFieldArray only
+  // re-renders on append/remove -- a kind CHANGED in place would not show the field it requires.
+  const watchedPayoutKinds = useWatch({ control, name: 'payoutRows' })?.map((r) => r?.kind);
 
   const ratingTable = useFieldArray({ control, name: 'ratingTable' });
   // useWatch, not watch(): one subscription for the whole array rather than a watch() call
@@ -915,6 +928,176 @@ export function PublishVersionForm({
             <Plus />
             Add policy year
           </Button>
+        </div>
+      )}
+
+      {/*
+        What the contract pays while the life assured is ALIVE (product step 2), and the free-look
+        window. Free-look is shown for every individual product -- it is required there, and a term
+        policy has one even though it pays nothing before death. The schedule rows appear only
+        where a schedule is legal, so a category that cannot carry one is not offered rows it
+        would be refused for.
+      */}
+      {(FREE_LOOK_CATEGORIES.includes(category) || SCHEDULED_CATEGORIES.includes(category)) && (
+        <div className="rounded-md border border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground">Payouts and free-look</p>
+          <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
+            {SCHEDULED_CATEGORIES.includes(category)
+              ? 'What this contract pays while the life assured is alive. An endowment must say what it pays at the end of its term; survival benefits and an income stream are optional.'
+              : 'How long after issue the customer may cancel and have their premiums back.'}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Free-look days" error={errors.freeLookDays?.message}>
+              <Input
+                type="number" min={1} max={365} inputSize="sm"
+                placeholder="15"
+                {...register('freeLookDays')}
+              />
+            </FormField>
+            <FormField
+              label="Death benefit at least this % of premiums"
+              error={errors.deathBenefitPremiumPercent?.message}
+            >
+              <Input
+                type="number" min={0} step="0.01" inputSize="sm"
+                placeholder="Optional"
+                {...register('deathBenefitPremiumPercent')}
+              />
+            </FormField>
+          </div>
+
+          {SCHEDULED_CATEGORIES.includes(category) && (
+            <>
+              <div className="mt-3 space-y-2">
+                {payoutRows.fields.map((field, index) => {
+                  const rowErrors = errors.payoutRows?.[index];
+                  const rowMessage =
+                    rowErrors?.kind?.message ??
+                    rowErrors?.fromPolicyYear?.message ??
+                    rowErrors?.toPolicyYear?.message ??
+                    rowErrors?.amountBasis?.message ??
+                    rowErrors?.amountValue?.message ??
+                    rowErrors?.frequency?.message;
+                  // A maturity pays once, on the policy's own maturity date -- the product does
+                  // not fix the term, each policy does -- so years and frequency are not merely
+                  // optional there, they are refused.
+                  const endOfTerm = watchedPayoutKinds?.[index] === 'MATURITY';
+                  return (
+                    <div key={field.id}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Select
+                          inputSize="sm" className="w-40 shrink-0"
+                          aria-label={`Payout ${index + 1} kind`}
+                          aria-invalid={rowErrors?.kind ? true : undefined}
+                          {...register(`payoutRows.${index}.kind`)}
+                        >
+                          <option value="">Choose…</option>
+                          <option value="MATURITY">Maturity</option>
+                          <option value="SURVIVAL">Survival benefit</option>
+                          <option value="INCOME">Income</option>
+                        </Select>
+                        <Input
+                          type="number" min={1} inputSize="sm" className="w-20 shrink-0 text-right"
+                          placeholder="From year" disabled={endOfTerm}
+                          aria-label={`Payout ${index + 1} from policy year`}
+                          aria-invalid={rowErrors?.fromPolicyYear ? true : undefined}
+                          {...register(`payoutRows.${index}.fromPolicyYear`)}
+                        />
+                        <Input
+                          type="number" min={1} inputSize="sm" className="w-20 shrink-0 text-right"
+                          placeholder="To year" disabled={endOfTerm}
+                          aria-label={`Payout ${index + 1} to policy year`}
+                          aria-invalid={rowErrors?.toPolicyYear ? true : undefined}
+                          {...register(`payoutRows.${index}.toPolicyYear`)}
+                        />
+                        <Select
+                          inputSize="sm" className="w-36 shrink-0"
+                          aria-label={`Payout ${index + 1} basis`}
+                          aria-invalid={rowErrors?.amountBasis ? true : undefined}
+                          {...register(`payoutRows.${index}.amountBasis`)}
+                        >
+                          <option value="">Choose…</option>
+                          <option value="PERCENT_OF_SA">% of sum assured</option>
+                          <option value="FIXED">Fixed amount</option>
+                        </Select>
+                        <Input
+                          type="number" min={0} step="0.01" inputSize="sm" className="w-24 shrink-0 text-right"
+                          placeholder="Value"
+                          aria-label={`Payout ${index + 1} amount`}
+                          aria-invalid={rowErrors?.amountValue ? true : undefined}
+                          {...register(`payoutRows.${index}.amountValue`)}
+                        />
+                        <Select
+                          inputSize="sm" className="w-32 shrink-0" disabled={endOfTerm}
+                          aria-label={`Payout ${index + 1} frequency`}
+                          aria-invalid={rowErrors?.frequency ? true : undefined}
+                          {...register(`payoutRows.${index}.frequency`)}
+                        >
+                          <option value="">Choose…</option>
+                          <option value="ANNUAL">Yearly</option>
+                          <option value="SEMI_ANNUAL">Twice a year</option>
+                          <option value="QUARTERLY">Quarterly</option>
+                          <option value="MONTHLY">Monthly</option>
+                        </Select>
+                        <Button
+                          type="button" size="icon" variant="ghost" className="shrink-0"
+                          aria-label="Remove payout row"
+                          onClick={() => payoutRows.remove(index)}
+                        >
+                          <X />
+                        </Button>
+                      </div>
+                      {rowMessage && (
+                        <p role="alert" className="mt-1 px-1 text-xs text-status-danger-fg">{rowMessage}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {errors.payoutRows?.root?.message && (
+                <p role="alert" className="mt-1 text-xs text-status-danger-fg">{errors.payoutRows.root.message}</p>
+              )}
+              {errors.payoutRows?.message && (
+                <p role="alert" className="mt-1 text-xs text-status-danger-fg">{errors.payoutRows.message}</p>
+              )}
+              <Button
+                type="button" size="sm" variant="ghost" className="-ml-2 mt-2"
+                onClick={() => payoutRows.append(blankPayoutRow())}
+              >
+                <Plus />
+                Add a payout
+              </Button>
+
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {/* Each is required only once a row makes it necessary, so each appears then --
+                    neither has a sensible default, which is why the server refuses to guess. */}
+                {watchedPayoutKinds?.includes('SURVIVAL') && (
+                  <FormField
+                    label="Survival benefits paid come off the death benefit"
+                    error={errors.survivalBenefitsDeductedFromDeath?.message}
+                  >
+                    <Select inputSize="sm" {...register('survivalBenefitsDeductedFromDeath')}>
+                      <option value="">Choose…</option>
+                      <option value="true">Yes, deduct them</option>
+                      <option value="false">No, pay the full death benefit</option>
+                    </Select>
+                  </FormField>
+                )}
+                {watchedPayoutKinds?.includes('INCOME') && (
+                  <FormField
+                    label="Proof of life every (months)"
+                    error={errors.proofOfLifeIntervalMonths?.message}
+                  >
+                    <Input
+                      type="number" min={1} max={60} inputSize="sm"
+                      placeholder="12"
+                      {...register('proofOfLifeIntervalMonths')}
+                    />
+                  </FormField>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

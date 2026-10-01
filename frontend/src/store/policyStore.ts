@@ -21,7 +21,9 @@ import {
   replaceBeneficiaries,
   requestPaymentForInvoice,
   resumePolicy,
+  searchMaturing,
   searchPolicies,
+  type MaturingSearchParams,
   suspendPolicy,
   waiveInvoice,
   type MemberListParams,
@@ -63,6 +65,8 @@ type Keyed<T> = Record<string, Resource<T>>;
 
 interface PolicyState {
   list: Resource<Page<PolicyView>>;
+  /** Finance's cash planning list: what matures in a window (product step 2). */
+  maturing: Resource<Page<PolicyView>>;
   /**
    * Policies a given party is connected to in any capacity, keyed by that PARTY id.
    *
@@ -122,6 +126,7 @@ interface PolicyState {
   addingMember: Keyed<PolicyMemberView>;
 
   loadList: (params: PolicySearchParams) => Promise<void>;
+  loadMaturing: (params: MaturingSearchParams) => Promise<void>;
   loadClaimantPolicies: (partyId: string, q?: string) => Promise<void>;
   loadDetail: (policyNumber: string) => Promise<void>;
   loadCoverage: (policyNumber: string, asOf?: string) => Promise<void>;
@@ -175,6 +180,7 @@ interface PolicyState {
 
 export const usePolicyStore = create<PolicyState>((set, getState) => ({
   list: idle(),
+  maturing: idle(),
   claimantPolicies: {},
   detail: {},
   coverage: {},
@@ -238,6 +244,14 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       getState().list,
       (next) => set({ list: next }),
       () => searchPolicies(params),
+    ),
+
+  loadMaturing: (params) =>
+    track(
+      'policy.maturing',
+      getState().maturing,
+      (next) => set({ maturing: next }),
+      () => searchMaturing(params),
     ),
 
   loadDetail: (policyNumber) =>

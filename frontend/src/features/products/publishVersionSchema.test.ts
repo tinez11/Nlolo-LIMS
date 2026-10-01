@@ -43,7 +43,21 @@ const valid = () => ({
   // every fixture carries one or nothing parses.
   tiraReference: 'TIRA/LIFE/2026/0001',
   tiraApprovalDate: '2026-01-15',
+  // Required on an individual product as of product step 2, for the same reason the TIRA filing
+  // above is here: PayoutPlanValidator refuses a version without it, so every fixture carries
+  // one or nothing parses.
+  freeLookDays: '15',
 });
+
+/** The one row an ENDOWMENT must carry: the whole sum assured at the end of the term. */
+const maturityRow = {
+  kind: 'MATURITY',
+  fromPolicyYear: '',
+  toPolicyYear: '',
+  amountBasis: 'PERCENT_OF_SA',
+  amountValue: '100',
+  frequency: '',
+};
 
 describe('publishVersionFormSchema', () => {
   const termLife = publishVersionFormSchema('TERM_LIFE');
@@ -429,8 +443,12 @@ describe('publishVersionFormSchema', () => {
     const row = (over: Record<string, string> = {}) => ({
       policyYear: '2', ageFrom: '', ageTo: '', cashValuePerMille: '200', paidUpPerMille: '', ...over,
     });
+    // An endowment must carry exactly one MATURITY row as of product step 2 -- an endowment that
+    // pays nothing at the end of its term is not an endowment -- so these cash-value fixtures
+    // carry one or nothing parses.
+    const endowmentValid = () => ({ ...valid(), payoutRows: [maturityRow] });
     const withTable = (over: Record<string, unknown> = {}) => ({
-      ...valid(),
+      ...endowmentValid(),
       cashValueBasisReference: 'ACT/2026/ENDOW-01',
       cashValueBasisDate: '2026-01-10',
       cashValuePaidUpBasis: 'PROPORTIONATE',
@@ -441,8 +459,16 @@ describe('publishVersionFormSchema', () => {
     const messages = (r: { error?: { issues: { message: string }[] } }) =>
       (r.error?.issues ?? []).map((i) => i.message);
 
+    it('refuses an endowment with no maturity row, in the server wording', () => {
+      // PayoutPlanValidator.checkCategory: an endowment that pays nothing at the end of its term
+      // is not an endowment, and the 422 says exactly this.
+      expect(messages(endowment.safeParse(valid()))).toContain(
+        'An ENDOWMENT product must carry exactly one MATURITY row',
+      );
+    });
+
     it('sends no cashValue block when none was authored', () => {
-      const result = endowment.safeParse(valid());
+      const result = endowment.safeParse(endowmentValid());
       expect(result.success).toBe(true);
       expect(toApiRequest(result.data!)).not.toHaveProperty('cashValue');
     });

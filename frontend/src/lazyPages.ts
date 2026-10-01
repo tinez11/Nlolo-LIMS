@@ -133,3 +133,12 @@ export const PayoutsQueuePage = lazy(() =>
 export const PayoutPage = lazy(() =>
   import('@/features/payouts/PayoutPage').then((m) => ({ default: m.PayoutPage })),
 );
+export const PaymentRunsPage = lazy(() =>
+  import('@/features/payouts/PaymentRunsPage').then((m) => ({ default: m.PaymentRunsPage })),
+);
+export const PaymentRunPage = lazy(() =>
+  import('@/features/payouts/PaymentRunPage').then((m) => ({ default: m.PaymentRunPage })),
+);
+export const MaturitiesPage = lazy(() =>
+  import('@/features/policies/MaturitiesPage').then((m) => ({ default: m.MaturitiesPage })),
+);

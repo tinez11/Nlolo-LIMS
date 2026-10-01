@@ -63,6 +63,9 @@ import {
   UnderwritingQueuePage,
   PayoutsQueuePage,
   PayoutPage,
+  PaymentRunsPage,
+  PaymentRunPage,
+  MaturitiesPage,
 } from '@/lazyPages';
 
 /**
@@ -444,6 +447,19 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'finance', label: 'Payouts', icon: HandCoins },
   },
   { path: 'payouts/:instalmentId', element: <PayoutPage />, reach: 'drill-in' },
+  {
+    path: 'payment-runs',
+    element: <PaymentRunsPage />,
+    reach: { group: 'finance', label: 'Payment runs', icon: Send },
+  },
+  { path: 'payment-runs/:paymentRunId', element: <PaymentRunPage />, reach: 'drill-in' },
+  // A policy read, but finance's question: it is how the money leaving over the next quarter is
+  // planned for, and the endpoint is FINANCE_OFFICER/ADMIN only to match.
+  {
+    path: 'maturities',
+    element: <MaturitiesPage />,
+    reach: { group: 'finance', label: 'Maturities', icon: Landmark },
+  },
   {
     path: 'gl-postings',
     element: <GlPostingsPage />,
