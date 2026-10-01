@@ -247,6 +247,15 @@ channels:
       Consumers: finaccounting (debits claims expense, credits cash), audit.
     publish:
       message: { $ref: '#/components/messages/PayoutPaid' }
+  accumulation.PostingRecorded:
+    description: >
+      Producer: accumulation (LedgerService.post -- the one place a savings account's balance
+      changes), once per posting, in the posting's own transaction, so a redelivered source that
+      posts nothing publishes nothing. Consumers: audit. The GL deliberately does not book it yet
+      (product step 3, Q10): IFRS 17 owns that classification, and a later GL change subscribes here
+      without touching accumulation.
+    publish:
+      message: { $ref: '#/components/messages/PostingRecorded' }
   policy.GroupMemberAdded:
     description: >
       Producer: policy (PolicyApiImpl.addMember) -- one insured life joins a group scheme after
@@ -596,6 +605,7 @@ components:
     PolicyCancelledFreeLook: { messageId: PolicyCancelledFreeLook, name: PolicyCancelledFreeLook, payload: { $ref: '#/components/schemas/PolicyCancelledFreeLookPayload' } }
     PayoutRequested: { messageId: PayoutRequested, name: PayoutRequested, payload: { $ref: '#/components/schemas/PayoutRequestedPayload' } }
     PayoutPaid: { messageId: PayoutPaid, name: PayoutPaid, payload: { $ref: '#/components/schemas/PayoutPaidPayload' } }
+    PostingRecorded: { messageId: PostingRecorded, name: PostingRecorded, payload: { $ref: '#/components/schemas/PostingRecordedPayload' } }
     GroupMemberAdded: { messageId: GroupMemberAdded, name: GroupMemberAdded, payload: { $ref: '#/components/schemas/GroupMemberAddedPayload' } }
     GroupMemberExited: { messageId: GroupMemberExited, name: GroupMemberExited, payload: { $ref: '#/components/schemas/GroupMemberExitedPayload' } }
     GroupMemberEvidenceGranted: { messageId: GroupMemberEvidenceGranted, name: GroupMemberEvidenceGranted, payload: { $ref: '#/components/schemas/GroupMemberEvidenceGrantedPayload' } }
@@ -763,7 +773,13 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { policyNumber: {type: string}, lapsedAt: {type: string, format: date-time} }
+          properties:
+            policyNumber: {type: string}
+            lapsedAt: {type: string, format: date-time}
+            # Product step 3, both optional and present only on an exhaustion lapse: an ACCOUNT
+            # policy whose savings account could no longer pay its own monthly fee.
+            reason: {type: string, enum: [ACCOUNT_EXHAUSTED]}
+            exhaustedOn: {type: string, format: date}
     PolicyReinstatedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
@@ -849,6 +865,27 @@ components:
             policyNumber: {type: string}
             kind: {type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM]}
             paidAmount: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+    PostingRecordedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            postingId: {type: string, format: uuid}
+            policyNumber: {type: string}
+            sourceType: {type: string, description: "invoice, month-end, withdrawal, surrender, instalment, claim, ..."}
+            sourceRef: {type: string, description: "Unique per sourceType within a tenant: one source, one posting"}
+            createdBy: {type: string}
+            approvedBy: {type: string, description: "Empty when no second person signed"}
+            entries:
+              type: array
+              items:
+                type: object
+                properties:
+                  seq: {type: integer}
+                  type: {type: string}
+                  amount: {type: string, description: "Signed decimal string"}
+                  balanceAfter: {type: string}
+                  effectiveDate: {type: string, format: date}
     GroupMemberAddedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

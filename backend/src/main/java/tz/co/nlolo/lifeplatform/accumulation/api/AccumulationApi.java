@@ -17,4 +17,21 @@ public interface AccumulationApi {
 
     /** Every entry, in sequence order. Immutable history: corrections appear as REVERSAL entries. */
     List<LedgerEntryView> entries(String policyNumber);
+
+    /** ADMIN proposes; a DIFFERENT ADMIN or a FINANCE_OFFICER approves (spec §10.11). */
+    RateDeclarationView proposeRate(java.util.UUID productId, java.math.BigDecimal ratePercent,
+                                    java.time.LocalDate effectiveFrom, String proposedBy);
+
+    /**
+     * Refused when the proposer approves, and when the rate would take effect on or before interest
+     * already credited on any account of the product -- checked again here, because the month-end
+     * run may have passed the date since the proposal.
+     */
+    RateDeclarationView approveRate(java.util.UUID declarationId, String approvedBy);
+
+    /** Only a PROPOSED rate: an approved one may already have earned interest. */
+    RateDeclarationView withdrawRate(java.util.UUID declarationId, String withdrawnBy);
+
+    /** Newest effective date first. */
+    List<RateDeclarationView> listRates(java.util.UUID productId);
 }

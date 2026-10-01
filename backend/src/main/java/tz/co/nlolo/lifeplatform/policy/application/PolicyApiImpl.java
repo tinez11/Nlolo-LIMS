@@ -788,6 +788,24 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional
+    public boolean lapseExhaustedAccount(String policyNumber, LocalDate exhaustedOn) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        if (!policy.canLapseOnExhaustion()) {
+            return false;
+        }
+        policy.lapseOnExhaustion();
+        policyRepository.save(policy);
+        // The same event as an arrears lapse, so billing, benefitpayout and audit react exactly as they
+        // already do. The two extra keys are additive and say why.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyLapsed", tenantId,
+            Map.of("policyNumber", policyNumber, "lapsedAt", policy.getLapsedAt().toString(),
+                "reason", "ACCOUNT_EXHAUSTED", "exhaustedOn", exhaustedOn.toString())));
+        return true;
+    }
+
+    @Override
     public boolean isLapsable(String policyNumber) {
         return findPolicyOrThrow(policyNumber, TenantContext.get()).canLapse();
     }

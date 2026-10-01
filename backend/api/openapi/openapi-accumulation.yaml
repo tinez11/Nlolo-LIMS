@@ -1,0 +1,123 @@
+openapi: 3.1.0
+info:
+  title: Accumulation API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `accumulation` module -- the guide's "bucket" (§21.4). A savings
+    account behind an ACCOUNT-basis policy: contributions in, charges out, interest credited at the
+    higher of a declared rate and the version's guarantee. The module owns the balance and every
+    transaction that changes it; entries are immutable and corrected only by reversing or
+    adjustment entries.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /products/{productId}/rate-declarations:
+    get:
+      summary: Every rate declared for a product, newest effective date first
+      description: FINANCE_OFFICER or ADMIN. Includes proposals still awaiting a second person.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The product's declarations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RateDeclaration' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Propose a declared rate
+      description: >
+        ADMIN only -- setting a price is ADMIN's, as publishing a version is. Every account on the
+        product is credited at the higher of the approved declared rate and its own version's
+        guarantee, from effectiveFrom. Refused when effectiveFrom is on or before interest already
+        credited on any account of the product: a declaration may not rewrite what a customer has
+        been told.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RateDeclarationRequest' }
+      responses:
+        '201':
+          description: Proposed, awaiting a second person's approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RateDeclaration' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- out of range, or reaching back past credited interest
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /rate-declarations/{declarationId}/approve:
+    post:
+      summary: Approve a proposed rate, by someone other than its proposer
+      description: >
+        A different ADMIN, or a FINANCE_OFFICER. The reach-back rule is checked again here, because
+        the month-end run may have passed the effective date since the proposal.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: declarationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Approved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RateDeclaration' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- the proposer approving, not PROPOSED, reaching back, or a rate already approved for that day
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /rate-declarations/{declarationId}/withdraw:
+    post:
+      summary: Withdraw a proposal
+      description: ADMIN. Only a PROPOSED rate -- an approved one may already have earned interest.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: declarationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Withdrawn
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RateDeclaration' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- not PROPOSED
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+components:
+  schemas:
+    RateDeclarationRequest:
+      type: object
+      required: [ratePercent, effectiveFrom]
+      properties:
+        ratePercent: { type: number, minimum: 0, maximum: 100, description: "Effective annual rate" }
+        effectiveFrom: { type: string, format: date }
+    RateDeclaration:
+      type: object
+      required: [declarationId, productId, ratePercent, effectiveFrom, status, proposedBy, proposedAt]
+      properties:
+        declarationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        ratePercent: { type: string, description: "Decimal string, effective annual" }
+        effectiveFrom: { type: string, format: date }
+        status: { type: string, enum: [PROPOSED, APPROVED, WITHDRAWN] }
+        proposedBy: { type: string }
+        proposedAt: { type: string, format: date-time }
+        approvedBy: { type: [string, "null"] }
+        approvedAt: { type: [string, "null"], format: date-time }

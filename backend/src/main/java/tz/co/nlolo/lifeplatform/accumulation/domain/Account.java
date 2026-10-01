@@ -76,6 +76,17 @@ public class Account {
 
     public void monthEndPostedThrough(LocalDate monthEnd) { this.lastMonthEnd = monthEnd; }
 
+    /** A reinstated policy brings an EXHAUSTED account back, at the zero it closed on. */
+    public void reopen() {
+        if (!"EXHAUSTED".equals(closedReason)) {
+            throw new AccumulationStateException("Policy " + policyNumber + "'s account closed on "
+                + closedReason + " and cannot reopen");
+        }
+        this.status = AccountStatus.OPEN.name();
+        this.closedReason = null;
+        this.closedOn = null;
+    }
+
     public String getPolicyNumber() { return policyNumber; }
     public UUID getTenantId() { return tenantId; }
     public UUID getProductId() { return productId; }

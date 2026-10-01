@@ -28,6 +28,8 @@ public class PolicyEventListener {
             case "policy.PolicyIssued" -> runner.run(envelope, p -> api.openIfAccountVersion(
                 (String) p.get("policyNumber"), (UUID) p.get("productVersionId"),
                 LocalDate.parse((String) p.get("issueDate"))));
+            case "policy.PolicyReinstated" -> runner.run(envelope, p ->
+                api.reopenOnReinstatement((String) p.get("policyNumber")));
             default -> { /* not ours */ }
         }
     }

@@ -582,6 +582,14 @@ public interface PolicyApi {
     void lapsePolicy(String policyNumber, String lapsedBy);
 
     /**
+     * The savings account behind this policy can no longer pay its own fee (product step 3).
+     * Publishes the same {@code policy.PolicyLapsed} as an arrears lapse, so every consumer reacts
+     * exactly as it already does. Returns false, writing nothing, when the policy is in no state to
+     * lapse -- asked rather than thrown, for the rollback-only reason {@code Policy.canLapse} gives.
+     */
+    boolean lapseExhaustedAccount(String policyNumber, java.time.LocalDate exhaustedOn);
+
+    /**
      * Whether {@link #lapsePolicy} would succeed right now -- for a caller that must lapse a
      * policy as a side effect of its own work and cannot simply attempt it.
      *
