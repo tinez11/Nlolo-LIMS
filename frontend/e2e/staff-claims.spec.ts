@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { issueRealPolicy } from './policies';
 import { dmy } from './dates';
 import { fillPolicyNumberManually } from './guards';
+import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 
 /**
  * Claims e2e coverage against the real stack.
@@ -52,19 +53,36 @@ async function policyWithRealClaim(page: Page): Promise<string> {
 }
 
 /**
- * A policy that is NOT in force, for the real 422 from `registerClaim`.
+ * An INDIVIDUAL policy that was not on risk on 2026-08-01, the date the claim below names.
  *
- * Discovered through the status filter rather than written down. The literal POL-6BD5702F was
- * "the one seeded (SURRENDERED) policy" until the volumes were last reset; policy numbers are
- * minted POL-<random>, so it can never exist again -- and a test asserting a 422 would have
- * passed anyway on the 404 a missing policy produces, which is the worse kind of green.
+ * Issued fresh rather than found. This used to take the first SURRENDERED row in the register and
+ * assume it was an individual policy -- but a group or credit-life scheme whose last member leaves
+ * is closed as SURRENDERED too, and the register has no product-type column or filter to tell them
+ * apart. Whenever a scheme happened to sort first, the claim form showed its member picker, the
+ * client refused with "Choose which member this claim is for", and the server's refusal this test
+ * exists to prove was never reached.
+ *
+ * The commencement date is set explicitly, AFTER the death. `issueRealPolicy` leaves it blank,
+ * and a policy with no commencement date has no lower bound on its cover (`Policy.wasOnRiskOn`):
+ * it is on risk on any day before today, which is exactly why `policyWithRealClaim` above can
+ * register a death on 2026-08-01 against one. Starting cover on 2026-08-02 makes the death the day
+ * before it -- the "was not on risk on 2026-08-01" the server should answer, with no dependence on
+ * what else the database happens to hold.
  */
 async function findNotInForcePolicy(page: Page): Promise<string> {
-  await page.goto('/staff/policies?status=SURRENDERED');
-  const firstRow = page.getByRole('row').filter({ hasText: 'Surrendered' }).first();
-  await expect(firstRow).toBeVisible({ timeout: 20_000 });
-  const policyNumber = await firstRow.getByRole('button').first().textContent();
-  return (policyNumber as string).trim();
+  const caseId = await caseAwaitingManualIssue(page);
+  await page.goto('/staff/policies/new');
+  await selectUnderwritingCase(page, caseId);
+  await expect(page.getByText('Resolving product version…')).not.toBeVisible();
+  await page.getByLabel('Sum assured').fill('2000000.00');
+  await page.getByLabel('Premium', { exact: true }).fill('800.00');
+  await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
+  await page.getByLabel('Reason for manual issue').fill('E2E fixture: claim dated before cover started');
+  await page.getByLabel('Commencement date').fill(dmy('2026-08-02'));
+  await page.getByRole('button', { name: 'Issue policy' }).click();
+  // 60s, as the payout fixtures allow: issuance answers only after the whole AFTER_COMMIT chain.
+  await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 60_000 });
+  return page.url().split('/').pop() as string;
 }
 
 async function firstClaimRow(page: Page) {
@@ -147,6 +165,9 @@ test.describe('staff claims', () => {
   test('registering against a policy that is not in force genuinely 422s, client validation intact', async ({
     page,
   }) => {
+    // It now issues its own policy -- an underwriting case, a second underwriter's decision and a
+    // manual issue -- before the behaviour under test starts.
+    test.setTimeout(180_000);
     const notInForce = await findNotInForcePolicy(page);
 
     await page.goto('/staff/claims/new');
@@ -195,6 +216,9 @@ test.describe('staff claims', () => {
     // A genuinely not-in-force policy, so the error this test proves does not resurface is a
     // real 422. It used to name POL-6BD5702F, which no longer exists -- so the alert it was
     // clearing was a 404, and the test passed for the wrong reason.
+    // Issuing that policy -- a case, a second underwriter's decision, a manual issue -- costs most
+    // of the default 60s before the behaviour under test starts; its sibling above allows the same.
+    test.setTimeout(180_000);
     const notInForce = await findNotInForcePolicy(page);
 
     await page.goto('/staff/claims/new');

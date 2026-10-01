@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { issueRealPolicy } from './policies';
 
 /**
  * Returns the first policy row's activation control, or null if the tenant genuinely
@@ -101,21 +102,21 @@ test.describe('staff policies', () => {
   test('a term policy offers no surrender at all, because it has nothing to surrender', async ({
     page,
   }) => {
-    await page.goto('/staff/policies');
-    const firstRow = await firstPolicyRow(page);
-    test.skip(firstRow === null, 'no seeded policy to open');
-    if (firstRow === null) return;
-
-    await firstRow.click();
-    await page.getByRole('dialog').getByRole('link', { name: /full detail/i }).click();
+    // Its own term policy -- an underwriting case, a second underwriter's decision and a manual
+    // issue -- before the assertion can run.
+    test.setTimeout(180_000);
+    // Issued fresh rather than taken from the top of the register. "Every seeded policy is term
+    // business" stopped being true when the money-back fixtures arrived: they sort newest-first,
+    // carry a cash value, and so CORRECTLY show the Value panel this test asserts is absent.
+    const policyNumber = await issueRealPolicy(page, 'E2E fixture: a term policy has nothing to surrender');
+    await page.goto(`/staff/policies/${policyNumber}`);
 
     /*
       This asserted a disabled "Surrender" button while POST /policies/{n}/surrender was a 501.
       Product step 1 made surrender real, and the action moved into the Value panel -- which only
-      a savings product gets, because a term policy never has a cash value to cash in. Every
-      seeded policy is term business, so the honest assertion is that the panel is absent here.
-      A disabled button for a product that can never qualify would be offering an act that is not
-      merely unavailable but meaningless.
+      a savings product gets, because a term policy never has a cash value to cash in. So the
+      honest assertion is that the panel is absent here. A disabled button for a product that can
+      never qualify would be offering an act that is not merely unavailable but meaningless.
     */
     await expect(page.getByRole('heading', { name: 'Lifecycle' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Value' })).toHaveCount(0);

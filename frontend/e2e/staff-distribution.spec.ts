@@ -69,10 +69,22 @@ async function createRealActiveProduct(page: Page): Promise<{ productId: string;
   // The TIRA filing that authorises this version -- required as of V12.
   await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
   await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+  // Required on an individual product as of product step 2 (PayoutPlanValidator). Without it the
+  // form refuses the publish, the product stays a DRAFT, and every caller below fails far from
+  // here -- on a Product picker that simply does not list it.
+  await page.getByLabel('Free-look days').fill('15');
   await page.getByRole('button', { name: 'Publish version' }).click();
+  // PROOF it published. This used to wait for the product page's url, which the CREATE step had
+  // already reached -- so a publish the form refused passed straight through, leaving a DRAFT that
+  // no picker lists. The server's own answer to the publish is what is asserted now; armed before
+  // the click, so a fast response cannot be missed.
+  const published = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && /\/products\/[0-9a-f-]{36}\/versions$/.test(r.url()),
+    { timeout: 15_000 },
+  );
   // Publishing retires the currently-active version, so it is confirmed.
   await page.getByRole('button', { name: 'Publish and make active' }).click();
-  await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
+  expect((await published).status(), 'the version must actually publish').toBe(201);
 
   const productId = page.url().split('/').pop() as string;
   return { productId, optionLabel: `${name} (${code})` };
