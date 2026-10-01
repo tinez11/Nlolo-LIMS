@@ -8,7 +8,7 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -71,8 +71,19 @@ public class PolicyEventListener {
     }
 
     /** An {@code Instant} on the envelope, read as the calendar day the schedule is dated in. */
+    /**
+     * The CIVIL day an instant falls on, in Dar es Salaam -- the day every due date on the schedule
+     * is written in, and the zone policy and communication use for the same question.
+     *
+     * <p>It was UTC, three hours behind. Between midnight and 03:00 local time that put a lapse on
+     * the previous day, so the lapse cancelled from yesterday and a reinstatement then revived the
+     * instalment dated the lapse day itself -- benefit for a day nobody was covered. Caught only
+     * because a test happened to run inside that window.
+     */
+    private static final ZoneId CIVIL_ZONE = ZoneId.of("Africa/Dar_es_Salaam");
+
     private static LocalDate day(Map<String, Object> payload, String key) {
-        return Instant.parse((String) payload.get(key)).atZone(ZoneOffset.UTC).toLocalDate();
+        return Instant.parse((String) payload.get(key)).atZone(CIVIL_ZONE).toLocalDate();
     }
 
     /** A {@code {amount, currencyCode}} figure. The currency is the policy's throughout, so only
