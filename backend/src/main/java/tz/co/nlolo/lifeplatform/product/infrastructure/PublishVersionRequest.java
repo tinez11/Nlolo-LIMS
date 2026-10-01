@@ -62,4 +62,8 @@ public record PublishVersionRequest(
     // published with no free-look period is refused here rather than discovered in production.
     PayoutTermsRequest payoutTerms,
 
-    @Valid List<PayoutRowRequest> payoutSchedule) {}
+    @Valid List<PayoutRowRequest> payoutSchedule,
+
+    // Present only on an ACCOUNT version (product step 3). Absent means SCALE -- what every version
+    // published before this step is.
+    @Valid AccumulationRequest accumulation) {}

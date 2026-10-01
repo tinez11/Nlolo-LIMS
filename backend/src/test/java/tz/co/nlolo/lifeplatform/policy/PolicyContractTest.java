@@ -88,6 +88,7 @@ class PolicyContractTest {
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
             "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",

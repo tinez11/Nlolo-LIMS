@@ -3,6 +3,8 @@ package tz.co.nlolo.lifeplatform.product;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
+import tz.co.nlolo.lifeplatform.product.api.PayoutAmountBasis;
 import tz.co.nlolo.lifeplatform.product.api.ProductSummaryView;
 import com.atlassian.oai.validator.mockmvc.OpenApiValidationMatchers;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -71,6 +73,7 @@ class ProductContractTest {
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
             "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql");
     }
 
@@ -591,6 +594,75 @@ class ProductContractTest {
                     """))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.detail").value("A TERM_LIFE product cannot carry a cash-value table"));
+    }
+
+    /** Product step 3: an ACCOUNT version's terms and charges arrive over HTTP and resolve back. */
+    @Test
+    void anAccountVersionSurvivesAPublishOverHttpAndIsReadableBack() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProduct(tenantId, "ACC-WIRE-01", "Account Over Http");   // ENDOWMENT
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+                     "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/LIFE/2026/0911","approvalDate":"2026-01-15"},
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
+                                    {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+                     "payoutSchedule":[{"kind":"MATURITY","amountBasis":"ACCOUNT_VALUE","amountValue":100}],
+                     "accumulation":{"guaranteedRatePercent":3,"minimumBalance":50000,
+                                     "charges":[{"fromPolicyYear":1,"toPolicyYear":1,"contributionAllocationPercent":5,
+                                                 "transferAllocationPercent":0,"monthlyPolicyFee":1000},
+                                                {"fromPolicyYear":2,"contributionAllocationPercent":1,
+                                                 "transferAllocationPercent":0,"monthlyPolicyFee":1000}]}}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        TenantContext.set(tenantId);
+        UUID versionId = productApi.getActiveSnapshot(productId, LocalDate.of(2026, 6, 1)).productVersionId();
+        AccumulationPlan plan = productApi.resolveAccumulationPlan(versionId);
+        assertThat(plan.isAccount()).isTrue();
+        assertThat(plan.guaranteedRatePercent()).isEqualByComparingTo("3");
+        assertThat(plan.minimumBalance()).isEqualByComparingTo("50000");
+        assertThat(plan.chargesFor(1).contributionAllocationPercent()).isEqualByComparingTo("5");
+        // Year 7 falls in the open-ended row: every year after the last authored one has a charge.
+        assertThat(plan.chargesFor(7).contributionAllocationPercent()).isEqualByComparingTo("1");
+        assertThat(productApi.resolvePayoutPlan(versionId).rows()).singleElement()
+            .satisfies(r -> assertThat(r.amountBasis()).isEqualTo(PayoutAmountBasis.ACCOUNT_VALUE));
+    }
+
+    @Test
+    void anAccountBasisOnTermLifeIsRefusedOverHttp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String productId = JsonPath.read(mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"ACC-TERM-01","productName":"Term With An Account","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.productId");
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/LIFE/2026/0912","approvalDate":"2026-01-15"},
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
+                                    {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+                     "accumulation":{"guaranteedRatePercent":3,"minimumBalance":0,
+                                     "charges":[{"fromPolicyYear":1,"contributionAllocationPercent":0,
+                                                 "transferAllocationPercent":0,"monthlyPolicyFee":0}]}}
+                    """))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("A TERM_LIFE product cannot use an account value basis"));
     }
 
     /** And a publish with no filing at all is refused at the edge, not deep in the service. */

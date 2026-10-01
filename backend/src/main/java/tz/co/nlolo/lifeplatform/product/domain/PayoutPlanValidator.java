@@ -27,10 +27,16 @@ public final class PayoutPlanValidator {
 
     private PayoutPlanValidator() {}
 
+    /** A SCALE version's payouts -- every version before product step 3. */
     public static void validate(ProductCategory category, PayoutPlan plan) {
+        validate(category, plan, AccumulationPlan.none());
+    }
+
+    public static void validate(ProductCategory category, PayoutPlan plan, AccumulationPlan accumulation) {
         if (plan == null || !plan.authored()) {
             return;
         }
+        checkAccountRules(plan, accumulation);
         PayoutTerms terms = plan.terms();
         if (INDIVIDUAL.contains(category) && terms.freeLookDays() == null) {
             fail("A free-look period in days is required on an individual product");
@@ -90,6 +96,36 @@ public final class PayoutPlanValidator {
             fail(offPremiums
                 ? "Only a RETURN_OF_PREMIUM row is valued as a percent of premiums"
                 : "A RETURN_OF_PREMIUM row is valued as a percent of premiums");
+        }
+    }
+
+    /**
+     * An account version's money lives in the account, so it pays out the account and nothing that
+     * would be drawn from the sum assured instead -- a survival benefit or a %-of-SA maturity on a
+     * ledger product would pay from nowhere while the customer's balance sat untouched.
+     *
+     * <p>Checked FIRST, before the per-category rules, so an account version is told the account
+     * rule rather than a general one it only breaks as a consequence.
+     */
+    private static void checkAccountRules(PayoutPlan plan, AccumulationPlan accumulation) {
+        boolean account = accumulation != null && accumulation.isAccount();
+        for (PayoutRowInput row : plan.rows()) {
+            boolean paysAccount = row.amountBasis() == PayoutAmountBasis.ACCOUNT_VALUE;
+            if (paysAccount && row.kind() != PayoutKind.MATURITY) {
+                fail("Only a MATURITY row may pay the account value");
+            }
+            if (paysAccount && !account) {
+                fail("Only an account-based version can pay the account value");
+            }
+            if (paysAccount && (row.amountValue() == null || row.amountValue().compareTo(new BigDecimal("100")) != 0)) {
+                fail("An account-value maturity pays the whole account (100)");
+            }
+            if (account && row.kind() == PayoutKind.MATURITY && !paysAccount) {
+                fail("An account-based version's maturity pays the account value");
+            }
+            if (account && (row.kind() == PayoutKind.SURVIVAL || row.kind() == PayoutKind.INCOME)) {
+                fail("An account-based version pays only its account value; survival and income payouts are not offered");
+            }
         }
     }
 

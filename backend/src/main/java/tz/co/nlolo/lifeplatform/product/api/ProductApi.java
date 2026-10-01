@@ -294,6 +294,23 @@ public interface ProductApi {
                          TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan, String publishedBy);
 
     /**
+     * The fullest form (product step 3): also how the version is VALUED. Every other overload
+     * delegates here with {@link AccumulationPlan#none()} -- a SCALE version, which is what every
+     * version before this step is.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                         AccumulationPlan accumulationPlan, String publishedBy);
+
+    /**
+     * A version's account terms; {@link AccumulationPlan#none()} for a SCALE version. Internal-only,
+     * like {@link #resolvePayoutPlan} -- consumed by {@code accumulation} and {@code policy}.
+     */
+    AccumulationPlan resolveAccumulationPlan(UUID productVersionId);
+
+    /**
      * What this version pays while the life assured lives, and its free-look and proof-of-life
      * terms. {@link PayoutPlan#none()} for a version with neither.
      *

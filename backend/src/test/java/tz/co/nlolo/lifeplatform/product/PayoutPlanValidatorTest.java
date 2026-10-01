@@ -144,4 +144,49 @@ class PayoutPlanValidatorTest {
                 PayoutPlan.authored(new PayoutTerms(15, null, null, BigDecimal.ZERO), List.of(MATURITY_100))))
             .hasMessage("A death-benefit premium percent must be greater than 0 and at most 1000");
     }
+
+    // ---- Product step 3: an account version's payouts --------------------------------------
+
+    private static final AccumulationPlan ACCOUNT = new AccumulationPlan(ValueBasis.ACCOUNT, new BigDecimal("3"),
+        BigDecimal.ZERO, List.of(new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)));
+
+    private static PayoutRowInput accountMaturity(String pct) {
+        return new PayoutRowInput(PayoutKind.MATURITY, null, null, PayoutAmountBasis.ACCOUNT_VALUE, new BigDecimal(pct), null);
+    }
+
+    @Test
+    void anAccountVersionsMaturityPaysTheWholeAccount() {
+        assertThatCode(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT,
+            PayoutPlan.authored(FREE_LOOK_15, List.of(accountMaturity("100"))), ACCOUNT))
+            .doesNotThrowAnyException();
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT,
+                PayoutPlan.authored(FREE_LOOK_15, List.of(accountMaturity("50"))), ACCOUNT))
+            .hasMessage("An account-value maturity pays the whole account (100)");
+    }
+
+    @Test
+    void anAccountVersionMustNotPayItsMaturityOffTheSumAssured() {
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT,
+                PayoutPlan.authored(FREE_LOOK_15, List.of(MATURITY_100)), ACCOUNT))
+            .hasMessage("An account-based version's maturity pays the account value");
+    }
+
+    @Test
+    void onlyAnAccountVersionMayPayTheAccountValue() {
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT,
+                PayoutPlan.authored(FREE_LOOK_15, List.of(accountMaturity("100"))), AccumulationPlan.none()))
+            .hasMessage("Only an account-based version can pay the account value");
+        // The two-argument form is a SCALE version, so it refuses the same way.
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT,
+                PayoutPlan.authored(FREE_LOOK_15, List.of(accountMaturity("100")))))
+            .hasMessage("Only an account-based version can pay the account value");
+    }
+
+    @Test
+    void anAccountVersionOffersNoSurvivalOrIncomePayouts() {
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT,
+                PayoutPlan.authored(new PayoutTerms(15, 12, false, null), List.of(accountMaturity("100"), SURVIVAL_Y5)),
+                ACCOUNT))
+            .hasMessage("An account-based version pays only its account value; survival and income payouts are not offered");
+    }
 }

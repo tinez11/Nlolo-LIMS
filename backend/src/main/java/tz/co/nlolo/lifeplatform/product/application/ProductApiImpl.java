@@ -29,13 +29,19 @@ public class ProductApiImpl implements ProductApi {
     private final CashValueConfigRepository cashValueConfigRepository;
     private final PayoutScheduleRowRepository payoutScheduleRowRepository;
     private final VersionPayoutTermsRepository versionPayoutTermsRepository;
+    private final VersionAccumulationTermsRepository versionAccumulationTermsRepository;
+    private final AccumulationChargeRepository accumulationChargeRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
                            FundDefinitionRepository fundDefinitionRepository, BaseRateRepository baseRateRepository,
                            CashValueEntryRepository cashValueEntryRepository, CashValueConfigRepository cashValueConfigRepository,
                            PayoutScheduleRowRepository payoutScheduleRowRepository,
-                           VersionPayoutTermsRepository versionPayoutTermsRepository) {
+                           VersionPayoutTermsRepository versionPayoutTermsRepository,
+                           VersionAccumulationTermsRepository versionAccumulationTermsRepository,
+                           AccumulationChargeRepository accumulationChargeRepository) {
+        this.versionAccumulationTermsRepository = versionAccumulationTermsRepository;
+        this.accumulationChargeRepository = accumulationChargeRepository;
         this.productDefinitionRepository = productDefinitionRepository;
         this.productVersionRepository = productVersionRepository;
         this.ratingFactorRepository = ratingFactorRepository;
@@ -201,6 +207,18 @@ public class ProductApiImpl implements ProductApi {
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                                 List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
                                 TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, cashValue, payoutPlan,
+            AccumulationPlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                                AccumulationPlan accumulationPlan, String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -283,8 +301,10 @@ public class ProductApiImpl implements ProductApi {
         rejectDuplicateRatingFactors(ratingTable);
         rejectMalformedAgeBands(ratingTable);
         rejectMalformedSumAssuredBands(ratingTable);
-        CashValuePlanValidator.validate(ProductCategory.valueOf(product.getCategory()), cashValue);
-        PayoutPlanValidator.validate(ProductCategory.valueOf(product.getCategory()), payoutPlan);
+        ProductCategory category = ProductCategory.valueOf(product.getCategory());
+        CashValuePlanValidator.validate(category, cashValue);
+        AccumulationPlanValidator.validate(category, accumulationPlan, cashValue);
+        PayoutPlanValidator.validate(category, payoutPlan, accumulationPlan);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -316,6 +336,7 @@ public class ProductApiImpl implements ProductApi {
         productVersionRepository.save(version);
         persistCashValue(tenantId, version.getProductVersionId(), cashValue);
         persistPayoutPlan(tenantId, version.getProductVersionId(), payoutPlan);
+        persistAccumulationPlan(tenantId, version.getProductVersionId(), accumulationPlan);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -827,6 +848,30 @@ public class ProductApiImpl implements ProductApi {
                 payoutScheduleRowRepository.findByProductVersionIdOrderByRowOrder(productVersionId).stream()
                     .map(PayoutScheduleRow::toInput).toList()))
             .orElse(PayoutPlan.none());
+    }
+
+    /** An ACCOUNT version's terms and charges (product step 3). Nothing for a SCALE version. */
+    private void persistAccumulationPlan(UUID tenantId, UUID productVersionId, AccumulationPlan plan) {
+        if (plan == null || !plan.isAccount()) {
+            return; // a SCALE version writes nothing -- its absence here IS the scale basis
+        }
+        versionAccumulationTermsRepository.save(new VersionAccumulationTerms(tenantId, productVersionId,
+            plan.guaranteedRatePercent(), plan.minimumBalance()));
+        for (AccumulationChargeRow row : plan.charges()) {
+            accumulationChargeRepository.save(new AccumulationCharge(tenantId, productVersionId, row));
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AccumulationPlan resolveAccumulationPlan(UUID productVersionId) {
+        // RLS scopes both reads to the caller's tenant -- the arrangement resolvePayoutPlan uses.
+        return versionAccumulationTermsRepository.findById(productVersionId)
+            .map(terms -> new AccumulationPlan(ValueBasis.ACCOUNT, terms.getGuaranteedRatePercent(),
+                terms.getMinimumBalance(),
+                accumulationChargeRepository.findByProductVersionIdOrderByFromPolicyYear(productVersionId).stream()
+                    .map(AccumulationCharge::toRow).toList()))
+            .orElse(AccumulationPlan.none());
     }
 
     private static void rejectOverlappingAgeBands(List<BaseRateInput> baseRates) {
