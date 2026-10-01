@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
+import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -97,7 +98,7 @@ public class ProductController {
                 ? request.fundDefinitions().stream().map(f -> new ProductApi.FundInput(f.fundCode(), f.currentNav())).collect(Collectors.toList())
                 : null,
             request.baseRates() != null
-                ? request.baseRates().stream().map(b -> new ProductApi.BaseRateInput(b.ageFrom(), b.ageTo(), b.sex(), b.smokerStatus(), b.ratePerMille())).collect(Collectors.toList())
+                ? request.baseRates().stream().map(b -> new ProductApi.BaseRateInput(b.ageFrom(), b.ageTo(), b.sex(), b.smokerStatus(), b.ratePerMille(), b.termFromMonths(), b.termToMonths())).collect(Collectors.toList())
                 : List.of(),
             // Never null downstream: an omitted block means an unbounded version, which is
             // a real design rather than a missing answer.
@@ -112,6 +113,7 @@ public class ProductController {
             // authorises it. @NotNull on the request rejects an absent block at the edge, so
             // this dereference is safe.
             new TiraFiling(request.tiraFiling().reference(), request.tiraFiling().approvalDate()),
+            request.cashValue() != null ? request.cashValue().toPlan() : CashValuePlan.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
@@ -161,7 +163,7 @@ public class ProductController {
         return ResponseEntity.ok(productApi.quotePremium(new ProductApi.PremiumQuoteInput(
             productId, request.sumAssuredAmount(), request.sumAssuredCurrency(), request.dateOfBirth(),
             request.sex(), request.smokerStatus(), request.occupationClass(),
-            request.frequency(), request.asOf())));
+            request.frequency(), request.asOf(), request.policyTermMonths())));
     }
 
     /**

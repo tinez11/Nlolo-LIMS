@@ -1,5 +1,4 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from 'react-oidc-context';
@@ -147,20 +146,21 @@ export function UnderwritingCaseDetailPage() {
 
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={detail.error} onRetry={() => void loadCase(caseId)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too, so a record that fails to load keeps its
+            heading and its way out instead of leaving a bare panel. */}
+        <PageHeader breadcrumb={[{ label: 'Underwriting', to: '/staff/underwriting' }]} title="Underwriting case" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadCase(caseId)} />
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Underwriting', to: '/staff/underwriting' }]}
         title="Underwriting case"
         description={<span className="font-mono text-xs">{caseId}</span>}
         actions={view?.status && <StatusBadge kind="underwritingCase" value={view.status} />}
@@ -343,7 +343,7 @@ export function UnderwritingCaseDetailPage() {
                 ceremony. The confirmation belongs on the decision, which is where the
                 consequence now lives.
               */}
-              <Button type="submit" variant="primary" disabled={submitting.status === 'loading'}>
+              <Button type="submit" variant="primary" pending={submitting.status === 'loading'}>
                 {isPostponed ? 'Submit further evidence' : 'Submit assessment'}
               </Button>
             </form>
@@ -440,10 +440,10 @@ export function UnderwritingCaseDetailPage() {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={referring.status === 'loading'}
+                pending={referring.status === 'loading'}
                 onClick={() => void referCase(caseId)}
               >
-                {referring.status === 'loading' ? 'Referring…' : 'Refer to senior underwriter'}
+                Refer to senior underwriter
               </Button>
               {referring.status === 'error' && referring.error && (
                 <p className="mt-2 text-xs text-status-danger-fg">
@@ -467,14 +467,4 @@ export function UnderwritingCaseDetailPage() {
   }
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to="../new" relative="path">
-        <ArrowLeft />
-        Open another case
-      </Link>
-    </Button>
-  );
-}
 

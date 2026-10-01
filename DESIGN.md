@@ -474,6 +474,18 @@ groups are ordered along the business flow — Clients, New business, Policies &
 claims, Finance, Distribution, Records, Configuration — with configuration last
 because authoring a product is rare set-up rather than daily work.
 
+**The shell owns the viewport, and the page never scrolls.** The shell is
+`fixed inset-0`, and `main` is the one vertical scroller. This is a rule, not an
+implementation detail: with a percentage height (`h-full`) the shell measured
+correctly at every viewport, yet 161px of layout overflow escaped `main` and gave
+the document a second scrollbar underneath main's own. Scrolling a register to
+the bottom then lifted the whole shell off the viewport floor, leaving the
+sidebar short by that much with a band of bare background beneath it — visible at
+1920x900, invisible at 1920x1080, so it hid from anyone testing on a tall window.
+Clipping did not cure it; `overflow: hidden` on the shell, `#root`, `body` and
+`html` all left the overflow intact. Nothing may reintroduce a second scroller:
+if a pane needs to scroll, it scrolls inside `main`.
+
 **The page rhythm.** A 24px page gutter governs everything: the header block
 (24px sides, 24px top, 16px bottom), the stat row (24px sides, 20px bottom), and
 the content beneath. Table cells step inward to 16px; slide-over content sits at
@@ -493,10 +505,15 @@ how nine screens ended up with one 282px card and three empty columns.
 **The detail page.** `DetailLayout` owns it: a `minmax(0,1fr)` work column and a
 320px record rail, 20px gaps, collapsing to one column below `lg`.
 
-- **The rail is the record, and it is pinned.** Identifying facts only — who,
-  what, how much, as of when. `sticky` at the 24px gutter, capped at
-  `100dvh - 3rem` with its own scroll, because a sticky element taller than the
-  viewport pins its top and puts its last rows permanently out of reach.
+- **The rail is the record, and it is pinned when it fits.** Identifying facts
+  only — who, what, how much, as of when. `sticky` below the page bar, but only
+  while the rail is shorter than the space available: `shouldPin` in
+  `railPin.ts` compares the rail against the viewport less the bars and a 2rem
+  margin, and a rail that does not fit scrolls with the page instead. Capping it
+  at `100dvh - 3rem` with its own `overflow-y` was the earlier answer and was
+  reverted: it put a third scrollbar on screen beside the sidebar's and the
+  page's, and the credit-life scheme record had all three at once. Un-pinning
+  keeps the last rows reachable without that scrollbar.
 - **The work column is ordered by task.** The acting panel leads where the page
   exists to perform an act, then the registers that evidence it. Read-only tables
   belong here rather than in the rail, which is where they were: a recoveries
@@ -514,9 +531,12 @@ how nine screens ended up with one 282px card and three empty columns.
 for a back-office desk and a large monitor. The only breakpoint doing real work
 is `sm`, which reveals table columns marked `secondary` — columns that are useful
 but not identifying, hidden on narrow viewports so the identifying column always
-survives. The sidebar does not currently collapse. **This is the least-developed
-part of the system**, and any narrow-viewport work is new design rather than a
-rule to be looked up here.
+survives. Below `md` the sidebar collapses to a drawer: a hamburger in a top bar
+opens it, a pointer dismiss layer and Escape close it, and it carries `invisible`
+rather than a transform alone so a phone user does not tab through twenty-two
+off-screen destinations before reaching the page. Touch targets step up to 44px
+under `pointer-coarse`. Narrow-viewport work beyond this is still new design
+rather than a rule to be looked up here.
 
 **Overflow.** A wide table scrolls inside its own `overflow-x` container. The
 page body never scrolls horizontally.

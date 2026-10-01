@@ -39,6 +39,14 @@ public class BillingSchedule {
     @Column(name = "next_due_date")
     private LocalDate nextDueDate;
 
+    /**
+     * The last date a premium may fall due (V8). Null where the contract does not term -- whole
+     * life, an annually renewable scheme -- which the roll-forward drain reads as "no end". The
+     * roll-forward stops raising invoices once {@code nextDueDate} passes this.
+     */
+    @Column(name = "premium_paying_until")
+    private LocalDate premiumPayingUntil;
+
     @Column(nullable = false)
     private String status = "ACTIVE";
 
@@ -49,12 +57,19 @@ public class BillingSchedule {
 
     public BillingSchedule(UUID tenantId, String policyNumber, String premiumFrequency,
                             BigDecimal premiumAmount, String premiumCurrency, LocalDate nextDueDate) {
+        this(tenantId, policyNumber, premiumFrequency, premiumAmount, premiumCurrency, nextDueDate, null);
+    }
+
+    public BillingSchedule(UUID tenantId, String policyNumber, String premiumFrequency,
+                            BigDecimal premiumAmount, String premiumCurrency, LocalDate nextDueDate,
+                            LocalDate premiumPayingUntil) {
         this.tenantId = tenantId;
         this.policyNumber = policyNumber;
         this.premiumFrequency = premiumFrequency;
         this.premiumAmount = premiumAmount;
         this.premiumCurrency = premiumCurrency;
         this.nextDueDate = nextDueDate;
+        this.premiumPayingUntil = premiumPayingUntil;
     }
 
     public void suspend() { this.status = "SUSPENDED"; }
@@ -69,5 +84,6 @@ public class BillingSchedule {
     public BigDecimal getPremiumAmount() { return premiumAmount; }
     public String getPremiumCurrency() { return premiumCurrency; }
     public LocalDate getNextDueDate() { return nextDueDate; }
+    public LocalDate getPremiumPayingUntil() { return premiumPayingUntil; }
     public String getStatus() { return status; }
 }

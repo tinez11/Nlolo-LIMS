@@ -80,6 +80,20 @@ export function IndividualFields({
           <FormField label="Nationality" error={errors.nationality?.message}>
             <Input className="uppercase" placeholder="TZ" {...register('nationality')} />
           </FormField>
+
+          {/*
+            Beside the ID rather than beside the name, because it is an identifier and a reader
+            looking for "which number is this person" should find all of them together. The hint
+            says whose number it is: this is the one place somebody could mistake it for the
+            platform's own id, and a reference filled in with a party id reconciles nothing.
+          */}
+          <FormField label="Client reference (optional)" error={errors.clientReference?.message}>
+            <Input {...register('clientReference')} />
+            <p className="mt-1 text-xs text-subtle-foreground">
+              Your own number for this client, if they already have one. Used to reconcile
+              against your existing records; leave blank if there is none.
+            </p>
+          </FormField>
         </div>
       </FieldGroup>
 

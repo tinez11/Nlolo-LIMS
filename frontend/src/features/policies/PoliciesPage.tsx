@@ -1,7 +1,12 @@
 import { Plus, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { POLICY_STATUSES, type PolicyStatus, type PolicyView } from '@/api/types';
+import {
+  POLICY_STATUSES,
+  PREMIUM_FREQUENCY_SUFFIXES,
+  type PolicyStatus,
+  type PolicyView,
+} from '@/api/types';
 import { DEFAULT_PAGE_SIZE } from '@/api/policies';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
@@ -147,7 +152,7 @@ export function PoliciesPage({
           {formatMoney(p.premium)}
           {p.premiumFrequency && (
             <span className="ml-1 text-xs text-subtle-foreground">
-              /{p.premiumFrequency.replace(/LY$/, '').toLowerCase()}
+              {PREMIUM_FREQUENCY_SUFFIXES[p.premiumFrequency]}
             </span>
           )}
         </span>

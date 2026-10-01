@@ -96,6 +96,8 @@ test.describe('staff products', () => {
     await ratingSection.getByLabel('Rating factor 2 to sum assured').fill('5000000');
 
     await page.getByRole('button', { name: 'Publish version' }).click();
+    // Publishing retires the currently-active version, so it is confirmed.
+    await page.getByRole('button', { name: 'Publish and make active' }).click();
 
     // Real POST -> 201 -> navigation to the product's own detail page, now
     // readable through GET /products for the first time (DRAFT -> ACTIVE).
@@ -167,6 +169,8 @@ test.describe('staff products', () => {
     await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
     await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
     await page.getByRole('button', { name: 'Publish version' }).click();
+    // Publishing retires the currently-active version, so it is confirmed.
+    await page.getByRole('button', { name: 'Publish and make active' }).click();
 
     // Published: it joins the catalogue and stops being an unfinished task. Both
     // halves matter -- the store refreshes `list` and `drafts` together, and a
@@ -265,6 +269,8 @@ test.describe('staff products', () => {
     await page.getByLabel('Quarterly loading %').fill('3');
 
     await page.getByRole('button', { name: 'Publish version' }).click();
+    // Publishing retires the currently-active version, so it is confirmed.
+    await page.getByRole('button', { name: 'Publish and make active' }).click();
 
     // A real 201 and a navigation to the product's own page.
     await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });

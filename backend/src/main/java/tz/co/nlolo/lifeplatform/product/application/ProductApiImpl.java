@@ -25,16 +25,21 @@ public class ProductApiImpl implements ProductApi {
     private final BenefitScheduleEntryRepository benefitScheduleEntryRepository;
     private final FundDefinitionRepository fundDefinitionRepository;
     private final BaseRateRepository baseRateRepository;
+    private final CashValueEntryRepository cashValueEntryRepository;
+    private final CashValueConfigRepository cashValueConfigRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
-                           FundDefinitionRepository fundDefinitionRepository, BaseRateRepository baseRateRepository) {
+                           FundDefinitionRepository fundDefinitionRepository, BaseRateRepository baseRateRepository,
+                           CashValueEntryRepository cashValueEntryRepository, CashValueConfigRepository cashValueConfigRepository) {
         this.productDefinitionRepository = productDefinitionRepository;
         this.productVersionRepository = productVersionRepository;
         this.ratingFactorRepository = ratingFactorRepository;
         this.benefitScheduleEntryRepository = benefitScheduleEntryRepository;
         this.fundDefinitionRepository = fundDefinitionRepository;
         this.baseRateRepository = baseRateRepository;
+        this.cashValueEntryRepository = cashValueEntryRepository;
+        this.cashValueConfigRepository = cashValueConfigRepository;
     }
 
     @Override
@@ -170,6 +175,16 @@ public class ProductApiImpl implements ProductApi {
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                                 List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, TiraFiling tiraFiling, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, CashValuePlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -252,6 +267,7 @@ public class ProductApiImpl implements ProductApi {
         rejectDuplicateRatingFactors(ratingTable);
         rejectMalformedAgeBands(ratingTable);
         rejectMalformedSumAssuredBands(ratingTable);
+        CashValuePlanValidator.validate(ProductCategory.valueOf(product.getCategory()), cashValue);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -281,6 +297,7 @@ public class ProductApiImpl implements ProductApi {
         // equivalent here on purpose -- an absent filing is not a kind of filing.
         version.applyTiraFiling(tiraFiling);
         productVersionRepository.save(version);
+        persistCashValue(tenantId, version.getProductVersionId(), cashValue);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -291,7 +308,7 @@ public class ProductApiImpl implements ProductApi {
             for (BaseRateInput input : baseRates) {
                 baseRateRepository.save(new BaseRate(tenantId, version.getProductVersionId(),
                     input.ageFrom(), input.ageTo(), input.sex().name(), input.smokerStatus().name(),
-                    input.ratePerMille()));
+                    input.ratePerMille(), input.termFromMonths(), input.termToMonths()));
             }
         }
         // Written from the validated definitions above, not from the raw inputs -- so a row can
@@ -389,10 +406,24 @@ public class ProductApiImpl implements ProductApi {
             throw new PremiumNotQuotableException("Date of birth " + input.dateOfBirth() + " is after " + asOf);
         }
 
+        // A SINGLE premium is one charge for a term the rate table does not span: rate_per_mille is
+        // an ANNUAL rate, so a single premium is only the annual figure while the term is twelve
+        // months. A longer single-premium term needs its own declared basis and is refused here
+        // rather than quoted at a wrong number (the existing comment lower down said so; now it is
+        // enforced).
+        if (input.frequency() == PremiumFrequency.SINGLE
+                && input.policyTermMonths() != null && input.policyTermMonths() > 12) {
+            throw new PremiumNotQuotableException("A single premium over a " + input.policyTermMonths()
+                + "-month term cannot be priced from an annual rate table; single premiums are"
+                + " supported only up to twelve months of cover until a single-premium basis is added");
+        }
+
         BaseRate cell = baseRateRepository
-            .findApplicable(versionId, ageAtEntry, input.sex().name(), input.smokerStatus().name())
+            .findApplicable(versionId, ageAtEntry, input.sex().name(), input.smokerStatus().name(), input.policyTermMonths())
             .orElseThrow(() -> new PremiumNotQuotableException("No base rate for age " + ageAtEntry
-                + ", " + input.sex() + ", " + input.smokerStatus() + " on product version " + versionId));
+                + ", " + input.sex() + ", " + input.smokerStatus()
+                + (input.policyTermMonths() != null ? ", term " + input.policyTermMonths() + " months" : ", no term")
+                + " on product version " + versionId));
 
         BigDecimal annualBase = input.sumAssuredAmount()
             .divide(new BigDecimal("1000"), java.math.MathContext.DECIMAL64)
@@ -419,9 +450,18 @@ public class ProductApiImpl implements ProductApi {
         FrequencyLoading loading = version.getFrequencyLoading();
         BigDecimal loadedAnnual = loading.applyTo(annual, input.frequency());
 
+        // SINGLE branches rather than divides. `instalmentsPerYear` is 0 for it BY DESIGN --
+        // there is no recurring period, and dividing by that value throws, which is the
+        // correct outcome for any caller reaching for a per-instalment figure on a contract
+        // that has none. The single premium is the whole loaded annual figure, charged once.
+        //
+        // That equivalence holds because this input carries no term and every single-premium
+        // product the platform sells today runs twelve months. A longer-term single premium
+        // is NOT this number and must not be quoted here until the input carries a term.
         int instalments = input.frequency().instalmentsPerYear();
-        BigDecimal instalment = loadedAnnual
-            .divide(BigDecimal.valueOf(instalments), 2, java.math.RoundingMode.HALF_UP);
+        BigDecimal instalment = input.frequency() == PremiumFrequency.SINGLE
+            ? loadedAnnual.setScale(2, java.math.RoundingMode.HALF_UP)
+            : loadedAnnual.divide(BigDecimal.valueOf(instalments), 2, java.math.RoundingMode.HALF_UP);
 
         return new PremiumQuoteView(versionId, input.sumAssuredCurrency(),
             ageAtEntry, cell.getAgeFrom(), cell.getAgeTo(), cell.getRatePerMille(),
@@ -441,7 +481,8 @@ public class ProductApiImpl implements ProductApi {
 
         List<BaseRateInput> rates = baseRateRepository.findByProductVersionId(versionId).stream()
             .map(r -> new BaseRateInput(r.getAgeFrom(), r.getAgeTo(), Sex.valueOf(r.getSex()),
-                SmokerStatus.valueOf(r.getSmokerStatus()), r.getRatePerMille()))
+                SmokerStatus.valueOf(r.getSmokerStatus()), r.getRatePerMille(),
+                r.getTermFromMonths(), r.getTermToMonths()))
             .toList();
         List<RatingFactorInput> factors = ratingFactorRepository.findByProductVersionId(versionId).stream()
             // Bounds included, both kinds: this is the read an actuary reviews a version's
@@ -734,21 +775,61 @@ public class ProductApiImpl implements ProductApi {
         }
     }
 
+    /** The cash-value table and its sign-off, in the version's own transaction. Nothing for none(). */
+    private void persistCashValue(UUID tenantId, UUID productVersionId, CashValuePlan cashValue) {
+        if (cashValue == null || !cashValue.isPresent()) {
+            return;
+        }
+        cashValueConfigRepository.save(new CashValueConfig(productVersionId, tenantId, cashValue.basisReference(),
+            cashValue.basisDate(), cashValue.paidUpBasis(), cashValue.minYearsForValue()));
+        for (CashValueRowInput row : cashValue.rows()) {
+            cashValueEntryRepository.save(new CashValueEntry(tenantId, productVersionId, row.policyYear(), row.ageFrom(),
+                row.ageTo(), row.cashValuePerMille(), row.paidUpPerMille()));
+        }
+    }
+
     private static void rejectOverlappingAgeBands(List<BaseRateInput> baseRates) {
         for (BaseRateInput a : baseRates) {
             if (a.ageTo() < a.ageFrom()) {
                 throw new InvalidProductVersionException(
                     "Base rate band " + a.ageFrom() + "-" + a.ageTo() + " ends before it begins");
             }
+            // Both term bounds together, or neither -- mirrors base_rate_term_range_shape.
+            if ((a.termFromMonths() == null) != (a.termToMonths() == null)) {
+                throw new InvalidProductVersionException(
+                    "A base rate term band needs both a from and a to month, or neither");
+            }
+            if (a.termFromMonths() != null && (a.termFromMonths() < 1 || a.termToMonths() < a.termFromMonths())) {
+                throw new InvalidProductVersionException(
+                    "Base rate term band " + a.termFromMonths() + "-" + a.termToMonths() + " months is not a range");
+            }
             for (BaseRateInput b : baseRates) {
                 if (a == b || a.sex() != b.sex() || a.smokerStatus() != b.smokerStatus()) continue;
-                if (a.ageFrom() <= b.ageTo() && b.ageFrom() <= a.ageTo()) {
-                    throw new InvalidProductVersionException("Base rate bands " + a.ageFrom() + "-" + a.ageTo()
-                        + " and " + b.ageFrom() + "-" + b.ageTo() + " overlap for " + a.sex() + "/" + a.smokerStatus()
-                        + " -- an age in both would price differently depending on row order");
+                // Two cells collide only if BOTH their age ranges AND their term ranges overlap. An
+                // unbanded row (null term) overlaps every term, so it cannot coexist with any other
+                // row for the same age/sex/smoker -- which is what keeps findApplicable to one match.
+                boolean ageOverlap = a.ageFrom() <= b.ageTo() && b.ageFrom() <= a.ageTo();
+                if (ageOverlap && termRangesOverlap(a, b)) {
+                    throw new InvalidProductVersionException("Base rate cells " + a.ageFrom() + "-" + a.ageTo()
+                        + termLabel(a) + " and " + b.ageFrom() + "-" + b.ageTo() + termLabel(b)
+                        + " overlap for " + a.sex() + "/" + a.smokerStatus()
+                        + " -- an age and term in both would price differently depending on row order");
                 }
             }
         }
+    }
+
+    /** Null term = any term, so it overlaps everything; otherwise the two month ranges intersect. */
+    private static boolean termRangesOverlap(BaseRateInput a, BaseRateInput b) {
+        if (a.termFromMonths() == null || b.termFromMonths() == null) {
+            return true;
+        }
+        return a.termFromMonths() <= b.termToMonths() && b.termFromMonths() <= a.termToMonths();
+    }
+
+    private static String termLabel(BaseRateInput r) {
+        return r.termFromMonths() == null ? " (any term)"
+            : " (" + r.termFromMonths() + "-" + r.termToMonths() + "mo)";
     }
 
     /**
@@ -886,13 +967,35 @@ public class ProductApiImpl implements ProductApi {
      */
     @Override
     public Optional<BigDecimal> resolveBaseRatePerMille(UUID productVersionId, int ageAtEntry,
-                                                         Sex sex, SmokerStatus smokerStatus) {
+                                                         Sex sex, SmokerStatus smokerStatus, Integer termMonths) {
         if (sex == null || smokerStatus == null) {
             return Optional.empty();
         }
         return baseRateRepository
-            .findApplicable(productVersionId, ageAtEntry, sex.name(), smokerStatus.name())
+            .findApplicable(productVersionId, ageAtEntry, sex.name(), smokerStatus.name(), termMonths)
             .map(BaseRate::getRatePerMille);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<CashValueConfigView> getCashValueConfig(UUID productVersionId) {
+        return cashValueConfigRepository.findById(productVersionId)
+            .map(c -> new CashValueConfigView(c.getBasisReference(), c.getBasisDate(),
+                c.getPaidUpBasis(), c.getMinYearsForValue()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> resolveCashValuePerMille(UUID productVersionId, int policyYear, Integer ageAtEntry) {
+        return cashValueEntryRepository.findApplicable(productVersionId, policyYear, ageAtEntry)
+            .map(CashValueEntry::getCashValuePerMille);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<BigDecimal> resolvePaidUpPerMille(UUID productVersionId, int policyYear, Integer ageAtEntry) {
+        return cashValueEntryRepository.findApplicable(productVersionId, policyYear, ageAtEntry)
+            .map(CashValueEntry::getPaidUpPerMille);
     }
 
     @Override

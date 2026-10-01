@@ -107,7 +107,7 @@ paths:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         - name: status
           in: query
-          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP] }
+          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
         - name: q
           in: query
           description: Free-text, case-insensitive substring match against policyNumber.
@@ -253,6 +253,31 @@ paths:
               schema: { $ref: '#/components/schemas/PolicyView' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/paid-up:
+    post:
+      summary: Make a savings policy paid-up
+      description: >
+        The customer stops paying and keeps reduced cover. The sum assured drops to the paid-up
+        figure -- proportionate to the premium term completed, or from the product's paid-up table --
+        the coverage a claim pays against is restated, the status becomes PAID_UP (in force, no
+        premium due) and billing stops. 409 when the policy is not a savings product, not in a
+        convertible status (ACTIVE, REINSTATED or LAPSED), or has no value yet. Not a lapse: no
+        commission is clawed back.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: Policy made paid-up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /policies/{policyNumber}/surrender-value:
     get:
       summary: Quote current surrender value (does not commit to surrender)
@@ -279,47 +304,83 @@ paths:
                   quotedAt: { type: string, format: date-time }
   /policies/{policyNumber}/surrender:
     post:
-      summary: Initiate policy surrender (asynchronous — loan-netting choreography)
+      summary: Request a customer surrender
       description: >
-        Returns 202 immediately; the actual net-of-loan disbursement completes via the
-        Camunda process described in Deliverable 3 Rev 2 §12. Poll the returned
-        processInstanceId via GET /policies/{policyNumber}/processes/{processInstanceId}.
+        Quotes the surrender value (cash value less the surrender charge), checks the policy can be
+        surrendered (in force, paid-up or lapsed-with-value, past the minimum term, no outstanding
+        loan, no other surrender in flight) and records a REQUESTED surrender for a second person to
+        approve. Does not stop cover. Staff-only, because money leaves the company and request and
+        approval must be different people.
       security:
-        - customersAuth: [profile]
-        - agentsAuth: [agent]
         - staffAuth: []
       parameters:
         - name: policyNumber
           in: path
           required: true
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
-        - $ref: 'openapi-common.yaml#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: [payeeRef]
               properties:
                 payeeRef: { type: string, description: "Mobile money / bank payout destination" }
       responses:
-        '202':
-          description: Surrender process started
+        '200':
+          description: Surrender requested, awaiting approval
           content:
             application/json:
-              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProcessStatus' }
+              schema: { $ref: '#/components/schemas/SurrenderRequest' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409':
-          description: Policy not in a surrenderable state, or a LoanValueReservation is currently RESERVED
+          description: Policy not surrenderable, has an outstanding loan, or a surrender is already in flight
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
-        '501':
-          description: >
-            Surrender/maturity loan-netting choreography is deferred pending a workflow-engine
-            decision (Camunda 7 is EOL; Camunda 8 needs a paid licence and a cross-tenant leak
-            review) -- this endpoint is real, routable, and correctly secured, but returns 501
-            instead of 202 until that engine is chosen. Interim state, not the intended eventual
-            behaviour (see the 202/409 responses above).
+  /policies/{policyNumber}/surrender-request:
+    get:
+      summary: The policy's most recent surrender request, in any status
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: The latest request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurrenderRequest' }
+        '204': { description: The policy has never had a surrender requested }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /surrender-requests/{surrenderRequestId}/approve:
+    post:
+      summary: Approve a surrender (by someone other than the requester)
+      description: >
+        Cover stops as of the approval date, billing stops, and the payout is sent through the
+        disbursement rail. FINANCE_OFFICER or ADMIN only, like a commission payout -- approving is what
+        moves the money. 409 if the requester tries to approve their own surrender, or the request is
+        not awaiting approval.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: surrenderRequestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Surrender approved, payout requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurrenderRequest' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '409':
+          description: Not awaiting approval, or approver is the requester
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
@@ -1270,6 +1331,18 @@ paths:
 
 components:
   schemas:
+    SurrenderRequest:
+      description: A customer surrender in flight.
+      type: object
+      required: [surrenderRequestId, policyNumber, status, quotedValue]
+      properties:
+        surrenderRequestId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED, IN_DOUBT] }
+        quotedValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        payeeRef: { type: string, description: "Where the payout goes — what the approver checks" }
+        requestedBy: { type: [string, "null"] }
+        approvedBy: { type: [string, "null"] }
     ExitSubmissionView:
       type: object
       description: >-
@@ -1339,6 +1412,28 @@ components:
         submittedAt: { type: string, format: date-time }
         acceptedBy: { type: string, nullable: true }
         acceptedAt: { type: string, format: date-time, nullable: true }
+        premiumTotal:
+          description: >-
+            What the insurer charges for this file, and the figure its invoice is built from.
+            Null until the submission is accepted.
+          type: [number, "null"]
+        statedPremiumTotal:
+          description: >-
+            What the LENDER's own file said, summed across the rows the insurer charged for.
+            Null where the file carried no premium column, which is legitimate and is NOT the
+            same as stating zero — both real schedules carry one, and it used to be discarded.
+          type: [number, "null"]
+        premiumVariance:
+          description: >-
+            `premiumTotal` less `statedPremiumTotal`, or null where there is nothing to compare.
+            Positive means the lender is invoiced MORE than their own file predicted.
+
+
+            Returned rather than left to the caller to subtract, so two clients cannot disagree
+            about the sign of a reconciliation. A variance never blocks acceptance: the insurer
+            prices the cover and the lender's figure is evidence, not an instruction — bouncing a
+            whole month over a disagreement would be worse than invoicing and saying so.
+          type: [number, "null"]
 
     EnrolmentRowView:
       description: >-
@@ -1424,7 +1519,10 @@ components:
             the failure is invisible to whoever issued the policy.
           type: [string, "null"]
           format: uuid
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE is charged once, at inception, and never again. It takes a
+        # `premiumPayingTermMonths` of 1 (or null) and is refused with anything else: a
+        # contract paid once cannot have a paying term of several months.
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         beneficiaries:
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryInput' }
@@ -1497,12 +1595,14 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         agentOfRecordId: { type: [string, "null"], format: uuid }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
         issueDate: { type: string, format: date }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cashValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         premium: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE included so a single-premium policy is readable: a view that cannot express
+        # the frequency a policy was written on refuses to render it at all.
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         beneficiaries:
           type: array
           items: { $ref: '#/components/schemas/BeneficiaryInput' }
@@ -1684,10 +1784,34 @@ components:
           enum: [MONTHLY, QUARTERLY, null]
         premiumRatePercent:
           description: >-
-            Per-lender and negotiable; 0.4% and 0.5% are the two quoted. Charged once per
-            borrower on the amount they borrowed, not on the declining balance.
+            Per-lender and negotiable; 0.5% and 0.6% are the two the real schedules carry.
+            Charged once per borrower, always on the amount they borrowed rather than on a
+            declining balance — what varies between lenders is not the base but how the rate
+            is applied to it, which `premiumBasis` states.
           type: [number, "null"]
           minimum: 0.0001
+        premiumBasis:
+          description: >-
+            How the rate becomes money. Required with `premiumRatePercent` and refused without
+            it, because a rate without a basis does not say what to do with itself.
+
+
+            `FLAT_ON_PRINCIPAL` charges the rate once on the disbursed amount and ignores the
+            term: a two-month loan costs what a twelve-month loan of the same size costs.
+            `PER_ANNUM_ON_PRINCIPAL` multiplies it by the term in years.
+            `ANNUAL_ON_DECLINING_BALANCE` charges it once per policy year on the principal still
+            outstanding when that year begins, straight-line, and sums them.
+
+
+            All three are a SINGLE premium charged at enrolment. The third walks years to reach
+            its figure because that is how the lender's own schedule presents it, not because
+            anything is invoiced annually.
+
+
+            No default. The three agree exactly on a twelve-month loan and diverge on every
+            other term, so a wrong basis is silent on an annual book and large on a short one.
+          type: [string, "null"]
+          enum: [FLAT_ON_PRINCIPAL, PER_ANNUM_ON_PRINCIPAL, ANNUAL_ON_DECLINING_BALANCE, null]
         underwritingCaseId:
           description: >-
             The group case this scheme is issued on. REQUIRED for a GROUP_LIFE (employer)
@@ -1795,7 +1919,7 @@ components:
       properties:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
         # AMORTISING_LOAN is credit life: the member IS a loan and the amount insured is the

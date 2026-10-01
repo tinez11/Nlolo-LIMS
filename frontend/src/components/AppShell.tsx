@@ -72,8 +72,25 @@ export function AppShell({ realm, children }: { realm: Realm; children: ReactNod
     };
   }, [navOpen]);
 
+  /*
+    `fixed inset-0` rather than `h-full`, and the difference is not cosmetic.
+    With a percentage height the shell measured a correct 900px on a 900px
+    viewport, yet `documentElement.scrollHeight` reported 1061 -- 161px of
+    layout overflow leaking out of `main`, which clips its own content and
+    carries its own scrollbar. The page therefore scrolled a second time,
+    underneath the first, and scrolling to the bottom of a register lifted the
+    whole shell off the viewport floor: the sidebar ended 161px short with a
+    band of bare background beneath it, and a second scrollbar sat beside main's
+    own. It only bit when the window was shorter than the content -- invisible
+    at 1920x1080, plain at 1920x900.
+
+    Clipping did not fix it: `overflow: hidden` on the shell, on `#root`, on
+    `body` and on `html` all left the overflow intact. Taking the shell out of
+    flow does, because then nothing it contains can size the root scroller.
+    Measured after: scrollHeight 900 on a 900px viewport, sidebar flush.
+  */
   return (
-    <div className="flex h-full">
+    <div className="fixed inset-0 flex">
       {/*
         Skip link. Measured at 19 tab stops from page load to the first table
         row, on every single navigation, because the whole sidebar sits ahead of

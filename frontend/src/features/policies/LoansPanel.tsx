@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { LoanView, Money } from '@/api/types';
 import { StatusBadge } from '@/components/StatusBadge';
+import { InlineError } from '@/components/InlineError';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { formatMoney } from '@/lib/money';
@@ -117,21 +118,18 @@ export function LoansPanel({
             variant="ghost"
             className="-ml-2"
             disabled={!hasCashValue}
-            {...(hasCashValue
-              ? {}
-              : {
-                  title:
-                    'This policy has no cash value to borrow against, so a loan would be refused. The platform does not credit cash value yet.',
-                })}
             onClick={() => setOriginating(true)}
           >
             Take a loan
           </Button>
         )}
+        {/* The reason is rendered, not hidden in a `title`: a tooltip is unreachable by keyboard
+            and invisible to a screen reader, so the disabled button said nothing to anyone who
+            could not hover it. */}
         {!originating && !hasCashValue && (
           <p className="mt-1 text-xs text-muted-foreground">
-            A loan is limited to the policy&rsquo;s cash value, which is still 0.00 —
-            nothing credits it yet.
+            A loan is limited to the policy&rsquo;s cash value, which is 0.00. A savings policy
+            builds value from its first two or three full years; a term policy never does.
           </p>
         )}
         {originating && (
@@ -236,9 +234,7 @@ function OriginateLoanForm({
           available loan value, or says the policy is not in force. Both are more
           useful than anything this form could say on its own. */}
       {originating.status === 'error' && originating.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {originating.error.detail ?? originating.error.title}
-        </p>
+        <InlineError error={originating.error} />
       )}
 
       <p className="text-xs text-muted-foreground">
@@ -309,9 +305,7 @@ function RepaymentForm({
       </FormField>
 
       {repaying.status === 'error' && repaying.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {repaying.error.detail ?? repaying.error.title}
-        </p>
+        <InlineError error={repaying.error} />
       )}
 
       <p className="text-xs text-muted-foreground">

@@ -1,9 +1,14 @@
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router-dom';
-import { isSingleLifeProduct, ISSUANCE_BASES, PREMIUM_FREQUENCIES } from '@/api/types';
+import {
+  isSingleLifeProduct,
+  ISSUANCE_BASES,
+  PREMIUM_FREQUENCIES,
+  PREMIUM_FREQUENCY_LABELS,
+} from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { DatePicker } from '@/components/DatePicker';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -53,6 +58,10 @@ import { InlineError } from '@/components/InlineError';
  * synthesize one per submission, which made every issuance look like a first issuance --
  * see `policyIssueForm.ts` for the full account.
  */
+
+/** Ties the hard-gate refusal to the submit button it explains. */
+const BLOCKED_REASON_ID = 'issue-policy-blocked-reason';
+
 export function IssuePolicyPage() {
   const navigate = useNavigate();
 
@@ -214,16 +223,8 @@ export function IssuePolicyPage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to=".." relative="path">
-            <ArrowLeft />
-            All policies
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Issue a policy"
         description="The staff exception path -- outside the normal underwriting-decision pipeline."
       />
@@ -407,7 +408,7 @@ export function IssuePolicyPage() {
           >
             {PREMIUM_FREQUENCIES.map((f) => (
               <option key={f} value={f}>
-                {f}
+                {PREMIUM_FREQUENCY_LABELS[f]}
               </option>
             ))}
           </Select>
@@ -632,6 +633,19 @@ export function IssuePolicyPage() {
           <InlineError error={issuing.error} />
         )}
 
+        {/*
+          The reason is rendered, not hung off `title`. It used to be a `title` attribute on a
+          button that is `disabled`, and a disabled button is not focusable: neither a keyboard
+          user nor a screen reader could ever reach the explanation, leaving only a mouse hover
+          over a greyed-out control. A sentence on the page reaches everyone, and
+          `aria-describedby` below ties it to the button it is about.
+        */}
+        {blocked && (
+          <p id={BLOCKED_REASON_ID} role="status" className="text-xs text-muted-foreground">
+            A check above must pass before this policy can be issued.
+          </p>
+        )}
+
         <div className="flex items-center gap-2">
           {/* A hard gate means the platform will refuse this anyway -- an age with no
               rate cell cannot be priced, and a term the product does not offer is the
@@ -642,12 +656,15 @@ export function IssuePolicyPage() {
           <Button
             type="submit"
             variant="primary"
-            disabled={issuing.status === 'loading' || blocked}
-            {...(blocked
-              ? { title: 'A check above must pass before this policy can be issued' }
-              : {})}
+            // The two reasons this button is unavailable are kept apart. `blocked` means a check
+            // above has not passed and no amount of waiting will change it -- the sentence above
+            // says which. `pending` means the request is running. Collapsing them into one
+            // `disabled` said "working" about a button refused for a reason the person can fix.
+            pending={issuing.status === 'loading'}
+            disabled={blocked}
+            aria-describedby={blocked ? BLOCKED_REASON_ID : undefined}
           >
-            {issuing.status === 'loading' ? 'Issuing…' : 'Issue policy'}
+            Issue policy
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">

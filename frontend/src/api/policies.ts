@@ -19,6 +19,8 @@ import type {
   PaymentRequest,
   PolicyStatus,
   PolicyView,
+  SurrenderQuote,
+  SurrenderRequestView,
   SuspendPolicyRequest,
   WaiverRequest,
 } from './types';
@@ -254,6 +256,34 @@ export function resumePolicy(policyNumber: string): Promise<PolicyView> {
  */
 export function reinstatePolicy(policyNumber: string): Promise<PolicyView> {
   return post<PolicyView>(`/policies/${encodeURIComponent(policyNumber)}/reinstate`);
+}
+
+/**
+ * `POST /policies/{n}/paid-up` -- staff only. The customer stops paying and keeps reduced
+ * cover. 409 unless the policy is a savings product in a convertible status with value.
+ */
+export function makePaidUp(policyNumber: string): Promise<PolicyView> {
+  return post<PolicyView>(`/policies/${encodeURIComponent(policyNumber)}/paid-up`);
+}
+
+/** `GET /policies/{n}/surrender-value` -- what a surrender would pay today. Does not commit. */
+export function getSurrenderValue(policyNumber: string): Promise<SurrenderQuote> {
+  return get<SurrenderQuote>(`/policies/${encodeURIComponent(policyNumber)}/surrender-value`);
+}
+
+/** `GET /policies/{n}/surrender-request` -- the latest request, or nothing (204). */
+export function getSurrenderRequest(policyNumber: string): Promise<SurrenderRequestView | ''> {
+  return get<SurrenderRequestView | ''>(`/policies/${encodeURIComponent(policyNumber)}/surrender-request`);
+}
+
+/** `POST /policies/{n}/surrender` -- records a REQUESTED surrender. Does NOT stop cover. */
+export function requestSurrender(policyNumber: string, payeeRef: string): Promise<SurrenderRequestView> {
+  return post<SurrenderRequestView>(`/policies/${encodeURIComponent(policyNumber)}/surrender`, { payeeRef });
+}
+
+/** `POST /surrender-requests/{id}/approve` -- finance only, and never the requester. Cover stops. */
+export function approveSurrender(surrenderRequestId: string): Promise<SurrenderRequestView> {
+  return post<SurrenderRequestView>(`/surrender-requests/${encodeURIComponent(surrenderRequestId)}/approve`);
 }
 
 /**

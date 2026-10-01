@@ -344,6 +344,31 @@ components:
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
         eligibility: { $ref: '#/components/schemas/EligibilityBounds' }
+        cashValue:
+          description: >-
+            The version's cash-value (surrender value) table and its actuarial sign-off. Optional,
+            and only on ENDOWMENT, WHOLE_LIFE and EDUCATION_SAVINGS: pure protection has no cash
+            value. Values are per 1,000 of sum assured at each policy year, optionally by entry-age
+            band. A TABLE paid-up basis needs a paid-up value on every row.
+          type: object
+          required: [basisReference, basisDate, paidUpBasis, minYearsForValue, rows]
+          properties:
+            basisReference: { type: string, maxLength: 200 }
+            basisDate: { type: string, format: date }
+            paidUpBasis: { type: string, enum: [PROPORTIONATE, TABLE] }
+            minYearsForValue: { type: integer, minimum: 2, maximum: 3 }
+            rows:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [policyYear, cashValuePerMille]
+                properties:
+                  policyYear: { type: integer, minimum: 1 }
+                  ageFrom: { type: [integer, "null"], minimum: 0 }
+                  ageTo: { type: [integer, "null"], minimum: 0 }
+                  cashValuePerMille: { type: number, minimum: 0 }
+                  paidUpPerMille: { type: [number, "null"], minimum: 0 }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and
@@ -446,6 +471,16 @@ components:
           description: Annual rate per 1,000 of sum assured.
           type: number
           exclusiveMinimum: 0
+        termFromMonths:
+          description: >-
+            Optional lower bound of the policy term this rate is for (V16). Both term bounds
+            together or neither; both null means the rate applies to any term.
+          type: integer
+          minimum: 1
+        termToMonths:
+          description: Optional upper bound of the policy term, inclusive.
+          type: integer
+          minimum: 1
     PremiumQuoteRequest:
       description: >-
         Takes dateOfBirth, never a precomputed age: entry age is the input a
@@ -466,11 +501,26 @@ components:
         sex: { type: string, enum: [FEMALE, MALE] }
         smokerStatus: { type: string, enum: [SMOKER, NON_SMOKER, UNKNOWN] }
         occupationClass: { type: string }
-        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE carries no frequency loading -- a loading prices the cost of spreading
+        # payment across the year, and a single premium spreads nothing. Its instalment is
+        # the whole loaded annual figure, charged once, so `instalmentsPerYear` comes back 0
+        # rather than 1: there is no recurring period, and a 1 would read as "annually" to
+        # any arithmetic that divides by it.
+        #
+        # The annual figure IS the single premium only while the cover term is twelve months.
+        # A single premium over a longer policyTermMonths is refused (422) rather than quoted at
+        # the wrong number, until a single-premium basis is added.
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         asOf:
           description: Selects the product version. Defaults to today.
           type: [string, "null"]
           format: date
+        policyTermMonths:
+          description: >-
+            The policy term the quote is for (V16). Optional: null prices against unbanded rates
+            only and is refused on a term-banded version, the same rule issuance follows.
+          type: integer
+          minimum: 1
     PremiumQuoteView:
       description: >-
         The premium AND its derivation. The breakdown is returned because
@@ -497,7 +547,9 @@ components:
         annualAfterFactors: { type: number }
         frequencyLoadingPercent: { type: number }
         annualAfterFrequencyLoading: { type: number }
-        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # 0 for SINGLE, and the instalment beside it is then the whole premium. See the
+        # request schema's own note.
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         instalmentsPerYear: { type: integer }
         instalmentAmount: { type: number }
     VersionRatingView:

@@ -8,7 +8,7 @@ import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
 import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
-import tz.co.nlolo.lifeplatform.claims.api.MaturityClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.DisabilityClaimDetails;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
@@ -110,12 +110,15 @@ class ClaimsContractTest {
     static void applyMigrationsAndCreateBuckets() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -128,6 +131,8 @@ class ClaimsContractTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -148,6 +153,10 @@ class ClaimsContractTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
@@ -235,14 +244,18 @@ class ClaimsContractTest {
         return view.claimId();
     }
 
-    /** MATURITY needs no assessment to reach SETTLEMENT_REQUESTED/SETTLED, but here it is used
-     * simply as a REGISTERED claim for the evidence tests, which need no particular claim type. */
-    private UUID registerMaturityClaim(UUID tenantId, UUID claimantId, String policyNumber) {
+    /** A REGISTERED claim for the evidence and listing tests, which need no particular claim type.
+     * DISABILITY, deliberately: a maturity claim is now only claimable once the policy has reached
+     * its maturity date (these fixtures issue no-term policies), and DEATH would collide with the
+     * one-death-claim-per-life rule in the listing test, which files a real DEATH claim alongside
+     * this one. DISABILITY has neither constraint, the fixture product authors it, and it stays
+     * REGISTERED -- exactly what these fixtures want. */
+    private UUID registerFixtureClaim(UUID tenantId, UUID claimantId, String policyNumber) {
         TenantContext.set(tenantId);
         LocalDate dateOfEvent = LocalDate.now().minusDays(1);
         ClaimView view = claimsApi.registerClaim(
-            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.MATURITY, dateOfEvent,
-                new MaturityClaimDetails(dateOfEvent)),
+            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.DISABILITY, dateOfEvent,
+                new DisabilityClaimDetails("Permanent disability", dateOfEvent, true, new BigDecimal("100"))),
             "ct-reg-" + UUID.randomUUID(), "claims-staff-fixture");
         TenantContext.clear();
         return view.claimId();
@@ -564,7 +577,7 @@ class ClaimsContractTest {
 
         // Two claims on one policy, of DIFFERENT types: one death claim per life now refuses a
         // second DEATH here, and this test is about the status filter, not the claim type.
-        UUID registeredClaimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID registeredClaimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
         UUID underAssessmentClaimId = registerDeathClaim(tenantId, fixture.applicantId(), policyNumber);
         submitAssessmentDirectly(tenantId, underAssessmentClaimId, "assessor-list-fixture");
 
@@ -972,7 +985,7 @@ class ClaimsContractTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-01");
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID claimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
 
         // openApi().isValid(SPEC_PATH) is deliberately omitted on this POST: verified empirically
         // that com.atlassian.oai.validator's MockMvc adapter cannot introspect a multipart/
@@ -1009,7 +1022,7 @@ class ClaimsContractTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-NAME");
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID claimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
 
         // No openApi() matcher on the multipart POST -- see the 201 test above.
         mockMvc.perform(multipart("/claims/" + claimId + "/evidence")
@@ -1039,7 +1052,7 @@ class ClaimsContractTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-CT-EVIDENCE-02");
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID claimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
 
         // openApi().isValid(SPEC_PATH) omitted here too -- same multipart-body-introspection
         // limitation as the 201 test above, verified the same way.

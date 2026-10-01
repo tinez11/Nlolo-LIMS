@@ -1,8 +1,9 @@
-import { ArrowLeft, Check, FileCheck, X } from 'lucide-react';
+import { Check, FileCheck, X } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/PageHeader';
+import { InlineError } from '@/components/InlineError';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { PartyName } from '@/components/PartyName';
@@ -47,6 +48,7 @@ import {
   usePartyStore,
 } from '@/store/partyStore';
 import { Panel } from '@/components/Panel';
+import { RecordTabs, type TabDef } from '@/components/RecordTabs';
 import { DetailLayout } from '@/components/DetailLayout';
 
 const ACCEPTED_EVIDENCE_TYPES = {
@@ -83,7 +85,6 @@ const ACCEPTED_EVIDENCE_TYPES = {
  */
 export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents' } = {}) {
   const { partyId = '' } = useParams();
-  const navigate = useNavigate();
   const detail = usePartyStore(selectParty(partyId));
   const loadParty = usePartyStore((s) => s.loadParty);
   const documents = usePartyStore(selectPartyDocuments(partyId));
@@ -182,6 +183,31 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
     if (partyId && soleSchemeNumber) void loadSchemeMembers(partyId, soleSchemeNumber);
   }, [partyId, soleSchemeNumber, loadSchemeMembers]);
 
+  const tabs = clientTabs({
+    isStaff,
+    isOrganisation,
+    lenderOnly,
+    party,
+    partyId,
+    policies,
+    claims,
+    cases,
+    beneficiaryOf,
+    documents,
+    agentRecords,
+    candidates,
+    employerSchemes,
+    creditLifeSchemes,
+    kinds,
+    notSchemes,
+    onRetryPolicies: () => void loadPolicies(partyId),
+    onRetryClaims: () => void loadClaims(partyId),
+    onRetryCases: () => void loadCases(partyId),
+    onRetryBeneficiaryOf: () => void loadBeneficiaryOf(partyId),
+    onRetryDocuments: () => void loadPartyDocuments(partyId),
+    onRetryAgentRecords: () => void loadAgentRecords(partyId),
+  });
+
   if (isInitialLoad(detail)) {
     return <LoadingBlock label="Loading client" />;
   }
@@ -191,25 +217,30 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
   // panel has to be reachable rather than assumed impossible.
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink onClick={() => navigate(-1)} />
-        <ErrorPanel error={detail.error} onRetry={() => void loadParty(partyId)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too. A client that fails to load used to lose its
+            heading and its way out along with its data -- and a 403 here is a real outcome for
+            an agents-realm caller who reached a client they did not register, so this is a path
+            people actually land on rather than a theoretical one. */}
+        <PageHeader breadcrumb={clientBreadcrumb(realm, undefined)} title="Client" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadParty(partyId)} />
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink onClick={() => navigate(-1)} />
-      </div>
-
       <PageHeader
+        breadcrumb={clientBreadcrumb(realm, party?.partyType)}
         title={party?.displayName ?? 'Client'}
         description={party?.partyType ? <span>{partyTypeLabel(party.partyType)}</span> : undefined}
+        // `status`, not `actions`: a KYC status is what the record IS. The Correct details
+        // link stays in `actions`, which is where a control belongs.
+        status={party?.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
         actions={
           <span className="flex items-center gap-2">
-            {party?.kycStatus && <StatusBadge kind="kyc" value={party.kycStatus} />}
             {/*
               Staff only, and absent entirely in the agents realm rather than present and
               refused: an agent who can see the button reasonably concludes the record is
@@ -260,6 +291,20 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
                     />
                   )}
                   <Field label="Nationality" value={party.nationality ?? '—'} />
+                  {/*
+                    Selectable and monospaced like the ID above it, because the only thing
+                    anybody does with this number is copy it into another system.
+                  */}
+                  <Field
+                    label="Client reference"
+                    value={
+                      party.clientReference ? (
+                        <span className="font-mono text-xs select-all">{party.clientReference}</span>
+                      ) : (
+                        '—'
+                      )
+                    }
+                  />
                   <Field
                     label="KYC decided"
                     value={party.kycVerifiedAt ? formatInstant(party.kycVerifiedAt) : '—'}
@@ -350,16 +395,116 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
           </>
         }
       >
-        {isStaff && (
-          <Panel
-            emphasis
-            title="KYC verification"
-            subtitle="Upload evidence, then record a decision against it."
-          >
-            {party && <KycPanel partyId={partyId} currentStatus={party.kycStatus} />}
-          </Panel>
-        )}
+        {/*
+          TABS, which the agreed proposal named for this record alongside the policy one. The
+          work column was eight panels -- KYC, policies, schemes, claims, underwriting,
+          beneficiary interests, documents, agent record -- and the fourth of them was a long
+          scroll away on a page whose whole job is deciding an identity.
 
+          Unlike the policy record, this costs no load behaviour: the seven reads fire together
+          in one page-level effect above, not inside the panels, so unmounting an inactive tab
+          does not stop anything being fetched. That is what makes the tab a pure reading
+          change here, and it is why the count regression tabs caused in plan 2 cannot repeat.
+        */}
+        <RecordTabs label="Client sections" tabs={tabs} />
+      </DetailLayout>
+    </>
+  );
+}
+
+/**
+ * Everything the work column's panels read.
+ *
+ * Fifteen values, which is why this stays a function in this file rather than moving to its own
+ * module the way `claimSections` did: the claim record's sections needed seven inputs and were
+ * worth extracting, this one would be a fifteen-parameter import for no gain. The array shape is
+ * the part that matters and it is unchanged -- one list of {value, label, content} with the gates
+ * applied while building it, so a tab can never be offered for a panel the page did not render.
+ */
+interface ClientTabInputs {
+  isStaff: boolean;
+  isOrganisation: boolean;
+  lenderOnly: boolean;
+  party: PartyDetailView | null;
+  partyId: string;
+  policies: Resource<Page<PolicyView>>;
+  claims: Resource<Page<ClaimView>>;
+  cases: Resource<Page<UnderwritingCaseView>>;
+  beneficiaryOf: Resource<BeneficiaryOfView[]>;
+  documents: Resource<PartyDocumentView[]>;
+  agentRecords: Resource<Page<AgentView>>;
+  candidates: PolicyView[];
+  employerSchemes: PolicyView[];
+  creditLifeSchemes: PolicyView[];
+  kinds: Record<string, SchemeCheck> | null;
+  notSchemes: PolicyView[];
+  onRetryPolicies: () => void;
+  onRetryClaims: () => void;
+  onRetryCases: () => void;
+  onRetryBeneficiaryOf: () => void;
+  onRetryDocuments: () => void;
+  onRetryAgentRecords: () => void;
+}
+
+/** One work-column section of the client record: the tab, and the panel behind it. */
+function clientTabs({
+  isStaff,
+  isOrganisation,
+  lenderOnly,
+  party,
+  partyId,
+  policies,
+  claims,
+  cases,
+  beneficiaryOf,
+  documents,
+  agentRecords,
+  candidates,
+  employerSchemes,
+  creditLifeSchemes,
+  kinds,
+  notSchemes,
+  onRetryPolicies,
+  onRetryClaims,
+  onRetryCases,
+  onRetryBeneficiaryOf,
+  onRetryDocuments,
+  onRetryAgentRecords,
+}: ClientTabInputs): TabDef[] {
+  const tabs: TabDef[] = [];
+
+  // KYC LEADS, and that was true before tabs for the same reason it is true now: this page
+  // acts on KYC and only on KYC. As the first tab it is what a reviewer lands on, which is
+  // what the old ordering was reaching for when it moved the panel to the top of a scroll.
+  //
+  // Absent entirely in the agents realm rather than present and refused -- an agent who can
+  // see the control reasonably concludes the record is theirs to change, and finds out
+  // otherwise at the point of saving. With it gone, Policies becomes their first tab, which
+  // is the register they came for anyway.
+  if (isStaff) {
+    tabs.push({
+      value: 'kyc',
+      label: 'KYC',
+      content: (
+        <Panel
+          emphasis
+          title="KYC verification"
+          subtitle="Upload evidence, then record a decision against it."
+        >
+          {party && <KycPanel partyId={partyId} currentStatus={party.kycStatus} />}
+        </Panel>
+      ),
+    });
+  }
+
+  // Policies and schemes share a tab because they answer one question -- what does this client
+  // hold -- and the schemes panel is DERIVED from the policies page already loaded. Splitting
+  // them would put two views of one fetch behind two clicks.
+  tabs.push({
+    value: 'policies',
+    label: 'Policies',
+    content: (
+      <>
         <Panel
           title={isStaff ? 'Policies' : 'Your Policies'}
           subtitle={
@@ -370,7 +515,7 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
         >
           <PolicyList
             resource={policies}
-            onRetry={() => void loadPolicies(partyId)}
+            onRetry={onRetryPolicies}
             partyId={partyId}
           />
         </Panel>
@@ -420,57 +565,82 @@ export function PartyDetailPage({ realm = 'staff' }: { realm?: 'staff' | 'agents
               lives={kinds}
               notSchemes={notSchemes}
               partyId={partyId}
-              onRetry={() => void loadPolicies(partyId)}
+              onRetry={onRetryPolicies}
             />
           </Panel>
         )}
+      </>
+    ),
+  });
 
-        <Panel title="Claims" subtitle="Claims this client has made.">
-          <ClaimList resource={claims} onRetry={() => void loadClaims(partyId)} />
+  tabs.push({
+    value: 'claims',
+    label: 'Claims',
+    content: (
+      <Panel title="Claims" subtitle="Claims this client has made.">
+        <ClaimList resource={claims} onRetry={onRetryClaims} />
+      </Panel>
+    ),
+  });
+
+  tabs.push({
+    value: 'underwriting',
+    label: 'Underwriting',
+    content: (
+      <Panel
+        title="Underwriting"
+        subtitle="Applications assessed for this client. Open one to decide it."
+      >
+        <CaseList resource={cases} onRetry={onRetryCases} />
+      </Panel>
+    ),
+  });
+
+  // Labelled "Beneficiary", not "Beneficiary of" or "Named as beneficiary": the panel keeps the
+  // full heading, and a tab bar reads better in nouns. The distinction the panel's subtitle
+  // draws -- policies that would pay OUT to this client, not policies they own -- is what stops
+  // this being a duplicate of the Policies tab, so it stays a tab of its own.
+  tabs.push({
+    value: 'beneficiary',
+    label: 'Beneficiary',
+    content: (
+      <Panel
+        title="Named as beneficiary"
+        subtitle="Policies that would pay out to this client — not policies they own."
+      >
+        <BeneficiaryOfList resource={beneficiaryOf} onRetry={onRetryBeneficiaryOf} />
+      </Panel>
+    ),
+  });
+
+  tabs.push({
+    value: 'documents',
+    label: 'Documents',
+    content: (
+      <Panel
+        title="Documents"
+        subtitle="Filed against this client. Claim evidence lives on the claim."
+      >
+        <DocumentList resource={documents} onRetry={onRetryDocuments} />
+      </Panel>
+    ),
+  });
+
+  // `GET /agents` is staff-only, so the agents realm never even fetches this -- a tab offering
+  // it there would open onto a guaranteed 403.
+  if (isStaff) {
+    tabs.push({
+      value: 'agent',
+      label: 'Agent',
+      content: (
+        <Panel title="Also an agent" subtitle="Whether this client sells for us as well.">
+          <AgentRecordList resource={agentRecords} onRetry={onRetryAgentRecords} />
         </Panel>
+      ),
+    });
+  }
 
-        <Panel
-          title="Underwriting"
-          subtitle="Applications assessed for this client. Open one to decide it."
-        >
-          <CaseList resource={cases} onRetry={() => void loadCases(partyId)} />
-        </Panel>
-
-        <Panel
-          title="Named as beneficiary"
-          subtitle="Policies that would pay out to this client — not policies they own."
-        >
-          <BeneficiaryOfList
-            resource={beneficiaryOf}
-            onRetry={() => void loadBeneficiaryOf(partyId)}
-          />
-        </Panel>
-
-        {/* Both moved out of the rail, which now holds only the identity itself.
-            These two are registers of things filed against the client, which is what
-            every panel in this column is -- and a filename truncated inside 320px was
-            losing the part that distinguishes one scan from another. */}
-        <Panel
-          title="Documents"
-          subtitle="Filed against this client. Claim evidence lives on the claim."
-        >
-          <DocumentList
-            resource={documents}
-            onRetry={() => void loadPartyDocuments(partyId)}
-          />
-        </Panel>
-
-        {isStaff && (
-          <Panel title="Also an agent" subtitle="Whether this client sells for us as well.">
-            <AgentRecordList
-              resource={agentRecords}
-              onRetry={() => void loadAgentRecords(partyId)}
-            />
-          </Panel>
-        )}
-      </DetailLayout>
-    </>
-  );
+  return tabs;
 }
 
 /**
@@ -1089,9 +1259,7 @@ function KycPanel({
       </div>
 
       {uploading.status === 'error' && uploading.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {uploading.error.detail ?? uploading.error.title}
-        </p>
+        <InlineError error={uploading.error} />
       )}
 
       {documentRef && (
@@ -1154,9 +1322,7 @@ function KycPanel({
             </div>
           )}
           {deciding.status === 'error' && deciding.error && (
-            <p role="alert" className="text-xs text-status-danger-fg">
-              {deciding.error.detail ?? deciding.error.title}
-            </p>
+            <InlineError error={deciding.error} />
           )}
         </div>
       )}
@@ -1165,17 +1331,21 @@ function KycPanel({
 }
 
 /**
- * Goes back to wherever the caller actually came from -- unlike every other
- * detail page's BackLink, a party is reached from four different contexts
- * (policy/claim/underwriting/agent), so there is no single "all X" list this
- * could point at.
+ * Where this record lives, which is not the same question as where the reader came from.
+ *
+ * The back link this replaces went to history instead of a route, and its comment gave a real
+ * reason: a party is reached from a policy, a claim, an underwriting case or an agent record,
+ * so there is no single "all X" list to point at. That argument holds for a BACK button and
+ * not for a breadcrumb -- a crumb says where the record sits in the console, and a party does
+ * sit somewhere. It sits in the client register, which is split by type, so the crumb is split
+ * the same way rather than guessing one of the two.
+ *
+ * Browser Back still does what the old control did, for the reader who wanted that instead.
  */
-function BackLink({ onClick }: { onClick: () => void }) {
-  return (
-    <Button variant="ghost" size="sm" className="-ml-2" onClick={onClick}>
-      <ArrowLeft />
-      Back
-    </Button>
-  );
+function clientBreadcrumb(realm: 'staff' | 'agents', partyType: PartyDetailView['partyType']) {
+  if (realm === 'agents') return [{ label: 'My clients', to: '/agents/clients' }];
+  return partyType === 'CORPORATE' || partyType === 'GROUP'
+    ? [{ label: 'Corporate/Group', to: '/staff/clients/organisations' }]
+    : [{ label: 'Individuals', to: '/staff/clients/individuals' }];
 }
 

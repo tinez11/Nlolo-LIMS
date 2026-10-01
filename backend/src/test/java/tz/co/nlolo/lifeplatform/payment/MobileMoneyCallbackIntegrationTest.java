@@ -83,13 +83,16 @@ class MobileMoneyCallbackIntegrationTest {
     static void applyMigrationsAndBootstrapAppRole() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
             // M5 final-review fix wave: V4 adds the id-keyed resolvers C1's fallback calls, and
             // widens both status CHECKs for C2's IN_DOUBT. Both are load-bearing below.
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
-            "db-migrations/payment/V6__disbursement_method.sql");
+            "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

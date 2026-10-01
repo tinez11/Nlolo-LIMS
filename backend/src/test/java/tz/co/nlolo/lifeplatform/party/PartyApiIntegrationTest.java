@@ -65,7 +65,10 @@ class PartyApiIntegrationTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/party/V6__client_reference.sql",
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql");
     }
 
     @Autowired
@@ -450,5 +453,56 @@ class PartyApiIntegrationTest {
             () -> partyApi.addGroupMember(groupUnderTenantA.partyId(), partyUnderTenantA.partyId()));
         Assertions.assertThrows(PartyNotFoundException.class,
             () -> partyApi.listGroupMembers(groupUnderTenantA.partyId(), PageRequest.of(0, 50)));
+    }
+
+    // ---- the insurer's own reference -----------------------------------------
+
+    @Test
+    void theClientReferenceRoundTripsThroughRegistrationAndDetailRead() {
+        var registered = partyApi.registerIndividual(new IndividualRegistration(
+            "Referenced Client", LocalDate.of(1985, 4, 2), "+255713444555", null,
+            Sex.MALE, null, new IdentityDocument(IdType.NATIONAL_ID, "19850402-44455-00001-11"),
+            null, null, null, "TZ", null, "CLT-000412"), "test-agent");
+
+        assertThat(partyApi.getPartyDetail(registered.partyId()).clientReference())
+            .isEqualTo("CLT-000412");
+    }
+
+    @Test
+    void aClientWithNoReferenceIsCompleteRatherThanIncomplete() {
+        // Optional by design: it exists to reconcile against a book the business already keeps,
+        // and an agent who has no such number is registering a whole client.
+        var registered = partyApi.registerIndividual("Unreferenced Client",
+            LocalDate.of(1985, 4, 2), "+255713444666", null, "test-agent");
+
+        assertThat(partyApi.getPartyDetail(registered.partyId()).clientReference()).isNull();
+    }
+
+    @Test
+    void aBlankReferenceIsStoredAsAbsentRatherThanAsAnEmptyString() {
+        // Otherwise "" occupies ux_party_client_reference and refuses the blank to everybody
+        // else, which is a confusing way to discover a typo.
+        var registered = partyApi.registerIndividual(new IndividualRegistration(
+            "Blank Reference", LocalDate.of(1985, 4, 2), "+255713444777", null,
+            Sex.MALE, null, new IdentityDocument(IdType.NATIONAL_ID, "19850402-44477-00001-11"),
+            null, null, null, "TZ", null, "   "), "test-agent");
+
+        assertThat(partyApi.getPartyDetail(registered.partyId()).clientReference()).isNull();
+    }
+
+    @Test
+    void twoClientsMayNotShareOneReference() {
+        // The whole point of the column is that it identifies one client. Two sharing it would
+        // reconcile to both, which is worse than reconciling to neither.
+        partyApi.registerIndividual(new IndividualRegistration(
+            "First Holder", LocalDate.of(1985, 4, 2), "+255713444888", null,
+            Sex.MALE, null, new IdentityDocument(IdType.NATIONAL_ID, "19850402-44488-00001-11"),
+            null, null, null, "TZ", null, "CLT-DUPLICATE"), "test-agent");
+
+        Assertions.assertThrows(Exception.class, () -> partyApi.registerIndividual(
+            new IndividualRegistration("Second Holder", LocalDate.of(1986, 5, 3),
+                "+255713444999", null, Sex.FEMALE, null,
+                new IdentityDocument(IdType.NATIONAL_ID, "19860503-44499-00001-11"),
+                null, null, null, "TZ", null, "CLT-DUPLICATE"), "test-agent"));
     }
 }

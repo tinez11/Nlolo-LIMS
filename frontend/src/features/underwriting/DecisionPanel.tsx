@@ -1,6 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import type { UnderwritingCaseView } from '@/api/types';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { FormField } from '@/components/FormField';
 import { Panel } from '@/components/Panel';
 import { Button } from '@/components/ui/button';
@@ -17,6 +19,33 @@ import {
   type DecideFormInput,
   type DecideFormValues,
 } from './decideForm';
+
+/** Ties the separation-of-duties refusal to the button it explains. */
+const BLOCKED_BY_RANK_ID = 'decision-blocked-by-rank';
+
+/** The outcome in real words, with the loading if there is one. */
+function consequenceOf(values: DecideFormValues) {
+  const label = DECISION_OUTCOMES.find((o) => o.value === values.outcome)?.label ?? values.outcome;
+  if (values.outcome === 'LOADED') {
+    return (
+      <>
+        Accept this risk with a loading of <strong>{values.loadingPercent}%</strong>, and issue the
+        policy.
+      </>
+    );
+  }
+  if (values.outcome === 'ACCEPT') {
+    return <>Accept this risk and issue the policy.</>;
+  }
+  if (values.outcome === 'DECLINED') {
+    return <>Refuse this risk. No policy is issued.</>;
+  }
+  return (
+    <>
+      Record <strong>{label}</strong>. No policy is issued.
+    </>
+  );
+}
 
 /**
  * Where an underwriter decides the case.
@@ -66,12 +95,39 @@ export function DecisionPanel({
     defaultValues: blankDecideForm(),
   });
 
+  /*
+    The decision is held here between the submit and the second, deliberate click.
+
+    It was the one comparably consequential act on the platform with no confirmation:
+    claim settlement, EFT execution, reinstatement and KYC all go through `ConfirmAct`,
+    while an underwriter decided a life in a single click from a select that may still
+    be carrying its previous value. A decided case is closed to further evidence unless
+    it was POSTPONED (`UnderwritingCaseAlreadyDecidedException`), so a mis-click is not
+    trivially undoable, and on ACCEPT/LOADED it issues the policy.
+  */
+  const [pending, setPending] = useState<DecideFormValues | null>(null);
+
   // eslint-disable-next-line react-hooks/incompatible-library -- see RegisterClaimPage
   const outcome = watch('outcome');
   const recommendation = view.recommendationOutcome ?? null;
   const override = isOverride(outcome, recommendation);
   const blockedByRank = override && !isSenior;
   const conflict = separationOfDutiesConflict(view, callerSubject);
+  /*
+    The evidence itself, not the recommendation derived from it.
+
+    This gate first asked whether a recommendation existed, on the reasoning that an assessed
+    case always has one. That is false, and false precisely where it matters: `recommendFromEvidence`
+    returns early for a GROUP SCHEME -- "no engine opinion on a group scheme, and this is a
+    decision rather than a gap", because the age band it would resolve belongs to a company. A
+    scheme case therefore carries assessments and no recommendation for ever, and the gate made
+    every one of them permanently undecidable.
+
+    `assessedBy` is the fact, and it is already on the wire for the separation-of-duties check
+    beside it: "identity-provider subjects of everyone who recorded an assessment on the case".
+    Empty means nothing has been assessed, which is the one thing `decide` actually refuses.
+  */
+  const awaitingAssessment = (view.assessedBy ?? []).length === 0;
 
   if (!canDecide) return null;
 
@@ -106,8 +162,14 @@ export function DecisionPanel({
             </>
           ) : (
             <p className="text-xs text-muted-foreground">
-              No recommendation yet — the engine runs when an assessment is submitted. You can
-              still decide, and it will not count as an override.
+              {awaitingAssessment
+                ? 'No recommendation yet — the engine runs when an assessment is submitted.'
+                : /*
+                     Assessed, and still no advice: this is a group scheme, where the engine
+                     deliberately has no opinion. Saying "not yet" here would be waiting for
+                     something that is never coming.
+                   */
+                  'No recommendation on a scheme — the engine rates one life from one age band, and the age it would read is the employer’s. Decide it on the evidence; it will not count as an override.'}
             </p>
           )}
         </div>
@@ -126,8 +188,25 @@ export function DecisionPanel({
             so another underwriter must decide it. Separation of duties: whoever takes or assesses
             a proposal does not also accept it.
           </p>
+        ) : awaitingAssessment ? (
+          /*
+            Withheld, like the separation-of-duties branch above, rather than offered and
+            refused. `UnderwritingApiImpl.decide` throws "there is nothing to decide on" when a
+            case carries no assessment -- "accepted, nothing assessed" is not a decision anyone
+            can defend later -- and this panel used to say the opposite in as many words: "You
+            can still decide, and it will not count as an override." The second half was true
+            and the first was not, so an underwriter filled the form, submitted, and got a raw
+            validation error for doing exactly what the screen invited.
+          */
+          <p
+            role="status"
+            className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
+          >
+            Record an assessment first. A case with no evidence on it cannot be decided — an
+            acceptance nobody assessed is not a decision that can be defended later.
+          </p>
         ) : (
-          <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => onDecide(toApiRequest(v)))(e)}>
+          <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
             <FormField label="Decision" error={errors.outcome?.message}>
               <Select {...register('outcome')}>
                 {/* No loading on a member's evidence case -- one member of a scheme has no
@@ -156,6 +235,7 @@ export function DecisionPanel({
 
             {blockedByRank && (
               <p
+                id={BLOCKED_BY_RANK_ID}
                 role="status"
                 className="rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
               >
@@ -175,13 +255,72 @@ export function DecisionPanel({
               <InlineError error={deciding.error} />
             )}
 
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={blockedByRank || deciding.status === 'loading'}
-            >
-              {deciding.status === 'loading' ? 'Recording…' : 'Record decision'}
-            </Button>
+            {pending ? (
+              <ConfirmAct
+                heading={
+                  pending.outcome === 'DECLINED'
+                    ? 'Decline this risk?'
+                    : pending.outcome === 'POSTPONED'
+                      ? 'Postpone this case?'
+                      : 'Record this acceptance?'
+                }
+                tone={pending.outcome === 'DECLINED' ? 'danger' : 'primary'}
+                consequence={consequenceOf(pending)}
+                /*
+                  Facts about the backend, not caution. `UnderwritingApiImpl` refuses a second
+                  decision on any decided case that is not POSTPONED, and
+                  `UnderwritingDecisionEventListener` issues the policy on ACCEPT and LOADED
+                  only -- DECLINED and POSTPONED never issue.
+                */
+                reversal={
+                  pending.outcome === 'POSTPONED' ? (
+                    <>
+                      A postponed case can be decided again once new evidence arrives, so this
+                      one is recoverable.
+                    </>
+                  ) : (
+                    <>
+                      Nothing here can undo it: the case closes to further evidence, and only a
+                      postponement can be decided a second time.
+                    </>
+                  )
+                }
+                /*
+                  Deliberately not "Record decision" again. Two buttons with the same
+                  accessible name, one replacing the other, is a confirmation a person can
+                  click through on muscle memory -- and the naming pattern here is the one
+                  `ClaimSettlementPanel` already sets, where "Approve claim" is confirmed by
+                  "Approve and pay".
+                */
+                confirmLabel={
+                  pending.outcome === 'DECLINED'
+                    ? 'Decline the risk'
+                    : pending.outcome === 'POSTPONED'
+                      ? 'Postpone the case'
+                      : 'Record the acceptance'
+                }
+                busy={deciding.status === 'loading'}
+                onConfirm={() => onDecide(toApiRequest(pending))}
+                onCancel={() => setPending(null)}
+              />
+            ) : (
+              <Button
+                type="submit"
+                variant="primary"
+                // Kept apart on purpose: `blockedByRank` is a separation-of-duties refusal, which
+                // no amount of waiting resolves, while `pending` is the request in flight. One
+                // `disabled` carrying both told a blocked underwriter the platform was working.
+                pending={deciding.status === 'loading'}
+                disabled={blockedByRank}
+                // The refusal above explains this button, so it is named as the button's
+                // description rather than left to sit near it. `title` was the pattern here and
+                // reaches nobody: a disabled button is not focusable, so neither a keyboard user
+                // nor a screen reader ever got the reason.
+                aria-describedby={blockedByRank ? BLOCKED_BY_RANK_ID : undefined}
+              >
+                Record decision
+              </Button>
+            )}
           </form>
         )}
       </div>

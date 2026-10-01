@@ -360,18 +360,26 @@ public class BillingApiImpl implements BillingApi {
             // overpayment leaves amountPaid above the premium due, and commission must follow the
             // premium, not the surplus. (This method has always ignored both arguments beyond
             // applyPayment's running total; the invoice is the authoritative record.)
-            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId,
-                Map.of("invoiceId", invoiceId,
-                       "policyNumber", invoice.getPolicyNumber(),
-                       // WHO paid, not just what was paid. Carried because the consumer that
-                       // needs it most cannot look it up: communication thanks the customer for
-                       // this payment and may not depend on policy. An event naming only the
-                       // contract would reach it with nobody to tell -- the same gap
-                       // policy.PolicyNotTakenUp had, and closed the same way.
-                       "policyholderPartyId", policyApi.getPolicy(invoice.getPolicyNumber()).policyholderPartyId(),
-                       "amount", Map.of("amount", invoice.getAmount().toPlainString(),
-                                        "currencyCode", invoice.getCurrency()),
-                       "collectedAt", Instant.now().toString())));
+            Map<String, Object> collected = new java.util.HashMap<>();
+            collected.put("invoiceId", invoiceId);
+            collected.put("policyNumber", invoice.getPolicyNumber());
+            // WHO paid, not just what was paid. Carried because the consumer that needs it most
+            // cannot look it up: communication thanks the customer for this payment and may not
+            // depend on policy. An event naming only the contract would reach it with nobody to
+            // tell -- the same gap policy.PolicyNotTakenUp had, and closed the same way.
+            collected.put("policyholderPartyId", policyApi.getPolicy(invoice.getPolicyNumber()).policyholderPartyId());
+            // The invoice's OWN amount, not the arguments -- see the note above.
+            collected.put("amount", Map.of("amount", invoice.getAmount().toPlainString(),
+                "currencyCode", invoice.getCurrency()));
+            collected.put("collectedAt", Instant.now().toString());
+            // How far premiums are paid, with no gap, from the first due date -- the input a
+            // cash-value policy needs to know which policy year it has reached. Billing owns the
+            // invoices, so it is the only module that can compute contiguity honestly; null when
+            // even the first invoice is unpaid (an out-of-order payment). A HashMap because the
+            // payload now carries a nullable value, which Map.of forbids.
+            LocalDate paidToDate = contiguousPaidToDate(invoice.getPolicyNumber(), tenantId);
+            collected.put("paidToDate", paidToDate != null ? paidToDate.toString() : null);
+            eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId, collected));
         }
         return toView(invoice);
     }
@@ -407,9 +415,11 @@ public class BillingApiImpl implements BillingApi {
 
     @Transactional
     void generateScheduleForNewPolicy(UUID tenantId, String policyNumber, UUID productVersionId,
-                                       LocalDate issueDate, BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency) {
+                                       LocalDate issueDate, BigDecimal premiumAmount, String premiumCurrency,
+                                       String premiumFrequency, LocalDate premiumPayingUntil) {
         LocalDate firstDueDate = nextPeriodStart(issueDate, premiumFrequency);
-        BillingSchedule schedule = new BillingSchedule(tenantId, policyNumber, premiumFrequency, premiumAmount, premiumCurrency, firstDueDate);
+        BillingSchedule schedule = new BillingSchedule(tenantId, policyNumber, premiumFrequency, premiumAmount,
+            premiumCurrency, firstDueDate, premiumPayingUntil);
         billingScheduleRepository.save(schedule);
         generateInvoicesAhead(tenantId, schedule, productVersionId, issueDate);
     }
@@ -434,6 +444,26 @@ public class BillingApiImpl implements BillingApi {
         billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
             .ifPresent(schedule -> {
                 schedule.suspend();
+                billingScheduleRepository.save(schedule);
+            });
+    }
+
+    /**
+     * The policy's term ran out (policy.PolicyExpired). Terminate the schedule so no further
+     * invoice is raised against a contract that has ended.
+     *
+     * <p>Terminated rather than suspended: suspension is a hold that resumes, and an expired term
+     * never does. A SUSPENDED schedule is terminated here too -- an expired policy that happened to
+     * be on hold still stops being billed. Only ACTIVE or SUSPENDED are touched; a schedule already
+     * TERMINATED (a single-premium contract never had one at all) is left as it is, so the handler
+     * is idempotent on a repeated event.
+     */
+    @Transactional
+    void terminateScheduleForExpiry(UUID tenantId, String policyNumber) {
+        billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "ACTIVE")
+            .or(() -> billingScheduleRepository.findByPolicyNumberAndTenantIdAndStatus(policyNumber, tenantId, "SUSPENDED"))
+            .ifPresent(schedule -> {
+                schedule.terminate();
                 billingScheduleRepository.save(schedule);
             });
     }
@@ -520,6 +550,63 @@ public class BillingApiImpl implements BillingApi {
     }
 
     /**
+     * The one charge a retail single-premium policy ever raises, due when its cover begins.
+     *
+     * <p>Separate from {@link #raiseSinglePremiumInvoice} rather than a null submission id on
+     * it, because the two answer different questions. That one charges a LENDER for a file of
+     * borrowers and dedupes on the file; this charges a CUSTOMER for their own contract and
+     * dedupes on the policy. Folding them together would have given the retail path the
+     * lender's payment term and the lender's grace reasoning, neither of which applies.
+     *
+     * <p>The grace window comes from the product, exactly as a scheduled invoice's does: an
+     * unpaid retail premium lapses one ordinary policy, which is the situation the product's
+     * own grace period was written for. (The enrolment path deliberately does NOT read it —
+     * see its comment — because a lender's unpaid file is a collections matter, not a lapse.)
+     *
+     * <p>Due on the issue date itself, not issue + a payment term. A single premium buys cover
+     * that starts now; a due date after commencement would mean the insurer carries risk it has
+     * not been paid for and cannot dun anybody for, which is the shape of the gap this method
+     * exists to close.
+     *
+     * @param issueDate the policy's OWN issue date, off the event. Never {@code now()}:
+     *     {@code ux_premium_invoice_policy_inception} includes due_date because the table is
+     *     partitioned on it, so the guarantee against double-charging a redelivered
+     *     {@code policy.PolicyIssued} holds only while a redelivery recomputes the same date.
+     */
+    @Transactional
+    UUID raisePolicyInceptionInvoice(UUID tenantId, String policyNumber, UUID productVersionId,
+                                      LocalDate issueDate, BigDecimal amount, String currency) {
+        ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(productVersionId);
+        LocalDate graceEnd = issueDate.plusDays(snapshot.gracePeriodDays());
+
+        // Asked before inserting, for the reason raiseSinglePremiumInvoice sets out at length:
+        // a failed statement poisons the whole Postgres transaction, so nothing can be read
+        // back inside a catch block. A policy that already has an inception invoice has been
+        // issued once and told to billing twice.
+        boolean alreadyRaised = premiumInvoiceRepository
+            .findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId).stream()
+            .anyMatch(existing -> existing.getBillingScheduleId() == null
+                && existing.getEnrolmentSubmissionId() == null);
+        if (alreadyRaised) {
+            log.info("Policy {} already carries its inception invoice -- redelivered PolicyIssued, "
+                + "not charging it again", policyNumber);
+            return null;
+        }
+
+        PremiumInvoice invoice = premiumInvoiceRepository.save(
+            PremiumInvoice.forPolicyInception(tenantId, policyNumber, issueDate, amount, currency, graceEnd));
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceGenerated", tenantId,
+            Map.of("invoiceId", invoice.getInvoiceId(), "policyNumber", policyNumber,
+                   "dueDate", issueDate.toString(),
+                   "amount", Map.of("amount", amount.toPlainString(), "currencyCode", currency))));
+
+        log.info("Raised inception invoice {} of {} {} for single-premium policy {}",
+            invoice.getInvoiceId(), amount.toPlainString(), currency, policyNumber);
+        return invoice.getInvoiceId();
+    }
+
+    /**
      * Give back the premium a departing borrower paid for cover they never got.
      *
      * <p>A NEW row, never a reduction of the invoice it reverses. The invoice says what was
@@ -590,10 +677,76 @@ public class BillingApiImpl implements BillingApi {
             amount.toPlainString(), currency, policyNumber, policyMemberId, exitDate, exitReason);
     }
 
+    /**
+     * Raise the next batch of invoices for one schedule whose pre-created ones are running low.
+     * Called by {@code InvoiceRollForward} for each schedule {@code schedules_due_for_invoicing()}
+     * returns.
+     *
+     * <p>Takes a write lock on the row first, which is the exactly-once guarantee: two drain
+     * instances both selected this schedule, but the second blocks here until the first commits,
+     * then re-reads a {@code nextDueDate} already advanced past the horizon and generates nothing.
+     * A schedule no longer ACTIVE (terminated by expiry or a claim between selection and this call)
+     * is left alone.
+     *
+     * <p>The product version comes from the policy this schedule bills -- billing already depends
+     * on {@code policy::api} -- because the schedule row does not carry it and
+     * {@code generateInvoicesAhead} needs the grace-period days.
+     */
+    @Transactional
+    public void rollForward(UUID scheduleId) {
+        BillingSchedule schedule = billingScheduleRepository.findByIdForUpdate(scheduleId).orElse(null);
+        if (schedule == null || !"ACTIVE".equals(schedule.getStatus()) || schedule.getNextDueDate() == null) {
+            return;
+        }
+        // Already reached the end of the contract between selection and now: nothing to raise.
+        if (schedule.getPremiumPayingUntil() != null
+                && schedule.getNextDueDate().isAfter(schedule.getPremiumPayingUntil())) {
+            return;
+        }
+        UUID productVersionId = policyApi.getPolicy(schedule.getPolicyNumber()).productVersionId();
+        // fromDate = the schedule's own next due date, so the twelve-month horizon in
+        // generateInvoicesAhead is measured forward from where invoicing currently stands rather
+        // than from a fixed issue date -- each roll adds another year (bounded by the paying end).
+        generateInvoicesAhead(schedule.getTenantId(), schedule, productVersionId, schedule.getNextDueDate());
+    }
+
+    /**
+     * The furthest due date to which premiums are paid without a gap, from the earliest invoice.
+     * PAID and WAIVED both count -- a waived instalment does not break cover -- and the run stops at
+     * the first invoice that is neither. Null when even the first invoice is unpaid.
+     *
+     * <p>A cash-value policy's worth turns on completed premium years, so what matters is not "was
+     * this one paid" but "paid up to when, unbroken". Only billing can answer that, because only
+     * billing holds the invoices.
+     */
+    private LocalDate contiguousPaidToDate(String policyNumber, UUID tenantId) {
+        LocalDate paidTo = null;
+        for (PremiumInvoice inv : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
+            if ("PAID".equals(inv.getStatus()) || "WAIVED".equals(inv.getStatus())) {
+                paidTo = inv.getDueDate();
+            } else {
+                break;
+            }
+        }
+        return paidTo;
+    }
+
     private void generateInvoicesAhead(UUID tenantId, BillingSchedule schedule, UUID productVersionId, LocalDate fromDate) {
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(productVersionId);
         LocalDate cursor = schedule.getNextDueDate();
+        // Stop at the twelve-month horizon OR the end of the contract, whichever comes first. The
+        // horizon bounds how far ahead invoices are pre-created (the roll-forward drain extends
+        // them later); the paying end bounds the contract itself, so a 6-month policy gets six
+        // invoices and a limited-pay policy is not billed past its paying term. A null paying end
+        // means the contract does not term -- whole life, an annually renewable scheme -- and only
+        // the horizon applies. The bound is INCLUSIVE: billing's first invoice falls one period
+        // after issue (premium in arrears), so a 12-month monthly policy is due issue+1..issue+12,
+        // and excluding the endpoint would drop the final month.
         LocalDate horizon = fromDate.plusMonths(SCHEDULE_HORIZON_MONTHS);
+        LocalDate payingEnd = schedule.getPremiumPayingUntil();
+        if (payingEnd != null && payingEnd.isBefore(horizon)) {
+            horizon = payingEnd;
+        }
         List<PremiumInvoice> toCreate = new ArrayList<>();
         while (!cursor.isAfter(horizon)) {
             LocalDate graceEnd = cursor.plusDays(snapshot.gracePeriodDays());

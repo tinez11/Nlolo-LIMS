@@ -42,7 +42,18 @@ public record EnrolmentRow(int lineNumber,
                             String borrowerPhone,
                             BigDecimal loanPrincipalAmount,
                             Integer loanTermMonths,
-                            LocalDate disbursementDate) {
+                            LocalDate disbursementDate,
+                            /**
+                             * What the LENDER said this loan's premium is, or null where they
+                             * sent no such column.
+                             *
+                             * <p>Never used to price anything: the insurer prices from the
+                             * scheme's own rate and basis, and a counterparty's figure is not an
+                             * instruction. It is carried so the two can be compared, because a
+                             * file whose premium column is discarded reconciles against nothing
+                             * — and one-file-one-invoice exists precisely to be reconciled.
+                             */
+                            BigDecimal statedPremiumAmount) {
 
     /** Age on the day the loan was paid out, which is the day cover starts. */
     public int entryAge() {

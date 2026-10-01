@@ -84,6 +84,8 @@ class FinaccountingApiIntegrationTest {
         // disabled and UPDATE/DELETE still granted to app_role.
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
@@ -97,13 +99,17 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
+            "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             "db-migrations/finaccounting/V1__create_finaccounting_schema.sql",
             "db-migrations/finaccounting/V2__grants_rls_chart_of_accounts_journal_entry_and_posting_columns.sql",
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
-            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql");
+            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
+            "db-migrations/finaccounting/V7__q4_2026_partitions.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -118,6 +124,31 @@ class FinaccountingApiIntegrationTest {
     @Autowired private GlPostingRepository glPostingRepository;
     @Autowired private ChartOfAccountSeeder chartOfAccountSeeder;
     @Autowired private ChartOfAccountRepository chartOfAccountRepository;
+    @Autowired private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @Test
+    void aPaidSurrenderIsBookedOnceAgainstClaimsExpenseAndCash() {
+        // Through the real listener: the event is published inside a committed transaction, so the
+        // AFTER_COMMIT finaccounting listener fires exactly as it does behind policy.markSurrenderPaid.
+        UUID tenantId = UUID.randomUUID();
+        String surrenderRequestId = UUID.randomUUID().toString();
+        java.util.Map<String, Object> payload = java.util.Map.of("surrenderRequestId", surrenderRequestId,
+            "policyNumber", "POL-SURR-GL", "paidAmount", java.util.Map.of("amount", "1240000.00", "currencyCode", "TZS"));
+        org.springframework.transaction.support.TransactionTemplate tx =
+            new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        for (int delivery = 0; delivery < 2; delivery++) {   // a redelivery must not post twice
+            tx.executeWithoutResult(s -> eventPublisher.publishEvent(
+                tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("policy.SurrenderPaid", tenantId, payload)));
+        }
+
+        TenantContext.set(tenantId);
+        List<JournalEntryView> entries = finaccountingApi.listJournalEntries(null, "POL-SURR-GL", Pageable.unpaged()).getContent();
+        assertThat(entries).extracting(JournalEntryView::sourceRef).containsExactly(surrenderRequestId);
+        TenantContext.set(tenantId);
+        assertThat(glPostingRepository.findByTenantIdAndAccountCodeAndPeriod(tenantId, PostingRule.CLAIMS_EXPENSE,
+            java.time.YearMonth.now().toString())).hasSize(1);
+    }
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }

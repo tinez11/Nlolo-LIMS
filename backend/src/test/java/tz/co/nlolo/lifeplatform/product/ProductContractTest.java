@@ -28,6 +28,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -66,7 +67,9 @@ class ProductContractTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V14__credit_life_category.sql",
-            "db-migrations/product/V15__exclusion_periods.sql");
+            "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql");
     }
 
     @AfterEach
@@ -515,6 +518,75 @@ class ProductContractTest {
             .andExpect(jsonPath("$.tiraFiling.reference").value("TIRA/LIFE/2026/0777"))
             .andExpect(jsonPath("$.tiraFiling.approvalDate").value("2026-01-15"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Autowired
+    private tz.co.nlolo.lifeplatform.product.api.ProductApi productApi;
+
+    /**
+     * A cash-value table authored over the wire is readable back (step 1). Before this the tables
+     * had no write path at all -- only a raw SQL insert in one test -- so no product could ever
+     * be published with surrender values, and nothing in the console could author one.
+     */
+    @Test
+    void aCashValueTableSurvivesAPublishOverHttpAndIsReadableBack() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProduct(tenantId, "CV-WIRE-01", "Savings Over Http");   // ENDOWMENT
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/LIFE/2026/0901","approvalDate":"2026-01-15"},
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
+                                    {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+                     "cashValue":{"basisReference":"ACT/2026/ENDOW-01","basisDate":"2026-01-10",
+                                  "paidUpBasis":"PROPORTIONATE","minYearsForValue":2,
+                                  "rows":[{"policyYear":2,"cashValuePerMille":200},{"policyYear":3,"cashValuePerMille":300}]}}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        TenantContext.set(tenantId);
+        UUID versionId = productApi.getActiveSnapshot(productId, LocalDate.of(2026, 6, 1)).productVersionId();
+        assertThat(productApi.getCashValueConfig(versionId)).hasValueSatisfying(c -> {
+            assertThat(c.basisReference()).isEqualTo("ACT/2026/ENDOW-01");
+            assertThat(c.minYearsForValue()).isEqualTo(2);
+        });
+        assertThat(productApi.resolveCashValuePerMille(versionId, 3, null)).hasValueSatisfying(
+            v -> assertThat(v).isEqualByComparingTo("300"));
+    }
+
+    @Test
+    void aCashValueTableOnPureProtectionIsRefusedOverHttp() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        String productId = JsonPath.read(mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"productCode":"CV-TERM-01","productName":"Term With Values","category":"TERM_LIFE","defaultCurrency":"TZS"}
+                    """))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.productId");
+
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
+                     "tiraFiling":{"reference":"TIRA/LIFE/2026/0902","approvalDate":"2026-01-15"},
+                     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},
+                                    {"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+                     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+                     "cashValue":{"basisReference":"ACT/2026/X","basisDate":"2026-01-10","paidUpBasis":"PROPORTIONATE",
+                                  "minYearsForValue":2,"rows":[{"policyYear":2,"cashValuePerMille":200}]}}
+                    """))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("A TERM_LIFE product cannot carry a cash-value table"));
     }
 
     /** And a publish with no filing at all is refused at the edge, not deep in the service. */

@@ -44,6 +44,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -81,6 +82,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -93,6 +95,8 @@ class PolicyApiIntegrationTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -120,6 +124,8 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",
@@ -129,7 +135,9 @@ class PolicyApiIntegrationTest {
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/distribution/V3__rls_fail_closed.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql");
     }
 
     @Autowired private PolicyRepository policyRepository;
@@ -1506,6 +1514,126 @@ class PolicyApiIntegrationTest {
         assertEquals(0, new BigDecimal("90000").compareTo(quote.quotedValueAmount()));
     }
 
+    /** Seed a cash-value config + scale for a version, so a policy on it can be valued (step 1). */
+    private void seedCashValue(UUID tenantId, UUID versionId) {
+        TenantContext.set(tenantId);
+        // The test connects as the table owner, so RLS is bypassed and tenant_id is set explicitly.
+        jdbcTemplate.update("INSERT INTO product.cash_value_config "
+            + "(product_version_id, tenant_id, basis_reference, basis_date, paid_up_basis, min_years_for_value) "
+            + "VALUES (?, ?, 'TEST-BASIS-2026', '2026-01-01', 'PROPORTIONATE', 2)", versionId, tenantId);
+        // Year 2 -> 200 per 1,000; year 3 -> 300. Unbanded (any entry age).
+        jdbcTemplate.update("INSERT INTO product.cash_value_table "
+            + "(tenant_id, product_version_id, policy_year, cash_value_per_mille) VALUES (?, ?, 2, 200)", tenantId, versionId);
+        jdbcTemplate.update("INSERT INTO product.cash_value_table "
+            + "(tenant_id, product_version_id, policy_year, cash_value_per_mille) VALUES (?, ?, 3, 300)", tenantId, versionId);
+    }
+
+    @Test
+    void aSavingsPolicysCashValueFollowsTheTableAndBacksALoan() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-CV-01");
+        seedCashValue(tenantId, fixture.productVersionId());
+
+        // A policy that commenced three years ago on this savings version, sum assured 2,000,000.
+        TenantContext.set(tenantId);
+        LocalDate commencement = LocalDate.now().minusYears(3);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "cash value test", commencement, 240, null, null, null);
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(policyNumber);
+
+        // One year paid: below the 2-year minimum, so no value yet.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(1));
+        assertEquals(0, BigDecimal.ZERO.compareTo(
+            policyAccountRepository.findById(policyNumber).orElseThrow().getCashValueAmount()));
+
+        // Two years paid: year-2 scale, 2,000,000 * 200 / 1000 = 400,000.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(2));
+        assertEquals(0, new BigDecimal("400000.00").compareTo(
+            policyAccountRepository.findById(policyNumber).orElseThrow().getCashValueAmount()));
+
+        // Three years paid: year-3 scale, 600,000.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(3));
+        assertEquals(0, new BigDecimal("600000.00").compareTo(
+            policyAccountRepository.findById(policyNumber).orElseThrow().getCashValueAmount()));
+
+        // The cash value now backs a loan -- the loan module reads exactly this field, which was
+        // 0 for every policy until this step. No LTV on this version, so the whole 600,000 is
+        // borrowable: 700,000 is refused, and 500,000 reserves.
+        assertThrows(tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException.class, () ->
+            policyApi.reserveLoanValue(policyNumber, new BigDecimal("700000.00"), "TZS", Duration.ofMinutes(10)));
+        assertThat(policyApi.reserveLoanValue(policyNumber, new BigDecimal("500000.00"), "TZS", Duration.ofMinutes(10)))
+            .isNotNull();
+    }
+
+    @Test
+    void makingASavingsPolicyPaidUpReducesCoverAndStopsPremiums() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-PU-01");
+        seedCashValue(tenantId, fixture.productVersionId());
+
+        // Commenced 3 years ago, 20-year cover, premiums payable over 10 years (120 months).
+        TenantContext.set(tenantId);
+        LocalDate commencement = LocalDate.now().minusYears(3);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "paid-up test", commencement, 240, 120, null, null);
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(policyNumber);
+        // Premiums paid to 3 years in: records paid_to_date, which paid-up reads.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(3));
+
+        PolicyView paidUp = policyApi.makePaidUp(policyNumber, "finance-officer");
+
+        // Proportionate: 2,000,000 * 36 months paid / 120 payable = 600,000, and the policy is now
+        // PAID_UP -- in force, no premium due.
+        assertEquals(PolicyStatus.PAID_UP, paidUp.status());
+        assertEquals(0, new BigDecimal("600000.00").compareTo(paidUp.sumAssuredAmount()));
+        assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+        // The coverage a claim pays against carries the reduced figure.
+        assertThat(policyApi.getCoverageStatus(policyNumber, null).activeCoverages())
+            .allSatisfy(c -> assertEquals(0, new BigDecimal("600000.00").compareTo(c.sumAssuredAmount())));
+        // Already paid-up: not convertible again.
+        assertThrows(InvalidPolicyStateException.class, () -> policyApi.makePaidUp(policyNumber, "finance-officer"));
+    }
+
+    @Test
+    void paidUpIsRefusedOnANonSavingsPolicy() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "PROTECTION-PU");
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        policyApi.activateOnFirstPremium(policyNumber);
+        // No cash-value config on this version -> nothing to make paid-up.
+        assertThrows(InvalidPolicyStateException.class, () -> policyApi.makePaidUp(policyNumber, "finance-officer"));
+    }
+
+    @Test
+    void theLoanToValuePercentCapsWhatCanBeBorrowedAgainstCashValue() {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-CV-LTV");
+        seedCashValue(tenantId, fixture.productVersionId());
+        // Cap this version's loan-to-value at 50%.
+        TenantContext.set(tenantId);
+        jdbcTemplate.update("UPDATE product.product_version SET max_loan_to_value_percent = 50 WHERE product_version_id = ?",
+            fixture.productVersionId());
+
+        LocalDate commencement = LocalDate.now().minusYears(3);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "ltv test", commencement, 240, null, null, null);
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(policyNumber);
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(3)); // cash value 600,000
+
+        // 50% of 600,000 = 300,000 borrowable: 350,000 is refused (it would be allowed without the
+        // cap, since cash value is 600,000), and 300,000 reserves.
+        assertThrows(tz.co.nlolo.lifeplatform.policy.api.InsufficientLoanValueException.class, () ->
+            policyApi.reserveLoanValue(policyNumber, new BigDecimal("350000.00"), "TZS", Duration.ofMinutes(10)));
+        assertThat(policyApi.reserveLoanValue(policyNumber, new BigDecimal("300000.00"), "TZS", Duration.ofMinutes(10)))
+            .isNotNull();
+    }
+
     @Test
     void issuedPolicyExposesPremiumFields() {
         UUID tenantId = UUID.randomUUID();
@@ -1626,5 +1754,70 @@ class PolicyApiIntegrationTest {
         assertThat(auditRows).hasSize(1);
         JsonNode payload = objectMapper.readTree(auditRows.get(0).getPayload());
         assertThat(payload.path("policyNumber").asText()).isEqualTo(policyNumber);
+    }
+
+    @Test
+    void surrenderRequestAndApprovalByADifferentUserSurrendersThePolicy() {
+        // Two-person rule: the requester may not also approve. Test the happy path (two different
+        // users) and the same-user rejection in one fixture to avoid spinning up two Postgres
+        // contexts. Setup mirrors makingASavingsPolicyPaidUpReducesCoverAndStopsPremiums above.
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-SURR-01");
+        seedCashValue(tenantId, fixture.productVersionId());
+
+        TenantContext.set(tenantId);
+        LocalDate commencement = LocalDate.now().minusYears(3);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(),
+            fixture.productVersionId(), new BigDecimal("2000000"), "TZS", new BigDecimal("50000.00"), "TZS", "MONTHLY",
+            null, List.of(), "surrender test", commencement, 240, null, null, null);
+        String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+        policyApi.activateOnFirstPremium(policyNumber);
+        // Three years paid: year-3 scale gives 600,000 cash value, well above zero.
+        policyApi.recalculateCashValue(policyNumber, commencement.plusYears(3));
+
+        // Step 1: request a surrender. Returns a REQUESTED surrender with the quoted value.
+        PolicyApi.SurrenderRequestView req = policyApi.requestSurrender(policyNumber, "MPESA-0712345678", "alice");
+        assertEquals("REQUESTED", req.status());
+        assertEquals(policyNumber, req.policyNumber());
+        assertEquals(0, new BigDecimal("600000.00").compareTo(req.quotedValueAmount()));
+        assertEquals("alice", req.requestedBy());
+        // Cover is still in force during REQUESTED state.
+        assertTrue(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+
+        // Two-person rule: alice cannot approve her own request.
+        UUID requestId = req.surrenderRequestId();
+        assertThrows(InvalidPolicyStateException.class, () -> policyApi.approveSurrender(requestId, "alice"));
+
+        // Step 2: a different officer approves. Cover stops as of today (Q2 decision).
+        PolicyApi.SurrenderRequestView approved = policyApi.approveSurrender(requestId, "bob");
+        assertEquals("APPROVED", approved.status());
+        assertEquals("bob", approved.approvedBy());
+        // And the policy page can find it again, which is how the approver reached it.
+        assertEquals(requestId, policyApi.findLatestSurrenderRequest(policyNumber).orElseThrow().surrenderRequestId());
+
+        // The policy is now SURRENDERED and no longer in force.
+        assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());
+        assertFalse(policyApi.isPolicyInForce(policyNumber, LocalDate.now()));
+
+        // A second surrender request on the same policy is refused (no in-flight surrender allowed
+        // AND the policy is no longer in a surrenderable state).
+        assertThrows(InvalidPolicyStateException.class,
+            () -> policyApi.requestSurrender(policyNumber, "MPESA-0712345678", "carol"));
+    }
+
+    @Test
+    void surrenderIsRefusedBeforeTheMinimumYears() {
+        // min_years_for_value is 2 (seeded by seedCashValue). A policy issued today has not passed
+        // the minimum and must be refused immediately -- before any cash value exists.
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "SAVINGS-SURR-02");
+        seedCashValue(tenantId, fixture.productVersionId());
+
+        TenantContext.set(tenantId);
+        String policyNumber = issueDirectly(tenantId, fixture, List.of());
+        policyApi.activateOnFirstPremium(policyNumber);
+        // Cash value is zero (no recalculate call) -- minimum-years gate fires first.
+        assertThrows(InvalidPolicyStateException.class,
+            () -> policyApi.requestSurrender(policyNumber, "MPESA-0712345678", "requester"));
     }
 }

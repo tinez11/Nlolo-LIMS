@@ -275,10 +275,25 @@ discovered in year 11.
 
 ### 2.8 Premium is a single premium; the bank earns commission on it
 
-Premium is an agreed percent **per annum** of the original principal, charged once at
-enrolment, invoiced as **one invoice per accepted file** carrying the total across its
-members. One charge, one collection, no arrears, no lapse — and one file-to-invoice
-correspondence, which is what reconciliation arguments are actually about.
+Premium is an agreed percent of the original principal, charged once at enrolment, invoiced as
+**one invoice per accepted file** carrying the total across its members. One charge, one
+collection, no arrears, no lapse — and one file-to-invoice correspondence, which is what
+reconciliation arguments are actually about.
+
+**How that percent becomes money is the scheme's own, and the two real lenders disagree**
+(answered 2026-09-29 from their schedules; this paragraph said "per annum" and was wrong for
+both). `CreditLifePremiumBasis` states it per scheme, with no default:
+
+- `FLAT_ON_PRINCIPAL` — Bumaco. The rate once, term irrelevant; a two-month loan costs what a
+  twelve-month one does.
+- `PER_ANNUM_ON_PRINCIPAL` — the rate times the term in years. What this platform computed
+  before a basis existed, and what every scheme written before it was priced on.
+- `ANNUAL_ON_DECLINING_BALANCE` — LOLC. The rate once per policy year, each year on the
+  principal still outstanding, summed and charged once.
+
+All three agree exactly at twelve months and diverge on every other term, which is why the
+single formula went unnoticed: the fixtures were annual. The gap on one real Bumaco file was
+54,333.33 on 111,000.
 
 Early settlement refunds **pro rata**, and commission claws back pro rata with it. Without
 the matching clawback the insurer returns the borrower's premium while the bank keeps

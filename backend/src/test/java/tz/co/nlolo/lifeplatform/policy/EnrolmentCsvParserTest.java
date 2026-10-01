@@ -314,4 +314,51 @@ class EnrolmentCsvParserTest {
         assertThat(parsed.errors()).hasSize(1);
         assertThat(parsed.errors().get(0).detail()).contains("Set the column format to Text");
     }
+
+    // ---- the lender's own premium ------------------------------------------
+    //
+    // Read so a file can be RECONCILED. It prices nothing: the insurer charges from the
+    // scheme's own rate and basis, and the counterparty's figure is evidence rather than an
+    // instruction. Both real schedules carry one and it used to be discarded.
+
+    @Test
+    void readsTheLendersOwnPremiumWhenTheFileCarriesOne() {
+        var parsed = EnrolmentCsvParser.parse(new StringReader(
+            "borrower_full_name,borrower_date_of_birth,loan_principal_amount,loan_term_months,"
+            + "disbursement_date,lender_premium_amount\n"
+            + "JULIUS MBASHANGO MALUNDE,1960-05-12,1500000.00,4,2026-05-18,9000.00\n"));
+
+        assertThat(parsed.errors()).isEmpty();
+        // BUMACO's own figure for that loan, off their May schedule.
+        assertThat(parsed.rows().get(0).statedPremiumAmount()).isEqualByComparingTo("9000.00");
+    }
+
+    @Test
+    void aFileWithNoPremiumColumnStatesNothingRatherThanZero() {
+        // Null and zero are different answers: one reconciles against nothing, the other
+        // claims the lender said the cover was free.
+        var parsed = parse("LN-1,Amina Hassan Mwinyi,1988-03-14,F,,,8500000.00,48,2026-08-03\n");
+
+        assertThat(parsed.rows().get(0).statedPremiumAmount()).isNull();
+    }
+
+    @Test
+    void anUnreadablePremiumIsIgnoredRatherThanRefusingTheRow() {
+        // The five required columns decide whether a borrower can be covered. This one cannot:
+        // refusing cover because the counterparty's own premium cell is malformed would be a
+        // rejection that helps nobody, and the row still reconciles against nothing.
+        var parsed = EnrolmentCsvParser.parse(new StringReader(
+            "borrower_full_name,borrower_date_of_birth,loan_principal_amount,loan_term_months,"
+            + "disbursement_date,lender_premium_amount\n"
+            + "Amina Hassan Mwinyi,1988-03-14,8500000.00,48,2026-08-03,9.0E+03\n"));
+
+        assertThat(parsed.errors()).isEmpty();
+        assertThat(parsed.rows()).hasSize(1);
+        assertThat(parsed.rows().get(0).statedPremiumAmount()).isNull();
+    }
+
+    @Test
+    void theTemplateOffersThePremiumColumnSoALenderKnowsItIsRead() {
+        assertThat(EnrolmentCsvParser.templateCsv()).contains("lender_premium_amount");
+    }
 }

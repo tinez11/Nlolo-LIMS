@@ -98,7 +98,9 @@ test.describe('staff policies', () => {
     await expect(page.getByRole('tab', { name: 'Loans' })).toBeVisible();
   });
 
-  test('the deferred surrender action is disabled, not merely broken', async ({ page }) => {
+  test('a term policy offers no surrender at all, because it has nothing to surrender', async ({
+    page,
+  }) => {
     await page.goto('/staff/policies');
     const firstRow = await firstPolicyRow(page);
     test.skip(firstRow === null, 'no seeded policy to open');
@@ -107,10 +109,17 @@ test.describe('staff policies', () => {
     await firstRow.click();
     await page.getByRole('dialog').getByRole('link', { name: /full detail/i }).click();
 
-    // POST /policies/{n}/surrender really does return 501 -- the choreography was
-    // deferred with the workflow engine. The button must be inert rather than
-    // producing an error the user cannot act on.
-    await expect(page.getByRole('button', { name: /surrender/i })).toBeDisabled();
+    /*
+      This asserted a disabled "Surrender" button while POST /policies/{n}/surrender was a 501.
+      Product step 1 made surrender real, and the action moved into the Value panel -- which only
+      a savings product gets, because a term policy never has a cash value to cash in. Every
+      seeded policy is term business, so the honest assertion is that the panel is absent here.
+      A disabled button for a product that can never qualify would be offering an act that is not
+      merely unavailable but meaningless.
+    */
+    await expect(page.getByRole('heading', { name: 'Lifecycle' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Value' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /surrender/i })).toHaveCount(0);
   });
 
   test('a filter is shareable through the URL', async ({ page }) => {

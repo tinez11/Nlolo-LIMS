@@ -106,6 +106,10 @@ describe('STATUS_MAPS coverage', () => {
         // An offer that expired unpaid. This test is what caught its absence when the status was
         // added backend-side, which is the job it exists to do.
         'NOT_TAKEN_UP',
+        // A term policy that ran its full term and paid nothing (product step 0).
+        'EXPIRED',
+        // The customer stopped paying and keeps reduced cover (product step 1).
+        'PAID_UP',
         'PROPOSED',
         'REINSTATED',
         'SURRENDERED',

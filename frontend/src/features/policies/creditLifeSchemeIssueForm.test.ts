@@ -40,6 +40,44 @@ function errorsFor(values: CreditLifeSchemeIssueFormValues): Record<string, stri
   return first;
 }
 
+describe('the premium basis', () => {
+  /**
+   * The rate does not say what to do with itself, and the two real lenders read the same
+   * percentage differently. Bumaco charges it flat on the disbursed amount — their May
+   * schedule prices a two-month loan exactly as it prices a twelve-month one — while LOLC
+   * charges it once per policy year on the balance still outstanding.
+   */
+  it('carries the basis to the request, since the rate alone does not price anything', () => {
+    const parsed = creditLifeSchemeIssueFormSchema(TODAY).safeParse({
+      ...valid(),
+      premiumRatePercent: '0.6',
+      premiumBasis: 'FLAT_ON_PRINCIPAL' as const,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(toIssueRequest(parsed.data).premiumBasis).toBe('FLAT_ON_PRINCIPAL');
+    }
+  });
+
+  it('accepts every basis the contract declares', () => {
+    for (const premiumBasis of [
+      'FLAT_ON_PRINCIPAL',
+      'PER_ANNUM_ON_PRINCIPAL',
+      'ANNUAL_ON_DECLINING_BALANCE',
+    ] as const) {
+      expect(
+        creditLifeSchemeIssueFormSchema(TODAY).safeParse({ ...valid(), premiumBasis }).success,
+      ).toBe(true);
+    }
+  });
+
+  it('refuses a basis that is not one of them, rather than passing it to the server', () => {
+    expect(
+      creditLifeSchemeIssueFormSchema(TODAY).safeParse({ ...valid(), premiumBasis: 'FLAT' }).success,
+    ).toBe(false);
+  });
+});
+
 describe('creditLifeSchemeIssueFormSchema', () => {
   it('accepts a lender and terms, with no borrowers at all', () => {
     // The shape a lender relationship actually starts in: the rate, the limit and the interest

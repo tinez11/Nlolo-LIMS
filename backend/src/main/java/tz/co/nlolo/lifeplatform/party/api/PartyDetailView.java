@@ -57,6 +57,15 @@ public record PartyDetailView(
      * policy's agent of record — which is what makes the registering agent's commission real.
      * Party cannot resolve it itself: it may not depend on distribution.
      */
+    /**
+     * The insurer's OWN reference for this client, or null where none was supplied.
+     *
+     * <p>Not an identity document and not the platform id: {@code partyId} names the client to
+     * this platform and {@code identityDocument} names the person to the state, while this is
+     * the number the business already uses for them elsewhere. Optional by design -- it exists
+     * for reconciliation, and a client without one is complete.
+     */
+    String clientReference,
     UUID registeredByPartyId,
     /**
      * Who {@code createdBy} is, by name, captured from their token at registration (V5) -- so

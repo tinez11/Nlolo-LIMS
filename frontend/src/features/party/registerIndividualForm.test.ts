@@ -15,6 +15,12 @@ const valid = () => ({
   dateOfBirth: '1990-05-12',
   phoneNumber: '+255712345678',
   email: 'amina@example.tz',
+  // Required as of 2026-09-30. Sex because the pricing pipeline refuses to price a life
+  // without it, and an identity document because a client nobody can identify cannot be
+  // KYC-verified. A fixture omitting them would model a client the form no longer accepts.
+  sex: 'FEMALE' as const,
+  idType: 'NATIONAL_ID' as const,
+  idNumber: '19900512-12345-00001-12',
 });
 
 describe('registerIndividualFormSchema', () => {
@@ -103,11 +109,14 @@ describe('the person record', () => {
   // means "not recorded", and "" would be a recorded blank. On a KYC register those
   // are different claims about a person.
   it('omits unanswered fields rather than sending empty strings', () => {
+    // Asserted on the fields that are still OPTIONAL. Sex and the identity document became
+    // required on 2026-09-30 and so are always answered now; smoker status is the one to keep
+    // an eye on, because UNKNOWN means the question was put and not answered while absent
+    // means nobody asked, and a product may price those differently.
     const request = toApiRequest(registerIndividualFormSchema.parse(valid()));
-    expect('sex' in request).toBe(false);
     expect('smokerStatus' in request).toBe(false);
     expect('occupation' in request).toBe(false);
-    expect('idType' in request).toBe(false);
+    expect('employerName' in request).toBe(false);
   });
 
   it('omits the address object entirely when no part of it was given', () => {
@@ -132,17 +141,48 @@ describe('the person record', () => {
   });
 
   it('rejects an ID number with no document type', () => {
-    const result = registerIndividualFormSchema.safeParse({ ...valid(), idNumber: 'A1234567' });
+    const result = registerIndividualFormSchema.safeParse({ ...valid(), idType: '', idNumber: 'A1234567' });
     expect(result.success).toBe(false);
   });
 
   it('rejects a document type with no ID number', () => {
-    const result = registerIndividualFormSchema.safeParse({ ...valid(), idType: 'PASSPORT' });
+    const result = registerIndividualFormSchema.safeParse({ ...valid(), idType: 'PASSPORT', idNumber: '' });
     expect(result.success).toBe(false);
   });
 
-  it('accepts neither, since an identity document is optional', () => {
-    expect(registerIndividualFormSchema.safeParse(valid()).success).toBe(true);
+  /**
+   * This asserted the opposite until 2026-09-30, when the document became required: a client
+   * nobody can identify cannot be KYC-verified, and an unverifiable client cannot hold a
+   * policy. Asked for at registration rather than discovered at verification, by which point
+   * the agent who took the details has moved on.
+   */
+  it('rejects a client with no identity document at all', () => {
+    const result = registerIndividualFormSchema.safeParse({
+      ...valid(),
+      idType: '',
+      idNumber: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a client whose sex is unrecorded, because nothing can price them', () => {
+    const result = registerIndividualFormSchema.safeParse({ ...valid(), sex: '' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((i) => i.path.join('.'))).toContain('sex');
+    }
+  });
+
+  it('carries the client reference through, and leaves it out when blank', () => {
+    const withRef = toApiRequest(
+      registerIndividualFormSchema.parse({ ...valid(), clientReference: 'CLT-000412' }),
+    );
+    expect(withRef.clientReference).toBe('CLT-000412');
+    // Absent rather than empty: "" would occupy the unique index and refuse the blank to
+    // everybody else, which is a confusing way to discover a typo.
+    expect(toApiRequest(registerIndividualFormSchema.parse(valid()))).not.toHaveProperty(
+      'clientReference',
+    );
   });
 
   it('rejects a nationality that is not two letters', () => {

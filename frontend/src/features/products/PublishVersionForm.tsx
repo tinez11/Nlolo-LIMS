@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, X } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, useFieldArray, useWatch, Controller } from 'react-hook-form';
 import {
   BENEFIT_CALCULATION_METHODS,
@@ -10,13 +10,16 @@ import {
   RATING_FACTOR_TYPES,
   type ProductCategory,
 } from '@/api/types';
+import { ConfirmAct } from '@/components/ConfirmAct';
 import { DatePicker } from '@/components/DatePicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { selectPublishing, useProductStore } from '@/store/productStore';
 import {
   blankBenefitRow,
+  blankCashValueRow,
   blankFundRow,
+  CASH_VALUE_CATEGORIES,
   blankBaseRateBand,
   blankRatingFactorRow,
   doubleCountedFactorMessage,
@@ -109,8 +112,14 @@ export function PublishVersionForm({
       quarterlyLoadingPercent: '',
       tiraReference: '',
       tiraApprovalDate: '',
+      cashValueBasisReference: '',
+      cashValueBasisDate: '',
+      cashValuePaidUpBasis: '',
+      cashValueMinYears: '',
+      cashValueRows: [],
     },
   });
+  const cashValueRows = useFieldArray({ control, name: 'cashValueRows' });
 
   const ratingTable = useFieldArray({ control, name: 'ratingTable' });
   // useWatch, not watch(): one subscription for the whole array rather than a watch() call
@@ -129,6 +138,14 @@ export function PublishVersionForm({
   const benefitRows = useWatch({ control, name: 'benefitSchedule' });
   const fundDefinitions = useFieldArray({ control, name: 'fundDefinitions' });
 
+  /*
+    Held between the submit and the second, deliberate click. Publishing retires the version
+    that is active now and repoints every subsequent policy at these rates -- a compliance-grade
+    act with no retraction -- and it was the one such act on the platform reached in a single
+    click, while claim settlement, EFT execution and reinstatement all confirm.
+  */
+  const [pending, setPending] = useState<PublishVersionFormValues | null>(null);
+
   async function onSubmit(values: PublishVersionFormValues) {
     await publishVersion(productId, toApiRequest(values));
     if (useProductStore.getState().publishing[productId]?.status === 'success') {
@@ -137,7 +154,7 @@ export function PublishVersionForm({
   }
 
   return (
-    <form className="space-y-4" onSubmit={(e) => void handleSubmit(onSubmit)(e)}>
+    <form className="space-y-4" onSubmit={(e) => void handleSubmit((v) => setPending(v))(e)}>
       <div className="grid grid-cols-2 gap-3">
         <FormField label="IFRS measurement model">
           <Select
@@ -516,7 +533,8 @@ export function PublishVersionForm({
       <div className="rounded-md border border-border p-3">
         <p className="text-xs font-medium text-muted-foreground">Base rates (optional)</p>
         <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
-          The annual rate per 1,000 of sum assured, by age band, sex and smoker status. A
+          The annual rate per 1,000 of sum assured, by age band, sex and smoker status, and
+          optionally by policy term in months (blank term = every term). A
           version published without them is valid and sellable but{' '}
           <strong className="font-medium text-foreground">can never be quoted</strong>, and
           rates cannot be added afterwards. Leave a rate blank to not price that
@@ -524,16 +542,17 @@ export function PublishVersionForm({
         </p>
 
         {/*
-          41rem is this row's measured content width: 64 + 64 + 112 + 3x112 + 32 with six
-          8px gaps = 656px. The header appears only at or above it, because a header over a
-          row that has already wrapped labels the wrong boxes -- which is what 37.5rem, a
-          figure carried over from the narrower rating table above, would have done.
+          54rem is this row's measured content width: 64 + 64 + 112 + 2x96 (term) + 3x112 + 32
+          with eight 8px gaps = 864px. The header appears only at or above it, because a header
+          over a row that has already wrapped labels the wrong boxes.
         */}
         <div className="@container">
-          <div className="mb-1 hidden items-center gap-2 px-1 text-xs text-subtle-foreground @min-[41rem]:flex">
+          <div className="mb-1 hidden items-center gap-2 px-1 text-xs text-subtle-foreground @min-[54rem]:flex">
             <span className="w-16 shrink-0 text-right">From</span>
             <span className="w-16 shrink-0 text-right">To</span>
             <span className="w-28 shrink-0">Sex</span>
+            <span className="w-24 shrink-0 text-right">Term from</span>
+            <span className="w-24 shrink-0 text-right">Term to</span>
             {BASE_RATE_COLUMNS.map((c) => (
               <span key={c.key} className="w-28 shrink-0 text-right">
                 {c.label}
@@ -548,6 +567,8 @@ export function PublishVersionForm({
               const rowMessage =
                 rowErrors?.ageFrom?.message ??
                 rowErrors?.ageTo?.message ??
+                rowErrors?.termFromMonths?.message ??
+                rowErrors?.termToMonths?.message ??
                 BASE_RATE_COLUMNS.map((c) => rowErrors?.[c.key]?.message).find(Boolean);
 
               return (
@@ -560,7 +581,7 @@ export function PublishVersionForm({
                     band gets a border and becomes one visible block. Above it the border
                     goes and the rows sit under the shared header instead.
                   */}
-                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 @min-[41rem]:rounded-none @min-[41rem]:border-0 @min-[41rem]:p-0">
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 @min-[54rem]:rounded-none @min-[54rem]:border-0 @min-[54rem]:p-0">
                     <Input
                       type="number"
                       min={0}
@@ -588,6 +609,26 @@ export function PublishVersionForm({
                       <option value="FEMALE">Female</option>
                       <option value="MALE">Male</option>
                     </Select>
+                    {/* Optional term band in months: blank on both means the rate applies to
+                        every term. */}
+                    <Input
+                      type="number"
+                      min={1}
+                      inputSize="sm" className="w-24 shrink-0 text-right"
+                      placeholder="Term from"
+                      aria-label={`Base rate ${index + 1} term from months`}
+                      aria-invalid={rowErrors?.termFromMonths ? true : undefined}
+                      {...register(`baseRates.${index}.termFromMonths`)}
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      inputSize="sm" className="w-24 shrink-0 text-right"
+                      placeholder="Term to"
+                      aria-label={`Base rate ${index + 1} term to months`}
+                      aria-invalid={rowErrors?.termToMonths ? true : undefined}
+                      {...register(`baseRates.${index}.termToMonths`)}
+                    />
                     {BASE_RATE_COLUMNS.map((c) => (
                       <Input
                         key={c.key}
@@ -759,6 +800,124 @@ export function PublishVersionForm({
         </Button>
       </div>
 
+      {/*
+        The cash-value (surrender value) table -- what a savings policy is worth as it runs, the
+        figure surrender, paid-up and policy loans all read. Only on the savings categories: pure
+        protection has no cash value and the server refuses a table there. Cannot be added after
+        publishing, the same as base rates.
+      */}
+      {CASH_VALUE_CATEGORIES.includes(category) && (
+        <div className="rounded-md border border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground">Cash value (optional)</p>
+          <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
+            The surrender value per 1,000 of sum assured at each policy year, from the table the
+            actuary supplies, optionally by entry-age band. Leave it empty for a version with no
+            cash value. A table needs the actuarial sign-off it was issued under.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Actuarial basis reference" error={errors.cashValueBasisReference?.message}>
+              <Input inputSize="sm" placeholder="ACT/2026/ENDOW-01" {...register('cashValueBasisReference')} />
+            </FormField>
+            <FormField label="Basis date" error={errors.cashValueBasisDate?.message}>
+              <Controller
+                control={control}
+                name="cashValueBasisDate"
+                render={({ field }) => (
+                  <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />
+                )}
+              />
+            </FormField>
+            <FormField label="Paid-up basis" error={errors.cashValuePaidUpBasis?.message}>
+              <Select inputSize="sm" {...register('cashValuePaidUpBasis')}>
+                <option value="">Choose…</option>
+                <option value="PROPORTIONATE">Proportionate</option>
+                <option value="TABLE">From the table</option>
+              </Select>
+            </FormField>
+            <FormField label="Years before any value" error={errors.cashValueMinYears?.message}>
+              <Select inputSize="sm" {...register('cashValueMinYears')}>
+                <option value="">Choose…</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+              </Select>
+            </FormField>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {cashValueRows.fields.map((field, index) => {
+              const rowErrors = errors.cashValueRows?.[index];
+              const rowMessage =
+                rowErrors?.policyYear?.message ??
+                rowErrors?.ageFrom?.message ??
+                rowErrors?.ageTo?.message ??
+                rowErrors?.cashValuePerMille?.message ??
+                rowErrors?.paidUpPerMille?.message;
+              return (
+                <div key={field.id}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="number" min={1} inputSize="sm" className="w-20 shrink-0 text-right"
+                      placeholder="Year"
+                      aria-label={`Cash value ${index + 1} policy year`}
+                      aria-invalid={rowErrors?.policyYear ? true : undefined}
+                      {...register(`cashValueRows.${index}.policyYear`)}
+                    />
+                    <Input
+                      type="number" min={0} inputSize="sm" className="w-20 shrink-0 text-right"
+                      placeholder="Age from"
+                      aria-label={`Cash value ${index + 1} entry age from`}
+                      aria-invalid={rowErrors?.ageFrom ? true : undefined}
+                      {...register(`cashValueRows.${index}.ageFrom`)}
+                    />
+                    <Input
+                      type="number" min={0} inputSize="sm" className="w-20 shrink-0 text-right"
+                      placeholder="Age to"
+                      aria-label={`Cash value ${index + 1} entry age to`}
+                      aria-invalid={rowErrors?.ageTo ? true : undefined}
+                      {...register(`cashValueRows.${index}.ageTo`)}
+                    />
+                    <Input
+                      type="number" min={0} step="0.0001" inputSize="sm" className="w-28 shrink-0 text-right"
+                      placeholder="Value per 1,000"
+                      aria-label={`Cash value ${index + 1} value per 1,000`}
+                      aria-invalid={rowErrors?.cashValuePerMille ? true : undefined}
+                      {...register(`cashValueRows.${index}.cashValuePerMille`)}
+                    />
+                    <Input
+                      type="number" min={0} step="0.0001" inputSize="sm" className="w-28 shrink-0 text-right"
+                      placeholder="Paid-up per 1,000"
+                      aria-label={`Cash value ${index + 1} paid-up per 1,000`}
+                      aria-invalid={rowErrors?.paidUpPerMille ? true : undefined}
+                      {...register(`cashValueRows.${index}.paidUpPerMille`)}
+                    />
+                    <Button
+                      type="button" size="icon" variant="ghost" className="shrink-0"
+                      aria-label="Remove cash value row"
+                      onClick={() => cashValueRows.remove(index)}
+                    >
+                      <X />
+                    </Button>
+                  </div>
+                  {rowMessage && (
+                    <p role="alert" className="mt-1 px-1 text-xs text-status-danger-fg">{rowMessage}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {errors.cashValueRows?.root?.message && (
+            <p role="alert" className="mt-1 text-xs text-status-danger-fg">{errors.cashValueRows.root.message}</p>
+          )}
+          <Button
+            type="button" size="sm" variant="ghost" className="-ml-2 mt-2"
+            onClick={() => cashValueRows.append(blankCashValueRow())}
+          >
+            <Plus />
+            Add policy year
+          </Button>
+        </div>
+      )}
+
       {category === 'UNIT_LINKED' && (
         <div className="rounded-md border border-border p-3">
           <p className="mb-2 text-xs font-medium text-muted-foreground">
@@ -808,9 +967,38 @@ export function PublishVersionForm({
         <InlineError error={publishing.error} />
       )}
 
-      <Button type="submit" variant="primary" disabled={publishing.status === 'loading'}>
-        {publishing.status === 'loading' ? 'Publishing…' : 'Publish version'}
-      </Button>
+      {pending ? (
+        <ConfirmAct
+          heading="Publish this version?"
+          consequence={
+            <>
+              Make this the active version from <strong>{pending.effectiveDate}</strong>. Every
+              policy priced from then on uses these rates, and the version that is active now is
+              retired.
+            </>
+          }
+          /*
+            A fact about the backend, not caution: `ProductApi.publishVersion` retires every
+            currently-ACTIVE version before inserting the new one, and there is no operation
+            that retracts a published version.
+          */
+          reversal={
+            <>
+              Nothing here retracts it. Correcting a published price means publishing a further
+              version, and any policy written in the meantime keeps the price it was sold at.
+            </>
+          }
+          // Distinct from the trigger, for the reason given in DecisionPanel.
+          confirmLabel="Publish and make active"
+          busy={publishing.status === 'loading'}
+          onConfirm={() => void onSubmit(pending)}
+          onCancel={() => setPending(null)}
+        />
+      ) : (
+        <Button type="submit" variant="primary" pending={publishing.status === 'loading'}>
+          Publish version
+        </Button>
+      )}
     </form>
   );
 }

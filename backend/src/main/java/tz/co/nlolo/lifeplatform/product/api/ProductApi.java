@@ -67,7 +67,17 @@ public interface ProductApi {
      * a premium is computed FROM; {@link RatingFactorInput}'s multipliers apply on
      * top for occupation class and sum-assured band.
      */
-    record BaseRateInput(int ageFrom, int ageTo, Sex sex, SmokerStatus smokerStatus, BigDecimal ratePerMille) {}
+    /**
+     * One base-rate cell. {@code termFromMonths}/{@code termToMonths} band the rate by policy term
+     * (V16): both null = any term (the pre-term-banding shape), both set = a term within [from, to]
+     * inclusive. The 5-arg form is kept so every existing unbanded call site reads unchanged.
+     */
+    record BaseRateInput(int ageFrom, int ageTo, Sex sex, SmokerStatus smokerStatus, BigDecimal ratePerMille,
+                         Integer termFromMonths, Integer termToMonths) {
+        public BaseRateInput(int ageFrom, int ageTo, Sex sex, SmokerStatus smokerStatus, BigDecimal ratePerMille) {
+            this(ageFrom, ageTo, sex, smokerStatus, ratePerMille, null, null);
+        }
+    }
 
     /**
      * What a premium is quoted for. Money arrives as amount + currency rather than
@@ -87,10 +97,22 @@ public interface ProductApi {
      * <p>{@code occupationClass} and {@code smokerStatus} are still ASSERTED by the caller: no
      * party record is read on this path.
      */
+    /**
+     * {@code policyTermMonths} is the term the quote is for (V16). Optional: null means "no term"
+     * (whole life, an annuity), which prices only against unbanded rates and is refused on a
+     * term-banded version. The 8-arg form is kept so existing unbanded call sites read unchanged.
+     */
     record PremiumQuoteInput(UUID productId, BigDecimal sumAssuredAmount, String sumAssuredCurrency,
                              LocalDate dateOfBirth, Sex sex, SmokerStatus smokerStatus,
                              String occupationClass,
-                             PremiumFrequency frequency, LocalDate asOf) {}
+                             PremiumFrequency frequency, LocalDate asOf, Integer policyTermMonths) {
+        public PremiumQuoteInput(UUID productId, BigDecimal sumAssuredAmount, String sumAssuredCurrency,
+                                 LocalDate dateOfBirth, Sex sex, SmokerStatus smokerStatus,
+                                 String occupationClass, PremiumFrequency frequency, LocalDate asOf) {
+            this(productId, sumAssuredAmount, sumAssuredCurrency, dateOfBirth, sex, smokerStatus,
+                occupationClass, frequency, asOf, null);
+        }
+    }
 
     /** One multiplier that was applied, in the order it was applied. */
     record AppliedFactor(FactorType factorType, String band, BigDecimal multiplier) {}
@@ -252,6 +274,16 @@ public interface ProductApi {
                          List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, TiraFiling tiraFiling, String publishedBy);
 
     /**
+     * The fullest form: also the version's cash-value table and its actuarial sign-off (product
+     * step 1). Every other overload delegates here with {@link CashValuePlan#none()}; the table is
+     * written in the same transaction as the version, so a version can never exist half-valued.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, String publishedBy);
+
+    /**
      * What this version charges for instalment payment.
      *
      * <p>Internal-only, not part of {@code openapi-product.yaml} — the same convention as
@@ -377,7 +409,7 @@ public interface ProductApi {
      *                     genuinely has nothing to assert.
      */
     Optional<BigDecimal> resolveBaseRatePerMille(UUID productVersionId, int ageAtEntry,
-                                                  Sex sex, SmokerStatus smokerStatus);
+                                                  Sex sex, SmokerStatus smokerStatus, Integer termMonths);
 
     /**
      * The AGE multiplier for an applicant of {@code age}, resolved by RANGE rather than by
@@ -404,4 +436,31 @@ public interface ProductApi {
      * resolveRatingMultiplier).
      */
     ProductSnapshotView getSnapshotByVersionId(UUID productVersionId);
+
+    /**
+     * A version's cash-value configuration, present only for a savings product (V17). Its presence
+     * is how a caller tells a savings contract from pure protection: {@code policy} reads it on each
+     * premium to decide whether to value the policy at all, and {@code min years} gates when a value
+     * first exists.
+     */
+    record CashValueConfigView(String basisReference, java.time.LocalDate basisDate,
+                               String paidUpBasis, int minYearsForValue) {}
+
+    /** The cash-value configuration for {@code productVersionId}, or empty for a non-savings product. */
+    Optional<CashValueConfigView> getCashValueConfig(UUID productVersionId);
+
+    /**
+     * The cash value per 1,000 of sum assured at {@code policyYear} for a life entering at
+     * {@code ageAtEntry} (null where the scale is not age-banded). Empty when the version has no
+     * cash-value table, or no row for that year/age -- a gap the actuary did not price, which the
+     * caller must treat as "no value", never as zero-by-default masquerading as priced.
+     */
+    Optional<BigDecimal> resolveCashValuePerMille(UUID productVersionId, int policyYear, Integer ageAtEntry);
+
+    /**
+     * The paid-up sum assured per 1,000 at {@code policyYear}/{@code ageAtEntry}, for the TABLE
+     * paid-up basis. Empty when no row applies or the row carries no paid-up scale (the version uses
+     * the PROPORTIONATE basis, which needs no table).
+     */
+    Optional<BigDecimal> resolvePaidUpPerMille(UUID productVersionId, int policyYear, Integer ageAtEntry);
 }

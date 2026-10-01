@@ -97,6 +97,11 @@ public class Policy {
     @Column(name = "maturity_date")
     private LocalDate maturityDate;
 
+    // When a customer surrender took effect (V30). Cover stops on this date; a death before it is
+    // covered, on or after it is not. Null on a policy surrendered by a settled claim.
+    @Column(name = "surrender_effective_date")
+    private LocalDate surrenderEffectiveDate;
+
     @Column(name = "suspended_at")
     private Instant suspendedAt;
 
@@ -188,6 +193,20 @@ public class Policy {
             // a product, it is a data error.
             throw new IllegalArgumentException(
                 "Premium-paying term cannot exceed the policy term");
+        }
+        // A contract paid ONCE cannot have a paying term of several months, and the two had
+        // been free to disagree: policies exist carrying MONTHLY with a paying term of 1, which
+        // reads as "monthly instalments, paid for one month" and is neither. Nothing anywhere
+        // refused it, because each field is independently valid.
+        //
+        // Only the SINGLE direction is enforced here. The recurring direction -- that MONTHLY
+        // over a twelve-month term ought to pay for twelve of them -- is a real gap too, but
+        // rejecting it now would invalidate policies already written, so it stays a known one.
+        if ("SINGLE".equals(premiumFrequency)
+                && premiumPayingTermMonths != null && premiumPayingTermMonths != 1) {
+            throw new IllegalArgumentException(
+                "A SINGLE premium is charged once, so its premium-paying term must be 1 month "
+                    + "(or absent), not " + premiumPayingTermMonths);
         }
 
         this.commencementDate = commencementDate;
@@ -383,8 +402,170 @@ public class Policy {
     }
 
     public boolean isInForce() {
-        return "ACTIVE".equals(status) || "REINSTATED".equals(status);
+        // PAID_UP is in force: the customer stopped paying but keeps (reduced) cover. Only the
+        // premium stops, not the cover.
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status) || "PAID_UP".equals(status);
     }
+
+    /**
+     * The zone a policy's DATES are read in. Lapse and suspension are stamped as instants, and a
+     * lapse at 01:00 in Dar es Salaam is still the previous day in UTC -- so a death on the day of
+     * a lapse would be judged against the wrong date for three hours of every night. Named, not
+     * {@code systemDefault()}, for the reason {@code OfferReminderDispatcher} gives for the same
+     * constant: the answer must not depend on how the host happens to be configured.
+     */
+    private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
+
+    /**
+     * Was this contract providing cover on {@code day}? The one date-bounded answer on the
+     * platform, and the question a claim actually asks.
+     *
+     * <p>{@link #isInForce()} answers something else -- whether cover is running TODAY -- and was
+     * being asked in its place. That was wrong in both directions: a death years after a term
+     * ended read as covered because nothing had changed the status, and a death that happened
+     * before a lapse, reported after it, was refused because the status had changed. The second
+     * is the commonest late death claim there is, because dunning lapses a deceased life's policy
+     * on its own.
+     *
+     * <p>The upper bound is the maturity date: a term's cover ends as that date begins. Within the
+     * term, a LAPSED or SUSPENDED contract was on risk until the day it lapsed or was suspended,
+     * and EXPIRED was on risk for the whole term -- expiry records that the term closed, not that
+     * cover failed.
+     *
+     * <p><b>The lower bound is the commencement date when one is recorded, and nothing when it is
+     * not.</b> A deliberately backdated or future-dated contract carries a commencement, and cover
+     * before it is no cover -- provable, so refused. A normally issued policy carries no
+     * commencement (cover starts at activation, and the platform stamps no date for that), so there
+     * is no recorded cover-start to refuse against; the issue date is administrative, not the
+     * moment risk began, and asserting a boundary the platform does not truly record is exactly
+     * what this class must not do. The console still advises on the issue date at intake. This is
+     * unchanged from the behaviour before this method existed, which never lower-bounded at all.
+     *
+     * <p><b>Known limit.</b> A REINSTATED policy keeps its {@code lapsedAt} and records no
+     * reinstatement date, so the gap between the two cannot be told apart from cover. It is
+     * treated as on risk throughout, which is what the platform did before this method existed.
+     */
+    public boolean wasOnRiskOn(LocalDate day) {
+        if (day == null) {
+            return false;
+        }
+        if (commencementDate != null && day.isBefore(commencementDate)) {
+            return false;
+        }
+        if (maturityDate != null && !day.isBefore(maturityDate)) {
+            return false;
+        }
+        return switch (status) {
+            case "ACTIVE", "REINSTATED", "EXPIRED", "PAID_UP" -> true;
+            case "LAPSED" -> lapsedAt != null && day.isBefore(lapsedAt.atZone(CIVIL_ZONE).toLocalDate());
+            case "SUSPENDED" -> suspendedAt != null
+                && day.isBefore(suspendedAt.atZone(CIVIL_ZONE).toLocalDate());
+            // A customer-surrendered policy was on risk until its effective date; a claim-terminated
+            // one carries no such date (cover was discharged by the claim) and is off risk.
+            case "SURRENDERED" -> surrenderEffectiveDate != null && day.isBefore(surrenderEffectiveDate);
+            // PROPOSED and NOT_TAKEN_UP were never on risk; MATURED is closed.
+            default -> false;
+        };
+    }
+
+    /**
+     * The last date a premium can fall due: start plus the premium-paying term, or the policy
+     * term where no shorter paying term was agreed. Null where the contract does not term at
+     * all -- whole life, an annually renewable scheme -- which billing reads as "no end".
+     *
+     * <p>Computed here and carried on {@code policy.PolicyIssued}, because billing may not read
+     * this module's tables and must not re-derive a contractual date on its own.
+     */
+    public LocalDate premiumPayingUntil() {
+        Integer months = premiumPayingTermMonths != null ? premiumPayingTermMonths : policyTermMonths;
+        LocalDate start = commencementDate != null ? commencementDate : issueDate;
+        if (months == null || start == null) {
+            return null;
+        }
+        return start.plusMonths(months);
+    }
+
+    /** Whether {@link #expire()} would succeed on {@code today}. Asked first, for the reason {@link #canLapse()} gives. */
+    public boolean canExpire(LocalDate today) {
+        return maturityDate != null && !today.isBefore(maturityDate)
+            && ("ACTIVE".equals(status) || "REINSTATED".equals(status) || "SUSPENDED".equals(status));
+    }
+
+    /**
+     * The term ran out. Terminal: nothing reinstates an EXPIRED policy, because reinstatement
+     * revives a LAPSED one and a term that has ended has nothing left to revive.
+     *
+     * <p>Not MATURED. A term policy that reaches its end pays nothing -- that is what term
+     * insurance is -- while MATURED says a maturity benefit was settled. A policy that carries a
+     * maturity benefit is never expired; the sweep that calls this skips it.
+     *
+     * <p>Already EXPIRED is a satisfied post-condition and returns silently, so a second drain
+     * instance racing the first does nothing rather than failing.
+     */
+    public void expire(LocalDate today) {
+        // Any terminal status is a satisfied post-condition -- MATURED and SURRENDERED as well as
+        // EXPIRED -- so a policy that closed between the drain selecting it and this call is left
+        // alone rather than throwing. Same shape as mature()/terminateForSettledClaim().
+        if (isClosed()) {
+            return;
+        }
+        if (!canExpire(today)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " cannot expire on " + today
+                + " (status " + status + ", maturity date " + maturityDate + ")");
+        }
+        this.status = "EXPIRED";
+    }
+
+    /** Whether {@link #makePaidUp} would succeed. In force or lapsed-with-value can convert. */
+    public boolean canMakePaidUp() {
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status) || "LAPSED".equals(status);
+    }
+
+    /**
+     * The customer stops paying and keeps reduced cover (guide §21.3). The sum assured drops to the
+     * paid-up figure the service computed, and the status becomes PAID_UP -- in force, no premium
+     * due. Accepted from ACTIVE, REINSTATED (still paying) and LAPSED (a non-forfeiture conversion
+     * of a policy that fell into arrears but has value).
+     *
+     * <p>Reduces the aggregate's own sum assured directly, unlike {@link #restateSumAssured} which
+     * refuses anything but a scheme: paid-up IS the sanctioned way an individual policy's sum
+     * assured moves, so it is expressed here rather than routed around that guard.
+     */
+    public void makePaidUp(BigDecimal paidUpSumAssured) {
+        if (!canMakePaidUp()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " must be ACTIVE, REINSTATED or LAPSED to be made paid-up (current: " + status + ")");
+        }
+        if (paidUpSumAssured == null || paidUpSumAssured.signum() <= 0) {
+            throw new IllegalArgumentException("A paid-up sum assured must be positive, was: " + paidUpSumAssured);
+        }
+        this.sumAssuredAmount = paidUpSumAssured;
+        this.status = "PAID_UP";
+    }
+
+    /** Whether a customer surrender would be accepted: in force, paid-up, or lapsed-with-value. */
+    public boolean canSurrender() {
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status)
+            || "PAID_UP".equals(status) || "LAPSED".equals(status);
+    }
+
+    /**
+     * Customer surrender takes effect (step 1, task 4; user decision Q2 -- cover stops at approval).
+     * The status becomes SURRENDERED and the effective date is recorded, so wasOnRiskOn can tell a
+     * death before it (covered) from one on or after it (not). Distinct from
+     * {@link #terminateForSettledClaim()}, which also reaches SURRENDERED but through a claim and
+     * carries no surrender date.
+     */
+    public void surrender(LocalDate effectiveDate) {
+        if (!canSurrender()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " cannot be surrendered from status " + status);
+        }
+        this.status = "SURRENDERED";
+        this.surrenderEffectiveDate = effectiveDate;
+    }
+
+    public LocalDate getSurrenderEffectiveDate() { return surrenderEffectiveDate; }
 
     /**
      * A MATURITY claim settled, or the policy reached term. Terminal.
@@ -437,8 +618,21 @@ public class Policy {
      * the same fix isolated that call -- it rolled back the claim's own SETTLED transition after
      * the money had already left. Nothing is gained by failing here: the goal is already met.
      */
+    /**
+     * Whether the contract has ended -- MATURED, SURRENDERED or EXPIRED. Public so the service's
+     * "suppress the repeat event" checks ask the aggregate rather than restate the list, which is
+     * how adding EXPIRED would otherwise have announced a maturity that never happened.
+     */
+    public boolean isClosed() {
+        return alreadyClosed();
+    }
+
     private boolean alreadyClosed() {
-        return "MATURED".equals(status) || "SURRENDERED".equals(status);
+        // EXPIRED too. A death during the term, settled after the term ended, discharges cover on
+        // a policy that has already stopped being invoiced -- the goal closure exists for is
+        // met, and throwing here would do it inside claims' settlement listener, after the money
+        // had left. The policy keeps EXPIRED, which is the truer record of how it ended.
+        return "MATURED".equals(status) || "SURRENDERED".equals(status) || "EXPIRED".equals(status);
     }
 
     /**

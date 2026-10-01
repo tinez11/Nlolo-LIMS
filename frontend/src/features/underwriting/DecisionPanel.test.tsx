@@ -21,6 +21,10 @@ const decidedCase = (over: Partial<UnderwritingCaseView> = {}): UnderwritingCase
     status: 'IN_REVIEW',
     recommendationOutcome: 'ACCEPT',
     recommendationReason: 'Standard risk profile',
+    // Assessed by SOMEBODY ELSE, which is the ordinary state of a case that is ready to be
+    // decided: the panel withholds the form until there is evidence, and separation of duties
+    // means the person deciding is never the person who assessed.
+    assessedBy: ['another-underwriter-sub'],
     ...over,
   }) as UnderwritingCaseView;
 
@@ -55,7 +59,7 @@ describe('the engine recommendation', () => {
   });
 
   it('says plainly when there is none, rather than rendering an empty box', () => {
-    renderPanel({ view: { recommendationOutcome: null, recommendationReason: null } });
+    renderPanel({ view: { recommendationOutcome: null, recommendationReason: null, assessedBy: [] } });
     expect(screen.getByText(/No recommendation yet/)).toBeInTheDocument();
   });
 });
@@ -68,9 +72,63 @@ describe('the senior underwriter gate', () => {
     await user.type(screen.getByLabelText('Reason'), 'Agrees with the recommendation');
     await user.click(screen.getByRole('button', { name: 'Record decision' }));
 
+    // The submit arms the confirmation; nothing is decided until the second click.
+    expect(onDecide).not.toHaveBeenCalled();
+    expect(screen.getByText('Record this acceptance?')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Record the acceptance' }));
+
     expect(onDecide).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'ACCEPT', reason: 'Agrees with the recommendation' }),
     );
+  });
+
+  /**
+   * The decision was the one comparably consequential act with no confirmation: a decided case
+   * is closed to further evidence unless it was POSTPONED, and on an acceptance it issues the
+   * policy. The confirmation has to state which of those is about to happen.
+   */
+  it('states the consequence and the absence of a way back before deciding', async () => {
+    const user = userEvent.setup();
+    const { onDecide } = renderPanel({ isSenior: true });
+
+    await user.selectOptions(screen.getByLabelText('Decision'), 'DECLINED');
+    await user.type(screen.getByLabelText('Reason'), 'Adverse history disclosed off-system');
+    await user.click(screen.getByRole('button', { name: 'Record decision' }));
+
+    expect(screen.getByText('Decline this risk?')).toBeInTheDocument();
+    expect(screen.getByText(/No policy is issued/)).toBeInTheDocument();
+    expect(screen.getByText(/the case closes to further evidence/)).toBeInTheDocument();
+    expect(onDecide).not.toHaveBeenCalled();
+  });
+
+  it('lets the underwriter back out of the confirmation without deciding', async () => {
+    const user = userEvent.setup();
+    const { onDecide } = renderPanel();
+
+    await user.type(screen.getByLabelText('Reason'), 'Agrees with the recommendation');
+    await user.click(screen.getByRole('button', { name: 'Record decision' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onDecide).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Record decision' })).toBeEnabled();
+  });
+
+  /**
+   * A postponement is the one outcome that can be decided again, so saying "nothing can undo
+   * this" there would be the overstatement `ConfirmAct` exists to prevent.
+   */
+  it('tells the truth about a postponement being recoverable', async () => {
+    const user = userEvent.setup();
+    // Senior: postponing departs from the ACCEPT recommendation, so a junior is blocked
+    // before any confirmation is reached.
+    renderPanel({ isSenior: true });
+
+    await user.selectOptions(screen.getByLabelText('Decision'), 'POSTPONED');
+    await user.type(screen.getByLabelText('Reason'), 'Awaiting the medical report');
+    await user.click(screen.getByRole('button', { name: 'Record decision' }));
+
+    expect(screen.getByText(/can be decided again once new evidence arrives/)).toBeInTheDocument();
   });
 
   it('blocks a junior departing from it, and says who can', async () => {
@@ -103,22 +161,66 @@ describe('the senior underwriter gate', () => {
 
     await user.type(screen.getByLabelText('Reason'), 'Adverse history disclosed off-system');
     await user.click(screen.getByRole('button', { name: 'Record decision' }));
+    await user.click(screen.getByRole('button', { name: 'Decline the risk' }));
 
     expect(onDecide).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'DECLINED' }));
   });
 
   /**
-   * Matches the server: a case with no recommendation has nothing to disagree with, so a
-   * junior may decide it freely.
+   * This test used to assert the opposite, on a premise that was simply wrong: "a case with no
+   * recommendation has nothing to disagree with, so a junior may decide it freely." The server
+   * does not let ANYBODY decide such a case -- `UnderwritingApiImpl.decide` refuses a case with
+   * no assessment, and no recommendation means no assessment, because the engine runs on every
+   * assessment and all four of its paths return an outcome.
+   *
+   * The panel said the same thing in as many words ("You can still decide"), so the screen
+   * invited an underwriter to fill the form and then handed them a raw validation error.
    */
-  it('does not treat a case with no recommendation as an override', async () => {
-    const user = userEvent.setup();
-    renderPanel({ view: { recommendationOutcome: null } });
+  it('withholds the form until an assessment exists, rather than inviting a refusal', () => {
+    renderPanel({ view: { recommendationOutcome: null, assessedBy: [] } });
 
-    await user.selectOptions(screen.getByLabelText('Decision'), 'DECLINED');
+    expect(screen.queryByLabelText('Decision')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record decision' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Record an assessment first/)).toBeInTheDocument();
+  });
 
-    expect(screen.queryByText(/a senior underwriter has to record it/)).not.toBeInTheDocument();
+  it('no longer claims an unassessed case can be decided', () => {
+    renderPanel({ view: { recommendationOutcome: null, recommendationReason: null, assessedBy: [] } });
+
+    expect(screen.getByText(/No recommendation yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/You can\s+still decide/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * A GROUP SCHEME is assessed and never gets a recommendation, for ever.
+   *
+   * `recommendFromEvidence` returns early for one -- "no engine opinion on a group scheme, and
+   * this is a decision rather than a gap", because the age band it would resolve belongs to a
+   * company rather than a life. An earlier version of this gate asked whether a recommendation
+   * existed and so made every scheme case permanently undecidable, which is the opposite of
+   * the documented intent: "an underwriter settles a scheme without a senior being demanded for
+   * departing from advice that was never given."
+   */
+  it('lets an assessed scheme be decided even though the engine will never advise on it', () => {
+    renderPanel({
+      view: {
+        groupScheme: true,
+        recommendationOutcome: null,
+        recommendationReason: null,
+        assessedBy: ['another-underwriter-sub'],
+      },
+    });
+
+    expect(screen.getByLabelText('Decision')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Record decision' })).toBeEnabled();
+    expect(screen.getByText(/No recommendation on a scheme/)).toBeInTheDocument();
+  });
+
+  it('withholds the form on an unassessed case whatever the recommendation says', () => {
+    renderPanel({ view: { recommendationOutcome: null, assessedBy: [] } });
+
+    expect(screen.queryByLabelText('Decision')).not.toBeInTheDocument();
+    expect(screen.getByText(/Record an assessment first/)).toBeInTheDocument();
   });
 });
 

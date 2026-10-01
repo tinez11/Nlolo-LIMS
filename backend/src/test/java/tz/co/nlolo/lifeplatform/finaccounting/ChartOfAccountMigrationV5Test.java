@@ -66,7 +66,8 @@ class ChartOfAccountMigrationV5Test {
 
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(),
             POSTGRES.getPassword(),
-            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql");
+            "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
+            "db-migrations/finaccounting/V7__q4_2026_partitions.sql");
     }
 
     /** The nine flat accounts as M9 seeded them -- no parent, no level, no status. */

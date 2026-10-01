@@ -1,5 +1,4 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { listAgents } from '@/api/distribution';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -17,6 +16,8 @@ import { isInitialLoad } from '@/store/createResourceSlice';
 import { selectIssuingScheme, usePolicyStore } from '@/store/policyStore';
 import { selectProductSnapshot, useProductStore } from '@/store/productStore';
 import {
+  CREDIT_LIFE_PREMIUM_BASES,
+  CREDIT_LIFE_PREMIUM_BASIS_LABELS,
   IN_FORCE_ISSUANCE_BASES,
   blankCreditLifeSchemeIssueForm,
   creditLifeSchemeIssueFormSchema,
@@ -144,16 +145,8 @@ export function IssueCreditLifeSchemePage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to="/staff/policies">
-            <ArrowLeft />
-            All policies
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Set up a credit-life scheme"
         description="A lender's book. The terms are agreed once here; the borrowers arrive every month on a file."
       />
@@ -233,6 +226,26 @@ export function IssueCreditLifeSchemePage() {
                 <Input placeholder="0.5" {...register('premiumRatePercent')} />
                 <p className="mt-1 text-xs text-subtle-foreground">
                   Charged once per borrower on what they borrowed, not on the declining balance.
+                </p>
+              </FormField>
+
+              <FormField label="How the rate is charged" error={errors.premiumBasis?.message}>
+                <Select {...register('premiumBasis')}>
+                  {CREDIT_LIFE_PREMIUM_BASES.map((b) => (
+                    <option key={b} value={b}>
+                      {CREDIT_LIFE_PREMIUM_BASIS_LABELS[b]}
+                    </option>
+                  ))}
+                </Select>
+                {/*
+                  A worked example, not a restatement of the label. The three bases agree
+                  exactly on a twelve-month loan and diverge on every other term, so the only
+                  way to tell them apart on this screen is to price the same loan three ways.
+                */}
+                <p className="mt-1 text-xs text-subtle-foreground">
+                  On a 10,400,000 loan over 18 months at 0.5%: flat charges 52,000, per year on
+                  the disbursed amount 78,000, and per year on the outstanding balance 69,333.33.
+                  Check the lender's own schedule — this is what they agreed, not a preference.
                 </p>
               </FormField>
 
@@ -326,8 +339,8 @@ export function IssueCreditLifeSchemePage() {
           {issuing.status === 'error' && issuing.error && <ErrorPanel error={issuing.error} />}
 
           <div className="flex items-center gap-2 border-t border-border pt-3">
-            <Button type="submit" disabled={issuing.status === 'loading'}>
-              {issuing.status === 'loading' ? 'Setting up…' : 'Set up the scheme'}
+            <Button type="submit" pending={issuing.status === 'loading'}>
+              Set up the scheme
             </Button>
             <p className="text-xs text-muted-foreground">
               Lands on the scheme&rsquo;s monthly files, ready for the first enrolment.

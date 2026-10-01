@@ -45,18 +45,43 @@ public class PolicyAccount {
     public String getPolicyNumber() { return policyNumber; }
     public java.util.UUID getTenantId() { return tenantId; }
     public BigDecimal getCashValueAmount() { return cashValueAmount; }
+
+    /**
+     * Restate the cash value from the product's cash-value table as premiums are paid (step 1).
+     * Set, not added: cash value is a function of the contract at a policy year, read from the
+     * table, not a running total -- so each premium recomputes it rather than incrementing it.
+     * Refuses a negative (the table's per-mille is non-negative; a negative here is a bug upstream)
+     * and updates the touch timestamp so the change is auditable.
+     */
+    public void restateCashValue(BigDecimal amount) {
+        if (amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException(
+                "Cash value cannot be negative, was: " + amount + " (policy " + policyNumber + ")");
+        }
+        this.cashValueAmount = amount;
+        this.updatedAt = Instant.now();
+    }
     public String getCashValueCurrency() { return cashValueCurrency; }
     public BigDecimal getLoanEncumbranceAmount() { return loanEncumbranceAmount; }
 
+    /** Uncapped: cash value net of encumbrance and holds. Kept for callers that have no LTV to apply. */
     public BigDecimal availableLoanValue(BigDecimal currentlyReserved) {
-        // Deliberate M3 simplification (Global Constraints): available value is cash value net
-        // of confirmed encumbrance and currently-RESERVED holds -- NOT further capped by
-        // product_version.max_loan_to_value_percent, which would require issuePolicy to persist
-        // that percentage onto PolicyAccount/Policy and is not required to prove the
-        // Module-Architecture-B1 race-condition fix, this milestone's actual acceptance
-        // criterion. Flagged, not silently dropped -- a future milestone can apply the LTV cap
-        // as a further multiplier on cashValueAmount before this subtraction.
-        return cashValueAmount.subtract(loanEncumbranceAmount).subtract(currentlyReserved);
+        return availableLoanValue(currentlyReserved, null);
+    }
+
+    /**
+     * Available loan value, capped by the product's loan-to-value percent (step 1). The borrowable
+     * base is cash value × LTV% (the whole cash value when the percent is null or 100+), then net of
+     * confirmed encumbrance and currently-RESERVED holds. The M3 simplification that ignored the LTV
+     * is closed: the percent is read from the policy's own product version and passed here.
+     */
+    public BigDecimal availableLoanValue(BigDecimal currentlyReserved, BigDecimal maxLoanToValuePercent) {
+        BigDecimal base = cashValueAmount;
+        if (maxLoanToValuePercent != null && maxLoanToValuePercent.compareTo(new BigDecimal("100")) < 0) {
+            base = cashValueAmount.multiply(maxLoanToValuePercent)
+                .divide(new BigDecimal("100"), 2, java.math.RoundingMode.DOWN);
+        }
+        return base.subtract(loanEncumbranceAmount).subtract(currentlyReserved);
     }
 
     /**

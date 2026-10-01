@@ -23,4 +23,8 @@ public record BaseRateRequest(
     @NotNull @PositiveOrZero Integer ageTo,
     @NotNull Sex sex,
     @NotNull SmokerStatus smokerStatus,
-    @NotNull @Positive BigDecimal ratePerMille) {}
+    @NotNull @Positive BigDecimal ratePerMille,
+    // Optional term band (V16): both null = any term, both set = a term within [from, to]. The
+    // application refuses one set without the other and any overlap; the shape CHECK backs it.
+    @Positive Integer termFromMonths,
+    @Positive Integer termToMonths) {}

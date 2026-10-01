@@ -7,7 +7,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
-import tz.co.nlolo.lifeplatform.claims.api.MaturityClaimDetails;
+import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -79,7 +79,7 @@ import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
  * established convention, not something a compiler or a structural test enforces for test code;
  * see below) validates against a REAL, in-force policy, which in turn needs a real product and
  * applicant -- {@code buildFixture}/{@code
- * issuePolicy}/{@code registerMaturityClaim} below are copied verbatim from {@code
+ * issuePolicy}/{@code registerFixtureClaim} below are copied verbatim from {@code
  * ClaimsContractTest}'s own identically-named helpers for exactly that reason, not reinvented.
  * {@code party::api}/{@code product::api}/{@code policy::api}/{@code claims::api} are all
  * NAMED-INTERFACE ({@code .api}) packages -- this is a design choice made to follow established
@@ -122,11 +122,14 @@ class DocumentContractTest {
     static void applyMigrationsAndCreateBuckets() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/party/V1__create_party_schema.sql",
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -139,6 +142,8 @@ class DocumentContractTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -159,6 +164,10 @@ class DocumentContractTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -247,14 +256,16 @@ class DocumentContractTest {
         return policyNumber;
     }
 
-    /** MATURITY needs no assessment to exist as a REGISTERED claim -- the only state this class's
-     * evidence-download test needs. */
-    private UUID registerMaturityClaim(UUID tenantId, UUID claimantId, String policyNumber) {
+    /** A REGISTERED claim -- the only state this class's evidence-download test needs. DEATH, not
+     * MATURITY: a maturity claim is now only claimable once the policy has reached its maturity
+     * date, and this fixture's policy has no term. DEATH registers cleanly on the active policy and
+     * stays REGISTERED. */
+    private UUID registerFixtureClaim(UUID tenantId, UUID claimantId, String policyNumber) {
         TenantContext.set(tenantId);
         LocalDate dateOfEvent = LocalDate.now().minusDays(1);
         ClaimView view = claimsApi.registerClaim(
-            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.MATURITY, dateOfEvent,
-                new MaturityClaimDetails(dateOfEvent)),
+            new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimantId, ClaimType.DEATH, dateOfEvent,
+                new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfEvent, "Dr. Test")),
             "dct-reg-" + UUID.randomUUID(), "claims-staff-fixture");
         TenantContext.clear();
         return view.claimId();
@@ -354,7 +365,7 @@ class DocumentContractTest {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "DOCUMENT-CT-EVIDENCE-01");
         String policyNumber = issuePolicy(tenantId, fixture);
-        UUID claimId = registerMaturityClaim(tenantId, fixture.applicantId(), policyNumber);
+        UUID claimId = registerFixtureClaim(tenantId, fixture.applicantId(), policyNumber);
         byte[] evidenceContent = "owning-customer-evidence-bytes".getBytes();
         String evidenceRef = attachEvidence(tenantId, claimId, evidenceContent);
 

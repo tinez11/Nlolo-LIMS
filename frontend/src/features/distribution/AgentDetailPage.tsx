@@ -1,9 +1,10 @@
-import { ArrowLeft, Pause, Play } from 'lucide-react';
+import { Pause, Play } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { readIdentity, staffRoles } from '@/auth/claims';
 import { PageHeader } from '@/components/PageHeader';
+import { InlineError } from '@/components/InlineError';
 import { Field } from '@/components/Field';
 import { AgentName } from '@/components/AgentName';
 import { PartyName } from '@/components/PartyName';
@@ -60,19 +61,19 @@ export function AgentDetailPage() {
 
   if (detail.data === null && detail.status === 'error' && detail.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={detail.error} onRetry={() => void loadAgent(agentId)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too, so a record that fails to load keeps its
+            heading and its way out instead of leaving a bare panel. */}
+        <PageHeader breadcrumb={[{ label: 'Agents', to: '/staff/agents' }]} title="Agent" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={detail.error} onRetry={() => void loadAgent(agentId)} />
+        </div>
+      </>
     );
   }
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       {/*
         The licence number stays the title -- an agent IS a licence here, the register is
         keyed by it and `GET /agents?q=` matches on it. What the byline said was the agent's
@@ -83,6 +84,7 @@ export function AgentDetailPage() {
         already loaded, so its partyId costs no second request.
       */}
       <PageHeader
+        breadcrumb={[{ label: 'Agents', to: '/staff/agents' }]}
         title={agent?.licenseNumber ?? 'Agent'}
         description={
           <span className="flex flex-wrap items-baseline gap-x-2">
@@ -164,16 +166,6 @@ export function AgentDetailPage() {
   }
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to="../new" relative="path">
-        <ArrowLeft />
-        Onboard another agent
-      </Link>
-    </Button>
-  );
-}
 
 /**
  * `POST /agents/{n}/suspend`/`reactivate` -- `AgentProfile.setLicenseStatus`
@@ -217,13 +209,11 @@ function SuspendAction({ agentId }: { agentId: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {suspending.status === 'error' && suspending.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {suspending.error.detail ?? suspending.error.title}
-        </p>
+        <InlineError error={suspending.error} />
       )}
-      <Button size="sm" disabled={suspending.status === 'loading'} onClick={() => void suspendAgent(agentId)}>
+      <Button size="sm" pending={suspending.status === 'loading'} onClick={() => void suspendAgent(agentId)}>
         <Pause />
-        {suspending.status === 'loading' ? 'Suspending…' : 'Suspend'}
+        Suspend
       </Button>
     </div>
   );
@@ -242,13 +232,11 @@ function ReactivateAction({ agentId }: { agentId: string }) {
   return (
     <div className="space-y-2 px-4 pb-4">
       {reactivating.status === 'error' && reactivating.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {reactivating.error.detail ?? reactivating.error.title}
-        </p>
+        <InlineError error={reactivating.error} />
       )}
-      <Button size="sm" disabled={reactivating.status === 'loading'} onClick={() => void reactivateAgent(agentId)}>
+      <Button size="sm" pending={reactivating.status === 'loading'} onClick={() => void reactivateAgent(agentId)}>
         <Play />
-        {reactivating.status === 'loading' ? 'Reactivating…' : 'Reactivate'}
+        Reactivate
       </Button>
     </div>
   );

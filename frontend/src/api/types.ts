@@ -17,7 +17,7 @@ import type { components as CommonComponents } from '@/types/api/common';
 import type { components as CommunicationComponents } from '@/types/api/communication';
 import type { components as PartyComponents } from '@/types/api/party';
 import type { components as PaymentComponents } from '@/types/api/payment';
-import type { components as PolicyComponents } from '@/types/api/policy';
+import type { components as PolicyComponents, paths as PolicyPaths } from '@/types/api/policy';
 import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { components as FinaccountingComponents } from '@/types/api/finaccounting';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
@@ -28,6 +28,12 @@ import type { components as UnderwritingComponents } from '@/types/api/underwrit
 
 export type PolicyView = PolicyComponents['schemas']['PolicyView'];
 export type PolicyStatus = NonNullable<PolicyView['status']>;
+/** A customer surrender in flight (product step 1). */
+export type SurrenderRequestView = PolicyComponents['schemas']['SurrenderRequest'];
+/** What a surrender would pay today -- a quote, not a commitment. */
+export type SurrenderQuote = NonNullable<
+  PolicyPaths['/policies/{policyNumber}/surrender-value']['get']['responses']['200']['content']['application/json']
+>;
 export type BeneficiaryInput = PolicyComponents['schemas']['BeneficiaryInput'];
 /** The reverse direction: a policy that names some party as beneficiary. */
 export type BeneficiaryOfView = PolicyComponents['schemas']['BeneficiaryOfView'];
@@ -407,7 +413,35 @@ export const BENEFIT_CALCULATION_METHOD_LABELS: Record<BenefitCalculationMethod,
 };
 export type PremiumFrequency = NonNullable<PolicyView['premiumFrequency']>;
 
-export const PREMIUM_FREQUENCIES: readonly PremiumFrequency[] = ['MONTHLY', 'QUARTERLY', 'ANNUALLY'];
+export const PREMIUM_FREQUENCIES: readonly PremiumFrequency[] = [
+  'MONTHLY',
+  'QUARTERLY',
+  'ANNUALLY',
+  'SINGLE',
+];
+
+/**
+ * How a premium reads BESIDE its amount — "TZS 10,625 /month", "TZS 125,000 once".
+ *
+ * A map rather than string surgery on the enum, because the surgery does not survive SINGLE.
+ * The registers derived this by stripping a trailing "LY" and lowercasing, which turns
+ * MONTHLY into "month" and SINGLE into "single" — and "TZS 125,000 /single" says nothing a
+ * reader wants. A single premium is not a rate per period; it is the whole price, once.
+ */
+export const PREMIUM_FREQUENCY_SUFFIXES: Record<PremiumFrequency, string> = {
+  MONTHLY: '/month',
+  QUARTERLY: '/quarter',
+  ANNUALLY: '/year',
+  SINGLE: 'once',
+};
+
+/** The frequency as a noun, for a picker or a label: "Single premium", not "SINGLE". */
+export const PREMIUM_FREQUENCY_LABELS: Record<PremiumFrequency, string> = {
+  MONTHLY: 'Monthly',
+  QUARTERLY: 'Quarterly',
+  ANNUALLY: 'Annually',
+  SINGLE: 'Single premium',
+};
 
 /** Why a policy is being issued by hand. Required on manual issue. */
 export type IssuanceBasis = NonNullable<ManualIssueRequest['issuanceBasis']>;

@@ -125,6 +125,8 @@ class ClaimSettlementEndToEndTest {
         // class in the suite that needs claims' AND payment's schemas live at once.
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
@@ -132,6 +134,7 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -144,6 +147,8 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -173,8 +178,14 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
+            "db-migrations/policy/V26__enrolment_stated_premium.sql",
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/claims/V1__create_claims_schema.sql",
             "db-migrations/claims/V2__grants_rls_money_checks_evidence_and_settlement_columns.sql",
             "db-migrations/claims/V3__registration_idempotency_key.sql",
@@ -184,7 +195,8 @@ class ClaimSettlementEndToEndTest {
             "db-migrations/claims/V8__claim_evidence_uploaded_by_name.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
-            "db-migrations/payment/V6__disbursement_method.sql");
+            "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
@@ -251,6 +263,20 @@ class ClaimSettlementEndToEndTest {
             new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims E2E test");
         String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
         // Cover starts with the first premium. This fixture needs a policy on risk.
+        policyApi.activateOnFirstPremium(issuedPolicyNumber);
+        return issuedPolicyNumber;
+    }
+
+    /**
+     * A policy that has reached its maturity date today: commenced a year ago on a 12-month term.
+     * A maturity claim is only claimable once the term is up, which registration now enforces.
+     */
+    private String issueMaturedPolicy(UUID tenantId, Fixture fixture) {
+        TenantContext.set(tenantId);
+        PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(fixture.applicantId(), fixture.productId(), fixture.productVersionId(),
+            new BigDecimal("2000000"), "TZS", new BigDecimal("40000.00"), "TZS", "MONTHLY", null, List.of(), "Claims E2E test",
+            LocalDate.now().minusMonths(12), 12, null, null, null);
+        String issuedPolicyNumber = policyApi.issuePolicy(null, request, "test-staff").policyNumber();
         policyApi.activateOnFirstPremium(issuedPolicyNumber);
         return issuedPolicyNumber;
     }
@@ -536,7 +562,9 @@ class ClaimSettlementEndToEndTest {
 
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "CLAIMS-E2E-SETTLE-MATURITY");
-        String policyNumber = issuePolicyWithNullUnderwritingCase(tenantId, fixture);
+        // A maturity claim is only claimable on a policy that has reached its maturity date, which
+        // the registration now enforces. This fixture matures today.
+        String policyNumber = issueMaturedPolicy(tenantId, fixture);
         UUID claimId = registerMaturityClaim(tenantId, fixture, policyNumber, "e2e-maturity-reg-01");
         String settleKey = "e2e-settle-maturity-" + claimId;
 

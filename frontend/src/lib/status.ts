@@ -28,6 +28,25 @@ export const STATUS_MAPS = {
     // started -- which is the whole reason this is not LAPSED. Colouring it as a failure would
     // put it in the same visual bucket as the lapses it was deliberately kept out of.
     NOT_TAKEN_UP: 'neutral',
+    // A term policy that ran its full term and paid nothing, as term cover does. Neutral, beside
+    // SURRENDERED and NOT_TAKEN_UP: it is a clean, expected ending, not a failure. MATURED stays
+    // success because a maturity benefit was actually paid; EXPIRED paid nothing, so it is not
+    // dressed as a good outcome, only as an uneventful one.
+    EXPIRED: 'neutral',
+    // The customer stopped paying and keeps reduced cover. Active: it is in force, cover is running
+    // -- only the premium stopped. Beside ACTIVE and REINSTATED, not a warning or a failure.
+    PAID_UP: 'active',
+  },
+
+  // policy.surrender_request.status (product step 1). The same five-state shape the payment rail
+  // gives every payout, and IN_DOUBT is deliberately a warning rather than a failure: the money
+  // may or may not have moved, and treating it as FAILED is how a surrender gets paid twice.
+  surrenderRequest: {
+    REQUESTED: 'pending',
+    APPROVED: 'pending', // cover has stopped, but the money has not arrived yet
+    PAID: 'success',
+    FAILED: 'danger',
+    IN_DOUBT: 'warning',
   },
 
   // claims/api/ClaimStatus.java

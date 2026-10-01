@@ -46,6 +46,8 @@ test.describe('staff credit-life scheme', () => {
     const { policyNumber, lenderPartyId } = await seedCreditLifeScheme();
 
     await page.goto(`/staff/parties/${lenderPartyId}`);
+    // Schemes live on the Policies tab of the client record; staff land on KYC.
+    await page.getByRole('tab', { name: 'Policies', exact: true }).click();
     const panel = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Credit-life schemes' }) });

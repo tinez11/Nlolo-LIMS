@@ -242,14 +242,21 @@ paths:
         '404': { description: "No such party in this tenant" }
   /parties/{partyId}/kyc-evidence:
     post:
-      summary: Upload a KYC evidence file (staff only)
+      summary: Upload a KYC evidence file (staff, or the agent who registered the client)
       description: >
         Uploads a document (ID scan, proof of address, certificate of incorporation)
         and returns its documentRef -- pass that ref to POST .../kyc to record a
         verification decision against it. Two separate calls, not one, because a
         decision may reuse evidence already on file rather than re-uploading it.
+
+
+        **An agent may upload, for a client they registered, and may not verify.** The agent who
+        took the documents files them and a staff member decides whether they are good — the
+        same separation underwriting and claims both insist on, and the one place KYC lacked it.
+        `POST /parties/{partyId}/kyc` stays staff-only for that reason.
       security:
         - staffAuth: []
+        - agentsAuth: [agent]
       parameters:
         - name: partyId
           in: path
@@ -384,6 +391,19 @@ components:
           type: [string, "null"]
           enum: [NATIONAL_ID, PASSPORT, DRIVING_LICENCE, VOTER_ID, null]
         idNumber: { type: [string, "null"], maxLength: 50 }
+        clientReference:
+          description: >-
+            The insurer's OWN reference for this client, supplied rather than minted. Optional,
+            and unique per tenant where present.
+
+
+            Not an identity document and not the platform id: `partyId` names the client to
+            this platform and `idNumber` names the person to the state, while this is the number
+            business already uses for them in its own records. It exists so the two books can be
+            reconciled without matching on name and date of birth, which is the matching that
+            goes wrong. A client registered without one is complete, not incomplete.
+          type: [string, "null"]
+          maxLength: 50
         occupation:
           description: As declared by the applicant, free text. Not a classification.
           type: [string, "null"]
@@ -488,6 +508,19 @@ components:
         employerName: { type: [string, "null"] }
         nationality: { type: [string, "null"], example: TZ }
         address: { $ref: '#/components/schemas/AddressView' }
+        clientReference:
+          description: >-
+            The insurer's OWN reference for this client, supplied rather than minted. Optional,
+            and unique per tenant where present.
+
+
+            Not an identity document and not the platform id: `partyId` names the client to
+            this platform and `idNumber` names the person to the state, while this is the number
+            business already uses for them in its own records. It exists so the two books can be
+            reconciled without matching on name and date of birth, which is the matching that
+            goes wrong. A client registered without one is complete, not incomplete.
+          type: [string, "null"]
+          maxLength: 50
         registeredByPartyId:
           description: >-
             The PARTY id of the agent who registered this client, taken from the registering

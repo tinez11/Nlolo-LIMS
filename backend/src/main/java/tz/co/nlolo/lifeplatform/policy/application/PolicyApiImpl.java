@@ -69,6 +69,8 @@ public class PolicyApiImpl implements PolicyApi {
      * and which file charged them. Read-only here -- EnrolmentApiImpl owns writing these rows.
      */
     private final EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository;
+    private final PolicyValueRepository policyValueRepository;
+    private final SurrenderRequestRepository surrenderRequestRepository;
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final ReferenceDataApi referenceDataApi;
@@ -83,6 +85,8 @@ public class PolicyApiImpl implements PolicyApi {
                           GroupSchemeRepository groupSchemeRepository, GroupSchemeGradeRepository groupSchemeGradeRepository,
                           PolicyMemberRepository policyMemberRepository, PolicyMemberBenefitRepository policyMemberBenefitRepository,
                           EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository,
+                          PolicyValueRepository policyValueRepository,
+                          SurrenderRequestRepository surrenderRequestRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
@@ -97,6 +101,8 @@ public class PolicyApiImpl implements PolicyApi {
         this.policyMemberRepository = policyMemberRepository;
         this.policyMemberBenefitRepository = policyMemberBenefitRepository;
         this.enrolmentSubmissionRowRepository = enrolmentSubmissionRowRepository;
+        this.policyValueRepository = policyValueRepository;
+        this.surrenderRequestRepository = surrenderRequestRepository;
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.referenceDataApi = referenceDataApi;
@@ -314,6 +320,22 @@ public class PolicyApiImpl implements PolicyApi {
         // customer to pay by a date, and must NOT tell that to somebody whose migrated policy is
         // already in force -- and it may not depend on policy to find out which it is looking at.
         payload.put("status", policy.getStatus());
+        // Whether this contract's premium arrives per accepted enrolment file instead of from
+        // the policy, which is the only thing billing needs to decide whether it may charge.
+        //
+        // Carried because a consumer cannot ask and must not guess. Billing used to key that
+        // decision on the FREQUENCY alone -- SINGLE meant "raise nothing" -- which was right
+        // while the only single-premium contract was a credit-life master policy, billed file
+        // by file. A retail single premium is also SINGLE and must be charged once, here, to
+        // the customer. Frequency cannot tell those apart; this can.
+        //
+        // An individual policy is never enrolment-billed: there is nobody to enrol.
+        payload.put("premiumPerEnrolment", false);
+        // The last date a premium can fall due, so billing stops raising invoices at the end of
+        // the contract instead of a fixed twelve months in. Null where the policy does not term
+        // (whole life, an annually renewable scheme) -- billing reads that as "no end". Computed
+        // by the aggregate after applyTerm, because billing may not read policy's tables.
+        putPremiumPayingUntil(payload, policy);
         putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 
@@ -469,7 +491,10 @@ public class PolicyApiImpl implements PolicyApi {
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         PolicyAccount account = policyAccountRepository.findById(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
-        ProductSnapshotView snapshot = productApi.getActiveSnapshot(policy.getProductId(), LocalDate.now());
+        // The version THIS POLICY was sold under, not the one on sale today. A surrender charge is a
+        // contractual term: republishing the product with a harsher schedule must not reach back
+        // into contracts already written, and reading the active version did exactly that.
+        ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
 
         BigDecimal chargePercent = resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(), policy.getIssueDate());
         BigDecimal charge = account.getCashValueAmount().multiply(chargePercent).divide(new BigDecimal("100"));
@@ -583,11 +608,18 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     public boolean isPolicyInForce(String policyNumber, LocalDate asOf) {
-        // asOf is accepted (matches the OpenAPI query param and Po3's signature) but not
-        // otherwise consulted -- this is a pure "is this policy currently ACTIVE-or-REINSTATED"
-        // status read, not a date-bounded coverage-window computation (that's
-        // getCoverageStatus's job, which separately filters `active` Coverage rows). Flagged.
-        return findPolicyOrThrow(policyNumber, TenantContext.get()).isInForce();
+        // Now genuinely date-bounded: "was this policy on risk on asOf", answered by
+        // Policy.wasOnRiskOn. It used to ignore asOf and read today's status, which claims
+        // registration relied on and which its own KNOWN GAP comment described -- a death before a
+        // lapse, reported after it, was refused, and a death after a term ended was accepted.
+        //
+        // policyloan passes today and asks "can this policy take a loan"; for a live policy the
+        // answer is unchanged, and for a termed policy past its maturity date it is now correctly
+        // false -- there is no cover left to lend against.
+        // asOf is optional on the in-force endpoint (a bare "is it on risk now"); an absent one
+        // means today. wasOnRiskOn(null) is false by contract, so the default is applied here.
+        LocalDate day = asOf != null ? asOf : LocalDate.now();
+        return findPolicyOrThrow(policyNumber, TenantContext.get()).wasOnRiskOn(day);
     }
 
     @Override
@@ -616,7 +648,7 @@ public class PolicyApiImpl implements PolicyApi {
         // RESERVED rows for this policy -- self-healing the crash case (reserved, then crashed
         // before confirm/release) on the next real access instead of on a fixed wall-clock timer.
         loanValueReservationRepository.expireStaleReservations(policyNumber, tenantId, Instant.now());
-        findPolicyOrThrow(policyNumber, tenantId);
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
         PolicyAccount account = policyAccountRepository.lockByPolicyNumber(policyNumber)
             .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
 
@@ -624,7 +656,11 @@ public class PolicyApiImpl implements PolicyApi {
         // pulling every RESERVED row into memory and reducing client-side -- same result,
         // one fewer place computing "sum of currently-RESERVED amounts" for this policy.
         BigDecimal currentlyReserved = loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId);
-        BigDecimal available = account.availableLoanValue(currentlyReserved);
+        // Cap the borrowable amount at the product's loan-to-value percent, read from the policy's
+        // OWN version (step 1 -- the M3 simplification that ignored it is closed). A null percent
+        // means the whole cash value is borrowable.
+        BigDecimal ltvPercent = productApi.getSnapshotByVersionId(policy.getProductVersionId()).maxLoanToValuePercent();
+        BigDecimal available = account.availableLoanValue(currentlyReserved, ltvPercent);
         if (amount.compareTo(available) > 0) {
             throw new InsufficientLoanValueException(
                 "Requested " + amount + " " + currency + " exceeds available loan value " + available + " for policy " + policyNumber);
@@ -774,10 +810,321 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " lapsed " + monthsSinceLapse
                 + " months ago, exceeding the " + windowMonths + "-month reinstatement window (TZ_REINSTATEMENT_WINDOW_MONTHS, a PLACEHOLDER pending B1 sign-off)");
         }
+        // A term that has already ended has nothing to revive. Reinstatement brings a lapsed
+        // policy back onto risk, and there is no risk to resume once the maturity date has passed
+        // -- the policy should be EXPIRED, not reinstated into a window that is over.
+        if (policy.getMaturityDate() != null && !LocalDate.now().isBefore(policy.getMaturityDate())) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " reached its maturity date "
+                + policy.getMaturityDate() + " and cannot be reinstated into a term that has ended");
+        }
         policy.reinstate();
         policyRepository.save(policy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyReinstated", tenantId,
             Map.of("policyNumber", policyNumber, "reinstatedAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional
+    public PolicyView makePaidUp(String policyNumber, String madePaidUpBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+
+        var config = productApi.getCashValueConfig(policy.getProductVersionId());
+        if (config.isEmpty()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " is not a savings product, so it has no value to make paid-up");
+        }
+        if (!policy.canMakePaidUp()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " must be ACTIVE, REINSTATED or LAPSED to be made paid-up (current status)");
+        }
+
+        LocalDate start = policy.getCommencementDate() != null ? policy.getCommencementDate() : policy.getIssueDate();
+        LocalDate paidToDate = policyValueRepository.findById(policyNumber)
+            .map(PolicyValue::getPaidToDate).orElse(null);
+        int completedYears = (paidToDate == null || start == null || paidToDate.isBefore(start))
+            ? 0 : Period.between(start, paidToDate).getYears();
+        if (completedYears < config.get().minYearsForValue()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " has only " + completedYears
+                + " full years paid; it has no value until " + config.get().minYearsForValue()
+                + ", so it cannot be made paid-up");
+        }
+
+        BigDecimal originalSumAssured = policy.getSumAssuredAmount();
+        BigDecimal paidUpSumAssured = "TABLE".equals(config.get().paidUpBasis())
+            ? paidUpFromTable(policy, completedYears, start, originalSumAssured)
+            : paidUpProportionate(policy, start, paidToDate, originalSumAssured);
+
+        // The claim pays against the coverage rows, so they carry the reduced figure. An endorsement
+        // records the change for audit -- the sanctioned way an individual sum assured moves.
+        coverageRepository.findByPolicyNumberAndActiveTrue(policyNumber)
+            .forEach(c -> { c.restateSumAssured(paidUpSumAssured); coverageRepository.save(c); });
+        endorsementRepository.save(new Endorsement(tenantId, policyNumber, "PAID_UP", LocalDate.now(),
+            Map.of("originalSumAssured", originalSumAssured.toPlainString(),
+                   "paidUpSumAssured", paidUpSumAssured.toPlainString(),
+                   "basis", config.get().paidUpBasis()),
+            madePaidUpBy));
+
+        policy.makePaidUp(paidUpSumAssured);
+        policyRepository.save(policy);
+
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyMadePaidUp", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "paidUpSumAssured", Map.of("amount", paidUpSumAssured.toPlainString(),
+                        "currencyCode", policy.getSumAssuredCurrency()),
+                   "madePaidUpAt", Instant.now().toString())));
+        return toView(policy);
+    }
+
+    /** Paid-up sum assured on the PROPORTIONATE basis: original x months paid / months payable. */
+    private BigDecimal paidUpProportionate(Policy policy, LocalDate start, LocalDate paidToDate, BigDecimal original) {
+        Integer payable = policy.getPremiumPayingTermMonths() != null
+            ? policy.getPremiumPayingTermMonths() : policy.getPolicyTermMonths();
+        if (payable == null || payable <= 0) {
+            throw new InvalidPolicyStateException("Policy " + policy.getPolicyNumber()
+                + " has no premium-paying term, so a proportionate paid-up value cannot be computed;"
+                + " this product needs a paid-up table (TABLE basis)");
+        }
+        long monthsPaid = start != null && paidToDate != null
+            ? Math.max(0, java.time.temporal.ChronoUnit.MONTHS.between(start, paidToDate)) : 0;
+        // Cap at the payable term: a policy paid ahead does not become MORE than fully paid-up.
+        long capped = Math.min(monthsPaid, payable);
+        return original.multiply(BigDecimal.valueOf(capped))
+            .divide(BigDecimal.valueOf(payable), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /** Paid-up sum assured on the TABLE basis: original x paid-up per-mille / 1000 for the year. */
+    private BigDecimal paidUpFromTable(Policy policy, int completedYears, LocalDate start, BigDecimal original) {
+        Integer ageAtEntry = ageAtEntryFor(policy, start);
+        BigDecimal perMille = productApi
+            .resolvePaidUpPerMille(policy.getProductVersionId(), completedYears, ageAtEntry)
+            .orElseThrow(() -> new InvalidPolicyStateException("Policy " + policy.getPolicyNumber()
+                + " uses the TABLE paid-up basis but its version has no paid-up figure for policy year "
+                + completedYears));
+        return original.multiply(perMille).divide(BigDecimal.valueOf(1000), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    @Override
+    @Transactional
+    public SurrenderRequestView requestSurrender(String policyNumber, String payeeRef, String requestedBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        if (payeeRef == null || payeeRef.isBlank()) {
+            throw new IllegalArgumentException("A surrender needs a payee reference");
+        }
+        if (!policy.canSurrender()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " cannot be surrendered from its current status");
+        }
+        if (surrenderRequestRepository.findLive(policyNumber, tenantId).isPresent()) {
+            throw new InvalidPolicyStateException("A surrender is already in flight for policy " + policyNumber);
+        }
+
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+
+        // No outstanding loan (user decision Q1): the loan must be repaid first. The encumbrance on
+        // the account is the outstanding-loan marker policy can see without reaching into policyloan.
+        if (account.getLoanEncumbranceAmount().signum() > 0) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " has an outstanding loan of "
+                + account.getLoanEncumbranceAmount() + "; it must be repaid before the policy can be surrendered");
+        }
+        if (loanValueReservationRepository.sumReservedAmountForPolicy(policyNumber, tenantId).signum() > 0) {
+            throw new InvalidPolicyStateException("A loan reservation is in flight on policy " + policyNumber
+                + "; it must resolve before the policy can be surrendered");
+        }
+
+        // Past the minimum term, and with a value. minYears comes from the policy's own version.
+        var config = productApi.getCashValueConfig(policy.getProductVersionId());
+        if (config.isPresent()) {
+            LocalDate start = policy.getCommencementDate() != null ? policy.getCommencementDate() : policy.getIssueDate();
+            LocalDate paidToDate = policyValueRepository.findById(policyNumber).map(PolicyValue::getPaidToDate).orElse(null);
+            int completedYears = (paidToDate == null || start == null || paidToDate.isBefore(start))
+                ? 0 : Period.between(start, paidToDate).getYears();
+            if (completedYears < config.get().minYearsForValue()) {
+                throw new InvalidPolicyStateException("Policy " + policyNumber + " has no value until "
+                    + config.get().minYearsForValue() + " years, so it cannot be surrendered");
+            }
+        }
+        if (account.getCashValueAmount().signum() <= 0) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " has no cash value to surrender");
+        }
+
+        // Quote off the policy's OWN version (step 0 D3): cash value less the surrender charge.
+        ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
+        BigDecimal chargePercent = resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(), policy.getIssueDate());
+        BigDecimal charge = account.getCashValueAmount().multiply(chargePercent).divide(new BigDecimal("100"));
+        BigDecimal quoted = account.getCashValueAmount().subtract(charge);
+        if (quoted.signum() <= 0) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " has no positive surrender value after charges");
+        }
+
+        SurrenderRequest request = new SurrenderRequest(tenantId, policyNumber, quoted,
+            account.getCashValueCurrency(), payeeRef, requestedBy);
+        surrenderRequestRepository.save(request);
+        return toSurrenderView(request);
+    }
+
+    @Override
+    @Transactional
+    public SurrenderRequestView approveSurrender(UUID surrenderRequestId, String approvedBy) {
+        UUID tenantId = TenantContext.get();
+        SurrenderRequest request = surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
+            .orElseThrow(() -> new SurrenderRequestNotFoundException(surrenderRequestId));
+        Policy policy = findPolicyOrThrow(request.getPolicyNumber(), tenantId);
+
+        // Two-person rule enforced in approve(); cover stops as of today (Q2).
+        request.approve(approvedBy);
+        policy.surrender(LocalDate.now());
+        surrenderRequestRepository.save(request);
+        policyRepository.save(policy);
+
+        // Billing stops and regreporting projects the surrender.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,
+            Map.of("policyNumber", request.getPolicyNumber(), "surrenderedAt", Instant.now().toString())));
+        // The payout, through the disbursement rail. The surrender request id is both the source
+        // reference and the idempotency key -- one payout per approval.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPayoutRequested", tenantId,
+            Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                   "idempotencyKey", surrenderRequestId.toString(),
+                   "policyNumber", request.getPolicyNumber(),
+                   "payeeRef", request.getPayeeRef(),
+                   "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
+                        "currencyCode", request.getQuotedValueCurrency()))));
+        return toSurrenderView(request);
+    }
+
+    /** The payout succeeded. Marks the request PAID. Idempotent: only an APPROVED request advances. */
+    @Override
+    @Transactional
+    public void markSurrenderPaid(UUID surrenderRequestId, UUID disbursementId) {
+        UUID tenantId = TenantContext.get();
+        surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
+            .filter(r -> "APPROVED".equals(r.getStatus()))
+            .ifPresent(r -> {
+                r.markPaid(disbursementId);
+                surrenderRequestRepository.save(r);
+                // Published only on the real APPROVED -> PAID transition, so a redelivered payment
+                // event cannot post the payout to the ledger twice. finaccounting books it.
+                eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPaid", tenantId,
+                    Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                           "policyNumber", r.getPolicyNumber(),
+                           "paidAmount", Map.of("amount", r.getQuotedValueAmount().toPlainString(),
+                                "currencyCode", r.getQuotedValueCurrency()))));
+            });
+    }
+
+    /** The payout failed. Marks the request FAILED. Cover stays stopped (Q2): a failed payout does
+     *  not restore cover; the surrender can be re-paid with a new idempotency key. */
+    @Override
+    @Transactional
+    public void markSurrenderFailed(UUID surrenderRequestId) {
+        UUID tenantId = TenantContext.get();
+        surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
+            .filter(r -> "APPROVED".equals(r.getStatus()))
+            .ifPresent(r -> { r.markFailed(); surrenderRequestRepository.save(r); });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<SurrenderRequestView> findLatestSurrenderRequest(String policyNumber) {
+        return surrenderRequestRepository
+            .findFirstByPolicyNumberAndTenantIdOrderByRequestedAtDesc(policyNumber, TenantContext.get())
+            .map(this::toSurrenderView);
+    }
+
+    private SurrenderRequestView toSurrenderView(SurrenderRequest r) {
+        return new SurrenderRequestView(r.getSurrenderRequestId(), r.getPolicyNumber(), r.getStatus(),
+            r.getQuotedValueAmount(), r.getQuotedValueCurrency(), r.getPayeeRef(), r.getRequestedBy(),
+            r.getApprovedBy());
+    }
+
+    @Override
+    @Transactional
+    public void expirePolicy(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        // Already EXPIRED (a second drain instance racing the first) returns silently and
+        // publishes nothing -- Policy.expire() no-ops, and announcing an expiry that did not
+        // happen would terminate a billing schedule twice. The @Version on the aggregate is what
+        // makes the winning write exclusive; this suppresses the loser's event.
+        if (policy.isClosed()) {
+            return;
+        }
+        policy.expire(LocalDate.now());
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyExpired", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "maturityDate", policy.getMaturityDate().toString(),
+                   "expiredAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional
+    public void recalculateCashValue(String policyNumber, LocalDate paidToDate) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+
+        // Not a savings product: no config, no cash value, nothing to do. This is how a pure-
+        // protection policy (every product before this step) stays untouched.
+        var config = productApi.getCashValueConfig(policy.getProductVersionId());
+        if (config.isEmpty()) {
+            return;
+        }
+
+        // Record how far premiums are paid, for a savings policy only. paid_to_date is what paid-up
+        // reads to compute the proportion of the premium term completed, and it also lets a later
+        // read reproduce this cash value without another billing round-trip.
+        PolicyValue policyValue = policyValueRepository.findById(policyNumber)
+            .orElseGet(() -> new PolicyValue(policyNumber, tenantId, paidToDate));
+        policyValue.restatePaidToDate(paidToDate);
+        policyValueRepository.save(policyValue);
+
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+
+        LocalDate start = policy.getCommencementDate() != null ? policy.getCommencementDate() : policy.getIssueDate();
+        int completedYears = (paidToDate == null || start == null || paidToDate.isBefore(start))
+            ? 0
+            : Period.between(start, paidToDate).getYears();
+
+        BigDecimal newCashValue;
+        if (completedYears < config.get().minYearsForValue()) {
+            // Before the minimum term a savings policy has no value -- the early premiums cover the
+            // cost of setting the contract up. Zero, not a table lookup.
+            newCashValue = BigDecimal.ZERO;
+        } else {
+            // Age at entry, for an age-banded scale. Null where the scale is not age-banded, which
+            // avoids the party read entirely for the common single-scale table.
+            Integer ageAtEntry = ageAtEntryFor(policy, start);
+            BigDecimal perMille = productApi
+                .resolveCashValuePerMille(policy.getProductVersionId(), completedYears, ageAtEntry)
+                .orElse(null);
+            if (perMille == null) {
+                // A savings version with no row for a year past its minimum is a table gap -- a
+                // configuration fault, not a reason to wipe a value already earned. Leave it and say so.
+                log.warn("Policy {} reached cash-value year {} but version {} has no cash-value row for it;"
+                        + " cash value left unchanged", policyNumber, completedYears, policy.getProductVersionId());
+                return;
+            }
+            newCashValue = policy.getSumAssuredAmount()
+                .multiply(perMille)
+                .divide(BigDecimal.valueOf(1000), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        account.restateCashValue(newCashValue);
+        policyAccountRepository.save(account);
+    }
+
+    /** The life assured's age when cover started, or null when it cannot be derived -- an unbanded
+     * cash-value scale ignores it, so a missing date of birth does not block valuation. */
+    private Integer ageAtEntryFor(Policy policy, LocalDate start) {
+        if (start == null) {
+            return null;
+        }
+        UUID lifeId = policy.getLifeAssuredPartyId() != null
+            ? policy.getLifeAssuredPartyId() : policy.getPolicyholderPartyId();
+        LocalDate dob = partyApi.getPartyDetail(lifeId).dateOfBirth();
+        return dob != null ? Period.between(dob, start).getYears() : null;
     }
 
     @Override
@@ -790,7 +1137,7 @@ public class PolicyApiImpl implements PolicyApi {
         // status alone, so publishing PolicyMatured for it would announce a transition that did not
         // happen. "Already closed" is the condition that suppresses the event, exactly as "already
         // in MY target status" did before the guards were widened.
-        boolean alreadyClosed = "MATURED".equals(policy.getStatus()) || "SURRENDERED".equals(policy.getStatus());
+        boolean alreadyClosed = policy.isClosed();
         policy.mature();
         policyRepository.save(policy);
         if (alreadyClosed) {
@@ -967,7 +1314,7 @@ public class PolicyApiImpl implements PolicyApi {
     private void closeAsSurrendered(Policy policy, UUID claimId, UUID tenantId) {
         // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning
         // as markMatured above (a policy already MATURED stays MATURED, so no PolicySurrendered).
-        boolean alreadyClosed = "SURRENDERED".equals(policy.getStatus()) || "MATURED".equals(policy.getStatus());
+        boolean alreadyClosed = policy.isClosed();
         policy.terminateForSettledClaim();
         policyRepository.save(policy);
         if (alreadyClosed) {
@@ -1317,7 +1664,10 @@ public class PolicyApiImpl implements PolicyApi {
             .orElseGet(() -> partyApi.registerIndividual(new IndividualRegistration(
                 member.getMemberName(), member.getMemberDateOfBirth(), identity.phoneNumber(),
                 null, identity.sex(), null, identity.identityDocument(),
-                null, null, null, null, null), promotedBy).partyId());
+                // No client reference: this party is minted from a claim on a freeform scheme
+                // member, and the lender's own number for them -- if they have one -- is not on
+                // the enrolment file. Inventing one here would reconcile nothing.
+                null, null, null, null, null, null), promotedBy).partyId());
 
         try {
             member.promoteAtClaim(partyId, promotedBy);
@@ -1417,6 +1767,16 @@ public class PolicyApiImpl implements PolicyApi {
         payload.put("issuedByName", policy.getIssuedByName());
     }
 
+    /**
+     * Put the paying-end date on a PolicyIssued payload, as an ISO string or null. A HashMap
+     * carries the null (unlike {@code Map.of}), so billing reads an absent or null value as "this
+     * contract does not end" -- the correct reading for whole life and annually renewable schemes.
+     */
+    private static void putPremiumPayingUntil(Map<String, Object> payload, Policy policy) {
+        LocalDate payingUntil = policy.premiumPayingUntil();
+        payload.put("premiumPayingUntil", payingUntil != null ? payingUntil.toString() : null);
+    }
+
     @Override
     @Transactional
     public GroupSchemeView issueGroupScheme(IssueGroupSchemeRequest request, String issuedBy,
@@ -1484,7 +1844,7 @@ public class PolicyApiImpl implements PolicyApi {
                 "A credit-life scheme must state how often its lender's loans repay");
         }
         if (!loanBasis && (request.interestMethod() != null || request.repaymentFrequency() != null
-                || request.premiumRatePercent() != null)) {
+                || request.premiumRatePercent() != null || request.premiumBasis() != null)) {
             throw new InvalidPolicyStateException(
                 "An interest method, a repayment cadence and a premium rate belong only on a "
                     + "credit-life scheme");
@@ -1497,6 +1857,17 @@ public class PolicyApiImpl implements PolicyApi {
             throw new InvalidPolicyStateException(
                 "A credit-life scheme must state the premium rate its lender agreed; the rate is "
                     + "negotiated per lender, so there is no default to fall back on");
+        }
+        // And what that rate MEANS, which it does not say by itself. Both real lenders price on
+        // the full disbursed amount and agree about nothing else: one charges the rate flat
+        // whatever the term, the other once per policy year on the balance still outstanding.
+        // A default here would price one lender on the other's agreement in silence -- and be
+        // out by two thirds on a two-month loan, which is the shape of error nobody reads a
+        // spreadsheet closely enough to catch.
+        if (loanBasis && request.premiumBasis() == null) {
+            throw new InvalidPolicyStateException(
+                "A credit-life scheme must state how its rate is charged: flat on the disbursed "
+                    + "amount, per annum on it, or per year on the declining balance");
         }
         // Checked here and not only in the GroupScheme constructor because the consequence is
         // in a different module: billing reacts to PolicyIssued by generating a schedule and a
@@ -1626,7 +1997,7 @@ public class PolicyApiImpl implements PolicyApi {
         groupSchemeRepository.save(new GroupScheme(policyNumber, tenantId, request.benefitBasis(),
             request.flatBenefitAmount(), request.salaryMultiple(), request.fclAmount(),
             request.currency(), request.interestMethod(), request.repaymentFrequency(),
-            request.premiumRatePercent(), issuedBy));
+            request.premiumRatePercent(), request.premiumBasis(), issuedBy));
         if (request.benefitBasis() == BenefitBasis.GRADED) {
             request.grades().forEach(g -> groupSchemeGradeRepository.save(
                 new GroupSchemeGrade(tenantId, policyNumber, g.gradeCode(), g.benefitAmount())));
@@ -1678,6 +2049,19 @@ public class PolicyApiImpl implements PolicyApi {
         // Load-bearing downstream: communication's offerMade branches on exactly this key, so
         // an employer now receives the offer message and its deadline. That is the point.
         payload.put("status", policy.getStatus());
+        // Load-bearing for billing, and NOT simply "is this a group scheme" -- that was the
+        // first version of this flag and it was wrong. Only a loan-basis scheme is billed per
+        // accepted enrolment file; `chk_group_scheme_rate_iff_loan_basis` is the proof, tying
+        // AMORTISING_LOAN to the premium rate the file is charged at. An employer or family
+        // scheme carries an AGREED premium on the policy, so it is billed from the policy like
+        // any other contract -- and if that premium is SINGLE, it is one charge at inception.
+        //
+        // Keyed on "is it enrolment-billed" rather than the basis name for the reason billing
+        // already documents: billing has no business knowing what credit life is.
+        payload.put("premiumPerEnrolment", request.benefitBasis() == BenefitBasis.AMORTISING_LOAN);
+        // See the individual issue path: null on a scheme with no term (credit-life masters, an
+        // annually renewable group scheme), a date on a fixed-term one so billing stops at term end.
+        putPremiumPayingUntil(payload, policy);
         putIssuanceRecord(payload, policy, issuedBy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyIssued", tenantId, payload));
 

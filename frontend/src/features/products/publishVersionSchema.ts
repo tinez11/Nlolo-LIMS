@@ -165,7 +165,21 @@ const baseRateRowSchema = z.object({
   nonSmoker: z.string().trim(),
   smoker: z.string().trim(),
   unknown: z.string().trim(),
+  /*
+    An optional policy-term band in months (product step 1, D4): a rate may differ by term. Both
+    or neither, mirroring base_rate_term_range_shape; blank on both means "every term". Optional
+    in the schema so a row built before term bands existed still parses as unbanded.
+  */
+  termFromMonths: z.string().trim().optional(),
+  termToMonths: z.string().trim().optional(),
 });
+
+/** "" or undefined both mean no term band. */
+function termBand(row: { termFromMonths?: string | undefined; termToMonths?: string | undefined }) {
+  const from = row.termFromMonths ?? '';
+  const to = row.termToMonths ?? '';
+  return from === '' && to === '' ? null : { from, to };
+}
 
 /** The three rate columns, in the order they are rendered and expanded. */
 export const BASE_RATE_COLUMNS = [
@@ -299,6 +313,97 @@ const benefitRowSchema = z
     }
   });
 
+/** One cell of a cash-value scale: per 1,000 of sum assured at a policy year, optionally by entry age. */
+const cashValueRowSchema = z.object({
+  policyYear: z.string().trim(),
+  ageFrom: z.string().trim(),
+  ageTo: z.string().trim(),
+  cashValuePerMille: z.string().trim(),
+  paidUpPerMille: z.string().trim(),
+});
+
+/** The savings products that carry a cash value -- CashValuePlanValidator.CASH_VALUE_CATEGORIES. */
+export const CASH_VALUE_CATEGORIES: readonly ProductCategory[] = ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'];
+
+interface CashValueFields {
+  cashValueBasisReference: string;
+  cashValueBasisDate: string;
+  cashValuePaidUpBasis: string;
+  cashValueMinYears: string;
+  cashValueRows: z.infer<typeof cashValueRowSchema>[];
+}
+
+function hasCashValue(v: CashValueFields): boolean {
+  return v.cashValueRows.length > 0 || v.cashValueBasisReference !== '';
+}
+
+/**
+ * CashValuePlanValidator, rule for rule and message for message, so the console refuses exactly
+ * what the server would and in the same words. Order matters only for which message shows first.
+ */
+function validateCashValue(category: ProductCategory, v: CashValueFields, ctx: z.RefinementCtx) {
+  if (!hasCashValue(v)) return;
+  const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
+
+  if (!CASH_VALUE_CATEGORIES.includes(category)) {
+    issue(['cashValueRows'], `A ${category} product cannot carry a cash-value table`);
+    return;
+  }
+  if (v.cashValueBasisReference === '' || v.cashValueBasisDate === '') {
+    issue([v.cashValueBasisReference === '' ? 'cashValueBasisReference' : 'cashValueBasisDate'],
+      'A cash-value table needs the actuarial basis reference and date it was signed off under');
+  }
+  if (v.cashValuePaidUpBasis !== 'PROPORTIONATE' && v.cashValuePaidUpBasis !== 'TABLE') {
+    issue(['cashValuePaidUpBasis'], 'The paid-up basis must be PROPORTIONATE or TABLE');
+  }
+  if (v.cashValueMinYears !== '2' && v.cashValueMinYears !== '3') {
+    issue(['cashValueMinYears'], 'A cash-value table needs the minimum years before any value exists, 2 or 3');
+  }
+  if (v.cashValueRows.length === 0) {
+    issue(['cashValueRows'], 'A cash-value table needs at least one row');
+    return;
+  }
+  const isWhole = (s: string) => /^\d+$/.test(s);
+  v.cashValueRows.forEach((row, i) => {
+    if (!isWhole(row.policyYear) || Number(row.policyYear) < 1) {
+      issue(['cashValueRows', i, 'policyYear'], "A cash-value row's policy year must be 1 or more");
+    }
+    if ((row.ageFrom === '') !== (row.ageTo === '')) {
+      issue(['cashValueRows', i, 'ageFrom'], 'A cash-value age band needs both a from and a to age, or neither');
+    } else if (row.ageFrom !== '' && (Number(row.ageTo) < Number(row.ageFrom) || Number(row.ageFrom) < 0)) {
+      issue(['cashValueRows', i, 'ageTo'], `Cash-value age band ${row.ageFrom}-${row.ageTo} is not a range`);
+    }
+    if (row.cashValuePerMille === '' || Number.isNaN(Number(row.cashValuePerMille)) || Number(row.cashValuePerMille) < 0) {
+      issue(['cashValueRows', i, 'cashValuePerMille'], 'A cash value per 1,000 cannot be negative');
+    }
+    if (row.paidUpPerMille !== '' && Number(row.paidUpPerMille) < 0) {
+      issue(['cashValueRows', i, 'paidUpPerMille'], 'A paid-up value per 1,000 cannot be negative');
+    }
+    if (v.cashValuePaidUpBasis === 'TABLE' && row.paidUpPerMille === '') {
+      issue(['cashValueRows', i, 'paidUpPerMille'],
+        `A TABLE paid-up basis needs a paid-up value on every row (policy year ${row.policyYear} has none)`);
+    }
+  });
+  const band = (r: { ageFrom: string; ageTo: string }) => (r.ageFrom === '' ? 'all ages' : `${r.ageFrom}-${r.ageTo}`);
+  for (let i = 0; i < v.cashValueRows.length; i++) {
+    for (let j = i + 1; j < v.cashValueRows.length; j++) {
+      const a = v.cashValueRows[i]!;
+      const b = v.cashValueRows[j]!;
+      if (a.policyYear !== b.policyYear) continue;
+      const overlap = a.ageFrom === '' || b.ageFrom === '' ||
+        (Number(a.ageFrom) <= Number(b.ageTo) && Number(b.ageFrom) <= Number(a.ageTo));
+      if (overlap) {
+        issue(['cashValueRows', j, 'ageFrom'],
+          `Cash-value rows for policy year ${a.policyYear}, ${a.ageFrom === '' ? 'all ages' : `ages ${band(a)}`} and ${band(b)}, overlap -- an entry age in both would be valued differently depending on row order`);
+      }
+    }
+  }
+}
+
+export function blankCashValueRow(): z.infer<typeof cashValueRowSchema> {
+  return { policyYear: '', ageFrom: '', ageTo: '', cashValuePerMille: '', paidUpPerMille: '' };
+}
+
 /** Both blank, or max at or above min. Mirrors EligibilityBounds and the DB CHECKs. */
 function requireOrdered(
   ctx: z.RefinementCtx,
@@ -351,6 +456,27 @@ export function publishVersionFormSchema(category: ProductCategory) {
           ctx.addIssue({ code: 'custom', path: [i, 'nonSmoker'], message: 'Give this band at least one rate' });
         }
 
+        // Mirrors rejectOverlappingAgeBands' term checks, and their wording.
+        const term = termBand(row);
+        if (term) {
+          if (term.from === '' || term.to === '') {
+            ctx.addIssue({
+              code: 'custom',
+              path: [i, term.from === '' ? 'termFromMonths' : 'termToMonths'],
+              message: 'A base rate term band needs both a from and a to month, or neither',
+            });
+          } else if (
+            !Number.isInteger(Number(term.from)) || !Number.isInteger(Number(term.to)) ||
+            Number(term.from) < 1 || Number(term.to) < Number(term.from)
+          ) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [i, 'termToMonths'],
+              message: `Base rate term band ${term.from}-${term.to} months is not a range`,
+            });
+          }
+        }
+
         // base_rate_table_rate_per_mille_check: strictly greater than zero. A rate
         // of 0 would price a real contract at nothing, so the database refuses it
         // and so does this.
@@ -372,23 +498,35 @@ export function publishVersionFormSchema(category: ProductCategory) {
         for the same sex as long as they do not price the same smoker status, which
         is how somebody splits a table across two lines.
       */
-      const seen: { i: number; key: string; from: number; to: number; label: string }[] = [];
+      // Two cells collide only when BOTH their ages and their terms overlap; a row with no term
+      // band overlaps every term -- termRangesOverlap's rule, so an unbanded row cannot sit beside
+      // a banded one for the same age, sex and smoker status.
+      type Seen = { key: string; from: number; to: number; term: { from: number; to: number } | null };
+      const termsOverlap = (a: Seen['term'], b: Seen['term']) =>
+        a === null || b === null || (a.from <= b.to && b.from <= a.to);
+      const seen: Seen[] = [];
       rows.forEach((row, i) => {
         const from = Number(row.ageFrom);
         const to = Number(row.ageTo);
         if (!Number.isInteger(from) || !Number.isInteger(to) || to < from) return;
+        const band = termBand(row);
+        if (band && (band.from === '' || band.to === '')) return; // already reported above
+        const term = band ? { from: Number(band.from), to: Number(band.to) } : null;
 
         for (const cell of pricedCells(row)) {
           const key = `${row.sex}/${cell.smokerStatus}`;
-          const clash = seen.find((s) => s.key === key && from <= s.to && s.from <= to);
+          const clash = seen.find(
+            (s) => s.key === key && from <= s.to && s.from <= to && termsOverlap(s.term, term),
+          );
           if (clash) {
+            const clashTerm = clash.term ? `, term ${clash.term.from}-${clash.term.to} months` : '';
             ctx.addIssue({
               code: 'custom',
               path: [i, cell.key],
-              message: `Overlaps ${clash.from}-${clash.to} for ${key} — an age in both would price differently depending on row order`,
+              message: `Overlaps ${clash.from}-${clash.to}${clashTerm} for ${key} — an age and term in both would price differently depending on row order`,
             });
           } else {
-            seen.push({ i, key, from, to, label: cell.label });
+            seen.push({ key, from, to, term });
           }
         }
       });
@@ -441,7 +579,21 @@ export function publishVersionFormSchema(category: ProductCategory) {
         });
       }
     }),
+
+    // The cash-value (surrender value) table and its actuarial sign-off (product step 1). All
+    // strings, blank meaning absent, for the coercion reason the file header gives. Validated as
+    // a whole below, by CashValuePlanValidator's rules and in its words.
+    cashValueBasisReference: z.string().trim(),
+    cashValueBasisDate: z
+      .string()
+      .trim()
+      .refine((v) => v === '' || ISO_DATE_PATTERN.test(v), 'Not a valid date'),
+    cashValuePaidUpBasis: z.string().trim(),
+    cashValueMinYears: z.string().trim(),
+    cashValueRows: z.array(cashValueRowSchema),
   }).superRefine((values, ctx) => {
+    validateCashValue(category, values, ctx);
+
     /*
       The two modes, mirroring ProductApiImpl.publishVersion exactly.
 
@@ -577,6 +729,11 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     quarterlyLoadingPercent: '',
     tiraReference: '',
     tiraApprovalDate: '',
+    cashValueBasisReference: '',
+    cashValueBasisDate: '',
+    cashValuePaidUpBasis: '',
+    cashValueMinYears: '',
+    cashValueRows: [],
   };
 }
 
@@ -598,7 +755,7 @@ export function blankRatingFactorRow(): PublishVersionFormInput['ratingTable'][n
  * than anything visible on this screen.
  */
 export function blankBaseRateBand(ageFrom = '', ageTo = ''): PublishVersionFormInput['baseRates'] {
-  const blank = { ageFrom, ageTo, nonSmoker: '', smoker: '', unknown: '' };
+  const blank = { ageFrom, ageTo, nonSmoker: '', smoker: '', unknown: '', termFromMonths: '', termToMonths: '' };
   return [
     { ...blank, sex: 'FEMALE' },
     { ...blank, sex: 'MALE' },
@@ -661,16 +818,36 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
     */
     ...(() => {
       const cells = values.baseRates.flatMap((row) =>
-        pricedCells(row).map((cell) => ({
-          ageFrom: Number(row.ageFrom),
-          ageTo: Number(row.ageTo),
-          sex: row.sex,
-          smokerStatus: cell.smokerStatus,
-          ratePerMille: Number(cell.raw),
-        })),
+        pricedCells(row).map((cell) => {
+          const term = termBand(row);
+          return {
+            ageFrom: Number(row.ageFrom),
+            ageTo: Number(row.ageTo),
+            sex: row.sex,
+            smokerStatus: cell.smokerStatus,
+            ratePerMille: Number(cell.raw),
+            // Omitted on an unbanded row rather than sent as nulls: absent means "every term".
+            ...(term && { termFromMonths: Number(term.from), termToMonths: Number(term.to) }),
+          };
+        }),
       );
       return cells.length > 0 ? { baseRates: cells } : {};
     })(),
+    // Omitted entirely on a version with no cash value -- pure protection has none.
+    ...(hasCashValue(values) && {
+      cashValue: {
+        basisReference: values.cashValueBasisReference,
+        basisDate: values.cashValueBasisDate,
+        paidUpBasis: values.cashValuePaidUpBasis as 'PROPORTIONATE' | 'TABLE',
+        minYearsForValue: Number(values.cashValueMinYears),
+        rows: values.cashValueRows.map((r) => ({
+          policyYear: Number(r.policyYear),
+          ...(r.ageFrom !== '' && { ageFrom: Number(r.ageFrom), ageTo: Number(r.ageTo) }),
+          cashValuePerMille: Number(r.cashValuePerMille),
+          ...(r.paidUpPerMille !== '' && { paidUpPerMille: Number(r.paidUpPerMille) }),
+        })),
+      },
+    }),
     // Required, so no omit-when-blank branch: a version may not exist without the filing that
     // authorises it, and the schema above refuses a blank one before this runs.
     tiraFiling: {

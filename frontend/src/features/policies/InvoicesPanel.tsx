@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import type { EnrolmentSubmissionView, InvoiceView, PolicyMemberView } from '@/api/types';
 import { canSeeFinance, readIdentity } from '@/auth/claims';
 import { FilterChip } from '@/components/FilterChip';
+import { InlineError } from '@/components/InlineError';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState, ErrorPanel, LoadingBlock } from '@/components/states';
 import { ConfirmAct } from '@/components/ConfirmAct';
@@ -345,9 +346,7 @@ function WaiveForm({
       </FormField>
 
       {waiving.status === 'error' && waiving.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {waiving.error.detail ?? waiving.error.title}
-        </p>
+        <InlineError error={waiving.error} />
       )}
 
       {pending ? (
@@ -439,9 +438,7 @@ function PaymentRequestForm({
       </FormField>
 
       {requesting.status === 'error' && requesting.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {requesting.error.detail ?? requesting.error.title}
-        </p>
+        <InlineError error={requesting.error} />
       )}
 
       <div className="flex items-center gap-1.5">

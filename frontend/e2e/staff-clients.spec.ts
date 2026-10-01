@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { dmy } from './dates';
+import { registerIndividualAsAgent } from './clients';
 import { expectStaffShellReady } from './guards';
 
 /**
@@ -92,10 +92,7 @@ test.describe('staff clients register', () => {
 
     const fullName = `E2E Clients Fixture ${Date.now()}`;
     await agentPage.goto('/agents/customers/new');
-    await agentPage.getByLabel('Full name').fill(fullName);
-    await agentPage.getByLabel('Date of birth').fill(dmy('1990-05-12'));
-    await agentPage.getByRole('button', { name: 'Register individual' }).click();
-    await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await registerIndividualAsAgent(agentPage, fullName);
     const partyIdText = await agentPage.getByText(/^[0-9a-f]{8}-[0-9a-f]{4}-/).textContent();
     const partyId = (partyIdText ?? '').trim();
     await agentContext.close();
@@ -147,10 +144,7 @@ test.describe('staff clients register', () => {
 
     const fullName = `E2E Correct Me ${Date.now()}`;
     await agentPage.goto('/agents/customers/new');
-    await agentPage.getByLabel('Full name').fill(fullName);
-    await agentPage.getByLabel('Date of birth').fill(dmy('1990-05-12'));
-    await agentPage.getByRole('button', { name: 'Register individual' }).click();
-    await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await registerIndividualAsAgent(agentPage, fullName);
     const partyIdText = await agentPage.getByText(/^[0-9a-f]{8}-[0-9a-f]{4}-/).textContent();
     const partyId = (partyIdText ?? '').trim();
     await agentContext.close();
@@ -204,25 +198,35 @@ test.describe('staff clients register', () => {
     await page.getByText('Amina Owner').first().click();
     await expect(page).toHaveURL(/\/staff\/parties\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
-    for (const panel of [
-      'Policies',
-      'Claims',
-      'Underwriting',
-      'Named as beneficiary',
-      'KYC verification',
-      'Identity',
-      'Documents',
-      'Also an agent',
-    ]) {
+    // The work column is tabs now, so the panels exist one at a time and this walks them
+    // rather than asserting eight headings at once. What it proves is unchanged -- every
+    // register is present and reachable -- and it proves one thing more than before: that each
+    // tab actually opens the panel it names.
+    for (const [tab, panel] of [
+      ['KYC', 'KYC verification'],
+      ['Policies', 'Policies'],
+      ['Claims', 'Claims'],
+      ['Underwriting', 'Underwriting'],
+      ['Beneficiary', 'Named as beneficiary'],
+      ['Documents', 'Documents'],
+      ['Agent', 'Also an agent'],
+    ] as const) {
+      await page.getByRole('tab', { name: tab, exact: true }).click();
       await expect(page.getByRole('heading', { name: panel, exact: true })).toBeVisible();
     }
+
+    // Identity stays in the RAIL, not behind a tab -- who the person is has to be on screen
+    // whichever register is open. Asserted after the walk, so its visibility is not an
+    // accident of which tab happens to be showing.
+    await expect(page.getByRole('heading', { name: 'Identity', exact: true })).toBeVisible();
 
     // Identity fields that were stored since the first migration and returned by no
     // endpoint at all until PartyDetailView existed.
     await expect(page.getByText('Date of birth')).toBeVisible();
     await expect(page.getByText('Registered by')).toBeVisible();
 
-    // A real policy, linked.
+    // A real policy, linked -- back on the tab that lists them.
+    await page.getByRole('tab', { name: 'Policies', exact: true }).click();
     await expect(page.getByRole('link', { name: /^POL-/ }).first()).toBeVisible({ timeout: 20_000 });
 
     // This client holds hundreds of policies, so the panel caps and says so rather

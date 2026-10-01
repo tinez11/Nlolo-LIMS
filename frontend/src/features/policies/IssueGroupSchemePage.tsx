@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
-import { PREMIUM_FREQUENCIES } from '@/api/types';
+import { PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { DatePicker } from '@/components/DatePicker';
+import { InlineError } from '@/components/InlineError';
 import { FormField } from '@/components/FormField';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyPicker } from '@/components/PartyPicker';
@@ -156,16 +157,8 @@ export function IssueGroupSchemePage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to="/staff/policies">
-            <ArrowLeft />
-            All policies
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title="Propose a group scheme"
         description="An underwriter decides it, and cover starts when the employer&apos;s first premium clears."
       />
@@ -485,7 +478,7 @@ export function IssueGroupSchemePage() {
               >
                 {PREMIUM_FREQUENCIES.map((f) => (
                   <option key={f} value={f}>
-                    {f}
+                    {PREMIUM_FREQUENCY_LABELS[f]}
                   </option>
                 ))}
               </Select>
@@ -520,14 +513,12 @@ export function IssueGroupSchemePage() {
         </fieldset>
 
         {issuing.status === 'error' && issuing.error && (
-          <p role="alert" className="text-xs text-status-danger-fg">
-            {issuing.error.detail ?? issuing.error.title}
-          </p>
+          <InlineError error={issuing.error} />
         )}
 
         <div className="flex items-center gap-2 border-t border-border pt-4">
-          <Button type="submit" variant="primary" disabled={issuing.status === 'loading'}>
-            {issuing.status === 'loading' ? 'Proposing…' : 'Propose scheme'}
+          <Button type="submit" variant="primary" pending={issuing.status === 'loading'}>
+            Propose scheme
           </Button>
           <Button asChild type="button" variant="ghost">
             <Link to="/staff/policies">Cancel</Link>

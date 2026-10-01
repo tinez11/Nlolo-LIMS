@@ -73,6 +73,29 @@ function offenders(pattern: RegExp, except: (path: string) => boolean = () => fa
   return found;
 }
 
+/**
+ * The same, over a window of consecutive lines.
+ *
+ * `offenders` is line-based, which is right for a class name and useless for a JSX element
+ * whose opening tag, its role and its body sit three lines apart -- which is exactly the shape
+ * of the error block the rule below catches.
+ */
+function spans(
+  size: number,
+  matches: (window: string) => boolean,
+  except: (path: string) => boolean = () => false,
+): string[] {
+  const found: string[] = [];
+  for (const [path, source] of files) {
+    if (except(path)) continue;
+    const lines = code(source).split('\n');
+    lines.forEach((_line, index) => {
+      if (matches(lines.slice(index, index + size).join(' '))) found.push(`${path}:${index + 1}`);
+    });
+  }
+  return found;
+}
+
 describe('design guards', () => {
   it('names only colour tokens the theme defines', () => {
     const unknown: string[] = [];
@@ -106,5 +129,73 @@ describe('design guards', () => {
     // `text-status-success-fg/80` at 11px was ~4.49:1 -- a pass on the page, a fail in the
     // arithmetic. Alpha on TEXT hides a contrast failure; a solid token cannot.
     expect(offenders(/(?<![\w-])text-[a-z-]+\/\d+/)).toEqual([]);
+  });
+
+  /*
+   * THE FOUR RULES BELOW EXIST BECAUSE THE SWEEP FAILED, REPEATEDLY.
+   *
+   * Each of these defects was removed lane by lane across a five-plan redesign, by grepping a
+   * list of directories assembled by hand. That worked three times and failed three times: plan
+   * 2 left fifteen error blocks and six renaming buttons in its OWN lane; plan 4 shipped a
+   * commit saying "that clears the finance lane" while one of its screens had both, because the
+   * directory list included another lane's folder and omitted one of its own; and the Panel rule
+   * is newer still -- two of its five offenders sat in a lane already reviewed and merged.
+   *
+   * Trying harder is not a fix for that shape of mistake. A failing test is.
+   */
+
+  it('never renames a button while its request is in flight', () => {
+    // `pending` exists for this. A control whose accessible NAME changes mid-request is a
+    // different control to a screen reader and to every locator that looks for it, and a bare
+    // `disabled` reports "unavailable" where `aria-busy` reports "working".
+    //
+    // Three of the eighteen also hid a SECOND condition in the same expression -- a failed
+    // check, a separation-of-duties refusal, an empty form -- so the button claimed to be
+    // working when it was refusing for a reason no waiting would resolve.
+    //
+    // A KNOWN AND DELIBERATE LIMIT: this is line-based, so a ternary broken across lines slips
+    // through. That is the right trade rather than a gap to close. All eighteen were written on
+    // one line, and the multi-line form is what a dropzone's live region legitimately uses --
+    // "Uploading…" / "Drop the file" / "Drag a file here" is status text, not a label, and no
+    // regex can tell it from a button's without reading structure. A rule that failed on that
+    // would be switched off, and then it would catch nothing at all.
+    expect(offenders(/status === 'loading'\s*\?\s*'/)).toEqual([]);
+  });
+
+  it('renders every request failure with InlineError', () => {
+    // An ApiError carries a trace id, and a hand-rolled <p role="alert"> throws it away.
+    //
+    // Matched on the ApiError SHAPE, not on role="alert" alone, because eight other alerts on
+    // this console are correct: form validation, strings from useState, and one server-stored
+    // issuance reason that is a fact about the record rather than a failed call. A rule that
+    // failed the build on those would be deleted rather than obeyed.
+    expect(
+      spans(
+        5,
+        (window) => /role="alert"/.test(window) && /\.detail \?\?/.test(window),
+        (path) =>
+          path.endsWith('/components/InlineError.tsx') || path.endsWith('/components/states.tsx'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('offers the way out as a breadcrumb, never a back link', () => {
+    // Twelve screens rendered a ghost button with a back arrow in a strip ABOVE the page bar --
+    // navigation doing a breadcrumb's job while pushing the sticky bar 44px down every record.
+    // A breadcrumb says where the record LIVES as well as offering the way out, and it rides
+    // the bar instead of scrolling away with the first panel.
+    //
+    // Matched as the JSX ELEMENT, not the word: `DatePicker` handles `case 'ArrowLeft':` as a
+    // keyboard key, and a rule that failed the build on correct keyboard handling would be
+    // switched off within a week.
+    expect(offenders(/<ArrowLeft[\s/>]/, (path) => !path.startsWith('/src/features/'))).toEqual([]);
+  });
+
+  it('draws every panel with the Panel primitive', () => {
+    // Five sections reimplemented Panel's frame by hand -- same rounded border, same ruled
+    // header, same `text-sm font-semibold` h2 -- so they looked right and inherited nothing:
+    // not the scroll margin that makes a jumped-to section land below the sticky bars, not
+    // `emphasis`, and not any later change to what a panel is.
+    expect(offenders(/<section className="rounded-lg border border-border bg-surface"/)).toEqual([]);
   });
 });

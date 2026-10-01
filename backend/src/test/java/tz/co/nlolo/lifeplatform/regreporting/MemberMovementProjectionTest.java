@@ -77,6 +77,8 @@ class MemberMovementProjectionTest {
     static void applyMigrationsAndBootstrapAppRole() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
             "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",

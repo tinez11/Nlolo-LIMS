@@ -87,6 +87,7 @@ class EnrolmentIntegrationTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -100,6 +101,8 @@ class EnrolmentIntegrationTest {
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -135,10 +138,18 @@ class EnrolmentIntegrationTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
+            "db-migrations/policy/V26__enrolment_stated_premium.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql");
 
         // The container never runs compose's minio-init job, so the buckets are made here.
         MinioClient minio = MinioClient.builder()
@@ -221,7 +232,8 @@ class EnrolmentIntegrationTest {
             "onboarding", IssuanceBasis.MIGRATION,
             loan ? InterestMethod.FLAT_RATE : null,
             loan ? RepaymentFrequency.MONTHLY : null,
-            loan ? new BigDecimal("0.5000") : null), "staff-setup").policyNumber();
+            loan ? new BigDecimal("0.5000") : null,
+            loan ? CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL : null), "staff-setup").policyNumber();
     }
 
     private UUID person(String name) {
@@ -619,7 +631,8 @@ class EnrolmentIntegrationTest {
             new BigDecimal("52000.00"), "TZS", "SINGLE",
             LocalDate.of(2026, 6, 1), null, "onboarding", IssuanceBasis.MIGRATION,
             InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY,
-            new BigDecimal("0.5000")), "staff-setup").policyNumber();
+            new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
+            "staff-setup").policyNumber();
     }
 
     /** As above, but the opening borrower joins TODAY -- so their benefit row is already dated today. */
@@ -643,7 +656,8 @@ class EnrolmentIntegrationTest {
             BenefitBasis.AMORTISING_LOAN, null, null, fclAmount, "TZS", null, List.of(opening),
             new BigDecimal("52000.00"), "TZS", "SINGLE", today, null, "onboarding",
             IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, RepaymentFrequency.MONTHLY,
-            new BigDecimal("0.5000")), "staff-setup").policyNumber();
+            new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
+            "staff-setup").policyNumber();
     }
     /** A credit-life scheme issued with NO borrowers -- the shape a lender relationship starts in. */
     private String issueEmptyCreditLifeScheme() {
@@ -681,7 +695,8 @@ class EnrolmentIntegrationTest {
             LocalDate.of(2026, 6, 1), null, "onboarding", IssuanceBasis.MIGRATION,
             loan ? InterestMethod.FLAT_RATE : null,
             loan ? RepaymentFrequency.MONTHLY : null,
-            loan ? new BigDecimal("0.5000") : null), "staff-setup").policyNumber();
+            loan ? new BigDecimal("0.5000") : null,
+            loan ? CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL : null), "staff-setup").policyNumber();
     }
 
     private PolicyMemberView onlyMemberOf(String policyNumber) {

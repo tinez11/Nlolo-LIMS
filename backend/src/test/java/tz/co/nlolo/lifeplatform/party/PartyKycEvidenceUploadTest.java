@@ -67,7 +67,10 @@ class PartyKycEvidenceUploadTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/party/V6__client_reference.sql",
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql");
 
         MinioClient minioClient = MinioClient.builder()
             .endpoint(MINIO.getS3URL())
@@ -88,15 +91,20 @@ class PartyKycEvidenceUploadTest {
             .jwt(builder -> builder.claim("tenant_id", tenantId.toString()));
     }
 
+    /** The subject that registers every fixture client here, and therefore owns it. */
+    private static final String REGISTERING_AGENT_SUBJECT = "registering-agent";
+
     private UUID registerIndividual(UUID tenantId) throws Exception {
         String response = mockMvc.perform(post("/parties/individuals")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
-                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                    .jwt(builder -> builder.subject(REGISTERING_AGENT_SUBJECT)
+                        .claim("tenant_id", tenantId.toString())))
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .content("""
                     {"fullName":"Kyc Evidence Upload Test","dateOfBirth":"1990-05-12",
+                     "sex":"FEMALE","idType":"NATIONAL_ID","idNumber":"%s",
                      "contactInfo":{"phoneNumber":"+255712345699"}}
-                    """))
+                    """.formatted("19900512-" + UUID.randomUUID().toString().substring(0, 5) + "-00001-11")))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         return UUID.fromString(JsonPath.read(response, "$.partyId"));
@@ -119,15 +127,45 @@ class PartyKycEvidenceUploadTest {
             .andExpect(jsonPath("$.documentRef").isNotEmpty());
     }
 
+    /**
+     * An agent MAY file evidence, for a client they registered.
+     *
+     * <p>This test asserted a flat 403 for any agents-realm caller until 2026-09-30. The agent
+     * takes the documents at the point of sale, so requiring them to reach a staff member
+     * before anything could be filed made the staff member a courier. What the agent still may
+     * not do is decide: {@code POST /parties/{id}/kyc} stays staff-only, which is the same
+     * separation underwriting and claims insist on.
+     *
+     * <p>{@code registerIndividual} above registers as an agents-realm caller, so the token
+     * here is the one that owns the client.
+     */
     @Test
-    void uploadKycEvidenceRejectsNonStaffCallerWith403() throws Exception {
+    void uploadKycEvidenceAdmitsTheAgentWhoRegisteredTheClient() throws Exception {
         UUID tenantId = UUID.randomUUID();
         UUID partyId = registerIndividual(tenantId);
 
         mockMvc.perform(multipart("/parties/" + partyId + "/kyc-evidence")
                 .file(new MockMultipartFile("file", "id-scan.jpg", "image/jpeg", "id-scan-bytes".getBytes()))
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
-                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+                    .jwt(builder -> builder.subject(REGISTERING_AGENT_SUBJECT)
+                        .claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.documentRef").isNotEmpty());
+    }
+
+    @Test
+    void uploadKycEvidenceRefusesAnAgentFilingAgainstSomebodyElsesClient() throws Exception {
+        // The narrower half of the same rule, and the one that makes opening the endpoint safe:
+        // an agent may file documents against their own client and nobody else's. Without this
+        // the permission above would let any agent write to any party in the tenant.
+        UUID tenantId = UUID.randomUUID();
+        UUID partyId = registerIndividual(tenantId);
+
+        mockMvc.perform(multipart("/parties/" + partyId + "/kyc-evidence")
+                .file(new MockMultipartFile("file", "id-scan.jpg", "image/jpeg", "id-scan-bytes".getBytes()))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.subject("a-different-agent")
+                        .claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isForbidden());
     }
 

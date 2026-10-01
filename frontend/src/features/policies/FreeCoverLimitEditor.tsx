@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { canUnderwriteGroupSchemes, readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { InlineError } from '@/components/InlineError';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AMOUNT_PATTERN, formatMoney } from '@/lib/money';
@@ -62,9 +63,7 @@ export function FreeCoverLimitEditor({ policyNumber }: { policyNumber: string })
           Change the free cover limit
         </Button>
         {scheme.status === 'error' && scheme.error && (
-          <p role="alert" className="mt-1 text-xs text-status-danger-fg">
-            {scheme.error.detail ?? scheme.error.title}
-          </p>
+          <InlineError error={scheme.error} />
         )}
       </div>
     );

@@ -114,6 +114,38 @@ SNAPSHOT_JSON=$(api "$STAFF_FINANCE_TOKEN" GET "/products/$PRODUCT_ID/active-sna
 PRODUCT_VERSION_ID=$(jsonval "$SNAPSHOT_JSON" productVersionId)
 echo "productVersionId=$PRODUCT_VERSION_ID"
 
+# An ENDOWMENT product carrying a cash-value table, so the savings half of the platform is
+# reachable at all.
+#
+# Without one, nothing a fresh dev stack can produce ever has a cash value: every seeded product
+# is term or credit life, which never do. So the policy page's Value panel (surrender, paid-up)
+# and the loans panel's origination are permanently inert, and a person clicking through the
+# console would reasonably conclude the features do not work. The table is the one from step 1's
+# own tests -- 200 per 1,000 at year 2, rising -- and the basis reference says plainly that it is
+# a demo figure, not an actuary's.
+#
+# No policy is seeded on it, for the same reason no credit-life scheme is: issuing one is what
+# the form is for.
+echo "=== Step 1a: Endowment product with a cash-value table (staff.admin) ==="
+END_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"DEMO-END-01","productName":"Demo Endowment","category":"ENDOWMENT","defaultCurrency":"TZS"}')
+END_PRODUCT_ID=$(jsonval "$END_PRODUCT_JSON" productId)
+echo "endowmentProductId=$END_PRODUCT_ID"
+
+END_VERSION_RESP=$(curl -sfi -X POST "$API/products/$END_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "tiraFiling":{"reference":"TIRA/DEMO/END/0001","approvalDate":"2020-01-01"},
+    "ratingTable":[{"factorType":"AGE","band":"18-60","multiplier":1.0,"ageFrom":18,"ageTo":60},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"},{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}],
+    "cashValue":{"basisReference":"DEMO-BASIS-NOT-ACTUARIAL","basisDate":"2020-01-01",
+                 "paidUpBasis":"PROPORTIONATE","minYearsForValue":2,
+                 "rows":[{"policyYear":2,"cashValuePerMille":200},{"policyYear":3,"cashValuePerMille":300},
+                         {"policyYear":5,"cashValuePerMille":450},{"policyYear":10,"cashValuePerMille":700}]}
+  }')
+echo "$END_VERSION_RESP" | head -1
+
 # A CREDIT_LIFE product, and a lender to hold a scheme on it.
 #
 # Neither existed here, and the consequence was not cosmetic: the console's "Credit-life scheme"

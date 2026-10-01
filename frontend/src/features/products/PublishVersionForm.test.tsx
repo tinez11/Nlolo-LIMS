@@ -165,3 +165,27 @@ describe('PublishVersionForm benefit schedule', () => {
     expect(await screen.findByText('A percentage benefit needs a percentage')).toBeInTheDocument();
   });
 });
+
+describe('PublishVersionForm cash value', () => {
+  it('offers a cash-value table on a savings product', () => {
+    renderForm();   // ENDOWMENT
+    expect(screen.getByRole('button', { name: 'Add policy year' })).toBeInTheDocument();
+  });
+
+  it('offers none on pure protection, which the server would refuse', () => {
+    render(<PublishVersionForm productId="p-2" category="TERM_LIFE" onPublished={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Add policy year' })).not.toBeInTheDocument();
+  });
+
+  it('refuses a table without its actuarial sign-off, in the server wording', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('button', { name: 'Add policy year' }));
+    await user.type(screen.getByLabelText('Cash value 1 policy year'), '2');
+    await user.type(screen.getByLabelText('Cash value 1 value per 1,000'), '200');
+    await user.click(screen.getByRole('button', { name: 'Publish version' }));
+    expect(await screen.findByText(
+      'A cash-value table needs the actuarial basis reference and date it was signed off under',
+    )).toBeInTheDocument();
+  });
+});

@@ -6,6 +6,7 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyView;
 import tz.co.nlolo.lifeplatform.policy.api.BenefitBasis;
+import tz.co.nlolo.lifeplatform.policy.api.CreditLifePremiumBasis;
 import tz.co.nlolo.lifeplatform.policy.api.InterestMethod;
 import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
 import tz.co.nlolo.lifeplatform.policy.api.LoanTerms;
@@ -70,6 +71,7 @@ class PolicyContractTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/product/V1__create_product_schema.sql",
             "db-migrations/product/V2__base_rate_table.sql",
             "db-migrations/product/V3__base_rate_structured_age.sql",
@@ -83,6 +85,8 @@ class PolicyContractTest {
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -116,7 +120,15 @@ class PolicyContractTest {
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
             "db-migrations/policy/V24__issuance_record.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
+            "db-migrations/policy/V26__enrolment_stated_premium.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql");
     }
 
     @AfterEach
@@ -367,7 +379,8 @@ class PolicyContractTest {
                     new LoanTerms(new BigDecimal("1000000.00"), BigDecimal.ZERO, 12, RepaymentFrequency.MONTHLY,
                         java.time.LocalDate.of(2026, 6, 5), java.time.LocalDate.of(2026, 7, 5)))),
                 new BigDecimal("5000.00"), "TZS", "SINGLE", java.time.LocalDate.of(2026, 6, 1), null,
-                "contract test lender", IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, new BigDecimal("0.5000")),
+                "contract test lender", IssuanceBasis.MIGRATION, InterestMethod.FLAT_RATE, new BigDecimal("0.5000"),
+                CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL),
             "staff-1").policyNumber();
         TenantContext.clear();
 
@@ -826,11 +839,10 @@ class PolicyContractTest {
     }
 
     @Test
-    void surrenderPolicyReturns501WithChoreographyNotImplemented() throws Exception {
-        // Decision 2: a real, routable, correctly-secured endpoint that returns 501, not 404
-        // and not omitted -- this is the falsifiable proof of that decision, not prose. Both
-        // paths now carry a documented 501 response in openapi-policy.yaml, so this validates
-        // against the contract too.
+    void surrenderRequestReturns409WhenThePolicyHasNoValue() throws Exception {
+        // Surrender is real now, not a 501 (product step 1). A plain term policy has no cash value,
+        // so a surrender request against it is refused with a 409 -- a real, routable, contract-valid
+        // response, which is the falsifiable proof the endpoint does something rather than stub.
         UUID tenantId = UUID.randomUUID();
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-09");
 
@@ -841,10 +853,41 @@ class PolicyContractTest {
                 .content("""
                     {"payeeRef":"MPESA-0712345678"}
                     """))
-            .andExpect(status().isNotImplemented())
+            .andExpect(status().isConflict())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
-            .andExpect(jsonPath("$.errorCode").value("CHOREOGRAPHY_NOT_IMPLEMENTED"))
+            .andExpect(jsonPath("$.errorCode").value("INVALID_POLICY_STATE"))
             .andExpect(jsonPath("$.traceId").exists());
+    }
+
+    @Test
+    void aPolicyWithNoSurrenderAnswers204() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-SR");
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/surrender-request")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNoContent())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void onlyFinanceMayApproveASurrender() throws Exception {
+        // Both halves, so the 403 is provably the role gate: the same request from a finance officer
+        // gets past it and reaches the lookup, which 404s on an id that does not exist.
+        UUID tenantId = UUID.randomUUID();
+        UUID unknownRequest = UUID.randomUUID();
+
+        mockMvc.perform(post("/surrender-requests/" + unknownRequest + "/approve")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE_REP"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/surrender-requests/" + unknownRequest + "/approve")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound());
     }
 
     @Test

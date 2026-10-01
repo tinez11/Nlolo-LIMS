@@ -80,6 +80,7 @@ class CommunicationContractTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/communication/V1__create_communication_schema.sql",
             "db-migrations/communication/V2__template_identity.sql",
             "db-migrations/communication/V3__seed_offer_templates.sql",
@@ -88,7 +89,9 @@ class CommunicationContractTest {
             "db-migrations/communication/V6__grants_and_rls.sql",
             "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
             "db-migrations/communication/V8__platform_default_templates.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql");
     }
 
     @AfterAll

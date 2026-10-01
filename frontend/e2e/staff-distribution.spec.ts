@@ -70,6 +70,8 @@ async function createRealActiveProduct(page: Page): Promise<{ productId: string;
   await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
   await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
   await page.getByRole('button', { name: 'Publish version' }).click();
+  // Publishing retires the currently-active version, so it is confirmed.
+  await page.getByRole('button', { name: 'Publish and make active' }).click();
   await expect(page).toHaveURL(/\/staff\/products\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
   const productId = page.url().split('/').pop() as string;

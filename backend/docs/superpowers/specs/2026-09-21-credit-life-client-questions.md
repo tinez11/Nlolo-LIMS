@@ -56,6 +56,29 @@ would mean insuring five years of risk for the price of one.
 
 **We have assumed per year, on the original loan amount.** Please confirm.
 
+### ANSWERED 2026-09-29 — and it is neither, because it is not one answer
+
+The question had a hidden premise: that both lenders price the same way. They do not, and the
+answer was read off their own schedules in `sample data/` rather than described.
+
+**Bumaco charges the percentage ONCE, flat, and the term does not enter the price.** Their May
+file carries six loans of 2, 4, 6, 6, 12 and 12 months and every one is exactly 0.6% of the
+disbursed amount — the two-month loan costs what a twelve-month loan of its size costs. The
+file's own total, 111,000 on 18,500,000, agrees.
+
+**LOLC charges it once per policy year, each year on the balance still outstanding.** That is
+what the 1st-to-5th-year columns on their sheet are. A 10,400,000 loan over 18 months pays
+0.5% of the full amount and then 0.5% of a third of it; a 10,500,000 over 23 months pays
+52,500 then 25,108.6956…, which their sheet carries to ten decimals.
+
+Both are charged ONCE, at enrolment. LOLC's per-year figures are how their total is arrived
+at, not an instruction to invoice annually, so one-file-one-invoice holds for both.
+
+The assumption in the table below — per year on the original amount — matched neither. It
+undercharged Bumaco by 49% on a real file and overcharged LOLC on any term over a year. It
+survived because all three bases agree exactly on a twelve-month loan, and every fixture used
+one. It is now `CreditLifePremiumBasis`, stated per scheme, with no default.
+
 ## 2. Commission clawback
 
 The bank earns commission on each loan insured.
@@ -181,7 +204,7 @@ If any of these is wrong, it is much cheaper to say so now.
 
 | | We assumed |
 |---|---|
-| Premium | An agreed percent **per year** of the original loan amount, charged once |
+| Premium | ~~An agreed percent **per year** of the original loan amount, charged once~~ — **ANSWERED 2026-09-29, and the assumption was wrong for both lenders.** See below. |
 | Payout | The **outstanding** balance, capped at what the bank confirms is actually owed |
 | If in arrears | Cover continues and follows the original repayment schedule |
 | Cover starts | On the loan's **disbursement date**, backdated |

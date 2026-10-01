@@ -1,11 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, Plus, Upload, UserPlus } from 'lucide-react';
+import { Plus, Upload, UserPlus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm, useWatch, Controller } from 'react-hook-form';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { DEFAULT_MEMBER_PAGE_SIZE } from '@/api/policies';
 import type { BenefitBasis, GroupSchemeView, MemberStatus, PolicyMemberView } from '@/api/types';
 import { DataTable, Pager, type Column } from '@/components/DataTable';
+import { InlineError } from '@/components/InlineError';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { PartyName } from '@/components/PartyName';
@@ -115,10 +116,14 @@ export function GroupSchemePage() {
 
   if (scheme.data === null && scheme.status === 'error' && scheme.error) {
     return (
-      <div className="px-6 pt-6">
-        <BackLink />
-        <ErrorPanel error={scheme.error} onRetry={() => void loadScheme(policyNumber)} />
-      </div>
+      <>
+        {/* The bar renders on the error path too, so a record that fails to load keeps its
+            heading and its way out instead of leaving a bare panel. */}
+        <PageHeader breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]} title="Scheme" />
+        <div className="px-6 pt-6">
+          <ErrorPanel error={scheme.error} onRetry={() => void loadScheme(policyNumber)} />
+        </div>
+      </>
     );
   }
 
@@ -145,11 +150,8 @@ export function GroupSchemePage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <BackLink />
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Policies', to: '/staff/policies' }]}
         title={policyNumber}
         description={
           data?.policyholderPartyId ? (
@@ -202,25 +204,35 @@ export function GroupSchemePage() {
           </Panel>
         )}
 
-        <section className="rounded-lg border border-border bg-surface">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold">Members</h2>
-              {/* Two sentences, because one of them would be a lie on the other kind of scheme.
-                  An employer member's stored cover IS their cover today. A credit-life member's
-                  is their cover on the day they were enrolled: the amount insured is the loan
-                  balance, it falls every month, and the declining figure is recomputed at the
-                  date of event when a claim is registered -- never stored, because materialising
-                  a row per repayment would be tens of thousands of rows per file. So this column
-                  is cover at inception, and saying "today" over it overstates every borrower who
-                  has made a repayment. */}
-              <p className="text-xs text-muted-foreground">
-                {data?.benefitBasis === 'AMORTISING_LOAN'
-                  ? 'Each row shows the cover this borrower was enrolled at. A claim pays what they still owed on the day.'
-                  : 'Each row shows the benefit in force for that person today.'}
-              </p>
-            </div>
-            <div className="flex items-center gap-1">
+        {/*
+          `Panel`, not a section hand-styled to look like one. This reimplemented the frame
+          exactly -- same border, same ruled header, same `text-sm font-semibold` heading -- so
+          it looked right and inherited nothing: not the scroll margin that makes a jumped-to
+          section land below the sticky bars, not `emphasis`, and not any later change to what a
+          panel is.
+
+          The toolbar moves INSIDE the panel as a ruled strip, which is what the chart of
+          accounts already does and says why: "the toolbar belongs to the register it drives".
+          It was in the header beside the title, which made the heading share a row with seven
+          controls and wrap before any of them did.
+        */}
+        <Panel
+          title="Members"
+          subtitle={
+            data?.benefitBasis === 'AMORTISING_LOAN'
+              ? 'Each row shows the cover this borrower was enrolled at. A claim pays what they still owed on the day.'
+              : 'Each row shows the benefit in force for that person today.'
+          }
+        >
+          {/* The toolbar, as a ruled strip below the panel heading. The two sentences the
+              subtitle now carries were written here for a reason worth keeping: an employer
+              member's stored cover IS their cover today, while a credit-life member's is
+              their cover on the day they were enrolled -- the amount insured is the loan
+              balance, it falls every month, and the declining figure is recomputed at the
+              date of event when a claim is registered. It is never stored, because a row per
+              repayment would be tens of thousands of rows, and saying "today" over a figure
+              that is cover at inception would overstate every borrower who has repaid. */}
+          <div className="flex flex-wrap items-center gap-1 gap-y-2 border-b border-border px-4 py-2.5">
               <FilterChip
                 label="All"
                 active={status === undefined}
@@ -243,7 +255,7 @@ export function GroupSchemePage() {
                   person covered" without paging it by eye. Beside the status chips
                   because the two compose -- "left, called Juma" is a real question a
                   claim assessor asks. */}
-              <form
+              <form className="ml-auto"
                 onSubmit={(e) => {
                   e.preventDefault();
                   const value = new FormData(e.currentTarget).get('q');
@@ -259,10 +271,9 @@ export function GroupSchemePage() {
                   className="w-52 px-2.5 text-sm"
                 />
               </form>
-            </div>
           </div>
           {renderMembers()}
-        </section>
+        </Panel>
       </DetailLayout>
     </>
   );
@@ -632,16 +643,6 @@ function describeBasis(scheme: GroupSchemeView): string {
   }
 }
 
-function BackLink() {
-  return (
-    <Button asChild variant="ghost" size="sm" className="-ml-2">
-      <Link to="/staff/policies">
-        <ArrowLeft />
-        All policies
-      </Link>
-    </Button>
-  );
-}
 
 
 /**
@@ -798,15 +799,13 @@ function AddMemberForm({ scheme, onDone }: { scheme: GroupSchemeView; onDone: ()
       )}
 
       {adding.status === 'error' && adding.error && (
-        <p role="alert" className="text-xs text-status-danger-fg">
-          {adding.error.detail ?? adding.error.title}
-        </p>
+        <InlineError error={adding.error} />
       )}
 
       <div className="flex items-center gap-1.5">
-        <Button type="submit" size="sm" variant="primary" disabled={adding.status === 'loading'}>
+        <Button type="submit" size="sm" variant="primary" pending={adding.status === 'loading'}>
           <Plus />
-          {adding.status === 'loading' ? 'Adding…' : 'Add member'}
+          Add member
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel

@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useEffect } from 'react';
 import { useFieldArray, useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,8 +10,7 @@ import { PartyName } from '@/components/PartyName';
 import { AgentPicker } from '@/components/AgentPicker';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
-import { isSingleLifeProduct, PREMIUM_FREQUENCIES } from '@/api/types';
-import { humanizeStatus } from '@/lib/status';
+import { isSingleLifeProduct, PREMIUM_FREQUENCIES, PREMIUM_FREQUENCY_LABELS } from '@/api/types';
 import { BeneficiaryRow } from '@/features/policies/BeneficiaryRow';
 import { blankBeneficiaryRow } from '@/features/policies/beneficiaryForm';
 import { isInitialLoad } from '@/store/createResourceSlice';
@@ -126,16 +125,8 @@ export function OpenUnderwritingCasePage() {
 
   return (
     <>
-      <div className="px-6 pt-6">
-        <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to=".." relative="path">
-            <ArrowLeft />
-            Back
-          </Link>
-        </Button>
-      </div>
-
       <PageHeader
+        breadcrumb={[{ label: 'Underwriting', to: '/staff/underwriting' }]}
         title="Open an underwriting case"
         description="Browsable afterward from the Underwriting queue -- but a policy later issued from it never re-exposes this case's id."
       />
@@ -330,7 +321,7 @@ export function OpenUnderwritingCasePage() {
                 <option value="">Not stated</option>
                 {PREMIUM_FREQUENCIES.map((f) => (
                   <option key={f} value={f}>
-                    {humanizeStatus(f)}
+                    {PREMIUM_FREQUENCY_LABELS[f]}
                   </option>
                 ))}
               </Select>
@@ -407,8 +398,8 @@ export function OpenUnderwritingCasePage() {
         )}
 
         <div className="flex items-center gap-2">
-          <Button type="submit" variant="primary" disabled={opening.status === 'loading'}>
-            {opening.status === 'loading' ? 'Opening…' : 'Open case'}
+          <Button type="submit" variant="primary" pending={opening.status === 'loading'}>
+            Open case
           </Button>
           <Button asChild variant="ghost">
             <Link to=".." relative="path">

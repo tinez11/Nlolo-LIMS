@@ -93,6 +93,17 @@ public class EnrolmentSubmissionRow {
     @Column(name = "premium_amount")
     private BigDecimal premiumAmount;
 
+    /**
+     * What the LENDER said this loan costs, where their file carried a premium column.
+     *
+     * <p>Beside {@code premiumAmount}, never instead of it: that one is what the insurer
+     * charged and goes on being the only figure an invoice is built from. This is the other
+     * side of a reconciliation, and it is stored even when the two agree -- a variance nobody
+     * recorded the agreement of is one nobody can audit later.
+     */
+    @Column(name = "stated_premium_amount")
+    private BigDecimal statedPremiumAmount;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -119,6 +130,10 @@ public class EnrolmentSubmissionRow {
         this.loanPrincipalAmount = source.loanPrincipalAmount();
         this.loanTermMonths = source.loanTermMonths();
         this.disbursementDate = source.disbursementDate();
+        // Carried on EVERY row shape -- enrolled, capped or refused -- because withLoan is the
+        // one place they all pass through. A rejected row's stated premium is worth keeping too:
+        // it is what the lender expected to be charged for cover nobody got.
+        this.statedPremiumAmount = source.statedPremiumAmount();
         return this;
     }
 
@@ -194,4 +209,5 @@ public class EnrolmentSubmissionRow {
     public UUID getPolicyMemberId() { return policyMemberId; }
     public String getMemberReference() { return memberReference; }
     public BigDecimal getPremiumAmount() { return premiumAmount; }
+    public BigDecimal getStatedPremiumAmount() { return statedPremiumAmount; }
 }

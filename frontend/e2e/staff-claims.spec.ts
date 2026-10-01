@@ -177,7 +177,14 @@ test.describe('staff claims', () => {
 
     await page.getByRole('button', { name: 'Register claim' }).click();
 
-    await expect(page.getByRole('alert')).toContainText(/was not in force/i);
+    /*
+      "not on risk on <date>", not the old "was not in force". Product step 0 made the check
+      date-aware -- `Policy.wasOnRiskOn` reads the commencement, the maturity date and the lapse
+      and suspension dates -- so the refusal now names the DAY it is talking about. Asserting the
+      date too, because that is the whole difference: a message that just says "not in force"
+      cannot distinguish a policy that never started from one that had already ended.
+    */
+    await expect(page.getByRole('alert')).toContainText(/was not on risk on 2026-08-01/i);
     // Still on the register page -- a rejected submission must not navigate away.
     await expect(page.getByRole('heading', { name: 'Register a claim' })).toBeVisible();
   });

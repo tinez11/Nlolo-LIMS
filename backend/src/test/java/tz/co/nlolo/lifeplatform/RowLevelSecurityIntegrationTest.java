@@ -80,6 +80,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             // M2 additions (final-review finding 4): prove RLS actually isolates tenants
             // on product/underwriting tables too, not merely that the CREATE POLICY SQL
             // reads correctly.
@@ -95,6 +96,8 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -136,6 +139,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
+            "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
             // on every insert (every auto-issued policy in policyIsTenantIsolatedUnderRls/
             // policyLoanIsTenantIsolatedUnderRls below would otherwise fail at persist time), the
@@ -149,6 +153,10 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
@@ -158,12 +166,15 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",
+            "db-migrations/billing/V7__policy_inception_invoice.sql",
+            "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             // M5 (Task 1) additions: disbursementInstructionIsTenantIsolatedUnderRls/
             // disbursementIdempotencyRegistryIsTenantIsolatedUnderRls below need payment's own
             // schema/grants/RLS -- V1 alone shipped zero GRANTs and zero RLS on any table.
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql",
             // M7 (Task 10) additions. distribution/V1 enabled RLS on NONE of its four tables and
             // granted app_role nothing; V2 is what adds both, plus commission_accrual and
             // policy_projection with their own policies. Until now no test in this class or
@@ -188,6 +199,7 @@ class RowLevelSecurityIntegrationTest {
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
+            "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             // M10 (Task 9) additions. regreporting/V1 enabled RLS on NEITHER of its two original
             // tables and granted app_role nothing at all; V2 is what adds both, for
             // policy_dimension/policy_movement/regulatory_return/return_line among others. Until now

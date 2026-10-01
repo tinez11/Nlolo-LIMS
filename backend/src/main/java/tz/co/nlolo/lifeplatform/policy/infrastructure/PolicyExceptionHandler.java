@@ -32,6 +32,11 @@ public class PolicyExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "POLICY_NOT_FOUND");
     }
 
+    @ExceptionHandler(tz.co.nlolo.lifeplatform.policy.api.SurrenderRequestNotFoundException.class)
+    public ProblemDetail handleSurrenderNotFound(tz.co.nlolo.lifeplatform.policy.api.SurrenderRequestNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex.getMessage(), "SURRENDER_REQUEST_NOT_FOUND");
+    }
+
     @ExceptionHandler(InvalidPolicyStateException.class)
     public ProblemDetail handleInvalidState(InvalidPolicyStateException ex) {
         return problem(HttpStatus.CONFLICT, ex.getMessage(), "INVALID_POLICY_STATE");

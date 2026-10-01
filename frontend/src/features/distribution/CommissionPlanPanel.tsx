@@ -235,8 +235,8 @@ function CreatePlanForm({ agentId, productId }: { agentId: string; productId: st
         <InlineError error={creating.error} />
       )}
 
-      <Button type="submit" size="sm" variant="primary" disabled={creating.status === 'loading'}>
-        {creating.status === 'loading' ? 'Creating…' : 'Create plan'}
+      <Button type="submit" size="sm" variant="primary" pending={creating.status === 'loading'}>
+        Create plan
       </Button>
     </form>
   );

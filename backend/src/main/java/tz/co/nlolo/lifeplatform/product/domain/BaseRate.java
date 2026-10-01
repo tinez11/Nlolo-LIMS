@@ -51,10 +51,24 @@ public class BaseRate {
     @Column(name = "rate_per_mille", nullable = false)
     private BigDecimal ratePerMille;
 
+    // The policy term this rate is for (V16). Both null = applies to any term (every row before
+    // term-banding). Both set = applies only to a term within [from, to] inclusive.
+    @Column(name = "term_from_months")
+    private Integer termFromMonths;
+
+    @Column(name = "term_to_months")
+    private Integer termToMonths;
+
     protected BaseRate() {}
 
+    /** Unbanded rate (any term) -- the pre-V16 shape, kept so existing call sites read unchanged. */
     public BaseRate(UUID tenantId, UUID productVersionId, int ageFrom, int ageTo, String sex,
                     String smokerStatus, BigDecimal ratePerMille) {
+        this(tenantId, productVersionId, ageFrom, ageTo, sex, smokerStatus, ratePerMille, null, null);
+    }
+
+    public BaseRate(UUID tenantId, UUID productVersionId, int ageFrom, int ageTo, String sex,
+                    String smokerStatus, BigDecimal ratePerMille, Integer termFromMonths, Integer termToMonths) {
         this.tenantId = tenantId;
         this.productVersionId = productVersionId;
         this.ageFrom = ageFrom;
@@ -62,6 +76,8 @@ public class BaseRate {
         this.sex = sex;
         this.smokerStatus = smokerStatus;
         this.ratePerMille = ratePerMille;
+        this.termFromMonths = termFromMonths;
+        this.termToMonths = termToMonths;
     }
 
     public UUID getProductVersionId() { return productVersionId; }
@@ -70,4 +86,6 @@ public class BaseRate {
     public String getSex() { return sex; }
     public String getSmokerStatus() { return smokerStatus; }
     public BigDecimal getRatePerMille() { return ratePerMille; }
+    public Integer getTermFromMonths() { return termFromMonths; }
+    public Integer getTermToMonths() { return termToMonths; }
 }

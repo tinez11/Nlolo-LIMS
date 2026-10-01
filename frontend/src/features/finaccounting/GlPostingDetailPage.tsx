@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Field } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
+import { Panel } from '@/components/Panel';
 import { ErrorPanel, LoadingBlock } from '@/components/states';
 import { formatInstant } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
@@ -63,11 +64,7 @@ export function GlPostingDetailPage() {
       {entry && (
         <div className="grid gap-5 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
-            <section className="rounded-lg border border-border bg-surface">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold">Postings</h2>
-                <p className="text-xs text-muted-foreground">Always exactly two legs -- one DR, one CR, equal totals</p>
-              </div>
+            <Panel title="Postings" subtitle="Always exactly two legs -- one DR, one CR, equal totals">
               <ul className="divide-y divide-border">
                 {entry.postings.map((p) => (
                   <li key={p.postingId} className="flex items-center justify-between px-4 py-2.5 text-sm">
@@ -79,20 +76,17 @@ export function GlPostingDetailPage() {
                   </li>
                 ))}
               </ul>
-            </section>
+            </Panel>
           </div>
 
           <div className="space-y-5">
-            <section className="rounded-lg border border-border bg-surface">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold">Entry</h2>
-              </div>
+            <Panel title="Entry">
               <dl className="px-4 pb-2">
                 <Field label="Period" value={entry.period} />
                 <Field label="Posted" value={formatInstant(entry.postedAt)} />
                 <Field label="Source ref" value={<span className="font-mono text-xs">{entry.sourceRef}</span>} />
               </dl>
-            </section>
+            </Panel>
           </div>
         </div>
       )}

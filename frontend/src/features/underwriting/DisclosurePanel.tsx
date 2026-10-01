@@ -1,6 +1,7 @@
 import { Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { InlineError } from '@/components/InlineError';
 import { ErrorPanel } from '@/components/states';
 import { FormField } from '@/components/FormField';
 import { formatInstant } from '@/lib/dates';
@@ -167,9 +168,7 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
         ))}
 
         {recording.status === 'error' && recording.error && (
-          <div role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-xs text-status-danger-fg">
-            {recording.error.detail ?? recording.error.title}
-          </div>
+          <InlineError error={recording.error} />
         )}
 
         <div className="flex items-center gap-2">
@@ -190,10 +189,14 @@ export function DisclosurePanel({ caseId }: { caseId: string }) {
               // Every part except notes is required, so a half-filled row cannot be saved: a
               // recorded question with no wording, or an answer with no question, looks like
               // evidence and is not.
-              disabled={complete.length === 0 || recording.status === 'loading'}
+              pending={recording.status === 'loading'}
+              disabled={complete.length === 0}
               onClick={() => void save()}
             >
-              {recording.status === 'loading' ? 'Recording…' : `Record ${complete.length} declaration(s)`}
+              {/* The count stays in the label, because it is the one thing that tells somebody
+                  how much of the form the platform thinks is finished. It is not a tense, so
+                  `pending` does not touch it. */}
+              {`Record ${complete.length} declaration(s)`}
             </Button>
           )}
         </div>

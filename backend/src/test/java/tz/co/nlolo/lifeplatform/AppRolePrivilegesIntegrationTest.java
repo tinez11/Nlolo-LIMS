@@ -121,7 +121,10 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/party/V2__individual_person_record.sql",
             "db-migrations/party/V4__registered_by_agent.sql",
             "db-migrations/party/V5__registered_by_name.sql",
+            "db-migrations/party/V6__client_reference.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             // M2 additions (final-review finding 4): product/underwriting's GRANT/RLS SQL
             // read correct by inspection but were never exercised under the real app_role
             // identity -- exactly the M1 blind spot this class's own javadoc describes.
@@ -137,6 +140,8 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -167,6 +172,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
+            "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             // M4 (Task 1) additions: policy.policy now requires premium_amount/currency/frequency
             // on every insert (this class's own policy-issuing tests would otherwise fail), the
             // auto-issuance listener invoked by submitAssessment below needs
@@ -180,6 +186,10 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
@@ -189,6 +199,8 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/billing/V3__amount_paid.sql",
             "db-migrations/billing/V5__single_premium_invoice.sql",
             "db-migrations/billing/V6__premium_credit.sql",
+            "db-migrations/billing/V7__policy_inception_invoice.sql",
+            "db-migrations/billing/V8__schedule_premium_paying_until.sql",
             // M6 (Task 1) additions: appRoleCanReadWriteAndUpdateAClaim below needs claims' own
             // schema/grants -- V1 alone had zero GRANT statements anywhere in the file (again),
             // the exact M1/M5 failure mode this class exists to catch, and RLS on only 1 of its
@@ -218,6 +230,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql",
             // M7 (Task 10) additions: distribution appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap claims had entering M6.
             // distribution/V1 has zero GRANT statements (the recurring V1 pattern this class
@@ -245,6 +258,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/finaccounting/V3__account_code_foreign_key.sql",
             "db-migrations/finaccounting/V4__chart_of_account_writable_via_api.sql",
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
+            "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
             // M10 (Task 9) additions: regreporting appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap finaccounting had entering
             // M9. regreporting/V1 has zero GRANT statements and zero RLS on either of its two
@@ -977,17 +991,17 @@ class AppRolePrivilegesIntegrationTest {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
-            statement.execute("CREATE TABLE finaccounting.gl_posting_2026_10 PARTITION OF finaccounting.gl_posting "
-                + "FOR VALUES FROM ('2026-10-01') TO ('2026-11-01')");
+            statement.execute("CREATE TABLE finaccounting.gl_posting_2030_01 PARTITION OF finaccounting.gl_posting "
+                + "FOR VALUES FROM ('2030-01-01') TO ('2030-02-01')");
 
             try (ResultSet rs = statement.executeQuery(
-                    "SELECT relrowsecurity FROM pg_class WHERE oid = 'finaccounting.gl_posting_2026_10'::regclass")) {
+                    "SELECT relrowsecurity FROM pg_class WHERE oid = 'finaccounting.gl_posting_2030_01'::regclass")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getBoolean(1)).as("RLS must be enabled on a brand-new partition with zero manual steps")
                     .isTrue();
             }
             try (ResultSet rs = statement.executeQuery(
-                    "SELECT count(*) FROM pg_policy WHERE polrelid = 'finaccounting.gl_posting_2026_10'::regclass")) {
+                    "SELECT count(*) FROM pg_policy WHERE polrelid = 'finaccounting.gl_posting_2030_01'::regclass")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getInt(1)).as("exactly one tenant-isolation policy must be mirrored").isEqualTo(1);
             }
@@ -998,10 +1012,10 @@ class AppRolePrivilegesIntegrationTest {
             // GL unwritable. A regression that revoked everything again would be invisible to a
             // negative-only test.
             try (ResultSet rs = statement.executeQuery(
-                    "SELECT has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'UPDATE'), "
-                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'DELETE'), "
-                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'SELECT'), "
-                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'INSERT')")) {
+                    "SELECT has_table_privilege('app_role', 'finaccounting.gl_posting_2030_01'::regclass, 'UPDATE'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2030_01'::regclass, 'DELETE'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2030_01'::regclass, 'SELECT'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2030_01'::regclass, 'INSERT')")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getBoolean(1)).as("app_role must NOT hold UPDATE on a brand-new partition").isFalse();
                 assertThat(rs.getBoolean(2)).as("app_role must NOT hold DELETE on a brand-new partition").isFalse();

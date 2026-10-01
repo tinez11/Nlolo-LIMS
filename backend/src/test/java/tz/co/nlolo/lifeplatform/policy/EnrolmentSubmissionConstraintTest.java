@@ -67,7 +67,13 @@ class EnrolmentSubmissionConstraintTest {
             "db-migrations/policy/V20__member_exit_reason.sql",
             "db-migrations/policy/V22__member_promoted_party.sql",
             "db-migrations/policy/V23__member_open_death_claim.sql",
-            "db-migrations/policy/V24__issuance_record.sql");
+            "db-migrations/policy/V24__issuance_record.sql",
+            "db-migrations/policy/V25__credit_life_premium_basis.sql",
+            "db-migrations/policy/V26__enrolment_stated_premium.sql",
+            "db-migrations/policy/V27__expired_status.sql",
+            "db-migrations/policy/V28__policies_due_to_expire.sql",
+            "db-migrations/policy/V29__paid_up.sql",
+            "db-migrations/policy/V30__surrender.sql");
     }
 
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -93,12 +99,12 @@ class EnrolmentSubmissionConstraintTest {
         // premium_rate_percent is not optional on a loan basis -- V18's
         // chk_group_scheme_rate_iff_loan_basis refuses a credit-life scheme without the rate
         // its lender agreed, because a scheme that reached its first accepted file without one
-        // could not price a single member.
+        // could not price a single member. V25 then requires the basis alongside the rate.
         jdbcTemplate.update("""
             insert into policy.group_scheme
                 (policy_number, tenant_id, benefit_basis, currency, interest_method,
-                 repayment_frequency, premium_rate_percent)
-            values (?, ?, 'AMORTISING_LOAN', 'TZS', 'FLAT_RATE', 'MONTHLY', 0.5000)
+                 repayment_frequency, premium_rate_percent, premium_basis)
+            values (?, ?, 'AMORTISING_LOAN', 'TZS', 'FLAT_RATE', 'MONTHLY', 0.5000, 'PER_ANNUM_ON_PRINCIPAL')
             """, policyNumber, tenantId);
     }
 

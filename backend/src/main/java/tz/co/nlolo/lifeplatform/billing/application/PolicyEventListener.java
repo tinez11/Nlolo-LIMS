@@ -50,6 +50,9 @@ public class PolicyEventListener {
             case "policy.PolicyEndorsed" -> withTenant(envelope, this::handlePolicyEndorsed);
             case "policy.PolicySuspended" -> withTenant(envelope, this::handlePolicySuspended);
             case "policy.PolicyResumed" -> withTenant(envelope, this::handlePolicyResumed);
+            case "policy.PolicyExpired" -> withTenant(envelope, this::handlePolicyExpired);
+            case "policy.PolicyMadePaidUp" -> withTenant(envelope, this::handlePolicyMadePaidUp);
+            case "policy.PolicySurrendered" -> withTenant(envelope, this::handlePolicySurrendered);
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
             case "policy.GroupMemberExited" -> withTenant(envelope, this::handleGroupMemberExited);
             default -> { /* not billing-relevant */ }
@@ -84,10 +87,12 @@ public class PolicyEventListener {
         String premiumCurrency = (String) premium.get("currencyCode");
         String premiumFrequency = (String) payload.get("premiumFrequency");
 
-        // A single-premium contract is not billed on a cycle, so it gets no schedule and no
-        // invoices generated ahead of it.
+        // A single-premium contract is not billed on a cycle, so it never gets a schedule --
+        // billing_schedule's own CHECK admits only MONTHLY, QUARTERLY and ANNUALLY. What it
+        // gets INSTEAD depends on where its premium comes from, and those are two different
+        // contracts that share one frequency.
         //
-        // Without this guard a credit-life master policy produced a BillingSchedule and twelve
+        // Without this branch a credit-life master policy produced a BillingSchedule and twelve
         // PremiumInvoice rows for whatever premium figure the caller of issueGroupScheme
         // happened to type. Those then fell due, aged into arrears, and dunned the lender for
         // money the contract never asked for. Its real premium arrives per accepted enrolment
@@ -97,13 +102,39 @@ public class PolicyEventListener {
         // business knowing what credit life is, and a category test would miss the next
         // single-premium product while this catches it.
         if ("SINGLE".equals(premiumFrequency)) {
-            log.info("Policy {} is single-premium -- no billing schedule; its premium is raised "
-                + "when there is something to charge for", policyNumber);
+            // Where the premium COMES FROM, which is the whole distinction, and a structural
+            // fact about the contract rather than a product name -- which is why policy states
+            // it on the event and billing reads it instead of inferring a category it should
+            // not know about.
+            //
+            // Not "is it a group scheme". That was this flag's first shape and it was wrong: a
+            // family or employer scheme paid once for a year of cover is a group scheme whose
+            // premium does NOT arrive file by file, and keying on group-ness would have issued
+            // it and then charged nobody -- the same silence this branch exists to end.
+            boolean premiumPerEnrolment = Boolean.TRUE.equals(payload.get("premiumPerEnrolment"));
+            if (premiumPerEnrolment) {
+                log.info("Policy {} is billed per enrolment file -- no schedule and no charge "
+                    + "against the policy itself", policyNumber);
+                return;
+            }
+
+            // A RETAIL single premium, which nothing charged until now. The policy was written,
+            // the premium was rated and stored on it, and no invoice was ever raised against
+            // it: the customer owed money the platform never asked for, and the cover ran
+            // regardless. One charge, due the day cover begins.
+            billingApiImpl.raisePolicyInceptionInvoice(TenantContext.get(), policyNumber,
+                productVersionId, issueDate, premiumAmount, premiumCurrency);
             return;
         }
 
+        // The end of the contract, so billing stops there instead of a fixed twelve months in.
+        // Absent or null on a policy that does not term -- whole life, an annually renewable
+        // scheme -- which the schedule reads as "no end".
+        String payingUntilRaw = (String) payload.get("premiumPayingUntil");
+        LocalDate premiumPayingUntil = payingUntilRaw != null ? LocalDate.parse(payingUntilRaw) : null;
+
         billingApiImpl.generateScheduleForNewPolicy(TenantContext.get(), policyNumber, productVersionId,
-            issueDate, premiumAmount, premiumCurrency, premiumFrequency);
+            issueDate, premiumAmount, premiumCurrency, premiumFrequency, premiumPayingUntil);
     }
 
     private void handlePolicyEndorsed(Map<String, Object> payload) {
@@ -117,6 +148,24 @@ public class PolicyEventListener {
     private void handlePolicySuspended(Map<String, Object> payload) {
         String policyNumber = (String) payload.get("policyNumber");
         billingApiImpl.pauseScheduleForSuspension(TenantContext.get(), policyNumber);
+    }
+
+    private void handlePolicyExpired(Map<String, Object> payload) {
+        String policyNumber = (String) payload.get("policyNumber");
+        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
+    }
+
+    private void handlePolicyMadePaidUp(Map<String, Object> payload) {
+        String policyNumber = (String) payload.get("policyNumber");
+        // Paid-up means no premium falls due again -- the same schedule termination as expiry.
+        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
+    }
+
+    private void handlePolicySurrendered(Map<String, Object> payload) {
+        String policyNumber = (String) payload.get("policyNumber");
+        // A surrendered policy is off risk; no further premium is due. Same schedule termination.
+        // Fires for a claim-terminated surrender too, which should equally stop being invoiced.
+        billingApiImpl.terminateScheduleForExpiry(TenantContext.get(), policyNumber);
     }
 
     /**

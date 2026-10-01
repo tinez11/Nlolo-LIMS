@@ -1,10 +1,12 @@
 package tz.co.nlolo.lifeplatform.policy;
 
 import org.junit.jupiter.api.Test;
+import tz.co.nlolo.lifeplatform.policy.api.CreditLifePremiumBasis;
 import tz.co.nlolo.lifeplatform.policy.domain.CreditLifePremium;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -18,6 +20,117 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * spreadsheet.
  */
 class CreditLifePremiumTest {
+
+    // ---- the bases, against the clients' own schedules -----------------------
+    //
+    // Every figure below is read off a real file in `sample data/`, not invented. That is the
+    // point of them: the platform priced on one formula for a long time and it matched neither
+    // lender, which no fixture of my own devising would ever have caught.
+
+    /**
+     * BUMACO INSURANCE MAY.xlsx, all six loans on it, at the 0.6% their sheet works out at.
+     *
+     * <p>Terms of 2, 4, 6, 6, 12 and 12 months, and every one is the same flat percentage of
+     * the disbursed amount: the 2-month loan pays exactly what a 12-month loan of its size
+     * does. The sheet's own total is 111,000 on 18,500,000 of principal, which is what these
+     * six sum to.
+     */
+    @Test
+    void aFlatBasisChargesTheRateOnTheDisbursedAmountWhateverTheTerm() {
+        BigDecimal rate = new BigDecimal("0.6000");
+        record Loan(String principal, int termMonths, String premium) {}
+        List<Loan> may = List.of(
+            new Loan("1500000.00", 4, "9000.00"),    // Malunde
+            new Loan("6000000.00", 12, "36000.00"),  // Chami
+            new Loan("1000000.00", 6, "6000.00"),    // Sendwa
+            new Loan("1000000.00", 2, "6000.00"),    // Malipesa -- two months, full rate
+            new Loan("4000000.00", 6, "24000.00"),   // Kipagata
+            new Loan("5000000.00", 12, "30000.00"));  // Mselle
+
+        BigDecimal total = BigDecimal.ZERO;
+        for (Loan loan : may) {
+            BigDecimal premium = CreditLifePremium.forLoan(new BigDecimal(loan.principal()),
+                loan.termMonths(), rate, CreditLifePremiumBasis.FLAT_ON_PRINCIPAL);
+            assertThat(premium).as(loan.principal() + " over " + loan.termMonths() + " months")
+                .isEqualByComparingTo(loan.premium());
+            total = total.add(premium);
+        }
+        assertThat(total).as("the file's own total").isEqualByComparingTo("111000.00");
+    }
+
+    /**
+     * CREDIT LIFE INSURANCE LOLC EXCEL SHEET-JUNE 2026.xlsx, at their 0.5%.
+     *
+     * <p>The rate once per policy year, each year on what is still outstanding when it begins.
+     * The 23-month row is the one that proves the shape rather than merely fitting it: its
+     * second year is 10,500,000 x (11/23) x 0.5% = 25,108.6956..., and the sheet carries that
+     * to ten decimal places.
+     */
+    @Test
+    void aDecliningBalanceBasisChargesEachYearOnWhatIsStillOwed() {
+        BigDecimal rate = new BigDecimal("0.5000");
+        record Loan(String principal, int termMonths, String total, String why) {}
+        List<Loan> june = List.of(
+            new Loan("10400000.00", 12, "52000.00", "one year only, nothing has declined"),
+            new Loan("10400000.00", 18, "69333.33", "52,000 then 10,400,000 x 6/18 x 0.5%"),
+            new Loan("10500000.00", 18, "70000.00", "52,500 then 17,500"),
+            new Loan("5900000.00", 18, "39333.33", "29,500 then 9,833.33"),
+            new Loan("10500000.00", 23, "77608.70", "52,500 then 25,108.6956..."),
+            new Loan("10500000.00", 24, "78750.00", "52,500 then half of 52,500"));
+
+        for (Loan loan : june) {
+            assertThat(CreditLifePremium.forLoan(new BigDecimal(loan.principal()),
+                    loan.termMonths(), rate, CreditLifePremiumBasis.ANNUAL_ON_DECLINING_BALANCE))
+                .as(loan.why())
+                .isEqualByComparingTo(loan.total());
+        }
+    }
+
+    /**
+     * The three bases genuinely differ, so choosing the wrong one is not a rounding matter.
+     *
+     * <p>Same loan, same rate: a flat basis charges 52,000, the platform's original per-annum
+     * basis charges 78,000, and LOLC's declining basis 69,333.33. The 26,000 between the first
+     * and the second is the gap that went unnoticed, because it closes to zero on a 12-month
+     * loan and every fixture used one.
+     */
+    @Test
+    void theBasesDisagreeOnEveryTermThatIsNotExactlyOneYear() {
+        BigDecimal principal = new BigDecimal("10400000.00");
+        BigDecimal rate = new BigDecimal("0.5000");
+
+        assertThat(CreditLifePremium.forLoan(principal, 18, rate, CreditLifePremiumBasis.FLAT_ON_PRINCIPAL))
+            .isEqualByComparingTo("52000.00");
+        assertThat(CreditLifePremium.forLoan(principal, 18, rate, CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL))
+            .isEqualByComparingTo("78000.00");
+        assertThat(CreditLifePremium.forLoan(principal, 18, rate, CreditLifePremiumBasis.ANNUAL_ON_DECLINING_BALANCE))
+            .isEqualByComparingTo("69333.33");
+
+        // At exactly twelve months they collapse onto one another, which is why a book of
+        // annual loans hides the difference completely.
+        for (CreditLifePremiumBasis basis : CreditLifePremiumBasis.values()) {
+            assertThat(CreditLifePremium.forLoan(principal, 12, rate, basis))
+                .as(basis.name() + " at twelve months")
+                .isEqualByComparingTo("52000.00");
+        }
+    }
+
+    @Test
+    void theDefaultOverloadStaysOnThePlatformsOriginalBasis() {
+        // 45 schemes were priced through the three-argument call before a basis existed, and it
+        // must go on meaning what it meant to them.
+        assertThat(CreditLifePremium.forLoan(new BigDecimal("10400000.00"), 18, new BigDecimal("0.5000")))
+            .isEqualByComparingTo(CreditLifePremium.forLoan(new BigDecimal("10400000.00"), 18,
+                new BigDecimal("0.5000"), CreditLifePremiumBasis.PER_ANNUM_ON_PRINCIPAL));
+    }
+
+    @Test
+    void aLoanCannotBePricedWithoutKnowingWhatItsRateMeans() {
+        assertThatThrownBy(() -> CreditLifePremium.forLoan(
+                new BigDecimal("1000000.00"), 12, new BigDecimal("0.5000"), null))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("CreditLifePremiumBasis");
+    }
 
     // ---- what a loan costs --------------------------------------------------
 

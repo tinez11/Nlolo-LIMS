@@ -473,9 +473,10 @@ components:
         premiumFrequency:
           description: >-
             How often the applicant intends to pay. The automatic issuance path divides the
-            annual premium by this rather than always by twelve.
+            annual premium by this rather than always by twelve. SINGLE divides by nothing:
+            the whole loaded annual figure is charged once, at inception.
           type: [string, "null"]
-          enum: [MONTHLY, QUARTERLY, ANNUALLY, null]
+          enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE, null]
         beneficiaries:
           description: >-
             Nominations as taken on the proposal form. Optional — a proposal arriving with the
@@ -523,7 +524,9 @@ components:
               salaryAmount: { type: [string, "null"] }
         premiumAmount: { type: string }
         premiumCurrency: { type: string }
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE included: a family or employer scheme bought with one contribution for a
+        # year of cover is a group scheme whose premium does not arrive per enrolment file.
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
     GroupProposal:
@@ -564,7 +567,9 @@ components:
             would read is the employer's. Carried verbatim to issuance.
           type: string
         premiumCurrency: { type: string }
-        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        # SINGLE included: a family or employer scheme bought with one contribution for a
+        # year of cover is a group scheme whose premium does not arrive per enrolment file.
+        premiumFrequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
     BeneficiaryNomination:
@@ -714,9 +719,9 @@ components:
           description: >-
             How often the applicant intends to pay. Drives the instalment the automatic
             issuance path computes — it divided the annual premium by twelve unconditionally
-            until this was captured.
+            until this was captured. SINGLE is charged once and divided by nothing.
           type: [string, "null"]
-          enum: [MONTHLY, QUARTERLY, ANNUALLY, null]
+          enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE, null]
         groupScheme:
           description: >-
             True when this case is a group scheme rather than one life. The queue needs it to

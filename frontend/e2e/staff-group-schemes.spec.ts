@@ -168,6 +168,11 @@ test.describe('staff group schemes', () => {
     await policyholderLink.click();
     await expect(page).toHaveURL(/\/staff\/parties\/[0-9a-f-]{36}$/, { timeout: 15_000 });
 
+    // The client record's work column is tabs, and schemes share the Policies tab with the
+    // policies register -- they answer one question, and the schemes panel is derived from the
+    // policies page already loaded. Staff land on KYC, so this opens the one it needs.
+    await page.getByRole('tab', { name: 'Policies', exact: true }).click();
+
     const schemesPanel = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Group schemes' }) });
@@ -301,7 +306,7 @@ test.describe('staff group schemes', () => {
     /*
      * REGISTRATION ITSELF IS NOT ASSERTED HERE, for the same reason the joiner is not
      * asserted in the first test: the server refuses a claim on a scheme that is not in
-     * force ("Policy GRP-... was not in force on ..."), a scheme is an offer until the
+     * force ("Policy GRP-... was not on risk on ..."), a scheme is an offer until the
      * employer's first premium clears, and this console has no action that accepts an
      * offer. GroupClaimIntegrationTest registers, approves and settles a member claim
      * against a real database, and ClaimSettlementEndToEndTest carries one to a real

@@ -53,7 +53,7 @@ export interface GroupSchemeIssueFormValues {
   openingSchedule: MemberRowValues[];
   premiumAmount: string;
   premiumCurrency: string;
-  premiumFrequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
+  premiumFrequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY' | 'SINGLE';
   commencementDate: string;
   policyTermMonths: string;
   reasonForManualIssue: string;
@@ -119,7 +119,7 @@ export function groupSchemeIssueFormSchema(today: string = todayIso()) {
         .regex(AMOUNT_PATTERN, 'Must be an amount like 1200000.00')
         .refine((v) => Number(v) >= 0.01, 'Must be at least 0.01'),
       premiumCurrency: z.string().trim().regex(CURRENCY_PATTERN, 'Must be a 3-letter code like TZS'),
-      premiumFrequency: z.enum(['MONTHLY', 'QUARTERLY', 'ANNUALLY']),
+      premiumFrequency: z.enum(['MONTHLY', 'QUARTERLY', 'ANNUALLY', 'SINGLE']),
       commencementDate: z
         .string()
         .trim()

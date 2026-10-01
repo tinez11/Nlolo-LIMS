@@ -70,7 +70,8 @@ class ProductApiIntegrationTest {
             // as "duplicate product code", because createProduct reports every
             // DataIntegrityViolationException that way. See the note on that test.
             "db-migrations/product/V14__credit_life_category.sql",
-            "db-migrations/product/V15__exclusion_periods.sql");
+            "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql");
     }
 
     @BeforeEach
@@ -1125,6 +1126,72 @@ class ProductApiIntegrationTest {
             });
     }
 
+    @Test
+    void aTermBandedVersionPricesEachTermOnItsOwnRateAndRefusesAnUnpricedTerm() {
+        ProductSummaryView product = productApi.createProduct("TERM-V16-BANDED", "Term-banded",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        // Same age/sex/smoker, two term bands at different rates -- the point of V16.
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now().minusDays(1), null,
+            List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
+                    new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
+            List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+            null,
+            List.of(new ProductApi.BaseRateInput(18, 40, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("8.0000"), 1, 120),
+                    new ProductApi.BaseRateInput(18, 40, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("14.0000"), 121, 360),
+                    // Both sexes are required by rejectUncoveredEntryAges; FEMALE bands mirror MALE's terms.
+                    new ProductApi.BaseRateInput(18, 40, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("6.0000"), 1, 120),
+                    new ProductApi.BaseRateInput(18, 40, Sex.FEMALE, SmokerStatus.NON_SMOKER, new BigDecimal("11.0000"), 121, 360)),
+            new EligibilityBounds(18, 40, null, null, null, null), ANY_FILING, "actuary@nlolo.co.tz");
+
+        // A 10-year (120mo) term prices on the 8.0 band: 1,000,000 / 1000 * 8.0 = 8,000 annual / 12.
+        ProductApi.PremiumQuoteView shortTerm = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(30),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now(), 120));
+        assertThat(shortTerm.instalmentAmount()).isEqualByComparingTo(new BigDecimal("666.67"));
+
+        // A 20-year (240mo) term prices on the 14.0 band -- a different, higher number.
+        ProductApi.PremiumQuoteView longTerm = productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(30),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now(), 240));
+        assertThat(longTerm.instalmentAmount()).isEqualByComparingTo(new BigDecimal("1166.67"));
+
+        // A term no band covers (30 years = 360mo is the edge; 361 is past it) is refused, not
+        // priced at a fallback -- the actuary did not price it.
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(30),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now(), 361)));
+
+        // And a quote with no term at all cannot match a banded row, so it too is refused.
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            product.productId(), new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(30),
+            Sex.MALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.MONTHLY, LocalDate.now(), null)));
+    }
+
+    @Test
+    void publishRefusesAnUnbandedRateOverlappingATermBandedOneForTheSameCell() {
+        ProductSummaryView product = productApi.createProduct("TERM-V16-OVERLAP", "Overlapping terms",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        InvalidProductVersionException thrown = assertThrows(InvalidProductVersionException.class, () ->
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE),
+                        new ProductApi.RatingFactorInput(FactorType.OCCUPATION_CLASS, "CLASS_1", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null,
+                // An unbanded row (any term) cannot coexist with a banded one for the same cell.
+                List.of(new ProductApi.BaseRateInput(18, 40, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("8.0000")),
+                        new ProductApi.BaseRateInput(18, 40, Sex.MALE, SmokerStatus.NON_SMOKER, new BigDecimal("14.0000"), 121, 360)),
+                new EligibilityBounds(18, 40, null, null, null, null), ANY_FILING, "actuary@nlolo.co.tz"));
+        assertThat(thrown.getMessage()).contains("overlap");
+    }
+
+    @Test
+    void aSinglePremiumOverTwelveMonthsIsRefused() {
+        UUID productId = pricedProduct("TERM-V16-SINGLE", new BigDecimal("10.0000"));
+        assertThrows(PremiumNotQuotableException.class, () -> productApi.quotePremium(new ProductApi.PremiumQuoteInput(
+            productId, new BigDecimal("1000000.00"), "TZS", LocalDate.now().minusYears(20),
+            Sex.FEMALE, SmokerStatus.NON_SMOKER, "CLASS_1", PremiumFrequency.SINGLE, LocalDate.now(), 24)));
+    }
+
     /** An amount no band covers is neutral, matching issuance -- above retention is a soft flag. */
     @Test
     void quotePremiumPricesAnAmountNoBandCoversAtTheNeutralMultiplier() {
@@ -1146,6 +1213,42 @@ class ProductApiIntegrationTest {
      * arithmetic: TZS 10,000,000 / 1,000 = 10,000 units, x 15.2 = 152,000 annual,
      * / 12 = 12,666.666... -> 12,666.67, rounded HALF_UP once at the end.
      */
+    @Test
+    void quoteASinglePremiumChargesTheWholeAnnualFigureOnceAndDividesByNothing() {
+        // The landmine this proves is disarmed: PremiumFrequency.SINGLE carries
+        // instalmentsPerYear() == 0 BY DESIGN -- "dividing by this value throws, which is the
+        // correct outcome" -- and quotePremium divided by it unconditionally. Quoting a single
+        // premium threw ArithmeticException rather than pricing anything.
+        UUID productId = pricedProduct("TERM-SINGLE", new BigDecimal("15.2000"));
+
+        ProductApi.PremiumQuoteView quote = productApi.quotePremium(
+            quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.SINGLE));
+
+        // The whole price, once. 10,000,000 / 1000 * 15.2 = 152,000, and no division follows.
+        assertThat(quote.instalmentAmount()).isEqualByComparingTo(new BigDecimal("152000.00"));
+        assertThat(quote.annualAfterFrequencyLoading()).isEqualByComparingTo(new BigDecimal("152000.00"));
+        // 0, not 1. A 1 would read as "annually" to any arithmetic that divides by it, which is
+        // precisely how a single-premium contract gets put back onto a billing cycle.
+        assertEquals(0, quote.instalmentsPerYear());
+    }
+
+    @Test
+    void aSinglePremiumCarriesNoFrequencyLoading() {
+        // A loading prices the cost of spreading payment across the year. A single premium
+        // spreads nothing -- the whole amount is held from day one, which is better for the
+        // insurer than annually, not worse -- so loading it would be charging for a service
+        // the customer did not take.
+        UUID productId = pricedProduct("TERM-SINGLE-NOLOAD", new BigDecimal("15.2000"));
+
+        ProductApi.PremiumQuoteView single = productApi.quotePremium(
+            quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.SINGLE));
+        ProductApi.PremiumQuoteView annually = productApi.quotePremium(
+            quoteFor(productId, LocalDate.now().minusYears(20), PremiumFrequency.ANNUALLY));
+
+        assertThat(single.frequencyLoadingPercent()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(single.instalmentAmount()).isEqualByComparingTo(annually.instalmentAmount());
+    }
+
     @Test
     void quotePremiumComputesFromTheBaseRateAndReturnsItsDerivation() {
         UUID productId = pricedProduct("TERM-Q1", new BigDecimal("15.2000"));
@@ -1589,7 +1692,9 @@ class ProductApiIntegrationTest {
         List<Method> declared = Arrays.stream(ProductApi.class.getMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(4, declared.size(), "expected four publishVersion overloads");
+        // Five since product step 1 added the cash-value overload. A new overload must raise this
+        // count AND pass both checks below -- that is the point of counting.
+        assertEquals(5, declared.size(), "expected five publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1597,7 +1702,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(4, implementations.size(), "every overload must be implemented here");
+        assertEquals(5, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));

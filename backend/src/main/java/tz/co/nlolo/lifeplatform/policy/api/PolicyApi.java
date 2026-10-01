@@ -242,7 +242,21 @@ public interface PolicyApi {
                                      * <p>Required on AMORTISING_LOAN and rejected on every other
                                      * basis, like {@code interestMethod} above it.
                                      */
-                                    BigDecimal premiumRatePercent) {
+                                    BigDecimal premiumRatePercent,
+                                    /**
+                                     * What that rate MEANS, which the rate alone does not say.
+                                     *
+                                     * <p>Both real client schedules price on the full disbursed
+                                     * amount and agree about nothing else: one charges the rate
+                                     * flat whatever the term, the other once per policy year on
+                                     * the balance still outstanding. A single formula matched
+                                     * neither, and was out by half on a two-month loan.
+                                     *
+                                     * <p>Required on AMORTISING_LOAN and rejected elsewhere, like
+                                     * the rate it qualifies. Never defaulted: a default prices one
+                                     * lender on another's agreement without saying so.
+                                     */
+                                    CreditLifePremiumBasis premiumBasis) {
 
         /** A credit-life scheme, which states both how and how often its loans repay. */
         public IssueGroupSchemeRequest(UUID policyholderPartyId, UUID productId, UUID productVersionId,
@@ -253,13 +267,14 @@ public interface PolicyApi {
                                         BigDecimal premiumAmount, String premiumCurrency, String premiumFrequency,
                                         LocalDate commencementDate, Integer policyTermMonths,
                                         String reasonForManualIssue, IssuanceBasis issuanceBasis,
-                                        InterestMethod interestMethod, BigDecimal premiumRatePercent) {
+                                        InterestMethod interestMethod, BigDecimal premiumRatePercent,
+                                        CreditLifePremiumBasis premiumBasis) {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
                 reasonForManualIssue, issuanceBasis, interestMethod,
                 interestMethod == null ? null : RepaymentFrequency.MONTHLY,
-                premiumRatePercent);
+                premiumRatePercent, premiumBasis);
         }
 
         /** Any scheme but credit life, which is the only basis that has an interest method. */
@@ -274,7 +289,7 @@ public interface PolicyApi {
             this(policyholderPartyId, productId, productVersionId, agentOfRecordId, benefitBasis,
                 flatBenefitAmount, salaryMultiple, fclAmount, currency, grades, openingSchedule,
                 premiumAmount, premiumCurrency, premiumFrequency, commencementDate, policyTermMonths,
-                reasonForManualIssue, issuanceBasis, null, null, null);
+                reasonForManualIssue, issuanceBasis, null, null, null, null);
         }
     }
 
@@ -605,6 +620,59 @@ public interface PolicyApi {
      * insured, which is the one message in the offer lifecycle somebody will act on.
      */
     void expireOffer(String policyNumber);
+
+    /**
+     * A termed policy carrying no maturity benefit ran out its term. Moves it to EXPIRED and
+     * publishes {@code policy.PolicyExpired}. Terminal; idempotent on repeat (a closed policy is
+     * left alone and no event is published). Called by {@code CoverExpiryDrain}.
+     */
+    void expirePolicy(String policyNumber);
+
+    /**
+     * Recompute a savings policy's cash value from the product's cash-value table, given premiums
+     * are paid to {@code paidToDate} (null = nothing paid yet). A no-op for a policy whose version
+     * carries no cash-value config -- pure protection has no cash value. Called on each collected
+     * premium. Idempotent: the value is a function of the contract at its policy year, set from the
+     * table, so recomputing yields the same number.
+     */
+    void recalculateCashValue(String policyNumber, LocalDate paidToDate);
+
+    /**
+     * Make a savings policy paid-up: the customer stops paying, cover reduces, no premium falls due
+     * again (guide §21.3). Reduces the sum assured to the paid-up figure -- proportionate to the
+     * premium term completed, or from the product's paid-up table -- restates the coverage a claim
+     * pays against, moves the policy to PAID_UP, and terminates its billing schedule. Refused on a
+     * policy with no cash-value config, or before the minimum term when there is no value yet.
+     * Returns the resulting view. Not a lapse: no commission is clawed back.
+     */
+    PolicyView makePaidUp(String policyNumber, String madePaidUpBy);
+
+    /** A surrender in flight. Status is REQUESTED, APPROVED, PAID, FAILED or IN_DOUBT. */
+    record SurrenderRequestView(java.util.UUID surrenderRequestId, String policyNumber, String status,
+                                BigDecimal quotedValueAmount, String quotedValueCurrency,
+                                String payeeRef, String requestedBy, String approvedBy) {}
+
+    /**
+     * Request a customer surrender: quote the value, check the policy can be surrendered (in force,
+     * paid-up or lapsed-with-value, past the minimum term, no outstanding loan, no other surrender in
+     * flight), and record a REQUESTED surrender for a second person to approve. Does not stop cover.
+     */
+    SurrenderRequestView requestSurrender(String policyNumber, String payeeRef, String requestedBy);
+
+    /**
+     * Approve a surrender, by someone other than the requester. Cover stops as of the approval date
+     * (user decision Q2), billing stops, and the payout is requested through the disbursement rail.
+     */
+    SurrenderRequestView approveSurrender(java.util.UUID surrenderRequestId, String approvedBy);
+
+    /** The policy's most recent surrender request in any status, so a second person can find one to approve. */
+    java.util.Optional<SurrenderRequestView> findLatestSurrenderRequest(String policyNumber);
+
+    /** The surrender payout succeeded; mark the request PAID. Idempotent. Called by the payment listener. */
+    void markSurrenderPaid(java.util.UUID surrenderRequestId, java.util.UUID disbursementId);
+
+    /** The surrender payout failed; mark the request FAILED. Cover stays stopped. Called by the payment listener. */
+    void markSurrenderFailed(java.util.UUID surrenderRequestId);
 
     /** A MATURITY claim settled, or the policy reached term. Terminal; idempotent on repeat. */
     void markMatured(String policyNumber, String maturedBy);

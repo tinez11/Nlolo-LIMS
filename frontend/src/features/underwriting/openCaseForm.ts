@@ -87,7 +87,7 @@ export const openCaseFormSchema = z.object({
   premiumPayingTermMonths: months('Premium-paying term'),
 
   /** '' means the applicant did not say, which the backend stores as null. */
-  premiumFrequency: z.enum(['', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']),
+  premiumFrequency: z.enum(['', 'MONTHLY', 'QUARTERLY', 'ANNUALLY', 'SINGLE']),
 
   /**
    * Nominations as taken on the proposal form.
