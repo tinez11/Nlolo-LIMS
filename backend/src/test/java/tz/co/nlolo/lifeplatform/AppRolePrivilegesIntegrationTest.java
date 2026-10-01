@@ -991,17 +991,17 @@ class AppRolePrivilegesIntegrationTest {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
-            statement.execute("CREATE TABLE finaccounting.gl_posting_2026_10 PARTITION OF finaccounting.gl_posting "
-                + "FOR VALUES FROM ('2026-10-01') TO ('2026-11-01')");
+            statement.execute("CREATE TABLE finaccounting.gl_posting_2030_01 PARTITION OF finaccounting.gl_posting "
+                + "FOR VALUES FROM ('2030-01-01') TO ('2030-02-01')");
 
             try (ResultSet rs = statement.executeQuery(
-                    "SELECT relrowsecurity FROM pg_class WHERE oid = 'finaccounting.gl_posting_2026_10'::regclass")) {
+                    "SELECT relrowsecurity FROM pg_class WHERE oid = 'finaccounting.gl_posting_2030_01'::regclass")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getBoolean(1)).as("RLS must be enabled on a brand-new partition with zero manual steps")
                     .isTrue();
             }
             try (ResultSet rs = statement.executeQuery(
-                    "SELECT count(*) FROM pg_policy WHERE polrelid = 'finaccounting.gl_posting_2026_10'::regclass")) {
+                    "SELECT count(*) FROM pg_policy WHERE polrelid = 'finaccounting.gl_posting_2030_01'::regclass")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getInt(1)).as("exactly one tenant-isolation policy must be mirrored").isEqualTo(1);
             }
@@ -1012,10 +1012,10 @@ class AppRolePrivilegesIntegrationTest {
             // GL unwritable. A regression that revoked everything again would be invisible to a
             // negative-only test.
             try (ResultSet rs = statement.executeQuery(
-                    "SELECT has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'UPDATE'), "
-                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'DELETE'), "
-                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'SELECT'), "
-                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2026_10'::regclass, 'INSERT')")) {
+                    "SELECT has_table_privilege('app_role', 'finaccounting.gl_posting_2030_01'::regclass, 'UPDATE'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2030_01'::regclass, 'DELETE'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2030_01'::regclass, 'SELECT'), "
+                    + "has_table_privilege('app_role', 'finaccounting.gl_posting_2030_01'::regclass, 'INSERT')")) {
                 assertThat(rs.next()).isTrue();
                 assertThat(rs.getBoolean(1)).as("app_role must NOT hold UPDATE on a brand-new partition").isFalse();
                 assertThat(rs.getBoolean(2)).as("app_role must NOT hold DELETE on a brand-new partition").isFalse();

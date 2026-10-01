@@ -686,7 +686,11 @@ class UnderwritingContractTest {
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
                     .jwt(builder -> builder.subject(agentSubject).claim("tenant_id", tenantId.toString())))
                 .contentType(MediaType.APPLICATION_JSON)
+                // An agent must record sex and an identity document; the ID number is derived
+                // from the phone because ux_party_individual_identity refuses a shared one.
                 .content("{\"fullName\":\"Scoped UW Applicant\",\"dateOfBirth\":\"1988-03-15\","
+                    + "\"sex\":\"FEMALE\",\"idType\":\"NATIONAL_ID\","
+                    + "\"idNumber\":\"19880315-" + phone.substring(phone.length() - 5) + "-00001-11\","
                     + "\"contactInfo\":{\"phoneNumber\":\"" + phone + "\"}}"))
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
