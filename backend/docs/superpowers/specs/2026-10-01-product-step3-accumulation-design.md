@@ -205,7 +205,7 @@ PDFBox is a new dependency: Apache-2.0, no native binaries.
 |---|---|
 | **product** | `value_basis`, guaranteed rate, minimum balance and the charges table on the version. The validator allows `ACCOUNT` only on the three Q9 categories; refuses a version carrying both a per-mille scale and an `ACCOUNT` basis; permits a new `ACCOUNT_VALUE` payout amount basis only on an `ACCOUNT` version's MATURITY row. |
 | **policy** | `recalculateCashValue` skips `ACCOUNT` versions. A new `restateCashValue` for accumulation's projection. Surrender on an `ACCOUNT` version stops at cover and the two signatures. Paid-up stops billing with no sum-assured cut. |
-| **billing** | The arrears sweep never lapses an `ACCOUNT` policy. A one-off top-up invoice. |
+| **billing** | Ignores a `PaymentConfirmed` whose purpose is not a premium (§10.1). The lapse exception itself lives in policy (§10.2). |
 | **benefitpayout** | Depends on `accumulation::api`. An `ACCOUNT_VALUE` MATURITY row is expanded at issue with **no amount**, exactly as step 2 treats a premium return, because the value is not known until the day it falls due. When it falls due, it closes the account and takes its amount from that closing entry. The death ceiling reads the account rather than the sum assured. |
 | **claims** | Unchanged — it already asks benefitpayout for the death ceiling. |
 | **payment** | A `WITHDRAWAL_PAYOUT` purpose. |
@@ -244,7 +244,57 @@ Aimed at the rules this design rests on:
 - A rate declaration starting before already-posted interest is refused.
 - A declaration's proposer cannot approve it.
 
-## 10. Out of scope, on the record
+## 10. Revisions made while planning (2026-10-01)
+
+Each was found by reading the code the plan builds on. The plan
+(`plans/2026-10-01-product-step3-accumulation.md`) follows these, not the earlier wording above.
+
+1. **Top-ups are a payment collection, not a billing invoice.** `billing.premium_invoice` is
+   partitioned, requires exactly one origin (a billing schedule or an enrolment file), and is
+   scanned by a pg_cron sweep that would mark an unpaid top-up OVERDUE and recommend a lapse.
+   Payment already collects money independently of invoices (`recordCollectionRequest` with a free
+   `sourceRef`), so accumulation requests the collection itself. Payment V9 gives collections a
+   `purpose` (`PREMIUM` by default, `ACCOUNT_TOP_UP`) carried on `PaymentConfirmed` and
+   `PaymentFailed`; billing ignores any collection that is not a premium — today it parses every
+   `sourceRef` as an invoice id.
+2. **The lapse exception lives in policy, not billing.** Billing does not lapse anything; it
+   publishes `billing.PolicyLapseRecommended` and a policy-side listener calls `lapsePolicy`. That
+   listener declines for an `ACCOUNT` version. Billing keeps its reminders for a missed
+   contribution, which remain useful.
+3. **`recalculateCashValue` already skips `ACCOUNT` versions.** It returns early when the version has
+   no cash-value scale, and the validator refuses a scale and an account basis together, so no code
+   change is needed — only a test pinning it.
+4. **Exhaustion needs its own lapse.** `Policy.canLapse()` allows only ACTIVE and SUSPENDED, so a
+   REINSTATED or PAID_UP account could never lapse on exhaustion. A dedicated
+   `lapseExhaustedAccount` accepts ACTIVE, REINSTATED, PAID_UP and SUSPENDED and publishes the same
+   `policy.PolicyLapsed`.
+5. **Contributions paid after a death are returned with the death benefit, not through billing.**
+   `billing.PremiumRefundDue` is published by billing; accumulation cannot drive it without billing
+   depending on accumulation. The payer's estate is the claimant, so the reversed amount is added to
+   the death payout as its own component.
+6. **On a death, every entry dated after it is reversed** — contributions, and month-end interest
+   and fees for any month the death falls inside — and interest is then posted from the last posting
+   to the date of death. Before this, the balance at death was ambiguous when a death was reported
+   weeks after a month-end run.
+7. **Interest compounds daily, including on interest not yet posted.** That is what makes "5% a
+   year" honest when posting is monthly: with a constant balance, twelve monthly postings compound
+   to the declared rate exactly, before rounding. Each posting rounds once, to the cent.
+8. **A product's value basis and terms live in their own table**, `version_accumulation_terms`,
+   not as a column on `product_version`. `ddl-auto` is `none`, so a mapped column missing from a test
+   database breaks every query on that table, and roughly fifty test classes read
+   `product_version`.
+9. **The death ceiling gains the date of death.** `deathBenefitCeiling(policyNumber, ceiling)` keeps
+   its behaviour; a new overload taking the date of death serves an `ACCOUNT` version, which must be
+   valued as at the death, not on the day the claim is approved.
+10. **A surrender on an `ACCOUNT` version** publishes `policy.AccountSurrenderApproved` instead of
+    `policy.SurrenderPayoutRequested`. Accumulation posts the closing entry and requests the payment
+    under the existing `SURRENDER_PAYOUT` purpose with the surrender request id as its source, so
+    policy's existing `SurrenderPaymentListener` still marks the request PAID.
+11. **Rate declarations are proposed by an ADMIN and approved by a different ADMIN or a
+    FINANCE_OFFICER.** Proposing is a pricing decision, which on this platform is ADMIN's; approving
+    is a second signature on money.
+
+## 11. Out of scope, on the record
 
 - Transfers out to another insurer's scheme — reuse the surrender flow later.
 - Vesting a deferred annuity or pension into an annuity (D).
