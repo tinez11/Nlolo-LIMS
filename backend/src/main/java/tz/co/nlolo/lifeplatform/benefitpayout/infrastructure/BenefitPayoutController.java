@@ -3,14 +3,17 @@ package tz.co.nlolo.lifeplatform.benefitpayout.infrastructure;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import tz.co.nlolo.lifeplatform.benefitpayout.api.BenefitPayoutApi;
+import tz.co.nlolo.lifeplatform.benefitpayout.api.FreeLookDeductionInput;
 import tz.co.nlolo.lifeplatform.benefitpayout.api.InstalmentStatus;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -113,6 +116,40 @@ public class BenefitPayoutController {
     public ResponseEntity<PaymentRunResponse> approveRun(@PathVariable UUID paymentRunId,
                                                          @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.accepted().body(PaymentRunResponse.from(api.approveRun(paymentRunId, jwt.getSubject())));
+    }
+
+    /**
+     * Prepare a cancellation. Open to any staff member, because preparing one commits nothing: the
+     * money moves at approval, and that is finance's.
+     */
+    @PostMapping("/policies/{policyNumber}/free-look-cancellation")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<FreeLookResponse> requestFreeLook(@PathVariable String policyNumber,
+                                                            @Valid @RequestBody FreeLookRequest request,
+                                                            @AuthenticationPrincipal Jwt jwt) {
+        List<FreeLookDeductionInput> items = request.deductions() == null ? List.of()
+            : request.deductions().stream()
+                .map(d -> new FreeLookDeductionInput(d.description(), new BigDecimal(d.amount()), d.documentId()))
+                .toList();
+        return ResponseEntity.status(HttpStatus.CREATED).body(FreeLookResponse.from(
+            api.requestFreeLook(policyNumber, request.payeeRef(), items, jwt.getSubject())));
+    }
+
+    /** 204 rather than 404 when there is none: "this policy has no cancellation" is not an error. */
+    @GetMapping("/policies/{policyNumber}/free-look-cancellation")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<FreeLookResponse> findFreeLook(@PathVariable String policyNumber) {
+        return api.findFreeLook(policyNumber).map(FreeLookResponse::from)
+            .map(ResponseEntity::ok)
+            .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @PostMapping("/free-look-cancellations/{cancellationId}/approve")
+    @PreAuthorize(FINANCE)
+    public ResponseEntity<FreeLookResponse> approveFreeLook(@PathVariable UUID cancellationId,
+                                                             @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.accepted()
+            .body(FreeLookResponse.from(api.approveFreeLook(cancellationId, jwt.getSubject())));
     }
 
     @PostMapping("/payout-streams/{streamId}/proof-of-life")

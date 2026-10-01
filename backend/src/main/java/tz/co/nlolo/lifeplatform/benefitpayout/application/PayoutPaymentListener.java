@@ -24,6 +24,8 @@ public class PayoutPaymentListener {
     static final Set<String> INSTALMENT_PURPOSES = Set.of(
         "MATURITY_PAYOUT", "SURVIVAL_BENEFIT_PAYOUT", "INCOME_PAYOUT", "PREMIUM_RETURN_PAYOUT");
 
+    static final String FREE_LOOK_PURPOSE = "FREE_LOOK_REFUND";
+
     private final BenefitPayoutApiImpl api;
     private final EnvelopeRunner tenantRunner;
 
@@ -41,18 +43,28 @@ public class PayoutPaymentListener {
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) envelope.payload();
-        if (!INSTALMENT_PURPOSES.contains((String) payload.get("purpose"))) {
+        String purpose = (String) payload.get("purpose");
+        boolean freeLook = FREE_LOOK_PURPOSE.equals(purpose);
+        if (!freeLook && !INSTALMENT_PURPOSES.contains(purpose)) {
             return;
         }
-        UUID instalmentId = UUID.fromString((String) payload.get("sourceRef"));
+        // Both carry their own id in sourceRef -- an instalment's for a payout, a cancellation's
+        // for a refund -- which is why one listener can close out either.
+        UUID sourceRef = UUID.fromString((String) payload.get("sourceRef"));
 
         tenantRunner.run(envelope, p -> {
             if (completed) {
                 Object idObj = p.get("disbursementId");
                 UUID disbursementId = idObj instanceof UUID u ? u : UUID.fromString((String) idObj);
-                api.markPaid(instalmentId, disbursementId);
+                if (freeLook) {
+                    api.markFreeLookRefunded(sourceRef, disbursementId);
+                } else {
+                    api.markPaid(sourceRef, disbursementId);
+                }
+            } else if (freeLook) {
+                api.markFreeLookRefundFailed(sourceRef);
             } else {
-                api.markFailed(instalmentId);
+                api.markFailed(sourceRef);
             }
         });
     }

@@ -164,6 +164,102 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/free-look-cancellation:
+    post:
+      summary: Prepare a free-look cancellation, with itemised deductions
+      description: >
+        Open to any staff member: preparing one commits nothing. The window is counted from the
+        ISSUE date, because it runs from when the customer received the contract and could read
+        it. Deductions are itemised rather than a percentage — someone exercising a statutory
+        right to walk away is owed an explanation of every shilling withheld.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payeeRef]
+              properties:
+                payeeRef: { type: string, maxLength: 200, description: "Where the refund is sent" }
+                deductions:
+                  type: array
+                  items:
+                    type: object
+                    required: [description, amount]
+                    properties:
+                      description: { type: string, maxLength: 200 }
+                      amount:
+                        type: string
+                        pattern: '^\d+(\.\d{1,2})?$'
+                        description: A decimal string, never a JSON number.
+                      documentId: { type: [string, "null"], format: uuid }
+      responses:
+        '201':
+          description: Prepared, awaiting a second person's approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeLookCancellation' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: >
+            Refused — outside the window, not an individual policy, not ACTIVE, the version has no
+            free-look period, or the deductions exceed the premiums collected
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+    get:
+      summary: The policy's most recent free-look cancellation, if it has one
+      description: 204 when it has none — "this policy was never cancelled" is not an error.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: The cancellation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeLookCancellation' }
+        '204': { description: The policy has no free-look cancellation }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /free-look-cancellations/{cancellationId}/approve:
+    post:
+      summary: Approve a cancellation, by someone other than the person who prepared it
+      description: >
+        Voids the policy from inception, withdraws its whole payout schedule and requests the
+        refund. A refund of nothing — where the deductions used up the premiums exactly — requests
+        no disbursement at all.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: cancellationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Approved and the refund requested — not yet paid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FreeLookCancellation' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: No such cancellation in this tenant
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: Refused — already decided, or the approver prepared it
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /payment-runs:
     get:
       summary: Payment runs, newest first (a bare array — runs are few)
@@ -270,6 +366,29 @@ paths:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    FreeLookCancellation:
+      type: object
+      required: [cancellationId, policyNumber, status, premiumsCollected, refundAmount, payeeRef, requestedBy, deductions]
+      properties:
+        cancellationId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED] }
+        premiumsCollected:
+          description: What came in. Carried beside the refund so the arithmetic can be checked.
+          $ref: 'openapi-common.yaml#/components/schemas/Money'
+        refundAmount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        payeeRef: { type: string }
+        requestedBy: { type: string }
+        approvedBy: { type: [string, "null"] }
+        deductions:
+          type: array
+          items:
+            type: object
+            required: [description, amount]
+            properties:
+              description: { type: string }
+              amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+              documentId: { type: [string, "null"], format: uuid }
     PaymentRun:
       type: object
       required: [paymentRunId, runDate, status, instalmentCount, total]

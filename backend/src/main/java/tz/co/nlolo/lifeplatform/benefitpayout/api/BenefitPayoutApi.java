@@ -54,6 +54,22 @@ public interface BenefitPayoutApi {
      */
     PayoutInstalmentView retry(UUID instalmentId);
 
+    /**
+     * Prepare a free-look cancellation: the window is checked, the premiums read and the itemised
+     * deductions priced. Nothing happens to the policy until a second person approves it.
+     */
+    FreeLookCancellationView requestFreeLook(String policyNumber, String payeeRef,
+                                             List<FreeLookDeductionInput> deductions, String requestedBy);
+
+    /**
+     * Release it: the policy is voided from inception, the schedule withdrawn, and the refund
+     * requested from the disbursement rail.
+     */
+    FreeLookCancellationView approveFreeLook(UUID cancellationId, String approver);
+
+    /** The policy's most recent cancellation in any status, so a second person can find one. */
+    java.util.Optional<FreeLookCancellationView> findFreeLook(String policyNumber);
+
     /** Payment runs, newest first. Runs are few -- one a day per tenant -- so this is not paged. */
     List<PaymentRunView> listRuns();
 

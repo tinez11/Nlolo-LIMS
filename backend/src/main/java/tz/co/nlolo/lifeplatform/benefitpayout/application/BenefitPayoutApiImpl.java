@@ -11,6 +11,7 @@ import tz.co.nlolo.lifeplatform.benefitpayout.api.*;
 import tz.co.nlolo.lifeplatform.benefitpayout.domain.*;
 import tz.co.nlolo.lifeplatform.benefitpayout.infrastructure.*;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
 import tz.co.nlolo.lifeplatform.product.api.PayoutKind;
 import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
@@ -49,14 +50,19 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     private final PayoutStreamRepository streams;
     private final PremiumTallyRepository tallies;
     private final PaymentRunRepository runs;
+    private final FreeLookCancellationRepository cancellations;
+    private final FreeLookDeductionRepository deductions;
     private final ProductApi productApi;
     private final PolicyApi policyApi;
     private final ApplicationEventPublisher eventPublisher;
 
     public BenefitPayoutApiImpl(PayoutInstalmentRepository instalments, PayoutStreamRepository streams,
                                 PremiumTallyRepository tallies, PaymentRunRepository runs,
+                                FreeLookCancellationRepository cancellations, FreeLookDeductionRepository deductions,
                                 ProductApi productApi, PolicyApi policyApi,
                                 ApplicationEventPublisher eventPublisher) {
+        this.cancellations = cancellations;
+        this.deductions = deductions;
         this.instalments = instalments;
         this.streams = streams;
         this.tallies = tallies;
@@ -306,6 +312,116 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             case INCOME -> "INCOME_PAYOUT";
             case RETURN_OF_PREMIUM -> "PREMIUM_RETURN_PAYOUT";
         };
+    }
+
+    /**
+     * Free-look is a right of an individual buyer (guide §21.3). A group or credit-life scheme is
+     * cancelled under the terms the employer or lender negotiated, not under this window.
+     */
+    private static final Set<String> INDIVIDUAL_CATEGORIES =
+        Set.of("TERM_LIFE", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS");
+
+    @Override
+    @Transactional
+    public FreeLookCancellationView requestFreeLook(String policyNumber, String payeeRef,
+                                                    List<FreeLookDeductionInput> deductionInputs,
+                                                    String requestedBy) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        if (!INDIVIDUAL_CATEGORIES.contains(policy.productCategory())) {
+            throw new PayoutStateException("Free-look applies to individual policies; a "
+                + policy.productCategory() + " scheme is cancelled under its contract");
+        }
+        if (policy.status() != PolicyStatus.ACTIVE) {
+            throw new PayoutStateException("Policy " + policyNumber + " is " + policy.status()
+                + "; only an ACTIVE policy can be cancelled in free-look");
+        }
+        Integer days = productApi.resolvePayoutPlan(policy.productVersionId()).terms().freeLookDays();
+        if (days == null) {
+            throw new PayoutStateException("Policy " + policyNumber + "'s product version has no free-look period");
+        }
+        // Counted from ISSUE, not from commencement: the window runs from when the customer
+        // received the contract and could read it.
+        LocalDate lastDay = policy.issueDate().plusDays(days);
+        if (LocalDate.now().isAfter(lastDay)) {
+            throw new PayoutStateException("Policy " + policyNumber + "'s free-look period ended on " + lastDay);
+        }
+
+        List<FreeLookDeductionInput> items = deductionInputs != null ? deductionInputs : List.of();
+        for (FreeLookDeductionInput d : items) {
+            if (d.description() == null || d.description().isBlank() || d.amount() == null || d.amount().signum() <= 0) {
+                throw new PayoutStateException("Every deduction needs a description and an amount greater than zero");
+            }
+        }
+        BigDecimal total = items.stream().map(FreeLookDeductionInput::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal collected = tallies.findById(policyNumber)
+            .map(PremiumTally::getPremiumsCollected).orElse(BigDecimal.ZERO);
+
+        UUID tenantId = TenantContext.get();
+        FreeLookCancellation c = cancellations.save(FreeLookCancellation.request(tenantId, policyNumber, collected,
+            total, policy.premiumCurrency(), payeeRef, requestedBy));
+        for (FreeLookDeductionInput d : items) {
+            deductions.save(new FreeLookDeduction(tenantId, c.getCancellationId(), d.description(), d.amount(),
+                d.documentId()));
+        }
+        return freeLookView(c);
+    }
+
+    @Override
+    @Transactional
+    public FreeLookCancellationView approveFreeLook(UUID cancellationId, String approver) {
+        FreeLookCancellation c = cancellations.findById(cancellationId)
+            .orElseThrow(() -> new PayoutNotFoundException(cancellationId));
+        c.approve(approver);
+        cancellations.save(c);
+        // The policy goes first: everything downstream -- billing stopping, commission going back --
+        // hangs off PolicyCancelledFreeLook, and a schedule withdrawn against a policy that then
+        // failed to cancel would be the worst of both.
+        policyApi.cancelForFreeLook(c.getPolicyNumber(), approver);
+        cancelFuture(c.getPolicyNumber(), BEGINNING, "Cancelled in free-look");
+        // A refund of nothing is not sent to the rail. It happens whenever the deductions used up
+        // the premiums exactly, and a zero disbursement would be a payment nobody can reconcile.
+        if (c.getRefundAmount().signum() > 0) {
+            eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutRequested", TenantContext.get(),
+                Map.of("cancellationId", cancellationId.toString(),
+                       "idempotencyKey", "free-look:" + cancellationId,
+                       "policyNumber", c.getPolicyNumber(),
+                       "payeeRef", c.getPayeeRef(),
+                       "purpose", "FREE_LOOK_REFUND",
+                       "amount", Map.of("amount", c.getRefundAmount().toPlainString(),
+                            "currencyCode", c.getCurrency()))));
+        }
+        return freeLookView(c);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<FreeLookCancellationView> findFreeLook(String policyNumber) {
+        return cancellations.findFirstByPolicyNumberOrderByRequestedAtDesc(policyNumber).map(this::freeLookView);
+    }
+
+    /** The refund landed. Idempotent on APPROVED, like every other outcome handler here. */
+    @Transactional
+    public void markFreeLookRefunded(UUID cancellationId, UUID disbursementId) {
+        cancellations.findById(cancellationId).ifPresent(c -> {
+            c.markPaid(disbursementId);
+            cancellations.save(c);
+        });
+    }
+
+    @Transactional
+    public void markFreeLookRefundFailed(UUID cancellationId) {
+        cancellations.findById(cancellationId).ifPresent(c -> {
+            c.markFailed();
+            cancellations.save(c);
+        });
+    }
+
+    private FreeLookCancellationView freeLookView(FreeLookCancellation c) {
+        return new FreeLookCancellationView(c.getCancellationId(), c.getPolicyNumber(), c.getStatus(),
+            c.getPremiumsCollected(), c.getRefundAmount(), c.getCurrency(), c.getPayeeRef(), c.getRequestedBy(),
+            c.getApprovedBy(),
+            deductions.findByCancellationId(c.getCancellationId()).stream()
+                .map(d -> new FreeLookDeductionInput(d.getDescription(), d.getAmount(), d.getDocumentId())).toList());
     }
 
     /**

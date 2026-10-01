@@ -668,6 +668,16 @@ public interface PolicyApi {
     /** The policy's most recent surrender request in any status, so a second person can find one to approve. */
     java.util.Optional<SurrenderRequestView> findLatestSurrenderRequest(String policyNumber);
 
+    /**
+     * Void the contract from inception, within the free-look window (guide §21.3).
+     *
+     * <p>Called by {@code benefitpayout} once a second person approves the cancellation: the window,
+     * the refund and its deductions all live there, and all this module owns is the policy's own
+     * status. Publishes {@code policy.PolicyCancelledFreeLook}, which stops billing and claws every
+     * commission accrual back in full.
+     */
+    void cancelForFreeLook(String policyNumber, String cancelledBy);
+
     /** The surrender payout succeeded; mark the request PAID. Idempotent. Called by the payment listener. */
     void markSurrenderPaid(java.util.UUID surrenderRequestId, java.util.UUID disbursementId);
 

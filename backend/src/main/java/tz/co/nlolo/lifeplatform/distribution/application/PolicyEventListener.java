@@ -122,6 +122,7 @@ public class PolicyEventListener {
             case "policy.PolicyActivated" -> withTenant(envelope, this::handlePolicyActivated);
             case "policy.AgentOfRecordChanged" -> withTenant(envelope, this::handleAgentOfRecordChanged);
             case "policy.PolicyLapsed" -> withTenant(envelope, this::handlePolicyLapsed);
+            case "policy.PolicyCancelledFreeLook" -> withTenant(envelope, this::handleFreeLookCancelled);
             // Credit life: commission follows the money that actually came in, file by file,
             // and goes back when any of it is refunded.
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
@@ -329,6 +330,39 @@ public class PolicyEventListener {
                     log.info("Clawed back {} {} of FIRST_YEAR commission from agent {} for policy {} (lapsed {} month(s) "
                         + "after issue, within the {}-month window)", reversal.getAmount().abs(), reversal.getCurrency(),
                         reversal.getAgentId(), policyNumber, monthsSinceIssue, windowMonths);
+                });
+        }
+    }
+
+    /**
+     * Free-look: the sale is undone from inception, so EVERY unreversed accrual goes back.
+     *
+     * <p>Two differences from a lapse, both following from that. There is no clawback window -- a
+     * lapse has one because cover genuinely ran for a while and the agent earned something for
+     * writing it; here the contract is treated as never having existed, so there is nothing to
+     * keep. And every tier goes, not FIRST_YEAR alone, for the same reason.
+     *
+     * <p>The idempotency key is the original accrual's id, which is the lapse handler's own choice.
+     * That is deliberate: a policy cannot be both lapsed and free-look cancelled, but if some
+     * future path contrived it, the second clawback of the same accrual would be dropped rather
+     * than taking the money off the agent twice.
+     */
+    private void handleFreeLookCancelled(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String policyNumber = (String) payload.get("policyNumber");
+        String period = currentPeriod();
+        for (CommissionAccrual original : commissionAccrualRepository
+                .findByTenantIdAndPolicyNumberAndReversesAccrualIdIsNullAndAmountGreaterThan(
+                    tenantId, policyNumber, BigDecimal.ZERO)) {
+            distributionApiImpl.persistAccrual(tenantId, original.getAgentId(), policyNumber, original.getTierType(),
+                    original.getAmount().negate(), original.getCurrency(), period,
+                    original.getAccrualId().toString(), original.getAccrualId(),
+                    "system:policy.PolicyCancelledFreeLook")
+                .ifPresent(reversal -> {
+                    meterRegistry.counter(CLAWBACK_COUNTER).increment();
+                    log.info("Clawed back {} {} of {} commission from agent {} for policy {} cancelled in free-look",
+                        reversal.getAmount().abs(), reversal.getCurrency(), original.getTierType(),
+                        reversal.getAgentId(), policyNumber);
                 });
         }
     }

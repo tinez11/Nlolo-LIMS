@@ -571,6 +571,23 @@ public class Policy {
     public LocalDate getSurrenderEffectiveDate() { return surrenderEffectiveDate; }
 
     /**
+     * Free-look cancellation (product step 2, guide §21.3). ACTIVE only, and terminal.
+     *
+     * <p>Not a surrender, and the difference is the point. A surrender ends a contract that ran:
+     * cover was real up to the day it stopped, and the customer gets a value, not their money back.
+     * Free-look voids the contract FROM INCEPTION -- the customer is treated as never having bought
+     * it, which is why {@code wasOnRiskOn} answers false for every date and why the refund is the
+     * premiums less what the insurer actually spent.
+     */
+    public void cancelForFreeLook() {
+        if (!"ACTIVE".equals(status)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " must be ACTIVE to be cancelled in its free-look period (current: " + status + ")");
+        }
+        this.status = "CANCELLED_FREE_LOOK";
+    }
+
+    /**
      * A MATURITY claim settled, or the policy reached term. Terminal.
      *
      * <p><b>Accepted source states: ACTIVE, REINSTATED, LAPSED, SUSPENDED</b> (see

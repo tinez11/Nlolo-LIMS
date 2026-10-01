@@ -998,6 +998,19 @@ public class PolicyApiImpl implements PolicyApi {
         return toSurrenderView(request);
     }
 
+    @Override
+    @Transactional
+    public void cancelForFreeLook(String policyNumber, String cancelledBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        policy.cancelForFreeLook();
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyCancelledFreeLook", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "cancelledAt", Instant.now().toString(),
+                   "cancelledBy", cancelledBy)));
+    }
+
     /** The payout succeeded. Marks the request PAID. Idempotent: only an APPROVED request advances. */
     @Override
     @Transactional

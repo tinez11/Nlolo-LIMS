@@ -267,6 +267,60 @@ class BenefitPayoutContractTest {
     }
 
     @Test
+    void aFreeLookCancellationIsPreparedReadBackAndApprovedOverTheContract() throws Exception {
+        String policyNumber = fixtures.issueEndowment(TENANT, MONEY_BACK, new BigDecimal("500000.00"), 240);
+        fixtures.collectPremium(TENANT, policyNumber, new BigDecimal("50000.00"), LocalDate.now());
+
+        // Nothing prepared yet: 204, because "this policy was never cancelled" is not an error.
+        mockMvc.perform(get("/policies/{n}/free-look-cancellation", policyNumber)
+                .with(staff("CUSTOMER_SERVICE_REP", "csr-1")))
+            .andExpect(status().isNoContent());
+
+        String created = mockMvc.perform(post("/policies/{n}/free-look-cancellation", policyNumber)
+                .with(staff("CUSTOMER_SERVICE_REP", "csr-1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"payeeRef\":\"+255700000009\",\"deductions\":"
+                    + "[{\"description\":\"Medical examination\",\"amount\":\"8000.00\"}]}"))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("REQUESTED"))
+            .andExpect(jsonPath("$.premiumsCollected.amount").value("50000.00"))
+            .andExpect(jsonPath("$.refundAmount.amount").value("42000.00"))
+            .andExpect(jsonPath("$.deductions[0].amount.amount").value("8000.00"))
+            .andReturn().getResponse().getContentAsString();
+        String cancellationId = JsonPath.read(created, "$.cancellationId");
+
+        mockMvc.perform(get("/policies/{n}/free-look-cancellation", policyNumber)
+                .with(staff("CUSTOMER_SERVICE_REP", "csr-1")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.cancellationId").value(cancellationId));
+
+        // Preparing is open to any staff member; releasing the money is finance's.
+        mockMvc.perform(post("/free-look-cancellations/{id}/approve", cancellationId)
+                .with(staff("CUSTOMER_SERVICE_REP", "csr-1")))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/free-look-cancellations/{id}/approve", cancellationId)
+                .with(staff("FINANCE_OFFICER", "fin-2")))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.approvedBy").value("fin-2"));
+    }
+
+    @Test
+    void aDeductionAmountMustBeADecimalString() throws Exception {
+        // A JSON number would be parsed as a double somewhere between the browser and the ledger
+        // and land a fraction of a cent out, on a figure the customer may check to the shilling.
+        mockMvc.perform(post("/policies/{n}/free-look-cancellation", "POL-DOES-NOT-MATTER")
+                .with(staff("CUSTOMER_SERVICE_REP", "csr-1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"payeeRef\":\"+255700000009\",\"deductions\":"
+                    + "[{\"description\":\"Medical examination\",\"amount\":\"8000.123\"}]}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void recordingProofOfLifeNeedsAMethodAndFinanceRights() throws Exception {
         // A CSR is refused before the body is even considered.
         mockMvc.perform(post("/payout-streams/{id}/proof-of-life", UUID.randomUUID())

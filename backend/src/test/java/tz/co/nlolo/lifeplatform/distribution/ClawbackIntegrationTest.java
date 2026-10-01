@@ -355,6 +355,36 @@ class ClawbackIntegrationTest {
     }
 
     @Test
+    void aFreeLookCancellationClawsBackWithNoWindowAtAll() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "FREELOOK");
+        String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("100000.00"), "FREELOOK-01");
+
+        TenantContext.set(tenantId);
+        CommissionAccrual original = originalFirstYearAccrual(tenantId, policyNumber);
+        assertThat(original.getAmount()).isEqualByComparingTo("10000.00");
+
+        // 20 months before "now" -- the date at which a LAPSE claws back nothing, because cover
+        // genuinely ran for those months and the agent earned something for writing it.
+        backdateProjectionIssueDate(tenantId, policyNumber, LocalDate.now().minusMonths(20));
+
+        policyApi.cancelForFreeLook(policyNumber, "fin-2");
+
+        TenantContext.set(tenantId);
+        // Free-look undoes the sale FROM INCEPTION, so the window does not apply and the whole
+        // accrual goes back. This is the one assertion that distinguishes the two handlers: run it
+        // through handlePolicyLapsed instead and it finds no reversal at all.
+        List<CommissionAccrual> reversals = reversalsOf(tenantId, original.getAccrualId());
+        assertThat(reversals).hasSize(1);
+        assertThat(reversals.get(0).getAmount()).isEqualByComparingTo("-10000.00");
+        assertThat(reversals.get(0).getAgentId()).isEqualTo(fixture.sellerId());
+        assertThat(reversals.get(0).getSourceRef()).isEqualTo(original.getAccrualId().toString());
+        // Append-only: the original row is never rewritten.
+        assertThat(commissionAccrualRepository.findById(original.getAccrualId()).orElseThrow().getAmount())
+            .isEqualByComparingTo("10000.00");
+    }
+
+    @Test
     void aLapseForAPolicyWithNoProjectionRowIsASilentNoOp() {
         UUID tenantId = UUID.randomUUID();
         Fixture fixture = buildFixture(tenantId, "NOPROJ");
