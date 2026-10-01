@@ -48,16 +48,19 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     private final PayoutInstalmentRepository instalments;
     private final PayoutStreamRepository streams;
     private final PremiumTallyRepository tallies;
+    private final PaymentRunRepository runs;
     private final ProductApi productApi;
     private final PolicyApi policyApi;
     private final ApplicationEventPublisher eventPublisher;
 
     public BenefitPayoutApiImpl(PayoutInstalmentRepository instalments, PayoutStreamRepository streams,
-                                PremiumTallyRepository tallies, ProductApi productApi, PolicyApi policyApi,
+                                PremiumTallyRepository tallies, PaymentRunRepository runs,
+                                ProductApi productApi, PolicyApi policyApi,
                                 ApplicationEventPublisher eventPublisher) {
         this.instalments = instalments;
         this.streams = streams;
         this.tallies = tallies;
+        this.runs = runs;
         this.productApi = productApi;
         this.policyApi = policyApi;
         this.eventPublisher = eventPublisher;
@@ -303,6 +306,126 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             case INCOME -> "INCOME_PAYOUT";
             case RETURN_OF_PREMIUM -> "PREMIUM_RETURN_PAYOUT";
         };
+    }
+
+    /**
+     * Gather today's ready stream instalments into this tenant's run for the date.
+     *
+     * <p>Idempotent per date: the run is found or created by its date, and a run that has already
+     * been approved is left alone -- what it did not carry is picked up by tomorrow's. That is why
+     * a drain running hourly cannot double-pay and cannot strand an instalment either.
+     */
+    @Transactional
+    public void prepareRun(LocalDate runDate) {
+        UUID tenantId = TenantContext.get();
+        List<PayoutInstalment> ready = instalments.findStreamInstalmentsReadyForARun(tenantId);
+        if (ready.isEmpty()) {
+            return;
+        }
+        PaymentRun run = runs.findByTenantIdAndRunDate(tenantId, runDate)
+            .orElseGet(() -> runs.save(new PaymentRun(tenantId, runDate)));
+        if (!run.isPrepared()) {
+            return;
+        }
+        for (PayoutInstalment i : ready) {
+            i.assignToRun(run.getPaymentRunId());
+            instalments.save(i);
+        }
+    }
+
+    @Override
+    @Transactional
+    public PaymentRunView approveRun(UUID paymentRunId, String approver) {
+        PaymentRun run = runs.findById(paymentRunId).orElseThrow(() -> new PayoutNotFoundException(paymentRunId));
+        run.approve(approver);
+        runs.save(run);
+        for (PayoutInstalment i : instalments.findByPaymentRunIdOrderByDueDateAsc(paymentRunId)) {
+            // The destination was confirmed by a person when the stream's first instalment was
+            // reviewed, and it is reused rather than re-entered here. A batch approver typing a
+            // payee per row would be the one place in this flow where money could be redirected
+            // without a second pair of eyes.
+            i.approveInRun(paymentRunId, approver, streamPayee(i.getStreamId()));
+            instalments.save(i);
+            publishPayoutRequested(i);
+        }
+        return runView(run);
+    }
+
+    /** The payee a person already confirmed on this stream, from the earliest instalment that has one. */
+    private String streamPayee(UUID streamId) {
+        return instalments.findByStreamIdOrderByDueDateAsc(streamId).stream()
+            .map(PayoutInstalment::getPayeeRef)
+            .filter(java.util.Objects::nonNull)
+            .findFirst()
+            .orElseThrow(() -> new PayoutStateException(
+                "Stream " + streamId + " has no payee confirmed by a reviewer, so its run cannot be approved"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PaymentRunView> listRuns() {
+        return runs.findByTenantIdOrderByRunDateDesc(TenantContext.get()).stream().map(this::runView).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PaymentRunView getRun(UUID paymentRunId) {
+        return runView(runs.findById(paymentRunId).orElseThrow(() -> new PayoutNotFoundException(paymentRunId)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PayoutInstalmentView> runInstalments(UUID paymentRunId) {
+        return instalments.findByPaymentRunIdOrderByDueDateAsc(paymentRunId).stream().map(Views::of).toList();
+    }
+
+    private PaymentRunView runView(PaymentRun run) {
+        List<PayoutInstalment> members = instalments.findByPaymentRunIdOrderByDueDateAsc(run.getPaymentRunId());
+        BigDecimal total = members.stream().map(PayoutInstalment::getCurrentAmount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String currency = members.isEmpty() ? "TZS" : members.get(0).getCurrency();
+        return new PaymentRunView(run.getPaymentRunId(), run.getRunDate(), run.getStatus(), run.getApprovedBy(),
+            members.size(), total, currency);
+    }
+
+    /**
+     * Proof of life is overdue: suspend the stream, and hold everything DUE on it.
+     *
+     * <p>An instalment already assigned to a run is left where it is. The batch was assembled while
+     * the stream was still ACTIVE and will be approved or not as a batch; pulling one row out from
+     * under it would make the total somebody is about to approve wrong.
+     */
+    @Transactional
+    public void suspendStream(UUID streamId) {
+        PayoutStream stream = streams.findById(streamId).orElseThrow(() -> new PayoutNotFoundException(streamId));
+        stream.suspendForProofOfLife();
+        streams.save(stream);
+        for (PayoutInstalment i : instalments.findByStreamIdAndStatus(streamId, InstalmentStatus.DUE.name())) {
+            if (i.getPaymentRunId() == null) {
+                i.hold("Proof of life is overdue");
+                instalments.save(i);
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public void recordProofOfLife(UUID streamId, ProofOfLifeMethod method, UUID documentId, String recordedBy) {
+        if (method == null) {
+            throw new PayoutStateException("Proof of life needs a method");
+        }
+        PayoutStream stream = streams.findById(streamId).orElseThrow(() -> new PayoutNotFoundException(streamId));
+        stream.recordProofOfLife(LocalDate.now());
+        streams.save(stream);
+        // Only what the overdue proof held comes back. An instalment held because the PREMIUMS are
+        // behind stays held -- proving someone is alive says nothing about what they have paid.
+        PremiumTally tally = tallies.findById(stream.getPolicyNumber()).orElse(null);
+        for (PayoutInstalment i : instalments.findByStreamIdAndStatus(streamId, InstalmentStatus.ON_HOLD.name())) {
+            if (tally == null || tally.isPaidUpTo(i.getDueDate())) {
+                i.release();
+                instalments.save(i);
+            }
+        }
     }
 
     /**

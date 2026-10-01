@@ -54,6 +54,28 @@ public interface BenefitPayoutApi {
      */
     PayoutInstalmentView retry(UUID instalmentId);
 
+    /** Payment runs, newest first. Runs are few -- one a day per tenant -- so this is not paged. */
+    List<PaymentRunView> listRuns();
+
+    PaymentRunView getRun(UUID paymentRunId);
+
+    List<PayoutInstalmentView> runInstalments(UUID paymentRunId);
+
+    /**
+     * Release a PREPARED run: every instalment in it reaches APPROVED and its payment is requested.
+     *
+     * <p>One signature, not two. The stream's first instalment already carried a reviewer and a
+     * separate approver; what stands behind these is the proof-of-life interval, which suspends the
+     * stream the moment it lapses. Decision Q7, and deliberate rather than an omission.
+     */
+    PaymentRunView approveRun(UUID paymentRunId, String approver);
+
+    /**
+     * Fresh proof that the life assured is alive. Restarts the stream's clock and releases the
+     * instalments the overdue proof held, so long as premiums are not separately behind.
+     */
+    void recordProofOfLife(UUID streamId, ProofOfLifeMethod method, UUID documentId, String recordedBy);
+
     /**
      * What a death claim may pay on this policy, given the sum-assured ceiling policy computed.
      *

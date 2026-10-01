@@ -117,6 +117,15 @@ class BenefitPayoutContractTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private PayoutTestFixtures fixtures;
     @Autowired private PayoutDueDrain drain;
+    @Autowired private tz.co.nlolo.lifeplatform.benefitpayout.application.PaymentRunDrain runDrain;
+
+    /** 12,000 a year paid monthly over two policy years, and proof of life every 12 months. */
+    private static final PayoutPlan INCOME = PayoutPlan.authored(
+        new PayoutTerms(15, 12, null, null),
+        List.of(new PayoutRowInput(PayoutKind.INCOME, 1, 2, PayoutAmountBasis.FIXED,
+                    new BigDecimal("12000"), PayoutFrequency.MONTHLY),
+                new PayoutRowInput(PayoutKind.MATURITY, null, null, PayoutAmountBasis.PERCENT_OF_SA,
+                    new BigDecimal("100"), null)));
 
     private static final PayoutPlan MONEY_BACK = PayoutPlan.authored(
         new PayoutTerms(15, null, false, null),
@@ -195,6 +204,84 @@ class BenefitPayoutContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
             .andExpect(jsonPath("$.items.length()").value(1))
             .andExpect(jsonPath("$.page.pageSize").value(1));
+    }
+
+    @Test
+    void aPaymentRunIsListedAndApprovedOverTheContract() throws Exception {
+        // An income plan on its OWN tenant: a payment run is one batch per tenant per day, so
+        // sharing this class's tenant would mix another test's instalments into the count.
+        UUID tenant = UUID.randomUUID();
+        String policyNumber = fixtures.issueEndowment(tenant, INCOME, new BigDecimal("1000000.00"), 120,
+            LocalDate.now().minusMonths(2).minusDays(1));
+        fixtures.collectPremium(tenant, policyNumber, new BigDecimal("200000.00"), LocalDate.now());
+        drain.drain();
+
+        RequestPostProcessor finance = jwt()
+            .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+            .jwt(builder -> builder.subject("fin-run-1").claim("tenant_id", tenant.toString()));
+        RequestPostProcessor approver = jwt()
+            .authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+            .jwt(builder -> builder.subject("admin-run-2").claim("tenant_id", tenant.toString()));
+
+        // The stream's first instalment through the ordinary two-person route, which activates it.
+        String schedule = mockMvc.perform(get("/policies/{n}/payouts", policyNumber).with(finance))
+            .andReturn().getResponse().getContentAsString();
+        String firstIncome = JsonPath.<java.util.List<String>>read(schedule,
+            "$[?(@.kind == 'INCOME')].instalmentId").get(0);
+        mockMvc.perform(post("/payouts/{id}/review", firstIncome).with(finance)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"payeeRef\":\"+255700000009\",\"proofOfLifeMethod\":\"IN_PERSON\"}"))
+            .andExpect(status().isOk());
+        mockMvc.perform(post("/payouts/{id}/approve", firstIncome).with(approver))
+            .andExpect(status().isAccepted());
+
+        runDrain.drain();
+
+        String runs = mockMvc.perform(get("/payment-runs").with(finance))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].status").value("PREPARED"))
+            .andExpect(jsonPath("$[0].instalmentCount").value(1))
+            // The total is money on the wire: a decimal STRING with a currency, never a number.
+            .andExpect(jsonPath("$[0].total.amount").value("1000.00"))
+            .andExpect(jsonPath("$[0].total.currencyCode").value("TZS"))
+            .andReturn().getResponse().getContentAsString();
+        String runId = JsonPath.read(runs, "$[0].paymentRunId");
+
+        mockMvc.perform(get("/payment-runs/{id}/instalments", runId).with(finance))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$[0].status").value("DUE"));
+
+        mockMvc.perform(post("/payment-runs/{id}/approve", runId).with(approver))
+            .andExpect(status().isAccepted())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("APPROVED"))
+            .andExpect(jsonPath("$.approvedBy").value("admin-run-2"));
+
+        // Released once. A second release would request every payment in the batch again.
+        mockMvc.perform(post("/payment-runs/{id}/approve", runId).with(approver))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.errorCode").value("PAYOUT_REFUSED"));
+    }
+
+    @Test
+    void recordingProofOfLifeNeedsAMethodAndFinanceRights() throws Exception {
+        // A CSR is refused before the body is even considered.
+        mockMvc.perform(post("/payout-streams/{id}/proof-of-life", UUID.randomUUID())
+                .with(staff("CUSTOMER_SERVICE_REP", "csr-1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"proofOfLifeMethod\":\"IN_PERSON\"}"))
+            .andExpect(status().isForbidden());
+
+        // "Proof of life was recorded" without saying HOW is the entry that makes the control
+        // worthless, so the method is required rather than defaulted.
+        mockMvc.perform(post("/payout-streams/{id}/proof-of-life", UUID.randomUUID())
+                .with(staff("FINANCE_OFFICER", "fin-1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -164,8 +164,124 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /payment-runs:
+    get:
+      summary: Payment runs, newest first (a bare array — runs are few)
+      description: >
+        One run per tenant per day, carrying that day's income instalments. FINANCE_OFFICER or
+        ADMIN only: this is the batch from which money is released.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: Runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PaymentRun' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /payment-runs/{paymentRunId}:
+    get:
+      summary: One run, with its server-computed total
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: paymentRunId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentRun' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: No such run in this tenant
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /payment-runs/{paymentRunId}/instalments:
+    get:
+      summary: The instalments in one run, in due-date order
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: paymentRunId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Instalments
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PayoutInstalment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /payment-runs/{paymentRunId}/approve:
+    post:
+      summary: Approve a PREPARED run; requests every instalment's payment
+      description: >
+        One signature, not two. Each stream's first instalment already carried a reviewer and a
+        separate approver; what stands behind the rest is the proof-of-life interval, which
+        suspends the stream the moment it lapses and keeps it out of the batch.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: paymentRunId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Approved and the payments requested — not yet paid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentRun' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused — the run is already approved, or a stream has no confirmed payee
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /payout-streams/{streamId}/proof-of-life:
+    post:
+      summary: Record proof of life on an income stream
+      description: >
+        Restarts the stream's clock and releases the instalments the overdue proof held. One it
+        does NOT release is an instalment held because the premiums are behind: proving someone is
+        alive says nothing about what they have paid.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: streamId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proofOfLifeMethod]
+              properties:
+                proofOfLifeMethod: { $ref: '#/components/schemas/ProofOfLifeMethod' }
+                proofOfLifeDocumentId: { type: [string, "null"], format: uuid }
+      responses:
+        '204': { description: Recorded }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused — the stream has ended, or no method was given
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    PaymentRun:
+      type: object
+      required: [paymentRunId, runDate, status, instalmentCount, total]
+      properties:
+        paymentRunId: { type: string, format: uuid }
+        runDate: { type: string, format: date }
+        status: { type: string, enum: [PREPARED, APPROVED] }
+        approvedBy: { type: [string, "null"] }
+        instalmentCount: { type: integer }
+        total:
+          description: Computed by the server — the console never sums the instalments itself.
+          $ref: 'openapi-common.yaml#/components/schemas/Money'
     InstalmentStatus:
       type: string
       description: >

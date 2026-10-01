@@ -87,4 +87,41 @@ public class BenefitPayoutController {
     public ResponseEntity<PayoutInstalmentResponse> retry(@PathVariable UUID instalmentId) {
         return ResponseEntity.accepted().body(PayoutInstalmentResponse.from(api.retry(instalmentId)));
     }
+
+    /** A bare array: one run per tenant per day, so this list stays short for years. */
+    @GetMapping("/payment-runs")
+    @PreAuthorize(FINANCE)
+    public List<PaymentRunResponse> listRuns() {
+        return api.listRuns().stream().map(PaymentRunResponse::from).toList();
+    }
+
+    @GetMapping("/payment-runs/{paymentRunId}")
+    @PreAuthorize(FINANCE)
+    public PaymentRunResponse getRun(@PathVariable UUID paymentRunId) {
+        return PaymentRunResponse.from(api.getRun(paymentRunId));
+    }
+
+    @GetMapping("/payment-runs/{paymentRunId}/instalments")
+    @PreAuthorize(FINANCE)
+    public List<PayoutInstalmentResponse> runInstalments(@PathVariable UUID paymentRunId) {
+        return api.runInstalments(paymentRunId).stream().map(PayoutInstalmentResponse::from).toList();
+    }
+
+    /** 202: every instalment in the batch is REQUESTED from the rail, not yet paid. */
+    @PostMapping("/payment-runs/{paymentRunId}/approve")
+    @PreAuthorize(FINANCE)
+    public ResponseEntity<PaymentRunResponse> approveRun(@PathVariable UUID paymentRunId,
+                                                         @AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.accepted().body(PaymentRunResponse.from(api.approveRun(paymentRunId, jwt.getSubject())));
+    }
+
+    @PostMapping("/payout-streams/{streamId}/proof-of-life")
+    @PreAuthorize(FINANCE)
+    public ResponseEntity<Void> recordProofOfLife(@PathVariable UUID streamId,
+                                                  @Valid @RequestBody ProofOfLifeRequest request,
+                                                  @AuthenticationPrincipal Jwt jwt) {
+        api.recordProofOfLife(streamId, request.proofOfLifeMethod(), request.proofOfLifeDocumentId(),
+            jwt.getSubject());
+        return ResponseEntity.noContent().build();
+    }
 }
