@@ -75,7 +75,9 @@ class UnderwritingContractTest {
             "db-migrations/underwriting/V11__member_evidence_case.sql",
             "db-migrations/underwriting/V13__single_premium_frequency.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql");
     }
 
     @Autowired

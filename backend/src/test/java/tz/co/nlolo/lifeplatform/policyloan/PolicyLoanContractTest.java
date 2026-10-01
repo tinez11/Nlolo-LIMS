@@ -119,8 +119,6 @@ class PolicyLoanContractTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
-            "db-migrations/policy/V25__credit_life_premium_basis.sql",
-            "db-migrations/policy/V26__enrolment_stated_premium.sql",
             "db-migrations/policy/V27__expired_status.sql",
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
@@ -129,13 +127,16 @@ class PolicyLoanContractTest {
             "db-migrations/policyloan/V3__money_check_constraints.sql",
             "db-migrations/policyloan/V4__persist_reservation_id.sql",
             "db-migrations/policyloan/V5__loan_interest_accrual.sql",
+            "db-migrations/policyloan/V7__q4_2026_partitions.sql",
             // NOT optional, and NOT in the task brief's list: every domain event these tests
             // publish (LoanOriginated, LoanDisbursementRequested, LoanRepaid, PolicyIssued, ...)
             // is picked up application-wide by audit.DomainEventAuditListener. It swallows its
             // own persistence failures, so omitting this migration still "passes" while flooding
             // the build log with SQLGrammarException stack traces for a missing audit.audit_log.
             // Same reason PolicyLoanApiIntegrationTest and policy.PolicyApiIntegrationTest carry it.
-            "db-migrations/audit/V1__create_audit_schema.sql");
+            "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql");
     }
 
     @Autowired private MockMvc mockMvc;

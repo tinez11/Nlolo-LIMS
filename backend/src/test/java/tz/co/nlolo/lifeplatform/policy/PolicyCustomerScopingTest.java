@@ -96,13 +96,13 @@ class PolicyCustomerScopingTest {
             "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
             "db-migrations/policy/V11__not_taken_up_status.sql",
             "db-migrations/policy/V24__issuance_record.sql",
-            "db-migrations/policy/V25__credit_life_premium_basis.sql",
-            "db-migrations/policy/V26__enrolment_stated_premium.sql",
             "db-migrations/policy/V27__expired_status.sql",
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             // Needed since PolicyController.resolveOwnAgentTeamOrThrow (agents-realm "browse my
             // book of business" scoping) queries distribution.agent_profile for ANY agents-realm
             // search now, not just ones this class originally anticipated.

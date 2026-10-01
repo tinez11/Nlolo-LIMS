@@ -138,13 +138,16 @@ class PaymentRequestListenerIntegrationTest {
         wireMock.start();
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // M5 final-review fix wave (C2): V4 widens both ledgers' status CHECK to admit
             // IN_DOUBT. Load-bearing for the two indeterminate-outcome tests below -- without it
             // they fail with a check-constraint violation rather than passing.
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
-            "db-migrations/payment/V6__disbursement_method.sql");
+            "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql");
     }
 
     @AfterAll

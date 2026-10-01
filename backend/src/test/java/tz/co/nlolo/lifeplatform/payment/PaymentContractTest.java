@@ -99,13 +99,16 @@ class PaymentContractTest {
     static void applyMigrations() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/audit/V1__create_audit_schema.sql",
+            "db-migrations/audit/V2__rls_fail_closed.sql",
+            "db-migrations/audit/V3__q4_2026_partitions.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
             "db-migrations/payment/V2__grants_rls_money_checks_version_and_tenant_scoped_registries.sql",
             // Needed for the webhook tests: the SECURITY DEFINER tenant-resolution functions
             // PaymentApiImpl.applyGatewayCallback calls to bootstrap TenantContext from a callback
             // that carries no bearer token at all.
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
-            "db-migrations/payment/V6__disbursement_method.sql");
+            "db-migrations/payment/V6__disbursement_method.sql",
+            "db-migrations/payment/V7__q4_2026_partitions.sql");
     }
 
     @Autowired private MockMvc mockMvc;
