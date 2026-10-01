@@ -265,6 +265,11 @@ export async function seedCreditLifeScheme(): Promise<CreditLifeScheme> {
       interestMethod: 'FLAT_RATE',
       repaymentFrequency: 'MONTHLY',
       premiumRatePercent: '0.5000',
+      // A rate and what that rate MEANS are two different things, and the server refuses one
+      // without the other (policy V25's chk_group_scheme_premium_basis_iff_rate). Omitted here,
+      // every credit-life spec died on the same 409 at its first line -- so the whole credit-life
+      // console suite was dead from the commit that added the rule.
+      premiumBasis: 'FLAT_ON_PRINCIPAL',
     });
     const policyNumber = scheme.policyNumber as string;
 
