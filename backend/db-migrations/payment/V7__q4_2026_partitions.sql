@@ -1,28 +1,32 @@
 -- db-migrations/payment/V7__q4_2026_partitions.sql
--- Add monthly partitions for payment_transaction and disbursement_instruction, Q4 2026 + Q1 2027.
--- V1 created partitions through 2026-09-30. Running on or after 2026-10-01, any INSERT fails
--- with "no partition of relation found for row".
-CREATE TABLE payment.payment_transaction_2026_10 PARTITION OF payment.payment_transaction
-    FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
-CREATE TABLE payment.payment_transaction_2026_11 PARTITION OF payment.payment_transaction
-    FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
-CREATE TABLE payment.payment_transaction_2026_12 PARTITION OF payment.payment_transaction
-    FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
-CREATE TABLE payment.payment_transaction_2027_01 PARTITION OF payment.payment_transaction
-    FOR VALUES FROM ('2027-01-01') TO ('2027-02-01');
-CREATE TABLE payment.payment_transaction_2027_02 PARTITION OF payment.payment_transaction
-    FOR VALUES FROM ('2027-02-01') TO ('2027-03-01');
-CREATE TABLE payment.payment_transaction_2027_03 PARTITION OF payment.payment_transaction
-    FOR VALUES FROM ('2027-03-01') TO ('2027-04-01');
-CREATE TABLE payment.disbursement_instruction_2026_10 PARTITION OF payment.disbursement_instruction
-    FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
-CREATE TABLE payment.disbursement_instruction_2026_11 PARTITION OF payment.disbursement_instruction
-    FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
-CREATE TABLE payment.disbursement_instruction_2026_12 PARTITION OF payment.disbursement_instruction
-    FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
-CREATE TABLE payment.disbursement_instruction_2027_01 PARTITION OF payment.disbursement_instruction
-    FOR VALUES FROM ('2027-01-01') TO ('2027-02-01');
-CREATE TABLE payment.disbursement_instruction_2027_02 PARTITION OF payment.disbursement_instruction
-    FOR VALUES FROM ('2027-02-01') TO ('2027-03-01');
-CREATE TABLE payment.disbursement_instruction_2027_03 PARTITION OF payment.disbursement_instruction
-    FOR VALUES FROM ('2027-03-01') TO ('2027-04-01');
+-- Monthly partitions for payment_transaction AND disbursement_instruction, Q4 2026 + Q1 2027,
+-- skipped where the month is already covered.
+--
+-- V1 created partitions through 2026-09-30, so from 2026-10-01 a collection or a disbursement
+-- fails with "no partition of relation found for row" -- but only where pg_partman is not running.
+-- See db-migrations/audit/V3 for the full reasoning behind the guard; in short, a configured
+-- environment already has these months from partman and a plain CREATE TABLE would abort
+-- migrate.sh there.
+DO $$
+DECLARE
+    parent TEXT;
+    month_start DATE;
+BEGIN
+    FOREACH parent IN ARRAY ARRAY['payment_transaction', 'disbursement_instruction'] LOOP
+        month_start := DATE '2026-10-01';
+        WHILE month_start < DATE '2027-04-01' LOOP
+            BEGIN
+                EXECUTE format(
+                    'CREATE TABLE payment.%I PARTITION OF payment.%I FOR VALUES FROM (%L) TO (%L)',
+                    parent || '_' || to_char(month_start, 'YYYY_MM'),
+                    parent,
+                    month_start,
+                    (month_start + INTERVAL '1 month')::date);
+            EXCEPTION
+                WHEN invalid_object_definition OR duplicate_table THEN
+                    RAISE NOTICE '% already covers %, leaving it alone', parent, month_start;
+            END;
+            month_start := (month_start + INTERVAL '1 month')::date;
+        END LOOP;
+    END LOOP;
+END $$;
