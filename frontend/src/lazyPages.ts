@@ -126,3 +126,10 @@ export const UnderwritingCaseDetailPage = lazy(() =>
 export const UnderwritingQueuePage = lazy(() =>
   import('@/features/underwriting/UnderwritingQueuePage').then((m) => ({ default: m.UnderwritingQueuePage })),
 );
+
+export const PayoutsQueuePage = lazy(() =>
+  import('@/features/payouts/PayoutsQueuePage').then((m) => ({ default: m.PayoutsQueuePage })),
+);
+export const PayoutPage = lazy(() =>
+  import('@/features/payouts/PayoutPage').then((m) => ({ default: m.PayoutPage })),
+);

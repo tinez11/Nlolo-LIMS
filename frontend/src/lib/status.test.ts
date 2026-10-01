@@ -110,6 +110,8 @@ describe('STATUS_MAPS coverage', () => {
         'EXPIRED',
         // The customer stopped paying and keeps reduced cover (product step 1).
         'PAID_UP',
+        // The customer changed their mind inside the free-look window (product step 2).
+        'CANCELLED_FREE_LOOK',
         'PROPOSED',
         'REINSTATED',
         'SURRENDERED',

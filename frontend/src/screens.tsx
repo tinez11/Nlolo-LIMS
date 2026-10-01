@@ -61,6 +61,8 @@ import {
   OpenUnderwritingCasePage,
   UnderwritingCaseDetailPage,
   UnderwritingQueuePage,
+  PayoutsQueuePage,
+  PayoutPage,
 } from '@/lazyPages';
 
 /**
@@ -433,6 +435,15 @@ const STAFF_SCREENS: Screen[] = [
     element: <EftExecutionPage />,
     reach: { group: 'finance', label: 'Bank transfers', icon: Banknote, badge: 'eft-awaiting' },
   },
+  // Money owed to LIVING policyholders (product step 2), as distinct from the claims queue, which
+  // pays on death. Under finance for the same reason bank transfers are: reviewing and approving a
+  // payout both move real money, and the endpoints are FINANCE_OFFICER/ADMIN only.
+  {
+    path: 'payouts',
+    element: <PayoutsQueuePage />,
+    reach: { group: 'finance', label: 'Payouts', icon: HandCoins },
+  },
+  { path: 'payouts/:instalmentId', element: <PayoutPage />, reach: 'drill-in' },
   {
     path: 'gl-postings',
     element: <GlPostingsPage />,

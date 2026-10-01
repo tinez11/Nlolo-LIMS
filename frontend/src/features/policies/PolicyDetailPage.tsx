@@ -32,6 +32,7 @@ import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
+import { PayoutsPanel } from '@/features/payouts/PayoutsPanel';
 import { ValueActions } from './ValueActions';
 
 /**
@@ -300,6 +301,20 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           <div className="pt-5">
             <Panel title="Loans" subtitle="Policy loans taken against cash value">
               <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
+            </Panel>
+          </div>
+        ),
+      },
+      {
+        value: 'payouts',
+        label: 'Payouts',
+        content: (
+          <div className="pt-5">
+            <Panel
+              title="Payouts"
+              subtitle="What this contract pays while the life assured is alive, dated at issue"
+            >
+              <PayoutsPanel policyNumber={policyNumber} />
             </Panel>
           </div>
         ),
