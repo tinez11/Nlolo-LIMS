@@ -265,11 +265,19 @@ export async function seedCreditLifeScheme(): Promise<CreditLifeScheme> {
       interestMethod: 'FLAT_RATE',
       repaymentFrequency: 'MONTHLY',
       premiumRatePercent: '0.5000',
-      // A rate and what that rate MEANS are two different things, and the server refuses one
-      // without the other (policy V25's chk_group_scheme_premium_basis_iff_rate). Omitted here,
-      // every credit-life spec died on the same 409 at its first line -- so the whole credit-life
-      // console suite was dead from the commit that added the rule.
-      premiumBasis: 'FLAT_ON_PRINCIPAL',
+      /*
+        A rate and what that rate MEANS are two different things, and the server refuses one
+        without the other (policy V25's chk_group_scheme_premium_basis_iff_rate). Omitted here,
+        every credit-life spec died on the same 409 at its first line -- so the whole credit-life
+        console suite was dead from the commit that added the rule.
+
+        PER_ANNUM_ON_PRINCIPAL specifically, because that is what these specs' figures were
+        computed under: it is the basis V25 backfilled onto every scheme that predates the column,
+        and the one `CreditLifePremium.forLoan`'s legacy overload still assumes. FLAT_ON_PRINCIPAL
+        drops the term multiplier -- 0.5% of 2,400,000 once rather than over 18 months -- which
+        silently rewrites every premium, invoice and commission figure downstream.
+      */
+      premiumBasis: 'PER_ANNUM_ON_PRINCIPAL',
     });
     const policyNumber = scheme.policyNumber as string;
 
