@@ -409,6 +409,17 @@ public class PolicyController {
             policyApi.requestSurrender(policyNumber, request.payeeRef(), jwt.getSubject())));
     }
 
+    /** The policy's latest surrender request, or 204 when it has none. Read by the policy page so the
+     *  approver can find a request to approve -- there was no other way to reach one. */
+    @GetMapping("/policies/{policyNumber}/surrender-request")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<SurrenderRequestResponseDto> latestSurrenderRequest(@PathVariable String policyNumber) {
+        return policyApi.findLatestSurrenderRequest(policyNumber)
+            .map(SurrenderRequestResponseDto::from)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.noContent().build());
+    }
+
     /** Approve a surrender, by someone other than the requester. Cover stops and the payout is sent.
      *  Finance-only, like a commission payout: approving is what moves money out of the company. */
     @PostMapping("/surrender-requests/{surrenderRequestId}/approve")

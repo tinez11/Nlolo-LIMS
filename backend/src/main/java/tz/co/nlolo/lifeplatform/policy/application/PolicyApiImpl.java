@@ -1024,6 +1024,14 @@ public class PolicyApiImpl implements PolicyApi {
             .ifPresent(r -> { r.markFailed(); surrenderRequestRepository.save(r); });
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<SurrenderRequestView> findLatestSurrenderRequest(String policyNumber) {
+        return surrenderRequestRepository
+            .findFirstByPolicyNumberAndTenantIdOrderByRequestedAtDesc(policyNumber, TenantContext.get())
+            .map(this::toSurrenderView);
+    }
+
     private SurrenderRequestView toSurrenderView(SurrenderRequest r) {
         return new SurrenderRequestView(r.getSurrenderRequestId(), r.getPolicyNumber(), r.getStatus(),
             r.getQuotedValueAmount(), r.getQuotedValueCurrency(), r.getRequestedBy(), r.getApprovedBy());

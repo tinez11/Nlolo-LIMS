@@ -1792,6 +1792,8 @@ class PolicyApiIntegrationTest {
         PolicyApi.SurrenderRequestView approved = policyApi.approveSurrender(requestId, "bob");
         assertEquals("APPROVED", approved.status());
         assertEquals("bob", approved.approvedBy());
+        // And the policy page can find it again, which is how the approver reached it.
+        assertEquals(requestId, policyApi.findLatestSurrenderRequest(policyNumber).orElseThrow().surrenderRequestId());
 
         // The policy is now SURRENDERED and no longer in force.
         assertEquals(PolicyStatus.SURRENDERED, policyApi.getPolicy(policyNumber).status());

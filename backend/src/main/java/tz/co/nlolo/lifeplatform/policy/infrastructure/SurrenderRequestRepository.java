@@ -13,6 +13,9 @@ public interface SurrenderRequestRepository extends JpaRepository<SurrenderReque
 
     List<SurrenderRequest> findByPolicyNumberAndTenantIdAndStatusIn(String policyNumber, UUID tenantId, List<String> statuses);
 
+    /** The most recent request for a policy, in any status -- what the policy page shows. */
+    Optional<SurrenderRequest> findFirstByPolicyNumberAndTenantIdOrderByRequestedAtDesc(String policyNumber, UUID tenantId);
+
     /** The one open request for a policy, if any -- REQUESTED or APPROVED. The partial unique index
      *  guarantees at most one, so callers take the first. */
     default Optional<SurrenderRequest> findLive(String policyNumber, UUID tenantId) {

@@ -665,6 +665,9 @@ public interface PolicyApi {
      */
     SurrenderRequestView approveSurrender(java.util.UUID surrenderRequestId, String approvedBy);
 
+    /** The policy's most recent surrender request in any status, so a second person can find one to approve. */
+    java.util.Optional<SurrenderRequestView> findLatestSurrenderRequest(String policyNumber);
+
     /** The surrender payout succeeded; mark the request PAID. Idempotent. Called by the payment listener. */
     void markSurrenderPaid(java.util.UUID surrenderRequestId, java.util.UUID disbursementId);
 

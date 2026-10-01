@@ -339,13 +339,32 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/surrender-request:
+    get:
+      summary: The policy's most recent surrender request, in any status
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: The latest request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurrenderRequest' }
+        '204': { description: The policy has never had a surrender requested }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /surrender-requests/{surrenderRequestId}/approve:
     post:
       summary: Approve a surrender (by someone other than the requester)
       description: >
         Cover stops as of the approval date, billing stops, and the payout is sent through the
-        disbursement rail. 409 if the requester tries to approve their own surrender, or the request
-        is not awaiting approval.
+        disbursement rail. FINANCE_OFFICER or ADMIN only, like a commission payout -- approving is what
+        moves the money. 409 if the requester tries to approve their own surrender, or the request is
+        not awaiting approval.
       security:
         - staffAuth: []
       parameters:

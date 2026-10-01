@@ -860,6 +860,17 @@ class PolicyContractTest {
     }
 
     @Test
+    void aPolicyWithNoSurrenderAnswers204() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-SR");
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/surrender-request")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNoContent())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
     void onlyFinanceMayApproveASurrender() throws Exception {
         // Both halves, so the 403 is provably the role gate: the same request from a finance officer
         // gets past it and reaches the lookup, which 404s on an id that does not exist.
