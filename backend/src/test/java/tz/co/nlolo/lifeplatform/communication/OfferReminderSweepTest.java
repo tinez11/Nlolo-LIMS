@@ -103,6 +103,8 @@ class OfferReminderSweepTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",

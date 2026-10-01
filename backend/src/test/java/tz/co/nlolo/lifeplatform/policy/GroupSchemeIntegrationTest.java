@@ -86,6 +86,8 @@ class GroupSchemeIntegrationTest {
             // createProduct stopped reporting every integrity violation as a duplicate code.
             "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",

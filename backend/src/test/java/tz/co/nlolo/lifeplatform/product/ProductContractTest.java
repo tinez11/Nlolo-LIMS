@@ -66,7 +66,9 @@ class ProductContractTest {
             "db-migrations/product/V12__tira_filing.sql",
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V14__credit_life_category.sql",
-            "db-migrations/product/V15__exclusion_periods.sql");
+            "db-migrations/product/V15__exclusion_periods.sql",
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql");
     }
 
     @AfterEach
