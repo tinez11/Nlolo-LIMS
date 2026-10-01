@@ -22,3 +22,5 @@ benefitpayout:
 # not urgent -- but an e2e test funding an account commenced months ago must see them in seconds.
 accumulation:
   month-end-interval-ms: 10000
+  # Daily elsewhere; the annual statement files once per account per year either way.
+  statement-interval-ms: 30000

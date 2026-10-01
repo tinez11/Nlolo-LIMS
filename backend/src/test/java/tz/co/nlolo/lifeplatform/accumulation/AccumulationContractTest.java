@@ -230,6 +230,28 @@ class AccumulationContractTest {
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
+    /**
+     * The computed statement and the (empty) filed list, to spec. Filing a PDF is NOT exercised here:
+     * this class has no MinIO of its own, and an upload would silently use whatever object store the
+     * dev stack runs. StatementIntegrationTest owns that path, with its own container.
+     */
+    @Test
+    void theComputedStatementIsReadToSpec() throws Exception {
+        String policy = fundedAccount();
+        String today = LocalDate.now().toString();
+        mockMvc.perform(get("/policies/" + policy + "/account/statement").param("from", today).param("to", today)
+                .with(staff("UNDERWRITER", "uw")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.openingBalance.amount").value("0.00"))
+            .andExpect(jsonPath("$.closingBalance.amount").value("190000.00"))
+            .andExpect(jsonPath("$.groups[0].type").value("CONTRIBUTION"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(get("/policies/" + policy + "/account/statements").with(staff("UNDERWRITER", "uw")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isEmpty())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
     @Test
     void aMalformedAmountIsA400ThatNamesTheField() throws Exception {
         String policy = fundedAccount();

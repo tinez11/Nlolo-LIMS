@@ -75,6 +75,39 @@ public class AccumulationController {
         return ClosingQuoteResponse.from(api.quoteClosing(policyNumber, java.time.LocalDate.now()));
     }
 
+    /** A period computed and reconciled, not filed -- the Statement tab. */
+    @GetMapping("/policies/{policyNumber}/account/statement")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public StatementResponse statement(@PathVariable String policyNumber,
+                                       @RequestParam java.time.LocalDate from, @RequestParam java.time.LocalDate to) {
+        return StatementResponse.from(api.statement(policyNumber, from, to));
+    }
+
+    /** Filed as a PDF -- or the existing one returned, when nothing new has been posted since. */
+    @PostMapping("/policies/{policyNumber}/account/statements")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public StatementRecordResponse generateStatement(@PathVariable String policyNumber,
+                                                     @Valid @RequestBody StatementPeriodBody body,
+                                                     @AuthenticationPrincipal Jwt jwt) {
+        return StatementRecordResponse.from(api.generateStatement(policyNumber, body.from(), body.to(), jwt.getSubject()));
+    }
+
+    @GetMapping("/policies/{policyNumber}/account/statements")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public List<StatementRecordResponse> statements(@PathVariable String policyNumber) {
+        return api.listStatements(policyNumber).stream().map(StatementRecordResponse::from).toList();
+    }
+
+    /** Loaded by id under RLS, so another tenant's statement is simply not found. */
+    @GetMapping(value = "/account-statements/{statementId}/pdf", produces = "application/pdf")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ResponseEntity<byte[]> statementPdf(@PathVariable UUID statementId) {
+        return ResponseEntity.ok()
+            .header("Content-Disposition", "attachment; filename=\"statement-" + statementId + ".pdf\"")
+            .body(api.statementPdf(statementId));
+    }
+
     /** Any staff member may REQUEST, as a surrender is requested; approving moves money and is finance's. */
     @PostMapping("/policies/{policyNumber}/account/withdrawals")
     @PreAuthorize("hasRole('REALM_STAFF')")

@@ -16,6 +16,8 @@ import tz.co.nlolo.lifeplatform.accumulation.infrastructure.*;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.LedgerEntryRepository;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.PostingRepository;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.RateDeclarationRepository;
+import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
+import tz.co.nlolo.lifeplatform.document.api.DocumentType;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
@@ -54,13 +56,18 @@ public class AccumulationApiImpl implements AccumulationApi {
     final TransferInRepository transfers;
     final AdjustmentRequestRepository adjustments;
     final ApplicationEventPublisher events;
+    final StatementRepository statementRepository;
+    final DocumentApi documentApi;
 
     public AccumulationApiImpl(AccountRepository accounts, PostingRepository postings, LedgerEntryRepository entries,
                                LedgerService ledger, PolicyApi policyApi, ProductApi productApi,
                                AccountValuer valuer, RateDeclarationRepository rates,
                                WithdrawalRequestRepository withdrawals, TopUpRequestRepository topUps,
                                TransferInRepository transfers, AdjustmentRequestRepository adjustments,
-                               ApplicationEventPublisher events) {
+                               ApplicationEventPublisher events, StatementRepository statementRepository,
+                               DocumentApi documentApi) {
+        this.statementRepository = statementRepository;
+        this.documentApi = documentApi;
         this.accounts = accounts;
         this.postings = postings;
         this.entries = entries;
@@ -339,6 +346,93 @@ public class AccumulationApiImpl implements AccumulationApi {
     private AdjustmentView toView(AdjustmentRequest a) {
         return new AdjustmentView(a.getAdjustmentId(), a.getPolicyNumber(), a.getAmount(), a.getReason(), a.getStatus(),
             a.getProposedBy(), a.getProposedAt(), a.getDecidedBy(), a.getDecidedAt());
+    }
+
+    // ---- Statements (task 8) ----------------------------------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public StatementView statement(String policyNumber, LocalDate from, LocalDate to) {
+        if (to.isBefore(from)) {
+            throw new AccumulationStateException("A statement's period must end on or after it starts");
+        }
+        Account account = accounts.findById(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber));
+        StatementView view = StatementBuilder.build(policyNumber, account.getCurrency(), entries(policyNumber), from, to,
+            account.getLastSeq());
+        reconcile(view);
+        return view;
+    }
+
+    /**
+     * The statement against an independent sum, not against itself. A statement that does not add up
+     * must never reach a customer, so a mismatch refuses to file at all.
+     */
+    private void reconcile(StatementView view) {
+        BigDecimal ledgerTotal = entries.sumThrough(view.policyNumber(), view.periodTo(), view.lastSeq());
+        if (view.closingBalance().compareTo(ledgerTotal) != 0) {
+            throw new IllegalStateException("Statement for " + view.policyNumber() + " to " + view.periodTo()
+                + " closes at " + view.closingBalance() + " but the ledger holds " + ledgerTotal + " -- not filed");
+        }
+    }
+
+    @Override
+    @Transactional
+    public StatementRecordView generateStatement(String policyNumber, LocalDate from, LocalDate to, String generatedBy) {
+        return toView(fileStatement(policyNumber, from, to, generatedBy, false));
+    }
+
+    /**
+     * Shared by on-demand and the annual run; only the annual run sets {@code annual}, and only then
+     * does communication send the SMS. Filed once per (policy, period, last seq): asked again with
+     * nothing new posted it returns the existing record, and a later correction -- a new entry with
+     * a higher seq -- makes a NEW statement rather than changing an old one.
+     */
+    Statement fileStatement(String policyNumber, LocalDate from, LocalDate to, String generatedBy, boolean annual) {
+        StatementView view = statement(policyNumber, from, to);
+        Optional<Statement> existing = statementRepository.findByPolicyNumberAndPeriodFromAndPeriodToAndLastSeq(
+            policyNumber, from, to, view.lastSeq());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        // The upload is the one side effect a rollback cannot undo; a failed save after it leaves an
+        // orphan object. The same trade every DocumentApi caller on this platform makes.
+        byte[] pdf = StatementPdf.render(view, "Nlolo Life");
+        String ref = documentApi.upload("policy:" + policyNumber, DocumentType.ACCOUNT_STATEMENT, generatedBy,
+            new java.io.ByteArrayInputStream(pdf), pdf.length, "application/pdf",
+            "statement-" + policyNumber + "-" + from + "-" + to + ".pdf");
+        Statement saved = statementRepository.save(new Statement(TenantContext.get(), policyNumber, from, to,
+            view.lastSeq(), ref, generatedBy));
+        Account account = accounts.findById(policyNumber).orElseThrow();
+        events.publishEvent(DomainEventEnvelope.of("accumulation.StatementIssued", TenantContext.get(), Map.of(
+            "statementId", saved.getStatementId().toString(),
+            "policyNumber", policyNumber,
+            "policyholderPartyId", account.getPolicyholderPartyId(),
+            "periodFrom", from.toString(),
+            "periodTo", to.toString(),
+            "closingBalance", Map.of("amount", view.closingBalance().toPlainString(), "currencyCode", view.currency()),
+            "interestCredited", Map.of("amount", view.interestCredited().toPlainString(), "currencyCode", view.currency()),
+            "annual", annual)));
+        return saved;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<StatementRecordView> listStatements(String policyNumber) {
+        return statementRepository.findByPolicyNumberOrderByPeriodToDescGeneratedAtDesc(policyNumber).stream()
+            .map(this::toView).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] statementPdf(UUID statementId) {
+        Statement s = statementRepository.findById(statementId)
+            .orElseThrow(() -> new AccumulationStateException("No statement " + statementId));
+        return documentApi.download(s.getDocumentRef());
+    }
+
+    private StatementRecordView toView(Statement s) {
+        return new StatementRecordView(s.getStatementId(), s.getPolicyNumber(), s.getPeriodFrom(), s.getPeriodTo(),
+            s.getLastSeq(), s.getDocumentRef(), s.getGeneratedBy(), s.getGeneratedAt());
     }
 
     // ---- Closing: surrender, maturity, death, free-look (task 7) --------------------------------

@@ -81,4 +81,20 @@ public interface AccumulationApi {
      * on the instalment: asked again, it returns the same figure and posts nothing.
      */
     java.math.BigDecimal closeForMaturity(String policyNumber, java.util.UUID instalmentId, java.time.LocalDate dueDate);
+
+    // ---- Statements (task 8) ---------------------------------------------------------------------
+
+    /** Computed and reconciled, not filed. The console's Statement tab. */
+    StatementView statement(String policyNumber, java.time.LocalDate from, java.time.LocalDate to);
+
+    /**
+     * Built, reconciled, rendered as a PDF and filed -- or the existing record when nothing new has
+     * been posted since, so regenerating is provably the same statement.
+     */
+    StatementRecordView generateStatement(String policyNumber, java.time.LocalDate from, java.time.LocalDate to,
+                                          String generatedBy);
+
+    List<StatementRecordView> listStatements(String policyNumber);
+
+    byte[] statementPdf(java.util.UUID statementId);
 }

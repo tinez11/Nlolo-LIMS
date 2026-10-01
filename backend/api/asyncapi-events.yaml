@@ -263,6 +263,14 @@ channels:
       top-up id. Its payment.PaymentConfirmed is accumulation's, not billing's.
     publish:
       message: { $ref: '#/components/messages/TopUpRequested' }
+  accumulation.StatementIssued:
+    description: >
+      Producer: accumulation, when a statement is filed (once per policy, period and last entry
+      included). Consumers: communication -- ONLY when annual is true -- sends the yearly SMS summary
+      (template ACCOUNT_STATEMENT); audit. Carries the policyholder because communication may not
+      depend on accumulation or policy to find them, and both figures off the reconciled statement.
+    publish:
+      message: { $ref: '#/components/messages/StatementIssued' }
   accumulation.PostingRecorded:
     description: >
       Producer: accumulation (LedgerService.post -- the one place a savings account's balance
@@ -635,6 +643,7 @@ components:
     PayoutRequested: { messageId: PayoutRequested, name: PayoutRequested, payload: { $ref: '#/components/schemas/PayoutRequestedPayload' } }
     PayoutPaid: { messageId: PayoutPaid, name: PayoutPaid, payload: { $ref: '#/components/schemas/PayoutPaidPayload' } }
     PostingRecorded: { messageId: PostingRecorded, name: PostingRecorded, payload: { $ref: '#/components/schemas/PostingRecordedPayload' } }
+    StatementIssued: { messageId: StatementIssued, name: StatementIssued, payload: { $ref: '#/components/schemas/StatementIssuedPayload' } }
     AccountPayoutRequested: { messageId: AccountPayoutRequested, name: AccountPayoutRequested, payload: { $ref: '#/components/schemas/AccountPayoutRequestedPayload' } }
     TopUpRequested: { messageId: TopUpRequested, name: TopUpRequested, payload: { $ref: '#/components/schemas/TopUpRequestedPayload' } }
     GroupMemberAdded: { messageId: GroupMemberAdded, name: GroupMemberAdded, payload: { $ref: '#/components/schemas/GroupMemberAddedPayload' } }
@@ -897,6 +906,19 @@ components:
             policyNumber: {type: string}
             kind: {type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM]}
             paidAmount: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+    StatementIssuedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            statementId: {type: string, format: uuid}
+            policyNumber: {type: string}
+            policyholderPartyId: {type: string, format: uuid}
+            periodFrom: {type: string, format: date}
+            periodTo: {type: string, format: date}
+            closingBalance: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+            interestCredited: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+            annual: {type: boolean, description: "True only from the annual run -- the SMS is sent only then"}
     AccountSurrenderApprovedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

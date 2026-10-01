@@ -4,5 +4,5 @@
  * {@code accumulation::api}, and this module posts. Entries are immutable and each source posts at
  * most once.
  */
-@org.springframework.modulith.ApplicationModule(allowedDependencies = { "policy::api", "product::api" })
+@org.springframework.modulith.ApplicationModule(allowedDependencies = { "policy::api", "product::api", "document::api" })
 package tz.co.nlolo.lifeplatform.accumulation;
