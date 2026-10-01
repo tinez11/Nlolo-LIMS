@@ -638,6 +638,13 @@ public interface PolicyApi {
     void recalculateCashValue(String policyNumber, LocalDate paidToDate);
 
     /**
+     * Restate an ACCOUNT-basis policy's cash value from its ledger (product step 3). Called ONLY by
+     * accumulation, after every posting: the ledger is the truth and this field is its projection,
+     * which is why surrender quotes and loan limits -- both of which read it -- need no change.
+     */
+    void restateAccountValue(String policyNumber, java.math.BigDecimal value);
+
+    /**
      * Make a savings policy paid-up: the customer stops paying, cover reduces, no premium falls due
      * again (guide §21.3). Reduces the sum assured to the paid-up figure -- proportionate to the
      * premium term completed, or from the product's paid-up table -- restates the coverage a claim

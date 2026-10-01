@@ -1099,6 +1099,15 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     @Transactional
+    public void restateAccountValue(String policyNumber, BigDecimal value) {
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+        account.restateCashValue(value);
+        policyAccountRepository.save(account);
+    }
+
+    @Override
+    @Transactional
     public void recalculateCashValue(String policyNumber, LocalDate paidToDate) {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
