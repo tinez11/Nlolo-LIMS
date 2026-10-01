@@ -1034,7 +1034,8 @@ public class PolicyApiImpl implements PolicyApi {
 
     private SurrenderRequestView toSurrenderView(SurrenderRequest r) {
         return new SurrenderRequestView(r.getSurrenderRequestId(), r.getPolicyNumber(), r.getStatus(),
-            r.getQuotedValueAmount(), r.getQuotedValueCurrency(), r.getRequestedBy(), r.getApprovedBy());
+            r.getQuotedValueAmount(), r.getQuotedValueCurrency(), r.getPayeeRef(), r.getRequestedBy(),
+            r.getApprovedBy());
     }
 
     @Override

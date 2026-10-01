@@ -13,6 +13,11 @@ import {
   originateLoan,
   recordLoanRepayment,
   reinstatePolicy,
+  makePaidUp,
+  getSurrenderValue,
+  getSurrenderRequest,
+  requestSurrender,
+  approveSurrender,
   replaceBeneficiaries,
   requestPaymentForInvoice,
   resumePolicy,
@@ -37,6 +42,8 @@ import type {
   PaymentRequest,
   PolicyMemberView,
   PolicyView,
+  SurrenderQuote,
+  SurrenderRequestView,
   SuspendPolicyRequest,
   WaiverRequest,
 } from '@/api/types';
@@ -93,6 +100,14 @@ interface PolicyState {
   suspending: Keyed<PolicyView>;
   resuming: Keyed<PolicyView>;
   reinstating: Keyed<PolicyView>;
+  // Product step 1's two value actions, each its own tracked mutation for the reason above.
+  // `surrenderQuote` and `surrenderRequest` are reads the surrender panel needs before it can
+  // say what a surrender would pay, or offer an approval.
+  makingPaidUp: Keyed<PolicyView>;
+  surrenderQuote: Keyed<SurrenderQuote>;
+  surrenderRequest: Keyed<SurrenderRequestView | null>;
+  requestingSurrender: Keyed<SurrenderRequestView>;
+  approvingSurrender: Keyed<SurrenderRequestView>;
 
   // Group business. `scheme` and `members` are keyed by policy number, like
   // `detail` -- the scheme page holds both at once and they load independently,
@@ -143,6 +158,12 @@ interface PolicyState {
   reinstatePolicy: (policyNumber: string) => Promise<void>;
   resetReinstatePolicy: (policyNumber: string) => void;
 
+  makePaidUp: (policyNumber: string) => Promise<void>;
+  loadSurrenderQuote: (policyNumber: string) => Promise<void>;
+  loadSurrenderRequest: (policyNumber: string) => Promise<void>;
+  requestSurrender: (policyNumber: string, payeeRef: string) => Promise<void>;
+  approveSurrender: (policyNumber: string, surrenderRequestId: string) => Promise<void>;
+
   loadScheme: (policyNumber: string) => Promise<void>;
   loadMembers: (policyNumber: string, params?: MemberListParams) => Promise<void>;
   issueGroupScheme: (request: IssueGroupSchemeRequest) => Promise<void>;
@@ -168,6 +189,11 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
   suspending: {},
   resuming: {},
   reinstating: {},
+  makingPaidUp: {},
+  surrenderQuote: {},
+  surrenderRequest: {},
+  requestingSurrender: {},
+  approvingSurrender: {},
   scheme: {},
   members: {},
   issuingScheme: idle(),
@@ -442,6 +468,64 @@ export const usePolicyStore = create<PolicyState>((set, getState) => ({
       return { reinstating: rest };
     }),
 
+  makePaidUp: (policyNumber) =>
+    track(
+      `policy.paidUp.${policyNumber}`,
+      getState().makingPaidUp[policyNumber] ?? idle<PolicyView>(),
+      (next) => set((s) => ({ makingPaidUp: { ...s.makingPaidUp, [policyNumber]: next } })),
+      async () => {
+        const updated = await makePaidUp(policyNumber);
+        set((s) => ({ detail: { ...s.detail, [policyNumber]: success(updated) } }));
+        return updated;
+      },
+    ),
+
+  loadSurrenderQuote: (policyNumber) =>
+    track(
+      `policy.surrenderQuote.${policyNumber}`,
+      getState().surrenderQuote[policyNumber] ?? idle<SurrenderQuote>(),
+      (next) => set((s) => ({ surrenderQuote: { ...s.surrenderQuote, [policyNumber]: next } })),
+      () => getSurrenderValue(policyNumber),
+    ),
+
+  loadSurrenderRequest: (policyNumber) =>
+    track(
+      `policy.surrenderRequest.${policyNumber}`,
+      getState().surrenderRequest[policyNumber] ?? idle<SurrenderRequestView | null>(),
+      (next) => set((s) => ({ surrenderRequest: { ...s.surrenderRequest, [policyNumber]: next } })),
+      // 204 when the policy has never had one; the http helper gives back an empty body, and
+      // null says "asked, and there is none" rather than "not asked yet".
+      async () => (await getSurrenderRequest(policyNumber)) || null,
+    ),
+
+  requestSurrender: (policyNumber, payeeRef) =>
+    track(
+      `policy.requestSurrender.${policyNumber}`,
+      getState().requestingSurrender[policyNumber] ?? idle<SurrenderRequestView>(),
+      (next) => set((s) => ({ requestingSurrender: { ...s.requestingSurrender, [policyNumber]: next } })),
+      async () => {
+        const request = await requestSurrender(policyNumber, payeeRef);
+        // The panel renders from the loaded request, so the new one lands there too -- otherwise
+        // it would show nothing until a reload.
+        set((s) => ({ surrenderRequest: { ...s.surrenderRequest, [policyNumber]: success(request) } }));
+        return request;
+      },
+    ),
+
+  approveSurrender: (policyNumber, surrenderRequestId) =>
+    track(
+      `policy.approveSurrender.${policyNumber}`,
+      getState().approvingSurrender[policyNumber] ?? idle<SurrenderRequestView>(),
+      (next) => set((s) => ({ approvingSurrender: { ...s.approvingSurrender, [policyNumber]: next } })),
+      async () => {
+        const approved = await approveSurrender(surrenderRequestId);
+        set((s) => ({ surrenderRequest: { ...s.surrenderRequest, [policyNumber]: success(approved) } }));
+        // Cover stopped: the policy is SURRENDERED now, and the badge above must say so.
+        await getState().loadDetail(policyNumber);
+        return approved;
+      },
+    ),
+
   loadScheme: (policyNumber) =>
     track(
       `policy.scheme.${policyNumber}`,
@@ -561,6 +645,16 @@ export const selectResuming = (policyNumber: string) => (s: PolicyState) =>
   s.resuming[policyNumber] ?? idle<PolicyView>();
 export const selectReinstating = (policyNumber: string) => (s: PolicyState) =>
   s.reinstating[policyNumber] ?? idle<PolicyView>();
+export const selectMakingPaidUp = (policyNumber: string) => (s: PolicyState) =>
+  s.makingPaidUp[policyNumber] ?? idle<PolicyView>();
+export const selectSurrenderQuote = (policyNumber: string) => (s: PolicyState) =>
+  s.surrenderQuote[policyNumber] ?? idle<SurrenderQuote>();
+export const selectSurrenderRequest = (policyNumber: string) => (s: PolicyState) =>
+  s.surrenderRequest[policyNumber] ?? idle<SurrenderRequestView | null>();
+export const selectRequestingSurrender = (policyNumber: string) => (s: PolicyState) =>
+  s.requestingSurrender[policyNumber] ?? idle<SurrenderRequestView>();
+export const selectApprovingSurrender = (policyNumber: string) => (s: PolicyState) =>
+  s.approvingSurrender[policyNumber] ?? idle<SurrenderRequestView>();
 export const selectWaivingInvoice = (invoiceId: string) => (s: PolicyState) =>
   s.waivingInvoice[invoiceId] ?? idle<true>();
 export const selectRequestingPayment = (invoiceId: string) => (s: PolicyState) =>

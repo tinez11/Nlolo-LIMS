@@ -38,6 +38,17 @@ export const STATUS_MAPS = {
     PAID_UP: 'active',
   },
 
+  // policy.surrender_request.status (product step 1). The same five-state shape the payment rail
+  // gives every payout, and IN_DOUBT is deliberately a warning rather than a failure: the money
+  // may or may not have moved, and treating it as FAILED is how a surrender gets paid twice.
+  surrenderRequest: {
+    REQUESTED: 'pending',
+    APPROVED: 'pending', // cover has stopped, but the money has not arrived yet
+    PAID: 'success',
+    FAILED: 'danger',
+    IN_DOUBT: 'warning',
+  },
+
   // claims/api/ClaimStatus.java
   claim: {
     REGISTERED: 'pending',

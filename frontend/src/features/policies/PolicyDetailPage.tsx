@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Ban, Pause, Play, RotateCcw, Users } from 'lucide-react';
+import { Pause, Play, RotateCcw, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
@@ -32,6 +32,13 @@ import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
+import { ValueActions } from './ValueActions';
+
+/**
+ * The categories whose policies can carry a cash value -- CashValuePlanValidator's own set. A
+ * term or group policy has none, so neither surrender nor paid-up is offered on one.
+ */
+const VALUE_CATEGORIES: readonly string[] = ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'];
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
@@ -147,13 +154,9 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                 </Link>
               </Button>
             )}
-            {/* POST /policies/{n}/surrender genuinely returns 501 -- the surrender
-                choreography was deferred with the workflow engine. Rendered disabled
-                rather than as a live button that produces an error. */}
-            <Button size="sm" disabled title="Not implemented on the platform yet (HTTP 501)">
-              <Ban />
-              Surrender
-            </Button>
+            {/* Surrender is a real action now (product step 1), and it lives in the Value panel
+                on the Overview tab with the gates and the second-person approval it needs. A
+                page-bar button cannot carry any of that, so there is none. */}
           </>
         }
       />
@@ -243,6 +246,15 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           <LifecycleActions policyNumber={policyNumber} status={policy.status} />
         </Panel>,
       );
+      // Only on a policy that could have value. A term policy has none, and a panel offering to
+      // surrender nothing would be two refusals wearing the shape of an action.
+      if (VALUE_CATEGORIES.includes(policy.productCategory ?? '')) {
+        overview.push(
+          <Panel key="value" title="Value" subtitle="Stop paying and keep reduced cover, or cash it in">
+            <ValueActions policy={policy} />
+          </Panel>,
+        );
+      }
     }
 
     const tabs: TabDef[] = [
@@ -379,10 +391,17 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   }
                 />
               )}
+              {/* The note is now only for a product that will never have one. A savings policy's
+                  value is real: it is restated from the product's table as premiums are paid, and
+                  0.00 there means "not yet", not "never". */}
               <Field
                 label="Cash value"
                 value={formatMoney(policy.cashValue)}
-                note="Always 0.00 until the platform credits cash value"
+                {...(VALUE_CATEGORIES.includes(policy.productCategory ?? '')
+                  ? {
+                      note: "From the product's cash-value table, restated as premiums are paid. Nothing until the first two or three full years.",
+                    }
+                  : { note: 'This product carries no cash value — it is pure protection.' })}
               />
               <Field label="Issued" value={formatDate(policy.issueDate)} />
               {/*

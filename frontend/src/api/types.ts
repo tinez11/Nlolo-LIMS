@@ -17,7 +17,7 @@ import type { components as CommonComponents } from '@/types/api/common';
 import type { components as CommunicationComponents } from '@/types/api/communication';
 import type { components as PartyComponents } from '@/types/api/party';
 import type { components as PaymentComponents } from '@/types/api/payment';
-import type { components as PolicyComponents } from '@/types/api/policy';
+import type { components as PolicyComponents, paths as PolicyPaths } from '@/types/api/policy';
 import type { components as DistributionComponents } from '@/types/api/distribution';
 import type { components as FinaccountingComponents } from '@/types/api/finaccounting';
 import type { components as PolicyLoanComponents } from '@/types/api/policyloan';
@@ -28,6 +28,12 @@ import type { components as UnderwritingComponents } from '@/types/api/underwrit
 
 export type PolicyView = PolicyComponents['schemas']['PolicyView'];
 export type PolicyStatus = NonNullable<PolicyView['status']>;
+/** A customer surrender in flight (product step 1). */
+export type SurrenderRequestView = PolicyComponents['schemas']['SurrenderRequest'];
+/** What a surrender would pay today -- a quote, not a commitment. */
+export type SurrenderQuote = NonNullable<
+  PolicyPaths['/policies/{policyNumber}/surrender-value']['get']['responses']['200']['content']['application/json']
+>;
 export type BeneficiaryInput = PolicyComponents['schemas']['BeneficiaryInput'];
 /** The reverse direction: a policy that names some party as beneficiary. */
 export type BeneficiaryOfView = PolicyComponents['schemas']['BeneficiaryOfView'];

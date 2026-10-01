@@ -132,7 +132,9 @@ describe('LoansPanel', () => {
 
     await waitFor(() => expect(screen.getByText('No loans')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Take a loan' })).toBeDisabled();
-    expect(screen.getByText(/still 0\.00/)).toBeInTheDocument();
+    // Rendered text, not a `title`: a tooltip is unreachable by keyboard and silent to a screen
+    // reader, so the reason has to be on the page for this assertion to mean anything.
+    expect(screen.getByText(/cash value, which is 0\.00/)).toBeInTheDocument();
   });
 
   it('enables origination the moment cash value exists, with no code change', async () => {

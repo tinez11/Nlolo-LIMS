@@ -650,7 +650,7 @@ public interface PolicyApi {
     /** A surrender in flight. Status is REQUESTED, APPROVED, PAID, FAILED or IN_DOUBT. */
     record SurrenderRequestView(java.util.UUID surrenderRequestId, String policyNumber, String status,
                                 BigDecimal quotedValueAmount, String quotedValueCurrency,
-                                String requestedBy, String approvedBy) {}
+                                String payeeRef, String requestedBy, String approvedBy) {}
 
     /**
      * Request a customer surrender: quote the value, check the policy can be surrendered (in force,

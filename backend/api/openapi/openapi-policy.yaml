@@ -1340,6 +1340,7 @@ components:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED, IN_DOUBT] }
         quotedValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        payeeRef: { type: string, description: "Where the payout goes — what the approver checks" }
         requestedBy: { type: [string, "null"] }
         approvedBy: { type: [string, "null"] }
     ExitSubmissionView:
