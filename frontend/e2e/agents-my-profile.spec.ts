@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { dmy } from './dates';
+import { registerIndividualAsAgent } from './clients';
 
 /**
  * Agents-realm e2e coverage against the real backend, as `agent.senior`
@@ -46,12 +47,9 @@ test.describe('agents onboard a customer', () => {
     await expect(page.getByRole('heading', { name: 'Onboard a customer' })).toBeVisible();
 
     const suffix = Date.now();
-    await page.getByLabel('Full name').fill(`E2E Agent Onboarded ${suffix}`);
-    await page.getByLabel('Date of birth').fill(dmy('1990-05-12'));
-    await page.getByLabel('Phone number (optional)').fill('+255712345678');
-    await page.getByRole('button', { name: 'Register individual' }).click();
-
-    await expect(page.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await registerIndividualAsAgent(page, `E2E Agent Onboarded ${suffix}`, {
+      phoneNumber: '+255712345678',
+    });
     await expect(page.getByText(/^[0-9a-f]{8}-[0-9a-f]{4}-/)).toBeVisible();
     await expect(page.getByText('Pending', { exact: true })).toBeVisible();
 

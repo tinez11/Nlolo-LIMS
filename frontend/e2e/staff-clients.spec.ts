@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { dmy } from './dates';
+import { registerIndividualAsAgent } from './clients';
 import { expectStaffShellReady } from './guards';
 
 /**
@@ -92,10 +92,7 @@ test.describe('staff clients register', () => {
 
     const fullName = `E2E Clients Fixture ${Date.now()}`;
     await agentPage.goto('/agents/customers/new');
-    await agentPage.getByLabel('Full name').fill(fullName);
-    await agentPage.getByLabel('Date of birth').fill(dmy('1990-05-12'));
-    await agentPage.getByRole('button', { name: 'Register individual' }).click();
-    await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await registerIndividualAsAgent(agentPage, fullName);
     const partyIdText = await agentPage.getByText(/^[0-9a-f]{8}-[0-9a-f]{4}-/).textContent();
     const partyId = (partyIdText ?? '').trim();
     await agentContext.close();
@@ -147,10 +144,7 @@ test.describe('staff clients register', () => {
 
     const fullName = `E2E Correct Me ${Date.now()}`;
     await agentPage.goto('/agents/customers/new');
-    await agentPage.getByLabel('Full name').fill(fullName);
-    await agentPage.getByLabel('Date of birth').fill(dmy('1990-05-12'));
-    await agentPage.getByRole('button', { name: 'Register individual' }).click();
-    await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await registerIndividualAsAgent(agentPage, fullName);
     const partyIdText = await agentPage.getByText(/^[0-9a-f]{8}-[0-9a-f]{4}-/).textContent();
     const partyId = (partyIdText ?? '').trim();
     await agentContext.close();

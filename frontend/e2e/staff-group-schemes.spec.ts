@@ -306,7 +306,7 @@ test.describe('staff group schemes', () => {
     /*
      * REGISTRATION ITSELF IS NOT ASSERTED HERE, for the same reason the joiner is not
      * asserted in the first test: the server refuses a claim on a scheme that is not in
-     * force ("Policy GRP-... was not in force on ..."), a scheme is an offer until the
+     * force ("Policy GRP-... was not on risk on ..."), a scheme is an offer until the
      * employer's first premium clears, and this console has no action that accepts an
      * offer. GroupClaimIntegrationTest registers, approves and settles a member claim
      * against a real database, and ClaimSettlementEndToEndTest carries one to a real

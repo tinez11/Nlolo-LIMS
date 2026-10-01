@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { dmy } from './dates';
+import { registerIndividualAsAgent } from './clients';
 
 /**
  * `POST /agents/{n}/suspend`/`reactivate` -- `AgentProfile.setLicenseStatus`
@@ -69,10 +70,7 @@ test.describe('staff agent lifecycle', () => {
     const agentPage = await agentContext.newPage();
     const pendingName = `E2E Picker Exclusion Fixture ${Date.now()}`;
     await agentPage.goto('/agents/customers/new');
-    await agentPage.getByLabel('Full name').fill(pendingName);
-    await agentPage.getByLabel('Date of birth').fill(dmy('1990-05-12'));
-    await agentPage.getByRole('button', { name: 'Register individual' }).click();
-    await expect(agentPage.getByText('Registered', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await registerIndividualAsAgent(agentPage, pendingName);
     await agentContext.close();
 
     await page.goto('/staff/agents/new');
