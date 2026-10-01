@@ -860,6 +860,26 @@ class PolicyContractTest {
     }
 
     @Test
+    void onlyFinanceMayApproveASurrender() throws Exception {
+        // Both halves, so the 403 is provably the role gate: the same request from a finance officer
+        // gets past it and reaches the lookup, which 404s on an id that does not exist.
+        UUID tenantId = UUID.randomUUID();
+        UUID unknownRequest = UUID.randomUUID();
+
+        mockMvc.perform(post("/surrender-requests/" + unknownRequest + "/approve")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE_REP"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/surrender-requests/" + unknownRequest + "/approve")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
     void getProcessStatusReturns501WithChoreographyNotImplemented() throws Exception {
         UUID tenantId = UUID.randomUUID();
         IssuedPolicy issued = manualIssue(tenantId, "POLICY-CONTRACT-10");

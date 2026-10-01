@@ -72,6 +72,10 @@ public final class PostingRule {
         // carrying the whole 13,800 as receivable -- the two could not be reconciled.
         Map.entry("billing.PremiumRefundDue",        new AccountPair(UNEARNED_PREMIUM, PREMIUM_RECEIVABLE)),
         Map.entry("claims.ClaimSettled",             new AccountPair(CLAIMS_EXPENSE, CASH)),
+        // A surrender value paid out. Against Claims Expense because the chart has no surrender-benefit
+        // account and adding one reopens the V5 chart remap -- a placeholder pending FINANCE sign-off,
+        // like every rule here. Before this rule the money left and the ledger never saw it.
+        Map.entry("policy.SurrenderPaid",            new AccountPair(CLAIMS_EXPENSE, CASH)),
         Map.entry("distribution.CommissionPaid",     new AccountPair(COMMISSION_EXPENSE, CASH)),
         Map.entry("reinsurance.CessionRecorded",     new AccountPair(REINSURANCE_CEDED_PREMIUM, REINSURANCE_PAYABLE)),
         Map.entry("reinsurance.RecoveryConfirmed",   new AccountPair(REINSURANCE_RECOVERABLE, CLAIMS_EXPENSE)),

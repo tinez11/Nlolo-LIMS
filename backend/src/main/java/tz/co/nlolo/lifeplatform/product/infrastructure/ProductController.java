@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
+import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -112,6 +113,7 @@ public class ProductController {
             // authorises it. @NotNull on the request rejects an absent block at the edge, so
             // this dereference is safe.
             new TiraFiling(request.tiraFiling().reference(), request.tiraFiling().approvalDate()),
+            request.cashValue() != null ? request.cashValue().toPlan() : CashValuePlan.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

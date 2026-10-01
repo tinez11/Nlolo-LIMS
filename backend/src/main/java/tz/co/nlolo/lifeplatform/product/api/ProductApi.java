@@ -274,6 +274,16 @@ public interface ProductApi {
                          List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, TiraFiling tiraFiling, String publishedBy);
 
     /**
+     * The fullest form: also the version's cash-value table and its actuarial sign-off (product
+     * step 1). Every other overload delegates here with {@link CashValuePlan#none()}; the table is
+     * written in the same transaction as the version, so a version can never exist half-valued.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, String publishedBy);
+
+    /**
      * What this version charges for instalment payment.
      *
      * <p>Internal-only, not part of {@code openapi-product.yaml} — the same convention as

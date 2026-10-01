@@ -175,6 +175,16 @@ public class ProductApiImpl implements ProductApi {
     public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                                 List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, TiraFiling tiraFiling, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, CashValuePlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -257,6 +267,7 @@ public class ProductApiImpl implements ProductApi {
         rejectDuplicateRatingFactors(ratingTable);
         rejectMalformedAgeBands(ratingTable);
         rejectMalformedSumAssuredBands(ratingTable);
+        CashValuePlanValidator.validate(ProductCategory.valueOf(product.getCategory()), cashValue);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -286,6 +297,7 @@ public class ProductApiImpl implements ProductApi {
         // equivalent here on purpose -- an absent filing is not a kind of filing.
         version.applyTiraFiling(tiraFiling);
         productVersionRepository.save(version);
+        persistCashValue(tenantId, version.getProductVersionId(), cashValue);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -760,6 +772,19 @@ public class ProductApiImpl implements ProductApi {
                     + ", but this version accepts entry ages " + min + "-" + max
                     + ". A priced version must be able to price every life it says it will accept.");
             }
+        }
+    }
+
+    /** The cash-value table and its sign-off, in the version's own transaction. Nothing for none(). */
+    private void persistCashValue(UUID tenantId, UUID productVersionId, CashValuePlan cashValue) {
+        if (cashValue == null || !cashValue.isPresent()) {
+            return;
+        }
+        cashValueConfigRepository.save(new CashValueConfig(productVersionId, tenantId, cashValue.basisReference(),
+            cashValue.basisDate(), cashValue.paidUpBasis(), cashValue.minYearsForValue()));
+        for (CashValueRowInput row : cashValue.rows()) {
+            cashValueEntryRepository.save(new CashValueEntry(tenantId, productVersionId, row.policyYear(), row.ageFrom(),
+                row.ageTo(), row.cashValuePerMille(), row.paidUpPerMille()));
         }
     }
 

@@ -52,4 +52,7 @@ public record PublishVersionRequest(
      * rates must be filed with and approved by TIRA before sale, and a version may not exist
      * without the filing that authorises it. There is deliberately no default.
      */
-    @NotNull @Valid TiraFilingRequest tiraFiling) {}
+    @NotNull @Valid TiraFilingRequest tiraFiling,
+
+    // Optional: present only on a savings version (product step 1). Absent means no cash value.
+    @Valid CashValueRequest cashValue) {}

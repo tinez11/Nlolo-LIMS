@@ -1692,7 +1692,9 @@ class ProductApiIntegrationTest {
         List<Method> declared = Arrays.stream(ProductApi.class.getMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(4, declared.size(), "expected four publishVersion overloads");
+        // Five since product step 1 added the cash-value overload. A new overload must raise this
+        // count AND pass both checks below -- that is the point of counting.
+        assertEquals(5, declared.size(), "expected five publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1700,7 +1702,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(4, implementations.size(), "every overload must be implemented here");
+        assertEquals(5, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));

@@ -124,6 +124,31 @@ class FinaccountingApiIntegrationTest {
     @Autowired private GlPostingRepository glPostingRepository;
     @Autowired private ChartOfAccountSeeder chartOfAccountSeeder;
     @Autowired private ChartOfAccountRepository chartOfAccountRepository;
+    @Autowired private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @Test
+    void aPaidSurrenderIsBookedOnceAgainstClaimsExpenseAndCash() {
+        // Through the real listener: the event is published inside a committed transaction, so the
+        // AFTER_COMMIT finaccounting listener fires exactly as it does behind policy.markSurrenderPaid.
+        UUID tenantId = UUID.randomUUID();
+        String surrenderRequestId = UUID.randomUUID().toString();
+        java.util.Map<String, Object> payload = java.util.Map.of("surrenderRequestId", surrenderRequestId,
+            "policyNumber", "POL-SURR-GL", "paidAmount", java.util.Map.of("amount", "1240000.00", "currencyCode", "TZS"));
+        org.springframework.transaction.support.TransactionTemplate tx =
+            new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+        for (int delivery = 0; delivery < 2; delivery++) {   // a redelivery must not post twice
+            tx.executeWithoutResult(s -> eventPublisher.publishEvent(
+                tz.co.nlolo.lifeplatform.DomainEventEnvelope.of("policy.SurrenderPaid", tenantId, payload)));
+        }
+
+        TenantContext.set(tenantId);
+        List<JournalEntryView> entries = finaccountingApi.listJournalEntries(null, "POL-SURR-GL", Pageable.unpaged()).getContent();
+        assertThat(entries).extracting(JournalEntryView::sourceRef).containsExactly(surrenderRequestId);
+        TenantContext.set(tenantId);
+        assertThat(glPostingRepository.findByTenantIdAndAccountCodeAndPeriod(tenantId, PostingRule.CLAIMS_EXPENSE,
+            java.time.YearMonth.now().toString())).hasSize(1);
+    }
 
     @AfterEach
     void clearTenant() { TenantContext.clear(); }

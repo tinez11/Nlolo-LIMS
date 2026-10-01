@@ -1000,9 +1000,17 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         surrenderRequestRepository.findBySurrenderRequestIdAndTenantId(surrenderRequestId, tenantId)
             .filter(r -> "APPROVED".equals(r.getStatus()))
-            .ifPresent(r -> { r.markPaid(disbursementId); surrenderRequestRepository.save(r); });
-        // GL posting (Dr surrender benefits / Cr cash) is deferred: the chart has no surrender-benefit
-        // account yet, and PostingRule cleanly does nothing without a rule. The money has moved.
+            .ifPresent(r -> {
+                r.markPaid(disbursementId);
+                surrenderRequestRepository.save(r);
+                // Published only on the real APPROVED -> PAID transition, so a redelivered payment
+                // event cannot post the payout to the ledger twice. finaccounting books it.
+                eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPaid", tenantId,
+                    Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                           "policyNumber", r.getPolicyNumber(),
+                           "paidAmount", Map.of("amount", r.getQuotedValueAmount().toPlainString(),
+                                "currencyCode", r.getQuotedValueCurrency()))));
+            });
     }
 
     /** The payout failed. Marks the request FAILED. Cover stays stopped (Q2): a failed payout does

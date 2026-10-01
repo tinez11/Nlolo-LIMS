@@ -409,9 +409,10 @@ public class PolicyController {
             policyApi.requestSurrender(policyNumber, request.payeeRef(), jwt.getSubject())));
     }
 
-    /** Approve a surrender, by someone other than the requester. Cover stops and the payout is sent. */
+    /** Approve a surrender, by someone other than the requester. Cover stops and the payout is sent.
+     *  Finance-only, like a commission payout: approving is what moves money out of the company. */
     @PostMapping("/surrender-requests/{surrenderRequestId}/approve")
-    @PreAuthorize("hasRole('REALM_STAFF')")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
     public ResponseEntity<SurrenderRequestResponseDto> approveSurrender(@PathVariable UUID surrenderRequestId,
             @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(SurrenderRequestResponseDto.from(

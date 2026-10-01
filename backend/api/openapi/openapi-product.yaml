@@ -344,6 +344,31 @@ components:
         effectiveDate: { type: string, format: date }
         retirementDate: { type: [string, "null"], format: date }
         eligibility: { $ref: '#/components/schemas/EligibilityBounds' }
+        cashValue:
+          description: >-
+            The version's cash-value (surrender value) table and its actuarial sign-off. Optional,
+            and only on ENDOWMENT, WHOLE_LIFE and EDUCATION_SAVINGS: pure protection has no cash
+            value. Values are per 1,000 of sum assured at each policy year, optionally by entry-age
+            band. A TABLE paid-up basis needs a paid-up value on every row.
+          type: object
+          required: [basisReference, basisDate, paidUpBasis, minYearsForValue, rows]
+          properties:
+            basisReference: { type: string, maxLength: 200 }
+            basisDate: { type: string, format: date }
+            paidUpBasis: { type: string, enum: [PROPORTIONATE, TABLE] }
+            minYearsForValue: { type: integer, minimum: 2, maximum: 3 }
+            rows:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [policyYear, cashValuePerMille]
+                properties:
+                  policyYear: { type: integer, minimum: 1 }
+                  ageFrom: { type: [integer, "null"], minimum: 0 }
+                  ageTo: { type: [integer, "null"], minimum: 0 }
+                  cashValuePerMille: { type: number, minimum: 0 }
+                  paidUpPerMille: { type: [number, "null"], minimum: 0 }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and
