@@ -884,6 +884,8 @@ git commit -m "feat(product): payout schedule and free-look terms on a product v
 
 **Files:**
 - Create: `backend/db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql`
+
+**Partitioning note (checked 2026-10-01):** `benefitpayout` deliberately partitions nothing. Every date-partitioned table on this platform is registered with pg_partman in `_post-migration/configure-pg-partman.sql` and listed in `ops.platform_readiness()`; adding a partitioned table means editing both, or the health check silently stops covering it. At payout volumes a plain table is right.
 - Create: `benefitpayout/package-info.java`, `benefitpayout/api/package-info.java`, `api/BenefitPayoutApi.java`, `api/InstalmentStatus.java`, `api/StreamStatus.java`, `api/ProofOfLifeMethod.java`, `api/PayoutInstalmentView.java`, `api/PayoutStateException.java`, `api/PayoutNotFoundException.java`
 - Create: `benefitpayout/domain/PayoutInstalment.java`, `PayoutStream.java`, `PremiumTally.java`, `ScheduleExpander.java`, `PayoutArithmetic.java`
 - Create: `benefitpayout/infrastructure/PayoutInstalmentRepository.java`, `PayoutStreamRepository.java`, `PremiumTallyRepository.java`
@@ -2558,7 +2560,7 @@ public class PayoutDueDrain {
 }
 ```
 
-Register the drain with the existing scheduled-jobs health check: open `ScheduledJobsHealthIndicator.java` and add `PayoutDueDrain` the same way `CoverExpiryDrain` is listed there (if it lists by bean or by SQL function — follow whichever it does; memory: health goes DOWN if a sweep is missing, so a drain left out of it is invisible).
+**Do NOT add this drain to `ScheduledJobsHealthIndicator`** (checked 2026-10-01). That indicator reads `ops.platform_readiness()`, a SQL function listing pg_cron jobs and pg_partman registrations — things `configure-db.sh` installs that a migration cannot. A Spring `@Scheduled` bean is none of those: it runs wherever the application runs, so its absence is a deployment fault, not a database one. Step 0's `CoverExpiryDrain` is correctly absent for the same reason.
 
 - [ ] **Step 7: Write the failing drain integration test**
 
@@ -3970,7 +3972,7 @@ public class PaymentRunDrain {
 }
 ```
 
-Register it in `ScheduledJobsHealthIndicator` the same way as `PayoutDueDrain` (Task 3 Step 6).
+Not registered in `ScheduledJobsHealthIndicator`, for the reason Task 3 Step 6 gives.
 
 - [ ] **Step 4: REST and spec**
 
