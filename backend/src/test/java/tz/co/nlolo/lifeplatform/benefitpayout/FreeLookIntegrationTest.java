@@ -224,6 +224,22 @@ class FreeLookIntegrationTest {
     }
 
     @Test
+    void aSecondCancellationOnTheSamePolicyIsRefusedRatherThanCrashing() {
+        String policyNumber = fixtures.issueEndowment(TENANT, ENDOWMENT_FREE_LOOK_15,
+            new BigDecimal("500000.00"), 120);
+        fixtures.collectPremium(TENANT, policyNumber, new BigDecimal("50000.00"), LocalDate.now());
+        asTenant(() -> api.requestFreeLook(policyNumber, "+255700000009", List.of(), "csr-1"));
+
+        // ux_free_look_live would refuse the insert anyway, but a unique-index violation raises
+        // DataIntegrityViolationException, which no handler maps -- so the slow second click of a
+        // button would be a 500. The service answers instead.
+        assertThatThrownBy(() -> asTenant(() ->
+                api.requestFreeLook(policyNumber, "+255700000009", List.of(), "csr-2")))
+            .isInstanceOf(PayoutStateException.class)
+            .hasMessage("A free-look cancellation is already requested on policy " + policyNumber);
+    }
+
+    @Test
     void outsideTheWindowIsRefused() {
         String policyNumber = fixtures.issueEndowment(TENANT, ENDOWMENT_FREE_LOOK_15,
             new BigDecimal("500000.00"), 120);

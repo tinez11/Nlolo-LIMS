@@ -321,6 +321,9 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     private static final Set<String> INDIVIDUAL_CATEGORIES =
         Set.of("TERM_LIFE", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS");
 
+    /** The statuses {@code ux_free_look_live} treats as in flight. */
+    private static final Set<String> LIVE_CANCELLATION = Set.of("REQUESTED", "APPROVED");
+
     @Override
     @Transactional
     public FreeLookCancellationView requestFreeLook(String policyNumber, String payeeRef,
@@ -335,6 +338,17 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             throw new PayoutStateException("Policy " + policyNumber + " is " + policy.status()
                 + "; only an ACTIVE policy can be cancelled in free-look");
         }
+        // At most one live cancellation per policy. ux_free_look_live enforces it, but a unique
+        // index raises DataIntegrityViolationException, which nothing maps -- so without this the
+        // second click of a slow button is a 500 rather than an answer. The same pre-check
+        // requestSurrender makes, for the same reason and in the same shape.
+        cancellations.findFirstByPolicyNumberOrderByRequestedAtDesc(policyNumber)
+            .filter(live -> LIVE_CANCELLATION.contains(live.getStatus()))
+            .ifPresent(live -> {
+                throw new PayoutStateException("A free-look cancellation is already "
+                    + live.getStatus().toLowerCase() + " on policy " + policyNumber);
+            });
+
         Integer days = productApi.resolvePayoutPlan(policy.productVersionId()).terms().freeLookDays();
         if (days == null) {
             throw new PayoutStateException("Policy " + policyNumber + "'s product version has no free-look period");
