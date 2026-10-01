@@ -81,6 +81,8 @@ class MemberPromotionIntegrationTest {
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -120,6 +122,7 @@ class MemberPromotionIntegrationTest {
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

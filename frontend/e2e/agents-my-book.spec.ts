@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './agentSession';
 import { caseAwaitingManualIssue, selectUnderwritingCase } from './underwriting';
 import { selectAgentOfRecord } from './policies';
 import { dmy } from './dates';

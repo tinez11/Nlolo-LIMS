@@ -115,6 +115,7 @@ public class PaymentRequestListener {
             case "claims.ClaimSettlementRequested" -> withTenant(envelope, this::handleClaimSettlement);
             case "distribution.CommissionPayoutRequested" -> withTenant(envelope, this::handleCommissionPayout);
             case "policy.SurrenderPayoutRequested" -> withTenant(envelope, this::handleSurrenderPayout);
+            case "benefitpayout.PayoutRequested" -> withTenant(envelope, this::handleBenefitPayout);
             default -> { /* not payment-relevant */ }
         }
     }
@@ -237,6 +238,27 @@ public class PaymentRequestListener {
         disbursementId.ifPresentOrElse(
             id -> submitDisbursement(tenantId, id, payeeRef, money),
             () -> log.info("Dropping duplicate SurrenderPayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
+    }
+
+    /**
+     * A scheduled benefit payout or a free-look refund (product step 2). Structurally the twin of
+     * {@link #handleSurrenderPayout}, with two differences: the PUBLISHER names the purpose, because
+     * one module now sends four kinds of money out; and the source reference is whichever id the
+     * payload carries -- an instalment for a payout, a cancellation for a refund.
+     */
+    private void handleBenefitPayout(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String idempotencyKey = requireKey(payload);
+        String sourceRef = payload.get("instalmentId") != null
+            ? (String) payload.get("instalmentId") : (String) payload.get("cancellationId");
+        String purpose = (String) payload.get("purpose");
+        String payeeRef = (String) payload.get("payeeRef");
+        Money money = money(payload);
+        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
+            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), purpose, sourceRef));
+        disbursementId.ifPresentOrElse(
+            id -> submitDisbursement(tenantId, id, payeeRef, money),
+            () -> log.info("Dropping duplicate PayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 
     private void handlePremiumCollection(Map<String, Object> payload) {

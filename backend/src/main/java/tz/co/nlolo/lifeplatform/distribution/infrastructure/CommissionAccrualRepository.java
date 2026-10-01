@@ -16,6 +16,17 @@ public interface CommissionAccrualRepository extends JpaRepository<CommissionAcc
     /** Clawback target lookup: the unreversed FIRST_YEAR accrual for a policy. */
     List<CommissionAccrual> findByTenantIdAndPolicyNumberAndTierTypeAndReversesAccrualIdIsNull(
         UUID tenantId, String policyNumber, TierType tierType);
+    /**
+     * Every unreversed EARNING on a policy, any tier -- what a free-look cancellation claws back,
+     * because it undoes the sale from inception rather than ending a contract that ran.
+     *
+     * <p>{@code reversesAccrualIdIsNull} already excludes the clawback rows, which carry the id of
+     * what they reverse. The {@code amountGreaterThan} zero clause is a second guard: it skips a
+     * zero accrual, where a reversal would be a meaningless row, and makes it impossible for this
+     * query to hand back anything whose negation would PAY an agent.
+     */
+    List<CommissionAccrual> findByTenantIdAndPolicyNumberAndReversesAccrualIdIsNullAndAmountGreaterThan(
+        UUID tenantId, String policyNumber, java.math.BigDecimal amount);
     boolean existsByTenantIdAndAgentIdAndTierTypeAndSourceRefAndReversesAccrualIdIsNull(
         UUID tenantId, UUID agentId, TierType tierType, String sourceRef);
     /**

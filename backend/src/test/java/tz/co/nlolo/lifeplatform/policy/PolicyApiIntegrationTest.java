@@ -97,6 +97,8 @@ class PolicyApiIntegrationTest {
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -126,6 +128,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",

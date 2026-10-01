@@ -58,7 +58,11 @@ export async function issueRealPolicy(page: Page, reason: string): Promise<strin
   await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
   await page.getByLabel('Reason for manual issue').fill(reason);
   await page.getByRole('button', { name: 'Issue policy' }).click();
-  await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
+  // 60s, not 15s. Manual issue answers only after its whole synchronous AFTER_COMMIT chain (billing,
+  // commission, payout schedule, SMS, projections): 4.1-5.8s measured alone on a quiet machine on
+  // 2026-10-02. That cleared 15s alone and failed it repeatedly an hour into a full run, while the
+  // policy was created perfectly well -- a budget failure, not a defect.
+  await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 60_000 });
   return page.url().split('/').pop() as string;
 }
 

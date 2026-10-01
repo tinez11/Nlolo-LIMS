@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -128,6 +129,24 @@ public class PolicyController {
      * point for a list endpoint, unlike getPolicy/coverage-status which 403 on an explicit mismatch
      * against a resource that already exists. Same idiom as ClaimController.listClaims.
      */
+    /**
+     * Finance's cash planning list: what matures in a window, and when (guide §6).
+     *
+     * <p>Declared before {@code /policies/{policyNumber}} for readability. Spring matches the
+     * literal segment first either way, so a policy genuinely numbered "maturing" could not shadow
+     * it -- but a reader should not have to know that to be sure.
+     */
+    @GetMapping("/policies/maturing")
+    @PreAuthorize("hasRole('REALM_STAFF') and (hasRole('FINANCE_OFFICER') or hasRole('ADMIN'))")
+    public ResponseEntity<PolicySearchResponse> maturing(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int pageSize) {
+        return ResponseEntity.ok(PolicySearchResponse.from(policyApi.searchMaturing(from, to,
+            PageRequest.of(page, Math.min(pageSize, 100), Sort.by("maturityDate", "policyNumber")))));
+    }
+
     @GetMapping("/policies")
     @PreAuthorize("hasRole('REALM_CUSTOMERS') or hasRole('REALM_AGENTS') or hasRole('REALM_STAFF')")
     public ResponseEntity<PolicySearchResponse> searchPolicies(

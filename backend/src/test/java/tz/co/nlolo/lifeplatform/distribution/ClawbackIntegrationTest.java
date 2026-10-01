@@ -109,6 +109,8 @@ class ClawbackIntegrationTest {
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -133,6 +135,7 @@ class ClawbackIntegrationTest {
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
         try (Connection connection = DriverManager.getConnection(
@@ -349,6 +352,36 @@ class ClawbackIntegrationTest {
         assertThat(paidStatementAfter.getTotalAmount()).isEqualByComparingTo(paidTotalBefore);
         assertThat(paidStatementAfter.getStatus()).isEqualTo(StatementStatus.PAID);
         assertThat(paidStatementAfter.getVersion()).isEqualTo(versionBefore);
+    }
+
+    @Test
+    void aFreeLookCancellationClawsBackWithNoWindowAtAll() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Fixture fixture = buildFixture(tenantId, "FREELOOK");
+        String policyNumber = issuePolicy(tenantId, fixture, new BigDecimal("100000.00"), "FREELOOK-01");
+
+        TenantContext.set(tenantId);
+        CommissionAccrual original = originalFirstYearAccrual(tenantId, policyNumber);
+        assertThat(original.getAmount()).isEqualByComparingTo("10000.00");
+
+        // 20 months before "now" -- the date at which a LAPSE claws back nothing, because cover
+        // genuinely ran for those months and the agent earned something for writing it.
+        backdateProjectionIssueDate(tenantId, policyNumber, LocalDate.now().minusMonths(20));
+
+        policyApi.cancelForFreeLook(policyNumber, "fin-2");
+
+        TenantContext.set(tenantId);
+        // Free-look undoes the sale FROM INCEPTION, so the window does not apply and the whole
+        // accrual goes back. This is the one assertion that distinguishes the two handlers: run it
+        // through handlePolicyLapsed instead and it finds no reversal at all.
+        List<CommissionAccrual> reversals = reversalsOf(tenantId, original.getAccrualId());
+        assertThat(reversals).hasSize(1);
+        assertThat(reversals.get(0).getAmount()).isEqualByComparingTo("-10000.00");
+        assertThat(reversals.get(0).getAgentId()).isEqualTo(fixture.sellerId());
+        assertThat(reversals.get(0).getSourceRef()).isEqualTo(original.getAccrualId().toString());
+        // Append-only: the original row is never rewritten.
+        assertThat(commissionAccrualRepository.findById(original.getAccrualId()).orElseThrow().getAmount())
+            .isEqualByComparingTo("10000.00");
     }
 
     @Test

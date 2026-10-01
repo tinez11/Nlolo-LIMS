@@ -82,7 +82,8 @@ class MissingDimensionTest {
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
             "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
             "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql",
-            "db-migrations/regreporting/V5__member_movement_columns.sql");
+            "db-migrations/regreporting/V5__member_movement_columns.sql",
+            "db-migrations/regreporting/V6__free_look_cancellation_movement.sql");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {

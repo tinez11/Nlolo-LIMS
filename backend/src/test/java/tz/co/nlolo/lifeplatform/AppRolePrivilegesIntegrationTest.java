@@ -142,6 +142,8 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -190,6 +192,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",
@@ -231,6 +234,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",
+            "db-migrations/payment/V8__benefit_payout_purposes.sql",
             // M7 (Task 10) additions: distribution appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap claims had entering M6.
             // distribution/V1 has zero GRANT statements (the recurring V1 pattern this class
@@ -270,7 +274,8 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/regreporting/V1__create_regreporting_schema.sql",
             "db-migrations/regreporting/V2__grants_rls_dimensions_movements_and_return_lines.sql",
             "db-migrations/regreporting/V3__optimistic_locking_on_movement_tables.sql",
-            "db-migrations/regreporting/V5__member_movement_columns.sql");
+            "db-migrations/regreporting/V5__member_movement_columns.sql",
+            "db-migrations/regreporting/V6__free_look_cancellation_movement.sql");
 
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());

@@ -11,6 +11,7 @@
  * actually promises. Screens must defend on each field.
  */
 import type { components as AuditComponents } from '@/types/api/audit';
+import type { components as BenefitPayoutComponents } from '@/types/api/benefitpayout';
 import type { components as BillingComponents } from '@/types/api/billing';
 import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
@@ -472,6 +473,34 @@ export const CLAIM_STATUSES: readonly ClaimStatus[] = [
   'APPROVED',
   'SETTLED',
   'REJECTED',
+];
+
+/**
+ * Money the insurer pays OUT while the life assured is still alive (product step 2):
+ * a maturity, a money-back plan's survival benefits, an income stream, a premium
+ * return. Unlike most views here these ARE fully required in the spec, so a screen
+ * can rely on `status`, `kind`, `dueDate` and `attempts` being present.
+ */
+export type PayoutInstalmentView = BenefitPayoutComponents['schemas']['PayoutInstalment'];
+export type InstalmentStatus = BenefitPayoutComponents['schemas']['InstalmentStatus'];
+export type PayoutKind = PayoutInstalmentView['kind'];
+export type ProofOfLifeMethod = BenefitPayoutComponents['schemas']['ProofOfLifeMethod'];
+/** One day's batch of income instalments, released by one person. */
+export type PaymentRunView = BenefitPayoutComponents['schemas']['PaymentRun'];
+/** A customer walking away inside the free-look window, and what is withheld. */
+export type FreeLookCancellationView = BenefitPayoutComponents['schemas']['FreeLookCancellation'];
+
+/** The payout register's status filter, in the order a queue is worked. */
+export const INSTALMENT_STATUSES: readonly InstalmentStatus[] = [
+  'DUE',
+  'REVIEWED',
+  'APPROVED',
+  'ON_HOLD',
+  'FAILED',
+  'IN_DOUBT',
+  'PAID',
+  'SCHEDULED',
+  'CANCELLED',
 ];
 
 /** The `{ items, page }` envelope the 4 paged endpoints return. */

@@ -101,6 +101,8 @@ class DistributionApiIntegrationTest {
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql");
         try (Connection connection = DriverManager.getConnection(

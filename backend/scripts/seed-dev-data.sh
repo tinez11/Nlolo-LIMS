@@ -105,6 +105,7 @@ VERSION_RESP=$(curl -sfi -X POST "$API/products/$PRODUCT_ID/versions" \
   -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{
     "ifrsMeasurementModel":"PAA","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
     "tiraFiling":{"reference":"TIRA/DEMO/0001","approvalDate":"2020-01-01"},
     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]
@@ -136,6 +137,8 @@ END_VERSION_RESP=$(curl -sfi -X POST "$API/products/$END_PRODUCT_ID/versions" \
   -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{
     "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "payoutSchedule":[{"kind":"MATURITY","amountBasis":"PERCENT_OF_SA","amountValue":100}],
     "tiraFiling":{"reference":"TIRA/DEMO/END/0001","approvalDate":"2020-01-01"},
     "ratingTable":[{"factorType":"AGE","band":"18-60","multiplier":1.0,"ageFrom":18,"ageTo":60},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"},{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}],
@@ -145,6 +148,48 @@ END_VERSION_RESP=$(curl -sfi -X POST "$API/products/$END_PRODUCT_ID/versions" \
                          {"policyYear":5,"cashValuePerMille":450},{"policyYear":10,"cashValuePerMille":700}]}
   }')
 echo "$END_VERSION_RESP" | head -1
+
+# A MONEY-BACK endowment: one that pays the customer WHILE THEY ARE ALIVE.
+#
+# DEMO-END-01 above pays only at maturity, so nothing seeded on a fresh stack ever produces a
+# survival benefit -- and the payouts queue, the payout page and the whole review/approve pair are
+# therefore permanently empty, which reads as "this does not work" rather than "nothing is due".
+# This one pays 10% of the sum assured on the 5th, 10th and 15th anniversaries and the balance at
+# maturity, which is how a money-back plan is actually sold (guide §14).
+#
+# survivalBenefitsDeductedFromDeath is stated explicitly rather than left out: a product with
+# SURVIVAL rows MUST say whether what has already been paid alive comes off the death benefit, and
+# the server refuses a version that does not. false here -- the plan pays both in full, which is
+# the more common Tanzanian shape and the more generous one to demonstrate.
+#
+# No policy is seeded on it, for the same reason none is on the others: issuing one is what the
+# form is for. The e2e suite issues against this product per run.
+echo "=== Step 1a2: Money-back endowment, paying while the life assured lives (staff.admin) ==="
+MB_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"END-MB-20","productName":"Nlolo Money-Back 20","category":"ENDOWMENT","defaultCurrency":"TZS"}')
+MB_PRODUCT_ID=$(jsonval "$MB_PRODUCT_JSON" productId)
+echo "moneyBackProductId=$MB_PRODUCT_ID"
+
+MB_VERSION_RESP=$(curl -sfi -X POST "$API/products/$MB_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15,"survivalBenefitsDeductedFromDeath":false},
+    "payoutSchedule":[
+      {"kind":"SURVIVAL","fromPolicyYear":5,"toPolicyYear":5,"amountBasis":"PERCENT_OF_SA","amountValue":10,"frequency":"ANNUAL"},
+      {"kind":"SURVIVAL","fromPolicyYear":10,"toPolicyYear":10,"amountBasis":"PERCENT_OF_SA","amountValue":10,"frequency":"ANNUAL"},
+      {"kind":"SURVIVAL","fromPolicyYear":15,"toPolicyYear":15,"amountBasis":"PERCENT_OF_SA","amountValue":10,"frequency":"ANNUAL"},
+      {"kind":"MATURITY","amountBasis":"PERCENT_OF_SA","amountValue":70}
+    ],
+    "tiraFiling":{"reference":"TIRA/DEMO/MB/0001","approvalDate":"2020-01-01"},
+    "ratingTable":[{"factorType":"AGE","band":"18-60","multiplier":1.0,"ageFrom":18,"ageTo":60},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"},{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}],
+    "cashValue":{"basisReference":"DEMO-BASIS-NOT-ACTUARIAL","basisDate":"2020-01-01",
+                 "paidUpBasis":"PROPORTIONATE","minYearsForValue":2,
+                 "rows":[{"policyYear":2,"cashValuePerMille":180},{"policyYear":3,"cashValuePerMille":270},
+                         {"policyYear":5,"cashValuePerMille":400},{"policyYear":10,"cashValuePerMille":620}]}
+  }')
+echo "$MB_VERSION_RESP" | head -1
 
 # A CREDIT_LIFE product, and a lender to hold a scheme on it.
 #

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './agentSession';
 import { dmy } from './dates';
 import { registerIndividualAsAgent } from './clients';
 

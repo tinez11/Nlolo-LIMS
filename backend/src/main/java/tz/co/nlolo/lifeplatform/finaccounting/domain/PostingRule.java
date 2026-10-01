@@ -76,6 +76,11 @@ public final class PostingRule {
         // account and adding one reopens the V5 chart remap -- a placeholder pending FINANCE sign-off,
         // like every rule here. Before this rule the money left and the ledger never saw it.
         Map.entry("policy.SurrenderPaid",            new AccountPair(CLAIMS_EXPENSE, CASH)),
+        // A benefit paid while the life assured LIVES -- a maturity, a survival benefit, an income
+        // instalment, a premium return. Against Claims Expense for the same reason a surrender is:
+        // the chart has no benefits-paid account, and adding one reopens the V5 chart remap. A
+        // placeholder pending FINANCE sign-off, like every rule in this file.
+        Map.entry("benefitpayout.PayoutPaid",        new AccountPair(CLAIMS_EXPENSE, CASH)),
         Map.entry("distribution.CommissionPaid",     new AccountPair(COMMISSION_EXPENSE, CASH)),
         Map.entry("reinsurance.CessionRecorded",     new AccountPair(REINSURANCE_CEDED_PREMIUM, REINSURANCE_PAYABLE)),
         Map.entry("reinsurance.RecoveryConfirmed",   new AccountPair(REINSURANCE_RECOVERABLE, CLAIMS_EXPENSE)),

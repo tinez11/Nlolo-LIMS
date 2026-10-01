@@ -32,6 +32,8 @@ import { CessionsPanel } from '@/features/reinsurance/CessionsPanel';
 import { BeneficiariesPanel } from './BeneficiariesPanel';
 import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
+import { FreeLookPanel } from '@/features/payouts/FreeLookPanel';
+import { PayoutsPanel } from '@/features/payouts/PayoutsPanel';
 import { ValueActions } from './ValueActions';
 
 /**
@@ -39,6 +41,14 @@ import { ValueActions } from './ValueActions';
  * term or group policy has none, so neither surrender nor paid-up is offered on one.
  */
 const VALUE_CATEGORIES: readonly string[] = ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'];
+
+/** `BenefitPayoutApiImpl.INDIVIDUAL_CATEGORIES` — who gets a free-look window at all. */
+const INDIVIDUAL_CATEGORIES: readonly string[] = [
+  'TERM_LIFE',
+  'ENDOWMENT',
+  'WHOLE_LIFE',
+  'EDUCATION_SAVINGS',
+];
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
@@ -255,6 +265,22 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           </Panel>,
         );
       }
+      // Free-look is an INDIVIDUAL buyer's statutory right (guide §21.3). A group or credit-life
+      // scheme is cancelled under the terms its employer or lender negotiated, and the server
+      // refuses the window for one, so offering it here would be an action that can only 422.
+      if (INDIVIDUAL_CATEGORIES.includes(policy.productCategory ?? '')) {
+        overview.push(
+          <Panel
+            key="free-look"
+            title="Changed their mind"
+            subtitle="Undo the sale from inception, inside the free-look window"
+          >
+            <div className="px-4 pb-4 pt-1">
+              <FreeLookPanel policy={policy} />
+            </div>
+          </Panel>,
+        );
+      }
     }
 
     const tabs: TabDef[] = [
@@ -300,6 +326,20 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           <div className="pt-5">
             <Panel title="Loans" subtitle="Policy loans taken against cash value">
               <LoansPanel policyNumber={policyNumber} cashValue={policy?.cashValue} />
+            </Panel>
+          </div>
+        ),
+      },
+      {
+        value: 'payouts',
+        label: 'Payouts',
+        content: (
+          <div className="pt-5">
+            <Panel
+              title="Payouts"
+              subtitle="What this contract pays while the life assured is alive, dated at issue"
+            >
+              <PayoutsPanel policyNumber={policyNumber} />
             </Panel>
           </div>
         ),

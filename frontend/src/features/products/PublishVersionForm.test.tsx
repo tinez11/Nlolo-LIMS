@@ -189,3 +189,43 @@ describe('PublishVersionForm cash value', () => {
     )).toBeInTheDocument();
   });
 });
+
+describe('PublishVersionForm payout schedule', () => {
+  it('offers payout rows on a savings product and none on pure protection', () => {
+    const { unmount } = renderForm(); // ENDOWMENT
+    expect(screen.getByRole('button', { name: 'Add a payout' })).toBeInTheDocument();
+    unmount();
+
+    // TERM_LIFE still gets free-look days -- it has a window even though it pays nothing before
+    // death -- but no schedule, which the server would refuse.
+    render(<PublishVersionForm productId="p-2" category="TERM_LIFE" onPublished={() => {}} />);
+    expect(screen.getByLabelText('Free-look days')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add a payout' })).not.toBeInTheDocument();
+  });
+
+  it('refuses an endowment with no maturity row, in the server wording', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('button', { name: 'Publish version' }));
+    expect(
+      await screen.findByText('An ENDOWMENT product must carry exactly one MATURITY row'),
+    ).toBeInTheDocument();
+  });
+
+  it('asks how survival benefits affect the death benefit only once a survival row exists', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    expect(
+      screen.queryByLabelText('Survival benefits paid come off the death benefit'),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Add a payout' }));
+    await user.selectOptions(screen.getByLabelText('Payout 1 kind'), 'SURVIVAL');
+
+    // Neither this nor the proof-of-life interval has a sensible default, which is why the server
+    // refuses to guess one -- so each appears the moment a row makes it necessary.
+    expect(
+      await screen.findByLabelText('Survival benefits paid come off the death benefit'),
+    ).toBeInTheDocument();
+  });
+});

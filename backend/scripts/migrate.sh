@@ -44,7 +44,11 @@ apply() {
   fi
 }
 
-MODULES="party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata"
+# Every folder under db-migrations/ except _post-migration (configure-db.sh's). benefitpayout was
+# missing from this list from the day product step 2 created it, so any environment built from
+# nothing came up with no payout schema at all -- and with ddl-auto none, every payout query
+# failed. MigrationScriptCoverageTest now fails the build when a folder is not listed here.
+MODULES="party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata benefitpayout"
 
 # Every V*.sql per module, in version order -- NOT just V1. Until M3's final-review fix wave
 # this loop hardcoded V1__create_<mod>_schema.sql, so db-migrations/refdata/V2 (the

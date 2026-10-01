@@ -7,5 +7,12 @@ package tz.co.nlolo.lifeplatform.policy.api;
  *
  * <p>NOT_TAKEN_UP is deliberately not LAPSED. Lapsing is what happens to an in-force policy whose
  * premiums stop, and a contract that was never on risk does not belong in the lapse figures.
+ *
+ * <p>CANCELLED_FREE_LOOK is likewise not a surrender (product step 2, guide §21.3). A surrender
+ * ends cover that genuinely ran; a free-look cancellation voids it from inception, so the policy
+ * was never on risk on any day and the premium goes back less what the insurer actually spent.
  */
-public enum PolicyStatus { PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP }
+public enum PolicyStatus {
+    PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP,
+    CANCELLED_FREE_LOOK
+}

@@ -404,6 +404,154 @@ export function blankCashValueRow(): z.infer<typeof cashValueRowSchema> {
   return { policyYear: '', ageFrom: '', ageTo: '', cashValuePerMille: '', paidUpPerMille: '' };
 }
 
+// ---- Payout schedule (product step 2) --------------------------------------------------------
+
+const payoutRowSchema = z.object({
+  kind: z.string().trim(),
+  fromPolicyYear: z.string().trim(),
+  toPolicyYear: z.string().trim(),
+  amountBasis: z.string().trim(),
+  amountValue: z.string().trim(),
+  frequency: z.string().trim(),
+});
+
+export type PayoutRowValues = z.infer<typeof payoutRowSchema>;
+
+/** `PayoutPlanValidator.INDIVIDUAL` -- products sold to one person, which carry a free-look window. */
+export const FREE_LOOK_CATEGORIES: readonly ProductCategory[] = [
+  'TERM_LIFE',
+  'ENDOWMENT',
+  'WHOLE_LIFE',
+  'EDUCATION_SAVINGS',
+];
+
+/** `PayoutPlanValidator.SCHEDULED` -- the two that pay while the life assured lives. */
+export const SCHEDULED_CATEGORIES: readonly ProductCategory[] = ['ENDOWMENT', 'EDUCATION_SAVINGS'];
+
+/** The kinds that pay once, on the policy's own maturity date, and so take no years or frequency. */
+const END_OF_TERM: readonly string[] = ['MATURITY', 'RETURN_OF_PREMIUM'];
+
+interface PayoutFields {
+  freeLookDays: string;
+  proofOfLifeIntervalMonths: string;
+  survivalBenefitsDeductedFromDeath: string;
+  deathBenefitPremiumPercent: string;
+  payoutRows: PayoutRowValues[];
+}
+
+export function blankPayoutRow(): PayoutRowValues {
+  return { kind: '', fromPolicyYear: '', toPolicyYear: '', amountBasis: '', amountValue: '', frequency: '' };
+}
+
+const rowsOf = (v: PayoutFields, kind: string) => v.payoutRows.filter((r) => r.kind === kind);
+
+/**
+ * `PayoutPlanValidator`, rule for rule and message for message, so the console refuses exactly what
+ * the server would and in the same words.
+ *
+ * Unlike the cash-value block there is no "has one?" early return. An authored plan is ALWAYS
+ * validated here, because the server's own `plan.authored()` is true for everything the HTTP path
+ * sends -- a product published through this form never takes the exemption its internal fixtures
+ * do, so free-look days are required on an individual product even when no rows were added.
+ */
+function validatePayoutPlan(category: ProductCategory, v: PayoutFields, ctx: z.RefinementCtx) {
+  const issue = (path: (string | number)[], message: string) =>
+    ctx.addIssue({ code: 'custom', path, message });
+
+  if (FREE_LOOK_CATEGORIES.includes(category) && v.freeLookDays === '') {
+    issue(['freeLookDays'], 'A free-look period in days is required on an individual product');
+  }
+  if (v.freeLookDays !== '' && (Number(v.freeLookDays) < 1 || Number(v.freeLookDays) > 365)) {
+    issue(['freeLookDays'], 'A free-look period must be between 1 and 365 days');
+  }
+
+  if (v.payoutRows.length === 0) {
+    // A product with no rows is an ordinary term or whole-life version; only the two SCHEDULED
+    // categories must carry one, and that is checked below.
+    if (!SCHEDULED_CATEGORIES.includes(category)) {
+      checkPayoutTermBounds(v, issue);
+      return;
+    }
+  }
+
+  if (category === 'TERM_LIFE') {
+    // Return-of-premium term and nothing else: a term policy that matures would not be term.
+    if (v.payoutRows.length !== 1 || v.payoutRows[0]?.kind !== 'RETURN_OF_PREMIUM') {
+      if (v.payoutRows.length > 0) {
+        issue(['payoutRows'], 'A TERM_LIFE product may carry only a single RETURN_OF_PREMIUM row');
+      }
+    }
+  } else if (!SCHEDULED_CATEGORIES.includes(category)) {
+    issue(['payoutRows'], `A ${category} product cannot carry a payout schedule`);
+    return;
+  } else {
+    if (rowsOf(v, 'MATURITY').length !== 1) {
+      issue(['payoutRows'], `An ${category} product must carry exactly one MATURITY row`);
+    }
+    if (rowsOf(v, 'RETURN_OF_PREMIUM').length > 0) {
+      issue(['payoutRows'], 'RETURN_OF_PREMIUM rows are only valid on TERM_LIFE products');
+    }
+  }
+
+  v.payoutRows.forEach((row, i) => {
+    if (row.amountValue === '' || Number.isNaN(Number(row.amountValue)) || Number(row.amountValue) <= 0) {
+      issue(['payoutRows', i, 'amountValue'], "A payout row's amount must be greater than zero");
+    }
+    if (END_OF_TERM.includes(row.kind)) {
+      if (row.fromPolicyYear !== '' || row.toPolicyYear !== '' || row.frequency !== '') {
+        issue(
+          ['payoutRows', i, 'fromPolicyYear'],
+          `A ${row.kind} row pays on the policy's maturity date and takes no years or frequency`,
+        );
+      }
+    } else if (
+      row.fromPolicyYear === ''
+      || row.toPolicyYear === ''
+      || row.frequency === ''
+      || Number(row.fromPolicyYear) < 1
+      || Number(row.toPolicyYear) < Number(row.fromPolicyYear)
+    ) {
+      issue(
+        ['payoutRows', i, 'fromPolicyYear'],
+        `A ${row.kind} row needs a from and to policy year (from >= 1, to >= from) and a frequency`,
+      );
+    }
+    const offPremiums = row.amountBasis === 'PERCENT_OF_PREMIUMS';
+    if (offPremiums !== (row.kind === 'RETURN_OF_PREMIUM')) {
+      issue(
+        ['payoutRows', i, 'amountBasis'],
+        offPremiums
+          ? 'Only a RETURN_OF_PREMIUM row is valued as a percent of premiums'
+          : 'A RETURN_OF_PREMIUM row is valued as a percent of premiums',
+      );
+    }
+  });
+
+  // The terms a row makes necessary: neither has a sensible default, so neither gets one.
+  if (rowsOf(v, 'SURVIVAL').length > 0 && v.survivalBenefitsDeductedFromDeath === '') {
+    issue(
+      ['survivalBenefitsDeductedFromDeath'],
+      'A product with SURVIVAL rows must say whether survival benefits paid are deducted from the death benefit',
+    );
+  }
+  if (rowsOf(v, 'INCOME').length > 0 && v.proofOfLifeIntervalMonths === '') {
+    issue(['proofOfLifeIntervalMonths'], 'A product with INCOME rows needs a proof-of-life interval in months');
+  }
+
+  checkPayoutTermBounds(v, issue);
+}
+
+function checkPayoutTermBounds(v: PayoutFields, issue: (path: (string | number)[], message: string) => void) {
+  if (v.proofOfLifeIntervalMonths !== ''
+      && (Number(v.proofOfLifeIntervalMonths) < 1 || Number(v.proofOfLifeIntervalMonths) > 60)) {
+    issue(['proofOfLifeIntervalMonths'], 'A proof-of-life interval must be between 1 and 60 months');
+  }
+  if (v.deathBenefitPremiumPercent !== ''
+      && (Number(v.deathBenefitPremiumPercent) <= 0 || Number(v.deathBenefitPremiumPercent) > 1000)) {
+    issue(['deathBenefitPremiumPercent'], 'A death-benefit premium percent must be greater than 0 and at most 1000');
+  }
+}
+
 /** Both blank, or max at or above min. Mirrors EligibilityBounds and the DB CHECKs. */
 function requireOrdered(
   ctx: z.RefinementCtx,
@@ -591,8 +739,14 @@ export function publishVersionFormSchema(category: ProductCategory) {
     cashValuePaidUpBasis: z.string().trim(),
     cashValueMinYears: z.string().trim(),
     cashValueRows: z.array(cashValueRowSchema),
+    freeLookDays: z.string().trim(),
+    proofOfLifeIntervalMonths: z.string().trim(),
+    survivalBenefitsDeductedFromDeath: z.string().trim(),
+    deathBenefitPremiumPercent: z.string().trim(),
+    payoutRows: z.array(payoutRowSchema),
   }).superRefine((values, ctx) => {
     validateCashValue(category, values, ctx);
+    validatePayoutPlan(category, values, ctx);
 
     /*
       The two modes, mirroring ProductApiImpl.publishVersion exactly.
@@ -734,6 +888,11 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     cashValuePaidUpBasis: '',
     cashValueMinYears: '',
     cashValueRows: [],
+    freeLookDays: '',
+    proofOfLifeIntervalMonths: '',
+    survivalBenefitsDeductedFromDeath: '',
+    deathBenefitPremiumPercent: '',
+    payoutRows: [],
   };
 }
 
@@ -848,6 +1007,33 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
         })),
       },
     }),
+    /*
+      Always sent, even when every field is blank. The server reads an authored plan's terms to
+      decide a free-look window and to value a death benefit, and omitting the block would make
+      every product published through this form look like one of the internal fixtures that are
+      exempt from the authoring rules. An empty string means "not set" and becomes null.
+    */
+    payoutTerms: {
+      freeLookDays: values.freeLookDays === '' ? null : Number(values.freeLookDays),
+      proofOfLifeIntervalMonths:
+        values.proofOfLifeIntervalMonths === '' ? null : Number(values.proofOfLifeIntervalMonths),
+      survivalBenefitsDeductedFromDeath:
+        values.survivalBenefitsDeductedFromDeath === ''
+          ? null
+          : values.survivalBenefitsDeductedFromDeath === 'true',
+      deathBenefitPremiumPercent:
+        values.deathBenefitPremiumPercent === '' ? null : Number(values.deathBenefitPremiumPercent),
+    },
+    payoutSchedule: values.payoutRows.map((row) => ({
+      kind: row.kind as 'SURVIVAL' | 'MATURITY' | 'INCOME' | 'RETURN_OF_PREMIUM',
+      ...(row.fromPolicyYear !== '' && { fromPolicyYear: Number(row.fromPolicyYear) }),
+      ...(row.toPolicyYear !== '' && { toPolicyYear: Number(row.toPolicyYear) }),
+      amountBasis: row.amountBasis as 'PERCENT_OF_SA' | 'FIXED' | 'PERCENT_OF_PREMIUMS',
+      amountValue: Number(row.amountValue),
+      ...(row.frequency !== '' && {
+        frequency: row.frequency as 'ANNUAL' | 'SEMI_ANNUAL' | 'QUARTERLY' | 'MONTHLY',
+      }),
+    })),
     // Required, so no omit-when-blank branch: a version may not exist without the filing that
     // authorises it, and the schema above refuses a blank one before this runs.
     tiraFiling: {

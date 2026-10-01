@@ -872,6 +872,11 @@ public class PolicyApiImpl implements PolicyApi {
             Map.of("policyNumber", policyNumber,
                    "paidUpSumAssured", Map.of("amount", paidUpSumAssured.toPlainString(),
                         "currencyCode", policy.getSumAssuredCurrency()),
+                   // BOTH figures, because the reduction is a PROPORTION and a consumer that has
+                   // only the new one cannot work it out -- the aggregate has already overwritten
+                   // the old. benefitpayout restates every future payout by exactly this ratio.
+                   "originalSumAssured", Map.of("amount", originalSumAssured.toPlainString(),
+                        "currencyCode", policy.getSumAssuredCurrency()),
                    "madePaidUpAt", Instant.now().toString())));
         return toView(policy);
     }
@@ -993,6 +998,32 @@ public class PolicyApiImpl implements PolicyApi {
         return toSurrenderView(request);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PolicyView> searchMaturing(LocalDate from, LocalDate to, Pageable pageable) {
+        if (from == null || to == null || to.isBefore(from)) {
+            throw new IllegalArgumentException("A maturities window needs a from date on or before its to date");
+        }
+        // In force only. A lapsed or surrendered policy has a maturity date on it still, and
+        // listing those would overstate the cash finance has to find by every contract that ended
+        // early -- which, over a twenty-year endowment book, is a great many of them.
+        return policyRepository.findByTenantIdAndMaturityDateBetweenAndStatusIn(TenantContext.get(), from, to,
+            List.of("ACTIVE", "REINSTATED", "PAID_UP", "SUSPENDED"), pageable).map(this::toView);
+    }
+
+    @Override
+    @Transactional
+    public void cancelForFreeLook(String policyNumber, String cancelledBy) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        policy.cancelForFreeLook();
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyCancelledFreeLook", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "cancelledAt", Instant.now().toString(),
+                   "cancelledBy", cancelledBy)));
+    }
+
     /** The payout succeeded. Marks the request PAID. Idempotent: only an APPROVED request advances. */
     @Override
     @Transactional
@@ -1048,6 +1079,14 @@ public class PolicyApiImpl implements PolicyApi {
         // happen would terminate a billing schedule twice. The @Version on the aggregate is what
         // makes the winning write exclusive; this suppresses the loser's event.
         if (policy.isClosed()) {
+            return;
+        }
+        // A version that pays at the end of the term MATURES through benefitpayout's drain, which
+        // pays the benefit and then closes the policy. Expiring it here would close cover on a
+        // contract that is owed money, and EXPIRED is terminal -- the maturity benefit would have
+        // nowhere to go. Skipped rather than thrown: the hourly selector offers it again until
+        // benefitpayout gets to it, and one unpayable policy must not stop the queue.
+        if (productApi.resolvePayoutPlan(policy.getProductVersionId()).hasEndOfTermRow()) {
             return;
         }
         policy.expire(LocalDate.now());

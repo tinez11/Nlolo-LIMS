@@ -36,6 +36,10 @@ export const STATUS_MAPS = {
     // The customer stopped paying and keeps reduced cover. Active: it is in force, cover is running
     // -- only the premium stopped. Beside ACTIVE and REINSTATED, not a warning or a failure.
     PAID_UP: 'active',
+    // The customer changed their mind inside the free-look window and the sale was undone from
+    // inception (product step 2). Neutral, beside NOT_TAKEN_UP: nobody lost cover they were
+    // relying on, and exercising a statutory right is not a failure.
+    CANCELLED_FREE_LOOK: 'neutral',
   },
 
   // policy.surrender_request.status (product step 1). The same five-state shape the payment rail
@@ -47,6 +51,51 @@ export const STATUS_MAPS = {
     PAID: 'success',
     FAILED: 'danger',
     IN_DOUBT: 'warning',
+  },
+
+  // benefitpayout/api/InstalmentStatus.java (product step 2). One dated amount the insurer owes
+  // while the life assured is alive, and the states it passes through on the way out.
+  payoutInstalment: {
+    SCHEDULED: 'neutral', // written at issue; nothing is owed yet
+    DUE: 'pending',
+    REVIEWED: 'pending',
+    APPROVED: 'pending', // requested from the rail, NOT yet paid -- the console must not say paid
+    PAID: 'success',
+    // Held for arrears, a suspended policy, or overdue proof of life. A queue somebody has to
+    // work, not something in flight, so it sits beside AWAITING_EXECUTION rather than DUE.
+    ON_HOLD: 'warning',
+    // The money may or may not have moved. Never dressed as FAILED: a retry on this one is how a
+    // customer gets paid twice, and the colour is the first thing that tells a clerk so.
+    IN_DOUBT: 'warning',
+    FAILED: 'danger',
+    // Withdrawn by a lapse, a surrender, a death claim or a free-look cancellation. Not a failure
+    // -- the contract changed, so the money stopped being owed.
+    CANCELLED: 'neutral',
+  },
+
+  // benefitpayout/api/StreamStatus.java -- an income plan's recurring payments as a whole.
+  payoutStream: {
+    PENDING_ACTIVATION: 'pending', // awaiting its first two-person approval
+    ACTIVE: 'active',
+    // Proof of life is overdue. The one control that justifies batch approval of the rest, so it
+    // is a warning a person must clear, not a neutral state.
+    SUSPENDED: 'warning',
+    ENDED: 'neutral',
+  },
+
+  // benefitpayout.payment_run.status -- one day's batch of income instalments.
+  paymentRun: {
+    PREPARED: 'pending', // assembled by the system, awaiting one person's release
+    APPROVED: 'success',
+  },
+
+  // benefitpayout.free_look_cancellation.status. No IN_DOUBT: a free-look refund that the rail
+  // cannot resolve leaves the cancellation APPROVED, exactly as a payout does.
+  freeLookCancellation: {
+    REQUESTED: 'pending',
+    APPROVED: 'pending', // the policy is void, but the refund has not arrived
+    PAID: 'success',
+    FAILED: 'danger',
   },
 
   // claims/api/ClaimStatus.java

@@ -64,6 +64,11 @@ public class PolicyMovement {
     @Column(name = "policies_claim_terminated", nullable = false)
     private int policiesClaimTerminated = 0;
 
+    /** Cancelled inside the free-look window, counted in the quarter the policy was ISSUED in.
+     *  Deliberately not a termination -- see {@link #applyCancelledFromInception}. */
+    @Column(name = "policies_cancelled_free_look", nullable = false)
+    private int policiesCancelledFreeLook = 0;
+
     @Column(name = "sum_assured_terminated", nullable = false)
     private BigDecimal sumAssuredTerminated = BigDecimal.ZERO;
 
@@ -143,6 +148,35 @@ public class PolicyMovement {
     }
 
     /**
+     * A free-look cancellation: <b>reverse the issuance, record no termination.</b>
+     *
+     * <p>The ONLY measure here that subtracts, and the reason is that a free-look cancellation is
+     * the one termination-shaped event that is not a termination. The customer exercised a
+     * statutory right inside the cooling-off window and the contract is void from inception, so in
+     * law it was never written.
+     *
+     * <p>Adding to {@code sumAssuredTerminated} instead -- via {@link #applyLapsed} or
+     * {@link #applyMatured} -- would report the same contract as BOTH written and terminated,
+     * inflating gross new business and gross terminations at once and computing persistency over
+     * policies that never existed. So the issuance is backed out and the cohort simply does not
+     * contain it.
+     *
+     * <p>The counter is incremented as well as the reversal applied, because a quarter whose new
+     * business silently shrank gives an actuary reconciling it a gap with no cause. This is the
+     * cause, and it makes cooling-off volume reportable on its own.
+     *
+     * <p>Cannot go negative in practice: the caller keys this row by the policy's ISSUE date, the
+     * same date {@code applyIssued}'s caller used, so every reversal has a matching increment. The
+     * {@code policy_movement_non_negative} CHECK is the backstop for a redelivered event.
+     */
+    public void applyCancelledFromInception(BigDecimal sumAssured) {
+        this.policiesIssued--;
+        this.sumAssuredIssued = this.sumAssuredIssued.subtract(sumAssured);
+        this.policiesCancelledFreeLook++;
+        this.updatedAt = Instant.now();
+    }
+
+    /**
      * Cover a joining member brought onto a scheme.
      *
      * <p><b>Moves no policy count</b>, unlike every other measure on this entity, and that is the
@@ -191,6 +225,7 @@ public class PolicyMovement {
     public int getPoliciesLapsed() { return policiesLapsed; }
     public int getPoliciesMatured() { return policiesMatured; }
     public int getPoliciesClaimTerminated() { return policiesClaimTerminated; }
+    public int getPoliciesCancelledFreeLook() { return policiesCancelledFreeLook; }
     public BigDecimal getSumAssuredTerminated() { return sumAssuredTerminated; }
     public BigDecimal getSumAssuredMemberAdded() { return sumAssuredMemberAdded; }
     public BigDecimal getSumAssuredMemberExited() { return sumAssuredMemberExited; }

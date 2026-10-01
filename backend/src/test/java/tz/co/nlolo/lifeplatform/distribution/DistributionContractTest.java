@@ -138,6 +138,8 @@ class DistributionContractTest {
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -162,6 +164,7 @@ class DistributionContractTest {
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/distribution/V1__create_distribution_schema.sql",
             "db-migrations/distribution/V2__grants_rls_money_checks_projection_and_statement_lifecycle.sql",
             "db-migrations/payment/V1__create_payment_schema.sql",
@@ -169,7 +172,8 @@ class DistributionContractTest {
             "db-migrations/payment/V3__inbound_callback_tenant_resolver.sql",
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
-            "db-migrations/payment/V7__q4_2026_partitions.sql");
+            "db-migrations/payment/V7__q4_2026_partitions.sql",
+            "db-migrations/payment/V8__benefit_payout_purposes.sql");
     }
 
     @AfterAll

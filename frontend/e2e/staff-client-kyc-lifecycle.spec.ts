@@ -1,4 +1,4 @@
-import { test, expect, request as apiRequest } from '@playwright/test';
+import { test, expect, request as apiRequest, type APIRequestContext } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -22,7 +22,7 @@ function clientSecret(realmFile: string): string {
   return secret;
 }
 
-async function token(http: any, realm: string, realmFile: string, username: string) {
+async function token(http: APIRequestContext, realm: string, realmFile: string, username: string) {
   const res = await http.post(`${KEYCLOAK}/realms/${realm}/protocol/openid-connect/token`, {
     form: {
       grant_type: 'password',

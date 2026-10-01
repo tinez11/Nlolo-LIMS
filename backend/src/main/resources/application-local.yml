@@ -10,3 +10,11 @@ spring:
 
 server:
   port: 8080
+
+# The payout drains run hourly in production, which is right for them: an instalment is dated to a
+# DAY, so nothing is lost by noticing it an hour late. On the dev stack that means an e2e test
+# issuing a policy whose benefit is already due would wait up to an hour to see it fall due, so
+# both are tightened here rather than in code -- the defaults stay hourly for every other profile.
+benefitpayout:
+  due-drain-interval-ms: 5000
+  run-drain-interval-ms: 10000

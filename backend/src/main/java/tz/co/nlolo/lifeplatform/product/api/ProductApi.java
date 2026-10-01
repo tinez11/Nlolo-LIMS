@@ -274,14 +274,34 @@ public interface ProductApi {
                          List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading, TiraFiling tiraFiling, String publishedBy);
 
     /**
-     * The fullest form: also the version's cash-value table and its actuarial sign-off (product
-     * step 1). Every other overload delegates here with {@link CashValuePlan#none()}; the table is
+     * Also the version's cash-value table and its actuarial sign-off (product step 1). The table is
      * written in the same transaction as the version, so a version can never exist half-valued.
      */
     void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                          List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
                          TiraFiling tiraFiling, CashValuePlan cashValue, String publishedBy);
+
+    /**
+     * The fullest form: also what the version pays while the life assured is ALIVE (product step 2).
+     * Every other overload delegates here with {@link PayoutPlan#none()}, which is exempt from the
+     * authoring rules -- see {@link PayoutPlan} for why a fixture and a real product are held to
+     * different standards.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan, String publishedBy);
+
+    /**
+     * What this version pays while the life assured lives, and its free-look and proof-of-life
+     * terms. {@link PayoutPlan#none()} for a version with neither.
+     *
+     * <p>Internal-only, not part of {@code openapi-product.yaml} -- the same convention as
+     * {@link #resolveBenefitSchedule}. Consumed by {@code benefitpayout} at issuance to expand the
+     * schedule, and by {@code policy} to know whether a policy matures or merely expires.
+     */
+    PayoutPlan resolvePayoutPlan(UUID productVersionId);
 
     /**
      * What this version charges for instalment payment.

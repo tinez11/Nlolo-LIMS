@@ -97,6 +97,8 @@ public class PolicyEventListener {
             case "policy.PolicyMatured" -> withTenant(envelope, this::handlePolicyMatured);
             case "policy.PolicySurrendered" -> withTenant(envelope, this::handlePolicySurrendered);
             case "policy.PolicyReinstated" -> withTenant(envelope, this::handlePolicyReinstated);
+            // The ONE event here that reverses rather than terminates -- see its handler.
+            case "policy.PolicyCancelledFreeLook" -> withTenant(envelope, this::handlePolicyCancelledFreeLook);
             // Both member events say the same thing -- "this scheme's total cover is now X" -- so
             // one handler serves both. See its javadoc for why the projection is a delta.
             case "policy.GroupMemberAdded" -> withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupMemberAdded"));
@@ -201,6 +203,48 @@ public class PolicyEventListener {
         boolean aClaimWasPaid = payload.get("claimId") != null;
         applyTerminationMovement(policyNumber, period, "policy.PolicySurrendered",
             aClaimWasPaid ? PolicyMovement::applyClaimTerminated : PolicyMovement::applyMatured);
+    }
+
+    /**
+     * A free-look cancellation: <b>back the issuance out of the cohort it was counted in.</b>
+     *
+     * <p>Not a termination, and that is the whole point. The contract is void from inception, so
+     * reporting it as written-then-terminated would inflate gross new business and gross
+     * terminations together and compute persistency over a policy that never existed. See
+     * {@link PolicyMovement#applyCancelledFromInception}.
+     *
+     * <p><b>Keyed by the ISSUE date, not the event.</b> {@link #handlePolicyActivated} keys its
+     * movement on {@code quarterOfDate(issueDate)} and stores that date on the dimension row, so
+     * reading it back lands this reversal on exactly the row the issuance incremented -- whatever
+     * quarter the customer happened to cancel in. It is also why a REPLAY is safe: the period comes
+     * from stored data rather than from the event or the clock, which is the guarantee
+     * {@code ProjectionSupport}'s header exists to protect.
+     *
+     * <p>No dimension row means the issuance was never projected either, so there is nothing to
+     * reverse. Unlike a termination this does NOT fall back to the UNKNOWN sentinel: decrementing a
+     * product and period that nothing ever incremented would breach the non-negative CHECK and
+     * invent an understatement. It is logged and counted, like every other unattributed movement.
+     */
+    private void handlePolicyCancelledFreeLook(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String policyNumber = (String) payload.get("policyNumber");
+
+        policyDimensionRepository.findByTenantIdAndPolicyNumber(tenantId, policyNumber).ifPresentOrElse(
+            dimension -> {
+                String period = ProjectionSupport.quarterOf(dimension.getIssueDate());
+                PolicyMovement movement = policyMovementRepository
+                    .findByTenantIdAndPeriodAndProductId(tenantId, period, dimension.getProductId())
+                    .orElseGet(() -> new PolicyMovement(tenantId, period, dimension.getProductId(),
+                        dimension.getSumAssuredCurrency()));
+                movement.applyCancelledFromInception(dimension.getSumAssuredAmount());
+                policyMovementRepository.save(movement);
+            },
+            () -> {
+                log.info("Policy {} was cancelled in free-look but has no policy_dimension row -- its "
+                    + "issuance was never projected, so there is nothing to reverse", policyNumber);
+                meterRegistry.counter(ProjectionSupport.UNATTRIBUTED_MOVEMENT_COUNTER,
+                    "eventType", "policy.PolicyCancelledFreeLook").increment();
+            });
     }
 
     private void handlePolicyReinstated(Map<String, Object> payload) {

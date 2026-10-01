@@ -53,6 +53,10 @@ public class PolicyEventListener {
             case "policy.PolicyExpired" -> withTenant(envelope, this::handlePolicyExpired);
             case "policy.PolicyMadePaidUp" -> withTenant(envelope, this::handlePolicyMadePaidUp);
             case "policy.PolicySurrendered" -> withTenant(envelope, this::handlePolicySurrendered);
+            // A free-look cancellation ends the billing schedule exactly as a surrender does. The
+            // two differ in what the customer is PAID, which is benefitpayout's business, not
+            // billing's -- so they share a handler rather than having a near-copy each.
+            case "policy.PolicyCancelledFreeLook" -> withTenant(envelope, this::handlePolicySurrendered);
             case "policy.EnrolmentAccepted" -> withTenant(envelope, this::handleEnrolmentAccepted);
             case "policy.GroupMemberExited" -> withTenant(envelope, this::handleGroupMemberExited);
             default -> { /* not billing-relevant */ }
