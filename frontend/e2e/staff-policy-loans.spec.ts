@@ -42,13 +42,14 @@ function loansPanel(page: Page): Locator {
  * that closes that.
  *
  * **What they deliberately do NOT do is originate a loan.** A loan is capped at the
- * policy's available loan value, and nothing on this platform credits cash value:
- * `PolicyApiImpl.issuePolicy` opens every `PolicyAccount` at zero and no code path or
- * migration ever writes it again. So origination against real seeded data can only ever
- * return 409 "exceeds available loan value 0". Asserting the DISABLED action and its
- * stated reason is the honest test; driving a submit and asserting the 409 would be
- * testing the blockage, and pretending otherwise with a seeded cash value would be
- * testing a fixture rather than the platform.
+ * policy's available loan value. Product step 1 made cash value real -- it is restated
+ * from the product's table as premiums are paid -- but only for a savings product past
+ * its first two or three full years, and every policy the dev seed produces is term
+ * business that will never have any. So origination against real seeded data still
+ * returns 409, and asserting the DISABLED action and its stated reason is still the
+ * honest test. Seeding a cash value to drive the happy path would be testing a fixture
+ * rather than the platform; the savings path is covered by `ValueActions.test.tsx` and
+ * by the backend's own end-to-end tests.
  */
 test.describe('staff policy loans', () => {
   test('the loans panel renders real loan data or an honest empty state', async ({ page }) => {
@@ -74,13 +75,12 @@ test.describe('staff policy loans', () => {
     const takeLoan = panel.getByRole('button', { name: 'Take a loan' });
     await expect(takeLoan).toBeVisible();
 
-    // Cash value is 0.00 for every policy this platform can currently produce, so the
-    // action must be inert AND must say why. If cash value ever starts being credited
-    // this assertion flips, which is exactly the signal wanted: the UI gate is on the
-    // live value, so the test failing here means the platform gained a capability.
+    // Cash value is 0.00 on every seeded (term) policy, so the action must be inert AND
+    // must say why. The reason is asserted as RENDERED TEXT, not a `title`: a tooltip is
+    // unreachable by keyboard and silent to a screen reader, so a disabled button whose
+    // only explanation lived there explained nothing to the people most in need of it.
     await expect(takeLoan).toBeDisabled();
-    await expect(takeLoan).toHaveAttribute('title', /no cash value to borrow against/i);
-    await expect(panel.getByText(/still 0\.00/)).toBeVisible();
+    await expect(panel.getByText(/cash value, which is 0\.00/)).toBeVisible();
   });
 
   test('the repayment action appears only on a loan that can actually take one', async ({
