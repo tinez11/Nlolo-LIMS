@@ -18,6 +18,7 @@ import { formatDate } from '@/lib/dates';
 import { startMutation } from '@/lib/idempotency';
 import { formatMoney } from '@/lib/money';
 import { useBenefitPayoutStore } from '@/store/benefitPayoutStore';
+import { usePolicyStore } from '@/store/policyStore';
 import { blankDeduction, blankFreeLook, freeLookSchema, type FreeLookValues } from './freeLookForm';
 
 /**
@@ -227,6 +228,11 @@ function DecidedOrAwaiting({
 }) {
   const approveCancellation = useBenefitPayoutStore((s) => s.approveCancellation);
   const acting = useBenefitPayoutStore((s) => s.acting[`freelook.${policyNumber}`]);
+  // Approving VOIDS THE POLICY, which this store knows nothing about -- so the record beside this
+  // panel would keep reading ACTIVE, and keep offering surrender and paid-up on a contract that no
+  // longer exists, until somebody reloaded the page. The component owns the refresh because no
+  // store on this console reaches into another one.
+  const reloadPolicy = usePolicyStore((s) => s.loadDetail);
   const [armed, setArmed] = useState(false);
 
   const figures = (
@@ -308,7 +314,10 @@ function DecidedOrAwaiting({
               tone="danger"
               busy={acting?.status === 'loading'}
               onConfirm={() => {
-                void approveCancellation(cancellation.cancellationId, policyNumber, startMutation());
+                void (async () => {
+                  await approveCancellation(cancellation.cancellationId, policyNumber, startMutation());
+                  await reloadPolicy(policyNumber);
+                })();
                 setArmed(false);
               }}
               onCancel={() => setArmed(false)}

@@ -36,7 +36,11 @@ async function activeMoneyBackPolicy(browser: Browser, reason: string): Promise<
     await page.getByLabel('Commencement date').fill(dmy(new Date().toISOString().slice(0, 10)));
     await page.getByLabel('Policy term (months)').fill('240');
     await page.getByRole('button', { name: 'Issue policy' }).click();
-    await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
+    // 60s, not the 15 the shared helper uses. Manual issue returns only after the WHOLE
+    // synchronous AFTER_COMMIT chain -- SMS, commission, four projections, and now the payout
+    // schedule -- so on a loaded stack the policy is created well before the response arrives.
+    // Failing here would report "the policy was not issued" about one that was.
+    await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 60_000 });
     return page.url().split('/').pop() as string;
   });
 }
