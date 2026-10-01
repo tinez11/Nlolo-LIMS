@@ -293,3 +293,27 @@ task's classes run while building; the full suite and the real-stack e2e run onc
 - Tax withholding on payouts (D, with annuities, where the guide raises it).
 - Whole-life cover ending at a fixed age — no product field holds a maturity age.
 - Agent-console visibility of payouts (needs agent scoping server-side).
+
+## 14. Revisions made while planning (2026-10-01)
+
+Each was found by reading the code the plan builds on; the plan
+(`plans/2026-10-01-product-step2-payout-engine.md`) follows these, not the earlier wording above.
+
+| Was | Now | Why |
+|---|---|---|
+| A separate `payout_review` table | Review and approval columns on `payout_instalment` | One review per instalment; the two-person rule becomes one CHECK on one row, as `surrender_request` does it. |
+| New benefit-expense accounts | Post `benefitpayout.PayoutPaid` to `5100 Claims Expense` / `1120 Cash` | The chart has no benefits account, and adding one reopens the V5 chart remap. Placeholder pending finance sign-off, like every rule in `PostingRule`. |
+| benefitpayout publishes `FreeLookCancelled` | policy publishes `policy.PolicyCancelledFreeLook`; billing and distribution consume it | The status changes in policy, so policy announces it — the same way every other policy transition reaches billing and distribution. |
+| MATURITY / ROP rows carry a year | They carry no years or frequency and pay on the policy's own maturity date | The product does not fix the term; each policy does. A row year would disagree with half the policies sold on it. |
+| Row amount per instalment | `amountValue` is per policy year, split across that year's instalments (remainder on the last) | "3% of SA a year, paid monthly" is how the guide (§14) and actuaries state it. |
+| Approve answers 202 with no body | 202 with the instalment | The Receipt shows server facts (payee, approver); a body is the honest source of them. |
+| Payee defaults from `party::api` | The reviewer enters it; the console pre-fills from the policy page it already holds | Keeps `party::api` out of benefitpayout's dependencies. |
+| — | `claims.ClaimApproved` gains `claimType` and `dateOfEvent` | Verified: the payload had neither, so a death could not cancel later instalments. |
+| — | `Policy.mature()` accepts `PAID_UP` | Verified: `closeableBySettledClaim` omitted it, so a paid-up endowment could never mature. |
+| — | Expiry skips a version with an end-of-term row (Java guard in `expirePolicy`); issuance refuses such a version without a term | Keeps `policies_due_to_expire()` free of a cross-schema read. |
+| — | Free-look days required only through the publish endpoint | The 40-odd internal `publishVersion` fixture callers pass `PayoutPlan.none()` and are exempt; the HTTP path, the seeder and the console all enforce it. |
+
+**Further step 1 findings, for its final review** (not changed by step 2):
+
+1. Step 1's surrender payouts never reach the general ledger. `PostingRule` has no rule for them, and finaccounting consumes only `claims.ClaimSettled` and the EFT events.
+2. Step 1's cash-value tables have no write path at all: no endpoint, no OpenAPI entry, no `new CashValueConfig` in the main code. Only one test loads them, by raw SQL. Step 1 Task 5's "cash-value table editor" has no backend to call yet.
