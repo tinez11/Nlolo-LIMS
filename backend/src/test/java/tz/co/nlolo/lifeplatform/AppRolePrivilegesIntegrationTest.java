@@ -234,6 +234,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/payment/V4__in_doubt_status_and_id_based_callback_resolvers.sql",
             "db-migrations/payment/V6__disbursement_method.sql",
             "db-migrations/payment/V7__q4_2026_partitions.sql",
+            "db-migrations/payment/V8__benefit_payout_purposes.sql",
             // M7 (Task 10) additions: distribution appeared in NEITHER this class nor
             // RowLevelSecurityIntegrationTest until now -- the same gap claims had entering M6.
             // distribution/V1 has zero GRANT statements (the recurring V1 pattern this class

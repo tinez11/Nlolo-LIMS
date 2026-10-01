@@ -240,6 +240,45 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         return instalments.findByStatusIn(wanted.stream().map(Enum::name).toList(), pageable).map(Views::of);
     }
 
+    /** The disbursement landed. Publishes {@code PayoutPaid}, which finaccounting books. */
+    @Transactional
+    public void markPaid(UUID instalmentId, UUID disbursementId) {
+        PayoutInstalment i = load(instalmentId);
+        if (i.status() != InstalmentStatus.APPROVED) {
+            return; // a redelivered completion, already closed out
+        }
+        i.markPaid(disbursementId);
+        instalments.save(i);
+        // On the real APPROVED -> PAID transition only, so a redelivery cannot post the same
+        // payout to the ledger twice.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutPaid", TenantContext.get(),
+            Map.of("instalmentId", instalmentId.toString(),
+                   "policyNumber", i.getPolicyNumber(),
+                   "kind", i.kind().name(),
+                   "paidAmount", Map.of("amount", i.getCurrentAmount().toPlainString(),
+                        "currencyCode", i.getCurrency()))));
+    }
+
+    /** The disbursement failed outright -- the money did not move, so it can be tried again. */
+    @Transactional
+    public void markFailed(UUID instalmentId) {
+        PayoutInstalment i = load(instalmentId);
+        if (i.status() == InstalmentStatus.APPROVED) {
+            i.markFailed();
+            instalments.save(i);
+        }
+    }
+
+    @Override
+    @Transactional
+    public PayoutInstalmentView retry(UUID instalmentId) {
+        PayoutInstalment i = load(instalmentId);
+        i.retry();
+        instalments.save(i);
+        publishPayoutRequested(i);
+        return Views.of(i);
+    }
+
     /** Ask payment to disburse. The key carries the attempt, so a retry is a NEW request rather
      *  than a duplicate payment dedupes away. */
     void publishPayoutRequested(PayoutInstalment i) {

@@ -77,4 +77,14 @@ public class BenefitPayoutController {
                                                             @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.accepted().body(PayoutInstalmentResponse.from(api.approve(instalmentId, jwt.getSubject())));
     }
+
+    /**
+     * Try a FAILED payment again. Only a payout that genuinely did not move money is retryable --
+     * an IN_DOUBT one stays APPROVED and waits for a person, because retrying it could pay twice.
+     */
+    @PostMapping("/payouts/{instalmentId}/retry")
+    @PreAuthorize(FINANCE)
+    public ResponseEntity<PayoutInstalmentResponse> retry(@PathVariable UUID instalmentId) {
+        return ResponseEntity.accepted().body(PayoutInstalmentResponse.from(api.retry(instalmentId)));
+    }
 }

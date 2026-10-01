@@ -46,4 +46,11 @@ public interface BenefitPayoutApi {
 
     /** The payouts register. An empty {@code statuses} means every status. Due date, then id. */
     Page<PayoutInstalmentView> search(Collection<InstalmentStatus> statuses, Pageable pageable);
+
+    /**
+     * FAILED -> APPROVED and a fresh payment request. The approval stands; only the payment is
+     * tried again, under a NEW idempotency key, because payment deliberately drops a resend
+     * carrying the old one.
+     */
+    PayoutInstalmentView retry(UUID instalmentId);
 }

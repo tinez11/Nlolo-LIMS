@@ -141,6 +141,29 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /payouts/{instalmentId}/retry:
+    post:
+      summary: Try a FAILED payment again
+      description: >
+        Only a payout whose disbursement genuinely failed. An IN_DOUBT one stays APPROVED and waits
+        for someone to reconcile it against the provider's statement — retrying it could pay the
+        customer twice. The approval stands; the request goes out under a new idempotency key.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: instalmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: A fresh payment requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutInstalment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused — the payout is not FAILED
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
     InstalmentStatus:
