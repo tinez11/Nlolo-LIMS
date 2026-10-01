@@ -53,4 +53,13 @@ public interface BenefitPayoutApi {
      * carrying the old one.
      */
     PayoutInstalmentView retry(UUID instalmentId);
+
+    /**
+     * What a death claim may pay on this policy, given the sum-assured ceiling policy computed.
+     *
+     * <p>Unchanged for a policy whose version authored no payout terms. Otherwise: minus the
+     * survival benefits already paid where the product deducts them (guide §7), then the higher of
+     * that and the product's percentage of premiums collected (guide §6).
+     */
+    java.math.BigDecimal deathBenefitCeiling(String policyNumber, java.math.BigDecimal sumAssuredCeiling);
 }

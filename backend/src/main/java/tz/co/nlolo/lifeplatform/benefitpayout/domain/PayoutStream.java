@@ -74,6 +74,18 @@ public class PayoutStream {
     /** The policy ended -- lapsed, surrendered, cancelled or claimed. Nothing further is owed. */
     public void end() { this.status = StreamStatus.ENDED.name(); }
 
+    /**
+     * Reinstatement after a lapse. The stream goes back to awaiting activation rather than straight
+     * to ACTIVE, because the proof of life taken before the lapse says nothing about a person who
+     * has been out of contact since: the next instalment earns its two signatures and fresh proof.
+     */
+    public void reopen() {
+        if (status() == StreamStatus.ENDED) {
+            this.status = StreamStatus.PENDING_ACTIVATION.name();
+            this.proofOfLifeDueDate = null;
+        }
+    }
+
     public UUID getStreamId() { return streamId; }
     public String getPolicyNumber() { return policyNumber; }
     public int getRowOrder() { return rowOrder; }

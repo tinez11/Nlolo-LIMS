@@ -872,6 +872,11 @@ public class PolicyApiImpl implements PolicyApi {
             Map.of("policyNumber", policyNumber,
                    "paidUpSumAssured", Map.of("amount", paidUpSumAssured.toPlainString(),
                         "currencyCode", policy.getSumAssuredCurrency()),
+                   // BOTH figures, because the reduction is a PROPORTION and a consumer that has
+                   // only the new one cannot work it out -- the aggregate has already overwritten
+                   // the old. benefitpayout restates every future payout by exactly this ratio.
+                   "originalSumAssured", Map.of("amount", originalSumAssured.toPlainString(),
+                        "currencyCode", policy.getSumAssuredCurrency()),
                    "madePaidUpAt", Instant.now().toString())));
         return toView(policy);
     }

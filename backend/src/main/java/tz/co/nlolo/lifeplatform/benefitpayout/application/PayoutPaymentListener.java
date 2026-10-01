@@ -25,9 +25,9 @@ public class PayoutPaymentListener {
         "MATURITY_PAYOUT", "SURVIVAL_BENEFIT_PAYOUT", "INCOME_PAYOUT", "PREMIUM_RETURN_PAYOUT");
 
     private final BenefitPayoutApiImpl api;
-    private final PolicyEventListener tenantRunner;
+    private final EnvelopeRunner tenantRunner;
 
-    public PayoutPaymentListener(BenefitPayoutApiImpl api, PolicyEventListener tenantRunner) {
+    public PayoutPaymentListener(BenefitPayoutApiImpl api, EnvelopeRunner tenantRunner) {
         this.api = api;
         this.tenantRunner = tenantRunner;
     }
@@ -46,7 +46,7 @@ public class PayoutPaymentListener {
         }
         UUID instalmentId = UUID.fromString((String) payload.get("sourceRef"));
 
-        tenantRunner.withTenant(envelope, p -> {
+        tenantRunner.run(envelope, p -> {
             if (completed) {
                 Object idObj = p.get("disbursementId");
                 UUID disbursementId = idObj instanceof UUID u ? u : UUID.fromString((String) idObj);

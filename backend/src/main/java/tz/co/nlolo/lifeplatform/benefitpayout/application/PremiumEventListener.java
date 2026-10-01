@@ -20,9 +20,9 @@ import java.util.Map;
 public class PremiumEventListener {
 
     private final BenefitPayoutApiImpl api;
-    private final PolicyEventListener tenantRunner;
+    private final EnvelopeRunner tenantRunner;
 
-    public PremiumEventListener(BenefitPayoutApiImpl api, PolicyEventListener tenantRunner) {
+    public PremiumEventListener(BenefitPayoutApiImpl api, EnvelopeRunner tenantRunner) {
         this.api = api;
         this.tenantRunner = tenantRunner;
     }
@@ -32,7 +32,7 @@ public class PremiumEventListener {
         if (!"billing.PremiumCollected".equals(envelope.eventType())) {
             return;
         }
-        tenantRunner.withTenant(envelope, p -> {
+        tenantRunner.run(envelope, p -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> amount = (Map<String, Object>) p.get("amount");
             api.recordPremium((String) p.get("policyNumber"), new BigDecimal((String) amount.get("amount")),

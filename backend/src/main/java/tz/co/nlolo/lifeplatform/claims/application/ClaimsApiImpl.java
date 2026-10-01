@@ -24,6 +24,7 @@ import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimAssessmentRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimEvidenceRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.SettlementDecisionRepository;
+import tz.co.nlolo.lifeplatform.benefitpayout.api.BenefitPayoutApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.policy.api.ClaimableCoverView;
@@ -70,6 +71,7 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final PartyApi partyApi;
     private final UnderwritingApi underwritingApi;
     private final DocumentApi documentApi;
+    private final BenefitPayoutApi benefitPayoutApi;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
@@ -77,6 +79,7 @@ public class ClaimsApiImpl implements ClaimsApi {
                           SettlementDecisionRepository settlementDecisionRepository,
                           ClaimEvidenceRepository claimEvidenceRepository, PolicyApi policyApi,
                           PartyApi partyApi, UnderwritingApi underwritingApi, DocumentApi documentApi,
+                          BenefitPayoutApi benefitPayoutApi,
                           ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager) {
         this.claimRepository = claimRepository;
         this.claimAssessmentRepository = claimAssessmentRepository;
@@ -86,6 +89,7 @@ public class ClaimsApiImpl implements ClaimsApi {
         this.partyApi = partyApi;
         this.underwritingApi = underwritingApi;
         this.documentApi = documentApi;
+        this.benefitPayoutApi = benefitPayoutApi;
         this.eventPublisher = eventPublisher;
         // REQUIRES_NEW, mirroring PaymentEventListener/PartyApiImpl's own precedent for a
         // constraint-violation-on-insert race: isolating the attempted INSERT in registerClaim
@@ -160,6 +164,16 @@ public class ClaimsApiImpl implements ClaimsApi {
                 if (policy.maturityDate() == null) {
                     throw new ClaimValidationException("Policy " + request.policyNumber()
                         + " has no maturity date, so it carries no maturity benefit to claim");
+                }
+                // A product that schedules its own maturity already owes the money on a dated
+                // instalment that finance reviews and approves. A claim filed alongside it would
+                // pay the same benefit a second time, and nothing downstream would notice: the
+                // claim and the instalment know nothing of each other. Policies on versions with
+                // no schedule -- every one sold before the payout engine existed -- are untouched.
+                if (benefitPayoutApi.hasScheduledMaturity(request.policyNumber())) {
+                    throw new ClaimValidationException("Policy " + request.policyNumber()
+                        + " pays its maturity benefit on a schedule, so it is already owed and does"
+                        + " not need a claim");
                 }
                 if (request.dateOfEvent().isBefore(policy.maturityDate())) {
                     throw new ClaimValidationException("Policy " + request.policyNumber()
@@ -545,9 +559,23 @@ public class ClaimsApiImpl implements ClaimsApi {
             ClaimableCoverView claimable = policyApi.claimableCover(
                 claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
                 claim.getClaimType().name());
-            claim.approve(approvedAmount, approvedCurrency, claimable.amount());
+            BigDecimal ceiling = claim.getClaimType() == ClaimType.DEATH
+                // On a savings product the sum assured is not the whole answer. The version may say
+                // survival benefits already paid come off the death benefit, and it may guarantee a
+                // percentage of the premiums paid as a floor. Both are the product's words, so the
+                // payout engine that holds them computes the ceiling; claims keeps the ceiling it
+                // already had for every policy whose version says neither.
+                ? benefitPayoutApi.deathBenefitCeiling(claim.getPolicyNumber(), claimable.amount())
+                : claimable.amount();
+            claim.approve(approvedAmount, approvedCurrency, ceiling);
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId,
                 Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),
+                       // The TYPE and the DATE, because a consumer deciding what a claim ends must
+                       // know which benefit was approved and as of when. Without them benefitpayout
+                       // would have to call back into claims to find out, which is the dependency
+                       // this envelope exists to avoid.
+                       "claimType", claim.getClaimType().name(),
+                       "dateOfEvent", claim.getDateOfEvent().toString(),
                        "approvedAmount", Map.of("amount", approvedAmount.toPlainString(),
                                                  "currencyCode", approvedCurrency))));
 

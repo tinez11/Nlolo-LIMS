@@ -41,6 +41,10 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
      *  keeps its benefits; SUSPENDED is owed them but holds until it resumes. */
     private static final Set<String> PAYABLE = Set.of("ACTIVE", "REINSTATED", "PAID_UP", "SUSPENDED");
 
+    /** Written on the rows a lapse withdrew, and matched exactly when reinstatement brings them
+     *  back -- so a row cancelled for any OTHER reason is never silently revived. */
+    static final String LAPSE_REASON = "Policy lapsed";
+
     private final PayoutInstalmentRepository instalments;
     private final PayoutStreamRepository streams;
     private final PremiumTallyRepository tallies;
@@ -301,10 +305,114 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         };
     }
 
-    /** A suspended stream's instalments stay held however current the premiums are. */
+    /**
+     * Withdraw everything dated {@code from} onwards, and end the policy's streams.
+     *
+     * <p>What is already ON_HOLD goes too, whatever its date: a held payout is one that fell due
+     * while the customer was behind, and a policy that then lapses never cured those arrears. On a
+     * death or surrender the same rows are replaced by the benefit being paid instead.
+     *
+     * <p>Nothing APPROVED or later is touched -- {@code cancel} is a no-op there, so an event
+     * arriving after the money went out cannot fail the lifecycle transition that sent it.
+     */
+    @Transactional
+    public void cancelFuture(String policyNumber, LocalDate from, String reason) {
+        for (PayoutInstalment i : instalments.findByPolicyNumberAndDueDateGreaterThanEqual(policyNumber, from)) {
+            if (i.cancel(reason)) {
+                instalments.save(i);
+            }
+        }
+        for (PayoutInstalment held : instalments.findByPolicyNumberAndStatus(policyNumber, InstalmentStatus.ON_HOLD.name())) {
+            if (held.cancel(reason)) {
+                instalments.save(held);
+            }
+        }
+        streams.findByPolicyNumber(policyNumber).forEach(s -> {
+            s.end();
+            streams.save(s);
+        });
+    }
+
+    /**
+     * Reinstatement: instalments the lapse cancelled come back, but only those still AHEAD.
+     *
+     * <p>What fell due during the lapse stays forfeited -- the customer was not covered then, and
+     * reviving a benefit for a period nobody paid for would pay for cover that did not exist.
+     */
+    @Transactional
+    public void restoreAfterReinstatement(String policyNumber, LocalDate reinstatedOn) {
+        for (PayoutInstalment i : instalments.findByPolicyNumberAndDueDateAfter(policyNumber, reinstatedOn)) {
+            if (i.status() == InstalmentStatus.CANCELLED && LAPSE_REASON.equals(i.getStatusReason())) {
+                i.restore();
+                instalments.save(i);
+            }
+        }
+        streams.findByPolicyNumber(policyNumber).forEach(s -> {
+            s.reopen();
+            streams.save(s);
+        });
+    }
+
+    /** Paid-up: every payout still ahead shrinks by the same proportion the sum assured did. */
+    @Transactional
+    public void restateForPaidUp(String policyNumber, BigDecimal paidUpSa, BigDecimal originalSa) {
+        String reason = "Made paid-up: " + paidUpSa.setScale(2, java.math.RoundingMode.HALF_EVEN)
+            + " of " + originalSa.setScale(2, java.math.RoundingMode.HALF_EVEN) + " sum assured";
+        for (PayoutInstalment i : instalments.findByPolicyNumberOrderByDueDateAscRowOrderAsc(policyNumber)) {
+            if (i.getOriginalAmount() != null) {
+                i.restate(PayoutArithmetic.restate(i.getOriginalAmount(), paidUpSa, originalSa), reason);
+                instalments.save(i);
+            }
+        }
+    }
+
+    /**
+     * What a death claim may pay on this policy, given the ceiling policy already computed.
+     *
+     * <p>Two product rules, both from the guide and both optional:
+     * <ul>
+     *   <li>§7 -- survival benefits already PAID may come off the death benefit. A product setting,
+     *       not a universal rule, which is why the version must state it.</li>
+     *   <li>§6 -- the death benefit may be the HIGHER of the sum assured and a percentage of the
+     *       premiums paid, so a family is never paid less than what was put in.</li>
+     * </ul>
+     *
+     * <p>Unchanged for a policy whose version authored no terms, which is every policy sold before
+     * this module existed.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal deathBenefitCeiling(String policyNumber, BigDecimal sumAssuredCeiling) {
+        PolicyView policy = policyApi.getPolicy(policyNumber);
+        PayoutPlan plan = productApi.resolvePayoutPlan(policy.productVersionId());
+        if (!plan.authored()) {
+            return sumAssuredCeiling;
+        }
+        BigDecimal ceiling = sumAssuredCeiling;
+        if (Boolean.TRUE.equals(plan.terms().survivalBenefitsDeductedFromDeath())) {
+            BigDecimal paid = instalments.findByPolicyNumberAndStatus(policyNumber, InstalmentStatus.PAID.name()).stream()
+                .filter(i -> i.kind() == PayoutKind.SURVIVAL)
+                .map(PayoutInstalment::getCurrentAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            // Never below zero: a product that paid out more than the sum assured still owes nothing
+            // rather than owing a negative amount.
+            ceiling = ceiling.subtract(paid).max(BigDecimal.ZERO);
+        }
+        BigDecimal pct = plan.terms().deathBenefitPremiumPercent();
+        if (pct != null) {
+            BigDecimal collected = tallies.findById(policyNumber)
+                .map(PremiumTally::getPremiumsCollected).orElse(BigDecimal.ZERO);
+            ceiling = ceiling.max(PayoutArithmetic.percentOf(collected, pct));
+        }
+        return ceiling;
+    }
+
+    /** A suspended or ended stream's instalments stay held however current the premiums are. */
     boolean streamAllowsRelease(PayoutInstalment instalment) {
         return instalment.getStreamId() == null
-            || streams.findById(instalment.getStreamId()).map(s -> s.status() != StreamStatus.SUSPENDED).orElse(true);
+            || streams.findById(instalment.getStreamId())
+                .map(s -> s.status() == StreamStatus.ACTIVE || s.status() == StreamStatus.PENDING_ACTIVATION)
+                .orElse(true);
     }
 
     PayoutInstalment load(UUID instalmentId) {

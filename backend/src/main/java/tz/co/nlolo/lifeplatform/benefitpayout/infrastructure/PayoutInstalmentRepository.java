@@ -19,6 +19,9 @@ public interface PayoutInstalmentRepository extends JpaRepository<PayoutInstalme
 
     List<PayoutInstalment> findByPolicyNumberAndDueDateAfter(String policyNumber, LocalDate after);
 
+    /** Inclusive of {@code from}: a policy that ends today also withdraws today's instalment. */
+    List<PayoutInstalment> findByPolicyNumberAndDueDateGreaterThanEqual(String policyNumber, LocalDate from);
+
     boolean existsByPolicyNumberAndKindIn(String policyNumber, Collection<String> kinds);
 
     Page<PayoutInstalment> findByStatusIn(Collection<String> statuses, Pageable pageable);

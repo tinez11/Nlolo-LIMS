@@ -59,8 +59,30 @@ public class PayoutTestFixtures {
         return issue(tenant, ProductCategory.ENDOWMENT, plan, sumAssured, termMonths, commencement, "MONTHLY");
     }
 
+    /**
+     * An ACTIVE savings endowment: a cash-value scale on the version and a premium-paying term, so
+     * {@code makePaidUp} can really be called on it rather than hand-published.
+     *
+     * <p>PROPORTIONATE basis with a two-year minimum, matching step 1's own fixtures.
+     */
+    public String issueSavingsEndowment(UUID tenant, PayoutPlan plan, BigDecimal sumAssured, int termMonths,
+                                        int premiumPayingTermMonths, LocalDate commencement) {
+        CashValuePlan cashValue = new CashValuePlan("TEST-BASIS-2026", LocalDate.of(2026, 1, 1), "PROPORTIONATE", 2,
+            List.of(new CashValueRowInput(2, null, null, new BigDecimal("200"), null),
+                    new CashValueRowInput(3, null, null, new BigDecimal("300"), null)));
+        return issue(tenant, ProductCategory.ENDOWMENT, plan, cashValue, sumAssured, termMonths,
+            premiumPayingTermMonths, commencement, "MONTHLY");
+    }
+
     public String issue(UUID tenant, ProductCategory category, PayoutPlan plan, BigDecimal sumAssured,
                         int termMonths, LocalDate commencement, String premiumFrequency) {
+        return issue(tenant, category, plan, CashValuePlan.none(), sumAssured, termMonths, null, commencement,
+            premiumFrequency);
+    }
+
+    public String issue(UUID tenant, ProductCategory category, PayoutPlan plan, CashValuePlan cashValue,
+                        BigDecimal sumAssured, int termMonths, Integer premiumPayingTermMonths,
+                        LocalDate commencement, String premiumFrequency) {
         UUID previous = TenantContext.getOrNull();
         TenantContext.set(tenant);
         try {
@@ -74,12 +96,12 @@ public class PayoutTestFixtures {
                         new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
                 List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
                 null, List.of(), EligibilityBounds.none(), FrequencyLoading.none(), ANY_FILING,
-                CashValuePlan.none(), plan, "actuary");
+                cashValue, plan, "actuary");
             UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
 
             PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(),
                 versionId, sumAssured, "TZS", new BigDecimal("50000.00"), "TZS", premiumFrequency, null, List.of(),
-                "payout test", commencement, termMonths, null, null, null);
+                "payout test", commencement, termMonths, premiumPayingTermMonths, null, null);
             String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
             policyApi.activateOnFirstPremium(policyNumber);
             return policyNumber;
