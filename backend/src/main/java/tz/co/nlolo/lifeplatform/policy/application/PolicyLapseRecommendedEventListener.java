@@ -3,6 +3,7 @@ package tz.co.nlolo.lifeplatform.policy.application;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,10 @@ import java.util.UUID;
  * recommendation against an already-lapsed policy fails loudly with InvalidPolicyStateException
  * rather than silently double-lapsing -- caught and logged below, same as
  * UnderwritingDecisionEventListener's own no-dead-letter posture.
+ *
+ * <p>One exception (product step 3, decision Q6): an ACCOUNT-valued policy is never lapsed by
+ * arrears. Its savings account keeps paying its own fee, and the policy lapses only when the account
+ * cannot -- accumulation's exhaustion, through {@code lapseExhaustedAccount}.
  */
 @Component
 public class PolicyLapseRecommendedEventListener {
@@ -30,10 +35,13 @@ public class PolicyLapseRecommendedEventListener {
     private static final Logger log = LoggerFactory.getLogger(PolicyLapseRecommendedEventListener.class);
 
     private final PolicyApi policyApi;
+    private final ProductApi productApi;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
-    public PolicyLapseRecommendedEventListener(PolicyApi policyApi, PlatformTransactionManager transactionManager) {
+    public PolicyLapseRecommendedEventListener(PolicyApi policyApi, ProductApi productApi,
+                                               PlatformTransactionManager transactionManager) {
         this.policyApi = policyApi;
+        this.productApi = productApi;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRES_NEW);
     }
@@ -49,8 +57,16 @@ public class PolicyLapseRecommendedEventListener {
         UUID previousTenant = TenantContext.getOrNull();
         TenantContext.set(envelope.tenantId());
         try {
-            requiresNewTransactionTemplate.executeWithoutResult(status ->
-                policyApi.lapsePolicy(policyNumber, "system:billing-lapse-recommendation"));
+            requiresNewTransactionTemplate.executeWithoutResult(status -> {
+                // Billing still raises the invoice and still reminds the customer; it is only the
+                // lapse it recommends that does not apply to an account-valued policy.
+                UUID versionId = policyApi.getPolicy(policyNumber).productVersionId();
+                if (productApi.resolveAccumulationPlan(versionId).isAccount()) {
+                    log.info("Not lapsing policy {} on billing's recommendation: it is valued by its account", policyNumber);
+                    return;
+                }
+                policyApi.lapsePolicy(policyNumber, "system:billing-lapse-recommendation");
+            });
         } catch (Exception e) {
             log.error("Automatic lapse failed for policy {} following billing's recommendation", policyNumber, e);
         } finally {

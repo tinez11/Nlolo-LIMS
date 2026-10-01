@@ -621,6 +621,11 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     /** Paid-up: every payout still ahead shrinks by the same proportion the sum assured did. */
     @Transactional
     public void restateForPaidUp(String policyNumber, BigDecimal paidUpSa, BigDecimal originalSa) {
+        if (paidUpSa.compareTo(originalSa) == 0) {
+            // Nothing was reduced -- an account-valued policy made paid-up (product step 3). A
+            // restatement at a ratio of one would record a change that never happened.
+            return;
+        }
         String reason = "Made paid-up: " + paidUpSa.setScale(2, java.math.RoundingMode.HALF_EVEN)
             + " of " + originalSa.setScale(2, java.math.RoundingMode.HALF_EVEN) + " sum assured";
         for (PayoutInstalment i : instalments.findByPolicyNumberOrderByDueDateAscRowOrderAsc(policyNumber)) {

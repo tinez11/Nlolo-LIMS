@@ -847,6 +847,9 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
 
+        if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
+            return makeAccountPaidUp(policy, madePaidUpBy, tenantId);
+        }
         var config = productApi.getCashValueConfig(policy.getProductVersionId());
         if (config.isEmpty()) {
             throw new InvalidPolicyStateException("Policy " + policyNumber
@@ -895,6 +898,42 @@ public class PolicyApiImpl implements PolicyApi {
                    // the old. benefitpayout restates every future payout by exactly this ratio.
                    "originalSumAssured", Map.of("amount", originalSumAssured.toPlainString(),
                         "currencyCode", policy.getSumAssuredCurrency()),
+                   "madePaidUpAt", Instant.now().toString())));
+        return toView(policy);
+    }
+
+    /**
+     * Paid-up on an account-valued version (product step 3): premiums stop and the account keeps
+     * paying its own fee. There is NO sum-assured reduction -- the account is the value, and it is
+     * not reduced by stopping contributions to it.
+     *
+     * <p>Only from ACTIVE or REINSTATED, though step 1 also admits LAPSED: an account policy lapses
+     * only on exhaustion, when its account has closed at zero, so making it paid-up would put cover
+     * back on with nothing to pay its fee. The way back for an exhausted account is reinstatement.
+     *
+     * <p>{@code PolicyMadePaidUp} carries both figures EQUAL, which every consumer already reads
+     * correctly: billing stops raising invoices, and benefitpayout's restatement is a ratio of one,
+     * which it skips.
+     */
+    private PolicyView makeAccountPaidUp(Policy policy, String madePaidUpBy, UUID tenantId) {
+        String policyNumber = policy.getPolicyNumber();
+        if (!"ACTIVE".equals(policy.getStatus()) && !"REINSTATED".equals(policy.getStatus())) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is valued by its account; it can be "
+                + "made paid-up only while ACTIVE or REINSTATED. An exhausted account comes back by reinstatement.");
+        }
+        BigDecimal sumAssured = policy.getSumAssuredAmount();
+        endorsementRepository.save(new Endorsement(tenantId, policyNumber, "PAID_UP", LocalDate.now(),
+            Map.of("originalSumAssured", sumAssured.toPlainString(),
+                   "paidUpSumAssured", sumAssured.toPlainString(),
+                   "basis", "ACCOUNT"),
+            madePaidUpBy));
+        policy.makePaidUp(sumAssured);
+        policyRepository.save(policy);
+        Map<String, Object> money = Map.of("amount", sumAssured.toPlainString(), "currencyCode", policy.getSumAssuredCurrency());
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyMadePaidUp", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "paidUpSumAssured", money,
+                   "originalSumAssured", money,
                    "madePaidUpAt", Instant.now().toString())));
         return toView(policy);
     }
