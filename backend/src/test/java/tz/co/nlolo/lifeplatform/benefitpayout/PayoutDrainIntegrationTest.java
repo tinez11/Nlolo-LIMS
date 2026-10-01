@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -13,9 +14,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.TenantContext;
-import tz.co.nlolo.lifeplatform.benefitpayout.api.BenefitPayoutApi;
-import tz.co.nlolo.lifeplatform.benefitpayout.api.InstalmentStatus;
-import tz.co.nlolo.lifeplatform.benefitpayout.api.PayoutInstalmentView;
+import tz.co.nlolo.lifeplatform.benefitpayout.api.*;
+import tz.co.nlolo.lifeplatform.benefitpayout.application.PayoutDueDrain;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.product.api.*;
 
 import java.math.BigDecimal;
@@ -24,19 +26,16 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * A policy issued on a version that pays while the life assured lives gets its whole schedule
- * stored at issue -- the guide's "calculated and stored on the day the policy is issued" (§16).
- *
- * <p>Through the REAL issuance path and the REAL event, not by calling the expander: the seam this
- * exists to cover is whether policy.PolicyIssued actually reaches this module carrying what it
- * needs, which no unit test of the expander can show.
+ * Instalments falling due, the arrears hold, the two-person review, and a policy maturing rather
+ * than expiring -- through the real drain and the real APIs.
  */
 @Testcontainers
 @SpringBootTest(classes = Application.class)
 @Import(PayoutTestFixtures.class)
-class BenefitPayoutApiIntegrationTest {
+class PayoutDrainIntegrationTest {
 
     private static final UUID TENANT = UUID.randomUUID();
 
@@ -106,45 +105,120 @@ class BenefitPayoutApiIntegrationTest {
             "db-migrations/audit/V3__q4_2026_partitions.sql");
     }
 
+    @Autowired private PayoutDueDrain drain;
     @Autowired private BenefitPayoutApi api;
+    @Autowired private PolicyApi policyApi;
     @Autowired private PayoutTestFixtures fixtures;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     private static final PayoutPlan MONEY_BACK = PayoutPlan.authored(
-        new PayoutTerms(15, null, true, null),
+        new PayoutTerms(15, null, false, null),
         List.of(
             new PayoutRowInput(PayoutKind.SURVIVAL, 5, 5, PayoutAmountBasis.PERCENT_OF_SA, new BigDecimal("10"), PayoutFrequency.ANNUAL),
             new PayoutRowInput(PayoutKind.MATURITY, null, null, PayoutAmountBasis.PERCENT_OF_SA, new BigDecimal("100"), null)));
 
-    @Test
-    void issuingAMoneyBackEndowmentStoresItsWholeSchedule() {
-        String policyNumber = fixtures.issueEndowment(TENANT, MONEY_BACK, new BigDecimal("1000000.00"), 240);
+    /** Commenced five years and a day ago, so year 5's survival benefit fell due yesterday. */
+    private String moneyBackDueYesterday() {
+        return fixtures.issueEndowment(TENANT, MONEY_BACK, new BigDecimal("1000000.00"), 240,
+            LocalDate.now().minusYears(5).minusDays(1));
+    }
 
+    private PayoutInstalmentView survival(String policyNumber) {
         TenantContext.set(TENANT);
         try {
-            List<PayoutInstalmentView> schedule = api.listForPolicy(policyNumber);
-            assertThat(schedule).extracting(PayoutInstalmentView::kind)
-                .containsExactly(PayoutKind.SURVIVAL, PayoutKind.MATURITY);
-            assertThat(schedule).allMatch(v -> v.status() == InstalmentStatus.SCHEDULED);
-            // 10% of a million, on the fifth anniversary of the day risk commenced.
-            assertThat(schedule.get(0).currentAmount()).isEqualByComparingTo("100000.00");
-            assertThat(schedule.get(0).dueDate()).isEqualTo(LocalDate.now().plusYears(5));
-            assertThat(schedule.get(1).currentAmount()).isEqualByComparingTo("1000000.00");
-            // Claims must refuse a manual maturity claim on this policy: it is already owed.
-            assertThat(api.hasScheduledMaturity(policyNumber)).isTrue();
+            return api.listForPolicy(policyNumber).stream()
+                .filter(v -> v.kind() == PayoutKind.SURVIVAL).findFirst().orElseThrow();
         } finally {
             TenantContext.clear();
         }
     }
 
     @Test
-    void aPolicyOnAVersionWithNoPlanGetsNoInstalments() {
-        // Every policy sold before step 2, and every term policy after it.
-        String policyNumber = fixtures.issueEndowment(TENANT, PayoutPlan.none(), new BigDecimal("500000.00"), 120);
+    void anUnpaidPolicyHoldsAndAPaymentReleasesIt() {
+        String policyNumber = moneyBackDueYesterday();
+        /*
+          The tally reckons premium due dates from the ISSUE date, which the API sets to today even
+          though cover commenced five years ago -- so no premium would be due before the payout and
+          the hold could never trigger. That would be a test passing while proving nothing.
+          Backdating the tally makes five years of monthly premiums fall due with none paid. The
+          test connects as the table owner, so RLS is bypassed.
+        */
+        jdbcTemplate.update("UPDATE benefitpayout.premium_tally SET issue_date = current_date - 1 - interval '5 years' "
+            + "WHERE policy_number = ?", policyNumber);
+
+        drain.drain();
+        assertThat(survival(policyNumber).status()).isEqualTo(InstalmentStatus.ON_HOLD);
+        assertThat(survival(policyNumber).statusReason()).isEqualTo("Premiums are not paid up to the due date");
+
+        fixtures.collectPremium(TENANT, policyNumber, new BigDecimal("3000000.00"), LocalDate.now().minusDays(1));
+        assertThat(survival(policyNumber).status()).isEqualTo(InstalmentStatus.DUE);
+    }
+
+    @Test
+    void reviewThenApproveByADifferentPersonRequestsThePayout() {
+        String policyNumber = moneyBackDueYesterday();
+        fixtures.collectPremium(TENANT, policyNumber, new BigDecimal("3000000.00"), LocalDate.now().minusDays(1));
+        drain.drain();
+        UUID id = survival(policyNumber).instalmentId();
 
         TenantContext.set(TENANT);
         try {
-            assertThat(api.listForPolicy(policyNumber)).isEmpty();
-            assertThat(api.hasScheduledMaturity(policyNumber)).isFalse();
+            api.review(id, "+255700000009", ProofOfLifeMethod.PHONE_OR_VIDEO, null, "reviewer-1");
+            assertThatThrownBy(() -> api.approve(id, "reviewer-1"))
+                .isInstanceOf(PayoutStateException.class)
+                .hasMessageContaining("other than the person who reviewed it");
+
+            PayoutInstalmentView approved = api.approve(id, "approver-2");
+            assertThat(approved.status()).isEqualTo(InstalmentStatus.APPROVED);
+            assertThat(approved.approvedBy()).isEqualTo("approver-2");
+            assertThat(approved.payeeRef()).isEqualTo("+255700000009");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Test
+    void aSurvivalPayoutCannotBeReviewedWithoutProofOfLife() {
+        String policyNumber = moneyBackDueYesterday();
+        fixtures.collectPremium(TENANT, policyNumber, new BigDecimal("3000000.00"), LocalDate.now().minusDays(1));
+        drain.drain();
+        UUID id = survival(policyNumber).instalmentId();
+
+        TenantContext.set(TENANT);
+        try {
+            assertThatThrownBy(() -> api.review(id, "+255700000009", null, null, "reviewer-1"))
+                .hasMessage("A SURVIVAL payout needs proof that the life assured is alive");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Test
+    void aMaturityDateArrivingMaturesThePolicyInsteadOfExpiringIt() {
+        // A twelve-month endowment commenced a year and a day ago: its maturity date was
+        // yesterday, so the expiry sweep and the payout drain both have a claim on it.
+        PayoutPlan endowment = PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of(
+            new PayoutRowInput(PayoutKind.MATURITY, null, null, PayoutAmountBasis.PERCENT_OF_SA, new BigDecimal("100"), null)));
+        String policyNumber = fixtures.issueEndowment(TENANT, endowment, new BigDecimal("500000.00"), 12,
+            LocalDate.now().minusYears(1).minusDays(1));
+
+        TenantContext.set(TENANT);
+        try {
+            // The expiry sweep must leave it alone: EXPIRED is terminal and pays nothing, so
+            // expiring it would strand the maturity benefit the customer paid for.
+            policyApi.expirePolicy(policyNumber);
+            assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.ACTIVE);
+        } finally {
+            TenantContext.clear();
+        }
+
+        drain.drain();
+
+        TenantContext.set(TENANT);
+        try {
+            assertThat(policyApi.getPolicy(policyNumber).status()).isEqualTo(PolicyStatus.MATURED);
+            assertThat(api.listForPolicy(policyNumber).get(0).status())
+                .isIn(InstalmentStatus.DUE, InstalmentStatus.ON_HOLD);
         } finally {
             TenantContext.clear();
         }

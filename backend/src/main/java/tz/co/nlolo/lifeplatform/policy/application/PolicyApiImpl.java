@@ -1050,6 +1050,14 @@ public class PolicyApiImpl implements PolicyApi {
         if (policy.isClosed()) {
             return;
         }
+        // A version that pays at the end of the term MATURES through benefitpayout's drain, which
+        // pays the benefit and then closes the policy. Expiring it here would close cover on a
+        // contract that is owed money, and EXPIRED is terminal -- the maturity benefit would have
+        // nowhere to go. Skipped rather than thrown: the hourly selector offers it again until
+        // benefitpayout gets to it, and one unpayable policy must not stop the queue.
+        if (productApi.resolvePayoutPlan(policy.getProductVersionId()).hasEndOfTermRow()) {
+            return;
+        }
         policy.expire(LocalDate.now());
         policyRepository.save(policy);
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyExpired", tenantId,

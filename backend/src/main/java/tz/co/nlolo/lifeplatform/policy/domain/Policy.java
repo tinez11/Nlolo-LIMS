@@ -457,6 +457,9 @@ public class Policy {
         }
         return switch (status) {
             case "ACTIVE", "REINSTATED", "EXPIRED", "PAID_UP" -> true;
+            // Void from inception: there is no day on which this policy was on risk, which is the
+            // whole difference between cancelling in the free-look window and surrendering.
+            case "CANCELLED_FREE_LOOK" -> false;
             case "LAPSED" -> lapsedAt != null && day.isBefore(lapsedAt.atZone(CIVIL_ZONE).toLocalDate());
             case "SUSPENDED" -> suspendedAt != null
                 && day.isBefore(suspendedAt.atZone(CIVIL_ZONE).toLocalDate());
@@ -632,7 +635,8 @@ public class Policy {
         // a policy that has already stopped being invoiced -- the goal closure exists for is
         // met, and throwing here would do it inside claims' settlement listener, after the money
         // had left. The policy keeps EXPIRED, which is the truer record of how it ended.
-        return "MATURED".equals(status) || "SURRENDERED".equals(status) || "EXPIRED".equals(status);
+        return "MATURED".equals(status) || "SURRENDERED".equals(status) || "EXPIRED".equals(status)
+            || "CANCELLED_FREE_LOOK".equals(status);
     }
 
     /**
@@ -652,7 +656,11 @@ public class Policy {
      * </ul>
      */
     private boolean closeableBySettledClaim() {
-        return "ACTIVE".equals(status) || "REINSTATED".equals(status)
+        // PAID_UP too (product step 2). It is in force -- wasOnRiskOn says so -- so it can be
+        // claimed on and it can mature. Its absence here meant a paid-up endowment reaching the
+        // end of its term could never be closed: mature() threw, and the maturity benefit the
+        // customer had kept paying towards had nowhere to go.
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status) || "PAID_UP".equals(status)
             || "LAPSED".equals(status) || "SUSPENDED".equals(status);
     }
 }

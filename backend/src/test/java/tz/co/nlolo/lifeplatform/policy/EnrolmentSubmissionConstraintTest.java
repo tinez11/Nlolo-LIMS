@@ -73,7 +73,8 @@ class EnrolmentSubmissionConstraintTest {
             "db-migrations/policy/V27__expired_status.sql",
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
-            "db-migrations/policy/V30__surrender.sql");
+            "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql");
     }
 
     @Autowired private JdbcTemplate jdbcTemplate;

@@ -1,5 +1,7 @@
 package tz.co.nlolo.lifeplatform.benefitpayout.infrastructure;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import tz.co.nlolo.lifeplatform.benefitpayout.domain.PayoutInstalment;
@@ -18,6 +20,8 @@ public interface PayoutInstalmentRepository extends JpaRepository<PayoutInstalme
     List<PayoutInstalment> findByPolicyNumberAndDueDateAfter(String policyNumber, LocalDate after);
 
     boolean existsByPolicyNumberAndKindIn(String policyNumber, Collection<String> kinds);
+
+    Page<PayoutInstalment> findByStatusIn(Collection<String> statuses, Pageable pageable);
 
     /**
      * Across every tenant, ids only -- the drain sets the tenant per row and reads the rest under

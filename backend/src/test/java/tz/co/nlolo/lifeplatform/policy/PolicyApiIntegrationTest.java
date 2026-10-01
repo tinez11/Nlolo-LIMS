@@ -128,6 +128,7 @@ class PolicyApiIntegrationTest {
             "db-migrations/policy/V24__issuance_record.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             // The offer-validity window the expiry sweep reads.
             "db-migrations/refdata/V5__seed_offer_validity.sql",

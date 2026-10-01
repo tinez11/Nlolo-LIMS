@@ -148,6 +148,7 @@ class ExitFileIntegrationTest {
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/policy/V21__exit_submission.sql",
             "db-migrations/document/V1__create_document_schema.sql",
             "db-migrations/document/V2__add_content_type_and_file_name.sql",

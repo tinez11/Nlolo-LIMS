@@ -192,6 +192,7 @@ class AppRolePrivilegesIntegrationTest {
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
             "db-migrations/billing/V1__create_billing_schema.sql",
             "db-migrations/billing/V2__grants_rls_money_checks_and_notification_columns.sql",

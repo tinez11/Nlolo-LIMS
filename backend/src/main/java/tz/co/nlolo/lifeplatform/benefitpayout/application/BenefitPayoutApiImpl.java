@@ -1,7 +1,11 @@
 package tz.co.nlolo.lifeplatform.benefitpayout.application;
 
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.benefitpayout.api.*;
 import tz.co.nlolo.lifeplatform.benefitpayout.domain.*;
@@ -14,9 +18,12 @@ import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -30,19 +37,26 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
      *  cannot bind it, and the failure would surface deep inside a listener. */
     static final LocalDate BEGINNING = LocalDate.of(1900, 1, 1);
 
+    /** Statuses in which a policy can still be owed a payout. PAID_UP keeps reduced cover and so
+     *  keeps its benefits; SUSPENDED is owed them but holds until it resumes. */
+    private static final Set<String> PAYABLE = Set.of("ACTIVE", "REINSTATED", "PAID_UP", "SUSPENDED");
+
     private final PayoutInstalmentRepository instalments;
     private final PayoutStreamRepository streams;
     private final PremiumTallyRepository tallies;
     private final ProductApi productApi;
     private final PolicyApi policyApi;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BenefitPayoutApiImpl(PayoutInstalmentRepository instalments, PayoutStreamRepository streams,
-                                PremiumTallyRepository tallies, ProductApi productApi, PolicyApi policyApi) {
+                                PremiumTallyRepository tallies, ProductApi productApi, PolicyApi policyApi,
+                                ApplicationEventPublisher eventPublisher) {
         this.instalments = instalments;
         this.streams = streams;
         this.tallies = tallies;
         this.productApi = productApi;
         this.policyApi = policyApi;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -123,6 +137,129 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
                 }
             }
         });
+    }
+
+    /**
+     * The drain's per-row work: SCHEDULED -> DUE, ON_HOLD or CANCELLED, and for an end-of-term
+     * payout, maturing the policy.
+     *
+     * <p>Guarded on SCHEDULED, so a second drain instance racing the first does nothing. That plus
+     * the aggregate's {@code @Version} is what makes running this in two places safe.
+     */
+    @Transactional
+    public void fallDue(UUID instalmentId) {
+        PayoutInstalment i = load(instalmentId);
+        if (i.status() != InstalmentStatus.SCHEDULED) {
+            return;
+        }
+        PolicyView policy = policyApi.getPolicy(i.getPolicyNumber());
+        String policyStatus = policy.status().name();
+        if (!PAYABLE.contains(policyStatus)) {
+            // Lapsed, surrendered, cancelled: nothing is owed and nothing will be.
+            i.cancel("Policy is " + policyStatus + " on the due date");
+            instalments.save(i);
+            return;
+        }
+
+        PremiumTally tally = tallies.findById(i.getPolicyNumber()).orElse(null);
+        BigDecimal valued = null;
+        if (i.kind() == PayoutKind.RETURN_OF_PREMIUM) {
+            valued = premiumReturnAmount(policy, i, tally);
+            if (valued.signum() == 0) {
+                // Nothing was ever collected, so there is nothing to return. The policy still
+                // matures: its term ran out either way.
+                i.cancel("No premiums were collected, so there is nothing to return");
+                instalments.save(i);
+                matureIfEndOfTerm(i);
+                return;
+            }
+        }
+
+        boolean upToDate = tally == null || tally.isPaidUpTo(i.getDueDate());
+        i.fallDue(upToDate, valued);
+        if (i.status() == InstalmentStatus.DUE && "SUSPENDED".equals(policyStatus)) {
+            i.hold("Policy is suspended");
+        } else if (i.status() == InstalmentStatus.DUE && !streamAllowsRelease(i)) {
+            i.hold("Proof of life is overdue");
+        }
+        instalments.save(i);
+        matureIfEndOfTerm(i);
+    }
+
+    /** The authored percentage applied to what billing actually collected (decision Q5). */
+    private BigDecimal premiumReturnAmount(PolicyView policy, PayoutInstalment i, PremiumTally tally) {
+        BigDecimal percent = productApi.resolvePayoutPlan(policy.productVersionId()).rows()
+            .get(i.getRowOrder()).amountValue();
+        BigDecimal collected = tally != null ? tally.getPremiumsCollected() : BigDecimal.ZERO;
+        return PayoutArithmetic.percentOf(collected, percent);
+    }
+
+    /**
+     * A maturity or premium return falling due ends the contract, whether or not the money has
+     * gone out yet -- cover stops on the date, exactly as step 1's surrender stops it at approval.
+     */
+    private void matureIfEndOfTerm(PayoutInstalment i) {
+        if (i.kind() == PayoutKind.MATURITY || i.kind() == PayoutKind.RETURN_OF_PREMIUM) {
+            policyApi.markMatured(i.getPolicyNumber(), "system:benefitpayout");
+        }
+    }
+
+    @Override
+    @Transactional
+    public PayoutInstalmentView review(UUID instalmentId, String payeeRef, ProofOfLifeMethod method,
+                                       UUID documentId, String reviewer) {
+        PayoutInstalment i = load(instalmentId);
+        i.review(reviewer, payeeRef, method, documentId);
+        return Views.of(instalments.save(i));
+    }
+
+    @Override
+    @Transactional
+    public PayoutInstalmentView approve(UUID instalmentId, String approver) {
+        PayoutInstalment i = load(instalmentId);
+        i.approve(approver);
+        instalments.save(i);
+        // The first approved instalment of an income stream starts its proof-of-life clock.
+        if (i.getStreamId() != null) {
+            streams.findById(i.getStreamId())
+                .filter(s -> s.status() == StreamStatus.PENDING_ACTIVATION)
+                .ifPresent(s -> {
+                    s.activate(LocalDate.now());
+                    streams.save(s);
+                });
+        }
+        publishPayoutRequested(i);
+        return Views.of(i);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PayoutInstalmentView> search(Collection<InstalmentStatus> statuses, Pageable pageable) {
+        Collection<InstalmentStatus> wanted = statuses == null || statuses.isEmpty()
+            ? EnumSet.allOf(InstalmentStatus.class) : statuses;
+        return instalments.findByStatusIn(wanted.stream().map(Enum::name).toList(), pageable).map(Views::of);
+    }
+
+    /** Ask payment to disburse. The key carries the attempt, so a retry is a NEW request rather
+     *  than a duplicate payment dedupes away. */
+    void publishPayoutRequested(PayoutInstalment i) {
+        eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutRequested", TenantContext.get(),
+            Map.of("instalmentId", i.getInstalmentId().toString(),
+                   "idempotencyKey", i.getInstalmentId() + ":" + i.getAttempts(),
+                   "policyNumber", i.getPolicyNumber(),
+                   "payeeRef", i.getPayeeRef(),
+                   "purpose", purposeFor(i.kind()),
+                   "amount", Map.of("amount", i.getCurrentAmount().toPlainString(),
+                        "currencyCode", i.getCurrency()))));
+    }
+
+    static String purposeFor(PayoutKind kind) {
+        return switch (kind) {
+            case MATURITY -> "MATURITY_PAYOUT";
+            case SURVIVAL -> "SURVIVAL_BENEFIT_PAYOUT";
+            case INCOME -> "INCOME_PAYOUT";
+            case RETURN_OF_PREMIUM -> "PREMIUM_RETURN_PAYOUT";
+        };
     }
 
     /** A suspended stream's instalments stay held however current the premiums are. */

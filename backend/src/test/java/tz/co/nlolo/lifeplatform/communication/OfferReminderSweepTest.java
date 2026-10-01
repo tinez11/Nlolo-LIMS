@@ -126,6 +126,7 @@ class OfferReminderSweepTest {
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
             "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql",
             "db-migrations/communication/V1__create_communication_schema.sql",
             "db-migrations/communication/V2__template_identity.sql",
             "db-migrations/communication/V3__seed_offer_templates.sql",

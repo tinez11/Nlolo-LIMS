@@ -66,7 +66,8 @@ class BillingSweepPsqlTest {
             "db-migrations/policy/V27__expired_status.sql",
             "db-migrations/policy/V28__policies_due_to_expire.sql",
             "db-migrations/policy/V29__paid_up.sql",
-            "db-migrations/policy/V30__surrender.sql");
+            "db-migrations/policy/V30__surrender.sql",
+            "db-migrations/policy/V31__free_look_status.sql");
 
         String fullFile = Files.readString(Path.of("db-migrations/_post-migration/configure-billing-sweep.sql"));
         String functionOnly = fullFile.substring(0, fullFile.indexOf("-- Every 15 minutes"));

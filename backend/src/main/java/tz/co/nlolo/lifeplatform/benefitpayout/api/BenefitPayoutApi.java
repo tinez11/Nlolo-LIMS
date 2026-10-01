@@ -1,5 +1,9 @@
 package tz.co.nlolo.lifeplatform.benefitpayout.api;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,4 +30,20 @@ public interface BenefitPayoutApi {
      * business already sold.
      */
     boolean hasScheduledMaturity(String policyNumber);
+
+    /**
+     * DUE -> REVIEWED: confirm where the money goes, and for a survival or income payout how the
+     * life assured was confirmed alive (decision Q2).
+     */
+    PayoutInstalmentView review(UUID instalmentId, String payeeRef, ProofOfLifeMethod method, UUID documentId,
+                                String reviewer);
+
+    /**
+     * REVIEWED -> APPROVED, by someone other than the reviewer, and the payout is requested from
+     * the disbursement rail. This is the point at which money leaves.
+     */
+    PayoutInstalmentView approve(UUID instalmentId, String approver);
+
+    /** The payouts register. An empty {@code statuses} means every status. Due date, then id. */
+    Page<PayoutInstalmentView> search(Collection<InstalmentStatus> statuses, Pageable pageable);
 }
