@@ -69,7 +69,8 @@ class ProductIntegrityViolationTest {
             "db-migrations/product/V13__benefit_calculation_method.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
-            "db-migrations/product/V17__cash_value.sql");
+            "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql");
         // V14 is deliberately absent -- see the class javadoc.
     }
 

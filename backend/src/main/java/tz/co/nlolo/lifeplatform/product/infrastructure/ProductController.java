@@ -1,6 +1,8 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
 import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
+import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
+import tz.co.nlolo.lifeplatform.product.api.PayoutTerms;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.FrequencyLoading;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -114,6 +116,14 @@ public class ProductController {
             // this dereference is safe.
             new TiraFiling(request.tiraFiling().reference(), request.tiraFiling().approvalDate()),
             request.cashValue() != null ? request.cashValue().toPlan() : CashValuePlan.none(),
+            // ALWAYS authored from here, even when both blocks are absent: that is what makes an
+            // individual version with no free-look period a 422 at the edge rather than a product
+            // nobody can cancel. The internal overloads pass none() and stay exempt.
+            PayoutPlan.authored(
+                request.payoutTerms() != null ? request.payoutTerms().toTerms() : PayoutTerms.none(),
+                request.payoutSchedule() != null
+                    ? request.payoutSchedule().stream().map(PayoutRowRequest::toInput).toList()
+                    : List.of()),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

@@ -27,11 +27,15 @@ public class ProductApiImpl implements ProductApi {
     private final BaseRateRepository baseRateRepository;
     private final CashValueEntryRepository cashValueEntryRepository;
     private final CashValueConfigRepository cashValueConfigRepository;
+    private final PayoutScheduleRowRepository payoutScheduleRowRepository;
+    private final VersionPayoutTermsRepository versionPayoutTermsRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
                            FundDefinitionRepository fundDefinitionRepository, BaseRateRepository baseRateRepository,
-                           CashValueEntryRepository cashValueEntryRepository, CashValueConfigRepository cashValueConfigRepository) {
+                           CashValueEntryRepository cashValueEntryRepository, CashValueConfigRepository cashValueConfigRepository,
+                           PayoutScheduleRowRepository payoutScheduleRowRepository,
+                           VersionPayoutTermsRepository versionPayoutTermsRepository) {
         this.productDefinitionRepository = productDefinitionRepository;
         this.productVersionRepository = productVersionRepository;
         this.ratingFactorRepository = ratingFactorRepository;
@@ -40,6 +44,8 @@ public class ProductApiImpl implements ProductApi {
         this.baseRateRepository = baseRateRepository;
         this.cashValueEntryRepository = cashValueEntryRepository;
         this.cashValueConfigRepository = cashValueConfigRepository;
+        this.payoutScheduleRowRepository = payoutScheduleRowRepository;
+        this.versionPayoutTermsRepository = versionPayoutTermsRepository;
     }
 
     @Override
@@ -185,6 +191,16 @@ public class ProductApiImpl implements ProductApi {
                                 List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                                 List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
                                 TiraFiling tiraFiling, CashValuePlan cashValue, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, cashValue, PayoutPlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan, String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -268,6 +284,7 @@ public class ProductApiImpl implements ProductApi {
         rejectMalformedAgeBands(ratingTable);
         rejectMalformedSumAssuredBands(ratingTable);
         CashValuePlanValidator.validate(ProductCategory.valueOf(product.getCategory()), cashValue);
+        PayoutPlanValidator.validate(ProductCategory.valueOf(product.getCategory()), payoutPlan);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -298,6 +315,7 @@ public class ProductApiImpl implements ProductApi {
         version.applyTiraFiling(tiraFiling);
         productVersionRepository.save(version);
         persistCashValue(tenantId, version.getProductVersionId(), cashValue);
+        persistPayoutPlan(tenantId, version.getProductVersionId(), payoutPlan);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -786,6 +804,29 @@ public class ProductApiImpl implements ProductApi {
             cashValueEntryRepository.save(new CashValueEntry(tenantId, productVersionId, row.policyYear(), row.ageFrom(),
                 row.ageTo(), row.cashValuePerMille(), row.paidUpPerMille()));
         }
+    }
+
+    /** The payout schedule and its terms, in the version's own transaction. Nothing for none(). */
+    private void persistPayoutPlan(UUID tenantId, UUID productVersionId, PayoutPlan plan) {
+        if (plan == null || !plan.authored()) {
+            return;
+        }
+        versionPayoutTermsRepository.save(new VersionPayoutTerms(tenantId, productVersionId, plan.terms()));
+        for (int order = 0; order < plan.rows().size(); order++) {
+            payoutScheduleRowRepository.save(new PayoutScheduleRow(tenantId, productVersionId, order, plan.rows().get(order)));
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PayoutPlan resolvePayoutPlan(UUID productVersionId) {
+        // RLS scopes both reads to the caller's tenant, so no explicit tenant filter is needed --
+        // the same arrangement getCashValueConfig uses.
+        return versionPayoutTermsRepository.findById(productVersionId)
+            .map(terms -> PayoutPlan.authored(terms.toTerms(),
+                payoutScheduleRowRepository.findByProductVersionIdOrderByRowOrder(productVersionId).stream()
+                    .map(PayoutScheduleRow::toInput).toList()))
+            .orElse(PayoutPlan.none());
     }
 
     private static void rejectOverlappingAgeBands(List<BaseRateInput> baseRates) {

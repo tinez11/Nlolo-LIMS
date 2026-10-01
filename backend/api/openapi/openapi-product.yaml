@@ -369,6 +369,38 @@ components:
                   ageTo: { type: [integer, "null"], minimum: 0 }
                   cashValuePerMille: { type: number, minimum: 0 }
                   paidUpPerMille: { type: [number, "null"], minimum: 0 }
+        payoutTerms:
+          description: >-
+            Free-look and payout servicing terms. freeLookDays is REQUIRED on an individual product
+            (term, endowment, whole life, education savings) and unused on group and credit life,
+            whose cancellation is the scheme contract's. The other three are required only when the
+            rows that need them are present: a proof-of-life interval once an INCOME row exists, and
+            the deduction setting once a SURVIVAL row does.
+          type: object
+          properties:
+            freeLookDays: { type: [integer, "null"], minimum: 1, maximum: 365 }
+            proofOfLifeIntervalMonths: { type: [integer, "null"], minimum: 1, maximum: 60 }
+            survivalBenefitsDeductedFromDeath: { type: [boolean, "null"] }
+            deathBenefitPremiumPercent: { type: [number, "null"] }
+        payoutSchedule:
+          description: >-
+            What this version pays while the life assured is ALIVE. MATURITY and RETURN_OF_PREMIUM
+            pay once on the policy's own maturity date and so carry no years or frequency; SURVIVAL
+            and INCOME state a range of policy years, and their amountValue is PER POLICY YEAR,
+            split across that year's instalments.
+          type: array
+          items:
+            type: object
+            required: [kind, amountBasis, amountValue]
+            properties:
+              kind: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM] }
+              fromPolicyYear: { type: [integer, "null"], minimum: 1 }
+              toPolicyYear: { type: [integer, "null"], minimum: 1 }
+              amountBasis: { type: string, enum: [PERCENT_OF_SA, FIXED, PERCENT_OF_PREMIUMS] }
+              amountValue: { type: number, exclusiveMinimum: 0 }
+              frequency:
+                type: [string, "null"]
+                enum: [ANNUAL, SEMI_ANNUAL, QUARTERLY, MONTHLY, null]
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and

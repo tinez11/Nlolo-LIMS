@@ -87,6 +87,7 @@ class PolicyContractTest {
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -240,7 +241,7 @@ class PolicyContractTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {"ifrsMeasurementModel":"PAA","effectiveDate":"2026-01-01",
-                     "tiraFiling":{"reference":"TIRA/TEST/0001","approvalDate":"2020-01-01"},
+                     "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/TEST/0001","approvalDate":"2020-01-01"},
                      "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
                      "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]}
                     """))

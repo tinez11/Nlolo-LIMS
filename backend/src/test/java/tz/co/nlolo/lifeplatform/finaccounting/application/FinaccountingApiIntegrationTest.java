@@ -101,6 +101,7 @@ class FinaccountingApiIntegrationTest {
             "db-migrations/product/V15__exclusion_periods.sql",
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql",
             "db-migrations/policyloan/V1__create_policyloan_schema.sql",
             "db-migrations/policyloan/V2__partition_tenant_controls.sql",
             "db-migrations/policyloan/V7__q4_2026_partitions.sql",

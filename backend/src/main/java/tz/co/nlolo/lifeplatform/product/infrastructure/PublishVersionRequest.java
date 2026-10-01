@@ -55,4 +55,11 @@ public record PublishVersionRequest(
     @NotNull @Valid TiraFilingRequest tiraFiling,
 
     // Optional: present only on a savings version (product step 1). Absent means no cash value.
-    @Valid CashValueRequest cashValue) {}
+    @Valid CashValueRequest cashValue,
+
+    // What the version pays while the life assured is alive (product step 2). Both optional, and
+    // an absent block is still AUTHORED when it arrives over HTTP -- so an individual product
+    // published with no free-look period is refused here rather than discovered in production.
+    PayoutTermsRequest payoutTerms,
+
+    @Valid List<PayoutRowRequest> payoutSchedule) {}

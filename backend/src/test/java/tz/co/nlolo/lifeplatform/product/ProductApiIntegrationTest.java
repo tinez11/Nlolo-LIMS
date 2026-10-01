@@ -71,7 +71,9 @@ class ProductApiIntegrationTest {
             // DataIntegrityViolationException that way. See the note on that test.
             "db-migrations/product/V14__credit_life_category.sql",
             "db-migrations/product/V15__exclusion_periods.sql",
-            "db-migrations/product/V16__base_rate_term_bands.sql");
+            "db-migrations/product/V16__base_rate_term_bands.sql",
+            "db-migrations/product/V17__cash_value.sql",
+            "db-migrations/product/V18__payout_schedule.sql");
     }
 
     @BeforeEach
@@ -1692,9 +1694,9 @@ class ProductApiIntegrationTest {
         List<Method> declared = Arrays.stream(ProductApi.class.getMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        // Five since product step 1 added the cash-value overload. A new overload must raise this
-        // count AND pass both checks below -- that is the point of counting.
-        assertEquals(5, declared.size(), "expected five publishVersion overloads");
+        // Six: step 1 added the cash-value overload, step 2 the payout-plan one. A new overload
+        // must raise this count AND pass both checks below -- that is the point of counting.
+        assertEquals(6, declared.size(), "expected six publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1702,7 +1704,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(5, implementations.size(), "every overload must be implemented here");
+        assertEquals(6, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));
@@ -1713,5 +1715,62 @@ class ProductApiIntegrationTest {
         productApi.createProduct("DUP-01", "First product", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
         assertThrows(DuplicateProductCodeException.class, () ->
             productApi.createProduct("DUP-01", "Second product with same code", ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz"));
+    }
+
+    // ---- Step 2: what a version pays while the life assured is alive ----
+
+    @Test
+    void anAuthoredMoneyBackEndowmentRoundTripsItsPayoutPlan() {
+        ProductSummaryView product = productApi.createProduct("END-PAY-1", "Money back twenty",
+            ProductCategory.ENDOWMENT, "TZS", "actuary@nlolo.co.tz");
+        PayoutPlan plan = PayoutPlan.authored(new PayoutTerms(15, 12, true, new BigDecimal("105")), List.of(
+            new PayoutRowInput(PayoutKind.SURVIVAL, 5, 5, PayoutAmountBasis.PERCENT_OF_SA, new BigDecimal("10"), PayoutFrequency.ANNUAL),
+            new PayoutRowInput(PayoutKind.MATURITY, null, null, PayoutAmountBasis.PERCENT_OF_SA, new BigDecimal("100"), null)));
+
+        publishWithPayoutPlan(product.productId(), plan);
+
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+        PayoutPlan read = productApi.resolvePayoutPlan(versionId);
+        assertThat(read.authored()).isTrue();
+        assertThat(read.terms().freeLookDays()).isEqualTo(15);
+        assertThat(read.terms().proofOfLifeIntervalMonths()).isEqualTo(12);
+        assertThat(read.terms().survivalBenefitsDeductedFromDeath()).isTrue();
+        assertThat(read.terms().deathBenefitPremiumPercent()).isEqualByComparingTo("105");
+        // Authoring ORDER survives, because a policy's instalments key back to a row by its index.
+        assertThat(read.rows()).extracting(PayoutRowInput::kind)
+            .containsExactly(PayoutKind.SURVIVAL, PayoutKind.MATURITY);
+        assertThat(read.rows().get(0).fromPolicyYear()).isEqualTo(5);
+        assertThat(read.rows().get(0).frequency()).isEqualTo(PayoutFrequency.ANNUAL);
+        // The question CoverExpiryDrain asks: this policy matures, it does not merely expire.
+        assertThat(read.hasEndOfTermRow()).isTrue();
+    }
+
+    @Test
+    void aVersionPublishedWithoutAPlanResolvesToNone() {
+        ProductSummaryView product = productApi.createProduct("TERM-NOPLAN", "Plain term",
+            ProductCategory.TERM_LIFE, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            payoutRatingTable(), payoutDeathOnly(), null, ANY_FILING, "actuary@nlolo.co.tz");
+
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+        PayoutPlan read = productApi.resolvePayoutPlan(versionId);
+        assertThat(read).isEqualTo(PayoutPlan.none());
+        // And the drain's question answers "expire", which is what term insurance does.
+        assertThat(read.hasEndOfTermRow()).isFalse();
+    }
+
+    private void publishWithPayoutPlan(UUID productId, PayoutPlan plan) {
+        productApi.publishVersion(productId, IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            payoutRatingTable(), payoutDeathOnly(), null, List.of(), EligibilityBounds.none(),
+            FrequencyLoading.none(), ANY_FILING, CashValuePlan.none(), plan, "actuary@nlolo.co.tz");
+    }
+
+    private static List<ProductApi.RatingFactorInput> payoutRatingTable() {
+        return List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                       new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE));
+    }
+
+    private static List<ProductApi.BenefitInput> payoutDeathOnly() {
+        return List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED));
     }
 }

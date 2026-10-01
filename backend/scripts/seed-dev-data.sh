@@ -105,6 +105,7 @@ VERSION_RESP=$(curl -sfi -X POST "$API/products/$PRODUCT_ID/versions" \
   -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{
     "ifrsMeasurementModel":"PAA","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
     "tiraFiling":{"reference":"TIRA/DEMO/0001","approvalDate":"2020-01-01"},
     "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}]
@@ -136,6 +137,8 @@ END_VERSION_RESP=$(curl -sfi -X POST "$API/products/$END_PRODUCT_ID/versions" \
   -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: $(uuid)" -d '{
     "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "payoutSchedule":[{"kind":"MATURITY","amountBasis":"PERCENT_OF_SA","amountValue":100}],
     "tiraFiling":{"reference":"TIRA/DEMO/END/0001","approvalDate":"2020-01-01"},
     "ratingTable":[{"factorType":"AGE","band":"18-60","multiplier":1.0,"ageFrom":18,"ageTo":60},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
     "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"},{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}],
