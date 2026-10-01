@@ -191,6 +191,87 @@ class PolicyContractTest {
         return policyNumber;
     }
 
+    /** An ACTIVE policy with a real term, so it has a maturity date the register can find. */
+    private String issueMaturingPolicy(UUID tenantId, String productCode, LocalDate commencement, int termMonths) {
+        TenantContext.set(tenantId);
+        try {
+            PartyView applicant = partyApi.registerIndividual("Maturity Register Life " + productCode,
+                LocalDate.of(1990, 1, 1),
+                "+25571320" + String.format("%04d", Math.abs(productCode.hashCode() % 10000)), null, "test-agent");
+            ProductSummaryView product = productApi.createProduct(productCode, "Maturity Register Product",
+                ProductCategory.TERM_LIFE, "TZS", "actuary");
+            productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-39", BigDecimal.ONE, 30, 39),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null, ANY_FILING, "actuary");
+            ProductSnapshotView snapshot = productApi.getActiveSnapshot(product.productId(), LocalDate.now());
+            PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(),
+                snapshot.productVersionId(), new BigDecimal("1000000"), "TZS", new BigDecimal("50000.00"), "TZS",
+                "MONTHLY", null, List.of(), "Maturity register fixture", commencement, termMonths, null, null, null);
+            String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+            policyApi.activateOnFirstPremium(policyNumber);
+            return policyNumber;
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Test
+    void theMaturitiesRegisterListsPoliciesMaturingInTheWindowInDateOrder() throws Exception {
+        // A fresh tenant: this register is tenant-wide, so another test's policies would count.
+        UUID tenantId = UUID.randomUUID();
+        String soon = issueMaturingPolicy(tenantId, "MATREG-SOON", LocalDate.now().minusMonths(11), 12);
+        String later = issueMaturingPolicy(tenantId, "MATREG-LATER", LocalDate.now().minusMonths(10), 12);
+        // Twenty years out: real, in force, and none of finance's concern this quarter.
+        issueMaturingPolicy(tenantId, "MATREG-FAR", LocalDate.now(), 240);
+        // Inside the window but no longer in force. A lapsed policy keeps its maturity date, and
+        // counting it would overstate the cash finance has to find by every contract that ended
+        // early -- over a twenty-year endowment book, a great many of them.
+        String lapsed = issueMaturingPolicy(tenantId, "MATREG-LAPSED", LocalDate.now().minusMonths(11), 12);
+        TenantContext.set(tenantId);
+        try {
+            policyApi.lapsePolicy(lapsed, "billing-sweep");
+        } finally {
+            TenantContext.clear();
+        }
+
+        mockMvc.perform(get("/policies/maturing")
+                .param("from", LocalDate.now().toString())
+                .param("to", LocalDate.now().plusDays(90).toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items[0].policyNumber").value(soon))
+            .andExpect(jsonPath("$.items[1].policyNumber").value(later))
+            .andExpect(jsonPath("$.page.totalElements").value(2));
+    }
+
+    @Test
+    void theMaturitiesRegisterIsFinancesAndRefusesABackwardsWindow() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+
+        // It is how the money leaving over the next quarter is planned for, so it is not open to
+        // every staff role.
+        mockMvc.perform(get("/policies/maturing")
+                .param("from", LocalDate.now().toString()).param("to", LocalDate.now().plusDays(90).toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_CUSTOMER_SERVICE_REP"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isForbidden());
+
+        // A window that ends before it starts returns nothing silently if unchecked, which reads
+        // as "nothing matures" rather than "you asked the wrong question".
+        mockMvc.perform(get("/policies/maturing")
+                .param("from", LocalDate.now().plusDays(90).toString()).param("to", LocalDate.now().toString())
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"),
+                        new SimpleGrantedAuthority("ROLE_FINANCE_OFFICER"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isBadRequest());
+    }
+
     // --- Task 5: full-HTTP fixture idiom (ProductContractTest / UnderwritingContractTest) -----
     //
     // Unlike issueTestPolicy above (which calls PolicyApi directly to fixture a policy for the

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +30,15 @@ public interface PolicyRepository extends JpaRepository<Policy, String> {
     Page<Policy> findByTenantIdAndPolicyholderPartyId(UUID tenantId, UUID policyholderPartyId, Pageable pageable);
     Page<Policy> findByTenantIdAndStatus(UUID tenantId, String status, Pageable pageable);
     Page<Policy> findByTenantId(UUID tenantId, Pageable pageable);
+
+    /**
+     * The maturities register: policies still in force maturing inside a window.
+     *
+     * <p>The tenant is named rather than left to RLS, like every other finder here -- RLS is the
+     * backstop, not the only guard, and this one is read by finance to plan real cash.
+     */
+    Page<Policy> findByTenantIdAndMaturityDateBetweenAndStatusIn(UUID tenantId, LocalDate from, LocalDate to,
+                                                                 Collection<String> statuses, Pageable pageable);
     Page<Policy> findByTenantIdAndPolicyholderPartyIdAndStatus(UUID tenantId, UUID policyholderPartyId, String status, Pageable pageable);
 
     /**

@@ -999,6 +999,19 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Page<PolicyView> searchMaturing(LocalDate from, LocalDate to, Pageable pageable) {
+        if (from == null || to == null || to.isBefore(from)) {
+            throw new IllegalArgumentException("A maturities window needs a from date on or before its to date");
+        }
+        // In force only. A lapsed or surrendered policy has a maturity date on it still, and
+        // listing those would overstate the cash finance has to find by every contract that ended
+        // early -- which, over a twenty-year endowment book, is a great many of them.
+        return policyRepository.findByTenantIdAndMaturityDateBetweenAndStatusIn(TenantContext.get(), from, to,
+            List.of("ACTIVE", "REINSTATED", "PAID_UP", "SUSPENDED"), pageable).map(this::toView);
+    }
+
+    @Override
     @Transactional
     public void cancelForFreeLook(String policyNumber, String cancelledBy) {
         UUID tenantId = TenantContext.get();

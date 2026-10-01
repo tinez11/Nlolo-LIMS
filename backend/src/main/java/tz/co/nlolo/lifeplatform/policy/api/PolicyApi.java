@@ -669,6 +669,17 @@ public interface PolicyApi {
     java.util.Optional<SurrenderRequestView> findLatestSurrenderRequest(String policyNumber);
 
     /**
+     * Policies still in force whose maturity date falls in {@code [from, to]}, maturity date then
+     * policy number.
+     *
+     * <p>Finance's cash planning list (guide §6): what is going to have to be paid out, and when.
+     * It lists rather than totalling, because a total across currencies is a number with no
+     * meaning and this platform does not convert.
+     */
+    org.springframework.data.domain.Page<PolicyView> searchMaturing(
+        LocalDate from, LocalDate to, org.springframework.data.domain.Pageable pageable);
+
+    /**
      * Void the contract from inception, within the free-look window (guide §21.3).
      *
      * <p>Called by {@code benefitpayout} once a second person approves the cancellation: the window,

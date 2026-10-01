@@ -107,7 +107,7 @@ paths:
           schema: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
         - name: status
           in: query
-          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
+          schema: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK] }
         - name: q
           in: query
           description: Free-text, case-insensitive substring match against policyNumber.
@@ -130,6 +130,38 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/PolicyView' }
                   page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+  /policies/maturing:
+    get:
+      summary: Policies maturing in a window — finance's cash planning list
+      description: >
+        Policies still in force whose maturity date falls in [from, to], in maturity-date then
+        policy-number order. It LISTS; it does not total. FINANCE_OFFICER or ADMIN only, because
+        it is how the money leaving over the next quarter is planned for.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PolicyView' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+        '400':
+          description: The window is malformed — no dates, or a to date before its from date
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
   /policies/{policyNumber}/endorsements:
     post:
       summary: Apply an endorsement (contract amendment)
@@ -1595,7 +1627,7 @@ components:
         productId: { type: string, format: uuid }
         productVersionId: { type: string, format: uuid }
         agentOfRecordId: { type: [string, "null"], format: uuid }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK] }
         issueDate: { type: string, format: date }
         sumAssured: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
         cashValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
@@ -1919,7 +1951,7 @@ components:
       properties:
         policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
         policyholderPartyId: { $ref: 'openapi-common.yaml#/components/schemas/PartyRef' }
-        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP] }
+        status: { type: string, enum: [PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP, CANCELLED_FREE_LOOK] }
         commencementDate: { type: [string, "null"], format: date }
         policyTermMonths: { type: [integer, "null"] }
         # AMORTISING_LOAN is credit life: the member IS a loan and the amount insured is the
