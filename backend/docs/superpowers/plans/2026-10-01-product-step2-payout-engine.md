@@ -601,7 +601,9 @@ public interface VersionPayoutTermsRepository extends JpaRepository<VersionPayou
 
 - [ ] **Step 9: Extend ProductApi and ProductApiImpl**
 
-Add to `ProductApi.java`, after the fullest `publishVersion` (the one ending `FrequencyLoading frequencyLoading, TiraFiling tiraFiling, String publishedBy);`):
+**Read this first — step 1's gap fix (`bec921c1`) already added a fifth overload.** The fullest form on `main` is now the 13-argument one ending `TiraFiling tiraFiling, CashValuePlan cashValue, String publishedBy)`. Step 2 adds a SIXTH, 14-argument overload that takes `CashValuePlan cashValue, PayoutPlan payoutPlan` before `publishedBy`; the 13-argument one becomes a delegate passing `PayoutPlan.none()`. Wherever this task says "13-argument overload with `plan`", read "14-argument overload with `CashValuePlan.none(), plan`" — including `publishWithPlan` in Step 13 and `PayoutTestFixtures.issue`. `ProductController` passes both blocks. And raise the guard in `ProductApiIntegrationTest.noPublishVersionOverloadIsADefaultMethodAndEveryImplementationIsTransactional` from 5 to 6 (both assertions).
+
+Add to `ProductApi.java`, after the fullest `publishVersion` (the one ending `TiraFiling tiraFiling, CashValuePlan cashValue, String publishedBy);`):
 
 ```java
     /**
@@ -611,7 +613,7 @@ Add to `ProductApi.java`, after the fullest `publishVersion` (the one ending `Fr
     void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
                          List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
                          List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
-                         TiraFiling tiraFiling, PayoutPlan payoutPlan, String publishedBy);
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan, String publishedBy);
 
     /**
      * What this version pays while the life assured is alive, and its free-look and proof-of-life
@@ -2110,7 +2112,9 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 /** policy's lifecycle, as it affects what is owed. Envelope-only: no compile dependency beyond policy::api. */
-@Component
+// Explicit bean name: five other modules have a PolicyEventListener, and two beans with one
+// default name fail startup with a conflicting-bean-definition error.
+@Component("benefitpayoutPolicyEventListener")
 public class PolicyEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(PolicyEventListener.class);
@@ -3234,7 +3238,7 @@ In `PostingRule.RULES` add (the comment states the placeholder status every rule
 // finaccounting/application/BenefitPayoutEventListener.java
 ```
 
-Write it as a copy of `finaccounting/application/ClaimsEventListener.java` with these exact differences, keeping its constructor, metrics counter, `withTenant` and logging unchanged: class name `BenefitPayoutEventListener`; the switch handles only `case "benefitpayout.PayoutPaid" -> withTenant(envelope, this::handlePayoutPaid);`; and the handler is:
+Write it as a copy of `finaccounting/application/ClaimsEventListener.java` with these exact differences, keeping its constructor, metrics counter, `withTenant` and logging unchanged: class name `BenefitPayoutEventListener` and `@Component("finaccountingBenefitPayoutEventListener")`; the switch handles only `case "benefitpayout.PayoutPaid" -> withTenant(envelope, this::handlePayoutPaid);`; and the handler is:
 
 ```java
     private void handlePayoutPaid(Map<String, Object> payload) {
@@ -3520,7 +3524,7 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import java.time.LocalDate;
 
 /** An approved DEATH claim: nothing dated after the date of death is owed (spec §6). */
-@Component
+@Component("benefitpayoutClaimEventListener")   // reinsurance also has a ClaimEventListener
 public class ClaimEventListener {
 
     private final BenefitPayoutApiImpl api;
@@ -5742,6 +5746,8 @@ git log --oneline -3
 ---
 
 ## Self-review notes (resolved while writing)
+
+- **Bean names:** every `@Component` listener in `benefitpayout` and the new finaccounting one carries an explicit, module-prefixed bean name. `PolicyEventListener` and `ClaimEventListener` already exist in other modules, and a duplicate default bean name fails application startup. `PremiumEventListener`, `PayoutPaymentListener`, `PayoutDueDrain` and `PaymentRunDrain` are unique today — check with `grep -rn "class <Name>" src/main/java` before relying on that.
 
 - **Spec coverage:** §3 → Task 1; §4 module/tables → Task 2; §5.1 → Tasks 3–4; §5.2 → Task 6; §6 maturity/ROP → Task 3, survival/death/paid-up/surrender/lapse → Task 5, free-look → Task 7, older-product MATURITY refusal → Task 5; §7 integration → Tasks 3–7; §8 refusals → every task's 422 tests; §9 access → controllers + contract 403 test; §10 frontend → Tasks 9–10; maturing report (§6 "Reports") → Task 8; §11 testing cadence → Global Constraints and every task's run step; §12 order → task order.
 - **Deviations from the spec**, recorded in the spec's §14: review fields live on `payout_instalment` (no separate `payout_review` table); payouts post to `5100 Claims Expense` (no new account); free-look status change is published by policy as `policy.PolicyCancelledFreeLook` (benefitpayout does not publish `FreeLookCancelled`); MATURITY/ROP rows carry no years and pay on the policy's own maturity date; SURVIVAL/INCOME `amountValue` is per policy year; approve answers 202 with the instalment body; `party::api` is not a dependency (the reviewer enters the payee).
