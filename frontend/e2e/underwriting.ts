@@ -11,12 +11,26 @@ import { expect, type Page } from '@playwright/test';
  */
 
 /** Opens a case for the seeded Amina Owner against the seeded Demo Term Life product. */
-export async function openCaseForAmina(page: Page, sumAssured = '1500000.00'): Promise<string> {
+/**
+ * The product a case is opened against, when the default term product is not the point.
+ *
+ * `Nlolo Money-Back 20` is the seeded endowment that pays WHILE THE LIFE ASSURED LIVES, which is
+ * the only seeded product that produces a payout schedule at all — a spec about payouts has to
+ * open its case against it or there is nothing to review.
+ */
+export const DEMO_TERM_PRODUCT = 'Demo Term Life (DEMO-TERM-01)';
+export const MONEY_BACK_PRODUCT = 'Nlolo Money-Back 20 (END-MB-20)';
+
+export async function openCaseForAmina(
+  page: Page,
+  sumAssured = '1500000.00',
+  productLabel: string = DEMO_TERM_PRODUCT,
+): Promise<string> {
   await page.goto('/staff/underwriting/new');
   await page.getByRole('button', { name: 'Search for the applicant by name' }).click();
   await page.getByPlaceholder('Type a name to search').fill('Amina');
   await page.getByRole('option', { name: 'Amina Owner' }).click();
-  await page.getByLabel('Product').selectOption({ label: 'Demo Term Life (DEMO-TERM-01)' });
+  await page.getByLabel('Product').selectOption({ label: productLabel });
   await expect(page.getByText('Resolving product version…')).not.toBeVisible();
   await page.getByLabel('Sum assured').fill(sumAssured);
   await page.getByRole('button', { name: 'Open case' }).click();
@@ -116,14 +130,18 @@ export async function decideAsSenior(page: Page, outcomeLabel: string, reason: s
  * allowed to create it, and the assertions stay with the identity under test. The browser
  * comes off the calling page rather than being threaded through every helper signature.
  */
-export async function caseAwaitingManualIssue(page: Page, sumAssured = '1500000.00'): Promise<string> {
+export async function caseAwaitingManualIssue(
+  page: Page,
+  sumAssured = '1500000.00',
+  productLabel: string = DEMO_TERM_PRODUCT,
+): Promise<string> {
   const browser = page.context().browser();
   if (!browser) throw new Error('caseAwaitingManualIssue needs a browser-backed context');
 
   const underwriterContext = await browser.newContext({ storageState: 'e2e/.auth/staff.json' });
   try {
     const uwPage = await underwriterContext.newPage();
-    const caseId = await openCaseForAmina(uwPage, sumAssured);
+    const caseId = await openCaseForAmina(uwPage, sumAssured, productLabel);
     await assess(uwPage, 'E2E fixture: adverse findings', '80');
     // A second underwriter decides: the one who opened and assessed it may not.
     await decideAsSenior(uwPage, 'Decline', 'E2E fixture: declined, to be overturned by manual issue');

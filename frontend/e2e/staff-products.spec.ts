@@ -75,6 +75,9 @@ test.describe('staff products', () => {
     // The TIRA filing that authorises this version -- required as of V12.
     await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
     await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+    // Required on an individual product as of product step 2 -- PayoutPlanValidator refuses a
+    // version without it, so every publish in this file fills it.
+    await page.getByLabel('Free-look days').fill('15');
 
     await page.getByRole('button', { name: 'Publish version' }).click();
     await expect(
@@ -168,6 +171,9 @@ test.describe('staff products', () => {
     // The TIRA filing that authorises this version -- required as of V12.
     await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
     await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+    // Required on an individual product as of product step 2 -- PayoutPlanValidator refuses a
+    // version without it, so every publish in this file fills it.
+    await page.getByLabel('Free-look days').fill('15');
     await page.getByRole('button', { name: 'Publish version' }).click();
     // Publishing retires the currently-active version, so it is confirmed.
     await page.getByRole('button', { name: 'Publish and make active' }).click();
@@ -250,6 +256,9 @@ test.describe('staff products', () => {
     // The TIRA filing that authorises this version -- required as of V12.
     await page.getByLabel('TIRA filing reference').fill('TIRA/E2E/0001');
     await page.getByLabel('TIRA approval date').fill(dmy('2026-01-15'));
+    // Required on an individual product as of product step 2 -- PayoutPlanValidator refuses a
+    // version without it, so every publish in this file fills it.
+    await page.getByLabel('Free-look days').fill('15');
 
     // A priced version must say what ages it sells to, and the form refuses the submit until
     // it does. Asserted before filling them in, because this is the rule that stops a rate
