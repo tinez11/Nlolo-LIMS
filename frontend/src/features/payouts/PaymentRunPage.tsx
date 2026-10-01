@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { PayoutInstalmentView, PayoutKind } from '@/api/types';
+import type { PaymentRunView, PayoutInstalmentView, PayoutKind } from '@/api/types';
 import { ConfirmAct } from '@/components/ConfirmAct';
 import { DetailLayout } from '@/components/DetailLayout';
 import { Field } from '@/components/Field';
@@ -96,6 +96,13 @@ export function PaymentRunPage() {
           </Panel>
         }
       >
+        {/*
+          The receipt is rendered BESIDE the action, not inside it. Approving flips the run to
+          APPROVED, which unmounts the acting panel -- so a receipt living in there would be
+          destroyed by the very success it was meant to announce, and the person who just released
+          real money would see the panel silently disappear.
+        */}
+        <ApprovedRunReceipt run={run} />
         {run.status === 'PREPARED' && <ApproveRunAction run={run} />}
 
         <Panel title="In this run" subtitle="Each instalment is paid separately">
@@ -121,23 +128,10 @@ export function PaymentRunPage() {
   );
 }
 
-function ApproveRunAction({ run }: { run: { paymentRunId: string; instalmentCount: number; total: { amount: string; currencyCode: string } } }) {
+function ApproveRunAction({ run }: { run: PaymentRunView }) {
   const approveRun = useBenefitPayoutStore((s) => s.approveRun);
   const acting = useBenefitPayoutStore((s) => s.acting[run.paymentRunId]);
   const [armed, setArmed] = useState(false);
-
-  if (acting?.status === 'success') {
-    return (
-      <Receipt
-        heading="Payments requested"
-        lines={[
-          { label: 'Instalments', value: String(run.instalmentCount) },
-          { label: 'Total', value: formatMoney(run.total) },
-        ]}
-        note="Requested, not yet paid. Each instalment shows PAID once the payment provider confirms it, and one that fails can be tried again from its own page without touching the rest."
-      />
-    );
-  }
 
   return (
     <Panel title="Release this run" subtitle="This is the point at which money leaves.">
@@ -170,6 +164,23 @@ function ApproveRunAction({ run }: { run: { paymentRunId: string; instalmentCoun
         )}
       </div>
     </Panel>
+  );
+}
+
+/** Shown only after an approval made in THIS session -- a run approved yesterday needs no receipt. */
+function ApprovedRunReceipt({ run }: { run: PaymentRunView }) {
+  const acting = useBenefitPayoutStore((s) => s.acting[run.paymentRunId]);
+  if (acting?.status !== 'success') return null;
+  return (
+    <Receipt
+      heading="Payments requested"
+      lines={[
+        { label: 'Instalments', value: String(run.instalmentCount) },
+        { label: 'Total', value: formatMoney(run.total) },
+        { label: 'Released by', value: run.approvedBy ?? '—' },
+      ]}
+      note="Requested, not yet paid. Each instalment shows PAID once the payment provider confirms it, and one that fails can be tried again from its own page without touching the rest."
+    />
   );
 }
 

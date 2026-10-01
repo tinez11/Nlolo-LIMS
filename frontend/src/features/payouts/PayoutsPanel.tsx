@@ -103,7 +103,7 @@ function PayoutRow({ payout }: { payout: PayoutInstalmentView }) {
 
       <p className="mt-1">
         <Link
-          to={`/payouts/${encodeURIComponent(payout.instalmentId)}`}
+          to={`/staff/payouts/${encodeURIComponent(payout.instalmentId)}`}
           className="text-xs underline underline-offset-2"
         >
           Open payout

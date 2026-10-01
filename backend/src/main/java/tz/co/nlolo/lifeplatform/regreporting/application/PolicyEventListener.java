@@ -97,6 +97,26 @@ public class PolicyEventListener {
             case "policy.PolicyMatured" -> withTenant(envelope, this::handlePolicyMatured);
             case "policy.PolicySurrendered" -> withTenant(envelope, this::handlePolicySurrendered);
             case "policy.PolicyReinstated" -> withTenant(envelope, this::handlePolicyReinstated);
+            /*
+              policy.PolicyCancelledFreeLook is NOT consumed, and that is an OPEN GAP rather than a
+              decision -- recorded here because this switch is where somebody adding the next
+              lifecycle event will look.
+
+              The policy WAS counted as new business by handlePolicyActivated, and a free-look
+              cancellation voids the contract from inception, so the return currently overstates
+              in-force business by every policy a customer walked away from.
+
+              It cannot be fixed by reusing a handler, for two reasons that both need an answer
+              from someone who owns the return:
+                - There is no honest measure. applyLapsed and applyMatured both add to
+                  sumAssuredTerminated, which would report the contract as BOTH written and
+                  terminated and inflate both sides; the actuarially usual treatment is to exclude
+                  free-look business from new business entirely, which needs a new measure and a
+                  migration.
+                - It would belong in the period the ISSUANCE was counted in, not the period of the
+                  cancellation, and a free-look window can cross a quarter boundary. Every other
+                  movement here is keyed by the event's own period.
+            */
             // Both member events say the same thing -- "this scheme's total cover is now X" -- so
             // one handler serves both. See its javadoc for why the projection is a delta.
             case "policy.GroupMemberAdded" -> withTenant(envelope, p -> handleSchemeTotalRestated(p, "policy.GroupMemberAdded"));

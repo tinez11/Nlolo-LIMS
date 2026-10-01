@@ -213,6 +213,40 @@ channels:
       surrender; see PolicyEventListener's own javadoc.
     publish:
       message: { $ref: '#/components/messages/PolicySurrendered' }
+  policy.PolicyCancelledFreeLook:
+    description: >
+      Producer: policy (PolicyApiImpl.cancelForFreeLook, product step 2) -- a customer exercised
+      their free-look right and the sale is undone FROM INCEPTION (guide §21.3). Published only
+      once a second person approves the cancellation benefitpayout prepared; preparing one
+      publishes nothing, because preparing commits nothing.
+      Consumers: billing (shares the surrender handler -- ending the schedule is identical and
+      only the money differs), distribution (claws back EVERY unreversed accrual with NO window,
+      unlike a lapse: cover never ran, so the agent kept nothing), audit.
+      NOT a surrender, and a consumer must not treat it as one. A surrender ends a contract that
+      RAN and pays a value; this one treats the contract as never having existed, which is why
+      Policy.wasOnRiskOn answers false for every date afterwards.
+    publish:
+      message: { $ref: '#/components/messages/PolicyCancelledFreeLook' }
+  benefitpayout.PayoutRequested:
+    description: >
+      Producer: benefitpayout (BenefitPayoutApiImpl.approve / retry / approveRun, and
+      approveFreeLook for a refund). Consumer: payment, which turns it into a real disbursement.
+      TWO SHAPES, distinguished by which id is present: an instalment payout carries
+      instalmentId, a free-look refund carries cancellationId. payment reads whichever is set as
+      its sourceRef, and purpose says which this is -- MATURITY_PAYOUT, SURVIVAL_BENEFIT_PAYOUT,
+      INCOME_PAYOUT, PREMIUM_RETURN_PAYOUT or FREE_LOOK_REFUND.
+      idempotencyKey carries the ATTEMPT for an instalment ("<id>:<attempts>"), so a retry is a
+      NEW request rather than a duplicate payment drops; a free-look refund uses
+      "free-look:<cancellationId>", because there is no retry path for one.
+    publish:
+      message: { $ref: '#/components/messages/PayoutRequested' }
+  benefitpayout.PayoutPaid:
+    description: >
+      Producer: benefitpayout (markPaid, on the real APPROVED -> PAID transition ONLY, so a
+      redelivered disbursement completion cannot post the same payout to the ledger twice).
+      Consumers: finaccounting (debits claims expense, credits cash), audit.
+    publish:
+      message: { $ref: '#/components/messages/PayoutPaid' }
   policy.GroupMemberAdded:
     description: >
       Producer: policy (PolicyApiImpl.addMember) -- one insured life joins a group scheme after
@@ -559,6 +593,9 @@ components:
     PolicySurrenderInitiated: { messageId: PolicySurrenderInitiated, name: PolicySurrenderInitiated, payload: { $ref: '#/components/schemas/PolicySurrenderInitiatedPayload' } }
     PolicyMaturityInitiated: { messageId: PolicyMaturityInitiated, name: PolicyMaturityInitiated, payload: { $ref: '#/components/schemas/PolicyMaturityInitiatedPayload' } }
     PolicySurrendered: { messageId: PolicySurrendered, name: PolicySurrendered, payload: { $ref: '#/components/schemas/PolicySurrenderedPayload' } }
+    PolicyCancelledFreeLook: { messageId: PolicyCancelledFreeLook, name: PolicyCancelledFreeLook, payload: { $ref: '#/components/schemas/PolicyCancelledFreeLookPayload' } }
+    PayoutRequested: { messageId: PayoutRequested, name: PayoutRequested, payload: { $ref: '#/components/schemas/PayoutRequestedPayload' } }
+    PayoutPaid: { messageId: PayoutPaid, name: PayoutPaid, payload: { $ref: '#/components/schemas/PayoutPaidPayload' } }
     GroupMemberAdded: { messageId: GroupMemberAdded, name: GroupMemberAdded, payload: { $ref: '#/components/schemas/GroupMemberAddedPayload' } }
     GroupMemberExited: { messageId: GroupMemberExited, name: GroupMemberExited, payload: { $ref: '#/components/schemas/GroupMemberExitedPayload' } }
     GroupMemberEvidenceGranted: { messageId: GroupMemberEvidenceGranted, name: GroupMemberEvidenceGranted, payload: { $ref: '#/components/schemas/GroupMemberEvidenceGrantedPayload' } }
@@ -779,6 +816,39 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties: { policyNumber: {type: string}, claimId: {type: string, format: uuid}, surrenderedAt: {type: string, format: date-time} }
+    PolicyCancelledFreeLookPayload:
+      description: >
+        cancelledBy is the APPROVER's subject, not the person who prepared the cancellation --
+        two people are involved and this names the one who released the money.
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties: { policyNumber: {type: string}, cancelledAt: {type: string, format: date-time}, cancelledBy: {type: string} }
+    PayoutRequestedPayload:
+      description: >
+        Exactly one of instalmentId and cancellationId is present -- see the channel description.
+        amount is {amount, currencyCode}, a decimal STRING and never a JSON number, like every
+        other money figure on this platform.
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            instalmentId: {type: string, format: uuid}
+            cancellationId: {type: string, format: uuid}
+            idempotencyKey: {type: string}
+            policyNumber: {type: string}
+            payeeRef: {type: string}
+            purpose: {type: string, enum: [MATURITY_PAYOUT, SURVIVAL_BENEFIT_PAYOUT, INCOME_PAYOUT, PREMIUM_RETURN_PAYOUT, FREE_LOOK_REFUND]}
+            amount: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+    PayoutPaidPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            instalmentId: {type: string, format: uuid}
+            policyNumber: {type: string}
+            kind: {type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM]}
+            paidAmount: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
     GroupMemberAddedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

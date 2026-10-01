@@ -31,6 +31,10 @@ import {
 
 const BREADCRUMB = [{ label: 'Payouts', to: '/staff/payouts' }];
 
+/** `BenefitPayoutApiImpl.suspendStream`'s own wording, matched so the one clearable hold is
+ *  distinguished from an arrears hold nobody here can clear. */
+const PROOF_OVERDUE = 'Proof of life is overdue';
+
 const KIND_LABEL: Record<PayoutKind, string> = {
   SURVIVAL: 'Survival benefit',
   MATURITY: 'Maturity',
@@ -121,6 +125,13 @@ function PayoutActions({ payout }: { payout: PayoutInstalmentView }) {
   const identity = readIdentity(auth.user?.access_token);
   const viewerSubject = identity?.subject ?? undefined;
 
+  // An income instalment held because the proof-of-life clock ran out is the one hold a person can
+  // actually clear from here: the control that replaces the second signature on a payment run is
+  // that clock, so reviving the stream is the work. An ARREARS hold is not clearable here --
+  // somebody has to pay the premium.
+  if (payout.status === 'ON_HOLD' && payout.streamId && payout.statusReason === PROOF_OVERDUE) {
+    return <ProofOfLifeAction payout={payout} streamId={payout.streamId} />;
+  }
   if (payout.status === 'DUE' || payout.status === 'ON_HOLD') {
     return <ReviewAction payout={payout} />;
   }
@@ -246,6 +257,69 @@ function ApproveAction({
             Approve
           </Button>
         )}
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * Fresh proof that the life assured is alive, which revives a suspended income stream.
+ *
+ * Releases the instalments the overdue proof held -- but NOT one held because the premiums are
+ * behind, which the server decides and this panel says plainly rather than implying the hold is
+ * gone.
+ */
+function ProofOfLifeAction({
+  payout,
+  streamId,
+}: {
+  payout: PayoutInstalmentView;
+  streamId: string;
+}) {
+  const proveLife = useBenefitPayoutStore((s) => s.proveLife);
+  const acting = useBenefitPayoutStore((s) => s.acting[streamId]);
+  const [method, setMethod] = useState<'' | ProofOfLifeMethod>('');
+
+  return (
+    <Panel
+      title="Proof of life is overdue"
+      subtitle="This stream is suspended until someone confirms the life assured is alive"
+    >
+      <div className="space-y-3 px-4 py-3">
+        {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
+        <FormField label="How was the life assured confirmed alive?">
+          <Select
+            value={method}
+            onChange={(event) => setMethod(event.target.value as '' | ProofOfLifeMethod)}
+          >
+            <option value="">Choose a method</option>
+            {PROOF_OF_LIFE_METHODS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </FormField>
+        <Button
+          size="sm"
+          disabled={method === '' || acting?.status === 'loading'}
+          onClick={() => {
+            if (method === '') return;
+            void proveLife(
+              streamId,
+              payout.policyNumber,
+              { proofOfLifeMethod: method, proofOfLifeDocumentId: null },
+              startMutation(),
+            );
+          }}
+        >
+          Record proof of life
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Recording this restarts the stream&rsquo;s clock and releases what the overdue proof held.
+          A payout held because the premiums are behind stays held — proving someone is alive says
+          nothing about what they have paid.
+        </p>
       </div>
     </Panel>
   );
