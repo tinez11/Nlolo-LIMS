@@ -187,6 +187,8 @@ describe('publishVersionFormSchema', () => {
       nonSmoker: string;
       smoker: string;
       unknown: string;
+      termFromMonths?: string;
+      termToMonths?: string;
     };
 
     // A priced female 18-30 band, overridable per test.
@@ -367,11 +369,129 @@ describe('publishVersionFormSchema', () => {
       expect(result.success).toBe(true);
     });
 
+    /*
+      Term bands (product step 1, D4): a rate may differ by policy term. Both bounds or
+      neither, mirroring base_rate_term_range_shape, and two cells collide only when BOTH
+      their ages and their terms overlap -- an unbanded row overlaps every term.
+    */
+    it('refuses a term band with only one bound, in the server wording', () => {
+      const result = termLife.safeParse(pricedValid({
+        baseRates: [band({ termFromMonths: '12' }), band({ sex: 'MALE' })],
+      }));
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result.error?.issues)).toContain(
+        'A base rate term band needs both a from and a to month, or neither');
+    });
+
+    it('allows one age band priced twice for two different terms', () => {
+      const result = termLife.safeParse(pricedValid({
+        baseRates: [
+          band({ termFromMonths: '1', termToMonths: '120' }),
+          band({ termFromMonths: '121', termToMonths: '240', nonSmoker: '0.7' }),
+          band({ sex: 'MALE' }),
+        ],
+      }));
+      expect(result.success).toBe(true);
+      const wire = toApiRequest(result.data!).baseRates!;
+      expect(wire).toEqual(expect.arrayContaining([
+        { ageFrom: 18, ageTo: 30, sex: 'FEMALE', smokerStatus: 'NON_SMOKER', ratePerMille: 0.7,
+          termFromMonths: 121, termToMonths: 240 },
+      ]));
+      // An unbanded row sends no term keys at all, rather than nulls.
+      expect(wire.find((c) => c.sex === 'MALE')).not.toHaveProperty('termFromMonths');
+    });
+
+    it('refuses an unbanded row beside a term-banded one for the same age, sex and status', () => {
+      const result = termLife.safeParse(pricedValid({
+        baseRates: [
+          band({ termFromMonths: '1', termToMonths: '120' }),
+          band(),
+          band({ sex: 'MALE' }),
+        ],
+      }));
+      expect(result.success).toBe(false);
+    });
+
     it('allows the same band for both sexes -- which is what "add age band" produces', () => {
       // pricedValid()'s own shape is exactly this pair; it adds only the declared entry-age
       // range, which a priced version must now carry.
       const result = termLife.safeParse(pricedValid());
       expect(result.success).toBe(true);
+    });
+  });
+
+  /*
+    The cash-value table (product step 1). Every message is CashValuePlanValidator's own, so
+    the form refuses exactly what a 422 would, in the same words.
+  */
+  describe('cash value', () => {
+    const endowment = publishVersionFormSchema('ENDOWMENT');
+    const row = (over: Record<string, string> = {}) => ({
+      policyYear: '2', ageFrom: '', ageTo: '', cashValuePerMille: '200', paidUpPerMille: '', ...over,
+    });
+    const withTable = (over: Record<string, unknown> = {}) => ({
+      ...valid(),
+      cashValueBasisReference: 'ACT/2026/ENDOW-01',
+      cashValueBasisDate: '2026-01-10',
+      cashValuePaidUpBasis: 'PROPORTIONATE',
+      cashValueMinYears: '2',
+      cashValueRows: [row(), row({ policyYear: '3', cashValuePerMille: '300' })],
+      ...over,
+    });
+    const messages = (r: { error?: { issues: { message: string }[] } }) =>
+      (r.error?.issues ?? []).map((i) => i.message);
+
+    it('sends no cashValue block when none was authored', () => {
+      const result = endowment.safeParse(valid());
+      expect(result.success).toBe(true);
+      expect(toApiRequest(result.data!)).not.toHaveProperty('cashValue');
+    });
+
+    it('sends a signed table, rows as numbers and blanks omitted', () => {
+      const result = endowment.safeParse(withTable());
+      expect(result.success).toBe(true);
+      expect(toApiRequest(result.data!).cashValue).toEqual({
+        basisReference: 'ACT/2026/ENDOW-01',
+        basisDate: '2026-01-10',
+        paidUpBasis: 'PROPORTIONATE',
+        minYearsForValue: 2,
+        rows: [{ policyYear: 2, cashValuePerMille: 200 }, { policyYear: 3, cashValuePerMille: 300 }],
+      });
+    });
+
+    it('refuses a table on pure protection', () => {
+      expect(messages(termLife.safeParse(withTable()))).toContain(
+        'A TERM_LIFE product cannot carry a cash-value table');
+    });
+
+    it('refuses a table without its actuarial sign-off', () => {
+      expect(messages(endowment.safeParse(withTable({ cashValueBasisReference: '' })))).toContain(
+        'A cash-value table needs the actuarial basis reference and date it was signed off under');
+    });
+
+    it('refuses minimum years other than 2 or 3, and a missing basis', () => {
+      expect(messages(endowment.safeParse(withTable({ cashValueMinYears: '' })))).toContain(
+        'A cash-value table needs the minimum years before any value exists, 2 or 3');
+      expect(messages(endowment.safeParse(withTable({ cashValuePaidUpBasis: '' })))).toContain(
+        'The paid-up basis must be PROPORTIONATE or TABLE');
+    });
+
+    it('needs a paid-up value on every row on a TABLE basis', () => {
+      expect(messages(endowment.safeParse(withTable({ cashValuePaidUpBasis: 'TABLE' })))).toContain(
+        'A TABLE paid-up basis needs a paid-up value on every row (policy year 2 has none)');
+    });
+
+    it('refuses overlapping rows for one policy year', () => {
+      const result = endowment.safeParse(withTable({
+        cashValueRows: [row({ ageFrom: '18', ageTo: '40' }), row({ ageFrom: '35', ageTo: '60' })],
+      }));
+      expect(messages(result)).toContain(
+        'Cash-value rows for policy year 2, ages 18-40 and 35-60, overlap -- an entry age in both would be valued differently depending on row order');
+    });
+
+    it('refuses a signed-off table with no rows', () => {
+      expect(messages(endowment.safeParse(withTable({ cashValueRows: [] })))).toContain(
+        'A cash-value table needs at least one row');
     });
   });
 
