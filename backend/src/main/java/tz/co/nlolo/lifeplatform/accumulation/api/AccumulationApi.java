@@ -34,4 +34,37 @@ public interface AccumulationApi {
 
     /** Newest effective date first. */
     List<RateDeclarationView> listRates(java.util.UUID productId);
+
+    // ---- Money in and out (task 6) ------------------------------------------------------------
+
+    /**
+     * Valued now and again at approval. Refused when it would leave less than the version's minimum
+     * balance, net of any loan lien.
+     */
+    WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount, String payeeRef, String requestedBy);
+
+    /** A second person. Posts the WITHDRAWAL entry and requests the payment; a failed payment is reversed. */
+    WithdrawalView approveWithdrawal(java.util.UUID withdrawalId, String approvedBy);
+
+    List<WithdrawalView> listWithdrawals(String policyNumber);
+
+    /** Requests the collection from payment; credited, at the contribution rate, when payment confirms it. */
+    TopUpView requestTopUp(String policyNumber, java.math.BigDecimal amount, String payerRef, String requestedBy);
+
+    List<TopUpView> listTopUps(String policyNumber);
+
+    /** Money already received from another scheme, recorded with its source; credited at the transfer rate. */
+    TransferInView recordTransferIn(String policyNumber, java.math.BigDecimal amount, String sourceScheme,
+                                    String documentRef, String recordedBy);
+
+    List<TransferInView> listTransfersIn(String policyNumber);
+
+    /** A person's correction: a signed amount and a reason, posted only once a second person approves. */
+    AdjustmentView proposeAdjustment(String policyNumber, java.math.BigDecimal amount, String reason, String proposedBy);
+
+    AdjustmentView approveAdjustment(java.util.UUID adjustmentId, String approvedBy);
+
+    AdjustmentView rejectAdjustment(java.util.UUID adjustmentId, String rejectedBy);
+
+    List<AdjustmentView> listAdjustments(String policyNumber);
 }

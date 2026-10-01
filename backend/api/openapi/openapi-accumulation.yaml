@@ -100,8 +100,361 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/account:
+    get:
+      summary: A policy's savings account and its whole ledger
+      description: >
+        Any staff member. 404 for a policy valued by a cash-value scale -- every policy sold before
+        product step 3 -- which has no account. Entries are in sequence order and immutable; a
+        correction appears as a REVERSAL or ADJUSTMENT entry, never as an edited one.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/account/withdrawals:
+    get:
+      summary: Every partial withdrawal on the account, newest first
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The withdrawals
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Withdrawal' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Request a partial withdrawal
+      description: >
+        Any staff member. Valued now and again at approval: refused when it would leave less than
+        the version's minimum balance, net of any loan lien, and while another withdrawal is in flight.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithdrawalRequest' }
+      responses:
+        '201':
+          description: Requested, awaiting a second person's approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Withdrawal' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- below the minimum balance, a withdrawal in flight, or the account closed
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /account-withdrawals/{withdrawalId}/approve:
+    post:
+      summary: Approve a withdrawal, by someone other than its requester
+      description: >
+        FINANCE_OFFICER or ADMIN. The WITHDRAWAL entry is posted now and the payment REQUESTED from
+        the rail -- not yet paid. A failed payment puts the money back with a REVERSAL entry.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Approved; the payment has been requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Withdrawal' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- the requester approving, not REQUESTED, or now below the minimum balance
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/account/top-ups:
+    get:
+      summary: Every top-up on the account, newest first
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The top-ups
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/TopUp' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Request a top-up -- money the customer adds, collected through the payment rail
+      description: >
+        Any staff member. 202: the collection is REQUESTED; it is credited, at the contribution
+        allocation rate, only once the payment provider confirms it.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TopUpRequest' }
+      responses:
+        '202':
+          description: Collection requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopUp' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- the account is closed
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/account/transfers-in:
+    get:
+      summary: Every transfer in from another scheme, newest first
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The transfers in
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/TransferIn' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Record money received from another scheme
+      description: FINANCE_OFFICER or ADMIN. Credited at once, at the transfer allocation rate.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransferInRequest' }
+      responses:
+        '201':
+          description: Recorded and credited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransferIn' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- the account is closed
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/account/adjustments:
+    get:
+      summary: Every proposed, approved and rejected adjustment, newest first
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The adjustments
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Adjustment' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Propose a correction -- a signed amount and a reason
+      description: >
+        FINANCE_OFFICER or ADMIN. Posted as an ADJUSTMENT entry only once a different person approves
+        it; the database refuses an adjustment entry whose approver is its proposer.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdjustmentRequest' }
+      responses:
+        '201':
+          description: Proposed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Adjustment' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- the account is closed
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /account-adjustments/{adjustmentId}/approve:
+    post:
+      summary: Approve an adjustment, by someone other than its proposer -- posts the entry
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: adjustmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Approved and posted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Adjustment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- the proposer deciding, not PROPOSED, or it would take the balance below zero
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /account-adjustments/{adjustmentId}/reject:
+    post:
+      summary: Reject an adjustment, by someone other than its proposer -- nothing is posted
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: adjustmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Adjustment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- the proposer deciding, or not PROPOSED
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    Account:
+      type: object
+      required: [policyNumber, status, balance, openedOn, entries]
+      properties:
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        status: { type: string, enum: [OPEN, CLOSED] }
+        balance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        openedOn: { type: string, format: date }
+        closedReason:
+          type: [string, "null"]
+          description: EXHAUSTED, SURRENDERED, MATURED, DEATH or FREE_LOOK
+        closedOn: { type: [string, "null"], format: date }
+        entries: { type: array, items: { $ref: '#/components/schemas/LedgerEntry' } }
+    LedgerEntry:
+      type: object
+      required: [entryId, seq, type, amount, balanceAfter, effectiveDate, postedAt, sourceType, sourceRef, createdBy]
+      properties:
+        entryId: { type: string, format: uuid }
+        seq: { type: integer, minimum: 1 }
+        type:
+          type: string
+          enum: [CONTRIBUTION, TOP_UP, TRANSFER_IN, ALLOCATION_CHARGE, POLICY_FEE, INTEREST, WITHDRAWAL,
+                 SURRENDER, MATURITY, DEATH_CLAIM, FREE_LOOK_REFUND, ADJUSTMENT, REVERSAL]
+        amount:
+          description: Signed -- a charge or a payment out is negative.
+          $ref: 'openapi-common.yaml#/components/schemas/Money'
+        balanceAfter: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        effectiveDate: { type: string, format: date }
+        postedAt: { type: string, format: date-time }
+        sourceType: { type: string }
+        sourceRef: { type: string }
+        reversesEntryId: { type: [string, "null"], format: uuid }
+        reason: { type: [string, "null"] }
+        createdBy: { type: string }
+        approvedBy: { type: [string, "null"] }
+    WithdrawalRequest:
+      type: object
+      required: [amount, payeeRef]
+      properties:
+        amount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+        payeeRef: { type: string, maxLength: 200 }
+    Withdrawal:
+      type: object
+      required: [withdrawalId, policyNumber, amount, payeeRef, status, requestedBy, requestedAt]
+      properties:
+        withdrawalId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        payeeRef: { type: string }
+        status: { type: string, enum: [REQUESTED, APPROVED, PAID, FAILED] }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+        approvedBy: { type: [string, "null"] }
+        approvedAt: { type: [string, "null"], format: date-time }
+    TopUpRequest:
+      type: object
+      required: [amount, payerRef]
+      properties:
+        amount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+        payerRef: { type: string, maxLength: 200 }
+    TopUp:
+      type: object
+      required: [topUpId, policyNumber, amount, payerRef, status, requestedBy, requestedAt]
+      properties:
+        topUpId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        payerRef: { type: string }
+        status: { type: string, enum: [REQUESTED, COLLECTED, FAILED] }
+        requestedBy: { type: string }
+        requestedAt: { type: string, format: date-time }
+    TransferInRequest:
+      type: object
+      required: [amount, sourceScheme]
+      properties:
+        amount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+        sourceScheme: { type: string, maxLength: 200 }
+        documentRef: { type: [string, "null"], maxLength: 200 }
+    TransferIn:
+      type: object
+      required: [transferId, policyNumber, amount, sourceScheme, recordedBy, recordedAt]
+      properties:
+        transferId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        sourceScheme: { type: string }
+        documentRef: { type: [string, "null"] }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
+    AdjustmentRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount: { type: string, pattern: '^-?\d+(\.\d{1,2})?$', description: "Signed" }
+        reason: { type: string, maxLength: 500 }
+    Adjustment:
+      type: object
+      required: [adjustmentId, policyNumber, amount, reason, status, proposedBy, proposedAt]
+      properties:
+        adjustmentId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        amount: { type: string, description: "Signed decimal string" }
+        reason: { type: string }
+        status: { type: string, enum: [PROPOSED, APPROVED, REJECTED] }
+        proposedBy: { type: string }
+        proposedAt: { type: string, format: date-time }
+        decidedBy: { type: [string, "null"] }
+        decidedAt: { type: [string, "null"], format: date-time }
     RateDeclarationRequest:
       type: object
       required: [ratePercent, effectiveFrom]

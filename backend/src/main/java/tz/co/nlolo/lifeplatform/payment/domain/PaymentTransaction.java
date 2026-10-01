@@ -65,6 +65,15 @@ public class PaymentTransaction {
     @Column(name = "source_ref", nullable = false)
     private String sourceRef;
 
+    /**
+     * What the money is for (payment V9). PREMIUM -- an invoice, billing's -- for every collection
+     * before product step 3; ACCOUNT_TOP_UP for money a customer adds to a savings account, whose
+     * sourceRef is a top-up id, not an invoice. Carried on PaymentConfirmed/PaymentFailed so billing
+     * can leave a confirmation that is not its own.
+     */
+    @Column(nullable = false)
+    private String purpose = "PREMIUM";
+
     @Version
     private long version;
 
@@ -72,13 +81,21 @@ public class PaymentTransaction {
 
     public PaymentTransaction(UUID tenantId, String idempotencyKey, String payerRef, BigDecimal amount,
                                String currency, String sourceRef) {
+        this(tenantId, idempotencyKey, payerRef, amount, currency, sourceRef, "PREMIUM");
+    }
+
+    public PaymentTransaction(UUID tenantId, String idempotencyKey, String payerRef, BigDecimal amount,
+                               String currency, String sourceRef, String purpose) {
         this.tenantId = tenantId;
         this.idempotencyKey = idempotencyKey;
         this.payerRef = payerRef;
         this.amount = amount;
         this.currency = currency;
         this.sourceRef = sourceRef;
+        this.purpose = purpose;
     }
+
+    public String getPurpose() { return purpose; }
 
     public void markConfirmed(String gatewayReference) {
         if ("CONFIRMED".equals(status)) {

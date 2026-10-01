@@ -247,6 +247,22 @@ channels:
       Consumers: finaccounting (debits claims expense, credits cash), audit.
     publish:
       message: { $ref: '#/components/messages/PayoutPaid' }
+  accumulation.PayoutRequested:
+    description: >
+      Producer: accumulation -- a partial withdrawal approved (purpose WITHDRAWAL_PAYOUT, sourceRef
+      the withdrawal id) or, from task 7, a surrender valued by the account (SURRENDER_PAYOUT,
+      sourceRef the surrender request id, so policy's SurrenderPaymentListener marks it PAID
+      unchanged). Consumer: payment, which records and submits the disbursement. The money has
+      ALREADY left the account when this is published; a failed payment is a REVERSAL entry.
+    publish:
+      message: { $ref: '#/components/messages/AccountPayoutRequested' }
+  accumulation.TopUpRequested:
+    description: >
+      Producer: accumulation, when staff request money a customer adds to a savings account.
+      Consumer: payment, which records a COLLECTION with purpose ACCOUNT_TOP_UP and sourceRef the
+      top-up id. Its payment.PaymentConfirmed is accumulation's, not billing's.
+    publish:
+      message: { $ref: '#/components/messages/TopUpRequested' }
   accumulation.PostingRecorded:
     description: >
       Producer: accumulation (LedgerService.post -- the one place a savings account's balance
@@ -606,6 +622,8 @@ components:
     PayoutRequested: { messageId: PayoutRequested, name: PayoutRequested, payload: { $ref: '#/components/schemas/PayoutRequestedPayload' } }
     PayoutPaid: { messageId: PayoutPaid, name: PayoutPaid, payload: { $ref: '#/components/schemas/PayoutPaidPayload' } }
     PostingRecorded: { messageId: PostingRecorded, name: PostingRecorded, payload: { $ref: '#/components/schemas/PostingRecordedPayload' } }
+    AccountPayoutRequested: { messageId: AccountPayoutRequested, name: AccountPayoutRequested, payload: { $ref: '#/components/schemas/AccountPayoutRequestedPayload' } }
+    TopUpRequested: { messageId: TopUpRequested, name: TopUpRequested, payload: { $ref: '#/components/schemas/TopUpRequestedPayload' } }
     GroupMemberAdded: { messageId: GroupMemberAdded, name: GroupMemberAdded, payload: { $ref: '#/components/schemas/GroupMemberAddedPayload' } }
     GroupMemberExited: { messageId: GroupMemberExited, name: GroupMemberExited, payload: { $ref: '#/components/schemas/GroupMemberExitedPayload' } }
     GroupMemberEvidenceGranted: { messageId: GroupMemberEvidenceGranted, name: GroupMemberEvidenceGranted, payload: { $ref: '#/components/schemas/GroupMemberEvidenceGrantedPayload' } }
@@ -865,6 +883,27 @@ components:
             policyNumber: {type: string}
             kind: {type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM]}
             paidAmount: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+    AccountPayoutRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            purpose: {type: string, enum: [WITHDRAWAL_PAYOUT, SURRENDER_PAYOUT]}
+            sourceRef: {type: string, description: "The withdrawal id, or the surrender request id"}
+            idempotencyKey: {type: string}
+            policyNumber: {type: string}
+            payeeRef: {type: string}
+            amount: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+    TopUpRequestedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            topUpId: {type: string, format: uuid}
+            idempotencyKey: {type: string}
+            policyNumber: {type: string}
+            payerRef: {type: string}
+            amount: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
     PostingRecordedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
@@ -1153,6 +1192,10 @@ components:
             gatewayReference: {type: string}
             amount: {type: object}
             confirmedAt: {type: string, format: date-time}
+            # Payment V9 (product step 3). Whose money this is: billing consumes PREMIUM (sourceRef
+            # an invoice id), accumulation consumes ACCOUNT_TOP_UP (sourceRef a top-up id). Absent on
+            # every confirmation published before V9, and read as PREMIUM.
+            purpose: {type: string, enum: [PREMIUM, ACCOUNT_TOP_UP]}
     PaymentFailedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
@@ -1162,6 +1205,7 @@ components:
             idempotencyKey: {type: string}
             sourceRef: {type: string}
             reason: {type: string}
+            purpose: {type: string, enum: [PREMIUM, ACCOUNT_TOP_UP], description: "As on PaymentConfirmed"}
     EftDisbursementLedgerPayload:
       description: >
         One shape for both EFT ledger events, because they carry identical facts and differ only
@@ -1197,10 +1241,13 @@ components:
             # (policyloan checks purpose == "LOAN_DISBURSEMENT" and returns otherwise) or it will
             # try to handle another module's payout. Values match
             # disbursement_instruction.purpose's CHECK constraint (db-migrations/payment/V1:54,
-            # widened by V2 to add DIVIDEND_PAYOUT).
+            # widened by V2 to add DIVIDEND_PAYOUT, by V8 for the payout engine's four, and by V9
+            # for a savings withdrawal).
             purpose:
               type: string
-              enum: [LOAN_DISBURSEMENT, CLAIM_SETTLEMENT, COMMISSION_PAYOUT, SURRENDER_PAYOUT, MATURITY_PAYOUT, DIVIDEND_PAYOUT]
+              enum: [LOAN_DISBURSEMENT, CLAIM_SETTLEMENT, COMMISSION_PAYOUT, SURRENDER_PAYOUT, MATURITY_PAYOUT,
+                     DIVIDEND_PAYOUT, SURVIVAL_BENEFIT_PAYOUT, INCOME_PAYOUT, PREMIUM_RETURN_PAYOUT,
+                     FREE_LOOK_REFUND, WITHDRAWAL_PAYOUT]
             gatewayReference: {type: string}
             amount: {type: object}
             completedAt: {type: string, format: date-time}

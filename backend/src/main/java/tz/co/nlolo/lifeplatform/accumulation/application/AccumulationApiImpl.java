@@ -2,15 +2,17 @@ package tz.co.nlolo.lifeplatform.accumulation.application;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.accumulation.api.*;
-import tz.co.nlolo.lifeplatform.accumulation.domain.Account;
+import tz.co.nlolo.lifeplatform.accumulation.domain.*;
 import tz.co.nlolo.lifeplatform.accumulation.domain.Posting;
 import tz.co.nlolo.lifeplatform.accumulation.domain.RateDeclaration;
-import tz.co.nlolo.lifeplatform.accumulation.infrastructure.AccountRepository;
+import tz.co.nlolo.lifeplatform.accumulation.infrastructure.*;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.LedgerEntryRepository;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.PostingRepository;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.RateDeclarationRepository;
@@ -47,10 +49,18 @@ public class AccumulationApiImpl implements AccumulationApi {
     final ProductApi productApi;
     final AccountValuer valuer;
     final RateDeclarationRepository rates;
+    final WithdrawalRequestRepository withdrawals;
+    final TopUpRequestRepository topUps;
+    final TransferInRepository transfers;
+    final AdjustmentRequestRepository adjustments;
+    final ApplicationEventPublisher events;
 
     public AccumulationApiImpl(AccountRepository accounts, PostingRepository postings, LedgerEntryRepository entries,
                                LedgerService ledger, PolicyApi policyApi, ProductApi productApi,
-                               AccountValuer valuer, RateDeclarationRepository rates) {
+                               AccountValuer valuer, RateDeclarationRepository rates,
+                               WithdrawalRequestRepository withdrawals, TopUpRequestRepository topUps,
+                               TransferInRepository transfers, AdjustmentRequestRepository adjustments,
+                               ApplicationEventPublisher events) {
         this.accounts = accounts;
         this.postings = postings;
         this.entries = entries;
@@ -59,6 +69,276 @@ public class AccumulationApiImpl implements AccumulationApi {
         this.productApi = productApi;
         this.valuer = valuer;
         this.rates = rates;
+        this.withdrawals = withdrawals;
+        this.topUps = topUps;
+        this.transfers = transfers;
+        this.adjustments = adjustments;
+        this.events = events;
+    }
+
+    // ---- Withdrawals: two people, valued at approval, reversed on a failed payment (task 6) ------
+
+    @Override
+    @Transactional
+    public WithdrawalView requestWithdrawal(String policyNumber, BigDecimal amount, String payeeRef, String requestedBy) {
+        if (payeeRef == null || payeeRef.isBlank()) {
+            throw new AccumulationStateException("A withdrawal needs a payee reference");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw new AccumulationStateException("A withdrawal must be for more than zero");
+        }
+        Account account = loadOpen(policyNumber);
+        if (withdrawals.existsByPolicyNumberAndStatusIn(policyNumber, List.of("REQUESTED", "APPROVED"))) {
+            throw new AccumulationStateException("A withdrawal is already in flight on policy " + policyNumber);
+        }
+        refuseBelowMinimum(account, amount);
+        WithdrawalRequest request = withdrawals.save(new WithdrawalRequest(TenantContext.get(), policyNumber,
+            amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), payeeRef, requestedBy));
+        return toView(request);
+    }
+
+    /**
+     * The money leaves the account HERE, at approval -- not when the payment lands. That is what stops
+     * two withdrawals, or a withdrawal and a surrender, from both spending the same balance.
+     */
+    @Override
+    @Transactional
+    public WithdrawalView approveWithdrawal(UUID withdrawalId, String approvedBy) {
+        WithdrawalRequest request = withdrawals.findById(withdrawalId)
+            .orElseThrow(() -> new AccumulationStateException("No withdrawal " + withdrawalId));
+        Account account = loadOpen(request.getPolicyNumber());
+        request.approve(approvedBy);
+        // Again at approval: a month-end fee may have landed since the request.
+        refuseBelowMinimum(account, request.getAmount());
+        ledger.post(request.getPolicyNumber(), new LedgerService.Source("withdrawal", "withdrawal:" + withdrawalId),
+            List.of(LedgerService.Line.of(EntryType.WITHDRAWAL, request.getAmount().negate(), LocalDate.now(),
+                "Partial withdrawal to " + request.getPayeeRef())),
+            request.getRequestedBy(), approvedBy);
+        withdrawals.save(request);
+        events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), Map.of(
+            "purpose", "WITHDRAWAL_PAYOUT",
+            "sourceRef", withdrawalId.toString(),
+            "idempotencyKey", "withdrawal:" + withdrawalId,
+            "policyNumber", request.getPolicyNumber(),
+            "payeeRef", request.getPayeeRef(),
+            "amount", Map.of("amount", request.getAmount().toPlainString(), "currencyCode", request.getCurrency()))));
+        return toView(request);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WithdrawalView> listWithdrawals(String policyNumber) {
+        return withdrawals.findByPolicyNumberOrderByRequestedAtDesc(policyNumber).stream().map(this::toView).toList();
+    }
+
+    /** What may leave is the balance less the loan lien, down to the version's minimum balance. */
+    private void refuseBelowMinimum(Account account, BigDecimal amount) {
+        BigDecimal lien = policyApi.getCashValue(account.getPolicyNumber()).loanEncumbranceAmount();
+        BigDecimal minimum = productApi.resolveAccumulationPlan(account.getProductVersionId()).minimumBalance();
+        BigDecimal available = account.getBalance().subtract(lien);
+        BigDecimal left = available.subtract(amount);
+        if (left.compareTo(minimum) < 0) {
+            BigDecimal most = available.subtract(minimum).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_EVEN);
+            throw new AccumulationStateException("A withdrawal of " + amount.setScale(2, RoundingMode.HALF_EVEN)
+                + " would leave " + left.setScale(2, RoundingMode.HALF_EVEN) + ", below this product's minimum balance of "
+                + minimum.setScale(2, RoundingMode.HALF_EVEN) + ". The most that can be withdrawn is " + most + ".");
+        }
+    }
+
+    /**
+     * {@code payment.DisbursementCompleted} / {@code DisbursementFailed} with purpose
+     * WITHDRAWAL_PAYOUT. A failure puts the money back by REVERSING the withdrawal entry -- the
+     * original stays, unedited, and the statement shows both.
+     */
+    @Transactional
+    public void settleWithdrawal(UUID withdrawalId, UUID disbursementId, boolean paid) {
+        WithdrawalRequest request = withdrawals.findById(withdrawalId).orElse(null);
+        if (request == null) {
+            return;
+        }
+        if (paid) {
+            if (request.markPaid(disbursementId)) {
+                withdrawals.save(request);
+            }
+            return;
+        }
+        if (!request.markFailed(disbursementId)) {
+            return; // already settled: a redelivery
+        }
+        withdrawals.save(request);
+        Posting posting = postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), "withdrawal",
+            "withdrawal:" + withdrawalId).orElseThrow();
+        LedgerEntry original = entries.findByPostingIdOrderBySeq(posting.getPostingId()).get(0);
+        // Posted even onto a CLOSED account: LedgerService has no requireOpen, deliberately -- the
+        // money is real and the ledger must say where it is.
+        ledger.post(request.getPolicyNumber(), new LedgerService.Source("reversal", "reversal:" + original.getEntryId()),
+            List.of(new LedgerService.Line(EntryType.REVERSAL, original.getAmount().negate(), LocalDate.now(),
+                "Withdrawal payment failed", original.getEntryId())),
+            "system", null);
+        accounts.findById(request.getPolicyNumber()).filter(a -> a.status() == AccountStatus.CLOSED).ifPresent(a ->
+            log.error("Withdrawal {} on policy {} failed after its account closed ({}); {} is back on the closed account "
+                + "and must be refunded by hand", withdrawalId, a.getPolicyNumber(), a.getClosedReason(), request.getAmount()));
+    }
+
+    private WithdrawalView toView(WithdrawalRequest w) {
+        return new WithdrawalView(w.getWithdrawalId(), w.getPolicyNumber(), w.getAmount(), w.getCurrency(), w.getPayeeRef(),
+            w.getStatus(), w.getRequestedBy(), w.getRequestedAt(), w.getApprovedBy(), w.getApprovedAt());
+    }
+
+    // ---- Top-ups and transfers in (task 6) -----------------------------------------------------
+
+    @Override
+    @Transactional
+    public TopUpView requestTopUp(String policyNumber, BigDecimal amount, String payerRef, String requestedBy) {
+        if (payerRef == null || payerRef.isBlank()) {
+            throw new AccumulationStateException("A top-up needs a payer reference");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw new AccumulationStateException("A top-up must be for more than zero");
+        }
+        Account account = loadOpen(policyNumber);
+        TopUpRequest request = topUps.save(new TopUpRequest(TenantContext.get(), policyNumber,
+            amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), payerRef, requestedBy));
+        events.publishEvent(DomainEventEnvelope.of("accumulation.TopUpRequested", TenantContext.get(), Map.of(
+            "topUpId", request.getTopUpId().toString(),
+            "idempotencyKey", "topup:" + request.getTopUpId(),
+            "policyNumber", policyNumber,
+            "payerRef", payerRef,
+            "amount", Map.of("amount", request.getAmount().toPlainString(), "currencyCode", request.getCurrency()))));
+        return toView(request);
+    }
+
+    /** The money is in. Credited at the CONTRIBUTION rate: a top-up is a contribution the customer chose. */
+    @Transactional
+    public void creditTopUp(UUID topUpId, BigDecimal amount, LocalDate confirmedOn) {
+        TopUpRequest request = topUps.findById(topUpId).orElse(null);
+        if (request == null || !request.markCollected()) {
+            return;
+        }
+        topUps.save(request);
+        Account account = loadOpen(request.getPolicyNumber());
+        LocalDate effective = confirmedOn.isBefore(account.getOpenedOn()) ? account.getOpenedOn() : confirmedOn;
+        int year = PolicyYears.of(account.getOpenedOn(), effective);
+        BigDecimal pct = productApi.resolveAccumulationPlan(account.getProductVersionId()).chargesFor(year)
+            .contributionAllocationPercent();
+        BigDecimal charge = amount.multiply(pct).divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
+        ledger.post(request.getPolicyNumber(), new LedgerService.Source("topup", "topup:" + topUpId), List.of(
+            LedgerService.Line.of(EntryType.TOP_UP, amount, effective, "Top-up from " + request.getPayerRef()),
+            LedgerService.Line.of(EntryType.ALLOCATION_CHARGE, charge.negate(), effective,
+                "Allocation charge " + pct.stripTrailingZeros().toPlainString() + "% (policy year " + year + ")")),
+            request.getRequestedBy(), null);
+    }
+
+    @Transactional
+    public void failTopUp(UUID topUpId) {
+        topUps.findById(topUpId).filter(TopUpRequest::markFailed).ifPresent(topUps::save);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TopUpView> listTopUps(String policyNumber) {
+        return topUps.findByPolicyNumberOrderByRequestedAtDesc(policyNumber).stream().map(this::toView).toList();
+    }
+
+    /**
+     * One person, unlike a withdrawal: it records money that has ALREADY arrived, with its document,
+     * and moves nothing out. If two-person recording is wanted later, it takes the withdrawal's shape.
+     */
+    @Override
+    @Transactional
+    public TransferInView recordTransferIn(String policyNumber, BigDecimal amount, String sourceScheme,
+                                           String documentRef, String recordedBy) {
+        if (sourceScheme == null || sourceScheme.isBlank()) {
+            throw new AccumulationStateException("A transfer in must name the scheme it came from");
+        }
+        if (amount == null || amount.signum() <= 0) {
+            throw new AccumulationStateException("A transfer in must be for more than zero");
+        }
+        Account account = loadOpen(policyNumber);
+        TransferIn transfer = transfers.save(new TransferIn(TenantContext.get(), policyNumber,
+            amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), sourceScheme, documentRef, recordedBy));
+        LocalDate today = LocalDate.now();
+        LocalDate effective = today.isBefore(account.getOpenedOn()) ? account.getOpenedOn() : today;
+        int year = PolicyYears.of(account.getOpenedOn(), effective);
+        BigDecimal pct = productApi.resolveAccumulationPlan(account.getProductVersionId()).chargesFor(year)
+            .transferAllocationPercent();
+        BigDecimal charge = transfer.getAmount().multiply(pct).divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
+        ledger.post(policyNumber, new LedgerService.Source("transfer", "transfer:" + transfer.getTransferId()), List.of(
+            LedgerService.Line.of(EntryType.TRANSFER_IN, transfer.getAmount(), effective, "Transfer in from " + sourceScheme),
+            LedgerService.Line.of(EntryType.ALLOCATION_CHARGE, charge.negate(), effective,
+                "Transfer allocation charge " + pct.stripTrailingZeros().toPlainString() + "% (policy year " + year + ")")),
+            recordedBy, null);
+        return toView(transfer);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TransferInView> listTransfersIn(String policyNumber) {
+        return transfers.findByPolicyNumberOrderByRecordedAtDesc(policyNumber).stream().map(this::toView).toList();
+    }
+
+    private TopUpView toView(TopUpRequest t) {
+        return new TopUpView(t.getTopUpId(), t.getPolicyNumber(), t.getAmount(), t.getCurrency(), t.getPayerRef(),
+            t.getStatus(), t.getRequestedBy(), t.getRequestedAt());
+    }
+
+    private TransferInView toView(TransferIn t) {
+        return new TransferInView(t.getTransferId(), t.getPolicyNumber(), t.getAmount(), t.getCurrency(),
+            t.getSourceScheme(), t.getDocumentRef(), t.getRecordedBy(), t.getRecordedAt());
+    }
+
+    // ---- Adjustments: a person's correction, two people (task 6) -------------------------------
+
+    @Override
+    @Transactional
+    public AdjustmentView proposeAdjustment(String policyNumber, BigDecimal amount, String reason, String proposedBy) {
+        if (amount == null || amount.signum() == 0) {
+            throw new AccumulationStateException("An adjustment must move the balance by something");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new AccumulationStateException("An adjustment needs a reason");
+        }
+        loadOpen(policyNumber);
+        return toView(adjustments.save(new AdjustmentRequest(TenantContext.get(), policyNumber,
+            amount.setScale(2, RoundingMode.UNNECESSARY), reason, proposedBy)));
+    }
+
+    /**
+     * Posts the ADJUSTMENT entry with created_by = the proposer and approved_by = the approver -- the
+     * exact pair ledger_entry_adjustment_approved compares, so the database refuses a same-person
+     * adjustment even if this aggregate somehow did not.
+     */
+    @Override
+    @Transactional
+    public AdjustmentView approveAdjustment(UUID adjustmentId, String approvedBy) {
+        AdjustmentRequest request = adjustments.findById(adjustmentId)
+            .orElseThrow(() -> new AccumulationStateException("No adjustment " + adjustmentId));
+        loadOpen(request.getPolicyNumber());
+        request.approve(approvedBy);
+        ledger.post(request.getPolicyNumber(), new LedgerService.Source("adjustment", "adjustment:" + adjustmentId),
+            List.of(LedgerService.Line.of(EntryType.ADJUSTMENT, request.getAmount(), LocalDate.now(), request.getReason())),
+            request.getProposedBy(), approvedBy);
+        return toView(adjustments.save(request));
+    }
+
+    @Override
+    @Transactional
+    public AdjustmentView rejectAdjustment(UUID adjustmentId, String rejectedBy) {
+        AdjustmentRequest request = adjustments.findById(adjustmentId)
+            .orElseThrow(() -> new AccumulationStateException("No adjustment " + adjustmentId));
+        request.reject(rejectedBy);
+        return toView(adjustments.save(request));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AdjustmentView> listAdjustments(String policyNumber) {
+        return adjustments.findByPolicyNumberOrderByProposedAtDesc(policyNumber).stream().map(this::toView).toList();
+    }
+
+    private AdjustmentView toView(AdjustmentRequest a) {
+        return new AdjustmentView(a.getAdjustmentId(), a.getPolicyNumber(), a.getAmount(), a.getReason(), a.getStatus(),
+            a.getProposedBy(), a.getProposedAt(), a.getDecidedBy(), a.getDecidedAt());
     }
 
     // ---- Month-end: interest, the policy fee, exhaustion (task 4) --------------------------------

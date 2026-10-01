@@ -172,4 +172,62 @@ class AccumulationContractTest {
                 .with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isForbidden());
     }
+
+    // ---- The account and money moving on it (task 6) -------------------------------------------
+
+    /** 200,000 in, 5% allocation: 190,000 in the account. */
+    private String fundedAccount() {
+        var issued = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now());
+        fixtures.collectPremium(TENANT, issued.policyNumber(), UUID.randomUUID(), new BigDecimal("200000.00"), LocalDate.now());
+        return issued.policyNumber();
+    }
+
+    @Test
+    void theAccountIsReadToSpec() throws Exception {
+        String policy = fundedAccount();
+        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("UNDERWRITER", "uw")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.balance.amount").value("190000.00"))
+            .andExpect(jsonPath("$.entries[0].type").value("CONTRIBUTION"))
+            .andExpect(jsonPath("$.entries[1].amount.amount").value("-10000.00"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aScalePolicyHasNoAccount() throws Exception {
+        var scale = fixtures.issueSavingsPlan(TENANT, AccumulationPlan.none(), LocalDate.now());
+        mockMvc.perform(get("/policies/" + scale.policyNumber() + "/account").with(staff("UNDERWRITER", "uw")))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("ACCOUNT_NOT_FOUND"));
+    }
+
+    @Test
+    void aWithdrawalIsRequestedAndApprovedToSpec() throws Exception {
+        String policy = fundedAccount();
+        String created = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals")
+                .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"40000.00\",\"payeeRef\":\"+255700000001\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("REQUESTED"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        String id = JsonPath.read(created, "$.withdrawalId");
+
+        // REQUESTED from the rail, not paid: 202, and the response says APPROVED, never PAID.
+        mockMvc.perform(post("/account-withdrawals/" + id + "/approve").with(staff("FINANCE_OFFICER", "finance-two")))
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.status").value("APPROVED"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aMalformedAmountIsA400ThatNamesTheField() throws Exception {
+        String policy = fundedAccount();
+        mockMvc.perform(post("/policies/" + policy + "/account/withdrawals")
+                .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"12.345\",\"payeeRef\":\"+255700000001\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(result -> org.assertj.core.api.Assertions.assertThat(result.getResponse().getContentAsString())
+                .contains("amount"));
+    }
 }

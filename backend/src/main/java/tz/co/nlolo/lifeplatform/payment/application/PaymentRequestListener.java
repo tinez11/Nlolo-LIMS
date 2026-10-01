@@ -116,6 +116,8 @@ public class PaymentRequestListener {
             case "distribution.CommissionPayoutRequested" -> withTenant(envelope, this::handleCommissionPayout);
             case "policy.SurrenderPayoutRequested" -> withTenant(envelope, this::handleSurrenderPayout);
             case "benefitpayout.PayoutRequested" -> withTenant(envelope, this::handleBenefitPayout);
+            case "accumulation.PayoutRequested" -> withTenant(envelope, this::handleAccountPayout);
+            case "accumulation.TopUpRequested" -> withTenant(envelope, this::handleTopUpCollection);
             default -> { /* not payment-relevant */ }
         }
     }
@@ -238,6 +240,40 @@ public class PaymentRequestListener {
         disbursementId.ifPresentOrElse(
             id -> submitDisbursement(tenantId, id, payeeRef, money),
             () -> log.info("Dropping duplicate SurrenderPayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
+    }
+
+    /**
+     * Money out of a savings account (product step 3): a partial withdrawal, or a surrender valued
+     * by the account. The twin of {@link #handleBenefitPayout} -- the publisher names the purpose
+     * and the source reference, so a surrender's disbursement still carries the surrender request id
+     * policy's SurrenderPaymentListener marks PAID.
+     */
+    private void handleAccountPayout(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String idempotencyKey = requireKey(payload);
+        String purpose = (String) payload.get("purpose");
+        String sourceRef = (String) payload.get("sourceRef");
+        String payeeRef = (String) payload.get("payeeRef");
+        Money money = money(payload);
+        Optional<UUID> disbursementId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordDisbursementRequest(
+            tenantId, idempotencyKey, payeeRef, money.amount(), money.currency(), purpose, sourceRef));
+        disbursementId.ifPresentOrElse(
+            id -> submitDisbursement(tenantId, id, payeeRef, money),
+            () -> log.info("Dropping duplicate accumulation.PayoutRequested for tenant {} key {}", tenantId, idempotencyKey));
+    }
+
+    /** A top-up: a collection that is not a premium, so billing leaves its confirmation alone. */
+    private void handleTopUpCollection(Map<String, Object> payload) {
+        UUID tenantId = TenantContext.get();
+        String idempotencyKey = requireKey(payload);
+        String topUpId = String.valueOf(payload.get("topUpId"));
+        String payerRef = (String) payload.get("payerRef");
+        Money money = money(payload);
+        Optional<UUID> transactionId = requiresNewTransactionTemplate.execute(status -> paymentApiImpl.recordCollectionRequest(
+            tenantId, idempotencyKey, payerRef, money.amount(), money.currency(), topUpId, "ACCOUNT_TOP_UP"));
+        transactionId.ifPresentOrElse(
+            id -> submitCollection(tenantId, id, payerRef, money),
+            () -> log.info("Dropping duplicate accumulation.TopUpRequested for tenant {} key {}", tenantId, idempotencyKey));
     }
 
     /**

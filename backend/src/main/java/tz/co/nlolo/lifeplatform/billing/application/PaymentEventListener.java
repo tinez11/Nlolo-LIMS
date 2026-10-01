@@ -82,6 +82,9 @@ public class PaymentEventListener {
     }
 
     private void handleConfirmed(Map<String, Object> payload) {
+        if (!isPremium(payload)) {
+            return;
+        }
         UUID invoiceId = UUID.fromString((String) payload.get("sourceRef"));
         @SuppressWarnings("unchecked")
         Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
@@ -94,7 +97,20 @@ public class PaymentEventListener {
      * on its own timer regardless of any failed collection attempt, so a
      * payment.PaymentFailed carries no new invoice transition to perform here -- only an
      * operational trail that the attempt happened, for whoever investigates a stuck invoice. */
+    /**
+     * A top-up is a collection too (product step 3), and its sourceRef is a top-up id, not an
+     * invoice -- parsed as one it would either throw or, worse, match nothing and be logged as a
+     * failure billing does not own. Absent means PREMIUM: every confirmation before payment V9.
+     */
+    private static boolean isPremium(Map<String, Object> payload) {
+        Object purpose = payload.get("purpose");
+        return purpose == null || "PREMIUM".equals(purpose);
+    }
+
     private void handleFailed(Map<String, Object> payload) {
+        if (!isPremium(payload)) {
+            return;
+        }
         Object sourceRef = payload.get("sourceRef");
         log.warn("Payment collection failed for billing invoice {} (tenant {}): {}",
             sourceRef, TenantContext.get(), payload.get("reason"));
