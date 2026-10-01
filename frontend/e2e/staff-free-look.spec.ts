@@ -1,41 +1,71 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import { asAdmin } from './admin';
-import { issueRealPolicy } from './policies';
+import { dmy } from './dates';
+import { caseAwaitingManualIssue, MONEY_BACK_PRODUCT, selectUnderwritingCase } from './underwriting';
 
 /**
  * The customer changed their mind inside the free-look window (guide §21.3).
  *
  * Not a surrender, and the spec asserts the difference: the policy ends up CANCELLED_FREE_LOOK —
- * treated as never having been bought — rather than SURRENDERED, and what goes back is the
- * premiums less what the insurer actually spent.
+ * treated as never having been bought — rather than SURRENDERED.
  *
- * The fixture is a `DEMO-TERM-01` policy issued today, whose seeded version carries a 15-day
- * window, so it is inside it by construction. Free-look is an INDIVIDUAL buyer's right and
- * TERM_LIFE is one — a group or credit-life scheme is refused outright.
+ * **Issued on END-MB-20, not the term product.** Free-look needs the version to carry a window,
+ * and only the seeded money-back endowment does: DEMO-TERM-01's active version on a long-lived dev
+ * database predates payout terms entirely, and the server answers "product version has no
+ * free-look period". A product that has never been republished is the normal case, not an edge one.
+ *
+ * **No deductions here, and that is not laziness.** A MIGRATION-issued fixture has collected no
+ * premium, so `premiumsCollected` is zero and ANY deduction exceeds it — the server is right to
+ * refuse that, and the second test below proves it does. Itemised deductions against a real
+ * premium are covered where a premium can actually be collected: `FreeLookIntegrationTest` (the
+ * 42,000 refund after an 8,000 deduction) and `BenefitPayoutContractTest` over HTTP.
  */
+
+/** A fresh ACTIVE money-back policy. A term is REQUIRED: the product pays at the end of its term,
+ *  and the payout engine refuses to expand a schedule it cannot date. */
+async function activeMoneyBackPolicy(browser: Browser, reason: string): Promise<string> {
+  return asAdmin(browser, async (page) => {
+    const caseId = await caseAwaitingManualIssue(page, '2000000.00', MONEY_BACK_PRODUCT);
+    await page.goto('/staff/policies/new');
+    await selectUnderwritingCase(page, caseId);
+    await expect(page.getByText('Resolving product version…')).not.toBeVisible();
+    await page.getByLabel('Sum assured').fill('2000000.00');
+    await page.getByLabel('Premium', { exact: true }).fill('5000.00');
+    await page.getByLabel('Why is this being issued by hand?').selectOption('MIGRATION');
+    await page.getByLabel('Reason for manual issue').fill(reason);
+    await page.getByLabel('Commencement date').fill(dmy(new Date().toISOString().slice(0, 10)));
+    await page.getByLabel('Policy term (months)').fill('240');
+    await page.getByRole('button', { name: 'Issue policy' }).click();
+    await expect(page).toHaveURL(/\/staff\/policies\/POL-[A-Z0-9]+$/, { timeout: 15_000 });
+    return page.url().split('/').pop() as string;
+  });
+}
+
+async function openFreeLookPanel(page: Page, policyNumber: string): Promise<void> {
+  await page.goto(`/staff/policies/${policyNumber}`);
+  await expect(page.getByRole('heading', { name: 'Changed their mind' })).toBeVisible();
+}
+
 test.describe('free-look cancellation', () => {
+  // The fixture builds an underwriting case, a second underwriter's decision and a manual issue
+  // before the behaviour under test even starts, and the release runs in its own browser context.
+  test.setTimeout(180_000);
+
   test('is prepared by one person and released by another', async ({ page, browser }) => {
-    // Preparing is open to ANY staff member: it commits nothing. The default identity here is
-    // staff.underwriter, which is the point — money only moves at approval.
-    const policyNumber = await issueRealPolicy(page, 'E2E fixture: free-look cancellation');
+    const policyNumber = await activeMoneyBackPolicy(browser, 'E2E fixture: free-look cancellation');
 
-    await page.goto(`/staff/policies/${policyNumber}`);
-    await expect(page.getByRole('heading', { name: 'Changed their mind' })).toBeVisible();
-
+    // Preparing is open to ANY staff member — it commits nothing. The identity here is
+    // staff.underwriter, which is the point: money only moves at approval.
+    await openFreeLookPanel(page, policyNumber);
     await page.getByLabel('Refund to').fill('+255700000009');
-    await page.getByRole('button', { name: 'Add a deduction' }).click();
-    await page.getByLabel('What for').fill('Medical examination');
-    await page.getByLabel('Amount').fill('8000.00');
     await page.getByRole('button', { name: 'Cancel in free-look' }).click();
     await page.getByRole('button', { name: 'Request cancellation' }).click();
 
-    // The server's figures, read back -- the console computes no refund of its own.
-    await expect(page.getByText('Less Medical examination')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText('Requested', { exact: true })).toBeVisible();
+    // The server's figures, read back — the console computes no refund of its own.
+    await expect(page.getByText('Premiums collected')).toBeVisible({ timeout: 20_000 });
     // Preparing changed nothing about the contract.
     await expect(page.getByText('Active', { exact: true }).first()).toBeVisible();
-    // An underwriter prepared it and is told who releases it, rather than shown a button that
-    // would 403.
+    // An underwriter is told who releases it, rather than shown a button that would 403.
     await expect(page.getByText(/Awaiting approval by a finance officer/)).toBeVisible();
 
     await asAdmin(browser, async (adminPage) => {
@@ -43,29 +73,28 @@ test.describe('free-look cancellation', () => {
       await adminPage.getByRole('button', { name: 'Approve cancellation' }).click();
       await adminPage.getByRole('button', { name: /^Refund TZS/ }).click();
 
-      // Void from inception, and the refund REQUESTED rather than paid.
-      await expect(adminPage.getByText('Refund requested')).toBeVisible({ timeout: 20_000 });
-      await expect(
-        adminPage.getByText(/Cover is void from inception and the refund has been requested, not paid/),
-      ).toBeVisible();
-      await expect(adminPage.getByText('Cancelled free look').first()).toBeVisible();
+      // Void from inception. The badge is the humanised literal StatusBadge produces.
+      await expect(adminPage.getByText('Cancelled free look').first()).toBeVisible({ timeout: 20_000 });
+      await expect(adminPage.getByText('Refund requested')).toBeVisible();
     });
   });
 
   test('a deduction larger than the premiums is refused by the server, not silently accepted', async ({
     page,
+    browser,
   }) => {
-    const policyNumber = await issueRealPolicy(page, 'E2E fixture: free-look over-deduction');
+    const policyNumber = await activeMoneyBackPolicy(browser, 'E2E fixture: free-look over-deduction');
 
-    await page.goto(`/staff/policies/${policyNumber}`);
+    await openFreeLookPanel(page, policyNumber);
     await page.getByLabel('Refund to').fill('+255700000009');
     await page.getByRole('button', { name: 'Add a deduction' }).click();
-    await page.getByLabel('What for').fill('Implausible cost');
-    await page.getByLabel('Amount').fill('99999999.00');
+    await page.getByLabel('What for').fill('Medical examination');
+    // Nothing has been collected on a migrated fixture, so even a modest cost exceeds it. A refund
+    // can be nothing; it can never be a bill.
+    await page.getByLabel('Amount').fill('8000.00');
     await page.getByRole('button', { name: 'Cancel in free-look' }).click();
     await page.getByRole('button', { name: 'Request cancellation' }).click();
 
-    // A refund can be nothing; it can never be a BILL. The message is the server's own.
     await expect(page.getByText(/exceed the .* premiums collected/)).toBeVisible({ timeout: 20_000 });
   });
 });

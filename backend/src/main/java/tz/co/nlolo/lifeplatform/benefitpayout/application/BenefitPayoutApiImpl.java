@@ -114,6 +114,18 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         if (plan.rows().isEmpty()) {
             return;
         }
+        // A contract that promises money at the end of its term, on a policy that has no end, is a
+        // contradiction this module cannot date -- and `due_date` is NOT NULL, so letting it
+        // through produced a constraint violation inside an AFTER_COMMIT listener that swallowed
+        // it. The policy then had NO schedule at all, survival rows included, because the whole
+        // expansion rolled back; the only trace was "null value in column due_date" in a log.
+        // Refused by name instead, so the log says which policy and what is wrong with it.
+        if (plan.hasEndOfTermRow() && policy.maturityDate() == null) {
+            throw new PayoutStateException("Policy " + policyNumber + " has no maturity date, so the "
+                + "end-of-term payout its product promises cannot be dated. A product that pays at "
+                + "the end of its term may only be issued with a policy term.");
+        }
+
         // Risk commences, not the issue date: a policy issued today may carry risk from next month,
         // and a policy year is counted from when cover actually started.
         LocalDate start = policy.commencementDate() != null ? policy.commencementDate() : issueDate;

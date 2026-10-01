@@ -297,6 +297,25 @@ class PayoutLifecycleIntegrationTest {
     }
 
     @Test
+    void anEndOfTermPayoutOnAPolicyWithNoTermIsRefusedByName() {
+        // due_date is NOT NULL, so a maturity row on a policy with no maturity date used to fail
+        // as a constraint violation INSIDE the AFTER_COMMIT listener -- which swallowed it and
+        // left the policy with no schedule at all, survival rows included, because the whole
+        // expansion rolled back. The only trace was "null value in column due_date".
+        UUID tenant = UUID.randomUUID();
+        String policyNumber = fixtures.issue(tenant, ProductCategory.ENDOWMENT, maturityOnly(null),
+            CashValuePlan.none(), SUM_ASSURED, null, null, LocalDate.now(), "MONTHLY");
+
+        TenantContext.set(tenant);
+        try {
+            // No schedule, and the refusal named the policy rather than a column.
+            assertThat(api.listForPolicy(policyNumber)).isEmpty();
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Test
     void aMaturityClaimIsRefusedOnAPolicyWhoseMaturityIsAlreadyScheduled() {
         // A twelve-month endowment that matured today: the maturity instalment is already owed and
         // dated, and finance will review and approve it.

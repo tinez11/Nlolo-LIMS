@@ -81,7 +81,7 @@ public class PayoutTestFixtures {
     }
 
     public String issue(UUID tenant, ProductCategory category, PayoutPlan plan, CashValuePlan cashValue,
-                        BigDecimal sumAssured, int termMonths, Integer premiumPayingTermMonths,
+                        BigDecimal sumAssured, Integer termMonths, Integer premiumPayingTermMonths,
                         LocalDate commencement, String premiumFrequency) {
         UUID previous = TenantContext.getOrNull();
         TenantContext.set(tenant);
