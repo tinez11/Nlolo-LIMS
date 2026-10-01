@@ -1,0 +1,187 @@
+openapi: 3.1.0
+info:
+  title: Benefit Payouts API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `benefitpayout` module — the guide's "tap" (§21.4): money the
+    insurer pays OUT while the life assured is still alive. A maturity benefit, the survival
+    benefits of a money-back plan, an income stream, and a premium return on a return-of-premium
+    term policy. A policy's whole schedule is stored at issue (§16), and each instalment is brought
+    due by a scheduled drain, reviewed by one person and approved by another before any money moves.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /policies/{policyNumber}/payouts:
+    get:
+      summary: Every payout instalment on one policy, in due-date order
+      description: >
+        Empty for a policy whose product version authored no payout schedule — every policy sold
+        before this module existed, and every term policy after it.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      responses:
+        '200':
+          description: The policy's schedule
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PayoutInstalment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /payouts:
+    get:
+      summary: The payouts register
+      description: >
+        FINANCE_OFFICER or ADMIN only: this is the queue from which money is paid. Ordered by due
+        date then id, so two pages never repeat or skip a row.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: >
+            One status, or omitted for every status — the same one-filter-at-a-time shape every
+            other register on this platform offers.
+          schema: { $ref: '#/components/schemas/InstalmentStatus' }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0 } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: One page of the register
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PayoutInstalment' }
+                  page: { $ref: 'openapi-common.yaml#/components/schemas/PageMeta' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /payouts/{instalmentId}:
+    get:
+      summary: One payout instalment
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: instalmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The instalment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutInstalment' }
+        '404':
+          description: No such instalment in this tenant
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /payouts/{instalmentId}/review:
+    post:
+      summary: Review a DUE payout — the payee, and proof of life where it is required
+      description: >
+        A SURVIVAL or INCOME payout needs proof the life assured is alive; a MATURITY or
+        RETURN_OF_PREMIUM does not, because it is owed by the calendar alone.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: instalmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payeeRef]
+              properties:
+                payeeRef: { type: string, maxLength: 200, description: "Mobile money / bank payout destination" }
+                proofOfLifeMethod:
+                  anyOf:
+                    - { $ref: '#/components/schemas/ProofOfLifeMethod' }
+                    - { type: 'null' }
+                proofOfLifeDocumentId: { type: [string, "null"], format: uuid }
+      responses:
+        '200':
+          description: Reviewed, awaiting a second person's approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutInstalment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused — not DUE, no payee, or no proof of life where it is required
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /payouts/{instalmentId}/approve:
+    post:
+      summary: Approve a REVIEWED payout, by someone other than its reviewer
+      description: >
+        Requests the disbursement. The money is REQUESTED, not paid — the instalment reaches PAID
+        only when the payment provider confirms it.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: instalmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Approved and the payment requested
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutInstalment' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused — not REVIEWED, or the approver is the reviewer
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+components:
+  schemas:
+    InstalmentStatus:
+      type: string
+      description: >
+        IN_DOUBT is deliberately distinct from FAILED: the money may or may not have moved, and
+        retrying it blindly is how a payout is made twice.
+      enum: [SCHEDULED, DUE, ON_HOLD, REVIEWED, APPROVED, PAID, FAILED, IN_DOUBT, CANCELLED]
+    ProofOfLifeMethod:
+      type: string
+      enum: [IN_PERSON, PHONE_OR_VIDEO, LIFE_CERTIFICATE]
+    PayoutInstalment:
+      type: object
+      required: [instalmentId, policyNumber, kind, dueDate, status, attempts]
+      properties:
+        instalmentId: { type: string, format: uuid }
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        kind: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM] }
+        dueDate: { type: string, format: date }
+        originalAmount:
+          description: What the contract authored. Null on a premium return until it falls due.
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: 'null' }
+        currentAmount:
+          description: What is payable now — lower than the original after a paid-up conversion.
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: 'null' }
+        restatementReason: { type: [string, "null"] }
+        status: { $ref: '#/components/schemas/InstalmentStatus' }
+        statusReason:
+          description: Why it is held or cancelled, in the server's own words.
+          type: [string, "null"]
+        streamId: { type: [string, "null"], format: uuid }
+        payeeRef: { type: [string, "null"] }
+        proofOfLifeMethod:
+          anyOf:
+            - { $ref: '#/components/schemas/ProofOfLifeMethod' }
+            - { type: 'null' }
+        reviewedBy: { type: [string, "null"] }
+        approvedBy: { type: [string, "null"] }
+        paymentRunId: { type: [string, "null"], format: uuid }
+        attempts: { type: integer }
