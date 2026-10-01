@@ -565,7 +565,9 @@ public class ClaimsApiImpl implements ClaimsApi {
                 // percentage of the premiums paid as a floor. Both are the product's words, so the
                 // payout engine that holds them computes the ceiling; claims keeps the ceiling it
                 // already had for every policy whose version says neither.
-                ? benefitPayoutApi.deathBenefitCeiling(claim.getPolicyNumber(), claimable.amount())
+                // As at the date of death: an account-valued policy is valued then, not on the day
+                // the claim is approved (product step 3).
+                ? benefitPayoutApi.deathBenefitCeiling(claim.getPolicyNumber(), claimable.amount(), claim.getDateOfEvent())
                 : claimable.amount();
             claim.approve(approvedAmount, approvedCurrency, ceiling);
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId,

@@ -65,6 +65,16 @@ public class AccumulationController {
             api.entries(policyNumber));
     }
 
+    /**
+     * What a closing today would pay, before any surrender charge: the balance plus interest not yet
+     * posted. The surrender approval shows this beside the request's own estimate (spec §5.4).
+     */
+    @GetMapping("/policies/{policyNumber}/account/quote")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public ClosingQuoteResponse quote(@PathVariable String policyNumber) {
+        return ClosingQuoteResponse.from(api.quoteClosing(policyNumber, java.time.LocalDate.now()));
+    }
+
     /** Any staff member may REQUEST, as a surrender is requested; approving moves money and is finance's. */
     @PostMapping("/policies/{policyNumber}/account/withdrawals")
     @PreAuthorize("hasRole('REALM_STAFF')")

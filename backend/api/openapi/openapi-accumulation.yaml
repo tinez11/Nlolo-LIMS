@@ -119,6 +119,29 @@ paths:
               schema: { $ref: '#/components/schemas/Account' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/account/quote:
+    get:
+      summary: What closing the account today would pay, before any surrender charge
+      description: >
+        The balance plus interest accrued since the last month-end. The surrender approval shows it
+        beside the request's own estimate, so the approver sees the figure that will actually be paid.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The quote
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClosingQuote' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- the account is closed
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /policies/{policyNumber}/account/withdrawals:
     get:
       summary: Every partial withdrawal on the account, newest first
@@ -347,6 +370,15 @@ paths:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    ClosingQuote:
+      type: object
+      required: [policyNumber, asOf, balance, interestToDate, value]
+      properties:
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        asOf: { type: string, format: date }
+        balance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        interestToDate: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        value: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
     Account:
       type: object
       required: [policyNumber, status, balance, openedOn, entries]

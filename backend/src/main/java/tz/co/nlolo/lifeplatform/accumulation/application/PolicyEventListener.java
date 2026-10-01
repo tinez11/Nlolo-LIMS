@@ -5,6 +5,8 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -30,6 +32,13 @@ public class PolicyEventListener {
                 LocalDate.parse((String) p.get("issueDate"))));
             case "policy.PolicyReinstated" -> runner.run(envelope, p ->
                 api.reopenOnReinstatement((String) p.get("policyNumber")));
+            case "policy.AccountSurrenderApproved" -> runner.run(envelope, p -> api.closeForSurrender(
+                (String) p.get("policyNumber"), UUID.fromString((String) p.get("surrenderRequestId")),
+                (String) p.get("payeeRef"), new BigDecimal((String) p.get("surrenderChargePercent")),
+                (String) p.get("approvedBy"),
+                LocalDate.ofInstant(Instant.parse((String) p.get("approvedAt")), BillingEventListener.CIVIL_ZONE)));
+            case "policy.PolicyCancelledFreeLook" -> runner.run(envelope, p ->
+                api.closeForFreeLook((String) p.get("policyNumber"), (String) p.get("cancelledBy")));
             default -> { /* not ours */ }
         }
     }

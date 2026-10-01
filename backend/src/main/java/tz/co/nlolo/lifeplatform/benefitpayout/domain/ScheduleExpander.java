@@ -33,7 +33,10 @@ public final class ScheduleExpander {
         for (int order = 0; order < plan.rows().size(); order++) {
             PayoutRowInput row = plan.rows().get(order);
             switch (row.kind()) {
-                case MATURITY -> out.add(new Planned(row.kind(), order, maturityDate, amountFor(row, sumAssured)));
+                case MATURITY -> out.add(new Planned(row.kind(), order, maturityDate,
+                    // An account's value is not known until the day it falls due (product step 3),
+                    // exactly as a premium return's is not.
+                    row.amountBasis() == PayoutAmountBasis.ACCOUNT_VALUE ? null : amountFor(row, sumAssured)));
                 case RETURN_OF_PREMIUM -> out.add(new Planned(row.kind(), order, maturityDate, null));
                 case SURVIVAL, INCOME -> expandRecurring(out, row, order, start, maturityDate, sumAssured);
             }

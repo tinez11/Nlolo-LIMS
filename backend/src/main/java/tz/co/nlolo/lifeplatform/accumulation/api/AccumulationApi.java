@@ -67,4 +67,18 @@ public interface AccumulationApi {
     AdjustmentView rejectAdjustment(java.util.UUID adjustmentId, String rejectedBy);
 
     List<AdjustmentView> listAdjustments(String policyNumber);
+
+    // ---- Closing (task 7) ----------------------------------------------------------------------
+
+    /** What a closing on {@code asOf} would move. The surrender approval screen shows it. */
+    ClosingQuote quoteClosing(String policyNumber, java.time.LocalDate asOf);
+
+    /** Read-only. What the account held at the death, before anything dated after it. */
+    DeathValuation valueAtDeath(String policyNumber, java.time.LocalDate dateOfDeath);
+
+    /**
+     * Closes the account on the maturity date and returns what the MATURITY entry moved. Idempotent
+     * on the instalment: asked again, it returns the same figure and posts nothing.
+     */
+    java.math.BigDecimal closeForMaturity(String policyNumber, java.util.UUID instalmentId, java.time.LocalDate dueDate);
 }

@@ -332,9 +332,22 @@ channels:
     publish:
       message: { $ref: '#/components/messages/AgentOfRecordChanged' }
   policy.SurrenderPayoutRequested:
-    description: "Producer: policy. Consumer: payment (request/confirm pattern)."
+    description: >
+      Producer: policy. Consumer: payment (request/confirm pattern). NOT published for an
+      ACCOUNT-valued version (product step 3): policy publishes policy.AccountSurrenderApproved
+      instead, and accumulation requests the payment once it has valued the account.
     publish:
       message: { $ref: '#/components/messages/SurrenderPayoutRequested' }
+  policy.AccountSurrenderApproved:
+    description: >
+      Producer: policy (approveSurrender, on an ACCOUNT-valued version, after the two signatures and
+      the end of cover). Consumer: accumulation, which closes the account with interest to the
+      approval day and requests the payment -- value less the surrender charge -- under
+      SURRENDER_PAYOUT with the surrender request id as its source, so policy's own
+      SurrenderPaymentListener marks the request PAID. Carries the charge percent because only
+      policy resolves the surrender-charge schedule.
+    publish:
+      message: { $ref: '#/components/messages/AccountSurrenderApproved' }
   policy.MaturityPayoutRequested:
     description: "Producer: policy. Consumer: payment (request/confirm pattern)."
     publish:
@@ -629,6 +642,7 @@ components:
     GroupMemberEvidenceGranted: { messageId: GroupMemberEvidenceGranted, name: GroupMemberEvidenceGranted, payload: { $ref: '#/components/schemas/GroupMemberEvidenceGrantedPayload' } }
     AgentOfRecordChanged: { messageId: AgentOfRecordChanged, name: AgentOfRecordChanged, payload: { $ref: '#/components/schemas/AgentOfRecordChangedPayload' } }
     SurrenderPayoutRequested: { messageId: SurrenderPayoutRequested, name: SurrenderPayoutRequested, payload: { $ref: '#/components/schemas/SurrenderPayoutRequestedPayload' } }
+    AccountSurrenderApproved: { messageId: AccountSurrenderApproved, name: AccountSurrenderApproved, payload: { $ref: '#/components/schemas/AccountSurrenderApprovedPayload' } }
     MaturityPayoutRequested: { messageId: MaturityPayoutRequested, name: MaturityPayoutRequested, payload: { $ref: '#/components/schemas/MaturityPayoutRequestedPayload' } }
     LoanOriginated: { messageId: LoanOriginated, name: LoanOriginated, payload: { $ref: '#/components/schemas/LoanOriginatedPayload' } }
     LoanDisbursementRequested: { messageId: LoanDisbursementRequested, name: LoanDisbursementRequested, payload: { $ref: '#/components/schemas/LoanDisbursementRequestedPayload' } }
@@ -883,6 +897,17 @@ components:
             policyNumber: {type: string}
             kind: {type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM]}
             paidAmount: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+    AccountSurrenderApprovedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            surrenderRequestId: {type: string, format: uuid}
+            policyNumber: {type: string}
+            payeeRef: {type: string}
+            surrenderChargePercent: {type: string, description: "Decimal string, from the version's own schedule"}
+            approvedBy: {type: string}
+            approvedAt: {type: string, format: date-time}
     AccountPayoutRequestedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

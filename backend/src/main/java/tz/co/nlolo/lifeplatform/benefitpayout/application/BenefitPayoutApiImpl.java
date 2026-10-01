@@ -10,6 +10,8 @@ import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.benefitpayout.api.*;
 import tz.co.nlolo.lifeplatform.benefitpayout.domain.*;
 import tz.co.nlolo.lifeplatform.benefitpayout.infrastructure.*;
+import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationApi;
+import tz.co.nlolo.lifeplatform.accumulation.api.DeathValuation;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
@@ -55,12 +57,15 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     private final ProductApi productApi;
     private final PolicyApi policyApi;
     private final ApplicationEventPublisher eventPublisher;
+    /** Product step 3: an account-value maturity is valued by the account, and so is its death ceiling. */
+    private final AccumulationApi accumulationApi;
 
     public BenefitPayoutApiImpl(PayoutInstalmentRepository instalments, PayoutStreamRepository streams,
                                 PremiumTallyRepository tallies, PaymentRunRepository runs,
                                 FreeLookCancellationRepository cancellations, FreeLookDeductionRepository deductions,
                                 ProductApi productApi, PolicyApi policyApi,
-                                ApplicationEventPublisher eventPublisher) {
+                                ApplicationEventPublisher eventPublisher, AccumulationApi accumulationApi) {
+        this.accumulationApi = accumulationApi;
         this.cancellations = cancellations;
         this.deductions = deductions;
         this.instalments = instalments;
@@ -200,7 +205,22 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             }
         }
 
-        boolean upToDate = tally == null || tally.isPaidUpTo(i.getDueDate());
+        boolean accountValue = i.kind() == PayoutKind.MATURITY && i.getOriginalAmount() == null;
+        if (accountValue) {
+            // An account-value maturity (product step 3): accumulation closes the account on the due
+            // date and this instalment pays what the MATURITY entry moved -- one figure, not two.
+            valued = accumulationApi.closeForMaturity(i.getPolicyNumber(), i.getInstalmentId(), i.getDueDate());
+            if (valued.signum() == 0) {
+                i.cancel("The account held nothing on the maturity date");
+                instalments.save(i);
+                matureIfEndOfTerm(i);
+                return;
+            }
+        }
+
+        // An account policy is never held for missed premiums: a missed contribution does not affect
+        // it (the account pays its own fee), and its money has just left the account on this date.
+        boolean upToDate = accountValue || tally == null || tally.isPaidUpTo(i.getDueDate());
         i.fallDue(upToDate, valued);
         if (i.status() == InstalmentStatus.DUE && "SUSPENDED".equals(policyStatus)) {
             i.hold("Policy is suspended");
@@ -675,6 +695,28 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             ceiling = ceiling.max(PayoutArithmetic.percentOf(collected, pct));
         }
         return ceiling;
+    }
+
+    /**
+     * The death ceiling as at the date of death (product step 3). For an account-valued version it is
+     * the account at the death -- or the premium floor if higher -- plus contributions paid after it,
+     * which are owed to the estate (spec §10.5). The sum assured is not part of it (Q5): an account
+     * product offers no death cover above its value. Every other version: unchanged.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal deathBenefitCeiling(String policyNumber, BigDecimal sumAssuredCeiling, LocalDate dateOfDeath) {
+        if (!accumulationApi.isAccount(policyNumber)) {
+            return deathBenefitCeiling(policyNumber, sumAssuredCeiling);
+        }
+        DeathValuation v = accumulationApi.valueAtDeath(policyNumber, dateOfDeath);
+        BigDecimal base = v.accountValue();
+        PayoutPlan plan = productApi.resolvePayoutPlan(policyApi.getPolicy(policyNumber).productVersionId());
+        BigDecimal pct = plan.authored() ? plan.terms().deathBenefitPremiumPercent() : null;
+        if (pct != null) {
+            base = base.max(PayoutArithmetic.percentOf(v.premiumsBeforeDeath(), pct));
+        }
+        return base.add(v.contributionsAfterDeath());
     }
 
     /** A suspended or ended stream's instalments stay held however current the premiums are. */

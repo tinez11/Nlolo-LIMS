@@ -1043,15 +1043,31 @@ public class PolicyApiImpl implements PolicyApi {
         // Billing stops and regreporting projects the surrender.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,
             Map.of("policyNumber", request.getPolicyNumber(), "surrenderedAt", Instant.now().toString())));
-        // The payout, through the disbursement rail. The surrender request id is both the source
-        // reference and the idempotency key -- one payout per approval.
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPayoutRequested", tenantId,
-            Map.of("surrenderRequestId", surrenderRequestId.toString(),
-                   "idempotencyKey", surrenderRequestId.toString(),
-                   "policyNumber", request.getPolicyNumber(),
-                   "payeeRef", request.getPayeeRef(),
-                   "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
-                        "currencyCode", request.getQuotedValueCurrency()))));
+        if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
+            // Product step 3 (spec §5.4): an account is valued at approval, with interest to the
+            // day, and the payment is accumulation's. Policy cannot call accumulation -- that would be
+            // a cycle -- so it says what it approved, with the charge it already resolves.
+            ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policy.AccountSurrenderApproved", tenantId,
+                Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                       "policyNumber", request.getPolicyNumber(),
+                       "payeeRef", request.getPayeeRef(),
+                       "surrenderChargePercent", resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(),
+                           policy.getIssueDate()).toPlainString(),
+                       "approvedBy", approvedBy,
+                       "approvedAt", Instant.now().toString())));
+        } else {
+            // The payout, through the disbursement rail. The surrender request id is both the source
+            // reference and the idempotency key -- one payout per approval. Every scale-valued
+            // surrender, which is every one before product step 3.
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPayoutRequested", tenantId,
+                Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                       "idempotencyKey", surrenderRequestId.toString(),
+                       "policyNumber", request.getPolicyNumber(),
+                       "payeeRef", request.getPayeeRef(),
+                       "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
+                            "currencyCode", request.getQuotedValueCurrency()))));
+        }
         return toSurrenderView(request);
     }
 

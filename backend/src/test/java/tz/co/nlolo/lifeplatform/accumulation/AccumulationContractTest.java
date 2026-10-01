@@ -221,6 +221,16 @@ class AccumulationContractTest {
     }
 
     @Test
+    void theClosingQuoteIsReadToSpec() throws Exception {
+        String policy = fundedAccount();
+        mockMvc.perform(get("/policies/" + policy + "/account/quote").with(staff("UNDERWRITER", "uw")))
+            .andExpect(status().isOk())
+            // Funded today, so no interest has accrued yet and the value is the balance.
+            .andExpect(jsonPath("$.balance.amount").value("190000.00"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
     void aMalformedAmountIsA400ThatNamesTheField() throws Exception {
         String policy = fundedAccount();
         mockMvc.perform(post("/policies/" + policy + "/account/withdrawals")

@@ -341,6 +341,191 @@ public class AccumulationApiImpl implements AccumulationApi {
             a.getProposedBy(), a.getProposedAt(), a.getDecidedBy(), a.getDecidedAt());
     }
 
+    // ---- Closing: surrender, maturity, death, free-look (task 7) --------------------------------
+    //
+    // Every closing is ONE posting: interest from the day after the last month-end up to the closing
+    // date, then the closing entry for the whole balance, with the account closed in the same
+    // transaction. Each caller takes the row lock first, so a contribution landing concurrently is
+    // either in the interest or waits behind the close -- never missed by one and refused by the other.
+
+    /** The day after the last month-end on or before {@code date}, or the opening day. */
+    private LocalDate interestFrom(Account account, LocalDate date) {
+        return entries.findByPolicyNumberOrderBySeq(account.getPolicyNumber()).stream()
+            .filter(e -> e.type() == EntryType.INTEREST && "month-end".equals(sourceTypeOf(e)) && !e.getEffectiveDate().isAfter(date))
+            .map(LedgerEntry::getEffectiveDate).max(LocalDate::compareTo)
+            .map(d -> d.plusDays(1)).orElse(account.getOpenedOn());
+    }
+
+    private String sourceTypeOf(LedgerEntry e) {
+        return postings.findById(e.getPostingId()).map(Posting::getSourceType).orElse("");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ClosingQuote quoteClosing(String policyNumber, LocalDate asOf) {
+        Account account = loadOpen(policyNumber);
+        BigDecimal interest = valuer.interestBetween(account, interestFrom(account, asOf), asOf);
+        return new ClosingQuote(policyNumber, asOf, account.getBalance(), interest, account.getBalance().add(interest),
+            account.getCurrency());
+    }
+
+    /** Interest to the day, then the whole balance out, in one posting; closes the account. */
+    private BigDecimal close(Account account, LedgerService.Source source, EntryType type, LocalDate on, String reason,
+                             String closedReason, String createdBy, String approvedBy) {
+        BigDecimal interest = valuer.interestBetween(account, interestFrom(account, on), on);
+        BigDecimal value = account.getBalance().add(interest);
+        ledger.post(account.getPolicyNumber(), source, List.of(
+            LedgerService.Line.of(EntryType.INTEREST, interest, on, "Interest to " + on),
+            LedgerService.Line.of(type, value.negate(), on, reason)), createdBy, approvedBy);
+        account.close(closedReason, on);
+        accounts.save(account);
+        return value;
+    }
+
+    /**
+     * {@code policy.AccountSurrenderApproved}: close on the approval day and pay the value less the
+     * surrender charge, through payment, under SURRENDER_PAYOUT with the surrender request id as the
+     * source -- so policy's SurrenderPaymentListener marks the request PAID unchanged. The charge is
+     * kept by the insurer and is not a ledger entry: the account is emptied either way. A failed
+     * payment leaves the SURRENDER entry standing -- cover has already stopped -- and finance retries
+     * on step 1's existing path.
+     */
+    @Transactional
+    public void closeForSurrender(String policyNumber, UUID surrenderRequestId, String payeeRef,
+                                  BigDecimal chargePercent, String approvedBy, LocalDate on) {
+        Account account = accounts.lockForPosting(policyNumber).orElse(null);
+        if (account == null || account.status() != AccountStatus.OPEN) {
+            return; // redelivered after the close, or not an account policy
+        }
+        BigDecimal value = close(account, new LedgerService.Source("surrender", "surrender:" + surrenderRequestId),
+            EntryType.SURRENDER, on, "Surrendered", "SURRENDERED", "system", approvedBy);
+        BigDecimal paid = value.multiply(HUNDRED.subtract(chargePercent)).divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
+        if (paid.signum() <= 0) {
+            log.error("Surrender {} of policy {} values to nothing after a {}% charge; no payment requested",
+                surrenderRequestId, policyNumber, chargePercent);
+            return;
+        }
+        events.publishEvent(DomainEventEnvelope.of("accumulation.PayoutRequested", TenantContext.get(), Map.of(
+            "purpose", "SURRENDER_PAYOUT",
+            "sourceRef", surrenderRequestId.toString(),
+            // The bare request id, as step 1's own surrender payout uses -- payment's key registry
+            // pays one request once whichever path published it.
+            "idempotencyKey", surrenderRequestId.toString(),
+            "policyNumber", policyNumber,
+            "payeeRef", payeeRef,
+            "amount", Map.of("amount", paid.toPlainString(), "currencyCode", account.getCurrency()))));
+    }
+
+    /**
+     * {@code policy.PolicyCancelledFreeLook}: the account is emptied. No interest -- a free-look
+     * cancels the contract from inception -- and the customer is refunded step 2's premiums less
+     * deductions; this entry only records that the account no longer holds anything. Keyed on the
+     * policy, because the event carries no cancellation id and a policy is cancelled once.
+     */
+    @Transactional
+    public void closeForFreeLook(String policyNumber, String cancelledBy) {
+        Account account = accounts.lockForPosting(policyNumber).orElse(null);
+        if (account == null || account.status() != AccountStatus.OPEN) {
+            return;
+        }
+        ledger.post(policyNumber, new LedgerService.Source("freelook", "freelook:" + policyNumber), List.of(
+            LedgerService.Line.of(EntryType.FREE_LOOK_REFUND, account.getBalance().negate(), LocalDate.now(),
+                "Cancelled in the free-look period; refunded as premiums less deductions")),
+            "system", cancelledBy);
+        account.close("FREE_LOOK", LocalDate.now());
+        accounts.save(account);
+    }
+
+    /**
+     * Called by benefitpayout as an ACCOUNT_VALUE maturity falls due, inside its transaction -- so the
+     * closing entry and the DUE instalment commit together or not at all.
+     */
+    @Override
+    @Transactional
+    public BigDecimal closeForMaturity(String policyNumber, UUID instalmentId, LocalDate dueDate) {
+        LedgerService.Source source = new LedgerService.Source("instalment", "instalment:" + instalmentId);
+        Optional<Posting> done = postings.findByTenantIdAndSourceTypeAndSourceRef(TenantContext.get(), source.type(), source.ref());
+        if (done.isPresent()) {
+            return entries.findByPostingIdOrderBySeq(done.get().getPostingId()).stream()
+                .filter(e -> e.type() == EntryType.MATURITY).map(e -> e.getAmount().negate())
+                .findFirst().orElse(BigDecimal.ZERO.setScale(2));
+        }
+        Account account = accounts.lockForPosting(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber));
+        if (account.status() != AccountStatus.OPEN) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        return close(account, source, EntryType.MATURITY, dueDate, "Matured", "MATURED", "system", null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DeathValuation valueAtDeath(String policyNumber, LocalDate dateOfDeath) {
+        Account account = accounts.findById(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber));
+        List<LedgerEntry> all = entries.findByPolicyNumberOrderBySeq(policyNumber);
+        BigDecimal atDeath = keptAtDeath(all, dateOfDeath).stream()
+            .map(LedgerEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal interest = account.status() == AccountStatus.OPEN
+            ? valuer.interestBetween(account, interestFrom(account, dateOfDeath), dateOfDeath) : BigDecimal.ZERO;
+        BigDecimal premiumsBefore = sumOfPremiums(all, e -> !e.getEffectiveDate().isAfter(dateOfDeath));
+        BigDecimal contributionsAfter = sumOfPremiums(all, e -> e.getEffectiveDate().isAfter(dateOfDeath));
+        return new DeathValuation(atDeath.add(interest).setScale(2, RoundingMode.HALF_EVEN),
+            premiumsBefore.setScale(2, RoundingMode.HALF_EVEN), contributionsAfter.setScale(2, RoundingMode.HALF_EVEN),
+            account.getCurrency());
+    }
+
+    /** "Premiums" for the percentage floor: what the customer paid in -- a transfer in is not a premium. */
+    private static BigDecimal sumOfPremiums(List<LedgerEntry> all, java.util.function.Predicate<LedgerEntry> when) {
+        return all.stream().filter(e -> (e.type() == EntryType.CONTRIBUTION || e.type() == EntryType.TOP_UP) && when.test(e))
+            .map(LedgerEntry::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * The entries a death leaves standing: everything effective on or before it, plus a REVERSAL
+     * dated later whose original was on or before it -- that reversal restores money the life
+     * assured owned when they died. Shared by valueAtDeath and closeForDeath, so the figure a claim is
+     * approved against and the figure the account pays out are one calculation.
+     */
+    private static List<LedgerEntry> keptAtDeath(List<LedgerEntry> all, LocalDate dateOfDeath) {
+        Map<UUID, LedgerEntry> byId = all.stream().collect(Collectors.toMap(LedgerEntry::getEntryId, e -> e));
+        return all.stream().filter(e -> !e.getEffectiveDate().isAfter(dateOfDeath)
+            || (e.type() == EntryType.REVERSAL && byId.containsKey(e.getReversesEntryId())
+                && !byId.get(e.getReversesEntryId()).getEffectiveDate().isAfter(dateOfDeath))).toList();
+    }
+
+    /**
+     * {@code claims.ClaimApproved} with claimType DEATH. Every entry effective after the death is
+     * reversed -- newest first, so the running balance passes back through states that already existed
+     * and never dips below zero -- then interest to the death, then DEATH_CLAIM takes the balance.
+     * Contributions reversed this way are owed to the estate; the death ceiling adds them to the
+     * claim, so they reach the claimant with the death benefit.
+     */
+    @Transactional
+    public void closeForDeath(String policyNumber, UUID claimId, LocalDate dateOfDeath, String approvedBy) {
+        Account account = accounts.lockForPosting(policyNumber).orElse(null);
+        if (account == null || account.status() != AccountStatus.OPEN) {
+            return;
+        }
+        List<LedgerEntry> all = entries.findByPolicyNumberOrderBySeq(policyNumber);
+        Set<UUID> kept = keptAtDeath(all, dateOfDeath).stream().map(LedgerEntry::getEntryId).collect(Collectors.toSet());
+        Set<UUID> alreadyReversed = all.stream().map(LedgerEntry::getReversesEntryId).filter(java.util.Objects::nonNull)
+            .collect(Collectors.toSet());
+        List<LedgerService.Line> lines = new java.util.ArrayList<>();
+        for (LedgerEntry e : all.reversed()) {
+            if (!kept.contains(e.getEntryId()) && e.type() != EntryType.REVERSAL && !alreadyReversed.contains(e.getEntryId())) {
+                lines.add(new LedgerService.Line(EntryType.REVERSAL, e.getAmount().negate(), dateOfDeath,
+                    "Dated after the death on " + dateOfDeath, e.getEntryId()));
+            }
+        }
+        BigDecimal reversedTotal = lines.stream().map(LedgerService.Line::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal interest = valuer.interestBetween(account, interestFrom(account, dateOfDeath), dateOfDeath);
+        BigDecimal value = account.getBalance().add(reversedTotal).add(interest);
+        lines.add(LedgerService.Line.of(EntryType.INTEREST, interest, dateOfDeath, "Interest to the date of death"));
+        lines.add(LedgerService.Line.of(EntryType.DEATH_CLAIM, value.negate(), dateOfDeath, "Death claim " + claimId));
+        ledger.post(policyNumber, new LedgerService.Source("claim", "claim:" + claimId), lines, "system", approvedBy);
+        account.close("DEATH", dateOfDeath);
+        accounts.save(account);
+    }
+
     // ---- Month-end: interest, the policy fee, exhaustion (task 4) --------------------------------
 
     /** Policy states that are on cover, and so owe the month's fee. No cover, no fee. */
