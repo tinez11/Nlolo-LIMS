@@ -189,6 +189,20 @@ export function OpenUnderwritingCasePage() {
           {productId && isInitialLoad(snapshot) && (
             <p className="mt-1 text-xs text-muted-foreground">Resolving product version…</p>
           )}
+          {/* A product with no version in force today -- its only version retired, or not yet
+              effective -- cannot be proposed. Said here, in the server's words: the version id is
+              a hidden field, so without this "Open case" refused silently, with nothing on screen
+              saying why. */}
+          {productId && snapshot.status === 'error' && snapshot.error && (
+            <div className="mt-1">
+              <InlineError error={snapshot.error} />
+            </div>
+          )}
+          {productId && snapshot.status !== 'error' && errors.productVersionId?.message && (
+            <p role="alert" className="mt-1 text-xs text-status-danger-fg">
+              This product&apos;s version has not resolved yet. Wait a moment, or choose the product again.
+            </p>
+          )}
         </FormField>
 
         <div className="grid grid-cols-[1fr_auto] gap-2">
