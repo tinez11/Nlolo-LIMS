@@ -39,6 +39,7 @@ public final class DepositTestMigrations {
         "db-migrations/accumulation/V1__create_accumulation_schema.sql",
         "db-migrations/accumulation/V2__request_keys.sql",
         "db-migrations/accumulation/V3__deposit_periods.sql",
+        "db-migrations/bonus/V1__create_bonus_schema.sql",
         "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
         "db-migrations/underwriting/V1__create_underwriting_schema.sql",
         "db-migrations/underwriting/V2__agent_of_record.sql",
