@@ -87,6 +87,17 @@ public class Account {
         this.closedOn = null;
     }
 
+    /** A matured deposit whose payment failed: the money is back, and waits for a payee again (plan §R7). */
+    public void reopenAwaitingPayee() {
+        if (!"MATURED".equals(closedReason)) {
+            throw new AccumulationStateException("Policy " + policyNumber + "'s account closed on "
+                + closedReason + " and cannot reopen for a payee");
+        }
+        this.status = AccountStatus.OPEN.name();
+        this.closedReason = null;
+        this.closedOn = null;
+    }
+
     public String getPolicyNumber() { return policyNumber; }
     public UUID getTenantId() { return tenantId; }
     public UUID getProductId() { return productId; }

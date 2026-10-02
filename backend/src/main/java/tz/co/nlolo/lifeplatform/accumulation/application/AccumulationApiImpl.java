@@ -59,6 +59,7 @@ public class AccumulationApiImpl implements AccumulationApi {
     final StatementRepository statementRepository;
     final DocumentApi documentApi;
     final IdempotentRequests keyed;
+    final Deposits deposits;
 
     public AccumulationApiImpl(AccountRepository accounts, PostingRepository postings, LedgerEntryRepository entries,
                                LedgerService ledger, PolicyApi policyApi, ProductApi productApi,
@@ -66,8 +67,9 @@ public class AccumulationApiImpl implements AccumulationApi {
                                WithdrawalRequestRepository withdrawals, TopUpRequestRepository topUps,
                                TransferInRepository transfers, AdjustmentRequestRepository adjustments,
                                ApplicationEventPublisher events, StatementRepository statementRepository,
-                               DocumentApi documentApi, IdempotentRequests keyed) {
+                               DocumentApi documentApi, IdempotentRequests keyed, Deposits deposits) {
         this.keyed = keyed;
+        this.deposits = deposits;
         this.statementRepository = statementRepository;
         this.documentApi = documentApi;
         this.accounts = accounts;
@@ -97,6 +99,7 @@ public class AccumulationApiImpl implements AccumulationApi {
             throw new AccumulationStateException("A withdrawal must be for more than zero");
         }
         Account account = loadOpen(policyNumber);
+        deposits.refuseMovement(account);
         if (withdrawals.existsByPolicyNumberAndStatusIn(policyNumber, List.of("REQUESTED", "APPROVED"))) {
             throw new AccumulationStateException("A withdrawal is already in flight on policy " + policyNumber);
         }
@@ -206,6 +209,7 @@ public class AccumulationApiImpl implements AccumulationApi {
             throw new AccumulationStateException("A top-up must be for more than zero");
         }
         Account account = loadOpen(policyNumber);
+        deposits.refuseMovement(account);
         TopUpRequest request = topUps.save(new TopUpRequest(TenantContext.get(), policyNumber,
             amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), payerRef, requestedBy));
         events.publishEvent(DomainEventEnvelope.of("accumulation.TopUpRequested", TenantContext.get(), Map.of(
@@ -264,6 +268,7 @@ public class AccumulationApiImpl implements AccumulationApi {
             throw new AccumulationStateException("A transfer in must be for more than zero");
         }
         Account account = loadOpen(policyNumber);
+        deposits.refuseMovement(account);
         TransferIn transfer = transfers.save(new TransferIn(TenantContext.get(), policyNumber,
             amount.setScale(2, RoundingMode.UNNECESSARY), account.getCurrency(), sourceScheme, documentRef, recordedBy));
         LocalDate today = LocalDate.now();
@@ -396,6 +401,42 @@ public class AccumulationApiImpl implements AccumulationApi {
             id -> toView(rates.findById(id).orElseThrow()));
     }
 
+    // ---- Fixed-term deposits (2026-10-02): the rules live in Deposits --------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isDeposit(String policyNumber) {
+        return accounts.findById(policyNumber).map(a -> deposits.isDepositVersion(a.getProductVersionId())).orElse(false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<DepositView> findDeposit(String policyNumber) {
+        return deposits.find(policyNumber);
+    }
+
+    @Override
+    public MaturityInstructionView recordMaturityInstruction(String policyNumber, MaturityAction action, Integer termMonths,
+                                                             String payeeRef, String recordedBy, String idempotencyKey) {
+        return keyed.once(idempotencyKey, "MATURITY_INSTRUCTION", policyNumber, recordedBy,
+            () -> deposits.instruct(policyNumber, action, termMonths, payeeRef, recordedBy),
+            MaturityInstructionView::instructionId, deposits::instructionView);
+    }
+
+    @Override
+    public DepositPeriodView payOutMaturedDeposit(String policyNumber, String payeeRef, String requestedBy,
+                                                  String idempotencyKey) {
+        return keyed.once(idempotencyKey, "DEPOSIT_PAYOUT", policyNumber, requestedBy,
+            () -> deposits.payOutAwaiting(policyNumber, payeeRef, requestedBy),
+            DepositPeriodView::periodId, deposits::periodView);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AwaitingPayeeView> listAwaitingPayee() {
+        return deposits.awaiting();
+    }
+
     // ---- Statements (task 8) ----------------------------------------------------------------------
 
     @Override
@@ -520,6 +561,7 @@ public class AccumulationApiImpl implements AccumulationApi {
             LedgerService.Line.of(EntryType.INTEREST, interest, on, "Interest to " + on),
             LedgerService.Line.of(type, value.negate(), on, reason)), createdBy, approvedBy);
         account.close(closedReason, on);
+        deposits.endRunning(account, DepositPeriodStatus.TERMINATED, interest, on);
         accounts.save(account);
         return value;
     }
@@ -575,6 +617,7 @@ public class AccumulationApiImpl implements AccumulationApi {
                 "Cancelled in the free-look period; refunded as premiums less deductions")),
             "system", cancelledBy);
         account.close("FREE_LOOK", LocalDate.now());
+        deposits.endRunning(account, DepositPeriodStatus.CANCELLED, BigDecimal.ZERO.setScale(2), LocalDate.now());
         accounts.save(account);
     }
 
@@ -665,6 +708,7 @@ public class AccumulationApiImpl implements AccumulationApi {
         lines.add(LedgerService.Line.of(EntryType.DEATH_CLAIM, value.negate(), dateOfDeath, "Death claim " + claimId));
         ledger.post(policyNumber, new LedgerService.Source("claim", "claim:" + claimId), lines, "system", approvedBy);
         account.close("DEATH", dateOfDeath);
+        deposits.endRunning(account, DepositPeriodStatus.TERMINATED, interest, dateOfDeath);
         accounts.save(account);
     }
 
@@ -706,6 +750,12 @@ public class AccumulationApiImpl implements AccumulationApi {
      * instance, so the head it advances is the one this method reads next.
      */
     private void postMonthEnd(Account account, LocalDate from, LocalDate monthEnd) {
+        if (deposits.isDepositVersion(account.getProductVersionId())) {
+            // A deposit earns for its term, posted once at the end (D4): no monthly interest, no fee.
+            account.monthEndPostedThrough(monthEnd);
+            accounts.save(account);
+            return;
+        }
         String policyNumber = account.getPolicyNumber();
         if (account.getLastSeq() == 0) {
             // Never paid into: nothing to credit, nothing to charge, and nothing to lapse. A policy
@@ -871,6 +921,13 @@ public class AccumulationApiImpl implements AccumulationApi {
      */
     @Transactional
     public void creditContribution(String policyNumber, UUID invoiceId, BigDecimal amount, LocalDate collectedOn) {
+        creditContribution(policyNumber, invoiceId, amount, collectedOn, null);
+    }
+
+    /** {@code payerRef}: the number the money came from, when billing knows it -- a deposit's default payee. */
+    @Transactional
+    public void creditContribution(String policyNumber, UUID invoiceId, BigDecimal amount, LocalDate collectedOn,
+                                   String payerRef) {
         Optional<Account> found = accounts.findById(policyNumber);
         if (found.isEmpty()) {
             return; // a scale policy -- not ours
@@ -888,6 +945,10 @@ public class AccumulationApiImpl implements AccumulationApi {
         // a date before cover -- which inside this listener would drop the customer's money with
         // nothing but a log line.
         LocalDate effective = collectedOn.isBefore(account.getOpenedOn()) ? account.getOpenedOn() : collectedOn;
+        if (deposits.isDepositVersion(account.getProductVersionId())) {
+            deposits.credit(account, invoiceId, amount, effective, payerRef);
+            return;
+        }
         int policyYear = PolicyYears.of(account.getOpenedOn(), effective);
         AccumulationChargeRow charges = productApi.resolveAccumulationPlan(account.getProductVersionId())
             .chargesFor(policyYear);

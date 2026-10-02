@@ -119,4 +119,25 @@ public interface AccumulationApi {
     List<StatementRecordView> listStatements(String policyNumber);
 
     byte[] statementPdf(java.util.UUID statementId);
+
+    // ---- Fixed-term deposits (2026-10-02) ------------------------------------------------------
+
+    /** True when the policy's account is on a deposit version. */
+    boolean isDeposit(String policyNumber);
+
+    /** Empty for any policy that is not a fixed-term deposit. */
+    Optional<DepositView> findDeposit(String policyNumber);
+
+    /**
+     * The client's choice for the end of the running term, superseding any earlier one (D7). A
+     * reinvestment names a term the version active for new business offers. Once per key.
+     */
+    MaturityInstructionView recordMaturityInstruction(String policyNumber, MaturityAction action, Integer termMonths,
+                                                      String payeeRef, String recordedBy, String idempotencyKey);
+
+    /** Finance pays a matured deposit that had no number to go to. Once per key. */
+    DepositPeriodView payOutMaturedDeposit(String policyNumber, String payeeRef, String requestedBy, String idempotencyKey);
+
+    /** Matured deposits whose money waits for a payee, longest-waiting first. */
+    List<AwaitingPayeeView> listAwaitingPayee();
 }

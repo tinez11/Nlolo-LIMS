@@ -24,3 +24,5 @@ accumulation:
   month-end-interval-ms: 10000
   # Daily elsewhere; the annual statement files once per account per year either way.
   statement-interval-ms: 30000
+  # A fixed-term deposit's maturity run: hourly elsewhere, seconds here for the e2e suite.
+  deposit-maturity-interval-ms: 10000

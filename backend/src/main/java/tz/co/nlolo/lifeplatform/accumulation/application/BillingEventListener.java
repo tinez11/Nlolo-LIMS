@@ -42,7 +42,9 @@ public class BillingEventListener {
                 // A UUID in process, a String after any serialising hop -- accept both.
                 UUID.fromString(String.valueOf(p.get("invoiceId"))),
                 new BigDecimal((String) amount.get("amount")),
-                LocalDate.ofInstant(Instant.parse((String) p.get("collectedAt")), CIVIL_ZONE));
+                LocalDate.ofInstant(Instant.parse((String) p.get("collectedAt")), CIVIL_ZONE),
+                // Absent for a field (cash) receipt: no number to pay a deposit back to.
+                (String) p.get("payerRef"));
         });
     }
 }
