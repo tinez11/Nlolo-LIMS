@@ -6,8 +6,8 @@ info:
     External REST surface of the `bonus` module (product step 4) -- with-profits bonuses. Bonuses are
     declared per product as at a valuation date, proposed by one person and approved by another, and
     attached to every eligible participating policy by a drain. The module owns every attached bonus
-    and every movement in it; entries are immutable and corrected only by reversing entries. Task 7
-    adds the per-policy reads.
+    and every movement in it; entries are immutable and corrected only by reversing entries. Each
+    policy's bonuses are read whole: the ledger, every declaration's outcome, every settlement.
 servers:
   - url: https://api.nlolo-lifeplatform.tz/v1
 paths:
@@ -101,6 +101,54 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/bonuses:
+    get:
+      summary: A with-profits policy's bonuses -- every entry, every declaration's outcome, every settlement
+      description: >
+        Any staff member. 404 (NOT_WITH_PROFITS) for a policy whose version is not with-profits, which
+        the console reads as "no Bonuses tab". Entries are in sequence order and immutable; a correction
+        appears as a REVERSAL entry, never as an edited one. An outcome says why a declaration did or
+        did not attach (NOT_ELIGIBLE carries the reason).
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The policy's bonuses
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyBonuses' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not a with-profits policy
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/bonuses/value:
+    get:
+      summary: What the policy's bonuses are worth at a date
+      description: >
+        Any staff member. Attached as at the date, plus interim since the last valuation (only if the
+        policy is eligible on the date), plus terminal on what is attached -- the figure a death or
+        maturity on that date would add. Reads only; nothing is recorded.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: asOf, in: query, required: false, schema: { type: string, format: date }, description: "Defaults to today (EAT)" }
+      responses:
+        '200':
+          description: The valuation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BonusValuation' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not a with-profits policy
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
     BonusDeclarationRequest:
@@ -125,3 +173,67 @@ components:
         approvedBy: { type: [string, "null"] }
         approvedAt: { type: [string, "null"], format: date-time }
         completedAt: { type: [string, "null"], format: date-time, description: "When the drain finished attaching it" }
+    BonusValuation:
+      type: object
+      additionalProperties: false
+      required: [attached, interim, terminal, total]
+      properties:
+        attached: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        interim: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        terminal: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        total: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        interimRatePercent: { type: [string, "null"], description: "The reversionary rate interim was earned at; null when no declaration applied" }
+        terminalRatePercent: { type: [string, "null"] }
+        declarationId: { type: [string, "null"], format: uuid, description: "The declaration this was valued against" }
+    BonusEntry:
+      type: object
+      additionalProperties: false
+      required: [entryId, seq, type, amount, totalAfter, effectiveDate, createdBy, createdAt]
+      properties:
+        entryId: { type: string, format: uuid }
+        seq: { type: integer }
+        type: { type: string, enum: [REVERSIONARY, REVERSAL] }
+        amount: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        totalAfter: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        effectiveDate: { type: string, format: date }
+        declarationId: { type: [string, "null"], format: uuid }
+        basis:
+          description: What the rate was applied to; null on a reversal
+          anyOf:
+            - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+            - { type: "null" }
+        ratePercent: { type: [string, "null"] }
+        reversesEntryId: { type: [string, "null"], format: uuid }
+        reason: { type: [string, "null"] }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+    BonusOutcome:
+      type: object
+      additionalProperties: false
+      required: [declarationId, outcome, decidedAt]
+      properties:
+        declarationId: { type: string, format: uuid }
+        valuationDate: { type: [string, "null"], format: date }
+        outcome: { type: string, enum: [ATTACHED, NOT_ELIGIBLE, NOTHING_DUE] }
+        reason: { type: [string, "null"], description: "Why it did not attach -- set for NOT_ELIGIBLE" }
+        decidedAt: { type: string, format: date-time }
+    BonusSettlement:
+      type: object
+      additionalProperties: false
+      required: [exitType, exitRef, exitDate, value, recordedAt]
+      properties:
+        exitType: { type: string, enum: [MATURITY, DEATH] }
+        exitRef: { type: string, description: "The claim id or payout instalment id" }
+        exitDate: { type: string, format: date }
+        value: { $ref: '#/components/schemas/BonusValuation' }
+        recordedAt: { type: string, format: date-time }
+    PolicyBonuses:
+      type: object
+      additionalProperties: false
+      required: [policyNumber, attachedTotal, entries, outcomes, settlements]
+      properties:
+        policyNumber: { type: string }
+        attachedTotal: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        entries: { type: array, items: { $ref: '#/components/schemas/BonusEntry' } }
+        outcomes: { type: array, items: { $ref: '#/components/schemas/BonusOutcome' } }
+        settlements: { type: array, items: { $ref: '#/components/schemas/BonusSettlement' } }

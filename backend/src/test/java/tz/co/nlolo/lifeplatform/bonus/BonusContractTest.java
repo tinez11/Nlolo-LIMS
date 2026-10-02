@@ -20,8 +20,15 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import tz.co.nlolo.lifeplatform.Application;
 import tz.co.nlolo.lifeplatform.MigrationTestSupport;
 import tz.co.nlolo.lifeplatform.accumulation.DepositTestMigrations;
+import tz.co.nlolo.lifeplatform.TenantContext;
+import tz.co.nlolo.lifeplatform.bonus.application.BonusApiImpl;
+import tz.co.nlolo.lifeplatform.bonus.application.DeclarationDrain;
+import tz.co.nlolo.lifeplatform.bonus.domain.Eligibility;
+import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
 import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -135,5 +142,70 @@ class BonusContractTest {
             .andExpect(status().isBadRequest());
         mockMvc.perform(get("/products/" + product + "/bonus-declarations").with(staff("FINANCE_OFFICER", "f")))
             .andExpect(jsonPath("$.length()").value(1));
+    }
+
+    // ---- Task 7: a policy's bonuses ------------------------------------------------------------
+
+    private static final LocalDate TODAY = LocalDate.now(Eligibility.CIVIL_ZONE);
+    @Autowired private BonusApiImpl api;
+    @Autowired private DeclarationDrain drain;
+
+    /** A with-profits policy with one 3% declaration (50% terminal) attached as at today. */
+    private BonusTestFixtures.Issued withOneBonus() {
+        var issued = fixtures.issue(TENANT, BonusTestFixtures.COMPOUND_NONE, CashValuePlan.none());
+        UUID declarationId;
+        TenantContext.set(TENANT);
+        try {
+            declarationId = api.proposeDeclaration(issued.productId(), TODAY, new BigDecimal("3"), new BigDecimal("50"),
+                "admin-one").declarationId();
+            api.approveDeclaration(declarationId, "finance-two");
+        } finally {
+            TenantContext.clear();
+        }
+        drain.drainOne(declarationId, TENANT);
+        return issued;
+    }
+
+    @Test
+    void aPolicysBonusesAreReadToSpecWithTheEntryAndWhyItAttached() throws Exception {
+        var issued = withOneBonus();
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses").with(staff("UNDERWRITER", "reader")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.attachedTotal.amount").value("30000.00"))
+            .andExpect(jsonPath("$.entries[0].type").value("REVERSIONARY"))
+            .andExpect(jsonPath("$.entries[0].ratePercent").value("3"))
+            .andExpect(jsonPath("$.entries[0].basis.amount").value("1000000.00"))
+            .andExpect(jsonPath("$.outcomes[0].outcome").value("ATTACHED"))
+            .andExpect(jsonPath("$.outcomes[0].valuationDate").value(TODAY.toString()))
+            .andExpect(jsonPath("$.settlements").isEmpty())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void anOrdinaryPolicyHasNoBonusesAndSaysSoWithA404() throws Exception {
+        var issued = fixtures.issue(TENANT, BonusPlan.none(), CashValuePlan.none());
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses").with(staff("UNDERWRITER", "reader")))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("NOT_WITH_PROFITS"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses/value").with(staff("UNDERWRITER", "reader")))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("NOT_WITH_PROFITS"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void theValueAtADateIsItsThreePartsAndTheirTotal() throws Exception {
+        var issued = withOneBonus();
+        // attached 30,000; interim (1,000,000 + 30,000) x 3% x 5/12 = 12,875.00; terminal 50% x 30,000 = 15,000.
+        mockMvc.perform(get("/policies/" + issued.policyNumber() + "/bonuses/value")
+                .param("asOf", TODAY.plusMonths(5).toString()).with(staff("UNDERWRITER", "reader")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.attached.amount").value("30000.00"))
+            .andExpect(jsonPath("$.interim.amount").value("12875.00"))
+            .andExpect(jsonPath("$.terminal.amount").value("15000.00"))
+            .andExpect(jsonPath("$.total.amount").value("57875.00"))
+            .andExpect(jsonPath("$.terminalRatePercent").value("50"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 }

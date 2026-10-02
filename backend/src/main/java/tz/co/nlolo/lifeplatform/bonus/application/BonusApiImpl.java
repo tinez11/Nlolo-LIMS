@@ -226,6 +226,30 @@ public class BonusApiImpl implements BonusApi {
         });
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<PolicyBonusView> policyBonuses(String policyNumber) {
+        Participant p = gate.participates(policyNumber) ? participants.findById(policyNumber).orElse(null) : null;
+        if (p == null) {
+            return Optional.empty();
+        }
+        List<BonusEntryView> entryViews = entries.findByPolicyNumberOrderBySeqAsc(policyNumber).stream()
+            .map(e -> new BonusEntryView(e.getEntryId(), e.getSeq(), e.type(), e.getAmount(), e.getTotalAfter(),
+                e.getEffectiveDate(), e.getDeclarationId(), e.getBasisAmount(), e.getRatePercent(), e.getReversesEntryId(),
+                e.getReason(), e.getCreatedBy(), e.getCreatedAt()))
+            .toList();
+        List<BonusOutcomeView> outcomeViews = outcomes.findByPolicyNumberOrderByDecidedAtDesc(policyNumber).stream()
+            .map(o -> new BonusOutcomeView(o.getDeclarationId(),
+                declarations.findById(o.getDeclarationId()).map(Declaration::getValuationDate).orElse(null),
+                o.outcome(), o.getReason(), o.getDecidedAt()))
+            .toList();
+        List<BonusSettlementView> settlementViews = settlements.findByPolicyNumberOrderByRecordedAtDesc(policyNumber).stream()
+            .map(s -> new BonusSettlementView(s.type(), s.getExitRef(), s.getExitDate(), s.toValuation(), s.getRecordedAt()))
+            .toList();
+        return Optional.of(new PolicyBonusView(policyNumber, p.getCurrency(), p.getAttachedTotal(), entryViews, outcomeViews,
+            settlementViews));
+    }
+
     /** Free-look (the spec's §5.3): the contract never was, so neither were its bonuses. */
     @Transactional
     public void reverseAllForFreeLook(String policyNumber, String cancelledBy) {

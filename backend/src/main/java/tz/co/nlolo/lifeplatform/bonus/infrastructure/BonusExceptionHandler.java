@@ -25,4 +25,12 @@ public class BonusExceptionHandler {
         problem.setProperty("traceId", UUID.randomUUID().toString());
         return problem;
     }
+
+    @ExceptionHandler(NotWithProfitsException.class)
+    public ProblemDetail handleNotWithProfits(NotWithProfitsException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problem.setProperty("errorCode", "NOT_WITH_PROFITS");
+        problem.setProperty("traceId", UUID.randomUUID().toString());
+        return problem;
+    }
 }

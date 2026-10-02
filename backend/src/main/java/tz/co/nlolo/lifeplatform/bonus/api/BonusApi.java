@@ -36,4 +36,7 @@ public interface BonusApi {
 
     /** valueAt, recorded once for this exit. A second call for the same exit returns the record. */
     BonusValuation settle(String policyNumber, ExitType type, String exitRef, LocalDate exitDate);
+
+    /** The policy's whole bonus history; empty when it is not with-profits -- an answer, not an error. */
+    java.util.Optional<PolicyBonusView> policyBonuses(String policyNumber);
 }
