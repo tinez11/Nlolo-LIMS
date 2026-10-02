@@ -13,6 +13,8 @@ import java.util.UUID;
 
 public interface ParticipantRepository extends JpaRepository<Participant, String> {
 
+    boolean existsByProductId(UUID productId);
+
     /** The head, locked for the entry about to be written -- accumulation's lockForPosting. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Participant p where p.policyNumber = :policyNumber")

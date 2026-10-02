@@ -1,0 +1,127 @@
+openapi: 3.1.0
+info:
+  title: Bonus API
+  version: "0.1.0-draft"
+  description: >
+    External REST surface of the `bonus` module (product step 4) -- with-profits bonuses. Bonuses are
+    declared per product as at a valuation date, proposed by one person and approved by another, and
+    attached to every eligible participating policy by a drain. The module owns every attached bonus
+    and every movement in it; entries are immutable and corrected only by reversing entries. Task 7
+    adds the per-policy reads.
+servers:
+  - url: https://api.nlolo-lifeplatform.tz/v1
+paths:
+  /products/{productId}/bonus-declarations:
+    get:
+      summary: Every bonus declared on a product, newest valuation date first
+      description: FINANCE_OFFICER or ADMIN. Includes proposals still awaiting a second person.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The product's declarations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BonusDeclaration' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+    post:
+      summary: Propose a bonus declaration
+      description: >
+        ADMIN only -- declaring a bonus is a price, as publishing a version is. A reversionary rate of
+        the sum assured (or of the sum assured plus bonuses already attached, on a COMPOUND version),
+        attached to every policy eligible on the valuation date; and a terminal rate, a percentage of
+        attached bonuses, paid at a claim or maturity valued against this declaration. Refused on a
+        product that has no with-profits policies.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BonusDeclarationRequest' }
+      responses:
+        '201':
+          description: Proposed, awaiting a second person's approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BonusDeclaration' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- a rate out of range, or a product with no with-profits policies
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /bonus-declarations/{declarationId}/approve:
+    post:
+      summary: Approve a proposed declaration, by someone other than its proposer
+      description: >
+        A different ADMIN, or a FINANCE_OFFICER. One approved declaration per product and valuation
+        date; an approved declaration cannot be withdrawn, because it may already have attached.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: declarationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Approved; the drain attaches it to every eligible policy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BonusDeclaration' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- the proposer approving, not a proposal, or a date already declared
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /bonus-declarations/{declarationId}/withdraw:
+    post:
+      summary: Withdraw a proposed declaration
+      description: ADMIN. Only a PROPOSED declaration -- an approved one may already have attached to a policy.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: declarationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Withdrawn
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BonusDeclaration' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused -- not a proposal
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+components:
+  schemas:
+    BonusDeclarationRequest:
+      type: object
+      required: [valuationDate, reversionaryRatePercent, terminalRatePercent]
+      properties:
+        valuationDate: { type: string, format: date }
+        reversionaryRatePercent: { type: number, minimum: 0, maximum: 100, description: "Of the sum assured (plus attached bonuses, on a COMPOUND version)" }
+        terminalRatePercent: { type: number, minimum: 0, maximum: 1000, description: "Of attached bonuses, paid at a claim or maturity" }
+    BonusDeclaration:
+      type: object
+      required: [declarationId, productId, valuationDate, reversionaryRatePercent, terminalRatePercent, status, proposedBy, proposedAt]
+      properties:
+        declarationId: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        valuationDate: { type: string, format: date }
+        reversionaryRatePercent: { type: string, description: "Decimal string, no trailing zeros" }
+        terminalRatePercent: { type: string, description: "Decimal string, no trailing zeros" }
+        status: { type: string, enum: [PROPOSED, APPROVED, WITHDRAWN] }
+        proposedBy: { type: string }
+        proposedAt: { type: string, format: date-time }
+        approvedBy: { type: [string, "null"] }
+        approvedAt: { type: [string, "null"], format: date-time }
+        completedAt: { type: [string, "null"], format: date-time, description: "When the drain finished attaching it" }

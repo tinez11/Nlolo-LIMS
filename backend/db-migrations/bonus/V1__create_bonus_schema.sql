@@ -119,6 +119,20 @@ CREATE TABLE bonus.settlement (
 );
 CREATE UNIQUE INDEX ux_settlement_exit ON bonus.settlement (tenant_id, exit_type, exit_ref);
 
+-- One row per Idempotency-Key a create request carried (proposing a declaration), accumulation V2's
+-- shape and reason: step 3's live check found a retried request created twice because no endpoint
+-- read the key the console sends. The create and its key commit in one transaction.
+CREATE TABLE bonus.request_key (
+    tenant_id       UUID NOT NULL,
+    idempotency_key VARCHAR(200) NOT NULL,
+    operation       VARCHAR(30) NOT NULL,
+    target          VARCHAR(100) NOT NULL,
+    resource_id     UUID NOT NULL,
+    created_by      VARCHAR(100) NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, idempotency_key)
+);
+
 -- IMMUTABILITY, twice, accumulation's arrangement: grants bind app_role, this trigger binds the
 -- owner every migration and test connects as.
 CREATE OR REPLACE FUNCTION bonus.refuse_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -171,7 +185,7 @@ DO $$
 DECLARE t TEXT;
 BEGIN
     FOREACH t IN ARRAY ARRAY['declaration','participant','status_event','declaration_outcome',
-                             'attachment_entry','settlement'] LOOP
+                             'attachment_entry','settlement','request_key'] LOOP
         EXECUTE format('ALTER TABLE bonus.%I ENABLE ROW LEVEL SECURITY', t);
         EXECUTE format('CREATE POLICY %I ON bonus.%I USING (tenant_id = '
             'NULLIF(current_setting(''app.current_tenant_id'', true), '''')::uuid)', t || '_tenant_isolation', t);
@@ -179,4 +193,5 @@ BEGIN
 END $$;
 GRANT SELECT, INSERT, UPDATE ON bonus.declaration, bonus.participant TO app_role;
 -- The record itself: read and append, nothing else.
-GRANT SELECT, INSERT ON bonus.status_event, bonus.declaration_outcome, bonus.attachment_entry, bonus.settlement TO app_role;
+GRANT SELECT, INSERT ON bonus.status_event, bonus.declaration_outcome, bonus.attachment_entry, bonus.settlement,
+    bonus.request_key TO app_role;
