@@ -56,6 +56,8 @@ public class PolicyApiImpl implements PolicyApi {
 
     private final PolicyRepository policyRepository;
     private final PolicyAccountRepository policyAccountRepository;
+    /** Product step 4. Read and written only for with-profits policies -- see V32. */
+    private final PolicyBonusRepository policyBonusRepository;
     private final EndorsementRepository endorsementRepository;
     private final BeneficiaryRepository beneficiaryRepository;
     private final CoverageRepository coverageRepository;
@@ -88,10 +90,12 @@ public class PolicyApiImpl implements PolicyApi {
                           EnrolmentSubmissionRowRepository enrolmentSubmissionRowRepository,
                           PolicyValueRepository policyValueRepository,
                           SurrenderRequestRepository surrenderRequestRepository,
+                          PolicyBonusRepository policyBonusRepository,
                           PartyApi partyApi, ProductApi productApi, ReferenceDataApi referenceDataApi,
                           DistributionApi distributionApi, UnderwritingApi underwritingApi,
                           ApplicationEventPublisher eventPublisher, ObjectMapper objectMapper) {
         this.policyRepository = policyRepository;
+        this.policyBonusRepository = policyBonusRepository;
         this.policyAccountRepository = policyAccountRepository;
         this.endorsementRepository = endorsementRepository;
         this.beneficiaryRepository = beneficiaryRepository;
@@ -1178,6 +1182,17 @@ public class PolicyApiImpl implements PolicyApi {
             Map.of("policyNumber", policyNumber,
                    "maturityDate", policy.getMaturityDate().toString(),
                    "expiredAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional
+    public void restateAttachedBonus(String policyNumber, BigDecimal total) {
+        UUID tenantId = TenantContext.get();
+        findPolicyOrThrow(policyNumber, tenantId);
+        PolicyBonus projection = policyBonusRepository.findById(policyNumber)
+            .orElseGet(() -> new PolicyBonus(policyNumber, tenantId));
+        projection.restate(total);
+        policyBonusRepository.save(projection);
     }
 
     @Override

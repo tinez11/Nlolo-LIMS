@@ -288,6 +288,14 @@ channels:
       without touching accumulation.
     publish:
       message: { $ref: '#/components/messages/PostingRecorded' }
+  bonus.BonusEntryRecorded:
+    description: >
+      Producer: bonus (AttachmentLedger -- the one place a policy's attached bonuses change), once
+      per attachment-ledger entry, in the entry's own transaction: REVERSIONARY when an approved
+      declaration attaches, REVERSAL when one is taken back. A redelivered declaration run attaches
+      nothing and publishes nothing. Consumers: audit.
+    publish:
+      message: { $ref: '#/components/messages/BonusEntryRecorded' }
   policy.GroupMemberAdded:
     description: >
       Producer: policy (PolicyApiImpl.addMember) -- one insured life joins a group scheme after
@@ -651,6 +659,7 @@ components:
     PayoutRequested: { messageId: PayoutRequested, name: PayoutRequested, payload: { $ref: '#/components/schemas/PayoutRequestedPayload' } }
     PayoutPaid: { messageId: PayoutPaid, name: PayoutPaid, payload: { $ref: '#/components/schemas/PayoutPaidPayload' } }
     PostingRecorded: { messageId: PostingRecorded, name: PostingRecorded, payload: { $ref: '#/components/schemas/PostingRecordedPayload' } }
+    BonusEntryRecorded: { messageId: BonusEntryRecorded, name: BonusEntryRecorded, payload: { $ref: '#/components/schemas/BonusEntryRecordedPayload' } }
     StatementIssued: { messageId: StatementIssued, name: StatementIssued, payload: { $ref: '#/components/schemas/StatementIssuedPayload' } }
     DepositMatured: { messageId: DepositMatured, name: DepositMatured, payload: { $ref: '#/components/schemas/DepositMaturedPayload' } }
     AccountPayoutRequested: { messageId: AccountPayoutRequested, name: AccountPayoutRequested, payload: { $ref: '#/components/schemas/AccountPayoutRequestedPayload' } }
@@ -992,6 +1001,18 @@ components:
                   amount: {type: string, description: "Signed decimal string"}
                   balanceAfter: {type: string}
                   effectiveDate: {type: string, format: date}
+    BonusEntryRecordedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          properties:
+            policyNumber: {type: string}
+            seq: {type: integer}
+            type: {type: string, enum: [REVERSIONARY, REVERSAL]}
+            amount: {type: object, description: "Signed: a reversal is negative", properties: {amount: {type: string}, currencyCode: {type: string}}}
+            totalAfter: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
+            effectiveDate: {type: string, format: date, description: "A declaration's valuation date; a reversal's own date"}
+            sourceRef: {type: string, description: "declaration:<id>:<policy> or reversal:<entry id> -- one source, one entry"}
     GroupMemberAddedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

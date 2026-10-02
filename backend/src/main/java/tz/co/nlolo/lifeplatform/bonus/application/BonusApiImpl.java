@@ -1,33 +1,56 @@
 package tz.co.nlolo.lifeplatform.bonus.application;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.bonus.api.*;
-import tz.co.nlolo.lifeplatform.bonus.domain.Declaration;
-import tz.co.nlolo.lifeplatform.bonus.infrastructure.DeclarationRepository;
-import tz.co.nlolo.lifeplatform.bonus.infrastructure.ParticipantRepository;
+import tz.co.nlolo.lifeplatform.bonus.domain.*;
+import tz.co.nlolo.lifeplatform.bonus.infrastructure.*;
+import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
+import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
 public class BonusApiImpl implements BonusApi {
 
+    private static final Logger log = LoggerFactory.getLogger(BonusApiImpl.class);
     private static final BigDecimal HUNDRED = new BigDecimal("100");
     private static final BigDecimal THOUSAND = new BigDecimal("1000");
 
     private final DeclarationRepository declarations;
     private final ParticipantRepository participants;
     private final BonusIdempotentRequests keyed;
+    private final StatusEventRepository statusEvents;
+    private final AttachmentEntryRepository entries;
+    private final DeclarationOutcomeRepository outcomes;
+    private final AttachmentLedger ledger;
+    private final ProductApi productApi;
+    private final BonusApiImpl self;
 
-    public BonusApiImpl(DeclarationRepository declarations, ParticipantRepository participants, BonusIdempotentRequests keyed) {
+    /** {@code self} is this bean's proxy: the drain must reach attachOne through it, or REQUIRES_NEW is ignored. */
+    public BonusApiImpl(DeclarationRepository declarations, ParticipantRepository participants, BonusIdempotentRequests keyed,
+                        StatusEventRepository statusEvents, AttachmentEntryRepository entries,
+                        DeclarationOutcomeRepository outcomes, AttachmentLedger ledger, ProductApi productApi,
+                        @Lazy BonusApiImpl self) {
         this.declarations = declarations;
         this.participants = participants;
         this.keyed = keyed;
+        this.statusEvents = statusEvents;
+        this.entries = entries;
+        this.outcomes = outcomes;
+        this.ledger = ledger;
+        this.productApi = productApi;
+        this.self = self;
     }
 
     @Override
@@ -84,6 +107,69 @@ public class BonusApiImpl implements BonusApi {
     @Transactional(readOnly = true)
     public List<BonusDeclarationView> listDeclarations(UUID productId) {
         return declarations.findByProductIdOrderByValuationDateDescProposedAtDesc(productId).stream().map(this::toView).toList();
+    }
+
+    /**
+     * One declaration, one policy: an outcome always, an entry only when a bonus attaches. Its own
+     * transaction (REQUIRES_NEW through the proxy), so one policy's failure costs only that policy.
+     * ux_declaration_outcome makes a re-run after a crash harmless.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void attachOne(UUID declarationId, String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Declaration d = load(declarationId);
+        Participant p = participants.findById(policyNumber).orElseThrow();
+        BonusPlan plan = productApi.resolveBonusPlan(p.getProductVersionId());
+        List<Eligibility.StatusRow> rows = statusEvents.findByPolicyNumberOrderByEffectiveAtAsc(policyNumber).stream()
+            .map(StatusEvent::toRow).toList();
+        Optional<String> refusal = Eligibility.refusal(rows, d.getValuationDate(), plan.paidUpParticipates());
+        if (refusal.isPresent()) {
+            outcomes.save(new DeclarationOutcome(tenantId, declarationId, policyNumber, OutcomeKind.NOT_ELIGIBLE, refusal.get()));
+            return;
+        }
+        BigDecimal sumAssured = Eligibility.sumAssuredOn(rows, d.getValuationDate());
+        BigDecimal attachedBefore = entries.sumBefore(policyNumber, d.getValuationDate());
+        BigDecimal amount = BonusArithmetic.reversionary(plan.method(), sumAssured, attachedBefore, d.getReversionaryRatePercent());
+        if (amount.signum() == 0) {
+            outcomes.save(new DeclarationOutcome(tenantId, declarationId, policyNumber, OutcomeKind.NOTHING_DUE, null));
+            return;
+        }
+        outcomes.saveAndFlush(new DeclarationOutcome(tenantId, declarationId, policyNumber, OutcomeKind.ATTACHED, null));
+        ledger.attach(policyNumber, d, BonusArithmetic.base(plan.method(), sumAssured, attachedBefore), amount,
+            "system:bonus-declaration");
+    }
+
+    /**
+     * One batch of one declaration. Returns how many policies it DECIDED -- not how many it tried: a
+     * policy that fails gets no outcome, so counting attempts would let one broken policy keep the
+     * drain's loop spinning on it forever. Zero with an empty batch means complete.
+     */
+    public int drainDeclaration(UUID declarationId) {
+        Declaration d = load(declarationId);
+        List<String> batch = participants.awaitingOutcome(d.getProductId(), declarationId);
+        if (batch.isEmpty()) {
+            self.complete(declarationId);
+            return 0;
+        }
+        int decided = 0;
+        for (String policyNumber : batch) {
+            try {
+                self.attachOne(declarationId, policyNumber);
+                decided++;
+            } catch (Exception e) {
+                log.error("Bonus declaration {} failed for policy {}", declarationId, policyNumber, e);
+            }
+        }
+        return decided;
+    }
+
+    @Transactional
+    public void complete(UUID declarationId) {
+        Declaration d = load(declarationId);
+        if (d.getCompletedAt() == null) {
+            d.complete();
+            declarations.save(d);
+        }
     }
 
     Declaration load(UUID declarationId) {

@@ -6,8 +6,8 @@ package tz.co.nlolo.lifeplatform.accumulation;
  * account with its terms. One list for every deposit test class, rather than another copy to miss
  * the next migration in.
  *
- * <p>Public since product step 4: the bonus module's tests use it too, and it gains bonus V1 and
- * policy V32 in the tasks that add them.
+ * <p>Public since product step 4: the bonus module's tests use it too, so it carries bonus V1 and
+ * policy V32.
  */
 public final class DepositTestMigrations {
     private DepositTestMigrations() {}
@@ -83,6 +83,7 @@ public final class DepositTestMigrations {
         "db-migrations/policy/V29__paid_up.sql",
         "db-migrations/policy/V30__surrender.sql",
         "db-migrations/policy/V31__free_look_status.sql",
+        "db-migrations/policy/V32__attached_bonus_projection.sql",
         "db-migrations/audit/V1__create_audit_schema.sql",
         "db-migrations/audit/V2__rls_fail_closed.sql",
         "db-migrations/audit/V3__q4_2026_partitions.sql",

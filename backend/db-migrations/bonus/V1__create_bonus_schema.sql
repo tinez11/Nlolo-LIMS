@@ -174,7 +174,9 @@ CREATE OR REPLACE FUNCTION bonus.declarations_due()
 RETURNS TABLE (declaration_id UUID, tenant_id UUID)
 LANGUAGE sql SECURITY DEFINER AS $$
     SELECT d.declaration_id, d.tenant_id FROM bonus.declaration d
-     WHERE d.status = 'APPROVED' AND d.completed_at IS NULL AND d.valuation_date <= current_date
+     -- The civil date, not current_date: the session runs in UTC, three hours behind Dar es Salaam.
+     WHERE d.status = 'APPROVED' AND d.completed_at IS NULL
+       AND d.valuation_date <= (now() AT TIME ZONE 'Africa/Dar_es_Salaam')::date
      ORDER BY d.valuation_date
      LIMIT 50;
 $$;
