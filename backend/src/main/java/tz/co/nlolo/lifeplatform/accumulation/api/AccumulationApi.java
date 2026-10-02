@@ -68,6 +68,28 @@ public interface AccumulationApi {
 
     List<AdjustmentView> listAdjustments(String policyNumber);
 
+    // ---- The same five, once per Idempotency-Key -----------------------------------------------
+    //
+    // What the REST layer calls. A repeat of the key answers with what the first request created and
+    // creates nothing, so a client retrying after a timeout cannot collect, credit or propose twice.
+    // A key reused for a different request is refused. The unkeyed forms above remain for in-process
+    // callers, which carry their own source references; it is over HTTP that retries happen.
+
+    WithdrawalView requestWithdrawal(String policyNumber, java.math.BigDecimal amount, String payeeRef, String requestedBy,
+                                     String idempotencyKey);
+
+    TopUpView requestTopUp(String policyNumber, java.math.BigDecimal amount, String payerRef, String requestedBy,
+                           String idempotencyKey);
+
+    TransferInView recordTransferIn(String policyNumber, java.math.BigDecimal amount, String sourceScheme,
+                                    String documentRef, String recordedBy, String idempotencyKey);
+
+    AdjustmentView proposeAdjustment(String policyNumber, java.math.BigDecimal amount, String reason, String proposedBy,
+                                     String idempotencyKey);
+
+    RateDeclarationView proposeRate(java.util.UUID productId, java.math.BigDecimal ratePercent,
+                                    java.time.LocalDate effectiveFrom, String proposedBy, String idempotencyKey);
+
     // ---- Closing (task 7) ----------------------------------------------------------------------
 
     /** What a closing on {@code asOf} would move. The surrender approval screen shows it. */

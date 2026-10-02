@@ -40,6 +40,7 @@ paths:
         - staffAuth: []
       parameters:
         - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
       requestBody:
         required: true
         content:
@@ -252,6 +253,7 @@ paths:
         - staffAuth: []
       parameters:
         - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
       requestBody:
         required: true
         content:
@@ -316,6 +318,7 @@ paths:
         - staffAuth: []
       parameters:
         - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
       requestBody:
         required: true
         content:
@@ -356,6 +359,7 @@ paths:
         - staffAuth: []
       parameters:
         - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
       requestBody:
         required: true
         content:
@@ -398,6 +402,7 @@ paths:
         - staffAuth: []
       parameters:
         - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
       requestBody:
         required: true
         content:

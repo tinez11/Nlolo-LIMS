@@ -38,9 +38,10 @@ public class AccumulationController {
     @PreAuthorize(PRICING)
     @ResponseStatus(HttpStatus.CREATED)
     public RateDeclarationResponse proposeRate(@PathVariable UUID productId, @Valid @RequestBody RateDeclarationRequest request,
+                                               @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                @AuthenticationPrincipal Jwt jwt) {
         return RateDeclarationResponse.from(api.proposeRate(productId, request.ratePercent(), request.effectiveFrom(),
-            jwt.getSubject()));
+            jwt.getSubject(), idempotencyKey));
     }
 
     @PostMapping("/rate-declarations/{declarationId}/approve")
@@ -114,9 +115,10 @@ public class AccumulationController {
     @ResponseStatus(HttpStatus.CREATED)
     public WithdrawalResponse requestWithdrawal(@PathVariable String policyNumber,
                                                 @Valid @RequestBody AccountRequestBodies.Withdrawal body,
+                                                @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                 @AuthenticationPrincipal Jwt jwt) {
         return WithdrawalResponse.from(api.requestWithdrawal(policyNumber, new BigDecimal(body.amount()), body.payeeRef(),
-            jwt.getSubject()));
+            jwt.getSubject(), idempotencyKey));
     }
 
     /** 202: approved and REQUESTED from the rail, not yet paid -- as a payout approval. */
@@ -137,8 +139,10 @@ public class AccumulationController {
     @PreAuthorize("hasRole('REALM_STAFF')")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public TopUpResponse requestTopUp(@PathVariable String policyNumber, @Valid @RequestBody AccountRequestBodies.TopUp body,
+                                      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                       @AuthenticationPrincipal Jwt jwt) {
-        return TopUpResponse.from(api.requestTopUp(policyNumber, new BigDecimal(body.amount()), body.payerRef(), jwt.getSubject()));
+        return TopUpResponse.from(api.requestTopUp(policyNumber, new BigDecimal(body.amount()), body.payerRef(), jwt.getSubject(),
+            idempotencyKey));
     }
 
     @GetMapping("/policies/{policyNumber}/account/top-ups")
@@ -153,9 +157,10 @@ public class AccumulationController {
     @ResponseStatus(HttpStatus.CREATED)
     public TransferInResponse recordTransferIn(@PathVariable String policyNumber,
                                                @Valid @RequestBody AccountRequestBodies.TransferIn body,
+                                               @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                @AuthenticationPrincipal Jwt jwt) {
         return TransferInResponse.from(api.recordTransferIn(policyNumber, new BigDecimal(body.amount()), body.sourceScheme(),
-            body.documentRef(), jwt.getSubject()));
+            body.documentRef(), jwt.getSubject(), idempotencyKey));
     }
 
     @GetMapping("/policies/{policyNumber}/account/transfers-in")
@@ -170,9 +175,10 @@ public class AccumulationController {
     @ResponseStatus(HttpStatus.CREATED)
     public AdjustmentResponse proposeAdjustment(@PathVariable String policyNumber,
                                                 @Valid @RequestBody AccountRequestBodies.Adjustment body,
+                                                @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                 @AuthenticationPrincipal Jwt jwt) {
         return AdjustmentResponse.from(api.proposeAdjustment(policyNumber, new BigDecimal(body.amount()), body.reason(),
-            jwt.getSubject()));
+            jwt.getSubject(), idempotencyKey));
     }
 
     @PostMapping("/account-adjustments/{adjustmentId}/approve")

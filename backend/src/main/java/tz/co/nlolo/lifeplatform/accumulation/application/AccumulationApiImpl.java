@@ -58,6 +58,7 @@ public class AccumulationApiImpl implements AccumulationApi {
     final ApplicationEventPublisher events;
     final StatementRepository statementRepository;
     final DocumentApi documentApi;
+    final IdempotentRequests keyed;
 
     public AccumulationApiImpl(AccountRepository accounts, PostingRepository postings, LedgerEntryRepository entries,
                                LedgerService ledger, PolicyApi policyApi, ProductApi productApi,
@@ -65,7 +66,8 @@ public class AccumulationApiImpl implements AccumulationApi {
                                WithdrawalRequestRepository withdrawals, TopUpRequestRepository topUps,
                                TransferInRepository transfers, AdjustmentRequestRepository adjustments,
                                ApplicationEventPublisher events, StatementRepository statementRepository,
-                               DocumentApi documentApi) {
+                               DocumentApi documentApi, IdempotentRequests keyed) {
+        this.keyed = keyed;
         this.statementRepository = statementRepository;
         this.documentApi = documentApi;
         this.accounts = accounts;
@@ -346,6 +348,52 @@ public class AccumulationApiImpl implements AccumulationApi {
     private AdjustmentView toView(AdjustmentRequest a) {
         return new AdjustmentView(a.getAdjustmentId(), a.getPolicyNumber(), a.getAmount(), a.getReason(), a.getStatus(),
             a.getProposedBy(), a.getProposedAt(), a.getDecidedBy(), a.getDecidedAt());
+    }
+
+    // ---- Once per Idempotency-Key: what the REST layer calls ---------------------------------------
+    //
+    // Not @Transactional: IdempotentRequests opens the one transaction the create and its key share,
+    // and the unkeyed call inside it joins that transaction (a self-call, so its own annotation is not
+    // what applies -- the template's transaction is).
+
+    @Override
+    public WithdrawalView requestWithdrawal(String policyNumber, BigDecimal amount, String payeeRef, String requestedBy,
+                                            String idempotencyKey) {
+        return keyed.once(idempotencyKey, "WITHDRAWAL", policyNumber, requestedBy,
+            () -> requestWithdrawal(policyNumber, amount, payeeRef, requestedBy), WithdrawalView::withdrawalId,
+            id -> toView(withdrawals.findById(id).orElseThrow()));
+    }
+
+    @Override
+    public TopUpView requestTopUp(String policyNumber, BigDecimal amount, String payerRef, String requestedBy,
+                                  String idempotencyKey) {
+        return keyed.once(idempotencyKey, "TOP_UP", policyNumber, requestedBy,
+            () -> requestTopUp(policyNumber, amount, payerRef, requestedBy), TopUpView::topUpId,
+            id -> toView(topUps.findById(id).orElseThrow()));
+    }
+
+    @Override
+    public TransferInView recordTransferIn(String policyNumber, BigDecimal amount, String sourceScheme, String documentRef,
+                                           String recordedBy, String idempotencyKey) {
+        return keyed.once(idempotencyKey, "TRANSFER_IN", policyNumber, recordedBy,
+            () -> recordTransferIn(policyNumber, amount, sourceScheme, documentRef, recordedBy), TransferInView::transferId,
+            id -> toView(transfers.findById(id).orElseThrow()));
+    }
+
+    @Override
+    public AdjustmentView proposeAdjustment(String policyNumber, BigDecimal amount, String reason, String proposedBy,
+                                            String idempotencyKey) {
+        return keyed.once(idempotencyKey, "ADJUSTMENT", policyNumber, proposedBy,
+            () -> proposeAdjustment(policyNumber, amount, reason, proposedBy), AdjustmentView::adjustmentId,
+            id -> toView(adjustments.findById(id).orElseThrow()));
+    }
+
+    @Override
+    public RateDeclarationView proposeRate(UUID productId, BigDecimal ratePercent, LocalDate effectiveFrom, String proposedBy,
+                                           String idempotencyKey) {
+        return keyed.once(idempotencyKey, "RATE_DECLARATION", productId.toString(), proposedBy,
+            () -> proposeRate(productId, ratePercent, effectiveFrom, proposedBy), RateDeclarationView::declarationId,
+            id -> toView(rates.findById(id).orElseThrow()));
     }
 
     // ---- Statements (task 8) ----------------------------------------------------------------------

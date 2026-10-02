@@ -85,6 +85,7 @@ class AccumulationContractTest {
             "db-migrations/product/V18__payout_schedule.sql",
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V2__request_keys.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
@@ -132,7 +133,7 @@ class AccumulationContractTest {
     void aRateIsProposedApprovedAndListedToSpec() throws Exception {
         UUID product = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now()).productId();
         String body = "{\"ratePercent\": 6.5, \"effectiveFrom\": \"" + LocalDate.now().plusMonths(1) + "\"}";
-        String created = mockMvc.perform(post("/products/" + product + "/rate-declarations")
+        String created = mockMvc.perform(post("/products/" + product + "/rate-declarations").header("Idempotency-Key", key())
                 .with(staff("ADMIN", "admin-one")).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated())
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
@@ -154,7 +155,7 @@ class AccumulationContractTest {
     void theProposerApprovingIsA422InTheServersWords() throws Exception {
         UUID product = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now()).productId();
         String body = "{\"ratePercent\": 6, \"effectiveFrom\": \"" + LocalDate.now().plusMonths(1) + "\"}";
-        String id = JsonPath.read(mockMvc.perform(post("/products/" + product + "/rate-declarations")
+        String id = JsonPath.read(mockMvc.perform(post("/products/" + product + "/rate-declarations").header("Idempotency-Key", key())
                 .with(staff("ADMIN", "admin-one")).contentType(MediaType.APPLICATION_JSON).content(body))
             .andReturn().getResponse().getContentAsString(), "$.declarationId");
         mockMvc.perform(post("/rate-declarations/" + id + "/approve").with(staff("ADMIN", "admin-one")))
@@ -168,7 +169,7 @@ class AccumulationContractTest {
         UUID product = fixtures.issueSavingsPlan(TENANT, AccumulationTestFixtures.SAVINGS, LocalDate.now()).productId();
         // A body that WOULD succeed for an admin, so the 403 is the role gate and nothing else.
         String body = "{\"ratePercent\": 6, \"effectiveFrom\": \"" + LocalDate.now().plusMonths(1) + "\"}";
-        mockMvc.perform(post("/products/" + product + "/rate-declarations")
+        mockMvc.perform(post("/products/" + product + "/rate-declarations").header("Idempotency-Key", key())
                 .with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isForbidden());
     }
@@ -204,7 +205,7 @@ class AccumulationContractTest {
     @Test
     void aWithdrawalIsRequestedAndApprovedToSpec() throws Exception {
         String policy = fundedAccount();
-        String created = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals")
+        String created = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key())
                 .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"amount\":\"40000.00\",\"payeeRef\":\"+255700000001\"}"))
             .andExpect(status().isCreated())
@@ -255,11 +256,90 @@ class AccumulationContractTest {
     @Test
     void aMalformedAmountIsA400ThatNamesTheField() throws Exception {
         String policy = fundedAccount();
-        mockMvc.perform(post("/policies/" + policy + "/account/withdrawals")
+        mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key())
                 .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"amount\":\"12.345\",\"payeeRef\":\"+255700000001\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(result -> org.assertj.core.api.Assertions.assertThat(result.getResponse().getContentAsString())
                 .contains("amount"));
+    }
+
+    // ---- Once per Idempotency-Key (fix after the 2026-10-02 live check) -------------------------
+    //
+    // A live check sent one top-up twice with one key -- the console's retry after a timeout -- and
+    // it was collected and credited twice. A transfer in is the sharpest form of the same bug: it
+    // posts to the ledger at once, with no payment rail between the retry and the money.
+
+    private static String key() {
+        return UUID.randomUUID().toString();
+    }
+
+    @Test
+    void theSameTransferInSentTwiceCreditsOnce() throws Exception {
+        String policy = fundedAccount();
+        String key = key();
+        String body = "{\"amount\":\"30000.00\",\"sourceScheme\":\"NSSF\"}";
+        String first = mockMvc.perform(post("/policies/" + policy + "/account/transfers-in").header("Idempotency-Key", key)
+                .with(staff("FINANCE_OFFICER", "finance-one")).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        String second = mockMvc.perform(post("/policies/" + policy + "/account/transfers-in").header("Idempotency-Key", key)
+                .with(staff("FINANCE_OFFICER", "finance-one")).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        // The same transfer, answered twice -- not a second one.
+        org.assertj.core.api.Assertions.assertThat((String) JsonPath.read(second, "$.transferId"))
+            .isEqualTo(JsonPath.read(first, "$.transferId"));
+        mockMvc.perform(get("/policies/" + policy + "/account/transfers-in").with(staff("UNDERWRITER", "uw")))
+            .andExpect(jsonPath("$.length()").value(1));
+        // 190,000 + 30,000 once (the fixture's transfer allocation is 0%), never 250,000.
+        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("UNDERWRITER", "uw")))
+            .andExpect(jsonPath("$.balance.amount").value("220000.00"));
+    }
+
+    @Test
+    void theSameWithdrawalSentTwiceIsAnsweredWithTheFirst() throws Exception {
+        String policy = fundedAccount();
+        String key = key();
+        String body = "{\"amount\":\"10000.00\",\"payeeRef\":\"+255700000001\"}";
+        String first = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key)
+                .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        // Without the key this would be a 422, "already in flight" -- the console would show a refusal
+        // for a request that in fact succeeded.
+        String second = mockMvc.perform(post("/policies/" + policy + "/account/withdrawals").header("Idempotency-Key", key)
+                .with(staff("UNDERWRITER", "staff-one")).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat((String) JsonPath.read(second, "$.withdrawalId"))
+            .isEqualTo(JsonPath.read(first, "$.withdrawalId"));
+    }
+
+    @Test
+    void aRequestWithNoKeyIsA400() throws Exception {
+        String policy = fundedAccount();
+        mockMvc.perform(post("/policies/" + policy + "/account/transfers-in")
+                .with(staff("FINANCE_OFFICER", "finance-one")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"30000.00\",\"sourceScheme\":\"NSSF\"}"))
+            .andExpect(status().isBadRequest());
+        // And nothing was credited.
+        mockMvc.perform(get("/policies/" + policy + "/account").with(staff("UNDERWRITER", "uw")))
+            .andExpect(jsonPath("$.balance.amount").value("190000.00"));
+    }
+
+    @Test
+    void aKeyReusedForADifferentRequestIsRefused() throws Exception {
+        String policy = fundedAccount();
+        String key = key();
+        mockMvc.perform(post("/policies/" + policy + "/account/transfers-in").header("Idempotency-Key", key)
+                .with(staff("FINANCE_OFFICER", "finance-one")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"30000.00\",\"sourceScheme\":\"NSSF\"}"))
+            .andExpect(status().isCreated());
+        mockMvc.perform(post("/policies/" + policy + "/account/adjustments").header("Idempotency-Key", key)
+                .with(staff("FINANCE_OFFICER", "finance-one")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"500.00\",\"reason\":\"reusing a key\"}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value(
+                "This Idempotency-Key was already used for a different request. A new request needs a new key."));
     }
 }

@@ -32,7 +32,8 @@ class LedgerImmutabilityTest {
     @BeforeAll
     static void migrate() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
-            "db-migrations/accumulation/V1__create_accumulation_schema.sql");
+            "db-migrations/accumulation/V1__create_accumulation_schema.sql",
+            "db-migrations/accumulation/V2__request_keys.sql");
         try (Connection c = owner(); Statement s = c.createStatement()) {
             s.execute("ALTER ROLE app_role LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '" + APP_PASSWORD + "'");
             s.execute("INSERT INTO accumulation.posting (posting_id, tenant_id, policy_number, source_type, source_ref, created_by) "
