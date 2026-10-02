@@ -49,8 +49,10 @@ beforeEach(() => {
     account: { 'POL-1': success(account) },
     withdrawals: {},
     adjustments: {},
+    deposit: {},
     loadAccount: async () => {},
     loadMovements: async () => {},
+    loadDeposit: async () => {},
   });
 });
 
@@ -69,6 +71,56 @@ describe('AccountPanel', () => {
     for (const name of ['Request withdrawal', 'Request top-up', 'Record transfer in', 'Propose adjustment']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
+  });
+
+  it('on a deposit shows the term and its rate, and offers no money movement but the adjustment', () => {
+    useAccumulationStore.setState({
+      deposit: {
+        'POL-1': success({
+          policyNumber: 'POL-1',
+          periods: [
+            { periodId: 'p1', seq: 1, principal: money('1000000.00'), termMonths: 3, ratePercent: 3, rateVersionId: 'v1',
+              startDate: '2026-10-01', maturityDate: '2027-01-01', status: 'RUNNING', interestPosted: null, closedOn: null },
+          ],
+          instruction: null,
+          interestSoFar: money('3260.87'),
+          defaultPayeeRef: '+255700000777',
+          awaitingPayee: false,
+          termsOffered: [3, 6, 12],
+        }),
+      },
+    });
+    render(<AccountPanel policyNumber="POL-1" />);
+    expect(screen.getByText('3 months, 3% for the term')).toBeInTheDocument();
+    expect(screen.getByText('No instruction: it will be paid out to +255700000777.')).toBeInTheDocument();
+    for (const name of ['Request withdrawal', 'Request top-up', 'Record transfer in']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: 'Propose adjustment' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record instruction' })).toBeInTheDocument();
+  });
+
+  it('offers finance the payee form on a matured deposit waiting for one', () => {
+    useAccumulationStore.setState({
+      deposit: {
+        'POL-1': success({
+          policyNumber: 'POL-1',
+          periods: [
+            { periodId: 'p1', seq: 1, principal: money('1000000.00'), termMonths: 3, ratePercent: 3, rateVersionId: 'v1',
+              startDate: '2026-06-01', maturityDate: '2026-09-01', status: 'MATURED', interestPosted: money('30000.00'),
+              closedOn: '2026-09-01' },
+          ],
+          instruction: null,
+          interestSoFar: money('0.00'),
+          defaultPayeeRef: null,
+          awaitingPayee: true,
+          termsOffered: [3, 6, 12],
+        }),
+      },
+    });
+    render(<AccountPanel policyNumber="POL-1" />);
+    expect(screen.getByRole('button', { name: 'Record payee and pay' })).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'At maturity' })).not.toBeInTheDocument();
   });
 
   it('offers no money movement on a closed account', () => {

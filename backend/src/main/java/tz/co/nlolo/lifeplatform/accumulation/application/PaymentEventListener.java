@@ -16,10 +16,12 @@ import java.util.UUID;
 public class PaymentEventListener {
 
     private final AccumulationApiImpl api;
+    private final Deposits deposits;
     private final EnvelopeRunner runner;
 
-    public PaymentEventListener(AccumulationApiImpl api, EnvelopeRunner runner) {
+    public PaymentEventListener(AccumulationApiImpl api, Deposits deposits, EnvelopeRunner runner) {
         this.api = api;
+        this.deposits = deposits;
         this.runner = runner;
     }
 
@@ -27,9 +29,13 @@ public class PaymentEventListener {
     public void onDomainEvent(DomainEventEnvelope<?> envelope) {
         switch (envelope.eventType()) {
             case "payment.DisbursementCompleted", "payment.DisbursementFailed" -> runner.run(envelope, p -> {
+                boolean paid = "payment.DisbursementCompleted".equals(envelope.eventType());
+                if ("DEPOSIT_MATURITY_PAYOUT".equals(p.get("purpose"))) {
+                    deposits.settlePayout((String) p.get("sourceRef"), paid);
+                    return;
+                }
                 if (!"WITHDRAWAL_PAYOUT".equals(p.get("purpose"))) return;
-                api.settleWithdrawal(UUID.fromString((String) p.get("sourceRef")), (UUID) p.get("disbursementId"),
-                    "payment.DisbursementCompleted".equals(envelope.eventType()));
+                api.settleWithdrawal(UUID.fromString((String) p.get("sourceRef")), (UUID) p.get("disbursementId"), paid);
             });
             case "payment.PaymentConfirmed" -> runner.run(envelope, p -> {
                 if (!"ACCOUNT_TOP_UP".equals(p.get("purpose"))) return;

@@ -1,7 +1,9 @@
 package tz.co.nlolo.lifeplatform.accumulation.application;
 
 import org.springframework.stereotype.Component;
+import tz.co.nlolo.lifeplatform.accumulation.api.DepositPeriodStatus;
 import tz.co.nlolo.lifeplatform.accumulation.api.RateDeclarationStatus;
+import tz.co.nlolo.lifeplatform.accumulation.infrastructure.DepositPeriodRepository;
 import tz.co.nlolo.lifeplatform.accumulation.domain.Account;
 import tz.co.nlolo.lifeplatform.accumulation.domain.LedgerEntry;
 import tz.co.nlolo.lifeplatform.accumulation.infrastructure.LedgerEntryRepository;
@@ -23,15 +25,25 @@ class AccountValuer {
     private final LedgerEntryRepository entries;
     private final RateDeclarationRepository rates;
     private final ProductApi productApi;
+    private final DepositPeriodRepository periods;
 
-    AccountValuer(LedgerEntryRepository entries, RateDeclarationRepository rates, ProductApi productApi) {
+    AccountValuer(LedgerEntryRepository entries, RateDeclarationRepository rates, ProductApi productApi,
+                  DepositPeriodRepository periods) {
         this.entries = entries;
         this.rates = rates;
         this.productApi = productApi;
+        this.periods = periods;
     }
 
     /** Rounded once, 2 dp half-even. Zero when {@code to} is before {@code from}. */
     BigDecimal interestBetween(Account account, LocalDate from, LocalDate to) {
+        if (productApi.resolveDepositPlan(account.getProductVersionId()).isDeposit()) {
+            // A deposit's rate is for its term, by day (D4): whatever span the caller asked about,
+            // the interest is the running term's up to {@code to}, and none once the term has ended
+            // (plan §R6) -- so a closing pays a term's interest once, whichever way it closes.
+            return periods.findByPolicyNumberAndStatus(account.getPolicyNumber(), DepositPeriodStatus.RUNNING.name())
+                .map(p -> Deposits.interestTo(p, to)).orElse(BigDecimal.ZERO.setScale(2));
+        }
         if (to.isBefore(from)) {
             return BigDecimal.ZERO.setScale(2);
         }

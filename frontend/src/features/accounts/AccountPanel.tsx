@@ -33,6 +33,7 @@ import {
   type TransferInValues,
   type WithdrawalValues,
 } from './accountForms';
+import { DepositSection } from './DepositSection';
 import { ENTRY_LABEL } from './entryLabels';
 
 /**
@@ -48,11 +49,18 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
   const account = useAccumulationStore((s) => s.account[policyNumber]);
   const loadAccount = useAccumulationStore((s) => s.loadAccount);
   const loadMovements = useAccumulationStore((s) => s.loadMovements);
+  // A fixed-term deposit carries its terms beside the ledger; null for any other account.
+  const deposit = useAccumulationStore((s) => s.deposit[policyNumber]);
+  const loadDeposit = useAccumulationStore((s) => s.loadDeposit);
+  const auth = useAuth();
+  const identity = readIdentity(auth.user?.access_token);
+  const isFinance = identity ? canSeeFinance(identity) : false;
 
   useEffect(() => {
     void loadAccount(policyNumber);
     void loadMovements(policyNumber);
-  }, [policyNumber, loadAccount, loadMovements]);
+    void loadDeposit(policyNumber);
+  }, [policyNumber, loadAccount, loadMovements, loadDeposit]);
 
   if (!account || isInitialLoad(account)) return <LoadingBlock />;
   if (account.status === 'error' && account.error && account.data === null) {
@@ -63,8 +71,9 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
   return (
     <div className="space-y-5">
       <Summary account={account.data} />
+      {deposit?.data && <DepositSection deposit={deposit.data} isFinance={isFinance} />}
       <Ledger entries={account.data.entries} />
-      <Movements account={account.data} />
+      <Movements account={account.data} deposit={Boolean(deposit?.data)} />
     </div>
   );
 }
@@ -124,7 +133,11 @@ type Action = 'withdraw' | 'topup' | 'transfer' | 'adjust' | null;
 const NONE_WITHDRAWN: WithdrawalView[] = [];
 const NONE_ADJUSTED: AdjustmentView[] = [];
 
-function Movements({ account }: { account: AccountView }) {
+/**
+ * `deposit`: a fixed-term deposit takes nothing in and lets nothing out during its term (spec
+ * D5), so only the adjustment -- the two-person correction -- is offered.
+ */
+function Movements({ account, deposit }: { account: AccountView; deposit: boolean }) {
   const policyNumber = account.policyNumber;
   const auth = useAuth();
   const identity = readIdentity(auth.user?.access_token);
@@ -145,20 +158,26 @@ function Movements({ account }: { account: AccountView }) {
     <div className="space-y-4">
       {open && (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant={action === 'withdraw' ? 'secondary' : 'outline'} onClick={() => setAction('withdraw')}>
-            Request withdrawal
-          </Button>
-          <Button size="sm" variant={action === 'topup' ? 'secondary' : 'outline'} onClick={() => setAction('topup')}>
-            Request top-up
-          </Button>
+          {!deposit && (
+            <>
+              <Button size="sm" variant={action === 'withdraw' ? 'secondary' : 'outline'} onClick={() => setAction('withdraw')}>
+                Request withdrawal
+              </Button>
+              <Button size="sm" variant={action === 'topup' ? 'secondary' : 'outline'} onClick={() => setAction('topup')}>
+                Request top-up
+              </Button>
+            </>
+          )}
           {/* Finance's: recording a transfer puts money on the account, and an adjustment is a
               correction a second finance user signs. Not offered at all to anyone else, rather than
               a button that would 403. */}
           {isFinance && (
             <>
-              <Button size="sm" variant={action === 'transfer' ? 'secondary' : 'outline'} onClick={() => setAction('transfer')}>
-                Record transfer in
-              </Button>
+              {!deposit && (
+                <Button size="sm" variant={action === 'transfer' ? 'secondary' : 'outline'} onClick={() => setAction('transfer')}>
+                  Record transfer in
+                </Button>
+              )}
               <Button size="sm" variant={action === 'adjust' ? 'secondary' : 'outline'} onClick={() => setAction('adjust')}>
                 Propose adjustment
               </Button>

@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useForm, useFieldArray, useWatch, Controller } from 'react-hook-form';
+import { useForm, useFieldArray, useWatch, Controller, type FieldErrors } from 'react-hook-form';
 import {
   BENEFIT_CALCULATION_METHODS,
   BENEFIT_CALCULATION_METHOD_LABELS,
@@ -19,6 +19,7 @@ import {
   ACCOUNT_CATEGORIES,
   blankAccountChargeRow,
   blankBenefitRow,
+  blankDepositBand,
   blankCashValueRow,
   blankFundRow,
   CASH_VALUE_CATEGORIES,
@@ -57,6 +58,30 @@ const BAND_PLACEHOLDER: Record<(typeof RATING_FACTOR_TYPES)[number], string> = {
 };
 
 /**
+ * Every message the deposit grid carries, once each: the grid's own, then each band's start and
+ * cell, then each term. RHF holds a nested array's errors as sparse objects, so they are walked
+ * rather than indexed.
+ */
+function depositGridMessages(errors: FieldErrors<PublishVersionFormInput>): string[] {
+  const out: string[] = [];
+  const push = (m?: string) => {
+    if (m && !out.includes(m)) out.push(m);
+  };
+  push(errors.depositBands?.message);
+  push(errors.depositBands?.root?.message);
+  push(errors.depositTerms?.message);
+  type Leaf = { message?: string } | undefined;
+  const bands = errors.depositBands as unknown as Record<string, { minAmount?: Leaf; rates?: Record<string, Leaf> } | undefined>;
+  Object.values(bands ?? {}).forEach((band) => {
+    push(band?.minAmount?.message);
+    Object.values(band?.rates ?? {}).forEach((cell) => push(cell?.message));
+  });
+  const terms = errors.depositTerms as unknown as Record<string, { months?: Leaf } | undefined>;
+  Object.values(terms ?? {}).forEach((term) => push(term?.months?.message));
+  return out;
+}
+
+/**
  * Publishing a version is the ONLY way a product ever becomes visible through
  * `GET /products` (it flips DRAFT -> ACTIVE) -- reused by both the new-product
  * wizard's second phase and, later, publishing a further version onto an
@@ -93,6 +118,8 @@ export function PublishVersionForm({
     register,
     handleSubmit,
     control,
+    getValues,
+    setValue,
     formState: { errors },
   } = useForm<PublishVersionFormInput, unknown, PublishVersionFormValues>({
     resolver: zodResolver(schema),
@@ -131,9 +158,25 @@ export function PublishVersionForm({
       guaranteedRatePercent: '',
       minimumBalance: '',
       accountCharges: [],
+      depositTerms: [],
+      depositBands: [],
     },
   });
   const cashValueRows = useFieldArray({ control, name: 'cashValueRows' });
+  // A fixed-term deposit: terms are the grid's columns, bands its rows. Adding a column adds a cell
+  // to every band, so a band can never be shorter than the terms it must offer.
+  const depositTerms = useFieldArray({ control, name: 'depositTerms' });
+  const depositBands = useFieldArray({ control, name: 'depositBands' });
+  function addDepositTerm() {
+    depositTerms.append({ months: '' });
+    getValues('depositBands').forEach((band, i) => setValue(`depositBands.${i}.rates`, [...band.rates, '']));
+  }
+  function removeDepositTerm(j: number) {
+    depositTerms.remove(j);
+    getValues('depositBands').forEach((band, i) =>
+      setValue(`depositBands.${i}.rates`, band.rates.filter((_, k) => k !== j)),
+    );
+  }
   // Product step 3: an ACCOUNT version carries its charges by policy year instead of a cash-value
   // table -- the server refuses both on one version, so choosing ACCOUNT hides the table.
   const accountCharges = useFieldArray({ control, name: 'accountCharges' });
@@ -842,6 +885,7 @@ export function PublishVersionForm({
               <Select inputSize="sm" {...register('valueBasis')}>
                 <option value="SCALE">Cash-value table (scale)</option>
                 <option value="ACCOUNT">Savings account</option>
+                <option value="DEPOSIT">Fixed-term deposit</option>
               </Select>
             </FormField>
           </div>
@@ -915,10 +959,91 @@ export function PublishVersionForm({
               </Button>
             </div>
           )}
+          {valueBasis === 'DEPOSIT' && (
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-subtle-foreground">
+                One deposit for a term the client chooses. Each rate is for the whole term, not a year. A band runs from its
+                start up to the next band&apos;s start. Nothing can be added or taken out until maturity, and the version
+                carries no payout schedule.
+              </p>
+              {depositTerms.fields.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="text-sm" aria-label="Deposit rates">
+                    <thead>
+                      <tr>
+                        <th className="px-1 py-1 text-left text-xs font-medium text-muted-foreground">Deposits from</th>
+                        {depositTerms.fields.map((field, j) => (
+                          <th key={field.id} className="px-1 py-1">
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number" min={1} inputSize="sm" className="w-20 text-right" placeholder="Months"
+                                aria-label={`Term ${j + 1} in months`}
+                                {...register(`depositTerms.${j}.months`)}
+                              />
+                              <Button
+                                type="button" size="icon" variant="ghost" aria-label={`Remove term ${j + 1}`}
+                                onClick={() => removeDepositTerm(j)}
+                              >
+                                <X className="size-4" />
+                              </Button>
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {depositBands.fields.map((field, i) => (
+                        <tr key={field.id}>
+                          <td className="px-1 py-1">
+                            <Input
+                              inputSize="sm" inputMode="decimal" className="w-32 text-right" placeholder="500000"
+                              aria-label={`Band ${i + 1} starts at`}
+                              {...register(`depositBands.${i}.minAmount`)}
+                            />
+                          </td>
+                          {depositTerms.fields.map((term, j) => (
+                            <td key={term.id} className="px-1 py-1">
+                              <Input
+                                inputSize="sm" inputMode="decimal" className="w-20 text-right" placeholder="%"
+                                aria-label={`Band ${i + 1} rate for term ${j + 1}`}
+                                {...register(`depositBands.${i}.rates.${j}`)}
+                              />
+                            </td>
+                          ))}
+                          <td className="px-1 py-1">
+                            <Button
+                              type="button" size="icon" variant="ghost" aria-label={`Remove band ${i + 1}`}
+                              onClick={() => depositBands.remove(i)}
+                            >
+                              <X className="size-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {depositGridMessages(errors).map((message) => (
+                <p key={message} role="alert" className="text-xs text-status-danger-fg">{message}</p>
+              ))}
+              <div className="flex gap-2">
+                <Button type="button" size="sm" variant="ghost" className="-ml-2" onClick={addDepositTerm}>
+                  <Plus className="size-4" /> Add a term
+                </Button>
+                <Button
+                  type="button" size="sm" variant="ghost"
+                  onClick={() => depositBands.append(blankDepositBand(depositTerms.fields.length))}
+                >
+                  <Plus className="size-4" /> Add a band
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {CASH_VALUE_CATEGORIES.includes(category) && valueBasis !== 'ACCOUNT' && (
+      {CASH_VALUE_CATEGORIES.includes(category) && valueBasis === 'SCALE' && (
         <div className="rounded-md border border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">Cash value (optional)</p>
           <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">

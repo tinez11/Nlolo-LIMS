@@ -33,7 +33,8 @@ class LedgerImmutabilityTest {
     static void migrate() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
-            "db-migrations/accumulation/V2__request_keys.sql");
+            "db-migrations/accumulation/V2__request_keys.sql",
+            "db-migrations/accumulation/V3__deposit_periods.sql");
         try (Connection c = owner(); Statement s = c.createStatement()) {
             s.execute("ALTER ROLE app_role LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD '" + APP_PASSWORD + "'");
             s.execute("INSERT INTO accumulation.posting (posting_id, tenant_id, policy_number, source_type, source_ref, created_by) "
@@ -140,6 +141,29 @@ class LedgerImmutabilityTest {
             rs.next();
             org.assertj.core.api.Assertions.assertThat(rs.getInt(1)).isPositive();
         }
+    }
+
+    @Test
+    void aDepositTermsRateCannotBeRewrittenOrDeletedEvenByTheOwner() throws Exception {
+        try (Connection c = owner(); Statement s = c.createStatement()) {
+            s.execute("INSERT INTO accumulation.account (policy_number, tenant_id, product_id, product_version_id, "
+                + "policyholder_party_id, opened_on) VALUES ('POL-DEP01', '" + TENANT + "', gen_random_uuid(), gen_random_uuid(), "
+                + "gen_random_uuid(), current_date)");
+            s.execute("INSERT INTO accumulation.deposit_period (period_id, tenant_id, policy_number, seq, principal, term_months, "
+                + "rate_percent, rate_version_id, start_date, maturity_date) VALUES ('00000000-0000-0000-0000-0000000000d1', '"
+                + TENANT + "', 'POL-DEP01', 1, 1000000, 3, 3, gen_random_uuid(), current_date, current_date + 90)");
+        }
+        assertThatThrownBy(() -> { try (Connection c = owner(); Statement s = c.createStatement()) {
+            s.executeUpdate("UPDATE accumulation.deposit_period SET rate_percent = 9 WHERE policy_number = 'POL-DEP01'"); } })
+            .hasMessageContaining("is the record of its rate");
+        assertThatThrownBy(() -> { try (Connection c = owner(); Statement s = c.createStatement()) {
+            s.executeUpdate("DELETE FROM accumulation.deposit_period WHERE policy_number = 'POL-DEP01'"); } })
+            .hasMessageContaining("cannot be deleted");
+        // Ending a term is the one change allowed.
+        assertThatCode(() -> { try (Connection c = owner(); Statement s = c.createStatement()) {
+            s.executeUpdate("UPDATE accumulation.deposit_period SET status = 'MATURED', closed_on = current_date, "
+                + "interest_posted = 30000 WHERE policy_number = 'POL-DEP01'"); } })
+            .doesNotThrowAnyException();
     }
 
     @Test

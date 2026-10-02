@@ -92,8 +92,11 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     @Override
     @Transactional(readOnly = true)
     public boolean hasScheduledMaturity(String policyNumber) {
+        // A fixed-term deposit matures through accumulation's own run, which pays or reinvests it --
+        // so a hand-filed maturity claim must be refused for it too.
         return instalments.existsByPolicyNumberAndKindIn(policyNumber,
-            List.of(PayoutKind.MATURITY.name(), PayoutKind.RETURN_OF_PREMIUM.name()));
+            List.of(PayoutKind.MATURITY.name(), PayoutKind.RETURN_OF_PREMIUM.name()))
+            || accumulationApi.isDeposit(policyNumber);
     }
 
     /**

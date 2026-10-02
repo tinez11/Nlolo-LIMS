@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { isInitialLoad } from '@/store/createResourceSlice';
+import { useAccumulationStore } from '@/store/accumulationStore';
 import { useBenefitPayoutStore } from '@/store/benefitPayoutStore';
 
 const KIND_LABEL: Record<PayoutKind, string> = {
@@ -188,7 +189,43 @@ export function PayoutsQueuePage() {
           </div>
           {renderBody()}
         </div>
+        <AwaitingDeposits />
       </div>
     </>
+  );
+}
+
+/**
+ * Matured fixed-term deposits whose money waits for a payee: no number came with the deposit, or
+ * the payment to it failed. Finance records the payee on the policy's Account tab. Rendered only
+ * when there is something waiting -- an empty second list under the register would be noise.
+ */
+function AwaitingDeposits() {
+  const awaiting = useAccumulationStore((s) => s.awaiting);
+  const loadAwaiting = useAccumulationStore((s) => s.loadAwaiting);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    void loadAwaiting();
+  }, [loadAwaiting]);
+
+  const rows = awaiting.data ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <section className="mt-6" aria-label="Matured deposits waiting for a payee">
+      <h2 className="mb-2 text-sm font-medium">Matured deposits waiting for a payee</h2>
+      <div className="divide-y divide-border rounded-lg border border-border bg-surface" role="list">
+        {rows.map((row) => (
+          <div key={row.policyNumber} role="listitem" className="flex items-center justify-between gap-3 px-4 py-2.5">
+            <span className="text-sm">
+              {row.policyNumber} · matured {formatDate(row.maturedOn)} · {formatMoney(row.balance)}
+            </span>
+            <Button size="sm" variant="outline" onClick={() => navigate(`/staff/policies/${encodeURIComponent(row.policyNumber)}`)}>
+              Record payee
+            </Button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

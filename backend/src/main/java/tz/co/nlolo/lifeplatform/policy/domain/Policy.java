@@ -218,6 +218,29 @@ public class Policy {
     }
 
     /**
+     * A fixed-term deposit's term follows its MONEY, not its issue date: the single premium can
+     * arrive days after issue (commencement moves to that day), and each reinvestment lengthens the
+     * term (commencement stays, the months grow). Accumulation restates it then.
+     *
+     * <p>Commencement and term together, never the maturity date alone:
+     * policy_maturity_matches_term holds maturity to commencement + term, so the date the expiry
+     * sweep and on-risk read can never drift from the term it came from -- even across many
+     * reinvestments and month-end clipping. Returns the maturity date it derives.
+     */
+    public LocalDate restateTerm(LocalDate commencement, int termMonths) {
+        if (commencement == null || termMonths <= 0) {
+            throw new IllegalArgumentException("A deposit's term needs a commencement date and a positive number of months");
+        }
+        if (isClosed()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is closed; its term cannot move");
+        }
+        this.commencementDate = commencement;
+        this.policyTermMonths = termMonths;
+        this.maturityDate = commencement.plusMonths(termMonths);
+        return maturityDate;
+    }
+
+    /**
      * Restate a group scheme's sum assured after its member schedule changed.
      *
      * <p>A scheme's sum assured <b>is</b> the total of what its members are covered for.

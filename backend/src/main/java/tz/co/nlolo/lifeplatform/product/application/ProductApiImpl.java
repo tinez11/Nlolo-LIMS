@@ -31,6 +31,7 @@ public class ProductApiImpl implements ProductApi {
     private final VersionPayoutTermsRepository versionPayoutTermsRepository;
     private final VersionAccumulationTermsRepository versionAccumulationTermsRepository;
     private final AccumulationChargeRepository accumulationChargeRepository;
+    private final DepositRateRepository depositRateRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
@@ -39,7 +40,9 @@ public class ProductApiImpl implements ProductApi {
                            PayoutScheduleRowRepository payoutScheduleRowRepository,
                            VersionPayoutTermsRepository versionPayoutTermsRepository,
                            VersionAccumulationTermsRepository versionAccumulationTermsRepository,
-                           AccumulationChargeRepository accumulationChargeRepository) {
+                           AccumulationChargeRepository accumulationChargeRepository,
+                           DepositRateRepository depositRateRepository) {
+        this.depositRateRepository = depositRateRepository;
         this.versionAccumulationTermsRepository = versionAccumulationTermsRepository;
         this.accumulationChargeRepository = accumulationChargeRepository;
         this.productDefinitionRepository = productDefinitionRepository;
@@ -219,6 +222,18 @@ public class ProductApiImpl implements ProductApi {
                                 List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
                                 TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                                 AccumulationPlan accumulationPlan, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, cashValue, payoutPlan, accumulationPlan,
+            DepositPlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                                AccumulationPlan accumulationPlan, DepositPlan depositPlan, String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -303,8 +318,13 @@ public class ProductApiImpl implements ProductApi {
         rejectMalformedSumAssuredBands(ratingTable);
         ProductCategory category = ProductCategory.valueOf(product.getCategory());
         CashValuePlanValidator.validate(category, cashValue);
-        AccumulationPlanValidator.validate(category, accumulationPlan, cashValue);
-        PayoutPlanValidator.validate(category, payoutPlan, accumulationPlan);
+        DepositPlan deposit = depositPlan != null ? depositPlan : DepositPlan.none();
+        DepositPlanValidator.validate(category, deposit, accumulationPlan, cashValue, frequencyLoading, payoutPlan, bounds);
+        // A deposit's account plan is the server's: an account that charges and guarantees nothing,
+        // so every ACCOUNT seam (lapse exemption, surrender event, death valuation) applies to it.
+        AccumulationPlan effectiveAccumulation = deposit.isDeposit() ? AccumulationPlan.forDeposit() : accumulationPlan;
+        AccumulationPlanValidator.validate(category, effectiveAccumulation, cashValue);
+        PayoutPlanValidator.validate(category, payoutPlan, effectiveAccumulation, deposit.isDeposit());
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -336,7 +356,8 @@ public class ProductApiImpl implements ProductApi {
         productVersionRepository.save(version);
         persistCashValue(tenantId, version.getProductVersionId(), cashValue);
         persistPayoutPlan(tenantId, version.getProductVersionId(), payoutPlan);
-        persistAccumulationPlan(tenantId, version.getProductVersionId(), accumulationPlan);
+        persistAccumulationPlan(tenantId, version.getProductVersionId(), effectiveAccumulation);
+        persistDepositPlan(tenantId, version.getProductVersionId(), deposit);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -860,6 +881,21 @@ public class ProductApiImpl implements ProductApi {
         for (AccumulationChargeRow row : plan.charges()) {
             accumulationChargeRepository.save(new AccumulationCharge(tenantId, productVersionId, row));
         }
+    }
+
+    /** A deposit version's grid (V20). Nothing for any other version. */
+    private void persistDepositPlan(UUID tenantId, UUID productVersionId, DepositPlan plan) {
+        for (DepositRateRow row : plan.rows()) {
+            depositRateRepository.save(new DepositRate(tenantId, productVersionId, row));
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DepositPlan resolveDepositPlan(UUID productVersionId) {
+        // RLS scopes the read to the caller's tenant, as resolveAccumulationPlan's are.
+        return new DepositPlan(depositRateRepository.findByProductVersionIdOrderByMinAmountAscTermMonthsAsc(productVersionId)
+            .stream().map(DepositRate::toRow).toList());
     }
 
     @Override

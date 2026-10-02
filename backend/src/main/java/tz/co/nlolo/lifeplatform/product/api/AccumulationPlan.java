@@ -23,6 +23,15 @@ public record AccumulationPlan(ValueBasis basis, BigDecimal guaranteedRatePercen
         return new AccumulationPlan(ValueBasis.SCALE, null, null, List.of());
     }
 
+    /**
+     * The account terms behind a fixed-term deposit. The deposit's rate comes from its grid, not
+     * from here, so this is an account that charges nothing and guarantees nothing.
+     */
+    public static AccumulationPlan forDeposit() {
+        return new AccumulationPlan(ValueBasis.ACCOUNT, BigDecimal.ZERO, BigDecimal.ZERO, List.of(
+            new AccumulationChargeRow(1, null, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)));
+    }
+
     public boolean isAccount() { return basis == ValueBasis.ACCOUNT; }
 
     /** The charge row for a policy year. The validator guarantees one exists for every year >= 1. */

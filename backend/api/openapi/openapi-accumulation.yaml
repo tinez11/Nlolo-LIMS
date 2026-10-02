@@ -460,8 +460,167 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /policies/{policyNumber}/account/deposit:
+    get:
+      summary: A fixed-term deposit -- its terms, the interest so far, and what happens at maturity
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+      responses:
+        '200':
+          description: The deposit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deposit' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+  /policies/{policyNumber}/account/deposit/maturity-instruction:
+    post:
+      summary: Record the client's choice for the end of the running term
+      description: >
+        Any staff member. REINVEST takes a term offered by the version active for new business; PAY_OUT
+        takes an optional payee (blank pays to the number the deposit was collected from). A new
+        instruction supersedes the last; with none, the deposit is paid out.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaturityInstructionRequest' }
+      responses:
+        '201':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaturityInstruction' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- no running term, or a term the product does not offer
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /deposits/awaiting-payee:
+    get:
+      summary: Matured deposits whose money waits for a payee
+      description: Finance. A deposit lands here when no number came with it, or the payment to it failed.
+      security:
+        - staffAuth: []
+      responses:
+        '200':
+          description: The waiting deposits, longest-waiting first
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/AwaitingPayee' } }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+  /policies/{policyNumber}/account/deposit/payout:
+    post:
+      summary: Pay a matured deposit to a payee finance records
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: policyNumber, in: path, required: true, schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' } }
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 200 }, description: "The same key is the same request: a retry is answered with what the first one created, and creates nothing. Reused for a different request, it is refused (422)." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepositPayoutRequest' }
+      responses:
+        '202':
+          description: Requested from the payment rail, not yet paid
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepositPeriod' }
+        '400': { $ref: 'openapi-common.yaml#/components/responses/BadRequest' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
+        '422':
+          description: Refused -- nothing on this policy is waiting for a payee
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
 components:
   schemas:
+    DepositPeriod:
+      type: object
+      required: [periodId, seq, principal, termMonths, ratePercent, rateVersionId, startDate, maturityDate, status]
+      properties:
+        periodId: { type: string, format: uuid }
+        seq: { type: integer }
+        principal: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        termMonths: { type: integer }
+        ratePercent: { type: number, description: "For the whole term, not a year" }
+        rateVersionId: { type: string, format: uuid }
+        startDate: { type: string, format: date }
+        maturityDate: { type: string, format: date }
+        status: { type: string, enum: [RUNNING, MATURED, TERMINATED, CANCELLED] }
+        interestPosted:
+          type: [object, "null"]
+          description: What the term posted when it ended; null while it runs
+          required: [amount, currencyCode]
+          properties:
+            amount: { type: string, pattern: '^-?\d+(\.\d{1,2})?$' }
+            currencyCode: { type: string }
+        closedOn: { type: [string, "null"], format: date }
+    MaturityInstruction:
+      type: object
+      required: [instructionId, periodId, action, recordedBy, recordedAt]
+      properties:
+        instructionId: { type: string, format: uuid }
+        periodId: { type: string, format: uuid }
+        action: { type: string, enum: [REINVEST, PAY_OUT] }
+        termMonths: { type: [integer, "null"] }
+        payeeRef: { type: [string, "null"] }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
+    MaturityInstructionRequest:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [REINVEST, PAY_OUT] }
+        termMonths: { type: integer, minimum: 1, maximum: 120 }
+        payeeRef: { type: string, maxLength: 200 }
+    DepositPayoutRequest:
+      type: object
+      required: [payeeRef]
+      properties:
+        payeeRef: { type: string, maxLength: 200 }
+    Deposit:
+      type: object
+      required: [policyNumber, periods, interestSoFar, awaitingPayee, termsOffered]
+      properties:
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        periods: { type: array, items: { $ref: '#/components/schemas/DepositPeriod' } }
+        instruction:
+          type: [object, "null"]
+          description: The current instruction for the running term; null when none is recorded (it will be paid out)
+          required: [instructionId, periodId, action, recordedBy, recordedAt]
+          properties:
+            instructionId: { type: string, format: uuid }
+            periodId: { type: string, format: uuid }
+            action: { type: string, enum: [REINVEST, PAY_OUT] }
+            termMonths: { type: [integer, "null"] }
+            payeeRef: { type: [string, "null"] }
+            recordedBy: { type: string }
+            recordedAt: { type: string, format: date-time }
+        interestSoFar: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        defaultPayeeRef: { type: [string, "null"], description: "The number the deposit was collected from" }
+        awaitingPayee: { type: boolean }
+        termsOffered: { type: array, items: { type: integer } }
+    AwaitingPayee:
+      type: object
+      required: [policyNumber, balance, maturedOn]
+      properties:
+        policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        balance: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
+        maturedOn: { type: string, format: date }
     StatementPeriod:
       type: object
       required: [from, to]

@@ -430,6 +430,11 @@ public class UnderwritingDecisionEventListener {
                 BigDecimal instalmentPremium = instalments == 0
                     ? loadedAnnualPremium.setScale(2, RoundingMode.HALF_UP)
                     : loadedAnnualPremium.divide(BigDecimal.valueOf(instalments), 2, RoundingMode.HALF_UP);
+                // A fixed-term deposit's premium is the deposit itself: the formula above prices
+                // risk, and a deposit is not priced. issuePolicy refuses it unless SINGLE.
+                if (productApi.resolveDepositPlan(decidedCase.productVersionId()).isDeposit()) {
+                    instalmentPremium = decidedCase.sumAssuredAmount();
+                }
 
                 // THE FORMULA CHECKS ITS OWN OUTPUT, because one of its inputs was nil and the
                 // only thing that noticed was a CHECK constraint three layers down.

@@ -429,6 +429,26 @@ components:
                   contributionAllocationPercent: { type: number, minimum: 0, maximum: 100 }
                   transferAllocationPercent: { type: number, minimum: 0, maximum: 100 }
                   monthlyPolicyFee: { type: number, minimum: 0 }
+        deposit:
+          description: >-
+            Present only on a fixed-term deposit (2026-10-02). Rates by deposit band and term, each the
+            total for the term, not a yearly rate. A band runs from its start up to the next band's
+            start; every band offers every term. The server builds a zero-charge account plan behind
+            it, so this is refused alongside `accumulation`, and the version carries no payout schedule
+            and no frequency loading.
+          type: [object, "null"]
+          required: [rates]
+          properties:
+            rates:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [minAmount, termMonths, ratePercent]
+                properties:
+                  minAmount: { type: number, exclusiveMinimum: 0, description: "Where the band starts" }
+                  termMonths: { type: integer, minimum: 1, maximum: 120 }
+                  ratePercent: { type: number, minimum: 0, maximum: 100, description: "For the whole term" }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and

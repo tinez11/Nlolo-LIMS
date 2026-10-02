@@ -66,4 +66,8 @@ public record PublishVersionRequest(
 
     // Present only on an ACCOUNT version (product step 3). Absent means SCALE -- what every version
     // published before this step is.
-    @Valid AccumulationRequest accumulation) {}
+    @Valid AccumulationRequest accumulation,
+
+    // Present only on a fixed-term deposit (2026-10-02). The server builds the account plan behind
+    // it, so a request carrying both blocks is refused.
+    @Valid DepositRequest deposit) {}

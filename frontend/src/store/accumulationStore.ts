@@ -6,6 +6,11 @@ import {
   generateStatement,
   getAccount,
   getClosingQuote,
+  getDeposit,
+  listAwaitingPayee,
+  payOutDeposit,
+  recordMaturityInstruction,
+  type MaturityInstructionBody,
   listAdjustments,
   listRates,
   listStatements,
@@ -27,6 +32,8 @@ import {
 } from '@/api/accumulation';
 import type {
   AccountView,
+  AwaitingPayeeView,
+  DepositView,
   AdjustmentView,
   ClosingQuoteView,
   RateDeclarationView,
@@ -60,6 +67,9 @@ interface AccumulationState {
   adjustments: Keyed<AdjustmentView[]>;
   statements: Keyed<StatementRecordView[]>;
   rates: Keyed<RateDeclarationView[]>;
+  /** null for an account that is not a fixed-term deposit -- an answer, like account's null. */
+  deposit: Keyed<DepositView | null>;
+  awaiting: Resource<AwaitingPayeeView[]>;
   acting: Keyed<unknown>;
 
   loadAccount: (policyNumber: string) => Promise<void>;
@@ -67,6 +77,10 @@ interface AccumulationState {
   loadMovements: (policyNumber: string) => Promise<void>;
   loadStatements: (policyNumber: string) => Promise<void>;
   loadRates: (productId: string) => Promise<void>;
+  loadDeposit: (policyNumber: string) => Promise<void>;
+  loadAwaiting: () => Promise<void>;
+  instruct: (policyNumber: string, body: MaturityInstructionBody, attempt: MutationAttempt) => Promise<void>;
+  payOutDeposit: (policyNumber: string, payeeRef: string, attempt: MutationAttempt) => Promise<void>;
 
   withdraw: (policyNumber: string, body: WithdrawalBody, attempt: MutationAttempt) => Promise<void>;
   approveWithdrawal: (policyNumber: string, withdrawalId: string, attempt: MutationAttempt) => Promise<void>;
@@ -118,6 +132,8 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
     adjustments: {},
     statements: {},
     rates: {},
+    deposit: {},
+    awaiting: idle(),
     acting: {},
 
     loadAccount: (policyNumber) => keyed('account', policyNumber, 'account', () => getAccount(policyNumber)),
@@ -132,6 +148,22 @@ export const useAccumulationStore = create<AccumulationState>((set, getState) =>
     },
     loadStatements: (policyNumber) => keyed('statements', policyNumber, 'statements', () => listStatements(policyNumber)),
     loadRates: (productId) => keyed('rates', productId, 'rates', () => listRates(productId)),
+    loadDeposit: (policyNumber) => keyed('deposit', policyNumber, 'deposit', () => getDeposit(policyNumber)),
+    loadAwaiting: () =>
+      track('accumulation.awaiting', getState().awaiting, (next) => set({ awaiting: next }), () => listAwaitingPayee()),
+
+    instruct: (policyNumber, body, attempt) =>
+      act(`instruct.${policyNumber}`, async () => {
+        await recordMaturityInstruction(policyNumber, body, attempt);
+        await getState().loadDeposit(policyNumber);
+      }),
+
+    // Rereads the account too: a payout closes it, and the balance on screen must say so.
+    payOutDeposit: (policyNumber, payeeRef, attempt) =>
+      act(`depositPayout.${policyNumber}`, async () => {
+        await payOutDeposit(policyNumber, payeeRef, attempt);
+        await Promise.all([getState().loadDeposit(policyNumber), getState().loadAccount(policyNumber)]);
+      }),
 
     withdraw: (policyNumber, body, attempt) =>
       act(`withdraw.${policyNumber}`, async () => {

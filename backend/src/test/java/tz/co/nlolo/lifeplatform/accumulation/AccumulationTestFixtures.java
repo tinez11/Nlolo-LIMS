@@ -92,6 +92,75 @@ public class AccumulationTestFixtures {
         }
     }
 
+    /** The user's grid (fixed-term deposit spec §1), rates for the term. */
+    public static final DepositPlan USER_GRID = grid(new String[][] {
+        {"500000", "3", "4", "5"}, {"6000000", "4", "5", "6"}, {"11000000", "5", "6", "7"}, {"21000000", "6", "7", "8"}});
+
+    /** Bands of {start, 3-month rate, 6-month rate, 12-month rate}. */
+    public static DepositPlan grid(String[][] bands) {
+        int[] terms = {3, 6, 12};
+        java.util.List<DepositRateRow> rows = new java.util.ArrayList<>();
+        for (String[] band : bands) {
+            for (int t = 0; t < terms.length; t++) {
+                rows.add(new DepositRateRow(new BigDecimal(band[0]), terms[t], new BigDecimal(band[t + 1])));
+            }
+        }
+        return new DepositPlan(rows);
+    }
+
+    /** A fixed-term deposit product on the user's grid, and an in-force deposit on it (not yet paid). */
+    public Issued issueDeposit(UUID tenant, BigDecimal amount, int termMonths, LocalDate commencement) {
+        UUID previous = TenantContext.getOrNull();
+        TenantContext.set(tenant);
+        try {
+            int n = SEQ.incrementAndGet();
+            PartyView applicant = partyApi.registerIndividual("Deposit Test Life " + n, LocalDate.of(1985, 1, 1),
+                "+25571600" + String.format("%04d", n % 10000), null, "test-agent");
+            ProductSummaryView product = productApi.createProduct(
+                "FTD-" + n + "-" + tenant.toString().substring(0, 4), "Fixed deposit", ProductCategory.ENDOWMENT, "TZS", "actuary");
+            UUID versionId = publishDepositVersion(tenant, product.productId(), USER_GRID);
+            PolicyApi.IssueRequest request = new PolicyApi.IssueRequest(applicant.partyId(), product.productId(),
+                versionId, amount, "TZS", amount, "TZS", "SINGLE", null,
+                List.of(), "deposit test", commencement, termMonths, null, null, null);
+            String policyNumber = policyApi.issuePolicy(UUID.randomUUID(), request, "test-staff").policyNumber();
+            policyApi.activateOnFirstPremium(policyNumber);
+            return new Issued(policyNumber, product.productId(), versionId);
+        } finally {
+            if (previous != null) TenantContext.set(previous); else TenantContext.clear();
+        }
+    }
+
+    /** Publishes (and so makes active for new business) a deposit version on an existing product. */
+    public UUID publishDepositVersion(UUID tenant, UUID productId, DepositPlan plan) {
+        UUID previous = TenantContext.getOrNull();
+        TenantContext.set(tenant);
+        try {
+            productApi.publishVersion(productId, IfrsMeasurementModel.GMM, LocalDate.now(), null,
+                List.of(new ProductApi.RatingFactorInput(FactorType.AGE, "30-49", BigDecimal.ONE, 30, 49),
+                        new ProductApi.RatingFactorInput(FactorType.SUM_ASSURED_BAND, "LOW", BigDecimal.ONE)),
+                List.of(new ProductApi.BenefitInput(BenefitType.DEATH, BenefitCalculationMethod.SUM_ASSURED)),
+                null, List.of(), EligibilityBounds.none(), FrequencyLoading.none(), ANY_FILING, CashValuePlan.none(),
+                PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of()), AccumulationPlan.none(), plan, "actuary");
+            return productApi.getActiveSnapshot(productId, LocalDate.now()).productVersionId();
+        } finally {
+            if (previous != null) TenantContext.set(previous); else TenantContext.clear();
+        }
+    }
+
+    /** billing.PremiumCollected for a deposit, with the number it was collected from (null: a cash receipt). */
+    public void collectDeposit(UUID tenant, String policyNumber, UUID invoiceId, BigDecimal amount, LocalDate on, String payerRef) {
+        Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("invoiceId", invoiceId);
+        payload.put("policyNumber", policyNumber);
+        payload.put("policyholderPartyId", UUID.randomUUID());
+        payload.put("amount", Map.of("amount", amount.toPlainString(), "currencyCode", "TZS"));
+        // Midnight UTC is 03:00 in Dar es Salaam, the same civil day accumulation reads.
+        payload.put("collectedAt", on.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toString());
+        payload.put("paidToDate", on.toString());
+        if (payerRef != null) payload.put("payerRef", payerRef);
+        publish(tenant, "billing.PremiumCollected", payload);
+    }
+
     /** What billing publishes when an invoice reaches PAID -- the real payload keys. */
     public void collectPremium(UUID tenant, String policyNumber, UUID invoiceId, BigDecimal amount, LocalDate collectedOn) {
         publish(tenant, "billing.PremiumCollected", Map.of(

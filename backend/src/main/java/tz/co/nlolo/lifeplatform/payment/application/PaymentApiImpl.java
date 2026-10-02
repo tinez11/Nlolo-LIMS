@@ -385,7 +385,9 @@ public class PaymentApiImpl implements PaymentApi {
                    "confirmedAt", Instant.now().toString(),
                    // Which consumer this money belongs to: billing takes PREMIUM, accumulation
                    // takes ACCOUNT_TOP_UP. Billing used to parse every sourceRef as an invoice id.
-                   "purpose", transaction.getPurpose())));
+                   "purpose", transaction.getPurpose(),
+                   // The number the money came from. A fixed-term deposit pays back to it by default.
+                   "payerRef", transaction.getPayerRef())));
     }
 
     /** Review fix (I2): same reasoning as {@code failDisbursement} above, for the collection

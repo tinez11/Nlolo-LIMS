@@ -13,6 +13,7 @@ import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.*;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.*;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
+import tz.co.nlolo.lifeplatform.product.api.DepositPlan;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.BenefitDefinition;
@@ -227,6 +228,7 @@ public class PolicyApiImpl implements PolicyApi {
 
         partyApi.getParty(request.policyholderPartyId()); // existence check -- PartyNotFoundException propagates as-is
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
+        refuseUnlessAValidDeposit(request);
 
         // Placeholder generation scheme (flagged): policy.policy's own column comment describes
         // a "tenant/product/year/sequence, human-meaningful for USSD/call-center lookup"
@@ -847,6 +849,11 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
 
+        if (productApi.resolveDepositPlan(policy.getProductVersionId()).isDeposit()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " is a fixed-term deposit: it was paid once and has no premiums to stop");
+        }
+
         if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
             return makeAccountPaidUp(policy, madePaidUpBy, tenantId);
         }
@@ -1159,7 +1166,10 @@ public class PolicyApiImpl implements PolicyApi {
         // contract that is owed money, and EXPIRED is terminal -- the maturity benefit would have
         // nowhere to go. Skipped rather than thrown: the hourly selector offers it again until
         // benefitpayout gets to it, and one unpayable policy must not stop the queue.
-        if (productApi.resolvePayoutPlan(policy.getProductVersionId()).hasEndOfTermRow()) {
+        if (productApi.resolvePayoutPlan(policy.getProductVersionId()).hasEndOfTermRow()
+                || productApi.resolveDepositPlan(policy.getProductVersionId()).isDeposit()) {
+            // ...and a fixed-term deposit matures through accumulation's own run (pay out or
+            // reinvest), never by expiry: its money is still on the account.
             return;
         }
         policy.expire(LocalDate.now());
@@ -1246,6 +1256,40 @@ public class PolicyApiImpl implements PolicyApi {
             ? policy.getLifeAssuredPartyId() : policy.getPolicyholderPartyId();
         LocalDate dob = partyApi.getPartyDetail(lifeId).dateOfBirth();
         return dob != null ? Period.between(dob, start).getYears() : null;
+    }
+
+    @Override
+    @Transactional
+    public LocalDate restateDepositTerm(String policyNumber, LocalDate commencement, int policyTermMonths) {
+        Policy policy = findPolicyOrThrow(policyNumber, TenantContext.get());
+        LocalDate maturity = policy.restateTerm(commencement, policyTermMonths);
+        policyRepository.save(policy);
+        return maturity;
+    }
+
+    /** A fixed-term deposit is one payment, of the deposit itself, for a term its grid offers (plan §R9). */
+    private void refuseUnlessAValidDeposit(IssueRequest request) {
+        DepositPlan deposit = productApi.resolveDepositPlan(request.productVersionId());
+        if (!deposit.isDeposit()) {
+            return;
+        }
+        if (!"SINGLE".equals(request.premiumFrequency())) {
+            throw new IllegalArgumentException("A fixed-term deposit is paid once: its premium frequency must be SINGLE, not "
+                + request.premiumFrequency());
+        }
+        if (request.premiumAmount() == null || request.sumAssuredAmount() == null
+                || request.premiumAmount().compareTo(request.sumAssuredAmount()) != 0) {
+            throw new IllegalArgumentException("A fixed-term deposit's premium is the deposit itself, so it must equal the sum assured");
+        }
+        if (request.policyTermMonths() == null || !deposit.terms().contains(request.policyTermMonths())) {
+            throw new IllegalArgumentException("This deposit offers terms of " + deposit.terms() + " months, not "
+                + request.policyTermMonths());
+        }
+        if (deposit.rateFor(request.sumAssuredAmount(), request.policyTermMonths()).isEmpty()) {
+            throw new IllegalArgumentException("A deposit of " + request.sumAssuredAmount().stripTrailingZeros().toPlainString()
+                + " is below the smallest band this product offers ("
+                + deposit.bandStarts().get(0).stripTrailingZeros().toPlainString() + ")");
+        }
     }
 
     @Override

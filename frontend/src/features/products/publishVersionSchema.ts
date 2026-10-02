@@ -437,6 +437,8 @@ interface PayoutFields {
   survivalBenefitsDeductedFromDeath: string;
   deathBenefitPremiumPercent: string;
   payoutRows: PayoutRowValues[];
+  /** A DEPOSIT version matures through its account, so it carries no schedule even as an endowment. */
+  valueBasis?: string;
 }
 
 export function blankPayoutRow(): PayoutRowValues {
@@ -468,7 +470,7 @@ function validatePayoutPlan(category: ProductCategory, v: PayoutFields, ctx: z.R
   if (v.payoutRows.length === 0) {
     // A product with no rows is an ordinary term or whole-life version; only the two SCHEDULED
     // categories must carry one, and that is checked below.
-    if (!SCHEDULED_CATEGORIES.includes(category)) {
+    if (!SCHEDULED_CATEGORIES.includes(category) || v.valueBasis === 'DEPOSIT') {
       checkPayoutTermBounds(v, issue);
       return;
     }
@@ -651,6 +653,80 @@ function validateAccumulation(category: ProductCategory, v: AccumulationFields &
         issue(['accountCharges'], `Account charges leave policy year ${expected} uncovered`);
       }
     }
+  }
+}
+
+// ---- Fixed-term deposit (2026-10-02) ----------------------------------------------------------
+
+const depositTermSchema = z.object({ months: z.string().trim() });
+const depositBandSchema = z.object({ minAmount: z.string().trim(), rates: z.array(z.string().trim()) });
+export type DepositBandValues = z.infer<typeof depositBandSchema>;
+
+/** A new band row with one empty cell per term already in the grid. */
+export function blankDepositBand(termCount: number): DepositBandValues {
+  return { minAmount: '', rates: Array.from({ length: termCount }, () => '') };
+}
+
+interface DepositFields extends CashValueFields {
+  valueBasis: string;
+  depositTerms: { months: string }[];
+  depositBands: DepositBandValues[];
+  minSumAssured?: string | undefined;
+  monthlyLoadingPercent?: string | undefined;
+  quarterlyLoadingPercent?: string | undefined;
+  payoutRows: PayoutRowValues[];
+}
+
+/** `DepositPlanValidator`, rule for rule and message for message. Only a DEPOSIT version is checked. */
+function validateDeposit(category: ProductCategory, v: DepositFields, ctx: z.RefinementCtx) {
+  if (v.valueBasis !== 'DEPOSIT') return;
+  const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
+  if (!ACCOUNT_CATEGORIES.includes(category)) {
+    issue(['valueBasis'], `A ${category} product cannot be a fixed-term deposit`);
+    return;
+  }
+  if (hasCashValue(v)) {
+    issue(['valueBasis'], 'A version is valued either by a cash-value scale or as a fixed-term deposit, not both');
+  }
+  if (Number(v.monthlyLoadingPercent || 0) > 0 || Number(v.quarterlyLoadingPercent || 0) > 0) {
+    issue(['monthlyLoadingPercent'], 'A fixed-term deposit is paid once; it takes no frequency loading');
+  }
+  if (v.payoutRows.length > 0) {
+    issue(['payoutRows'], 'A fixed-term deposit matures through its account; it carries no payout schedule');
+  }
+  if (v.depositTerms.length === 0 || v.depositBands.length === 0) {
+    issue(['depositBands'], 'A fixed-term deposit needs at least one term and one band');
+    return;
+  }
+  const terms = v.depositTerms.map((t) => t.months);
+  terms.forEach((t, j) => {
+    const n = Number(t);
+    if (!Number.isInteger(n) || n < 1 || n > 120) {
+      issue(['depositTerms', j, 'months'], 'A deposit term must be between 1 and 120 months');
+    }
+  });
+  if (new Set(terms).size !== terms.length) issue(['depositTerms'], 'Each term may appear once');
+  const starts = new Set<number>();
+  v.depositBands.forEach((band, i) => {
+    const min = Number(band.minAmount);
+    if (!isNumber(band.minAmount) || min <= 0) {
+      issue(['depositBands', i, 'minAmount'], 'A deposit band must start above zero');
+    } else if (starts.has(min)) {
+      issue(['depositBands', i, 'minAmount'], 'Each band may start only once');
+    }
+    starts.add(min);
+    terms.forEach((t, j) => {
+      const rate = band.rates[j] ?? '';
+      if (rate === '') {
+        issue(['depositBands', i, 'rates', j], `The band from ${band.minAmount} does not offer a ${t}-month term`);
+      } else if (!isNumber(rate) || Number(rate) < 0 || Number(rate) > 100) {
+        issue(['depositBands', i, 'rates', j], 'A deposit rate must be between 0 and 100 percent');
+      }
+    });
+  });
+  const lowest = Math.min(...v.depositBands.map((b) => Number(b.minAmount)));
+  if (v.minSumAssured && Number(v.minSumAssured) !== lowest) {
+    issue(['depositBands'], `The lowest deposit band must start at the version's minimum sum assured (${v.minSumAssured})`);
   }
 }
 
@@ -863,10 +939,14 @@ export function publishVersionFormSchema(category: ProductCategory) {
     guaranteedRatePercent: z.string().trim(),
     minimumBalance: z.string().trim(),
     accountCharges: z.array(accountChargeRowSchema),
+    // A fixed-term deposit (2026-10-02): rates by band x term, each for the TERM.
+    depositTerms: z.array(depositTermSchema),
+    depositBands: z.array(depositBandSchema),
   }).superRefine((values, ctx) => {
     validateCashValue(category, values, ctx);
     validatePayoutPlan(category, values, ctx);
     validateAccumulation(category, values, ctx);
+    validateDeposit(category, values, ctx);
 
     /*
       The two modes, mirroring ProductApiImpl.publishVersion exactly.
@@ -1017,6 +1097,8 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     guaranteedRatePercent: '',
     minimumBalance: '',
     accountCharges: [],
+    depositTerms: [],
+    depositBands: [],
   };
 }
 
@@ -1170,6 +1252,19 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
           transferAllocationPercent: Number(c.transferAllocationPercent),
           monthlyPolicyFee: Number(c.monthlyPolicyFee),
         })),
+      },
+    }),
+    // A fixed-term deposit: the grid flattened to one row per cell. No accumulation block -- the
+    // server builds the zero-charge account behind it.
+    ...(values.valueBasis === 'DEPOSIT' && {
+      deposit: {
+        rates: values.depositBands.flatMap((band) =>
+          values.depositTerms.map((term, j) => ({
+            minAmount: Number(band.minAmount),
+            termMonths: Number(term.months),
+            ratePercent: Number(band.rates[j]),
+          })),
+        ),
       },
     }),
     // Required, so no omit-when-blank branch: a version may not exist without the filing that

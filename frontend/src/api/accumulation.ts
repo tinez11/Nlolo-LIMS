@@ -3,6 +3,10 @@ import type { ApiError } from '@/lib/apiError';
 import type { MutationAttempt } from '@/lib/idempotency';
 import type {
   AccountView,
+  AwaitingPayeeView,
+  DepositPeriodView,
+  DepositView,
+  MaturityInstructionView,
   AdjustmentView,
   ClosingQuoteView,
   RateDeclarationView,
@@ -175,4 +179,43 @@ export function withdrawRate(declarationId: string, attempt: MutationAttempt): P
   return post<RateDeclarationView>(`/rate-declarations/${encodeURIComponent(declarationId)}/withdraw`, undefined, {
     headers: attempt.headers(),
   });
+}
+
+// ---- Fixed-term deposits (2026-10-02) --------------------------------------------------------
+
+/** The deposit, or null for any account that is not one -- an answer, as getAccount's null is. */
+export async function getDeposit(policyNumber: string): Promise<DepositView | null> {
+  try {
+    return await get<DepositView>(`${account(policyNumber)}/deposit`);
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+}
+
+export interface MaturityInstructionBody {
+  action: 'REINVEST' | 'PAY_OUT';
+  termMonths?: number;
+  payeeRef?: string;
+}
+
+/** The client's choice for the end of the running term; a new one supersedes the last. */
+export function recordMaturityInstruction(
+  policyNumber: string,
+  body: MaturityInstructionBody,
+  attempt: MutationAttempt,
+): Promise<MaturityInstructionView> {
+  return post<MaturityInstructionView>(`${account(policyNumber)}/deposit/maturity-instruction`, body, {
+    headers: attempt.headers(),
+  });
+}
+
+/** Finance's: matured deposits with no number to pay them to. */
+export function listAwaitingPayee(): Promise<AwaitingPayeeView[]> {
+  return get<AwaitingPayeeView[]>('/deposits/awaiting-payee');
+}
+
+/** 202: requested from the rail, not paid. The screen must say so. */
+export function payOutDeposit(policyNumber: string, payeeRef: string, attempt: MutationAttempt): Promise<DepositPeriodView> {
+  return post<DepositPeriodView>(`${account(policyNumber)}/deposit/payout`, { payeeRef }, { headers: attempt.headers() });
 }

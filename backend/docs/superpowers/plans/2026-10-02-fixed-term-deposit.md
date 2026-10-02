@@ -57,6 +57,7 @@ The payer's number reaches accumulation through an additive `payerRef` on `payme
 | R12 | "A list" of AWAITING_PAYEE accounts | A section on the existing payouts register (`PayoutsQueuePage`), linking to each policy. Payment is recorded on the policy's Account tab. | No new route or nav ("don't invent anything"). |
 | R13 | Payout purpose `DEPOSIT_MATURITY_PAYOUT` | Kept (23 characters, fits VARCHAR(30)) | |
 | R14 | Spec table `product.deposit_rate_row` | Kept, with the shape of R2 | |
+| R16 (found in Task 2) | `restateMaturityDate` | `PolicyApi.restateDepositTerm(policy, commencement, termMonths)` returns the derived maturity date. Term 1: commencement = the day the money arrived, months = its term. A reinvestment: commencement unchanged, months += the new term, and the new period's maturity IS the policy's derived date. `DepositPeriod` takes its maturity explicitly. | `policy_maturity_matches_term` (V6) holds maturity = commencement + term months, and refused a bare date move. Moving commencement at each reinvestment would make earlier terms look off cover. |
 | R15 | Validator refuses any payout schedule row | Kept. `PayoutPlanValidator` also stops requiring the endowment's MATURITY row for a deposit; free-look days are still required. | Otherwise every deposit endowment is refused. |
 
 ---
