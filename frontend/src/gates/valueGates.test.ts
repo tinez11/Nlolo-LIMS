@@ -38,6 +38,17 @@ describe('surrenderGates', () => {
     expect(gates.some((g) => !g.ok && g.hard)).toBe(true);
   });
 
+  // Product step 4: the server lets a policy surrender on its attached bonuses alone.
+  it('accepts a policy whose only surrender value is its attached bonuses', () => {
+    const bonusOnly = {
+      ...quote('12000.00'),
+      bonusSurrenderValue: { amount: '12000.00', currencyCode: 'TZS' },
+    } as SurrenderQuote;
+    const gates = surrenderGates(policy({ cashValue: { amount: '0.00', currencyCode: 'TZS' } }), bonusOnly, null);
+    expect(gates.every((g) => g.ok)).toBe(true);
+    expect(gates[1]!.detail).toBe('No cash value, but its attached bonuses are worth TZS 12,000.00 on surrender.');
+  });
+
   it('refuses a quote that is zero after charges, naming the figure', () => {
     const gates = surrenderGates(policy(), quote('0.00'), null);
     const failed = gates.find((g) => !g.ok)!;

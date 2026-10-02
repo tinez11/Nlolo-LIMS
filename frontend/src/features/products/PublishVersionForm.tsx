@@ -17,6 +17,8 @@ import { FormField } from '@/components/FormField';
 import { selectPublishing, useProductStore } from '@/store/productStore';
 import {
   ACCOUNT_CATEGORIES,
+  WITH_PROFITS_CATEGORIES,
+  blankBonusSurrenderRow,
   blankAccountChargeRow,
   blankBenefitRow,
   blankDepositBand,
@@ -37,6 +39,7 @@ import {
   type PublishVersionFormValues,
 } from './publishVersionSchema';
 import { Input, Select } from '@/components/ui/input';
+import { CheckboxField } from '@/components/ui/checkbox';
 import { InlineError } from '@/components/InlineError';
 import { humanizeStatus } from '@/lib/status';
 
@@ -160,8 +163,16 @@ export function PublishVersionForm({
       accountCharges: [],
       depositTerms: [],
       depositBands: [],
+      withProfits: false,
+      bonusMethod: '',
+      bonusPaidUpParticipates: false,
+      bonusSurrenderBasis: '',
+      bonusSurrenderRows: [],
     },
   });
+  const bonusSurrenderRows = useFieldArray({ control, name: 'bonusSurrenderRows' });
+  const withProfits = useWatch({ control, name: 'withProfits' });
+  const bonusSurrenderBasis = useWatch({ control, name: 'bonusSurrenderBasis' });
   const cashValueRows = useFieldArray({ control, name: 'cashValueRows' });
   // A fixed-term deposit: terms are the grid's columns, bands its rows. Adding a column adds a cell
   // to every band, so a band can never be shorter than the terms it must offer.
@@ -1038,6 +1049,95 @@ export function PublishVersionForm({
                   <Plus className="size-4" /> Add a band
                 </Button>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/*
+        With-profits (product step 4): bonuses declared on the product attach to every eligible
+        policy. Every field renders its own error, including the surrender basis -- an empty select
+        with no default, because what bonuses add to a surrender is a contract term the version
+        must state.
+      */}
+      {WITH_PROFITS_CATEGORIES.includes(category) && valueBasis === 'SCALE' && (
+        <div className="rounded-md border border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground">With profits (optional)</p>
+          <div className="mt-2">
+            <CheckboxField label="With-profits version" {...register('withProfits')} />
+            {errors.withProfits?.message && (
+              <p role="alert" className="mt-1 text-xs text-status-danger-fg">{errors.withProfits.message}</p>
+            )}
+          </div>
+          {withProfits && (
+            <div className="mt-3 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="Bonus method" error={errors.bonusMethod?.message}>
+                  <Select inputSize="sm" {...register('bonusMethod')}>
+                    <option value="">Choose…</option>
+                    <option value="SIMPLE">Simple (on the sum assured)</option>
+                    <option value="COMPOUND">Compound (on the sum assured plus attached bonuses)</option>
+                  </Select>
+                </FormField>
+                <FormField label="Bonus surrender basis" error={errors.bonusSurrenderBasis?.message}>
+                  <Select inputSize="sm" {...register('bonusSurrenderBasis')}>
+                    <option value="">Choose…</option>
+                    <option value="NONE">None — bonuses add nothing to a surrender</option>
+                    <option value="SUM_ASSURED_SCALE">The version&apos;s cash-value scale</option>
+                    <option value="OWN_SCALE">Its own scale, below</option>
+                  </Select>
+                </FormField>
+              </div>
+              <CheckboxField label="A paid-up policy still receives declarations" {...register('bonusPaidUpParticipates')} />
+              {bonusSurrenderBasis === 'OWN_SCALE' && (
+                <div className="space-y-2">
+                  <p className="text-xs text-subtle-foreground">
+                    What each 1,000 of attached bonus is worth on surrender, from a number of completed years.
+                  </p>
+                  {bonusSurrenderRows.fields.map((field, index) => {
+                    const rowErrors = errors.bonusSurrenderRows?.[index];
+                    const rowMessage = rowErrors?.fromCompletedYears?.message ?? rowErrors?.perMille?.message;
+                    return (
+                      <div key={field.id}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input
+                            type="number" min={0} inputSize="sm" className="w-28 shrink-0 text-right" placeholder="From year"
+                            aria-label={`Bonus surrender row ${index + 1} from completed years`}
+                            {...register(`bonusSurrenderRows.${index}.fromCompletedYears`)}
+                          />
+                          <Input
+                            inputSize="sm" inputMode="decimal" className="w-28 shrink-0 text-right" placeholder="Per mille"
+                            aria-label={`Bonus surrender row ${index + 1} value per mille`}
+                            {...register(`bonusSurrenderRows.${index}.perMille`)}
+                          />
+                          <Button
+                            type="button" size="icon" variant="ghost"
+                            aria-label={`Remove bonus surrender row ${index + 1}`}
+                            onClick={() => bonusSurrenderRows.remove(index)}
+                          >
+                            <X className="size-4" />
+                          </Button>
+                        </div>
+                        {rowMessage && <p role="alert" className="mt-1 text-xs text-status-danger-fg">{rowMessage}</p>}
+                      </div>
+                    );
+                  })}
+                  <Button
+                    type="button" size="sm" variant="ghost" className="-ml-2"
+                    onClick={() => bonusSurrenderRows.append(blankBonusSurrenderRow())}
+                  >
+                    <Plus className="size-4" /> Add a bonus surrender row
+                  </Button>
+                </div>
+              )}
+              {/* Rendered whatever the basis: "only for OWN_SCALE" lands here when rows were left
+                  behind by switching away from it. */}
+              {errors.bonusSurrenderRows?.message && (
+                <p role="alert" className="text-xs text-status-danger-fg">{errors.bonusSurrenderRows.message}</p>
+              )}
+              {errors.bonusSurrenderRows?.root?.message && (
+                <p role="alert" className="text-xs text-status-danger-fg">{errors.bonusSurrenderRows.root.message}</p>
+              )}
             </div>
           )}
         </div>

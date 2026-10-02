@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input';
 import { approveSurrenderGates, paidUpGates, surrenderGates } from '@/gates/valueGates';
 import { formatMoney } from '@/lib/money';
 import type { PolicyView, SurrenderQuote, SurrenderRequestView } from '@/api/types';
+
+const isPositiveAmount = (amount: string | undefined) => Number(amount ?? '0') > 0;
 import {
   selectApprovingSurrender,
   selectMakingPaidUp,
@@ -208,6 +210,14 @@ function SurrenderAction({
         gates={gates}
         title={awaitingApproval ? 'Before approving this surrender' : 'Before surrendering this policy'}
       />
+
+      {/* Product step 4: already inside the quoted figure, shown on its own so nobody has to guess
+          what the bonuses added. Valued on the version's own stated basis, with no surrender charge. */}
+      {!awaitingApproval && isPositiveAmount(quote?.bonusSurrenderValue?.amount) && (
+        <p className="text-xs text-muted-foreground">
+          Includes {formatMoney(quote?.bonusSurrenderValue)} for attached bonuses
+        </p>
+      )}
 
       {requesting.status === 'error' && requesting.error && <InlineError error={requesting.error} />}
       {approving.status === 'error' && approving.error && <InlineError error={approving.error} />}
