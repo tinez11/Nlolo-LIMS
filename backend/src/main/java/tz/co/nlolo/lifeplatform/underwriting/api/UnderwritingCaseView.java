@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.underwriting.api;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -119,4 +120,23 @@ public record UnderwritingCaseView(UUID caseId, UUID applicantPartyId, UUID prod
                                     // excess it decides. Null on a proposal. Serialized, so the
                                     // queue and the case page can say what is being decided.
                                     String evidenceForPolicyNumber,
-                                    UUID evidenceForMemberId) {}
+                                    UUID evidenceForMemberId) {
+
+    /**
+     * The sum assured the proposal asked for, as Money on the wire -- null on a group case, which
+     * has none until policy values its schedule.
+     *
+     * <p>The two components above stay {@code @JsonIgnore}: they were hidden only to satisfy the
+     * response schema, never for a business reason, and that left the console's issue form unable
+     * to prefill the one figure every manual issue needs -- staff typed the sum assured again for
+     * every policy issued from a case (found by the user, 2026-10-02). The schema now declares it.
+     */
+    @JsonProperty("sumAssured")
+    public java.util.Map<String, String> sumAssuredOnTheWire() {
+        if (sumAssuredAmount == null || sumAssuredCurrency == null) {
+            return null;
+        }
+        return java.util.Map.of("amount", sumAssuredAmount.setScale(2, java.math.RoundingMode.HALF_EVEN).toPlainString(),
+            "currencyCode", sumAssuredCurrency);
+    }
+}
