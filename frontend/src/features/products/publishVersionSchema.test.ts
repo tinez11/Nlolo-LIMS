@@ -971,16 +971,17 @@ describe('account value basis', () => {
 describe('fixed-term deposit', () => {
   const endowment = publishVersionFormSchema('ENDOWMENT');
   const messages = (r: { error?: { issues: { message: string }[] } }) => (r.error?.issues ?? []).map((i) => i.message);
-  // The user's grid: from each band start, the rate for 3, 6 and 12 months -- each for the TERM.
+  // The user's grid: from each band start, the rate for 3, 6 and 12 months -- each for the TERM. An
+  // amount above a band's top goes to the next band, so each starts a cent above the one before.
   const deposit = (over: Record<string, unknown> = {}) => ({
     ...valid(),
     valueBasis: 'DEPOSIT',
     depositTerms: [{ months: '3' }, { months: '6' }, { months: '12' }],
     depositBands: [
       { minAmount: '500000', rates: ['3', '4', '5'] },
-      { minAmount: '6000000', rates: ['4', '5', '6'] },
-      { minAmount: '11000000', rates: ['5', '6', '7'] },
-      { minAmount: '21000000', rates: ['6', '7', '8'] },
+      { minAmount: '5000000.01', rates: ['4', '5', '6'] },
+      { minAmount: '10000000.01', rates: ['5', '6', '7'] },
+      { minAmount: '20000000.01', rates: ['6', '7', '8'] },
     ],
     payoutRows: [],
     ...over,
@@ -991,14 +992,14 @@ describe('fixed-term deposit', () => {
     expect(result.success).toBe(true);
     const body = toApiRequest(result.data!);
     expect(body.deposit?.rates).toHaveLength(12);
-    expect(body.deposit?.rates).toContainEqual({ minAmount: 6000000, termMonths: 6, ratePercent: 5 });
+    expect(body.deposit?.rates).toContainEqual({ minAmount: 5000000.01, termMonths: 6, ratePercent: 5 });
     expect(body).not.toHaveProperty('accumulation');
   });
 
   it('names an empty cell by its band and term', () => {
     const bands = deposit().depositBands.map((b, i) => (i === 1 ? { ...b, rates: ['4', '', '6'] } : b));
     expect(messages(endowment.safeParse(deposit({ depositBands: bands })))).toContain(
-      'The band from 6000000 does not offer a 6-month term',
+      'The band from 5000000.01 does not offer a 6-month term',
     );
   });
 

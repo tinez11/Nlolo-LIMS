@@ -92,9 +92,13 @@ public class AccumulationTestFixtures {
         }
     }
 
-    /** The user's grid (fixed-term deposit spec §1), rates for the term. */
+    /**
+     * The user's grid (fixed-term deposit spec §1), rates for the term. An amount between their bands
+     * goes to the higher one (their answer, 2026-10-02), so each band past the first starts one cent
+     * above the previous band's top.
+     */
     public static final DepositPlan USER_GRID = grid(new String[][] {
-        {"500000", "3", "4", "5"}, {"6000000", "4", "5", "6"}, {"11000000", "5", "6", "7"}, {"21000000", "6", "7", "8"}});
+        {"500000", "3", "4", "5"}, {"5000000.01", "4", "5", "6"}, {"10000000.01", "5", "6", "7"}, {"20000000.01", "6", "7", "8"}});
 
     /** Bands of {start, 3-month rate, 6-month rate, 12-month rate}. */
     public static DepositPlan grid(String[][] bands) {

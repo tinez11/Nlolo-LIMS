@@ -49,9 +49,10 @@ test.describe('a fixed-term deposit', () => {
     }
     const bands = [
       ['500000', '3', '4', '5'],
-      ['6000000', '4', '5', '6'],
-      ['11000000', '5', '6', '7'],
-      ['21000000', '6', '7', '8'],
+      // Above a band's top is the next band (the user's answer), so each starts a cent above it.
+      ['5000000.01', '4', '5', '6'],
+      ['10000000.01', '5', '6', '7'],
+      ['20000000.01', '6', '7', '8'],
     ];
     for (const [i, band] of bands.entries()) {
       await page.getByRole('button', { name: 'Add a band' }).click();

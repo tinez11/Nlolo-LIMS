@@ -265,7 +265,7 @@ class DepositLifecycleIntegrationTest {
         asTenant(() -> api.recordMaturityInstruction(policy, MaturityAction.REINVEST, 6, null, "staff-one", key()));
         // New rates published AFTER the first term started; the reinvestment must use them (D3, D8).
         UUID newVersion = fixtures.publishDepositVersion(TENANT, productId, AccumulationTestFixtures.grid(new String[][] {
-            {"500000", "9", "10", "11"}, {"6000000", "4", "5", "6"}, {"11000000", "5", "6", "7"}, {"21000000", "6", "7", "8"}}));
+            {"500000", "9", "10", "11"}, {"5000000.01", "4", "5", "6"}, {"10000000.01", "5", "6", "7"}, {"20000000.01", "6", "7", "8"}}));
         runMaturity(policy);
 
         DepositView d = deposit(policy);
