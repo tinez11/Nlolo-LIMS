@@ -967,3 +967,56 @@ describe('account value basis', () => {
     );
   });
 });
+
+describe('fixed-term deposit', () => {
+  const endowment = publishVersionFormSchema('ENDOWMENT');
+  const messages = (r: { error?: { issues: { message: string }[] } }) => (r.error?.issues ?? []).map((i) => i.message);
+  // The user's grid: from each band start, the rate for 3, 6 and 12 months -- each for the TERM.
+  const deposit = (over: Record<string, unknown> = {}) => ({
+    ...valid(),
+    valueBasis: 'DEPOSIT',
+    depositTerms: [{ months: '3' }, { months: '6' }, { months: '12' }],
+    depositBands: [
+      { minAmount: '500000', rates: ['3', '4', '5'] },
+      { minAmount: '6000000', rates: ['4', '5', '6'] },
+      { minAmount: '11000000', rates: ['5', '6', '7'] },
+      { minAmount: '21000000', rates: ['6', '7', '8'] },
+    ],
+    payoutRows: [],
+    ...over,
+  });
+
+  it("accepts the user's grid with no payout schedule, and sends one rate per cell and no account block", () => {
+    const result = endowment.safeParse(deposit());
+    expect(result.success).toBe(true);
+    const body = toApiRequest(result.data!);
+    expect(body.deposit?.rates).toHaveLength(12);
+    expect(body.deposit?.rates).toContainEqual({ minAmount: 6000000, termMonths: 6, ratePercent: 5 });
+    expect(body).not.toHaveProperty('accumulation');
+  });
+
+  it('names an empty cell by its band and term', () => {
+    const bands = deposit().depositBands.map((b, i) => (i === 1 ? { ...b, rates: ['4', '', '6'] } : b));
+    expect(messages(endowment.safeParse(deposit({ depositBands: bands })))).toContain(
+      'The band from 6000000 does not offer a 6-month term',
+    );
+  });
+
+  it('refuses a payout schedule and a frequency loading', () => {
+    expect(messages(endowment.safeParse(deposit({ payoutRows: [maturityRow] })))).toContain(
+      'A fixed-term deposit matures through its account; it carries no payout schedule',
+    );
+    expect(messages(endowment.safeParse(deposit({ monthlyLoadingPercent: '5' })))).toContain(
+      'A fixed-term deposit is paid once; it takes no frequency loading',
+    );
+  });
+
+  it('refuses a deposit on a protection product, and a lowest band off the minimum sum assured', () => {
+    expect(messages(publishVersionFormSchema('TERM_LIFE').safeParse(deposit()))).toContain(
+      'A TERM_LIFE product cannot be a fixed-term deposit',
+    );
+    expect(messages(endowment.safeParse(deposit({ minSumAssured: '1000000' })))).toContain(
+      "The lowest deposit band must start at the version's minimum sum assured (1000000)",
+    );
+  });
+});
