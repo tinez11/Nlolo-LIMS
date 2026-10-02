@@ -13,6 +13,8 @@ import tz.co.nlolo.lifeplatform.policy.api.*;
 import tz.co.nlolo.lifeplatform.policy.domain.*;
 import tz.co.nlolo.lifeplatform.policy.infrastructure.*;
 import tz.co.nlolo.lifeplatform.product.api.BenefitType;
+import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
+import tz.co.nlolo.lifeplatform.product.api.BonusSurrenderBasis;
 import tz.co.nlolo.lifeplatform.product.api.DepositPlan;
 import tz.co.nlolo.lifeplatform.product.api.EligibilityBounds;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
@@ -504,7 +506,8 @@ public class PolicyApiImpl implements PolicyApi {
 
         BigDecimal chargePercent = resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(), policy.getIssueDate());
         BigDecimal charge = account.getCashValueAmount().multiply(chargePercent).divide(new BigDecimal("100"));
-        BigDecimal quotedValue = account.getCashValueAmount().subtract(charge);
+        BigDecimal bonusValue = bonusSurrenderValue(policy);
+        BigDecimal quotedValue = account.getCashValueAmount().subtract(charge).add(bonusValue);
         Instant quotedAt = Instant.now();
 
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderValueCalculated", tenantId,
@@ -512,7 +515,41 @@ public class PolicyApiImpl implements PolicyApi {
                    "quotedValue", Map.of("amount", quotedValue.toPlainString(), "currencyCode", account.getCashValueCurrency()),
                    "quotedAt", quotedAt.toString())));
 
-        return new SurrenderQuoteView(policyNumber, quotedValue, account.getCashValueCurrency(), quotedAt);
+        return new SurrenderQuoteView(policyNumber, quotedValue, account.getCashValueCurrency(), quotedAt, bonusValue);
+    }
+
+    /**
+     * What attached bonuses add to a surrender (product step 4, Q6): exactly the version's stated
+     * basis, never assumed. The surrender CHARGE is not applied to it (plan revision R3): the bonus
+     * scale is already the product's statement of what bonuses are worth on surrender. Product is
+     * asked first, so a policy on an ordinary version never reads policy_bonus.
+     */
+    private BigDecimal bonusSurrenderValue(Policy policy) {
+        BonusPlan plan = productApi.resolveBonusPlan(policy.getProductVersionId());
+        if (!plan.participating() || plan.surrenderBasis() == BonusSurrenderBasis.NONE) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal attached = policyBonusRepository.findById(policy.getPolicyNumber())
+            .map(PolicyBonus::getAttachedBonusAmount).orElse(BigDecimal.ZERO);
+        if (attached.signum() == 0) {
+            return BigDecimal.ZERO;
+        }
+        LocalDate start = policy.getCommencementDate() != null ? policy.getCommencementDate() : policy.getIssueDate();
+        LocalDate paidToDate = policyValueRepository.findById(policy.getPolicyNumber()).map(PolicyValue::getPaidToDate).orElse(null);
+        int completedYears = (paidToDate == null || start == null || paidToDate.isBefore(start))
+            ? 0 : Period.between(start, paidToDate).getYears();
+        BigDecimal perMille = switch (plan.surrenderBasis()) {
+            case OWN_SCALE -> plan.ownScalePerMille(completedYears);
+            case SUM_ASSURED_SCALE -> {
+                var config = productApi.getCashValueConfig(policy.getProductVersionId());
+                yield config.isPresent() && completedYears >= config.get().minYearsForValue()
+                    ? productApi.resolveCashValuePerMille(policy.getProductVersionId(), completedYears,
+                        ageAtEntryFor(policy, start)).orElse(BigDecimal.ZERO)
+                    : BigDecimal.ZERO;
+            }
+            case NONE -> BigDecimal.ZERO;
+        };
+        return attached.multiply(perMille).divide(BigDecimal.valueOf(1000), 2, java.math.RoundingMode.HALF_EVEN);
     }
 
     /**
@@ -1018,15 +1055,18 @@ public class PolicyApiImpl implements PolicyApi {
                     + config.get().minYearsForValue() + " years, so it cannot be surrendered");
             }
         }
-        if (account.getCashValueAmount().signum() <= 0) {
+        // A policy whose only surrender value is its bonuses still has one (product step 4).
+        BigDecimal bonusValue = bonusSurrenderValue(policy);
+        if (account.getCashValueAmount().signum() <= 0 && bonusValue.signum() <= 0) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " has no cash value to surrender");
         }
 
-        // Quote off the policy's OWN version (step 0 D3): cash value less the surrender charge.
+        // Quote off the policy's OWN version (step 0 D3): cash value less the surrender charge, plus
+        // what the version says attached bonuses are worth.
         ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
         BigDecimal chargePercent = resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(), policy.getIssueDate());
         BigDecimal charge = account.getCashValueAmount().multiply(chargePercent).divide(new BigDecimal("100"));
-        BigDecimal quoted = account.getCashValueAmount().subtract(charge);
+        BigDecimal quoted = account.getCashValueAmount().subtract(charge).add(bonusValue);
         if (quoted.signum() <= 0) {
             throw new InvalidPolicyStateException("Policy " + policyNumber + " has no positive surrender value after charges");
         }

@@ -374,6 +374,20 @@ class PayoutLifecycleIntegrationTest {
         assertThat(asTenant(() -> api.deathBenefitCeiling(policyNumber, SUM_ASSURED)))
             .usingComparator(BigDecimal::compareTo).isEqualTo(new BigDecimal("1320000.00"));
 
+        // The claim screen's "Covered for" is that same limit, not the sum assured (product step 4,
+        // plan revision R1): it used to show 1,000,000 while approval allowed up to 1,320,000.
+        LocalDate dateOfDeath = LocalDate.now().minusDays(1);
+        UUID claimId = asTenant(() -> {
+            UUID claimant = partyApi.registerIndividual("Payout Floor Claimant", LocalDate.of(1980, 3, 3),
+                "+255715000009", null, "test-agent").partyId();
+            return claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimant,
+                ClaimType.DEATH, dateOfDeath,
+                new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfDeath, "Dr. Test")),
+                "payout-floor-reg-01", "claims-clerk").claimId();
+        });
+        assertThat(asTenant(() -> claimsApi.claimableCover(claimId)).amount())
+            .usingComparator(BigDecimal::compareTo).isEqualTo(new BigDecimal("1320000.00"));
+
         // And a policy whose version says neither rule keeps exactly the ceiling it always had.
         String plain = fixtures.issueEndowment(TENANT, maturityOnly(null), SUM_ASSURED, 240,
             LocalDate.now().minusYears(2));

@@ -12,6 +12,8 @@ import tz.co.nlolo.lifeplatform.benefitpayout.domain.*;
 import tz.co.nlolo.lifeplatform.benefitpayout.infrastructure.*;
 import tz.co.nlolo.lifeplatform.accumulation.api.AccumulationApi;
 import tz.co.nlolo.lifeplatform.accumulation.api.DeathValuation;
+import tz.co.nlolo.lifeplatform.bonus.api.BonusApi;
+import tz.co.nlolo.lifeplatform.bonus.api.ExitType;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyStatus;
 import tz.co.nlolo.lifeplatform.policy.api.PolicyView;
@@ -59,13 +61,17 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     private final ApplicationEventPublisher eventPublisher;
     /** Product step 3: an account-value maturity is valued by the account, and so is its death ceiling. */
     private final AccumulationApi accumulationApi;
+    /** Product step 4: a with-profits maturity and death ceiling add the bonus. */
+    private final BonusApi bonusApi;
 
     public BenefitPayoutApiImpl(PayoutInstalmentRepository instalments, PayoutStreamRepository streams,
                                 PremiumTallyRepository tallies, PaymentRunRepository runs,
                                 FreeLookCancellationRepository cancellations, FreeLookDeductionRepository deductions,
                                 ProductApi productApi, PolicyApi policyApi,
-                                ApplicationEventPublisher eventPublisher, AccumulationApi accumulationApi) {
+                                ApplicationEventPublisher eventPublisher, AccumulationApi accumulationApi,
+                                BonusApi bonusApi) {
         this.accumulationApi = accumulationApi;
+        this.bonusApi = bonusApi;
         this.cancellations = cancellations;
         this.deductions = deductions;
         this.instalments = instalments;
@@ -219,6 +225,14 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
                 matureIfEndOfTerm(i);
                 return;
             }
+        }
+
+        if (i.kind() == PayoutKind.MATURITY && !accountValue && bonusApi.isParticipating(i.getPolicyNumber())) {
+            // With-profits (product step 4): the maturity pays the row's figure PLUS the bonus --
+            // attached, interim and terminal -- valued on the due date and recorded once against
+            // this instalment, so a re-run pays the figure first recorded.
+            valued = i.getCurrentAmount().add(
+                bonusApi.settle(i.getPolicyNumber(), ExitType.MATURITY, i.getInstalmentId().toString(), i.getDueDate()).total());
         }
 
         // An account policy is never held for missed premiums: a missed contribution does not affect
@@ -710,7 +724,10 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     @Transactional(readOnly = true)
     public BigDecimal deathBenefitCeiling(String policyNumber, BigDecimal sumAssuredCeiling, LocalDate dateOfDeath) {
         if (!accumulationApi.isAccount(policyNumber)) {
-            return deathBenefitCeiling(policyNumber, sumAssuredCeiling);
+            BigDecimal ceiling = deathBenefitCeiling(policyNumber, sumAssuredCeiling);
+            // With-profits (product step 4): the bonus as at the death sits on top of the sum assured.
+            return bonusApi.isParticipating(policyNumber)
+                ? ceiling.add(bonusApi.valueAt(policyNumber, dateOfDeath).total()) : ceiling;
         }
         DeathValuation v = accumulationApi.valueAtDeath(policyNumber, dateOfDeath);
         BigDecimal base = v.accountValue();

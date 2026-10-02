@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
-/** With-profits bonuses (product step 4). Tasks 5-7 add attaching, exits and the policy reads. */
+/** With-profits bonuses (product step 4): declarations, and what bonuses are worth at an exit. */
 public interface BonusApi {
 
     /** In-process form; over HTTP the keyed form below is what runs. */
@@ -24,4 +24,16 @@ public interface BonusApi {
     BonusDeclarationView withdrawDeclaration(UUID declarationId, String withdrawnBy);
 
     List<BonusDeclarationView> listDeclarations(UUID productId);
+
+    /**
+     * Whether this policy is on a with-profits version -- the cheap gate every caller asks first.
+     * Answered from policy and product alone, so asking reads no bonus table.
+     */
+    boolean isParticipating(String policyNumber);
+
+    /** Attached as at the date, plus interim (if eligible on it), plus terminal. Reads only. */
+    BonusValuation valueAt(String policyNumber, LocalDate date);
+
+    /** valueAt, recorded once for this exit. A second call for the same exit returns the record. */
+    BonusValuation settle(String policyNumber, ExitType type, String exitRef, LocalDate exitDate);
 }

@@ -35,13 +35,15 @@ public class BonusApiImpl implements BonusApi {
     private final DeclarationOutcomeRepository outcomes;
     private final AttachmentLedger ledger;
     private final ProductApi productApi;
+    private final SettlementRepository settlements;
+    private final ParticipationGate gate;
     private final BonusApiImpl self;
 
     /** {@code self} is this bean's proxy: the drain must reach attachOne through it, or REQUIRES_NEW is ignored. */
     public BonusApiImpl(DeclarationRepository declarations, ParticipantRepository participants, BonusIdempotentRequests keyed,
                         StatusEventRepository statusEvents, AttachmentEntryRepository entries,
                         DeclarationOutcomeRepository outcomes, AttachmentLedger ledger, ProductApi productApi,
-                        @Lazy BonusApiImpl self) {
+                        SettlementRepository settlements, ParticipationGate gate, @Lazy BonusApiImpl self) {
         this.declarations = declarations;
         this.participants = participants;
         this.keyed = keyed;
@@ -50,6 +52,8 @@ public class BonusApiImpl implements BonusApi {
         this.outcomes = outcomes;
         this.ledger = ledger;
         this.productApi = productApi;
+        this.settlements = settlements;
+        this.gate = gate;
         this.self = self;
     }
 
@@ -169,6 +173,68 @@ public class BonusApiImpl implements BonusApi {
         if (d.getCompletedAt() == null) {
             d.complete();
             declarations.save(d);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isParticipating(String policyNumber) {
+        return gate.participates(policyNumber);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BonusValuation valueAt(String policyNumber, LocalDate date) {
+        Participant p = gate.participates(policyNumber) ? participants.findById(policyNumber).orElse(null) : null;
+        if (p == null) {
+            return BonusValuation.none();
+        }
+        BigDecimal attached = entries.sumThrough(policyNumber, date).setScale(2);
+        Optional<Declaration> last = declarations.latestApprovedOnOrBefore(p.getProductId(), date);
+        if (last.isEmpty()) {
+            return new BonusValuation(attached, BigDecimal.ZERO.setScale(2), BigDecimal.ZERO.setScale(2), null, null, null);
+        }
+        Declaration d = last.get();
+        BonusPlan plan = productApi.resolveBonusPlan(p.getProductVersionId());
+        List<Eligibility.StatusRow> rows = statusEvents.findByPolicyNumberOrderByEffectiveAtAsc(policyNumber).stream()
+            .map(StatusEvent::toRow).toList();
+        BigDecimal interim = BigDecimal.ZERO.setScale(2);
+        if (Eligibility.refusal(rows, date, plan.paidUpParticipates()).isEmpty()) {
+            // Since the LATER of the last valuation and the issue date (plan revision R2): a policy
+            // issued after the last declaration earns interim only for the time it existed.
+            LocalDate from = d.getValuationDate().isAfter(p.getIssuedOn()) ? d.getValuationDate() : p.getIssuedOn();
+            interim = BonusArithmetic.interim(plan.method(), Eligibility.sumAssuredOn(rows, date), attached,
+                d.getReversionaryRatePercent(), BonusArithmetic.wholeMonths(from, date));
+        }
+        BigDecimal terminal = BonusArithmetic.terminal(attached, d.getTerminalRatePercent());
+        return new BonusValuation(attached, interim, terminal, d.getReversionaryRatePercent(), d.getTerminalRatePercent(),
+            d.getDeclarationId());
+    }
+
+    @Override
+    @Transactional
+    public BonusValuation settle(String policyNumber, ExitType type, String exitRef, LocalDate exitDate) {
+        if (!gate.participates(policyNumber)) {
+            return BonusValuation.none();
+        }
+        return settlements.findByExitTypeAndExitRef(type.name(), exitRef).map(Settlement::toValuation).orElseGet(() -> {
+            BonusValuation v = valueAt(policyNumber, exitDate);
+            if (participants.existsById(policyNumber)) {
+                settlements.saveAndFlush(new Settlement(TenantContext.get(), policyNumber, type, exitRef, exitDate, v));
+            }
+            return v;
+        });
+    }
+
+    /** Free-look (the spec's §5.3): the contract never was, so neither were its bonuses. */
+    @Transactional
+    public void reverseAllForFreeLook(String policyNumber, String cancelledBy) {
+        if (!gate.participates(policyNumber) || !participants.existsById(policyNumber)) {
+            return;
+        }
+        for (AttachmentEntry e : entries.unreversed(policyNumber)) {
+            ledger.reverse(policyNumber, e, LocalDate.now(Eligibility.CIVIL_ZONE),
+                "Cancelled in the free-look period", cancelledBy != null ? cancelledBy : "system:free-look");
         }
     }
 

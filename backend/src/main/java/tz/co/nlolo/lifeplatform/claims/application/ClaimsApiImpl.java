@@ -430,12 +430,29 @@ public class ClaimsApiImpl implements ClaimsApi {
     @Transactional(readOnly = true)
     public ClaimCoverView claimableCover(UUID claimId) {
         Claim claim = findOrThrow(claimId, TenantContext.get());
-        // The SAME call decideSettlement makes, with the same four arguments off the same stored
+        // The SAME calls decideSettlement makes, with the same arguments off the same stored
         // facts. Not a re-implementation of the rule and not an approximation of it: if this and
-        // the ceiling could disagree, showing it would be worse than showing nothing.
+        // the ceiling could disagree, showing it would be worse than showing nothing. Until product
+        // step 4 they did disagree -- this showed the sum assured while approval enforced the
+        // death limit -- so both now go through ceilingFor.
         ClaimableCoverView cover = policyApi.claimableCover(claim.getPolicyNumber(),
             claim.getPolicyMemberId(), claim.getDateOfEvent(), claim.getClaimType().name());
-        return new ClaimCoverView(cover.amount(), cover.currencyCode());
+        return new ClaimCoverView(ceilingFor(claim, cover), cover.currencyCode());
+    }
+
+    /**
+     * The most this claim can pay -- the ONE figure decideSettlement enforces and claimableCover shows.
+     * On a savings product the sum assured is not the whole answer for a death. The version may say
+     * survival benefits already paid come off the death benefit, it may guarantee a percentage of the
+     * premiums paid as a floor, and a with-profits policy adds its bonus. Those are the product's
+     * words, so the payout engine that holds them computes the ceiling, as at the date of death (an
+     * account-valued policy is valued then, not on the day the claim is approved); claims keeps the
+     * ceiling it already had for every policy whose version says none of them.
+     */
+    private BigDecimal ceilingFor(Claim claim, ClaimableCoverView claimable) {
+        return claim.getClaimType() == ClaimType.DEATH
+            ? benefitPayoutApi.deathBenefitCeiling(claim.getPolicyNumber(), claimable.amount(), claim.getDateOfEvent())
+            : claimable.amount();
     }
 
     @Override
@@ -559,16 +576,7 @@ public class ClaimsApiImpl implements ClaimsApi {
             ClaimableCoverView claimable = policyApi.claimableCover(
                 claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
                 claim.getClaimType().name());
-            BigDecimal ceiling = claim.getClaimType() == ClaimType.DEATH
-                // On a savings product the sum assured is not the whole answer. The version may say
-                // survival benefits already paid come off the death benefit, and it may guarantee a
-                // percentage of the premiums paid as a floor. Both are the product's words, so the
-                // payout engine that holds them computes the ceiling; claims keeps the ceiling it
-                // already had for every policy whose version says neither.
-                // As at the date of death: an account-valued policy is valued then, not on the day
-                // the claim is approved (product step 3).
-                ? benefitPayoutApi.deathBenefitCeiling(claim.getPolicyNumber(), claimable.amount(), claim.getDateOfEvent())
-                : claimable.amount();
+            BigDecimal ceiling = ceilingFor(claim, claimable);
             claim.approve(approvedAmount, approvedCurrency, ceiling);
             eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId,
                 Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),

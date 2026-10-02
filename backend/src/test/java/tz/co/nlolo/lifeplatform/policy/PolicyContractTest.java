@@ -923,6 +923,8 @@ class PolicyContractTest {
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
+            // Product step 4: always present, zero on a version that is not with-profits.
+            .andExpect(jsonPath("$.bonusSurrenderValue.amount").value("0"))
             .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
