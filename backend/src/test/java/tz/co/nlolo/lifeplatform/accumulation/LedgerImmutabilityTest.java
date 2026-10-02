@@ -112,6 +112,36 @@ class LedgerImmutabilityTest {
     }
 
     @Test
+    void everyAccumulationTableHasRowLevelSecurity() throws Exception {
+        // Every table, found from the catalogue rather than listed, so a table added later without
+        // its policy fails here instead of leaking across tenants.
+        try (Connection c = owner(); Statement s = c.createStatement();
+             var rs = s.executeQuery("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                 + "WHERE n.nspname = 'accumulation' AND c.relkind = 'r' AND NOT c.relrowsecurity")) {
+            java.util.List<String> unprotected = new java.util.ArrayList<>();
+            while (rs.next()) unprotected.add(rs.getString(1));
+            org.assertj.core.api.Assertions.assertThat(unprotected).as("accumulation tables without RLS").isEmpty();
+        }
+    }
+
+    @Test
+    void anotherTenantCannotSeeTheLedger() throws Exception {
+        try (Connection c = DriverManager.getConnection(POSTGRES.getJdbcUrl(), "app_role", APP_PASSWORD);
+             Statement s = c.createStatement()) {
+            s.execute("SET app.current_tenant_id = '" + UUID.randomUUID() + "'");
+            var rs = s.executeQuery("SELECT count(*) FROM accumulation.ledger_entry");
+            rs.next();
+            org.assertj.core.api.Assertions.assertThat(rs.getInt(1)).isZero();
+        }
+        // The control: the owning tenant does see it, so the zero above is isolation, not an empty table.
+        try (Connection c = appRole(); Statement s = c.createStatement()) {
+            var rs = s.executeQuery("SELECT count(*) FROM accumulation.ledger_entry");
+            rs.next();
+            org.assertj.core.api.Assertions.assertThat(rs.getInt(1)).isPositive();
+        }
+    }
+
+    @Test
     void aCorrectEntryThatFollowsIsAccepted() {
         assertThatCode(() -> { try (Connection c = owner(); Statement s = c.createStatement()) {
             s.execute("INSERT INTO accumulation.ledger_entry (tenant_id, posting_id, policy_number, seq, entry_type, amount, "
