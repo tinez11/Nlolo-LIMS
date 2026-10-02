@@ -502,6 +502,12 @@ export type AdjustmentView = AccumulationComponents['schemas']['Adjustment'];
 export type ClosingQuoteView = AccumulationComponents['schemas']['ClosingQuote'];
 export type StatementView = AccumulationComponents['schemas']['Statement'];
 export type StatementRecordView = AccumulationComponents['schemas']['StatementRecord'];
+// A fixed-term deposit (2026-10-02): its terms, the client's maturity choice, and the money
+// waiting for a payee.
+export type DepositView = AccumulationComponents['schemas']['Deposit'];
+export type DepositPeriodView = AccumulationComponents['schemas']['DepositPeriod'];
+export type MaturityInstructionView = AccumulationComponents['schemas']['MaturityInstruction'];
+export type AwaitingPayeeView = AccumulationComponents['schemas']['AwaitingPayee'];
 export type RateDeclarationView = AccumulationComponents['schemas']['RateDeclaration'];
 
 /** The payout register's status filter, in the order a queue is worked. */

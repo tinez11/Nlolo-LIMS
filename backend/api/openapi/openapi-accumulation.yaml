@@ -564,6 +564,7 @@ components:
         interestPosted:
           type: [object, "null"]
           description: What the term posted when it ended; null while it runs
+          required: [amount, currencyCode]
           properties:
             amount: { type: string, pattern: '^-?\d+(\.\d{1,2})?$' }
             currencyCode: { type: string }
@@ -600,6 +601,7 @@ components:
         instruction:
           type: [object, "null"]
           description: The current instruction for the running term; null when none is recorded (it will be paid out)
+          required: [instructionId, periodId, action, recordedBy, recordedAt]
           properties:
             instructionId: { type: string, format: uuid }
             periodId: { type: string, format: uuid }
