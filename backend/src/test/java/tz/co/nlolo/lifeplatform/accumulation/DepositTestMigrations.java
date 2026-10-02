@@ -5,11 +5,14 @@ package tz.co.nlolo.lifeplatform.accumulation;
  * party, product with its grid), billing's single-premium invoice, the payment rail, and the
  * account with its terms. One list for every deposit test class, rather than another copy to miss
  * the next migration in.
+ *
+ * <p>Public since product step 4: the bonus module's tests use it too, and it gains bonus V1 and
+ * policy V32 in the tasks that add them.
  */
-final class DepositTestMigrations {
+public final class DepositTestMigrations {
     private DepositTestMigrations() {}
 
-    static final String[] ALL = {
+    public static final String[] ALL = {
         "db-migrations/party/V1__create_party_schema.sql",
         "db-migrations/party/V2__individual_person_record.sql",
         "db-migrations/party/V4__registered_by_agent.sql",
@@ -32,6 +35,7 @@ final class DepositTestMigrations {
         "db-migrations/product/V18__payout_schedule.sql",
         "db-migrations/product/V19__accumulation_terms.sql",
         "db-migrations/product/V20__deposit_rate_grid.sql",
+        "db-migrations/product/V21__bonus_terms.sql",
         "db-migrations/accumulation/V1__create_accumulation_schema.sql",
         "db-migrations/accumulation/V2__request_keys.sql",
         "db-migrations/accumulation/V3__deposit_periods.sql",

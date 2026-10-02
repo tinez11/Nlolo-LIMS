@@ -70,4 +70,7 @@ public record PublishVersionRequest(
 
     // Present only on a fixed-term deposit (2026-10-02). The server builds the account plan behind
     // it, so a request carrying both blocks is refused.
-    @Valid DepositRequest deposit) {}
+    @Valid DepositRequest deposit,
+
+    // Present only on a with-profits version (product step 4). Absent means non-participating.
+    @Valid BonusRequest bonus) {}

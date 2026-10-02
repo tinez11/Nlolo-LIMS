@@ -75,6 +75,7 @@ class ProductContractTest {
             "db-migrations/product/V18__payout_schedule.sql",
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
+            "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql");
     }
@@ -908,6 +909,57 @@ class ProductContractTest {
      * from it. Asserted rather than assumed, because "tighten the product endpoints" is exactly
      * the kind of instruction that takes the reads with it.
      */
+    // ---- Step 4: with-profits over the wire ----
+
+    private UUID createProductOfCategory(UUID tenantId, String code, String category) throws Exception {
+        MvcResult created = mockMvc.perform(post("/products")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productCode\":\"" + code + "\",\"productName\":\"" + code + "\",\"category\":\"" + category
+                    + "\",\"defaultCurrency\":\"TZS\"}"))
+            .andExpect(status().isCreated())
+            .andReturn();
+        return objectMapper.readValue(created.getResponse().getContentAsString(), ProductSummaryView.class).productId();
+    }
+
+    private static String withProfitsVersion(String payoutSchedule) {
+        return """
+            {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+             "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/CONTRACT/WP","approvalDate":"2026-01-15"},
+             "ratingTable":[{"factorType":"AGE","band":"30-39","multiplier":1.0,"ageFrom":30,"ageTo":39},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+             "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+             "payoutSchedule":%s,
+             "bonus":{"method":"COMPOUND","paidUpParticipates":false,"surrenderBasis":"NONE"}}
+            """.formatted(payoutSchedule);
+    }
+
+    @Test
+    void aWithProfitsEndowmentIsPublishedOverTheWire() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "WP-CONTRACT-01", "ENDOWMENT");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(withProfitsVersion("[{\"kind\":\"MATURITY\",\"amountBasis\":\"PERCENT_OF_SA\",\"amountValue\":100}]")))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aWithProfitsTermProductIsRefusedInTheValidatorsWords() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "WP-CONTRACT-02", "TERM_LIFE");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(withProfitsVersion("[]")))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("A TERM_LIFE product cannot be with-profits"));
+    }
+
     @Test
     void readingTheProductCatalogueStaysOpenToAnyStaffMember() throws Exception {
         UUID tenantId = UUID.randomUUID();

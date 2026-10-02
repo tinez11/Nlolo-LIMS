@@ -32,6 +32,8 @@ public class ProductApiImpl implements ProductApi {
     private final VersionAccumulationTermsRepository versionAccumulationTermsRepository;
     private final AccumulationChargeRepository accumulationChargeRepository;
     private final DepositRateRepository depositRateRepository;
+    private final VersionBonusTermsRepository versionBonusTermsRepository;
+    private final BonusSurrenderEntryRepository bonusSurrenderEntryRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
@@ -41,8 +43,12 @@ public class ProductApiImpl implements ProductApi {
                            VersionPayoutTermsRepository versionPayoutTermsRepository,
                            VersionAccumulationTermsRepository versionAccumulationTermsRepository,
                            AccumulationChargeRepository accumulationChargeRepository,
-                           DepositRateRepository depositRateRepository) {
+                           DepositRateRepository depositRateRepository,
+                           VersionBonusTermsRepository versionBonusTermsRepository,
+                           BonusSurrenderEntryRepository bonusSurrenderEntryRepository) {
         this.depositRateRepository = depositRateRepository;
+        this.versionBonusTermsRepository = versionBonusTermsRepository;
+        this.bonusSurrenderEntryRepository = bonusSurrenderEntryRepository;
         this.versionAccumulationTermsRepository = versionAccumulationTermsRepository;
         this.accumulationChargeRepository = accumulationChargeRepository;
         this.productDefinitionRepository = productDefinitionRepository;
@@ -234,6 +240,19 @@ public class ProductApiImpl implements ProductApi {
                                 List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
                                 TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                                 AccumulationPlan accumulationPlan, DepositPlan depositPlan, String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, cashValue, payoutPlan, accumulationPlan,
+            depositPlan, BonusPlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                                AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                                String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -325,6 +344,8 @@ public class ProductApiImpl implements ProductApi {
         AccumulationPlan effectiveAccumulation = deposit.isDeposit() ? AccumulationPlan.forDeposit() : accumulationPlan;
         AccumulationPlanValidator.validate(category, effectiveAccumulation, cashValue);
         PayoutPlanValidator.validate(category, payoutPlan, effectiveAccumulation, deposit.isDeposit());
+        // The EFFECTIVE account plan, so a deposit is told the deposit rule rather than the account one.
+        BonusPlanValidator.validate(category, bonusPlan, cashValue, effectiveAccumulation, payoutPlan, deposit);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -358,6 +379,7 @@ public class ProductApiImpl implements ProductApi {
         persistPayoutPlan(tenantId, version.getProductVersionId(), payoutPlan);
         persistAccumulationPlan(tenantId, version.getProductVersionId(), effectiveAccumulation);
         persistDepositPlan(tenantId, version.getProductVersionId(), deposit);
+        persistBonusPlan(tenantId, version.getProductVersionId(), bonusPlan);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -888,6 +910,30 @@ public class ProductApiImpl implements ProductApi {
         for (DepositRateRow row : plan.rows()) {
             depositRateRepository.save(new DepositRate(tenantId, productVersionId, row));
         }
+    }
+
+    /** A with-profits version's terms (V21). Nothing for a non-participating one -- its absence IS that. */
+    private void persistBonusPlan(UUID tenantId, UUID productVersionId, BonusPlan plan) {
+        if (plan == null || !plan.participating()) {
+            return;
+        }
+        versionBonusTermsRepository.save(new VersionBonusTerms(tenantId, productVersionId, plan.method().name(),
+            plan.paidUpParticipates(), plan.surrenderBasis().name()));
+        for (BonusSurrenderRow row : plan.surrenderRows()) {
+            bonusSurrenderEntryRepository.save(new BonusSurrenderEntry(tenantId, productVersionId, row));
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BonusPlan resolveBonusPlan(UUID productVersionId) {
+        // RLS scopes both reads to the caller's tenant, as resolveAccumulationPlan's are.
+        return versionBonusTermsRepository.findById(productVersionId)
+            .map(t -> new BonusPlan(true, BonusMethod.valueOf(t.getBonusMethod()), t.isPaidUpParticipates(),
+                BonusSurrenderBasis.valueOf(t.getSurrenderBasis()),
+                bonusSurrenderEntryRepository.findByProductVersionIdOrderByFromCompletedYears(productVersionId).stream()
+                    .map(BonusSurrenderEntry::toRow).toList()))
+            .orElse(BonusPlan.none());
     }
 
     @Override

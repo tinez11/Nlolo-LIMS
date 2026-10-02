@@ -449,6 +449,25 @@ components:
                   minAmount: { type: number, exclusiveMinimum: 0, description: "Where the band starts" }
                   termMonths: { type: integer, minimum: 1, maximum: 120 }
                   ratePercent: { type: number, minimum: 0, maximum: 100, description: "For the whole term" }
+        bonus:
+          description: >-
+            Present only on a with-profits version (product step 4). Refused on an account-valued
+            version, on a fixed-term deposit, and on any category but ENDOWMENT and WHOLE_LIFE.
+            surrenderBasis has no default: what attached bonuses add to a surrender is a contract term
+            the version must state.
+          type: [object, "null"]
+          properties:
+            method: { type: [string, "null"], enum: [SIMPLE, COMPOUND, null] }
+            paidUpParticipates: { type: boolean, description: "Whether a policy paid-up on a valuation date still receives that declaration" }
+            surrenderBasis: { type: [string, "null"], enum: [NONE, SUM_ASSURED_SCALE, OWN_SCALE, null] }
+            surrenderRows:
+              type: array
+              items:
+                type: object
+                required: [fromCompletedYears, perMille]
+                properties:
+                  fromCompletedYears: { type: integer, minimum: 0 }
+                  perMille: { type: number, minimum: 0, maximum: 1000 }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and

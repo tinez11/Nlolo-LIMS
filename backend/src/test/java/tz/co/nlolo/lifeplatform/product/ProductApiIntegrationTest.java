@@ -77,6 +77,7 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V18__payout_schedule.sql",
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
+            "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql");
     }
@@ -1699,11 +1700,11 @@ class ProductApiIntegrationTest {
         List<Method> declared = Arrays.stream(ProductApi.class.getMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        // Eight: step 1 added the cash-value overload, step 2 the payout-plan one, the fixed-term
-        // deposit the deposit-grid one, step 3 the
-        // accumulation-plan one. A new overload must raise this count AND pass both checks below --
-        // that is the point of counting.
-        assertEquals(8, declared.size(), "expected eight publishVersion overloads");
+        // Nine: step 1 added the cash-value overload, step 2 the payout-plan one, step 3 the
+        // accumulation-plan one, the fixed-term deposit the deposit-grid one, step 4 the with-profits
+        // one. A new overload must raise this count AND pass both checks below -- that is the point
+        // of counting.
+        assertEquals(9, declared.size(), "expected nine publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1711,7 +1712,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(8, implementations.size(), "every overload must be implemented here");
+        assertEquals(9, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));
@@ -1800,6 +1801,47 @@ class ProductApiIntegrationTest {
                 ANY_FILING, CashValuePlan.none(), withRow, AccumulationPlan.none(), DepositPlanTest.userGrid(), "actuary@nlolo.co.tz"))
             .isInstanceOf(InvalidProductVersionException.class)
             .hasMessage("A fixed-term deposit matures through its account; it carries no payout schedule");
+    }
+
+    // ---- Step 4: a with-profits version ----
+
+    private static final PayoutPlan SA_MATURITY = PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of(
+        new PayoutRowInput(PayoutKind.MATURITY, null, null, PayoutAmountBasis.PERCENT_OF_SA, new BigDecimal("100"), null)));
+
+    @Test
+    void aWithProfitsVersionRoundTripsItsTermsAndOwnScale() {
+        ProductSummaryView product = productApi.createProduct("WP-1", "With profits endowment",
+            ProductCategory.ENDOWMENT, "TZS", "actuary@nlolo.co.tz");
+        BonusPlan plan = new BonusPlan(true, BonusMethod.COMPOUND, true, BonusSurrenderBasis.OWN_SCALE, List.of(
+            new BonusSurrenderRow(2, new BigDecimal("300")), new BonusSurrenderRow(5, new BigDecimal("600"))));
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.GMM, LocalDate.now(), null,
+            payoutRatingTable(), payoutDeathOnly(), null, List.of(), EligibilityBounds.none(), FrequencyLoading.none(),
+            ANY_FILING, CashValuePlan.none(), SA_MATURITY, AccumulationPlan.none(), DepositPlan.none(), plan,
+            "actuary@nlolo.co.tz");
+
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+        BonusPlan read = productApi.resolveBonusPlan(versionId);
+        assertThat(read.participating()).isTrue();
+        assertThat(read.method()).isEqualTo(BonusMethod.COMPOUND);
+        assertThat(read.paidUpParticipates()).isTrue();
+        assertThat(read.surrenderBasis()).isEqualTo(BonusSurrenderBasis.OWN_SCALE);
+        assertThat(read.ownScalePerMille(4)).isEqualByComparingTo("300");
+        assertThat(read.ownScalePerMille(5)).isEqualByComparingTo("600");
+        // A version published without terms is non-participating.
+        assertThat(productApi.resolveBonusPlan(UUID.randomUUID()).participating()).isFalse();
+    }
+
+    @Test
+    void aFixedTermDepositCannotAlsoBeWithProfits() {
+        ProductSummaryView product = productApi.createProduct("WP-FTD", "Deposit with profits",
+            ProductCategory.ENDOWMENT, "TZS", "actuary@nlolo.co.tz");
+        assertThatThrownBy(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                payoutRatingTable(), payoutDeathOnly(), null, List.of(), EligibilityBounds.none(), FrequencyLoading.none(),
+                ANY_FILING, CashValuePlan.none(), PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of()),
+                AccumulationPlan.none(), DepositPlanTest.userGrid(),
+                new BonusPlan(true, BonusMethod.SIMPLE, false, BonusSurrenderBasis.NONE, List.of()), "actuary@nlolo.co.tz"))
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessage("A fixed-term deposit cannot be with-profits");
     }
 
     private void publishWithPayoutPlan(UUID productId, PayoutPlan plan) {

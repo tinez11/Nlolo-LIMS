@@ -1,6 +1,7 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
 import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
+import tz.co.nlolo.lifeplatform.product.api.BonusPlan;
 import tz.co.nlolo.lifeplatform.product.api.DepositPlan;
 import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
 import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
@@ -128,6 +129,7 @@ public class ProductController {
                     : List.of()),
             request.accumulation() != null ? request.accumulation().toPlan() : AccumulationPlan.none(),
             request.deposit() != null ? request.deposit().toPlan() : DepositPlan.none(),
+            request.bonus() != null ? request.bonus().toPlan() : BonusPlan.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
