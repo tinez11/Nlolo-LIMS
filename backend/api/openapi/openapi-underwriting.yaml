@@ -646,6 +646,15 @@ components:
         decisionDeclineReason: { type: [string, "null"] }
         decisionDecidedAt: { type: [string, "null"], format: date-time }
         agentOfRecordId: { type: [string, "null"], format: uuid }
+        sumAssured:
+          type: [object, "null"]
+          description: >-
+            The sum assured the proposal asked for. Null on a group case, which has none until policy
+            values its schedule. The issue form prefills from it rather than asking for it again.
+          required: [amount, currencyCode]
+          properties:
+            amount: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+            currencyCode: { type: string }
         proposalNumber:
           description: >-
             Human handle for the proposal, shaped like a policy number (PRO-XXXXXXXX). A case was

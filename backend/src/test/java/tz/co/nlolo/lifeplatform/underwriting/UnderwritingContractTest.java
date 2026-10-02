@@ -145,6 +145,7 @@ class UnderwritingContractTest {
             // NULL, and asserted: the queue must not show a company against a figure nobody
             // computed. policy derives it at issuance, in the module that owns the calculator.
             .andExpect(jsonPath("$.sumAssuredAmount").doesNotExist())
+            .andExpect(jsonPath("$.sumAssured").doesNotExist())
             .andReturn().getResponse().getContentAsString();
         String caseId = JsonPath.read(response, "$.caseId");
 
@@ -278,7 +279,17 @@ class UnderwritingContractTest {
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
                     .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
             .andExpect(status().isOk())
-            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            // What the issue form prefills from, so nobody types the sum assured twice.
+            .andExpect(jsonPath("$.sumAssured.amount").value("1000000.00"))
+            .andExpect(jsonPath("$.sumAssured.currencyCode").value("TZS"));
+        // And on the list the issue form's case picker reads.
+        mockMvc.perform(get("/underwriting/cases")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.items[0].sumAssured.amount").value("1000000.00"));
     }
 
     @Test

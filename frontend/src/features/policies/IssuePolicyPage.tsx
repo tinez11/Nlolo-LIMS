@@ -262,6 +262,16 @@ export function IssuePolicyPage() {
                   if (decidedCase.applicantPartyId) {
                     setValue('policyholderPartyId', decidedCase.applicantPartyId);
                   }
+                  // The sum assured and the agent were the two figures staff typed again for every
+                  // policy issued from a case: the case held both, and its response hid the first
+                  // and this form ignored the second.
+                  if (decidedCase.sumAssured) {
+                    setValue('sumAssuredAmount', decidedCase.sumAssured.amount);
+                    setValue('sumAssuredCurrency', decidedCase.sumAssured.currencyCode);
+                  }
+                  if (decidedCase.agentOfRecordId) {
+                    setValue('agentOfRecordId', decidedCase.agentOfRecordId, { shouldValidate: true });
+                  }
                   if (decidedCase.lifeAssuredPartyId
                       && decidedCase.lifeAssuredPartyId !== decidedCase.applicantPartyId) {
                     setValue('lifeAssuredPartyId', decidedCase.lifeAssuredPartyId);
