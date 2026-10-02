@@ -271,6 +271,14 @@ channels:
       depend on accumulation or policy to find them, and both figures off the reconciled statement.
     publish:
       message: { $ref: '#/components/messages/StatementIssued' }
+  accumulation.DepositMatured:
+    description: >
+      Producer: accumulation, once per fixed-term deposit term that reaches maturity, in the same
+      transaction as the term's interest: REINVESTED (a new term opened at the rate then in force),
+      PAID_OUT (DEPOSIT_MATURITY_PAYOUT requested) or AWAITING_PAYEE (no number to pay it to; finance
+      records one). Consumers: audit.
+    publish:
+      message: { $ref: '#/components/messages/DepositMatured' }
   accumulation.PostingRecorded:
     description: >
       Producer: accumulation (LedgerService.post -- the one place a savings account's balance
@@ -644,6 +652,7 @@ components:
     PayoutPaid: { messageId: PayoutPaid, name: PayoutPaid, payload: { $ref: '#/components/schemas/PayoutPaidPayload' } }
     PostingRecorded: { messageId: PostingRecorded, name: PostingRecorded, payload: { $ref: '#/components/schemas/PostingRecordedPayload' } }
     StatementIssued: { messageId: StatementIssued, name: StatementIssued, payload: { $ref: '#/components/schemas/StatementIssuedPayload' } }
+    DepositMatured: { messageId: DepositMatured, name: DepositMatured, payload: { $ref: '#/components/schemas/DepositMaturedPayload' } }
     AccountPayoutRequested: { messageId: AccountPayoutRequested, name: AccountPayoutRequested, payload: { $ref: '#/components/schemas/AccountPayoutRequestedPayload' } }
     TopUpRequested: { messageId: TopUpRequested, name: TopUpRequested, payload: { $ref: '#/components/schemas/TopUpRequestedPayload' } }
     GroupMemberAdded: { messageId: GroupMemberAdded, name: GroupMemberAdded, payload: { $ref: '#/components/schemas/GroupMemberAddedPayload' } }
@@ -919,6 +928,17 @@ components:
             closingBalance: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
             interestCredited: {type: object, properties: {amount: {type: string}, currencyCode: {type: string}}}
             annual: {type: boolean, description: "True only from the annual run -- the SMS is sent only then"}
+    DepositMaturedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          required: [policyNumber, periodId, outcome, interest]
+          properties:
+            policyNumber: {type: string}
+            periodId: {type: string, format: uuid}
+            outcome: {type: string, enum: [REINVESTED, PAID_OUT, AWAITING_PAYEE]}
+            interest: {type: string, description: "The term's interest, posted at maturity (decimal string)"}
+            nextPeriodId: {type: string, format: uuid, description: "Only when reinvested"}
     AccountSurrenderApprovedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
@@ -935,8 +955,8 @@ components:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
           properties:
-            purpose: {type: string, enum: [WITHDRAWAL_PAYOUT, SURRENDER_PAYOUT]}
-            sourceRef: {type: string, description: "The withdrawal id, or the surrender request id"}
+            purpose: {type: string, enum: [WITHDRAWAL_PAYOUT, SURRENDER_PAYOUT, DEPOSIT_MATURITY_PAYOUT]}
+            sourceRef: {type: string, description: "The withdrawal id, the surrender request id, or a matured deposit's '<periodId>:<attempt>'"}
             idempotencyKey: {type: string}
             policyNumber: {type: string}
             payeeRef: {type: string}
@@ -1100,7 +1120,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
         - type: object
-          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, amount: {type: object}, collectedAt: {type: string, format: date-time} }
+          properties: { invoiceId: {type: string, format: uuid}, policyNumber: {type: string}, policyholderPartyId: {type: string, format: uuid}, amount: {type: object}, collectedAt: {type: string, format: date-time}, payerRef: {type: string, description: "The number the money came from (2026-10-02). Absent for a field (cash) receipt, which has none; a fixed-term deposit is paid back to it by default."} }
     PremiumOverduePayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'
@@ -1243,6 +1263,9 @@ components:
             # an invoice id), accumulation consumes ACCOUNT_TOP_UP (sourceRef a top-up id). Absent on
             # every confirmation published before V9, and read as PREMIUM.
             purpose: {type: string, enum: [PREMIUM, ACCOUNT_TOP_UP]}
+            # The number the money came from (2026-10-02). Billing carries it onto
+            # billing.PremiumCollected; a fixed-term deposit is paid back to it by default.
+            payerRef: {type: string}
     PaymentFailedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

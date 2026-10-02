@@ -198,4 +198,41 @@ public class AccumulationController {
     public List<AdjustmentResponse> listAdjustments(@PathVariable String policyNumber) {
         return api.listAdjustments(policyNumber).stream().map(AdjustmentResponse::from).toList();
     }
+
+    // ---- Fixed-term deposits (2026-10-02) ------------------------------------------------------
+
+    /** Any staff member, as the account is. 404 for a policy that is not a deposit. */
+    @GetMapping("/policies/{policyNumber}/account/deposit")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    public DepositResponse deposit(@PathVariable String policyNumber) {
+        return DepositResponse.from(api.findDeposit(policyNumber).orElseThrow(() -> new AccountNotFoundException(policyNumber)));
+    }
+
+    /** The client's choice, taken by any staff member as a withdrawal request is. Changeable until maturity. */
+    @PostMapping("/policies/{policyNumber}/account/deposit/maturity-instruction")
+    @PreAuthorize("hasRole('REALM_STAFF')")
+    @ResponseStatus(HttpStatus.CREATED)
+    public DepositResponse.Instruction instruct(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Instruction body,
+                                                @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                                @AuthenticationPrincipal Jwt jwt) {
+        return DepositResponse.Instruction.from(api.recordMaturityInstruction(policyNumber, body.action(), body.termMonths(),
+            body.payeeRef(), jwt.getSubject(), idempotencyKey));
+    }
+
+    @GetMapping("/deposits/awaiting-payee")
+    @PreAuthorize(FINANCE)
+    public List<DepositResponse.Awaiting> awaitingPayee() {
+        return api.listAwaitingPayee().stream().map(DepositResponse.Awaiting::from).toList();
+    }
+
+    /** 202: REQUESTED from the rail, not paid. Money out, so finance's. */
+    @PostMapping("/policies/{policyNumber}/account/deposit/payout")
+    @PreAuthorize(FINANCE)
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public DepositResponse.Period payOut(@PathVariable String policyNumber, @Valid @RequestBody DepositBodies.Payout body,
+                                         @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                         @AuthenticationPrincipal Jwt jwt) {
+        var paid = api.payOutMaturedDeposit(policyNumber, body.payeeRef(), jwt.getSubject(), idempotencyKey);
+        return DepositResponse.Period.from(paid, api.findAccount(policyNumber).orElseThrow().currency());
+    }
 }

@@ -63,62 +63,8 @@ class AccumulationContractTest {
     @BeforeAll
     static void applyMigrations() throws Exception {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
-            "db-migrations/party/V1__create_party_schema.sql",
-            "db-migrations/party/V2__individual_person_record.sql",
-            "db-migrations/party/V4__registered_by_agent.sql",
-            "db-migrations/party/V5__registered_by_name.sql",
-            "db-migrations/party/V6__client_reference.sql",
-            "db-migrations/product/V1__create_product_schema.sql",
-            "db-migrations/product/V2__base_rate_table.sql",
-            "db-migrations/product/V3__base_rate_structured_age.sql",
-            "db-migrations/product/V4__rating_table_unique_band.sql",
-            "db-migrations/product/V5__rating_table_age_bounds.sql",
-            "db-migrations/product/V6__eligibility_bounds.sql",
-            "db-migrations/product/V9__rating_table_sum_assured_bounds.sql",
-            "db-migrations/product/V10__ifrs_measurement_model_on_version.sql",
-            "db-migrations/product/V11__frequency_loading.sql",
-            "db-migrations/product/V12__tira_filing.sql",
-            "db-migrations/product/V13__benefit_calculation_method.sql",
-            "db-migrations/product/V15__exclusion_periods.sql",
-            "db-migrations/product/V16__base_rate_term_bands.sql",
-            "db-migrations/product/V17__cash_value.sql",
-            "db-migrations/product/V18__payout_schedule.sql",
-            "db-migrations/product/V19__accumulation_terms.sql",
-
-            "db-migrations/product/V20__deposit_rate_grid.sql",
-            "db-migrations/accumulation/V1__create_accumulation_schema.sql",
-            "db-migrations/accumulation/V2__request_keys.sql",
-            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
-            "db-migrations/underwriting/V1__create_underwriting_schema.sql",
-            "db-migrations/underwriting/V2__agent_of_record.sql",
-            "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
-            "db-migrations/underwriting/V4__proposal_identity.sql",
-            "db-migrations/underwriting/V5__explicit_decision.sql",
-            "db-migrations/underwriting/V6__proposal_terms_and_beneficiaries.sql",
-            "db-migrations/underwriting/V8__rating_multiplier.sql",
-            "db-migrations/underwriting/V9__group_proposal.sql",
-            "db-migrations/underwriting/V10__issuance_failure.sql",
-            "db-migrations/underwriting/V11__member_evidence_case.sql",
-            "db-migrations/refdata/V1__create_refdata_schema.sql",
-            "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
-            "db-migrations/policy/V1__create_policy_schema.sql",
-            "db-migrations/policy/V2__endorsement_append_only_and_money_checks.sql",
-            "db-migrations/policy/V3__premium_fields.sql",
-            "db-migrations/policy/V4__underwriting_case_id.sql",
-            "db-migrations/policy/V5__beneficiary_party_index.sql",
-            "db-migrations/policy/V6__policy_term.sql",
-            "db-migrations/policy/V7__life_assured.sql",
-            "db-migrations/policy/V10__one_policy_per_underwriting_case.sql",
-            "db-migrations/policy/V11__not_taken_up_status.sql",
-            "db-migrations/policy/V24__issuance_record.sql",
-            "db-migrations/policy/V27__expired_status.sql",
-            "db-migrations/policy/V28__policies_due_to_expire.sql",
-            "db-migrations/policy/V29__paid_up.sql",
-            "db-migrations/policy/V30__surrender.sql",
-            "db-migrations/policy/V31__free_look_status.sql",
-            "db-migrations/audit/V1__create_audit_schema.sql",
-            "db-migrations/audit/V2__rls_fail_closed.sql",
-            "db-migrations/audit/V3__q4_2026_partitions.sql");
+            // The deposit list: issuance to SINGLE (policy V18), billing, the rail and V3.
+            DepositTestMigrations.ALL);
     }
 
     private static final UUID TENANT = UUID.randomUUID();
@@ -343,5 +289,83 @@ class AccumulationContractTest {
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.detail").value(
                 "This Idempotency-Key was already used for a different request. A new request needs a new key."));
+    }
+
+    // ---- Fixed-term deposits (2026-10-02) ------------------------------------------------------
+
+    private String depositPolicy() {
+        var issued = fixtures.issueDeposit(TENANT, new BigDecimal("1000000.00"), 3, LocalDate.now());
+        fixtures.collectDeposit(TENANT, issued.policyNumber(), UUID.randomUUID(), new BigDecimal("1000000.00"),
+            LocalDate.now(), "+255700000777");
+        return issued.policyNumber();
+    }
+
+    @Test
+    void aDepositIsReadToSpec() throws Exception {
+        String policy = depositPolicy();
+        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("UNDERWRITER", "uw")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.periods[0].termMonths").value(3))
+            .andExpect(jsonPath("$.periods[0].principal.amount").value("1000000.00"))
+            .andExpect(jsonPath("$.periods[0].status").value("RUNNING"))
+            .andExpect(jsonPath("$.defaultPayeeRef").value("+255700000777"))
+            .andExpect(jsonPath("$.termsOffered[2]").value(12))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aSavingsAccountIsNotADeposit() throws Exception {
+        String policy = fundedAccount();
+        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("UNDERWRITER", "uw")))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void theSameInstructionSentTwiceIsRecordedOnce() throws Exception {
+        String policy = depositPolicy();
+        String key = key();
+        String body = "{\"action\":\"REINVEST\",\"termMonths\":6}";
+        String first = mockMvc.perform(post("/policies/" + policy + "/account/deposit/maturity-instruction")
+                .header("Idempotency-Key", key).with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        String second = mockMvc.perform(post("/policies/" + policy + "/account/deposit/maturity-instruction")
+                .header("Idempotency-Key", key).with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        assertThat((String) JsonPath.read(second, "$.instructionId")).isEqualTo(JsonPath.read(first, "$.instructionId"));
+        // Read back, the deposit names the instruction it now carries -- and the spec admits it.
+        mockMvc.perform(get("/policies/" + policy + "/account/deposit").with(staff("UNDERWRITER", "uw")))
+            .andExpect(jsonPath("$.instruction.action").value("REINVEST"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aTopUpOnADepositIsA422InTheServersWords() throws Exception {
+        String policy = depositPolicy();
+        mockMvc.perform(post("/policies/" + policy + "/account/top-ups").header("Idempotency-Key", key())
+                .with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"amount\":\"1000.00\",\"payerRef\":\"+255700000002\"}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("This is a fixed-term deposit: nothing can be added or taken out until it matures on "
+                + LocalDate.now().plusMonths(3)));
+    }
+
+    @Test
+    void onlyFinanceSeesTheAwaitingListOrPaysIt() throws Exception {
+        mockMvc.perform(get("/deposits/awaiting-payee").with(staff("UNDERWRITER", "uw"))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/deposits/awaiting-payee").with(staff("FINANCE_OFFICER", "fin")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+        String policy = depositPolicy();
+        mockMvc.perform(post("/policies/" + policy + "/account/deposit/payout").header("Idempotency-Key", key())
+                .with(staff("UNDERWRITER", "uw")).contentType(MediaType.APPLICATION_JSON).content("{\"payeeRef\":\"+255700000001\"}"))
+            .andExpect(status().isForbidden());
+        // Finance, on a deposit still running: nothing is waiting, refused in the server's words.
+        mockMvc.perform(post("/policies/" + policy + "/account/deposit/payout").header("Idempotency-Key", key())
+                .with(staff("FINANCE_OFFICER", "fin")).contentType(MediaType.APPLICATION_JSON).content("{\"payeeRef\":\"+255700000001\"}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Policy " + policy + " has no matured deposit waiting for a payee"));
     }
 }
