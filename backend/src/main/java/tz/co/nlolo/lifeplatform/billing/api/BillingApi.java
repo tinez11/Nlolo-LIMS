@@ -123,6 +123,9 @@ public interface BillingApi {
      * premium_invoice has no column for either today, so neither is persisted or compared here. */
     InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference);
 
+    /** As above, with the number the money came from; carried onto billing.PremiumCollected as payerRef. */
+    InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference, String payerRef);
+
     record FieldReceiptResult(UUID receiptId, String status) {}
     FieldReceiptResult captureFieldReceipt(UUID agentId, String policyNumber, BigDecimal amount, String currency,
                                             String clientIdempotencyKey, Instant capturedAtClient);

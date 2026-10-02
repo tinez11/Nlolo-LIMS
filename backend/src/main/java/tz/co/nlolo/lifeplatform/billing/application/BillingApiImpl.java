@@ -328,6 +328,13 @@ public class BillingApiImpl implements BillingApi {
     @Override
     @Transactional
     public InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference) {
+        return applyConfirmedPayment(invoiceId, amount, currency, paymentReference, null);
+    }
+
+    @Override
+    @Transactional
+    public InvoiceView applyConfirmedPayment(UUID invoiceId, BigDecimal amount, String currency, String paymentReference,
+                                             String payerRef) {
         UUID tenantId = TenantContext.get();
         PremiumInvoice invoice = premiumInvoiceRepository.findByInvoiceIdAndTenantId(invoiceId, tenantId)
             .orElseThrow(() -> new InvoiceNotFoundException(invoiceId));
@@ -379,6 +386,11 @@ public class BillingApiImpl implements BillingApi {
             // payload now carries a nullable value, which Map.of forbids.
             LocalDate paidToDate = contiguousPaidToDate(invoice.getPolicyNumber(), tenantId);
             collected.put("paidToDate", paidToDate != null ? paidToDate.toString() : null);
+            // Who paid, as a number: a fixed-term deposit pays back to it. Absent for a field
+            // receipt, which has no number -- consumers must read a missing key as "none known".
+            if (payerRef != null && !payerRef.isBlank()) {
+                collected.put("payerRef", payerRef);
+            }
             eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumCollected", tenantId, collected));
         }
         return toView(invoice);

@@ -90,7 +90,8 @@ public class PaymentEventListener {
         Map<String, Object> amount = (Map<String, Object>) payload.get("amount");
         BigDecimal paidAmount = new BigDecimal((String) amount.get("amount"));
         String currency = (String) amount.get("currencyCode");
-        billingApi.applyConfirmedPayment(invoiceId, paidAmount, currency, (String) payload.get("gatewayReference"));
+        billingApi.applyConfirmedPayment(invoiceId, paidAmount, currency, (String) payload.get("gatewayReference"),
+            (String) payload.get("payerRef"));
     }
 
     /** No state change: billing.sweep_billing_state() (Task 5) already escalates unpaid invoices
