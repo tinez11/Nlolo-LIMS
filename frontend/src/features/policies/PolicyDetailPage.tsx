@@ -34,6 +34,9 @@ import { InvoicesPanel } from './InvoicesPanel';
 import { LoansPanel } from './LoansPanel';
 import { FreeLookPanel } from '@/features/payouts/FreeLookPanel';
 import { PayoutsPanel } from '@/features/payouts/PayoutsPanel';
+import { AccountPanel } from '@/features/accounts/AccountPanel';
+import { StatementSection } from '@/features/accounts/StatementSection';
+import { useAccumulationStore } from '@/store/accumulationStore';
 import { ValueActions } from './ValueActions';
 
 /**
@@ -88,12 +91,18 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
 
   const loadDetail = usePolicyStore((s) => s.loadDetail);
   const loadCoverage = usePolicyStore((s) => s.loadCoverage);
+  // A savings account exists only for a policy on an ACCOUNT-basis version (product step 3). The
+  // read answers null for every other policy, which is how the tab knows to stay away. Staff-only,
+  // as the endpoint is.
+  const savingsAccount = useAccumulationStore((s) => s.account[policyNumber]);
+  const loadAccount = useAccumulationStore((s) => s.loadAccount);
 
   useEffect(() => {
     if (!policyNumber) return;
     void loadDetail(policyNumber);
     void loadCoverage(policyNumber);
-  }, [policyNumber, loadDetail, loadCoverage]);
+    if (isStaff) void loadAccount(policyNumber);
+  }, [policyNumber, loadDetail, loadCoverage, loadAccount, isStaff]);
 
   const policy = detail.data;
 
@@ -344,6 +353,28 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
           </div>
         ),
       },
+      ...(savingsAccount?.data
+        ? [
+            {
+              value: 'account',
+              label: 'Account',
+              content: (
+                <div className="space-y-5 pt-5">
+                  <Panel title="Account" subtitle="The savings account behind this policy, and every movement on it">
+                    <div className="p-4">
+                      <AccountPanel policyNumber={policyNumber} />
+                    </div>
+                  </Panel>
+                  <Panel title="Statement" subtitle="A period of the account, reconciled, and filed as a PDF on request">
+                    <div className="p-4">
+                      <StatementSection policyNumber={policyNumber} />
+                    </div>
+                  </Panel>
+                </div>
+              ),
+            },
+          ]
+        : []),
       {
         value: 'messages',
         label: 'Messages',
@@ -437,7 +468,10 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
               <Field
                 label="Cash value"
                 value={formatMoney(policy.cashValue)}
-                {...(VALUE_CATEGORIES.includes(policy.productCategory ?? '')
+                {...(savingsAccount?.data
+                  ? // Product step 3: the figure is the account's balance, projected from its ledger.
+                    { note: 'The savings account balance, after every charge and interest posted. See the Account tab.' }
+                  : VALUE_CATEGORIES.includes(policy.productCategory ?? '')
                   ? {
                       note: "From the product's cash-value table, restated as premiums are paid. Nothing until the first two or three full years.",
                     }

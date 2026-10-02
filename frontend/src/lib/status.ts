@@ -98,6 +98,43 @@ export const STATUS_MAPS = {
     FAILED: 'danger',
   },
 
+  // accumulation/api/AccountStatus.java -- a savings account (product step 3). Not `account`,
+  // which is finaccounting's chart-of-accounts status.
+  savingsAccount: {
+    OPEN: 'active',
+    CLOSED: 'neutral',
+  },
+
+  // accumulation.withdrawal_request.status. APPROVED is pending, not success: the money has left
+  // the account but the payment provider has not confirmed it arrived.
+  accountWithdrawal: {
+    REQUESTED: 'pending',
+    APPROVED: 'pending',
+    PAID: 'success',
+    FAILED: 'danger',
+  },
+
+  // accumulation.top_up_request.status. Credited only once COLLECTED.
+  accountTopUp: {
+    REQUESTED: 'pending',
+    COLLECTED: 'success',
+    FAILED: 'danger',
+  },
+
+  // accumulation.adjustment_request.status.
+  accountAdjustment: {
+    PROPOSED: 'pending',
+    APPROVED: 'success',
+    REJECTED: 'neutral',
+  },
+
+  // accumulation/api/RateDeclarationStatus.java.
+  rateDeclaration: {
+    PROPOSED: 'pending',
+    APPROVED: 'active',
+    WITHDRAWN: 'neutral',
+  },
+
   // claims/api/ClaimStatus.java
   claim: {
     REGISTERED: 'pending',

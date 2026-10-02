@@ -881,3 +881,89 @@ describe('eligibility bounds', () => {
     expect(termLife.safeParse({ ...valid(), minTermMonths: '12.5' }).success).toBe(false);
   });
 });
+
+/*
+  The account value basis (product step 3). Every message is AccumulationPlanValidator's or
+  PayoutPlanValidator.checkAccountRules' own, so the form refuses exactly what a 422 would.
+*/
+describe('account value basis', () => {
+  const endowment = publishVersionFormSchema('ENDOWMENT');
+  const accountMaturity = { ...maturityRow, amountBasis: 'ACCOUNT_VALUE' };
+  const charge = (over: Record<string, string> = {}) => ({
+    fromPolicyYear: '1', toPolicyYear: '', contributionAllocationPercent: '5', transferAllocationPercent: '0',
+    monthlyPolicyFee: '1000', ...over,
+  });
+  const account = (over: Record<string, unknown> = {}) => ({
+    ...valid(),
+    payoutRows: [accountMaturity],
+    valueBasis: 'ACCOUNT',
+    guaranteedRatePercent: '3',
+    minimumBalance: '50000',
+    accountCharges: [charge({ toPolicyYear: '1' }), charge({ fromPolicyYear: '2', contributionAllocationPercent: '1' })],
+    ...over,
+  });
+  const messages = (r: { error?: { issues: { message: string }[] } }) => (r.error?.issues ?? []).map((i) => i.message);
+
+  it('sends the accumulation block, numbers on the wire, the open-ended row without a to-year', () => {
+    const result = endowment.safeParse(account());
+    expect(result.success).toBe(true);
+    expect(toApiRequest(result.data!).accumulation).toEqual({
+      guaranteedRatePercent: 3,
+      minimumBalance: 50000,
+      charges: [
+        { fromPolicyYear: 1, toPolicyYear: 1, contributionAllocationPercent: 5, transferAllocationPercent: 0, monthlyPolicyFee: 1000 },
+        { fromPolicyYear: 2, contributionAllocationPercent: 1, transferAllocationPercent: 0, monthlyPolicyFee: 1000 },
+      ],
+    });
+  });
+
+  it('sends nothing for a scale version', () => {
+    const result = endowment.safeParse({ ...valid(), payoutRows: [maturityRow] });
+    expect(toApiRequest(result.data!)).not.toHaveProperty('accumulation');
+  });
+
+  it('refuses an account basis outside the three savings categories', () => {
+    expect(messages(publishVersionFormSchema('ANNUITY').safeParse(account({ payoutRows: [] })))).toContain(
+      'A ANNUITY product cannot use an account value basis',
+    );
+  });
+
+  it('refuses a version valued both ways', () => {
+    expect(messages(endowment.safeParse(account({ cashValueBasisReference: 'ACT/1' })))).toContain(
+      'A version is valued either by a cash-value scale or by an account, not both',
+    );
+  });
+
+  it('refuses a missing guarantee and a missing minimum balance', () => {
+    const issues = messages(endowment.safeParse(account({ guaranteedRatePercent: '', minimumBalance: '' })));
+    expect(issues).toContain('An account-based version needs a guaranteed interest rate between 0 and 100 percent');
+    expect(issues).toContain('An account-based version needs a minimum balance for withdrawals, zero or more');
+  });
+
+  it('refuses charges that do not cover every policy year once', () => {
+    expect(messages(endowment.safeParse(account({ accountCharges: [charge({ fromPolicyYear: '2' })] })))).toContain(
+      'Account charges must start at policy year 1',
+    );
+    expect(messages(endowment.safeParse(account({ accountCharges: [charge({ toPolicyYear: '2' }), charge({ fromPolicyYear: '4' })] })))).toContain(
+      'Account charges leave policy year 3 uncovered',
+    );
+    expect(messages(endowment.safeParse(account({ accountCharges: [charge({ toPolicyYear: '2' })] })))).toContain(
+      'The last account charge row must be open-ended, so every policy year has a charge',
+    );
+  });
+
+  it('refuses a maturity off the sum assured on an account version, and the account value on a scale one', () => {
+    expect(messages(endowment.safeParse(account({ payoutRows: [maturityRow] })))).toContain(
+      "An account-based version's maturity pays the account value",
+    );
+    expect(messages(endowment.safeParse({ ...valid(), payoutRows: [accountMaturity] }))).toContain(
+      'Only an account-based version can pay the account value',
+    );
+  });
+
+  it('refuses an account-value maturity at anything but 100', () => {
+    expect(messages(endowment.safeParse(account({ payoutRows: [{ ...accountMaturity, amountValue: '50' }] })))).toContain(
+      'An account-value maturity pays the whole account (100)',
+    );
+  });
+});

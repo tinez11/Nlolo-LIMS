@@ -191,6 +191,31 @@ MB_VERSION_RESP=$(curl -sfi -X POST "$API/products/$MB_PRODUCT_ID/versions" \
   }')
 echo "$MB_VERSION_RESP" | head -1
 
+# A savings plan valued by an ACCOUNT (product step 3): contributions in, charges out, interest
+# credited at the higher of a declared rate and the 3% guarantee here. No cash-value table -- the
+# server refuses a version valued both ways -- and its maturity pays the whole account. The charges
+# are demonstration figures, not an actuarial basis: 5% held back from each premium in year 1 and
+# 1% after, 2%/1% on a transfer in, and a 1,000 monthly fee throughout.
+SAVE_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"SAVE-PLAN-01","productName":"Nlolo Akiba Plan","category":"ENDOWMENT","defaultCurrency":"TZS"}')
+SAVE_PRODUCT_ID=$(jsonval "$SAVE_PRODUCT_JSON" productId)
+echo "savingsPlanProductId=$SAVE_PRODUCT_ID"
+
+SAVE_VERSION_RESP=$(curl -sfi -X POST "$API/products/$SAVE_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "payoutSchedule":[{"kind":"MATURITY","amountBasis":"ACCOUNT_VALUE","amountValue":100}],
+    "tiraFiling":{"reference":"TIRA/DEMO/SAVE/0001","approvalDate":"2020-01-01"},
+    "ratingTable":[{"factorType":"AGE","band":"18-60","multiplier":1.0,"ageFrom":18,"ageTo":60},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+    "accumulation":{"guaranteedRatePercent":3,"minimumBalance":50000,
+                    "charges":[{"fromPolicyYear":1,"toPolicyYear":1,"contributionAllocationPercent":5,"transferAllocationPercent":2,"monthlyPolicyFee":1000},
+                               {"fromPolicyYear":2,"contributionAllocationPercent":1,"transferAllocationPercent":1,"monthlyPolicyFee":1000}]}
+  }')
+echo "$SAVE_VERSION_RESP" | head -1
+
 # A CREDIT_LIFE product, and a lender to hold a scheme on it.
 #
 # Neither existed here, and the consequence was not cosmetic: the console's "Credit-life scheme"

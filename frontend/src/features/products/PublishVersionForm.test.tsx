@@ -229,3 +229,31 @@ describe('PublishVersionForm payout schedule', () => {
     ).toBeInTheDocument();
   });
 });
+
+/*
+  Product step 3: a savings version is valued by a cash-value table OR by an account, never both --
+  the server refuses the pair -- so choosing the account hides the table rather than leaving two
+  value models on one form for the author to reconcile.
+*/
+describe('PublishVersionForm value basis', () => {
+  it('offers the cash-value table on a scale version, the default', () => {
+    renderForm();
+    expect(screen.getByText('Cash value (optional)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Guaranteed interest rate (% a year)')).not.toBeInTheDocument();
+  });
+
+  it('choosing the savings account reveals its terms and hides the cash-value table', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.selectOptions(screen.getByLabelText('Value basis'), 'ACCOUNT');
+    expect(screen.getByLabelText('Guaranteed interest rate (% a year)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Minimum balance after a withdrawal')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add a charge row/ })).toBeInTheDocument();
+    expect(screen.queryByText('Cash value (optional)')).not.toBeInTheDocument();
+  });
+
+  it('is not offered on a category that cannot carry an account', () => {
+    render(<PublishVersionForm productId="p-1" category="TERM_LIFE" onPublished={() => {}} />);
+    expect(screen.queryByLabelText('Value basis')).not.toBeInTheDocument();
+  });
+});

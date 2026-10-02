@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { readIdentity } from '@/auth/claims';
 import { ConfirmAct } from '@/components/ConfirmAct';
+import { Field } from '@/components/Field';
 import { GatePanel } from '@/components/GatePanel';
+import { useAccumulationStore } from '@/store/accumulationStore';
 import { InlineError } from '@/components/InlineError';
 import { Receipt } from '@/components/Receipt';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -116,6 +118,35 @@ function PaidUpAction({ policy }: { policy: PolicyView }) {
   );
 }
 
+/**
+ * For a policy valued by its savings account (product step 3), the figure a surrender actually pays
+ * is worked out AT APPROVAL, with interest to that day -- the request's own figure is an estimate
+ * taken when it was made. Both are shown, side by side and labelled, so the approver signs off the
+ * real number (spec §5.4). The live figure is before any surrender charge, and says so; the console
+ * does not compute the charge itself. Renders nothing for a scale-valued policy, which has no account.
+ */
+function LiveAccountQuote({ policyNumber, estimate }: { policyNumber: string; estimate: SurrenderRequestView['quotedValue'] }) {
+  const hasAccount = useAccumulationStore((s) => Boolean(s.account[policyNumber]?.data));
+  const quote = useAccumulationStore((s) => s.quote[policyNumber]);
+  const loadQuote = useAccumulationStore((s) => s.loadQuote);
+
+  useEffect(() => {
+    if (hasAccount) void loadQuote(policyNumber);
+  }, [hasAccount, policyNumber, loadQuote]);
+
+  if (!hasAccount) return null;
+  return (
+    <dl className="divide-y divide-border rounded-md border border-border">
+      <Field label="Estimated when requested" value={formatMoney(estimate)} />
+      <Field
+        label="Valued today, with interest to date"
+        value={quote?.data ? `${formatMoney(quote.data.value)} before any surrender charge` : '…'}
+        emphasis
+      />
+    </dl>
+  );
+}
+
 function SurrenderAction({
   policy,
   quote,
@@ -180,6 +211,8 @@ function SurrenderAction({
 
       {requesting.status === 'error' && requesting.error && <InlineError error={requesting.error} />}
       {approving.status === 'error' && approving.error && <InlineError error={approving.error} />}
+
+      {awaitingApproval && request && <LiveAccountQuote policyNumber={policyNumber} estimate={request.quotedValue} />}
 
       {awaitingApproval ? (
         armed === 'approve' ? (

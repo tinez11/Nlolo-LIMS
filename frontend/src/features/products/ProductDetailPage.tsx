@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from 'react-oidc-context';
 import { canAuthorProducts, readIdentity } from '@/auth/claims';
+import { RateDeclarationsPanel } from './RateDeclarationsPanel';
+import { showsRates } from './rateDeclarationForm';
 import type { BaseRate, VersionRatingView } from '@/api/types';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
@@ -31,7 +33,8 @@ import { DetailLayout } from '@/components/DetailLayout';
  */
 export function ProductDetailPage() {
   const { productId = '' } = useParams();
-  const canAuthor = canAuthorProducts(readIdentity(useAuth().user?.access_token));
+  const identity = readIdentity(useAuth().user?.access_token);
+  const canAuthor = canAuthorProducts(identity);
   const [publishOpen, setPublishOpen] = useState(false);
 
   const list = useProductStore((s) => s.list);
@@ -182,6 +185,12 @@ export function ProductDetailPage() {
             <Field label="Default currency" value={product.defaultCurrency ?? '—'} />
           </dl>
         </Panel>
+
+        {showsRates(product.category, identity) && (
+          <Panel title="Declared interest rates" subtitle="Credited on every account, never below its own version's guarantee">
+            <RateDeclarationsPanel productId={productId} />
+          </Panel>
+        )}
 
         <Panel title="Active version" subtitle="As of today">
           {isInitialLoad(snapshot) && (

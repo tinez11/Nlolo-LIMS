@@ -20,6 +20,8 @@ import { expect, type Page } from '@playwright/test';
  */
 export const DEMO_TERM_PRODUCT = 'Demo Term Life (DEMO-TERM-01)';
 export const MONEY_BACK_PRODUCT = 'Nlolo Money-Back 20 (END-MB-20)';
+/** Product step 3: the seeded savings plan valued by an ACCOUNT -- the only one with a ledger. */
+export const SAVINGS_PRODUCT = 'Nlolo Akiba Plan (SAVE-PLAN-01)';
 
 export async function openCaseForAmina(
   page: Page,
