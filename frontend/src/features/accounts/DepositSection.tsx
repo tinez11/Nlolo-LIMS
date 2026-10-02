@@ -4,6 +4,7 @@ import type { DepositPeriodView, DepositView } from '@/api/types';
 import { Field } from '@/components/Field';
 import { FormField } from '@/components/FormField';
 import { InlineError } from '@/components/InlineError';
+import { EmptyState } from '@/components/states';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { formatDate } from '@/lib/dates';
@@ -26,6 +27,16 @@ const STATUS_LABEL: Record<DepositPeriodView['status'], string> = {
  */
 export function DepositSection({ deposit, isFinance }: { deposit: DepositView; isFinance: boolean }) {
   const running = deposit.periods.find((p) => p.status === 'RUNNING');
+  // Before the money arrives there is no term at all: the rate, the dates and the interest are
+  // all fixed on the day the deposit is credited. Said so, rather than an empty list of terms.
+  if (deposit.periods.length === 0) {
+    return (
+      <EmptyState
+        title="Waiting for the deposit"
+        description="This is a fixed-term deposit. Its term, rate and interest start on the day the deposit is received. Collect it from the Billing tab with Request payment."
+      />
+    );
+  }
   return (
     <div className="space-y-4">
       {running && (

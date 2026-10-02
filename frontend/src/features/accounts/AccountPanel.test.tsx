@@ -123,6 +123,27 @@ describe('AccountPanel', () => {
     expect(screen.queryByRole('form', { name: 'At maturity' })).not.toBeInTheDocument();
   });
 
+  it('on a deposit not yet paid says it is waiting for the money, not an empty list of terms', () => {
+    useAccumulationStore.setState({
+      account: { 'POL-1': success({ ...account, balance: money('0.00'), entries: [] }) },
+      deposit: {
+        'POL-1': success({
+          policyNumber: 'POL-1',
+          periods: [],
+          instruction: null,
+          interestSoFar: money('0.00'),
+          defaultPayeeRef: null,
+          awaitingPayee: false,
+          termsOffered: [3, 6, 12],
+        }),
+      },
+    });
+    render(<AccountPanel policyNumber="POL-1" />);
+    expect(screen.getByText('Waiting for the deposit')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing on the ledger yet')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request top-up' })).not.toBeInTheDocument();
+  });
+
   it('offers no money movement on a closed account', () => {
     useAccumulationStore.setState({
       account: { 'POL-1': success({ ...account, status: 'CLOSED', closedReason: 'SURRENDERED', closedOn: '2026-03-01' }) },

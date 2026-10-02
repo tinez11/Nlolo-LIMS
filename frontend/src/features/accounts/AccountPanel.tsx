@@ -72,7 +72,9 @@ export function AccountPanel({ policyNumber }: { policyNumber: string }) {
     <div className="space-y-5">
       <Summary account={account.data} />
       {deposit?.data && <DepositSection deposit={deposit.data} isFinance={isFinance} />}
-      <Ledger entries={account.data.entries} />
+      {/* An unpaid deposit's empty ledger would invite a top-up or transfer it cannot take; the
+          deposit section already says what is awaited. */}
+      {!(deposit?.data && account.data.entries.length === 0) && <Ledger entries={account.data.entries} />}
       <Movements account={account.data} deposit={Boolean(deposit?.data)} />
     </div>
   );
