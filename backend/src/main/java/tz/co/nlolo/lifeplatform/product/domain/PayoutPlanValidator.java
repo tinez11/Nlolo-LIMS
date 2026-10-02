@@ -33,6 +33,14 @@ public final class PayoutPlanValidator {
     }
 
     public static void validate(ProductCategory category, PayoutPlan plan, AccumulationPlan accumulation) {
+        validate(category, plan, accumulation, false);
+    }
+
+    /**
+     * {@code deposit}: a fixed-term deposit matures through its account (accumulation's drain), so
+     * an endowment deposit carries no MATURITY row. Free-look and term bounds still apply.
+     */
+    public static void validate(ProductCategory category, PayoutPlan plan, AccumulationPlan accumulation, boolean deposit) {
         if (plan == null || !plan.authored()) {
             return;
         }
@@ -45,8 +53,8 @@ public final class PayoutPlanValidator {
             fail("A free-look period must be between 1 and 365 days");
         }
         // A product with no rows is a perfectly ordinary term or whole-life version; only the two
-        // SCHEDULED categories must carry one, and they are checked below.
-        if (plan.rows().isEmpty() && !SCHEDULED.contains(category)) {
+        // SCHEDULED categories must carry one, and they are checked below -- unless it is a deposit.
+        if (plan.rows().isEmpty() && (!SCHEDULED.contains(category) || deposit)) {
             checkTermBounds(terms, plan);
             return;
         }

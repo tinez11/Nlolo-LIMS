@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
 import static tz.co.nlolo.lifeplatform.ProductFilingFixture.ANY_FILING;
 
@@ -75,6 +76,8 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V17__cash_value.sql",
             "db-migrations/product/V18__payout_schedule.sql",
             "db-migrations/product/V19__accumulation_terms.sql",
+
+            "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql");
     }
@@ -1697,10 +1700,11 @@ class ProductApiIntegrationTest {
         List<Method> declared = Arrays.stream(ProductApi.class.getMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        // Seven: step 1 added the cash-value overload, step 2 the payout-plan one, step 3 the
+        // Eight: step 1 added the cash-value overload, step 2 the payout-plan one, the fixed-term
+        // deposit the deposit-grid one, step 3 the
         // accumulation-plan one. A new overload must raise this count AND pass both checks below --
         // that is the point of counting.
-        assertEquals(7, declared.size(), "expected seven publishVersion overloads");
+        assertEquals(8, declared.size(), "expected eight publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1708,7 +1712,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(7, implementations.size(), "every overload must be implemented here");
+        assertEquals(8, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));
@@ -1761,6 +1765,42 @@ class ProductApiIntegrationTest {
         assertThat(read).isEqualTo(PayoutPlan.none());
         // And the drain's question answers "expire", which is what term insurance does.
         assertThat(read.hasEndOfTermRow()).isFalse();
+    }
+
+    // ---- Fixed-term deposit: a rate grid, and a zero-charge account behind it ----
+
+    @Test
+    void aDepositVersionRoundTripsItsGridAndGetsAZeroChargeAccount() {
+        ProductSummaryView product = productApi.createProduct("FTD-1", "Fixed deposit",
+            ProductCategory.ENDOWMENT, "TZS", "actuary@nlolo.co.tz");
+        productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+            payoutRatingTable(), payoutDeathOnly(), null, List.of(), EligibilityBounds.none(), FrequencyLoading.none(),
+            ANY_FILING, CashValuePlan.none(), PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of()),
+            AccumulationPlan.none(), DepositPlanTest.userGrid(), "actuary@nlolo.co.tz");
+
+        UUID versionId = productApi.getActiveSnapshot(product.productId(), LocalDate.now()).productVersionId();
+        DepositPlan read = productApi.resolveDepositPlan(versionId);
+        assertThat(read.rows()).hasSize(12);
+        assertThat(read.rateFor(new BigDecimal("6000000"), 6)).hasValueSatisfying(r -> assertThat(r).isEqualByComparingTo("5"));
+        AccumulationPlan account = productApi.resolveAccumulationPlan(versionId);
+        assertThat(account.isAccount()).isTrue();
+        assertThat(account.guaranteedRatePercent()).isEqualByComparingTo("0");
+        assertThat(account.chargesFor(1).monthlyPolicyFee()).isEqualByComparingTo("0");
+        // And a version that is not a deposit says so.
+        assertThat(productApi.resolveDepositPlan(UUID.randomUUID()).isDeposit()).isFalse();
+    }
+
+    @Test
+    void aDepositEndowmentWithAMaturityRowIsRefused() {
+        ProductSummaryView product = productApi.createProduct("FTD-2", "Fixed deposit with a row",
+            ProductCategory.ENDOWMENT, "TZS", "actuary@nlolo.co.tz");
+        PayoutPlan withRow = PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of(new PayoutRowInput(
+            PayoutKind.MATURITY, null, null, PayoutAmountBasis.ACCOUNT_VALUE, new BigDecimal("100"), null)));
+        assertThatThrownBy(() -> productApi.publishVersion(product.productId(), IfrsMeasurementModel.PAA, LocalDate.now(), null,
+                payoutRatingTable(), payoutDeathOnly(), null, List.of(), EligibilityBounds.none(), FrequencyLoading.none(),
+                ANY_FILING, CashValuePlan.none(), withRow, AccumulationPlan.none(), DepositPlanTest.userGrid(), "actuary@nlolo.co.tz"))
+            .isInstanceOf(InvalidProductVersionException.class)
+            .hasMessage("A fixed-term deposit matures through its account; it carries no payout schedule");
     }
 
     private void publishWithPayoutPlan(UUID productId, PayoutPlan plan) {

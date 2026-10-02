@@ -189,4 +189,18 @@ class PayoutPlanValidatorTest {
                 ACCOUNT))
             .hasMessage("An account-based version pays only its account value; survival and income payouts are not offered");
     }
+
+    @Test
+    void aDepositEndowmentCarriesNoScheduleButStillNeedsAFreeLookPeriod() {
+        PayoutPlan noRows = PayoutPlan.authored(FREE_LOOK_15, List.of());
+        assertThatCode(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT, noRows, AccumulationPlan.forDeposit(), true))
+            .doesNotThrowAnyException();
+        PayoutPlan noFreeLook = PayoutPlan.authored(new PayoutTerms(null, null, null, null), List.of());
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT, noFreeLook,
+                AccumulationPlan.forDeposit(), true))
+            .hasMessage("A free-look period in days is required on an individual product");
+        // And an ordinary account endowment with no rows is still refused, for the reason it always was.
+        assertThatThrownBy(() -> PayoutPlanValidator.validate(ProductCategory.ENDOWMENT, noRows, AccumulationPlan.forDeposit()))
+            .hasMessage("An ENDOWMENT product must carry exactly one MATURITY row");
+    }
 }

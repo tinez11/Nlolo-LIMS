@@ -305,6 +305,20 @@ public interface ProductApi {
                          AccumulationPlan accumulationPlan, String publishedBy);
 
     /**
+     * The fullest form (fixed-term deposit): also the deposit's rate grid. Every other overload
+     * delegates here with {@link DepositPlan#none()}. A deposit's account plan is built by the
+     * server ({@link AccumulationPlan#forDeposit()}); passing one alongside is refused.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                         AccumulationPlan accumulationPlan, DepositPlan depositPlan, String publishedBy);
+
+    /** A version's deposit grid; {@link DepositPlan#none()} for any other version. Internal-only. */
+    DepositPlan resolveDepositPlan(UUID productVersionId);
+
+    /**
      * A version's account terms; {@link AccumulationPlan#none()} for a SCALE version. Internal-only,
      * like {@link #resolvePayoutPlan} -- consumed by {@code accumulation} and {@code policy}.
      */
