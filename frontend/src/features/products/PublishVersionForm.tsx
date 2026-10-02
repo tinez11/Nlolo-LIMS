@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { selectPublishing, useProductStore } from '@/store/productStore';
 import {
+  ACCOUNT_CATEGORIES,
+  blankAccountChargeRow,
   blankBenefitRow,
   blankCashValueRow,
   blankFundRow,
@@ -125,9 +127,17 @@ export function PublishVersionForm({
       survivalBenefitsDeductedFromDeath: '',
       deathBenefitPremiumPercent: '',
       payoutRows: [],
+      valueBasis: 'SCALE',
+      guaranteedRatePercent: '',
+      minimumBalance: '',
+      accountCharges: [],
     },
   });
   const cashValueRows = useFieldArray({ control, name: 'cashValueRows' });
+  // Product step 3: an ACCOUNT version carries its charges by policy year instead of a cash-value
+  // table -- the server refuses both on one version, so choosing ACCOUNT hides the table.
+  const accountCharges = useFieldArray({ control, name: 'accountCharges' });
+  const valueBasis = useWatch({ control, name: 'valueBasis' });
   const payoutRows = useFieldArray({ control, name: 'payoutRows' });
   // Which kinds are on the form right now, so the two conditional terms appear the moment a row
   // needs them. Watched rather than read off `payoutRows.fields`, which useFieldArray only
@@ -819,7 +829,96 @@ export function PublishVersionForm({
         protection has no cash value and the server refuses a table there. Cannot be added after
         publishing, the same as base rates.
       */}
-      {CASH_VALUE_CATEGORIES.includes(category) && (
+      {/*
+        How the policy's value is defined (product step 3). SCALE is step 1's cash-value table, below.
+        ACCOUNT is a savings account: contributions in, charges out, interest credited at the higher
+        of a declared rate and this version's guarantee. Only on the three savings categories.
+      */}
+      {ACCOUNT_CATEGORIES.includes(category) && (
+        <div className="rounded-md border border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground">How the policy&apos;s value is defined</p>
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <FormField label="Value basis" error={errors.valueBasis?.message}>
+              <Select inputSize="sm" {...register('valueBasis')}>
+                <option value="SCALE">Cash-value table (scale)</option>
+                <option value="ACCOUNT">Savings account</option>
+              </Select>
+            </FormField>
+          </div>
+          {valueBasis === 'ACCOUNT' && (
+            <div className="mt-3 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="Guaranteed interest rate (% a year)" error={errors.guaranteedRatePercent?.message}>
+                  <Input inputSize="sm" inputMode="decimal" placeholder="3" {...register('guaranteedRatePercent')} />
+                </FormField>
+                <FormField label="Minimum balance after a withdrawal" error={errors.minimumBalance?.message}>
+                  <Input inputSize="sm" inputMode="decimal" placeholder="50000" {...register('minimumBalance')} />
+                </FormField>
+              </div>
+              <p className="text-xs text-subtle-foreground">
+                Charges by policy year. Start at year 1 and leave the last row&apos;s end blank, so every year has a charge.
+              </p>
+              {accountCharges.fields.map((field, index) => {
+                const rowErrors = errors.accountCharges?.[index];
+                const rowMessage =
+                  rowErrors?.contributionAllocationPercent?.message ??
+                  rowErrors?.monthlyPolicyFee?.message ??
+                  rowErrors?.toPolicyYear?.message;
+                return (
+                  <div key={field.id}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        type="number" min={1} inputSize="sm" className="w-20 shrink-0 text-right" placeholder="From"
+                        aria-label={`Charge row ${index + 1} from policy year`}
+                        {...register(`accountCharges.${index}.fromPolicyYear`)}
+                      />
+                      <Input
+                        type="number" min={1} inputSize="sm" className="w-20 shrink-0 text-right" placeholder="To"
+                        aria-label={`Charge row ${index + 1} to policy year`}
+                        {...register(`accountCharges.${index}.toPolicyYear`)}
+                      />
+                      <Input
+                        inputSize="sm" inputMode="decimal" className="w-24 shrink-0 text-right" placeholder="Premium %"
+                        aria-label={`Charge row ${index + 1} allocation charge on premiums`}
+                        {...register(`accountCharges.${index}.contributionAllocationPercent`)}
+                      />
+                      <Input
+                        inputSize="sm" inputMode="decimal" className="w-24 shrink-0 text-right" placeholder="Transfer %"
+                        aria-label={`Charge row ${index + 1} allocation charge on transfers in`}
+                        {...register(`accountCharges.${index}.transferAllocationPercent`)}
+                      />
+                      <Input
+                        inputSize="sm" inputMode="decimal" className="w-28 shrink-0 text-right" placeholder="Monthly fee"
+                        aria-label={`Charge row ${index + 1} monthly policy fee`}
+                        {...register(`accountCharges.${index}.monthlyPolicyFee`)}
+                      />
+                      <Button
+                        type="button" size="icon" variant="ghost"
+                        aria-label={`Remove charge row ${index + 1}`}
+                        onClick={() => accountCharges.remove(index)}
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    </div>
+                    {rowMessage && <p role="alert" className="mt-1 text-xs text-status-danger-fg">{rowMessage}</p>}
+                  </div>
+                );
+              })}
+              {errors.accountCharges?.root?.message && (
+                <p role="alert" className="text-xs text-status-danger-fg">{errors.accountCharges.root.message}</p>
+              )}
+              {errors.accountCharges?.message && (
+                <p role="alert" className="text-xs text-status-danger-fg">{errors.accountCharges.message}</p>
+              )}
+              <Button type="button" size="sm" variant="ghost" className="-ml-2" onClick={() => accountCharges.append(blankAccountChargeRow())}>
+                <Plus className="size-4" /> Add a charge row
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {CASH_VALUE_CATEGORIES.includes(category) && valueBasis !== 'ACCOUNT' && (
         <div className="rounded-md border border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">Cash value (optional)</p>
           <p className="mt-0.5 mb-2.5 text-xs text-subtle-foreground">
@@ -1019,6 +1118,8 @@ export function PublishVersionForm({
                           <option value="">Choose…</option>
                           <option value="PERCENT_OF_SA">% of sum assured</option>
                           <option value="FIXED">Fixed amount</option>
+                          {/* Product step 3: an account version's maturity pays the account, at 100. */}
+                          <option value="ACCOUNT_VALUE">The whole account value</option>
                         </Select>
                         <Input
                           type="number" min={0} step="0.01" inputSize="sm" className="w-24 shrink-0 text-right"

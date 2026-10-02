@@ -95,4 +95,14 @@ class ScheduleExpanderTest {
     void anUnauthoredPlanExpandsToNothing() {
         assertThat(ScheduleExpander.expand(PayoutPlan.none(), START, MATURITY, SA)).isEmpty();
     }
+
+    @Test
+    void anAccountValueMaturityIsExpandedWithNoAmount() {
+        // Product step 3: the account's value is not known until the day it falls due -- a figure
+        // written here off the sum assured would be a second, wrong answer to "what does it pay".
+        PayoutPlan plan = PayoutPlan.authored(new PayoutTerms(15, null, null, null), List.of(new PayoutRowInput(
+            PayoutKind.MATURITY, null, null, PayoutAmountBasis.ACCOUNT_VALUE, new BigDecimal("100"), null)));
+        assertThat(ScheduleExpander.expand(plan, START, MATURITY, SA)).singleElement()
+            .satisfies(p -> assertThat(p.amount()).isNull());
+    }
 }

@@ -582,6 +582,14 @@ public interface PolicyApi {
     void lapsePolicy(String policyNumber, String lapsedBy);
 
     /**
+     * The savings account behind this policy can no longer pay its own fee (product step 3).
+     * Publishes the same {@code policy.PolicyLapsed} as an arrears lapse, so every consumer reacts
+     * exactly as it already does. Returns false, writing nothing, when the policy is in no state to
+     * lapse -- asked rather than thrown, for the rollback-only reason {@code Policy.canLapse} gives.
+     */
+    boolean lapseExhaustedAccount(String policyNumber, java.time.LocalDate exhaustedOn);
+
+    /**
      * Whether {@link #lapsePolicy} would succeed right now -- for a caller that must lapse a
      * policy as a side effect of its own work and cannot simply attempt it.
      *
@@ -636,6 +644,13 @@ public interface PolicyApi {
      * table, so recomputing yields the same number.
      */
     void recalculateCashValue(String policyNumber, LocalDate paidToDate);
+
+    /**
+     * Restate an ACCOUNT-basis policy's cash value from its ledger (product step 3). Called ONLY by
+     * accumulation, after every posting: the ledger is the truth and this field is its projection,
+     * which is why surrender quotes and loan limits -- both of which read it -- need no change.
+     */
+    void restateAccountValue(String policyNumber, java.math.BigDecimal value);
 
     /**
      * Make a savings policy paid-up: the customer stops paying, cover reduces, no premium falls due

@@ -24,5 +24,15 @@ public enum DocumentType {
      * other takes them off — and a stored file labelled as the wrong one is evidence that
      * argues against itself in exactly the dispute it exists to settle.
      */
-    EXITS_FILE
+    EXITS_FILE,
+
+    /**
+     * A savings account's statement for a period (product step 3), filed against its policy.
+     *
+     * <p>Its own type rather than POLICY_DOCUMENT: a statement is a record of money at a date,
+     * regenerated each year, and one filed as "the policy document" is the wrong evidence in a
+     * dispute about either. Routed to the general {@code policy-documents} bucket by
+     * {@code MinioDocumentStorage.bucketFor}'s default arm, for the reason ENROLMENT_SCHEDULE gives.
+     */
+    ACCOUNT_STATEMENT
 }

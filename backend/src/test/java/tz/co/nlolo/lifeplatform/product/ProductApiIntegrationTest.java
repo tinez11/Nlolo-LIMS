@@ -74,7 +74,9 @@ class ProductApiIntegrationTest {
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
             "db-migrations/product/V18__payout_schedule.sql",
-            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql");
+            "db-migrations/product/V19__accumulation_terms.sql",
+            "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
+            "db-migrations/accumulation/V1__create_accumulation_schema.sql");
     }
 
     @BeforeEach
@@ -1695,9 +1697,10 @@ class ProductApiIntegrationTest {
         List<Method> declared = Arrays.stream(ProductApi.class.getMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        // Six: step 1 added the cash-value overload, step 2 the payout-plan one. A new overload
-        // must raise this count AND pass both checks below -- that is the point of counting.
-        assertEquals(6, declared.size(), "expected six publishVersion overloads");
+        // Seven: step 1 added the cash-value overload, step 2 the payout-plan one, step 3 the
+        // accumulation-plan one. A new overload must raise this count AND pass both checks below --
+        // that is the point of counting.
+        assertEquals(7, declared.size(), "expected seven publishVersion overloads");
         declared.forEach(m -> assertFalse(m.isDefault(),
             "publishVersion must not be a default method: Spring's proxy cannot apply "
                 + "@Transactional to one, so its delegation runs untransacted"));
@@ -1705,7 +1708,7 @@ class ProductApiIntegrationTest {
         List<Method> implementations = Arrays.stream(ProductApiImpl.class.getDeclaredMethods())
             .filter(m -> m.getName().equals("publishVersion"))
             .toList();
-        assertEquals(6, implementations.size(), "every overload must be implemented here");
+        assertEquals(7, implementations.size(), "every overload must be implemented here");
         implementations.forEach(m -> assertNotNull(m.getAnnotation(Transactional.class),
             "every publishVersion implementation must carry @Transactional, including the "
                 + "convenience overloads -- the retire-then-insert sequence must be atomic"));

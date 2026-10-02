@@ -396,11 +396,39 @@ components:
               kind: { type: string, enum: [SURVIVAL, MATURITY, INCOME, RETURN_OF_PREMIUM] }
               fromPolicyYear: { type: [integer, "null"], minimum: 1 }
               toPolicyYear: { type: [integer, "null"], minimum: 1 }
-              amountBasis: { type: string, enum: [PERCENT_OF_SA, FIXED, PERCENT_OF_PREMIUMS] }
+              amountBasis:
+                type: string
+                enum: [PERCENT_OF_SA, FIXED, PERCENT_OF_PREMIUMS, ACCOUNT_VALUE]
+                description: >-
+                  ACCOUNT_VALUE (product step 3) pays the whole account on the maturity date: only on
+                  the MATURITY row of an ACCOUNT version, with amountValue 100.
               amountValue: { type: number, exclusiveMinimum: 0 }
               frequency:
                 type: [string, "null"]
                 enum: [ANNUAL, SEMI_ANNUAL, QUARTERLY, MONTHLY, null]
+        accumulation:
+          description: >-
+            Present only on an ACCOUNT version (product step 3) -- a ledger of contributions, charges
+            and interest instead of step 1's per-mille scale. Refused on a version that also carries
+            a cashValue scale, and on any category but ENDOWMENT, WHOLE_LIFE and EDUCATION_SAVINGS.
+            Its charges must start at policy year 1, cover every year once, and end open-ended.
+          type: [object, "null"]
+          required: [guaranteedRatePercent, minimumBalance, charges]
+          properties:
+            guaranteedRatePercent: { type: number, minimum: 0, maximum: 100, description: "Effective annual floor" }
+            minimumBalance: { type: number, minimum: 0, description: "A partial withdrawal may not leave less" }
+            charges:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [fromPolicyYear, contributionAllocationPercent, transferAllocationPercent, monthlyPolicyFee]
+                properties:
+                  fromPolicyYear: { type: integer, minimum: 1 }
+                  toPolicyYear: { type: [integer, "null"], minimum: 1, description: "Null on the last row: every year after" }
+                  contributionAllocationPercent: { type: number, minimum: 0, maximum: 100 }
+                  transferAllocationPercent: { type: number, minimum: 0, maximum: 100 }
+                  monthlyPolicyFee: { type: number, minimum: 0 }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and

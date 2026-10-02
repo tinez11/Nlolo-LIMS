@@ -389,6 +389,25 @@ public class Policy {
         this.lapsedAt = Instant.now();
     }
 
+    /**
+     * Whether an exhausted savings account may lapse this policy (product step 3, spec §10.4).
+     * Wider than {@link #canLapse()} on purpose: a REINSTATED or PAID_UP account policy still pays
+     * its own fee, so it can still run dry -- and canLapse admits neither.
+     */
+    public boolean canLapseOnExhaustion() {
+        return "ACTIVE".equals(status) || "REINSTATED".equals(status) || "PAID_UP".equals(status)
+            || "SUSPENDED".equals(status);
+    }
+
+    public void lapseOnExhaustion() {
+        if (!canLapseOnExhaustion()) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber
+                + " cannot lapse on an exhausted account (current: " + status + ")");
+        }
+        this.status = "LAPSED";
+        this.lapsedAt = Instant.now();
+    }
+
     /** LAPSED -> REINSTATED directly (not a second write to ACTIVE) -- a reinstated policy stays
      * labeled REINSTATED going forward, distinguishing it for audit/actuarial purposes from a
      * policy that was continuously ACTIVE. isInForce() treats both as equivalent for coverage

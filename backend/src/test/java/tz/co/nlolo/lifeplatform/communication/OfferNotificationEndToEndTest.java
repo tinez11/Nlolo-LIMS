@@ -102,7 +102,9 @@ class OfferNotificationEndToEndTest {
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
             "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
+            "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",
             "db-migrations/refdata/V3__seed_billing_parameters.sql",
@@ -138,6 +140,7 @@ class OfferNotificationEndToEndTest {
             "db-migrations/communication/V7__null_safe_rls_and_pending_reminders.sql",
             "db-migrations/communication/V8__platform_default_templates.sql",
             "db-migrations/communication/V9__payment_received_template.sql",
+            "db-migrations/communication/V10__account_statement_template.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

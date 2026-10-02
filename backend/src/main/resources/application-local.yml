@@ -18,3 +18,9 @@ server:
 benefitpayout:
   due-drain-interval-ms: 5000
   run-drain-interval-ms: 10000
+# Product step 3: month-end interest and fees are posted hourly elsewhere -- a completed month is
+# not urgent -- but an e2e test funding an account commenced months ago must see them in seconds.
+accumulation:
+  month-end-interval-ms: 10000
+  # Daily elsewhere; the annual statement files once per account per year either way.
+  statement-interval-ms: 30000

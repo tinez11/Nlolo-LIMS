@@ -159,8 +159,15 @@ public class PaymentApiImpl implements PaymentApi {
     @Transactional
     Optional<UUID> recordCollectionRequest(UUID tenantId, String idempotencyKey, String payerRef,
                                             BigDecimal amount, String currency, String sourceRef) {
+        return recordCollectionRequest(tenantId, idempotencyKey, payerRef, amount, currency, sourceRef, "PREMIUM");
+    }
+
+    /** A collection that is not a premium (product step 3: a savings top-up). See PaymentTransaction.purpose. */
+    @Transactional
+    Optional<UUID> recordCollectionRequest(UUID tenantId, String idempotencyKey, String payerRef,
+                                            BigDecimal amount, String currency, String sourceRef, String purpose) {
         PaymentTransaction transaction =
-            new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency, sourceRef);
+            new PaymentTransaction(tenantId, idempotencyKey, payerRef, amount, currency, sourceRef, purpose);
         int claimed = paymentIdempotencyRepository.claimKey(tenantId, idempotencyKey, transaction.getPaymentTransactionId());
         if (claimed == 0) {
             return Optional.empty();
@@ -375,7 +382,10 @@ public class PaymentApiImpl implements PaymentApi {
                    "gatewayReference", gatewayReference,
                    "amount", Map.of("amount", transaction.getAmount().toPlainString(),
                                     "currencyCode", transaction.getCurrency()),
-                   "confirmedAt", Instant.now().toString())));
+                   "confirmedAt", Instant.now().toString(),
+                   // Which consumer this money belongs to: billing takes PREMIUM, accumulation
+                   // takes ACCOUNT_TOP_UP. Billing used to parse every sourceRef as an invoice id.
+                   "purpose", transaction.getPurpose())));
     }
 
     /** Review fix (I2): same reasoning as {@code failDisbursement} above, for the collection
@@ -391,7 +401,8 @@ public class PaymentApiImpl implements PaymentApi {
             Map.of("paymentRequestId", paymentTransactionId,
                    "idempotencyKey", transaction.getIdempotencyKey(),
                    "sourceRef", transaction.getSourceRef(),
-                   "reason", reason)));
+                   "reason", reason,
+                   "purpose", transaction.getPurpose())));
     }
 
     // ---- Task 8: the mobile-money gateway's inbound callback entry point

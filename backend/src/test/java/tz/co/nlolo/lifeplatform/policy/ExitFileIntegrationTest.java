@@ -106,7 +106,9 @@ class ExitFileIntegrationTest {
             "db-migrations/product/V16__base_rate_term_bands.sql",
             "db-migrations/product/V17__cash_value.sql",
             "db-migrations/product/V18__payout_schedule.sql",
+            "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
+            "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
             "db-migrations/underwriting/V3__medical_disclosure_recorded_by.sql",
@@ -154,6 +156,7 @@ class ExitFileIntegrationTest {
             "db-migrations/document/V2__add_content_type_and_file_name.sql",
             "db-migrations/document/V4__enrolment_schedule_document_type.sql",
             "db-migrations/document/V5__exits_file_document_type.sql",
+            "db-migrations/document/V6__account_statement_document_type.sql",
             "db-migrations/audit/V1__create_audit_schema.sql",
             "db-migrations/audit/V2__rls_fail_closed.sql",
             "db-migrations/audit/V3__q4_2026_partitions.sql");

@@ -100,4 +100,12 @@ public interface BenefitPayoutApi {
      * that and the product's percentage of premiums collected (guide §6).
      */
     java.math.BigDecimal deathBenefitCeiling(String policyNumber, java.math.BigDecimal sumAssuredCeiling);
+
+    /**
+     * The death ceiling as at the date of death (product step 3). For an account-valued version it is
+     * the account at the death, or the premium floor if higher, plus contributions paid after it.
+     * Every other version: exactly {@link #deathBenefitCeiling(String, java.math.BigDecimal)}.
+     */
+    java.math.BigDecimal deathBenefitCeiling(String policyNumber, java.math.BigDecimal sumAssuredCeiling,
+                                             java.time.LocalDate dateOfDeath);
 }

@@ -12,6 +12,7 @@
  */
 import type { components as AuditComponents } from '@/types/api/audit';
 import type { components as BenefitPayoutComponents } from '@/types/api/benefitpayout';
+import type { components as AccumulationComponents } from '@/types/api/accumulation';
 import type { components as BillingComponents } from '@/types/api/billing';
 import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
@@ -489,6 +490,19 @@ export type ProofOfLifeMethod = BenefitPayoutComponents['schemas']['ProofOfLifeM
 export type PaymentRunView = BenefitPayoutComponents['schemas']['PaymentRun'];
 /** A customer walking away inside the free-look window, and what is withheld. */
 export type FreeLookCancellationView = BenefitPayoutComponents['schemas']['FreeLookCancellation'];
+
+/** A savings account and its whole ledger (product step 3). */
+export type AccountView = AccumulationComponents['schemas']['Account'];
+export type LedgerEntryView = AccumulationComponents['schemas']['LedgerEntry'];
+export type EntryType = LedgerEntryView['type'];
+export type WithdrawalView = AccumulationComponents['schemas']['Withdrawal'];
+export type TopUpView = AccumulationComponents['schemas']['TopUp'];
+export type TransferInView = AccumulationComponents['schemas']['TransferIn'];
+export type AdjustmentView = AccumulationComponents['schemas']['Adjustment'];
+export type ClosingQuoteView = AccumulationComponents['schemas']['ClosingQuote'];
+export type StatementView = AccumulationComponents['schemas']['Statement'];
+export type StatementRecordView = AccumulationComponents['schemas']['StatementRecord'];
+export type RateDeclarationView = AccumulationComponents['schemas']['RateDeclaration'];
 
 /** The payout register's status filter, in the order a queue is worked. */
 export const INSTALMENT_STATUSES: readonly InstalmentStatus[] = [

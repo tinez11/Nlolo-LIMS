@@ -1,5 +1,6 @@
 package tz.co.nlolo.lifeplatform.product.infrastructure;
 
+import tz.co.nlolo.lifeplatform.product.api.AccumulationPlan;
 import tz.co.nlolo.lifeplatform.product.api.CashValuePlan;
 import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
 import tz.co.nlolo.lifeplatform.product.api.PayoutTerms;
@@ -124,6 +125,7 @@ public class ProductController {
                 request.payoutSchedule() != null
                     ? request.payoutSchedule().stream().map(PayoutRowRequest::toInput).toList()
                     : List.of()),
+            request.accumulation() != null ? request.accumulation().toPlan() : AccumulationPlan.none(),
             jwt.getSubject());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }

@@ -788,6 +788,24 @@ public class PolicyApiImpl implements PolicyApi {
     }
 
     @Override
+    @Transactional
+    public boolean lapseExhaustedAccount(String policyNumber, LocalDate exhaustedOn) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        if (!policy.canLapseOnExhaustion()) {
+            return false;
+        }
+        policy.lapseOnExhaustion();
+        policyRepository.save(policy);
+        // The same event as an arrears lapse, so billing, benefitpayout and audit react exactly as they
+        // already do. The two extra keys are additive and say why.
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyLapsed", tenantId,
+            Map.of("policyNumber", policyNumber, "lapsedAt", policy.getLapsedAt().toString(),
+                "reason", "ACCOUNT_EXHAUSTED", "exhaustedOn", exhaustedOn.toString())));
+        return true;
+    }
+
+    @Override
     public boolean isLapsable(String policyNumber) {
         return findPolicyOrThrow(policyNumber, TenantContext.get()).canLapse();
     }
@@ -829,6 +847,9 @@ public class PolicyApiImpl implements PolicyApi {
         UUID tenantId = TenantContext.get();
         Policy policy = findPolicyOrThrow(policyNumber, tenantId);
 
+        if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
+            return makeAccountPaidUp(policy, madePaidUpBy, tenantId);
+        }
         var config = productApi.getCashValueConfig(policy.getProductVersionId());
         if (config.isEmpty()) {
             throw new InvalidPolicyStateException("Policy " + policyNumber
@@ -877,6 +898,42 @@ public class PolicyApiImpl implements PolicyApi {
                    // the old. benefitpayout restates every future payout by exactly this ratio.
                    "originalSumAssured", Map.of("amount", originalSumAssured.toPlainString(),
                         "currencyCode", policy.getSumAssuredCurrency()),
+                   "madePaidUpAt", Instant.now().toString())));
+        return toView(policy);
+    }
+
+    /**
+     * Paid-up on an account-valued version (product step 3): premiums stop and the account keeps
+     * paying its own fee. There is NO sum-assured reduction -- the account is the value, and it is
+     * not reduced by stopping contributions to it.
+     *
+     * <p>Only from ACTIVE or REINSTATED, though step 1 also admits LAPSED: an account policy lapses
+     * only on exhaustion, when its account has closed at zero, so making it paid-up would put cover
+     * back on with nothing to pay its fee. The way back for an exhausted account is reinstatement.
+     *
+     * <p>{@code PolicyMadePaidUp} carries both figures EQUAL, which every consumer already reads
+     * correctly: billing stops raising invoices, and benefitpayout's restatement is a ratio of one,
+     * which it skips.
+     */
+    private PolicyView makeAccountPaidUp(Policy policy, String madePaidUpBy, UUID tenantId) {
+        String policyNumber = policy.getPolicyNumber();
+        if (!"ACTIVE".equals(policy.getStatus()) && !"REINSTATED".equals(policy.getStatus())) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " is valued by its account; it can be "
+                + "made paid-up only while ACTIVE or REINSTATED. An exhausted account comes back by reinstatement.");
+        }
+        BigDecimal sumAssured = policy.getSumAssuredAmount();
+        endorsementRepository.save(new Endorsement(tenantId, policyNumber, "PAID_UP", LocalDate.now(),
+            Map.of("originalSumAssured", sumAssured.toPlainString(),
+                   "paidUpSumAssured", sumAssured.toPlainString(),
+                   "basis", "ACCOUNT"),
+            madePaidUpBy));
+        policy.makePaidUp(sumAssured);
+        policyRepository.save(policy);
+        Map<String, Object> money = Map.of("amount", sumAssured.toPlainString(), "currencyCode", policy.getSumAssuredCurrency());
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyMadePaidUp", tenantId,
+            Map.of("policyNumber", policyNumber,
+                   "paidUpSumAssured", money,
+                   "originalSumAssured", money,
                    "madePaidUpAt", Instant.now().toString())));
         return toView(policy);
     }
@@ -986,15 +1043,31 @@ public class PolicyApiImpl implements PolicyApi {
         // Billing stops and regreporting projects the surrender.
         eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicySurrendered", tenantId,
             Map.of("policyNumber", request.getPolicyNumber(), "surrenderedAt", Instant.now().toString())));
-        // The payout, through the disbursement rail. The surrender request id is both the source
-        // reference and the idempotency key -- one payout per approval.
-        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPayoutRequested", tenantId,
-            Map.of("surrenderRequestId", surrenderRequestId.toString(),
-                   "idempotencyKey", surrenderRequestId.toString(),
-                   "policyNumber", request.getPolicyNumber(),
-                   "payeeRef", request.getPayeeRef(),
-                   "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
-                        "currencyCode", request.getQuotedValueCurrency()))));
+        if (productApi.resolveAccumulationPlan(policy.getProductVersionId()).isAccount()) {
+            // Product step 3 (spec §5.4): an account is valued at approval, with interest to the
+            // day, and the payment is accumulation's. Policy cannot call accumulation -- that would be
+            // a cycle -- so it says what it approved, with the charge it already resolves.
+            ProductSnapshotView snapshot = productApi.getSnapshotByVersionId(policy.getProductVersionId());
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policy.AccountSurrenderApproved", tenantId,
+                Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                       "policyNumber", request.getPolicyNumber(),
+                       "payeeRef", request.getPayeeRef(),
+                       "surrenderChargePercent", resolveSurrenderChargePercent(snapshot.surrenderChargeScheduleJson(),
+                           policy.getIssueDate()).toPlainString(),
+                       "approvedBy", approvedBy,
+                       "approvedAt", Instant.now().toString())));
+        } else {
+            // The payout, through the disbursement rail. The surrender request id is both the source
+            // reference and the idempotency key -- one payout per approval. Every scale-valued
+            // surrender, which is every one before product step 3.
+            eventPublisher.publishEvent(DomainEventEnvelope.of("policy.SurrenderPayoutRequested", tenantId,
+                Map.of("surrenderRequestId", surrenderRequestId.toString(),
+                       "idempotencyKey", surrenderRequestId.toString(),
+                       "policyNumber", request.getPolicyNumber(),
+                       "payeeRef", request.getPayeeRef(),
+                       "amount", Map.of("amount", request.getQuotedValueAmount().toPlainString(),
+                            "currencyCode", request.getQuotedValueCurrency()))));
+        }
         return toSurrenderView(request);
     }
 
@@ -1095,6 +1168,15 @@ public class PolicyApiImpl implements PolicyApi {
             Map.of("policyNumber", policyNumber,
                    "maturityDate", policy.getMaturityDate().toString(),
                    "expiredAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional
+    public void restateAccountValue(String policyNumber, BigDecimal value) {
+        PolicyAccount account = policyAccountRepository.findById(policyNumber)
+            .orElseThrow(() -> new PolicyNotFoundException(policyNumber));
+        account.restateCashValue(value);
+        policyAccountRepository.save(account);
     }
 
     @Override

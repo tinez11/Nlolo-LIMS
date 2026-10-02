@@ -541,6 +541,119 @@ function validatePayoutPlan(category: ProductCategory, v: PayoutFields, ctx: z.R
   checkPayoutTermBounds(v, issue);
 }
 
+// ---- Account value basis (product step 3) ---------------------------------------------------
+
+const accountChargeRowSchema = z.object({
+  fromPolicyYear: z.string().trim(),
+  toPolicyYear: z.string().trim(),
+  contributionAllocationPercent: z.string().trim(),
+  transferAllocationPercent: z.string().trim(),
+  monthlyPolicyFee: z.string().trim(),
+});
+export type AccountChargeRowValues = z.infer<typeof accountChargeRowSchema>;
+
+export function blankAccountChargeRow(): AccountChargeRowValues {
+  return { fromPolicyYear: '', toPolicyYear: '', contributionAllocationPercent: '', transferAllocationPercent: '0', monthlyPolicyFee: '' };
+}
+
+/** `AccumulationPlanValidator.ACCOUNT_CATEGORIES`. ANNUITY waits for vesting (sub-project D). */
+export const ACCOUNT_CATEGORIES: readonly ProductCategory[] = ['ENDOWMENT', 'WHOLE_LIFE', 'EDUCATION_SAVINGS'];
+
+interface AccumulationFields {
+  valueBasis: string;
+  guaranteedRatePercent: string;
+  minimumBalance: string;
+  accountCharges: AccountChargeRowValues[];
+  payoutRows: PayoutRowValues[];
+}
+
+const isNumber = (v: string) => v !== '' && !Number.isNaN(Number(v));
+
+/**
+ * `AccumulationPlanValidator` and `PayoutPlanValidator.checkAccountRules`, rule for rule and message
+ * for message. A SCALE version (the default) is not checked here at all -- the account fields are
+ * simply not sent.
+ */
+function validateAccumulation(category: ProductCategory, v: AccumulationFields & CashValueFields, ctx: z.RefinementCtx) {
+  const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
+  const account = v.valueBasis === 'ACCOUNT';
+
+  // checkAccountRules: these run whatever the basis, because an ACCOUNT_VALUE row on a scale version
+  // is refused too.
+  v.payoutRows.forEach((row, i) => {
+    const paysAccount = row.amountBasis === 'ACCOUNT_VALUE';
+    if (paysAccount && row.kind !== 'MATURITY') {
+      issue(['payoutRows', i, 'amountBasis'], 'Only a MATURITY row may pay the account value');
+    } else if (paysAccount && !account) {
+      issue(['payoutRows', i, 'amountBasis'], 'Only an account-based version can pay the account value');
+    } else if (paysAccount && Number(row.amountValue) !== 100) {
+      issue(['payoutRows', i, 'amountValue'], 'An account-value maturity pays the whole account (100)');
+    } else if (account && row.kind === 'MATURITY' && !paysAccount) {
+      issue(['payoutRows', i, 'amountBasis'], "An account-based version's maturity pays the account value");
+    } else if (account && (row.kind === 'SURVIVAL' || row.kind === 'INCOME')) {
+      issue(['payoutRows', i, 'kind'], 'An account-based version pays only its account value; survival and income payouts are not offered');
+    }
+  });
+
+  if (!account) return;
+  if (!ACCOUNT_CATEGORIES.includes(category)) {
+    issue(['valueBasis'], `A ${category} product cannot use an account value basis`);
+    return;
+  }
+  if (hasCashValue(v)) {
+    issue(['valueBasis'], 'A version is valued either by a cash-value scale or by an account, not both');
+  }
+  const rate = Number(v.guaranteedRatePercent);
+  if (!isNumber(v.guaranteedRatePercent) || rate < 0 || rate > 100) {
+    issue(['guaranteedRatePercent'], 'An account-based version needs a guaranteed interest rate between 0 and 100 percent');
+  }
+  if (!isNumber(v.minimumBalance) || Number(v.minimumBalance) < 0) {
+    issue(['minimumBalance'], 'An account-based version needs a minimum balance for withdrawals, zero or more');
+  }
+  if (v.accountCharges.length === 0) {
+    issue(['accountCharges'], 'An account-based version needs at least one row of charges');
+    return;
+  }
+  const rows = v.accountCharges
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => Number(a.row.fromPolicyYear) - Number(b.row.fromPolicyYear));
+  if (Number(rows[0]!.row.fromPolicyYear) !== 1) {
+    issue(['accountCharges'], 'Account charges must start at policy year 1');
+    return;
+  }
+  const describe = (r: AccountChargeRowValues) => (r.toPolicyYear === '' ? `${r.fromPolicyYear} onwards` : `${r.fromPolicyYear}-${r.toPolicyYear}`);
+  for (let i = 0; i < rows.length; i++) {
+    const { row, index } = rows[i]!;
+    const last = i === rows.length - 1;
+    for (const pct of [row.contributionAllocationPercent, row.transferAllocationPercent]) {
+      if (!isNumber(pct) || Number(pct) < 0 || Number(pct) > 100) {
+        issue(['accountCharges', index, 'contributionAllocationPercent'], 'An allocation charge must be between 0 and 100 percent');
+      }
+    }
+    if (!isNumber(row.monthlyPolicyFee) || Number(row.monthlyPolicyFee) < 0) {
+      issue(['accountCharges', index, 'monthlyPolicyFee'], 'A monthly policy fee cannot be negative');
+    }
+    if (row.toPolicyYear !== '' && Number(row.toPolicyYear) < Number(row.fromPolicyYear)) {
+      issue(['accountCharges', index, 'toPolicyYear'], `An account charge row ends before it begins (${describe(row)})`);
+    }
+    if (row.toPolicyYear === '' && !last) {
+      issue(['accountCharges', index, 'toPolicyYear'], 'Only the last account charge row may be open-ended');
+    }
+    if (last && row.toPolicyYear !== '') {
+      issue(['accountCharges'], 'The last account charge row must be open-ended, so every policy year has a charge');
+    }
+    if (!last && row.toPolicyYear !== '') {
+      const next = rows[i + 1]!.row;
+      const expected = Number(row.toPolicyYear) + 1;
+      if (Number(next.fromPolicyYear) < expected) {
+        issue(['accountCharges'], `Account charges for policy years ${describe(row)} and ${describe(next)} overlap`);
+      } else if (Number(next.fromPolicyYear) > expected) {
+        issue(['accountCharges'], `Account charges leave policy year ${expected} uncovered`);
+      }
+    }
+  }
+}
+
 function checkPayoutTermBounds(v: PayoutFields, issue: (path: (string | number)[], message: string) => void) {
   if (v.proofOfLifeIntervalMonths !== ''
       && (Number(v.proofOfLifeIntervalMonths) < 1 || Number(v.proofOfLifeIntervalMonths) > 60)) {
@@ -744,9 +857,16 @@ export function publishVersionFormSchema(category: ProductCategory) {
     survivalBenefitsDeductedFromDeath: z.string().trim(),
     deathBenefitPremiumPercent: z.string().trim(),
     payoutRows: z.array(payoutRowSchema),
+    // How the version is valued (product step 3). SCALE is every version before it; ACCOUNT adds the
+    // guarantee, the withdrawal minimum and the charges by policy year.
+    valueBasis: z.string().trim(),
+    guaranteedRatePercent: z.string().trim(),
+    minimumBalance: z.string().trim(),
+    accountCharges: z.array(accountChargeRowSchema),
   }).superRefine((values, ctx) => {
     validateCashValue(category, values, ctx);
     validatePayoutPlan(category, values, ctx);
+    validateAccumulation(category, values, ctx);
 
     /*
       The two modes, mirroring ProductApiImpl.publishVersion exactly.
@@ -893,6 +1013,10 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     survivalBenefitsDeductedFromDeath: '',
     deathBenefitPremiumPercent: '',
     payoutRows: [],
+    valueBasis: 'SCALE',
+    guaranteedRatePercent: '',
+    minimumBalance: '',
+    accountCharges: [],
   };
 }
 
@@ -1028,12 +1152,26 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
       kind: row.kind as 'SURVIVAL' | 'MATURITY' | 'INCOME' | 'RETURN_OF_PREMIUM',
       ...(row.fromPolicyYear !== '' && { fromPolicyYear: Number(row.fromPolicyYear) }),
       ...(row.toPolicyYear !== '' && { toPolicyYear: Number(row.toPolicyYear) }),
-      amountBasis: row.amountBasis as 'PERCENT_OF_SA' | 'FIXED' | 'PERCENT_OF_PREMIUMS',
+      amountBasis: row.amountBasis as 'PERCENT_OF_SA' | 'FIXED' | 'PERCENT_OF_PREMIUMS' | 'ACCOUNT_VALUE',
       amountValue: Number(row.amountValue),
       ...(row.frequency !== '' && {
         frequency: row.frequency as 'ANNUAL' | 'SEMI_ANNUAL' | 'QUARTERLY' | 'MONTHLY',
       }),
     })),
+    // Product step 3. Omitted entirely on a SCALE version -- absent IS the scale basis on the server.
+    ...(values.valueBasis === 'ACCOUNT' && {
+      accumulation: {
+        guaranteedRatePercent: Number(values.guaranteedRatePercent),
+        minimumBalance: Number(values.minimumBalance),
+        charges: values.accountCharges.map((c) => ({
+          fromPolicyYear: Number(c.fromPolicyYear),
+          ...(c.toPolicyYear !== '' && { toPolicyYear: Number(c.toPolicyYear) }),
+          contributionAllocationPercent: Number(c.contributionAllocationPercent),
+          transferAllocationPercent: Number(c.transferAllocationPercent),
+          monthlyPolicyFee: Number(c.monthlyPolicyFee),
+        })),
+      },
+    }),
     // Required, so no omit-when-blank branch: a version may not exist without the filing that
     // authorises it, and the schema above refuses a blank one before this runs.
     tiraFiling: {
