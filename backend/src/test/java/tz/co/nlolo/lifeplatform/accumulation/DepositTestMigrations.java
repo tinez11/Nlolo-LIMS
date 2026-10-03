@@ -5,11 +5,14 @@ package tz.co.nlolo.lifeplatform.accumulation;
  * party, product with its grid), billing's single-premium invoice, the payment rail, and the
  * account with its terms. One list for every deposit test class, rather than another copy to miss
  * the next migration in.
+ *
+ * <p>Public since product step 4: the bonus module's tests use it too, so it carries bonus V1 and
+ * policy V32.
  */
-final class DepositTestMigrations {
+public final class DepositTestMigrations {
     private DepositTestMigrations() {}
 
-    static final String[] ALL = {
+    public static final String[] ALL = {
         "db-migrations/party/V1__create_party_schema.sql",
         "db-migrations/party/V2__individual_person_record.sql",
         "db-migrations/party/V4__registered_by_agent.sql",
@@ -32,9 +35,11 @@ final class DepositTestMigrations {
         "db-migrations/product/V18__payout_schedule.sql",
         "db-migrations/product/V19__accumulation_terms.sql",
         "db-migrations/product/V20__deposit_rate_grid.sql",
+        "db-migrations/product/V21__bonus_terms.sql",
         "db-migrations/accumulation/V1__create_accumulation_schema.sql",
         "db-migrations/accumulation/V2__request_keys.sql",
         "db-migrations/accumulation/V3__deposit_periods.sql",
+        "db-migrations/bonus/V1__create_bonus_schema.sql",
         "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
         "db-migrations/underwriting/V1__create_underwriting_schema.sql",
         "db-migrations/underwriting/V2__agent_of_record.sql",
@@ -78,6 +83,7 @@ final class DepositTestMigrations {
         "db-migrations/policy/V29__paid_up.sql",
         "db-migrations/policy/V30__surrender.sql",
         "db-migrations/policy/V31__free_look_status.sql",
+        "db-migrations/policy/V32__attached_bonus_projection.sql",
         "db-migrations/audit/V1__create_audit_schema.sql",
         "db-migrations/audit/V2__rls_fail_closed.sql",
         "db-migrations/audit/V3__q4_2026_partitions.sql",

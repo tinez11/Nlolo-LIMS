@@ -92,6 +92,7 @@ class PayoutLifecycleIntegrationTest {
             "db-migrations/product/V18__payout_schedule.sql",
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
+            "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
@@ -371,6 +372,20 @@ class PayoutLifecycleIntegrationTest {
         // Guide §6: the higher of the sum assured and 110% of premiums paid. 1,200,000 x 110% =
         // 1,320,000, which is more than the cover, so a family is not paid less than was put in.
         assertThat(asTenant(() -> api.deathBenefitCeiling(policyNumber, SUM_ASSURED)))
+            .usingComparator(BigDecimal::compareTo).isEqualTo(new BigDecimal("1320000.00"));
+
+        // The claim screen's "Covered for" is that same limit, not the sum assured (product step 4,
+        // plan revision R1): it used to show 1,000,000 while approval allowed up to 1,320,000.
+        LocalDate dateOfDeath = LocalDate.now().minusDays(1);
+        UUID claimId = asTenant(() -> {
+            UUID claimant = partyApi.registerIndividual("Payout Floor Claimant", LocalDate.of(1980, 3, 3),
+                "+255715000009", null, "test-agent").partyId();
+            return claimsApi.registerClaim(new ClaimsApi.RegisterClaimRequest(policyNumber, null, claimant,
+                ClaimType.DEATH, dateOfDeath,
+                new DeathClaimDetails("Natural causes", "Dar es Salaam", dateOfDeath, "Dr. Test")),
+                "payout-floor-reg-01", "claims-clerk").claimId();
+        });
+        assertThat(asTenant(() -> claimsApi.claimableCover(claimId)).amount())
             .usingComparator(BigDecimal::compareTo).isEqualTo(new BigDecimal("1320000.00"));
 
         // And a policy whose version says neither rule keeps exactly the ceiling it always had.

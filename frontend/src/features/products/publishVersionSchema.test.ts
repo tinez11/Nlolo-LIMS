@@ -1021,3 +1021,113 @@ describe('fixed-term deposit', () => {
     );
   });
 });
+
+describe('with profits', () => {
+  const endowment = publishVersionFormSchema('ENDOWMENT');
+  const withProfits = (over: Record<string, unknown> = {}) => ({
+    ...valid(),
+    payoutRows: [maturityRow],
+    withProfits: true,
+    bonusMethod: 'COMPOUND',
+    bonusPaidUpParticipates: false,
+    bonusSurrenderBasis: 'OWN_SCALE',
+    bonusSurrenderRows: [{ fromCompletedYears: '0', perMille: '400' }],
+    ...over,
+  });
+  const issues = (r: { error?: { issues: { message: string; path: PropertyKey[] }[] } }) => r.error?.issues ?? [];
+  const messages = (r: { error?: { issues: { message: string; path: PropertyKey[] }[] } }) => issues(r).map((i) => i.message);
+
+  /**
+   * Every path the form renders an error under (plan §12, L10): a message landing anywhere else
+   * would make Publish silently do nothing.
+   */
+  const RENDERED = /^(withProfits|bonusMethod|bonusSurrenderBasis|bonusSurrenderRows|bonusSurrenderRows\.\d+\.(fromCompletedYears|perMille))$/;
+  const expectRefusal = (result: ReturnType<typeof endowment.safeParse>, message: string) => {
+    const issue = issues(result).find((i) => i.message === message);
+    expect(issue, message).toBeDefined();
+    expect(issue!.path.join('.')).toMatch(RENDERED);
+  };
+
+  it('sends the bonus block, rows only for OWN_SCALE', () => {
+    const result = endowment.safeParse(withProfits());
+    expect(result.success).toBe(true);
+    expect(toApiRequest(result.data!).bonus).toEqual({
+      method: 'COMPOUND',
+      paidUpParticipates: false,
+      surrenderBasis: 'OWN_SCALE',
+      surrenderRows: [{ fromCompletedYears: 0, perMille: 400 }],
+    });
+  });
+
+  it('sends nothing for a version that is not with-profits', () => {
+    const result = endowment.safeParse({ ...valid(), payoutRows: [maturityRow] });
+    expect(toApiRequest(result.data!)).not.toHaveProperty('bonus');
+  });
+
+  it('refuses a category that cannot be with-profits', () => {
+    expectRefusal(publishVersionFormSchema('EDUCATION_SAVINGS').safeParse(withProfits()), 'A EDUCATION_SAVINGS product cannot be with-profits');
+  });
+
+  it('refuses a deposit and an account version', () => {
+    expectRefusal(endowment.safeParse(withProfits({ valueBasis: 'DEPOSIT' })), 'A fixed-term deposit cannot be with-profits');
+    expectRefusal(
+      endowment.safeParse(withProfits({ valueBasis: 'ACCOUNT' })),
+      'A version is valued either by an account or with profits, not both',
+    );
+  });
+
+  it('needs a bonus method', () => {
+    expectRefusal(
+      endowment.safeParse(withProfits({ bonusMethod: '' })),
+      'A with-profits version must state its bonus method (SIMPLE or COMPOUND)',
+    );
+  });
+
+  it('has no default surrender basis -- an empty one is refused', () => {
+    expectRefusal(
+      endowment.safeParse(withProfits({ bonusSurrenderBasis: '', bonusSurrenderRows: [] })),
+      'A with-profits version must state how attached bonuses count toward surrender (NONE, SUM_ASSURED_SCALE or OWN_SCALE)',
+    );
+  });
+
+  it('refuses rows on a basis that is not OWN_SCALE', () => {
+    expectRefusal(endowment.safeParse(withProfits({ bonusSurrenderBasis: 'NONE' })), 'Bonus surrender rows are only for OWN_SCALE');
+  });
+
+  it("refuses SUM_ASSURED_SCALE without the version's own cash-value scale", () => {
+    expectRefusal(
+      endowment.safeParse(withProfits({ bonusSurrenderBasis: 'SUM_ASSURED_SCALE', bonusSurrenderRows: [] })),
+      "SUM_ASSURED_SCALE needs the version's own cash-value scale",
+    );
+  });
+
+  it('needs at least one OWN_SCALE row', () => {
+    expectRefusal(
+      endowment.safeParse(withProfits({ bonusSurrenderRows: [] })),
+      'OWN_SCALE needs at least one row of bonus surrender values',
+    );
+  });
+
+  it('refuses a row before year 0, a repeated start, and a value outside 0-1000', () => {
+    expectRefusal(
+      endowment.safeParse(withProfits({ bonusSurrenderRows: [{ fromCompletedYears: '-1', perMille: '400' }] })),
+      'A bonus surrender row cannot start before year 0',
+    );
+    expectRefusal(
+      endowment.safeParse(withProfits({
+        bonusSurrenderRows: [{ fromCompletedYears: '0', perMille: '400' }, { fromCompletedYears: '0', perMille: '500' }],
+      })),
+      'Bonus surrender rows must each start at a different completed year',
+    );
+    expectRefusal(
+      endowment.safeParse(withProfits({ bonusSurrenderRows: [{ fromCompletedYears: '0', perMille: '1001' }] })),
+      'A bonus surrender value must be between 0 and 1000 per mille',
+    );
+  });
+
+  it('refuses a with-profits endowment with no maturity payout', () => {
+    expect(messages(endowment.safeParse(withProfits({ payoutRows: [] })))).toContain(
+      'A with-profits ENDOWMENT needs a MATURITY payout, or its bonuses could never be paid at term end',
+    );
+  });
+});

@@ -411,6 +411,8 @@ public class PolicyController {
         body.put("policyNumber", quote.policyNumber());
         body.put("quotedValue", Map.of("amount", quote.quotedValueAmount().toPlainString(), "currencyCode", quote.quotedValueCurrency()));
         body.put("quotedAt", quote.quotedAt().toString());
+        body.put("bonusSurrenderValue", Map.of("amount", quote.bonusSurrenderValueAmount().toPlainString(),
+            "currencyCode", quote.quotedValueCurrency()));
         return ResponseEntity.ok(body);
     }
 

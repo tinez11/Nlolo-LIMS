@@ -315,8 +315,22 @@ public interface ProductApi {
                          TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                          AccumulationPlan accumulationPlan, DepositPlan depositPlan, String publishedBy);
 
+    /**
+     * The fullest form (product step 4): also whether the version is WITH-PROFITS. Every other
+     * overload delegates here with {@link BonusPlan#none()}. Nine overloads now -- consolidating them
+     * into one command record is overdue, and is its own change.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                         AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan, String publishedBy);
+
     /** A version's deposit grid; {@link DepositPlan#none()} for any other version. Internal-only. */
     DepositPlan resolveDepositPlan(UUID productVersionId);
+
+    /** A version's with-profits terms; {@link BonusPlan#none()} for a non-participating one. Internal-only. */
+    BonusPlan resolveBonusPlan(UUID productVersionId);
 
     /**
      * A version's account terms; {@link AccumulationPlan#none()} for a SCALE version. Internal-only,

@@ -34,6 +34,10 @@ export function surrenderGates(
   if (!policy) return [];
   const status = policy.status;
   const live = latestRequest && IN_FLIGHT.includes(latestRequest.status ?? '');
+  // PolicyApiImpl.requestSurrender: a policy whose only surrender value is its attached bonuses
+  // still has one (product step 4), so either figure being positive passes.
+  const hasCash = isPositive(policy.cashValue?.amount);
+  const hasBonusValue = isPositive(quote?.bonusSurrenderValue?.amount);
   const gates: Gate[] = [
     {
       ok: SURRENDERABLE.includes(status ?? ''),
@@ -44,12 +48,14 @@ export function surrenderGates(
         : `This policy is ${label(status)}. Only an in-force, paid-up or lapsed policy can be surrendered.`,
     },
     {
-      ok: isPositive(policy.cashValue?.amount),
+      ok: hasCash || hasBonusValue,
       hard: true,
       title: 'The policy has cash value',
-      detail: isPositive(policy.cashValue?.amount)
+      detail: hasCash
         ? `${formatMoney(policy.cashValue)} of cash value stands behind it.`
-        : 'This policy has no cash value to surrender.',
+        : hasBonusValue
+          ? `No cash value, but its attached bonuses are worth ${formatMoney(quote?.bonusSurrenderValue)} on surrender.`
+          : 'This policy has no cash value to surrender.',
     },
     {
       ok: !live,

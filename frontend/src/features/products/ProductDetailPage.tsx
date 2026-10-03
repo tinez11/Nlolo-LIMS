@@ -4,6 +4,8 @@ import { useAuth } from 'react-oidc-context';
 import { canAuthorProducts, readIdentity } from '@/auth/claims';
 import { RateDeclarationsPanel } from './RateDeclarationsPanel';
 import { showsRates } from './rateDeclarationForm';
+import { BonusDeclarationsPanel } from '@/features/bonuses/BonusDeclarationsPanel';
+import { showsBonuses } from '@/features/bonuses/bonusDeclarationForm';
 import type { BaseRate, VersionRatingView } from '@/api/types';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Field } from '@/components/Field';
@@ -189,6 +191,12 @@ export function ProductDetailPage() {
         {showsRates(product.category, identity) && (
           <Panel title="Declared interest rates" subtitle="Credited on every account, never below its own version's guarantee">
             <RateDeclarationsPanel productId={productId} />
+          </Panel>
+        )}
+
+        {showsBonuses(product.category, identity) && (
+          <Panel title="Bonus declarations" subtitle="Attached to every with-profits policy on this product eligible on the valuation date">
+            <BonusDeclarationsPanel productId={productId} />
           </Panel>
         )}
 

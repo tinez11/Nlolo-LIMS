@@ -13,6 +13,7 @@
 import type { components as AuditComponents } from '@/types/api/audit';
 import type { components as BenefitPayoutComponents } from '@/types/api/benefitpayout';
 import type { components as AccumulationComponents } from '@/types/api/accumulation';
+import type { components as BonusComponents } from '@/types/api/bonus';
 import type { components as BillingComponents } from '@/types/api/billing';
 import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
@@ -509,6 +510,14 @@ export type DepositPeriodView = AccumulationComponents['schemas']['DepositPeriod
 export type MaturityInstructionView = AccumulationComponents['schemas']['MaturityInstruction'];
 export type AwaitingPayeeView = AccumulationComponents['schemas']['AwaitingPayee'];
 export type RateDeclarationView = AccumulationComponents['schemas']['RateDeclaration'];
+
+// With-profits bonuses (product step 4).
+export type BonusDeclarationView = BonusComponents['schemas']['BonusDeclaration'];
+export type PolicyBonusView = BonusComponents['schemas']['PolicyBonuses'];
+export type BonusEntryView = BonusComponents['schemas']['BonusEntry'];
+export type BonusOutcomeView = BonusComponents['schemas']['BonusOutcome'];
+export type BonusSettlementView = BonusComponents['schemas']['BonusSettlement'];
+export type BonusValuationView = BonusComponents['schemas']['BonusValuation'];
 
 /** The payout register's status filter, in the order a queue is worked. */
 export const INSTALMENT_STATUSES: readonly InstalmentStatus[] = [

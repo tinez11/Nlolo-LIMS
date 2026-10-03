@@ -37,6 +37,8 @@ import { PayoutsPanel } from '@/features/payouts/PayoutsPanel';
 import { AccountPanel } from '@/features/accounts/AccountPanel';
 import { StatementSection } from '@/features/accounts/StatementSection';
 import { useAccumulationStore } from '@/store/accumulationStore';
+import { PolicyBonusesPanel } from '@/features/bonuses/PolicyBonusesPanel';
+import { useBonusStore } from '@/store/bonusStore';
 import { ValueActions } from './ValueActions';
 
 /**
@@ -96,13 +98,20 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
   // as the endpoint is.
   const savingsAccount = useAccumulationStore((s) => s.account[policyNumber]);
   const loadAccount = useAccumulationStore((s) => s.loadAccount);
+  // Bonuses exist only for a policy on a with-profits version (product step 4); the read answers
+  // null for every other policy, exactly as the account's does.
+  const policyBonuses = useBonusStore((s) => s.policy[policyNumber]);
+  const loadBonuses = useBonusStore((s) => s.loadPolicy);
 
   useEffect(() => {
     if (!policyNumber) return;
     void loadDetail(policyNumber);
     void loadCoverage(policyNumber);
-    if (isStaff) void loadAccount(policyNumber);
-  }, [policyNumber, loadDetail, loadCoverage, loadAccount, isStaff]);
+    if (isStaff) {
+      void loadAccount(policyNumber);
+      void loadBonuses(policyNumber);
+    }
+  }, [policyNumber, loadDetail, loadCoverage, loadAccount, loadBonuses, isStaff]);
 
   const policy = detail.data;
 
@@ -368,6 +377,23 @@ export function PolicyDetailPage({ realm = 'staff' }: { realm?: Realm } = {}) {
                   <Panel title="Statement" subtitle="A period of the account, reconciled, and filed as a PDF on request">
                     <div className="p-4">
                       <StatementSection policyNumber={policyNumber} />
+                    </div>
+                  </Panel>
+                </div>
+              ),
+            },
+          ]
+        : []),
+      ...(policyBonuses?.data
+        ? [
+            {
+              value: 'bonuses',
+              label: 'Bonuses',
+              content: (
+                <div className="pt-5">
+                  <Panel title="Bonuses" subtitle="Every bonus attached to this policy, why each declaration did or did not attach, and what was paid out">
+                    <div className="p-4">
+                      <PolicyBonusesPanel policyNumber={policyNumber} />
                     </div>
                   </Panel>
                 </div>

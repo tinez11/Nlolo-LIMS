@@ -334,6 +334,13 @@ paths:
                   policyNumber: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
                   quotedValue: { $ref: 'openapi-common.yaml#/components/schemas/Money' }
                   quotedAt: { type: string, format: date-time }
+                  bonusSurrenderValue:
+                    description: >
+                      What attached bonuses add, on the version's stated basis. Already included in
+                      quotedValue; shown on its own so the console can say what bonuses add. Zero for a
+                      version that is not with-profits or whose bonus surrender basis is NONE.
+                    allOf:
+                      - $ref: 'openapi-common.yaml#/components/schemas/Money'
   /policies/{policyNumber}/surrender:
     post:
       summary: Request a customer surrender

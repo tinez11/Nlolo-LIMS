@@ -653,6 +653,13 @@ public interface PolicyApi {
     void restateAccountValue(String policyNumber, java.math.BigDecimal value);
 
     /**
+     * Restate a with-profits policy's attached-bonus total (product step 4). Called ONLY by bonus,
+     * after every entry: the bonus ledger is the truth and this is its projection, read by the
+     * surrender quote -- policy cannot call bonus, which would be a cycle.
+     */
+    void restateAttachedBonus(String policyNumber, java.math.BigDecimal total);
+
+    /**
      * Make a savings policy paid-up: the customer stops paying, cover reduces, no premium falls due
      * again (guide §21.3). Reduces the sum assured to the paid-up figure -- proportionate to the
      * premium term completed, or from the product's paid-up table -- restates the coverage a claim

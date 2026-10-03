@@ -1,0 +1,8 @@
+package tz.co.nlolo.lifeplatform.product.infrastructure;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import tz.co.nlolo.lifeplatform.product.domain.VersionBonusTerms;
+
+import java.util.UUID;
+
+public interface VersionBonusTermsRepository extends JpaRepository<VersionBonusTerms, UUID> {}

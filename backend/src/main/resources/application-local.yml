@@ -26,3 +26,6 @@ accumulation:
   statement-interval-ms: 30000
   # A fixed-term deposit's maturity run: hourly elsewhere, seconds here for the e2e suite.
   deposit-maturity-interval-ms: 10000
+# Product step 4: an approved bonus declaration attaches hourly elsewhere, seconds here for e2e.
+bonus:
+  declaration-interval-ms: 10000

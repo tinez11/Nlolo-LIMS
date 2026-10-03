@@ -135,6 +135,20 @@ export const STATUS_MAPS = {
     WITHDRAWN: 'neutral',
   },
 
+  // bonus/api/DeclarationStatus.java.
+  bonusDeclaration: {
+    PROPOSED: 'pending',
+    APPROVED: 'active',
+    WITHDRAWN: 'neutral',
+  },
+
+  // bonus/api/OutcomeKind.java: what one declaration did to one policy.
+  bonusOutcome: {
+    ATTACHED: 'success',
+    NOT_ELIGIBLE: 'neutral',
+    NOTHING_DUE: 'neutral',
+  },
+
   // claims/api/ClaimStatus.java
   claim: {
     REGISTERED: 'pending',

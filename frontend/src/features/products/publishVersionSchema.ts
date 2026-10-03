@@ -656,6 +656,83 @@ function validateAccumulation(category: ProductCategory, v: AccumulationFields &
   }
 }
 
+// ---- With-profits (product step 4) -------------------------------------------------------------
+
+const bonusSurrenderRowSchema = z.object({ fromCompletedYears: z.string().trim(), perMille: z.string().trim() });
+export type BonusSurrenderRowValues = z.infer<typeof bonusSurrenderRowSchema>;
+
+export function blankBonusSurrenderRow(): BonusSurrenderRowValues {
+  return { fromCompletedYears: '', perMille: '' };
+}
+
+/** `BonusPlanValidator.CATEGORIES`. */
+export const WITH_PROFITS_CATEGORIES: readonly ProductCategory[] = ['ENDOWMENT', 'WHOLE_LIFE'];
+
+interface BonusFields {
+  withProfits: boolean;
+  bonusMethod: string;
+  bonusSurrenderBasis: string;
+  bonusSurrenderRows: BonusSurrenderRowValues[];
+  valueBasis: string;
+  payoutRows: PayoutRowValues[];
+}
+
+/**
+ * `BonusPlanValidator`, rule for rule and message for message. The surrender basis has NO default:
+ * what attached bonuses add to a surrender is a contract term the version must state.
+ */
+function validateBonus(category: ProductCategory, v: BonusFields & CashValueFields, ctx: z.RefinementCtx) {
+  if (!v.withProfits) return;
+  const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: 'custom', path, message });
+  if (!WITH_PROFITS_CATEGORIES.includes(category)) {
+    issue(['withProfits'], `A ${category} product cannot be with-profits`);
+    return;
+  }
+  if (v.valueBasis === 'DEPOSIT') {
+    issue(['withProfits'], 'A fixed-term deposit cannot be with-profits');
+    return;
+  }
+  if (v.valueBasis === 'ACCOUNT') {
+    issue(['withProfits'], 'A version is valued either by an account or with profits, not both');
+    return;
+  }
+  if (v.bonusMethod === '') {
+    issue(['bonusMethod'], 'A with-profits version must state its bonus method (SIMPLE or COMPOUND)');
+  }
+  if (v.bonusSurrenderBasis === '') {
+    issue(
+      ['bonusSurrenderBasis'],
+      'A with-profits version must state how attached bonuses count toward surrender (NONE, SUM_ASSURED_SCALE or OWN_SCALE)',
+    );
+  } else if (v.bonusSurrenderBasis !== 'OWN_SCALE') {
+    if (v.bonusSurrenderRows.length > 0) {
+      issue(['bonusSurrenderRows'], 'Bonus surrender rows are only for OWN_SCALE');
+    }
+    if (v.bonusSurrenderBasis === 'SUM_ASSURED_SCALE' && !hasCashValue(v)) {
+      issue(['bonusSurrenderBasis'], "SUM_ASSURED_SCALE needs the version's own cash-value scale");
+    }
+  } else if (v.bonusSurrenderRows.length === 0) {
+    issue(['bonusSurrenderRows'], 'OWN_SCALE needs at least one row of bonus surrender values');
+  } else {
+    const starts = new Set<string>();
+    v.bonusSurrenderRows.forEach((row, i) => {
+      if (!/^\d+$/.test(row.fromCompletedYears)) {
+        issue(['bonusSurrenderRows', i, 'fromCompletedYears'], 'A bonus surrender row cannot start before year 0');
+      } else if (starts.has(String(Number(row.fromCompletedYears)))) {
+        issue(['bonusSurrenderRows', i, 'fromCompletedYears'], 'Bonus surrender rows must each start at a different completed year');
+      } else {
+        starts.add(String(Number(row.fromCompletedYears)));
+      }
+      if (!isNumber(row.perMille) || Number(row.perMille) < 0 || Number(row.perMille) > 1000) {
+        issue(['bonusSurrenderRows', i, 'perMille'], 'A bonus surrender value must be between 0 and 1000 per mille');
+      }
+    });
+  }
+  if (category === 'ENDOWMENT' && !v.payoutRows.some((r) => r.kind === 'MATURITY')) {
+    issue(['withProfits'], 'A with-profits ENDOWMENT needs a MATURITY payout, or its bonuses could never be paid at term end');
+  }
+}
+
 // ---- Fixed-term deposit (2026-10-02) ----------------------------------------------------------
 
 const depositTermSchema = z.object({ months: z.string().trim() });
@@ -942,11 +1019,18 @@ export function publishVersionFormSchema(category: ProductCategory) {
     // A fixed-term deposit (2026-10-02): rates by band x term, each for the TERM.
     depositTerms: z.array(depositTermSchema),
     depositBands: z.array(depositBandSchema),
+    // With-profits (product step 4). Sent only when ticked; the basis select starts empty.
+    withProfits: z.boolean(),
+    bonusMethod: z.string().trim(),
+    bonusPaidUpParticipates: z.boolean(),
+    bonusSurrenderBasis: z.string().trim(),
+    bonusSurrenderRows: z.array(bonusSurrenderRowSchema),
   }).superRefine((values, ctx) => {
     validateCashValue(category, values, ctx);
     validatePayoutPlan(category, values, ctx);
     validateAccumulation(category, values, ctx);
     validateDeposit(category, values, ctx);
+    validateBonus(category, values, ctx);
 
     /*
       The two modes, mirroring ProductApiImpl.publishVersion exactly.
@@ -1099,6 +1183,11 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     accountCharges: [],
     depositTerms: [],
     depositBands: [],
+    withProfits: false,
+    bonusMethod: '',
+    bonusPaidUpParticipates: false,
+    bonusSurrenderBasis: '',
+    bonusSurrenderRows: [],
   };
 }
 
@@ -1252,6 +1341,21 @@ export function toApiRequest(values: PublishVersionFormValues): ProductVersionSp
           transferAllocationPercent: Number(c.transferAllocationPercent),
           monthlyPolicyFee: Number(c.monthlyPolicyFee),
         })),
+      },
+    }),
+    // Product step 4. Omitted entirely unless ticked -- absent IS a non-participating version.
+    ...(values.withProfits && {
+      bonus: {
+        method: values.bonusMethod as 'SIMPLE' | 'COMPOUND',
+        paidUpParticipates: values.bonusPaidUpParticipates,
+        surrenderBasis: values.bonusSurrenderBasis as 'NONE' | 'SUM_ASSURED_SCALE' | 'OWN_SCALE',
+        surrenderRows:
+          values.bonusSurrenderBasis === 'OWN_SCALE'
+            ? values.bonusSurrenderRows.map((r) => ({
+                fromCompletedYears: Number(r.fromCompletedYears),
+                perMille: Number(r.perMille),
+              }))
+            : [],
       },
     }),
     // A fixed-term deposit: the grid flattened to one row per cell. No accumulation block -- the

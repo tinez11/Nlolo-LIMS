@@ -216,6 +216,29 @@ SAVE_VERSION_RESP=$(curl -sfi -X POST "$API/products/$SAVE_PRODUCT_ID/versions" 
   }')
 echo "$SAVE_VERSION_RESP" | head -1
 
+# A with-profits endowment (product step 4): the sum assured at maturity plus whatever bonuses are
+# declared on it, compound, with attached bonuses worth 400 per mille on surrender. No declaration
+# is seeded -- proposing one and having a second person approve it is what the product page is for,
+# and one approved declaration per valuation date means a seeded one would block that on day one.
+WP_PRODUCT_JSON=$(api "$STAFF_ADMIN_TOKEN" POST "/products" \
+  '{"productCode":"WP-ENDOW-01","productName":"Nlolo Faida Endowment","category":"ENDOWMENT","defaultCurrency":"TZS"}')
+WP_PRODUCT_ID=$(jsonval "$WP_PRODUCT_JSON" productId)
+echo "withProfitsProductId=$WP_PRODUCT_ID"
+
+WP_VERSION_RESP=$(curl -sfi -X POST "$API/products/$WP_PRODUCT_ID/versions" \
+  -H "Authorization: Bearer $STAFF_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $(uuid)" -d '{
+    "ifrsMeasurementModel":"GMM","effectiveDate":"2020-01-01",
+    "payoutTerms":{"freeLookDays":15},
+    "payoutSchedule":[{"kind":"MATURITY","amountBasis":"PERCENT_OF_SA","amountValue":100}],
+    "tiraFiling":{"reference":"TIRA/DEMO/WP/0001","approvalDate":"2020-01-01"},
+    "ratingTable":[{"factorType":"AGE","band":"18-60","multiplier":1.0,"ageFrom":18,"ageTo":60},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+    "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"},{"benefitType":"MATURITY","calculationMethod":"SUM_ASSURED"}],
+    "bonus":{"method":"COMPOUND","paidUpParticipates":false,"surrenderBasis":"OWN_SCALE",
+             "surrenderRows":[{"fromCompletedYears":0,"perMille":400}]}
+  }')
+echo "$WP_VERSION_RESP" | head -1
+
 # A CREDIT_LIFE product, and a lender to hold a scheme on it.
 #
 # Neither existed here, and the consequence was not cosmetic: the console's "Credit-life scheme"
