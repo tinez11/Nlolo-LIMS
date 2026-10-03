@@ -8,6 +8,7 @@ import {
   Landmark,
   MessageSquare,
   Package,
+  Percent,
   Receipt,
   ScrollText,
   Send,
@@ -66,6 +67,7 @@ import {
   PaymentRunsPage,
   PaymentRunPage,
   MaturitiesPage,
+  WithholdingRulesPage,
 } from '@/lazyPages';
 
 /**
@@ -453,6 +455,12 @@ const STAFF_SCREENS: Screen[] = [
     reach: { group: 'finance', label: 'Payment runs', icon: Send },
   },
   { path: 'payment-runs/:paymentRunId', element: <PaymentRunPage />, reach: 'drill-in' },
+  // Tax withheld from payouts (product step 5): finance proposes a rule, a second person approves.
+  {
+    path: 'withholding-rules',
+    element: <WithholdingRulesPage />,
+    reach: { group: 'finance', label: 'Withholding rules', icon: Percent },
+  },
   // A policy read, but finance's question: it is how the money leaving over the next quarter is
   // planned for, and the endpoint is FINANCE_OFFICER/ADMIN only to match.
   {

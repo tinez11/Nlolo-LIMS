@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ProductCategory, ProductVersionSpec } from '@/api/types';
 import { AMOUNT_PATTERN } from '@/lib/money';
 import { ISO_DATE_PATTERN } from '@/lib/patterns';
+import { annuityFieldsShape, blankAnnuityFields, toAnnuityRequest, validateAnnuity } from './annuitySchema';
 
 /**
  * Zod schema for publishing a product version, mirroring `ProductApiImpl.publishVersion`
@@ -423,6 +424,7 @@ export const FREE_LOOK_CATEGORIES: readonly ProductCategory[] = [
   'ENDOWMENT',
   'WHOLE_LIFE',
   'EDUCATION_SAVINGS',
+  'ANNUITY',
 ];
 
 /** `PayoutPlanValidator.SCHEDULED` -- the two that pay while the life assured lives. */
@@ -1025,12 +1027,15 @@ export function publishVersionFormSchema(category: ProductCategory) {
     bonusPaidUpParticipates: z.boolean(),
     bonusSurrenderBasis: z.string().trim(),
     bonusSurrenderRows: z.array(bonusSurrenderRowSchema),
+    // An ANNUITY version's forms, rate grids and frequencies (product step 5); see annuitySchema.
+    ...annuityFieldsShape,
   }).superRefine((values, ctx) => {
     validateCashValue(category, values, ctx);
     validatePayoutPlan(category, values, ctx);
     validateAccumulation(category, values, ctx);
     validateDeposit(category, values, ctx);
     validateBonus(category, values, ctx);
+    validateAnnuity(category, values, ctx);
 
     /*
       The two modes, mirroring ProductApiImpl.publishVersion exactly.
@@ -1188,6 +1193,7 @@ export function blankPublishVersionForm(): PublishVersionFormInput {
     bonusPaidUpParticipates: false,
     bonusSurrenderBasis: '',
     bonusSurrenderRows: [],
+    ...blankAnnuityFields(),
   };
 }
 
@@ -1227,8 +1233,10 @@ export function blankFundRow(): PublishVersionFormInput['fundDefinitions'][numbe
   return { fundCode: '', currentNav: 0 };
 }
 
-export function toApiRequest(values: PublishVersionFormValues): ProductVersionSpec {
+export function toApiRequest(values: PublishVersionFormValues, category?: ProductCategory): ProductVersionSpec {
   return {
+    // Product step 5. Sent only on an ANNUITY product, where it is required; refused on any other.
+    ...(category === 'ANNUITY' && { annuity: toAnnuityRequest(values) }),
     ifrsMeasurementModel: values.ifrsMeasurementModel,
     effectiveDate: values.effectiveDate,
     retirementDate: values.retirementDate === '' ? null : values.retirementDate,

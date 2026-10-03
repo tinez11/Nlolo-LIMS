@@ -42,6 +42,8 @@ import { Input, Select } from '@/components/ui/input';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { InlineError } from '@/components/InlineError';
 import { humanizeStatus } from '@/lib/status';
+import { blankAnnuityFields } from './annuitySchema';
+import { AnnuityTermsSection } from './AnnuityTermsSection';
 
 /**
  * An example shaped like the factor it belongs to.
@@ -168,6 +170,7 @@ export function PublishVersionForm({
       bonusPaidUpParticipates: false,
       bonusSurrenderBasis: '',
       bonusSurrenderRows: [],
+      ...blankAnnuityFields(),
     },
   });
   const bonusSurrenderRows = useFieldArray({ control, name: 'bonusSurrenderRows' });
@@ -224,7 +227,7 @@ export function PublishVersionForm({
   const [pending, setPending] = useState<PublishVersionFormValues | null>(null);
 
   async function onSubmit(values: PublishVersionFormValues) {
-    await publishVersion(productId, toApiRequest(values));
+    await publishVersion(productId, toApiRequest(values, category));
     if (useProductStore.getState().publishing[productId]?.status === 'success') {
       onPublished();
     }
@@ -1060,6 +1063,9 @@ export function PublishVersionForm({
         with no default, because what bonuses add to a surrender is a contract term the version
         must state.
       */}
+      {/* Product step 5: required on an ANNUITY product, and offered on no other. */}
+      {category === 'ANNUITY' && <AnnuityTermsSection register={register} control={control} errors={errors} />}
+
       {WITH_PROFITS_CATEGORIES.includes(category) && valueBasis === 'SCALE' && (
         <div className="rounded-md border border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">With profits (optional)</p>

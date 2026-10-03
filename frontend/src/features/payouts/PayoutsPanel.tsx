@@ -14,6 +14,7 @@ const KIND_LABEL: Record<PayoutKind, string> = {
   MATURITY: 'Maturity',
   INCOME: 'Income',
   RETURN_OF_PREMIUM: 'Premium return',
+  ANNUITY: 'Annuity income',
 };
 
 /**

@@ -32,8 +32,29 @@ export const decideFormSchema = z
       .trim()
       .min(1, 'Say why. A decision nobody explained is one nobody can review')
       .max(500, 'Keep the reason under 500 characters'),
+    // An annuity case's light path (product step 5). `annuity` is set by the panel from the case,
+    // never by the underwriter; the confirmation is theirs.
+    annuity: z.boolean(),
+    ageEvidenceConfirmed: z.boolean(),
   })
   .superRefine((values, ctx) => {
+    // Mirrors UnderwritingApiImpl's annuity checks, in its words.
+    if (values.annuity) {
+      if (values.outcome === 'LOADED' || values.outcome === 'POSTPONED') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['outcome'],
+          message: 'An annuity is accepted or declined; it is not loaded or postponed',
+        });
+      }
+      if (values.outcome === 'ACCEPT' && !values.ageEvidenceConfirmed) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['ageEvidenceConfirmed'],
+          message: 'An annuity is accepted only once proof of age is confirmed',
+        });
+      }
+    }
     if (values.outcome === 'LOADED') {
       if (values.loadingPercent === '') {
         ctx.addIssue({
@@ -77,7 +98,7 @@ export const decideFormSchema = z
 export type DecideFormValues = z.output<typeof decideFormSchema>;
 export type DecideFormInput = z.input<typeof decideFormSchema>;
 
-export function blankDecideForm(): DecideFormInput {
+export function blankDecideForm(annuity = false): DecideFormInput {
   return {
     // Blank would be the honest default, but `outcome` is an enum with no empty member and
     // the form must open on something. ACCEPT is the commonest outcome and, crucially, is
@@ -86,6 +107,8 @@ export function blankDecideForm(): DecideFormInput {
     outcome: 'ACCEPT',
     loadingPercent: '',
     reason: '',
+    annuity,
+    ageEvidenceConfirmed: false,
   };
 }
 
@@ -137,5 +160,7 @@ export function toApiRequest(values: DecideFormValues): DecideRequest {
     // Absent, not null and not zero, on every outcome but LOADED. The server refuses a
     // non-null loading on any other outcome, mirroring the database CHECK.
     ...(values.outcome === 'LOADED' ? { loadingPercent: Number(values.loadingPercent) } : {}),
+    // Sent only on an annuity case; the server ignores it on every other.
+    ...(values.annuity ? { ageEvidenceConfirmed: values.ageEvidenceConfirmed } : {}),
   };
 }

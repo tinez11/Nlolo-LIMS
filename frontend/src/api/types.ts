@@ -14,6 +14,7 @@ import type { components as AuditComponents } from '@/types/api/audit';
 import type { components as BenefitPayoutComponents } from '@/types/api/benefitpayout';
 import type { components as AccumulationComponents } from '@/types/api/accumulation';
 import type { components as BonusComponents } from '@/types/api/bonus';
+import type { components as AnnuityComponents } from '@/types/api/annuity';
 import type { components as BillingComponents } from '@/types/api/billing';
 import type { components as ClaimsComponents } from '@/types/api/claims';
 import type { components as CommonComponents } from '@/types/api/common';
@@ -518,6 +519,15 @@ export type BonusEntryView = BonusComponents['schemas']['BonusEntry'];
 export type BonusOutcomeView = BonusComponents['schemas']['BonusOutcome'];
 export type BonusSettlementView = BonusComponents['schemas']['BonusSettlement'];
 export type BonusValuationView = BonusComponents['schemas']['BonusValuation'];
+
+// Immediate annuities and tax withholding (product step 5).
+export type AnnuityContractView = AnnuityComponents['schemas']['AnnuityContract'];
+export type AnnuityQuoteView = AnnuityComponents['schemas']['AnnuityQuote'];
+export type AnnuityQuoteRequest = AnnuityComponents['schemas']['AnnuityQuoteRequest'];
+export type AnnuityTermsView = ProductComponents['schemas']['AnnuityTerms'];
+export type AnnuitySpec = NonNullable<ProductVersionSpec['annuity']>;
+export type AnnuityChoiceView = UnderwritingComponents['schemas']['AnnuityChoice'];
+export type WithholdingRuleView = BenefitPayoutComponents['schemas']['WithholdingRule'];
 
 /** The payout register's status filter, in the order a queue is worked. */
 export const INSTALMENT_STATUSES: readonly InstalmentStatus[] = [

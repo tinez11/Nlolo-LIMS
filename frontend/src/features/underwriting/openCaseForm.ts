@@ -97,7 +97,36 @@ export const openCaseFormSchema = z.object({
    * than an interpretation, and one schema is the only way to guarantee that.
    */
   beneficiaries: beneficiaryListSchema,
+
+  /**
+   * An annuity purchase (product step 5). `isAnnuity` and `annuityJointRequired` are set by the page
+   * from the product and the chosen form, never typed. The sum assured above is the purchase price.
+   */
+  isAnnuity: z.boolean(),
+  annuityJointRequired: z.boolean(),
+  annuityFormCode: z.string().trim(),
+  annuityFrequency: z.string().trim(),
+  annuityJointLifePartyId: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || UUID_PATTERN.test(v), 'Not a valid party id'),
 }).superRefine((values, ctx) => {
+  // Mirrors UnderwritingApiImpl.recordAnnuityChoice, in its words where it has them.
+  if (values.isAnnuity) {
+    if (values.annuityFormCode === '') {
+      ctx.addIssue({ code: 'custom', path: ['annuityFormCode'], message: 'Choose the annuity form' });
+    }
+    if (values.annuityFrequency === '') {
+      ctx.addIssue({ code: 'custom', path: ['annuityFrequency'], message: 'Choose how often the income is paid' });
+    }
+    if (values.annuityJointRequired && values.annuityJointLifePartyId === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['annuityJointLifePartyId'],
+        message: `Form ${values.annuityFormCode} is joint-life: name the joint life`,
+      });
+    }
+  }
   // Mirrors chk_proposal_paying_term_within_term, and policy's own
   // policy_premium_paying_term_within_term behind it: premiums may be paid for a shorter time
   // than cover runs (a limited-payment policy), never for longer.
@@ -139,10 +168,40 @@ export function blankOpenCaseForm(): OpenCaseFormInput {
     // applicant never stated, and it is the value the issued policy is billed on.
     premiumFrequency: '',
     beneficiaries: [],
+    isAnnuity: false,
+    annuityJointRequired: false,
+    annuityFormCode: '',
+    annuityFrequency: '',
+    annuityJointLifePartyId: '',
   };
 }
 
 export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
+  // An annuity has no term and no premium frequency: it is bought with one single premium, the
+  // purchase price, and pays until death. The choice travels instead, and only then.
+  if (values.isAnnuity) {
+    return {
+      ...baseRequest(values),
+      annuityChoice: {
+        formCode: values.annuityFormCode,
+        frequency: values.annuityFrequency as NonNullable<NonNullable<OpenCaseRequest['annuityChoice']>['frequency']>,
+        jointLifePartyId: values.annuityJointRequired ? values.annuityJointLifePartyId : null,
+      },
+    };
+  }
+  return {
+    ...baseRequest(values),
+    // Same omit-when-blank rule as everything above. A blank term is not zero months and not
+    // a null to send: it means this product does not term, or the applicant did not say.
+    ...(values.requestedTermMonths ? { requestedTermMonths: Number(values.requestedTermMonths) } : {}),
+    ...(values.premiumPayingTermMonths
+      ? { premiumPayingTermMonths: Number(values.premiumPayingTermMonths) }
+      : {}),
+    ...(values.premiumFrequency ? { premiumFrequency: values.premiumFrequency } : {}),
+  };
+}
+
+function baseRequest(values: OpenCaseFormValues): OpenCaseRequest {
   return {
     applicantPartyId: values.applicantPartyId.trim(),
     productId: values.productId,
@@ -160,13 +219,6 @@ export function toApiRequest(values: OpenCaseFormValues): OpenCaseRequest {
     ...(values.proposedCommencementDate
       ? { proposedCommencementDate: values.proposedCommencementDate }
       : {}),
-    // Same omit-when-blank rule as everything above. A blank term is not zero months and not
-    // a null to send: it means this product does not term, or the applicant did not say.
-    ...(values.requestedTermMonths ? { requestedTermMonths: Number(values.requestedTermMonths) } : {}),
-    ...(values.premiumPayingTermMonths
-      ? { premiumPayingTermMonths: Number(values.premiumPayingTermMonths) }
-      : {}),
-    ...(values.premiumFrequency ? { premiumFrequency: values.premiumFrequency } : {}),
     // Omitted entirely when nobody was nominated, rather than sent as []. Both mean the same
     // thing to the backend, but an absent key says "not stated on this proposal" where an
     // empty array reads as "stated, and it is nobody".

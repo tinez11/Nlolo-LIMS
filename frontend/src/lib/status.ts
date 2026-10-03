@@ -40,6 +40,8 @@ export const STATUS_MAPS = {
     // inception (product step 2). Neutral, beside NOT_TAKEN_UP: nobody lost cover they were
     // relying on, and exercising a statutory right is not a failure.
     CANCELLED_FREE_LOOK: 'neutral',
+    // An annuity that has paid everything it ever will (product step 5): finished, not failed.
+    ANNUITY_ENDED: 'neutral',
   },
 
   // policy.surrender_request.status (product step 1). The same five-state shape the payment rail
@@ -147,6 +149,24 @@ export const STATUS_MAPS = {
     ATTACHED: 'success',
     NOT_ELIGIBLE: 'neutral',
     NOTHING_DUE: 'neutral',
+  },
+
+  // annuity/api/ContractStatus.java (product step 5).
+  annuityContract: {
+    AWAITING_PAYMENT: 'pending',
+    IN_PAYMENT: 'active',
+    SURVIVOR: 'active',
+    GUARANTEE: 'warning',
+    ENDED: 'neutral',
+    CANCELLED: 'neutral',
+    LOCK_FAILED: 'danger',
+  },
+
+  // benefitpayout withholding_rule.status (product step 5).
+  withholdingRule: {
+    PROPOSED: 'pending',
+    APPROVED: 'active',
+    WITHDRAWN: 'neutral',
   },
 
   // claims/api/ClaimStatus.java
