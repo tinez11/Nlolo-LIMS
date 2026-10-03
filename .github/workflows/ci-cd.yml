@@ -126,7 +126,7 @@ jobs:
           # Every V*.sql per module in version order, NOT just V1 -- this loop used to
           # hardcode V1__create_<mod>_schema.sql, so refdata/V2 (runtime reference data) and
           # policyloan/V2 (partition tenant-control event trigger) were validated by nothing.
-          for mod in party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata benefitpayout accumulation bonus; do
+          for mod in party product underwriting policy policyloan billing claims payment audit distribution reinsurance finaccounting regreporting communication document refdata benefitpayout accumulation bonus annuity; do
             for f in $(ls db-migrations/$mod/V*.sql 2>/dev/null | sort -V); do
               echo "Applying $f"
               psql -h localhost -U postgres -v ON_ERROR_STOP=1 -f "$f"

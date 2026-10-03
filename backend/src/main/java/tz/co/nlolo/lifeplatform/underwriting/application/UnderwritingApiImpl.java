@@ -670,8 +670,13 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     @Override
     @Transactional(readOnly = true)
     public java.util.Optional<AnnuityChoice> annuityChoice(UUID caseId) {
-        UnderwritingCase underwritingCase = findOrThrow(caseId, TenantContext.get());
-        if (!productApi.resolveAnnuityPlan(underwritingCase.getProductVersionId()).annuity()) {
+        // Empty, never a throw, for a case this tenant does not have: callers (the annuity module's
+        // issue listener) ask inside their own transaction, and an exception thrown through this
+        // transactional method would mark theirs rollback-only even if they caught it.
+        java.util.Optional<UnderwritingCase> underwritingCase =
+            underwritingCaseRepository.findByCaseIdAndTenantId(caseId, TenantContext.get());
+        if (underwritingCase.isEmpty()
+                || !productApi.resolveAnnuityPlan(underwritingCase.get().getProductVersionId()).annuity()) {
             return java.util.Optional.empty();
         }
         return annuityChoiceRepository.findById(caseId).map(AnnuityChoiceEntity::toChoice);

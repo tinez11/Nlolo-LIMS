@@ -12,6 +12,7 @@ import tz.co.nlolo.lifeplatform.claims.domain.ExclusionWindows;
 import tz.co.nlolo.lifeplatform.policy.api.ExclusionPeriodsView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimStatus;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimType;
+import tz.co.nlolo.lifeplatform.claims.api.DeathClaimDetails;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimValidationException;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimView;
 import tz.co.nlolo.lifeplatform.claims.api.ClaimsApi;
@@ -24,6 +25,7 @@ import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimAssessmentRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimEvidenceRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.ClaimRepository;
 import tz.co.nlolo.lifeplatform.claims.infrastructure.SettlementDecisionRepository;
+import tz.co.nlolo.lifeplatform.annuity.api.AnnuityApi;
 import tz.co.nlolo.lifeplatform.benefitpayout.api.BenefitPayoutApi;
 import tz.co.nlolo.lifeplatform.document.api.DocumentApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
@@ -43,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +75,8 @@ public class ClaimsApiImpl implements ClaimsApi {
     private final UnderwritingApi underwritingApi;
     private final DocumentApi documentApi;
     private final BenefitPayoutApi benefitPayoutApi;
+    /** Product step 5: an annuity's death claim is valued by the annuity module. */
+    private final AnnuityApi annuityApi;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
@@ -80,7 +85,9 @@ public class ClaimsApiImpl implements ClaimsApi {
                           ClaimEvidenceRepository claimEvidenceRepository, PolicyApi policyApi,
                           PartyApi partyApi, UnderwritingApi underwritingApi, DocumentApi documentApi,
                           BenefitPayoutApi benefitPayoutApi,
-                          ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager) {
+                          ApplicationEventPublisher eventPublisher, PlatformTransactionManager transactionManager,
+                          AnnuityApi annuityApi) {
+        this.annuityApi = annuityApi;
         this.claimRepository = claimRepository;
         this.claimAssessmentRepository = claimAssessmentRepository;
         this.settlementDecisionRepository = settlementDecisionRepository;
@@ -269,7 +276,8 @@ public class ClaimsApiImpl implements ClaimsApi {
         //     claim per policy. A rejected claim does not count -- it can be reopened, and a new
         //     claim is the other legitimate path after a refusal.
         if (request.claimType() == ClaimType.DEATH) {
-            refuseASecondDeathClaim(tenantId, request.policyNumber(), request.policyMemberId(), null);
+            refuseASecondDeathClaim(tenantId, request.policyNumber(), request.policyMemberId(), null,
+                request.details() instanceof DeathClaimDetails d ? d.deceasedPartyId() : null);
         }
 
         // 4. Contestability. Fails CLOSED on an unknown answer, or on any failure reaching
@@ -388,9 +396,12 @@ public class ClaimsApiImpl implements ClaimsApi {
             ClaimableCoverView claimable = policyApi.claimableCover(
                 claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
                 claim.getClaimType().name());
-            if (recommendedAmount.compareTo(claimable.amount()) > 0) {
+            // ceilingFor, the one figure approval enforces (step 4 R1) -- an annuity's death is
+            // bounded by its capital refund, not by the purchase price (product step 5).
+            BigDecimal ceiling = ceilingFor(claim, claimable);
+            if (recommendedAmount.compareTo(ceiling) > 0) {
                 throw new ClaimValidationException("Recommended amount " + recommendedAmount
-                    + " exceeds the " + claimable.amount() + " this claim is covered for");
+                    + " exceeds the " + ceiling + " this claim is covered for");
             }
         }
 
@@ -449,7 +460,17 @@ public class ClaimsApiImpl implements ClaimsApi {
      * account-valued policy is valued then, not on the day the claim is approved); claims keeps the
      * ceiling it already had for every policy whose version says none of them.
      */
+    /** Who a death claim says died: the named life on a joint annuity, else null -- the life assured. */
+    private static UUID deceasedOf(Claim claim) {
+        return claim.getDetails() instanceof DeathClaimDetails d ? d.deceasedPartyId() : null;
+    }
+
     private BigDecimal ceilingFor(Claim claim, ClaimableCoverView claimable) {
+        // An annuity's death (product step 5) pays the capital-protection refund on the last death,
+        // or nothing: the annuity module, which holds the contract, values it as at the death.
+        if (claim.getClaimType() == ClaimType.DEATH && annuityApi.isAnnuity(claim.getPolicyNumber())) {
+            return annuityApi.deathValue(claim.getPolicyNumber(), deceasedOf(claim), claim.getDateOfEvent()).capitalRefund();
+        }
         return claim.getClaimType() == ClaimType.DEATH
             ? benefitPayoutApi.deathBenefitCeiling(claim.getPolicyNumber(), claimable.amount(), claim.getDateOfEvent())
             : claimable.amount();
@@ -502,10 +523,15 @@ public class ClaimsApiImpl implements ClaimsApi {
             // claim on this life refuses this approval, whichever of them was registered first:
             // choosing between them is a person's decision, made by rejecting one.
             if (claim.getClaimType() == ClaimType.DEATH) {
-                refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+                refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId, deceasedOf(claim));
             }
             PolicyView policy = policyApi.getPolicy(claim.getPolicyNumber());
             boolean creditLife = "CREDIT_LIFE".equals(policy.productCategory());
+            // An annuity's death that pays nothing (product step 5): a verified death on a life-only
+            // form, or a guarantee that continues instead of a lump sum. Settled at approval, with no
+            // payee and no payment -- asking the rail to pay zero would only fail.
+            boolean annuity = claim.getClaimType() == ClaimType.DEATH && annuityApi.isAnnuity(claim.getPolicyNumber());
+            boolean nothingToPay = annuity && approvedAmount != null && approvedAmount.signum() == 0;
             if (creditLife) {
                 // ON CREDIT LIFE THERE IS NO PAYEE TO CHOOSE. The insurer deals only with the
                 // lender (client answer 3.6), and the lender is the claimant and the policyholder
@@ -522,10 +548,10 @@ public class ClaimsApiImpl implements ClaimsApi {
                 // pay. The account itself is held by finance, out of band, as the spec leaves it.
                 payeeRef = partyApi.getParty(policy.policyholderPartyId()).displayName()
                     + " — policyholder of " + claim.getPolicyNumber();
-            } else if (payeeRef == null || payeeRef.isBlank()) {
+            } else if ((payeeRef == null || payeeRef.isBlank()) && !nothingToPay) {
                 throw new ClaimValidationException("A payee reference is required to approve a claim");
             }
-            if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            if ((idempotencyKey == null || idempotencyKey.isBlank()) && !nothingToPay) {
                 // Global Constraints: a blank idempotency key would silently reach the payment
                 // rail zero times rather than failing loudly here.
                 throw new ClaimValidationException("A settlement idempotency key is required to approve a claim");
@@ -577,17 +603,33 @@ public class ClaimsApiImpl implements ClaimsApi {
                 claim.getPolicyNumber(), claim.getPolicyMemberId(), claim.getDateOfEvent(),
                 claim.getClaimType().name());
             BigDecimal ceiling = ceilingFor(claim, claimable);
-            claim.approve(approvedAmount, approvedCurrency, ceiling);
-            eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId,
-                Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),
-                       // The TYPE and the DATE, because a consumer deciding what a claim ends must
-                       // know which benefit was approved and as of when. Without them benefitpayout
-                       // would have to call back into claims to find out, which is the dependency
-                       // this envelope exists to avoid.
-                       "claimType", claim.getClaimType().name(),
-                       "dateOfEvent", claim.getDateOfEvent().toString(),
-                       "approvedAmount", Map.of("amount", approvedAmount.toPlainString(),
-                                                 "currencyCode", approvedCurrency))));
+            claim.approve(approvedAmount, approvedCurrency, ceiling, annuity);
+            // The TYPE and the DATE, because a consumer deciding what a claim ends must know which
+            // benefit was approved and as of when. Without them benefitpayout would have to call back
+            // into claims to find out, which is the dependency this envelope exists to avoid.
+            // deceasedPartyId (product step 5) is additive and only present on a joint annuity's claim.
+            Map<String, Object> approvedPayload = new java.util.HashMap<>();
+            approvedPayload.put("claimId", claimId);
+            approvedPayload.put("policyNumber", claim.getPolicyNumber());
+            approvedPayload.put("claimType", claim.getClaimType().name());
+            approvedPayload.put("dateOfEvent", claim.getDateOfEvent().toString());
+            approvedPayload.put("approvedAmount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency));
+            if (deceasedOf(claim) != null) {
+                approvedPayload.put("deceasedPartyId", deceasedOf(claim));
+            }
+            eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimApproved", tenantId, approvedPayload));
+
+            if (nothingToPay) {
+                // Settled now: nothing is owed by the rail. The same ClaimSettled every settlement
+                // publishes, at zero -- finaccounting posts nothing for a non-positive amount.
+                claim.settleWithNothingToPay();
+                claimRepository.save(claim);
+                eventPublisher.publishEvent(DomainEventEnvelope.of("claims.ClaimSettled", tenantId,
+                    Map.of("claimId", claimId, "policyNumber", claim.getPolicyNumber(),
+                           "settledAmount", Map.of("amount", approvedAmount.toPlainString(), "currencyCode", approvedCurrency),
+                           "settledAt", Instant.now().toString())));
+                return;
+            }
 
             // APPROVED -> SETTLEMENT_REQUESTED. Task 6 owns turning this event into an actual
             // payment request; this method's job ends at publishing it.
@@ -667,7 +709,7 @@ public class ClaimsApiImpl implements ClaimsApi {
         // the SECOND one on this life -- somebody may have registered a fresh claim after the
         // rejection, which is the other legitimate path.
         if (fromRejected && claim.getClaimType() == ClaimType.DEATH) {
-            refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId);
+            refuseASecondDeathClaim(tenantId, claim.getPolicyNumber(), claim.getPolicyMemberId(), claimId, deceasedOf(claim));
         }
 
         // REJECTED or SETTLED -> REOPENED; a no-op if already REOPENED, throws from any other
@@ -816,12 +858,23 @@ public class ClaimsApiImpl implements ClaimsApi {
      * @throws InvalidClaimStateException at approval (409: it conflicts with recorded state)
      */
     private void refuseASecondDeathClaim(UUID tenantId, String policyNumber, UUID policyMemberId, UUID self) {
+        refuseASecondDeathClaim(tenantId, policyNumber, policyMemberId, self, null);
+    }
+
+    /**
+     * @param deceased the life the claim names (product step 5): a joint annuity has TWO lives on one
+     *                 policy and no member records, so "this life" means the same named deceased. Null on
+     *                 every other claim, so every other claim still matches every other, exactly as before.
+     */
+    private void refuseASecondDeathClaim(UUID tenantId, String policyNumber, UUID policyMemberId, UUID self, UUID deceased) {
         List<Claim> deathClaims = policyMemberId != null
             ? claimRepository.findByTenantIdAndPolicyNumberAndPolicyMemberIdAndClaimTypeAndStatusNotOrderByCreatedAtAsc(
                 tenantId, policyNumber, policyMemberId, ClaimType.DEATH, ClaimStatus.REJECTED)
             : claimRepository.findByTenantIdAndPolicyNumberAndPolicyMemberIdIsNullAndClaimTypeAndStatusNotOrderByCreatedAtAsc(
                 tenantId, policyNumber, ClaimType.DEATH, ClaimStatus.REJECTED);
-        Claim other = deathClaims.stream().filter(c -> !c.getClaimId().equals(self)).findFirst().orElse(null);
+        Claim other = deathClaims.stream().filter(c -> !c.getClaimId().equals(self))
+            .filter(c -> java.util.Objects.equals(deceasedOf(c), deceased))
+            .findFirst().orElse(null);
         if (other == null) {
             return;
         }

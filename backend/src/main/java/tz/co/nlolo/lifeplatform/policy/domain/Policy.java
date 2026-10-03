@@ -498,7 +498,8 @@ public class Policy {
             return false;
         }
         return switch (status) {
-            case "ACTIVE", "REINSTATED", "EXPIRED", "PAID_UP" -> true;
+            // ANNUITY_ENDED (product step 5) as EXPIRED: on risk until it ended.
+            case "ACTIVE", "REINSTATED", "EXPIRED", "PAID_UP", "ANNUITY_ENDED" -> true;
             // Void from inception: there is no day on which this policy was on risk, which is the
             // whole difference between cancelling in the free-look window and surrendering.
             case "CANCELLED_FREE_LOOK" -> false;
@@ -695,7 +696,22 @@ public class Policy {
         // met, and throwing here would do it inside claims' settlement listener, after the money
         // had left. The policy keeps EXPIRED, which is the truer record of how it ended.
         return "MATURED".equals(status) || "SURRENDERED".equals(status) || "EXPIRED".equals(status)
-            || "CANCELLED_FREE_LOOK".equals(status);
+            || "CANCELLED_FREE_LOOK".equals(status) || "ANNUITY_ENDED".equals(status);
+    }
+
+    /**
+     * An annuity that owes nothing more (product step 5): the last life died with no guarantee left,
+     * or the guarantee paid out. Idempotent on a closed policy, like every closure here.
+     */
+    public void endAnnuity() {
+        if (alreadyClosed()) {
+            return;
+        }
+        if (!"ACTIVE".equals(status)) {
+            throw new InvalidPolicyStateException("Policy " + policyNumber + " must be ACTIVE to end as an annuity (current: "
+                + status + ")");
+        }
+        this.status = "ANNUITY_ENDED";
     }
 
     /**

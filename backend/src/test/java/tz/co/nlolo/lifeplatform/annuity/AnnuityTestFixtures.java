@@ -36,12 +36,49 @@ public class AnnuityTestFixtures {
     private final ProductApi productApi;
     private final UnderwritingApi underwritingApi;
     private final PolicyApi policyApi;
+    private final org.springframework.context.ApplicationEventPublisher publisher;
+    private final org.springframework.transaction.support.TransactionTemplate tx;
 
-    public AnnuityTestFixtures(PartyApi partyApi, ProductApi productApi, UnderwritingApi underwritingApi, PolicyApi policyApi) {
+    public AnnuityTestFixtures(PartyApi partyApi, ProductApi productApi, UnderwritingApi underwritingApi, PolicyApi policyApi,
+                               org.springframework.context.ApplicationEventPublisher publisher,
+                               org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.underwritingApi = underwritingApi;
         this.policyApi = policyApi;
+        this.publisher = publisher;
+        this.tx = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+    }
+
+    /**
+     * Opens a case with its choice and has a second underwriter accept it on proof of age: the normal
+     * path, which auto-issues the policy PROPOSED. Returns the policy number.
+     */
+    public String buy(UUID tenant, Product product, UUID annuitant, String price, AnnuityChoice choice) {
+        UUID caseId = openCase(tenant, product, annuitant, price, choice);
+        asTenant(tenant, () -> underwritingApi.decide(caseId,
+            new UnderwritingApi.DecisionInput(tz.co.nlolo.lifeplatform.underwriting.api.DecisionOutcome.ACCEPT, null,
+                "Age proven by passport", true), "senior-two", true));
+        return asTenant(tenant, () -> policyApi.searchPolicies(annuitant, null, null, null, null,
+            org.springframework.data.domain.PageRequest.of(0, 5)).getContent().get(0).policyNumber());
+    }
+
+    /** What billing publishes when the single premium is collected -- the real payload keys. */
+    public void collect(UUID tenant, String policyNumber, String amount, LocalDate on) {
+        java.util.Map<String, Object> payload = new java.util.HashMap<>();
+        payload.put("invoiceId", UUID.randomUUID());
+        payload.put("policyNumber", policyNumber);
+        payload.put("policyholderPartyId", UUID.randomUUID());
+        payload.put("amount", java.util.Map.of("amount", amount, "currencyCode", "TZS"));
+        // 09:00 in Dar es Salaam: the civil day is unambiguous whatever the server's clock zone.
+        payload.put("collectedAt", on.atTime(9, 0).atZone(ZoneId.of("Africa/Dar_es_Salaam")).toInstant().toString());
+        payload.put("paidToDate", on.toString());
+        publish(tenant, "billing.PremiumCollected", payload);
+    }
+
+    public void publish(UUID tenant, String eventType, java.util.Map<String, Object> payload) {
+        tx.executeWithoutResult(status -> publisher.publishEvent(
+            tz.co.nlolo.lifeplatform.DomainEventEnvelope.of(eventType, tenant, payload)));
     }
 
     public record Product(UUID productId, UUID versionId) {}

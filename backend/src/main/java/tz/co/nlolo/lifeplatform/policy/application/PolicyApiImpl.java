@@ -1227,6 +1227,20 @@ public class PolicyApiImpl implements PolicyApi {
 
     @Override
     @Transactional
+    public void endAnnuity(String policyNumber) {
+        UUID tenantId = TenantContext.get();
+        Policy policy = findPolicyOrThrow(policyNumber, tenantId);
+        if (policy.isClosed()) {
+            return; // idempotent -- no second event
+        }
+        policy.endAnnuity();
+        policyRepository.save(policy);
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.AnnuityEnded", tenantId,
+            Map.of("policyNumber", policyNumber, "endedAt", Instant.now().toString())));
+    }
+
+    @Override
+    @Transactional
     public void restateAttachedBonus(String policyNumber, BigDecimal total) {
         UUID tenantId = TenantContext.get();
         findPolicyOrThrow(policyNumber, tenantId);
@@ -1550,6 +1564,13 @@ public class PolicyApiImpl implements PolicyApi {
      *     {@code Map.of} rejects a null value outright.
      */
     private void closeAsSurrendered(Policy policy, UUID claimId, UUID tenantId) {
+        // An annuity is NOT closed by a settled death claim (product step 5): a guarantee may still
+        // pay the beneficiaries for years, and a joint annuity pays the survivor -- closing it here
+        // would make every one of those instalments unpayable. The annuity module ends the policy
+        // (endAnnuity) when nothing further is owed.
+        if (productApi.resolveAnnuityPlan(policy.getProductVersionId()).annuity()) {
+            return;
+        }
         // Either terminal status, not just SURRENDERED -- same M6 final-review C1 part 2 reasoning
         // as markMatured above (a policy already MATURED stays MATURED, so no PolicySurrendered).
         boolean alreadyClosed = policy.isClosed();

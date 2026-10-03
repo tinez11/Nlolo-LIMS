@@ -184,6 +184,14 @@ public class Claim {
      *     Null means unbounded, which no production path uses.
      */
     public void approve(BigDecimal approvedAmount, String approvedCurrency, BigDecimal ceiling) {
+        approve(approvedAmount, approvedCurrency, ceiling, false);
+    }
+
+    /**
+     * @param zeroAllowed true only for an annuity's death claim (product step 5): a verified death that
+     *                    pays nothing is a real outcome there, never a data-entry error.
+     */
+    public void approve(BigDecimal approvedAmount, String approvedCurrency, BigDecimal ceiling, boolean zeroAllowed) {
         if (status == ClaimStatus.APPROVED) {
             return;
         }
@@ -192,7 +200,7 @@ public class Claim {
             throw new InvalidClaimStateException(
                 "Claim " + claimId + " is " + status + ", cannot approve");
         }
-        if (approvedAmount == null || approvedAmount.signum() <= 0) {
+        if (approvedAmount == null || approvedAmount.signum() < 0 || (approvedAmount.signum() == 0 && !zeroAllowed)) {
             throw new ClaimValidationException("Approved amount must be positive");
         }
         // Positive was the ONLY check here, on every policy. Nothing stopped one member's death
@@ -256,6 +264,17 @@ public class Claim {
         this.status = ClaimStatus.SETTLEMENT_REQUESTED;
         this.settlementIdempotencyKey = idempotencyKey;
         this.settlementFailureReason = null; // a fresh attempt clears the previous failure
+    }
+
+    /**
+     * An annuity death approved at zero (product step 5): APPROVED -> SETTLED with no payment, because
+     * nothing is owed by the rail. Refused for any claim that has an amount to pay.
+     */
+    public void settleWithNothingToPay() {
+        if (status != ClaimStatus.APPROVED || approvedAmount == null || approvedAmount.signum() != 0) {
+            throw new InvalidClaimStateException("Claim " + claimId + " has money to pay, so it settles through the payment rail");
+        }
+        this.status = ClaimStatus.SETTLED;
     }
 
     /** payment.DisbursementCompleted. SETTLEMENT_REQUESTED -> SETTLED. Terminal unless reopened. */

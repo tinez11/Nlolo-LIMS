@@ -352,6 +352,8 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             .ifPresent(s -> {
                 s.end();
                 streams.save(s);
+                // The guarantee is paid out: the annuity owes nothing more.
+                policyApi.endAnnuity(s.getPolicyNumber());
             });
     }
 
@@ -680,17 +682,19 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
      */
     @Transactional
     public void cancelFuture(String policyNumber, LocalDate from, String reason) {
+        // An annuity's stream is the annuity module's to end, reduce or redirect (product step 5): a
+        // death may leave a guarantee or a survivor still to pay, so it is never swept away here.
         for (PayoutInstalment i : instalments.findByPolicyNumberAndDueDateGreaterThanEqual(policyNumber, from)) {
-            if (i.cancel(reason)) {
+            if (i.kind() != PayoutKind.ANNUITY && i.cancel(reason)) {
                 instalments.save(i);
             }
         }
         for (PayoutInstalment held : instalments.findByPolicyNumberAndStatus(policyNumber, InstalmentStatus.ON_HOLD.name())) {
-            if (held.cancel(reason)) {
+            if (held.kind() != PayoutKind.ANNUITY && held.cancel(reason)) {
                 instalments.save(held);
             }
         }
-        streams.findByPolicyNumber(policyNumber).forEach(s -> {
+        streams.findByPolicyNumber(policyNumber).stream().filter(s -> !s.isOpenEnded()).forEach(s -> {
             s.end();
             streams.save(s);
         });

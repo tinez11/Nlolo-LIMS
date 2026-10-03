@@ -14,5 +14,7 @@ package tz.co.nlolo.lifeplatform.policy.api;
  */
 public enum PolicyStatus {
     PROPOSED, ACTIVE, LAPSED, SUSPENDED, SURRENDERED, MATURED, REINSTATED, NOT_TAKEN_UP, EXPIRED, PAID_UP,
-    CANCELLED_FREE_LOOK
+    CANCELLED_FREE_LOOK,
+    /** Product step 5: an annuity that owes nothing more. Terminal; never EXPIRED, which means a term ran out. */
+    ANNUITY_ENDED
 }
