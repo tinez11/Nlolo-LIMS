@@ -87,6 +87,7 @@ class BenefitPayoutContractTest {
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
             "db-migrations/benefitpayout/V3__withholding.sql",
+            "db-migrations/benefitpayout/V4__withholding_rule_end.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/underwriting/V1__create_underwriting_schema.sql",
             "db-migrations/underwriting/V2__agent_of_record.sql",
@@ -154,7 +155,46 @@ class BenefitPayoutContractTest {
             .andExpect(jsonPath("$[0].kind").value("SURVIVAL"))
             // Money is a decimal STRING plus a currency code, never a JSON number.
             .andExpect(jsonPath("$[0].currentAmount.amount").value("100000.00"))
-            .andExpect(jsonPath("$[0].currentAmount.currencyCode").value("TZS"));
+            .andExpect(jsonPath("$[0].currentAmount.currencyCode").value("TZS"))
+            // A survival benefit pays a living policyholder: its review must say how that was confirmed.
+            .andExpect(jsonPath("$[0].proofOfLifeRequired").value(true));
+    }
+
+    @Test
+    void aWithholdingRuleIsProposedApprovedByASecondPersonAndEndedByOneOverTheContract() throws Exception {
+        String today = LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")).toString();
+        String proposed = mockMvc.perform(post("/withholding-rules").with(staff("FINANCE_OFFICER", "fin-1"))
+                .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"payoutKinds\":[\"ANNUITY\"],\"ratePercent\":10,\"effectiveFrom\":\"" + today
+                    + "\",\"legalReference\":\"Income Tax Act s.82 (contract test)\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andReturn().getResponse().getContentAsString();
+        String ruleId = JsonPath.read(proposed, "$.ruleId");
+
+        mockMvc.perform(post("/withholding-rules/{id}/approve", ruleId).with(staff("FINANCE_OFFICER", "fin-2")))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        // One person ends it -- the proposer, alone.
+        mockMvc.perform(post("/withholding-rules/{id}/end", ruleId).with(staff("FINANCE_OFFICER", "fin-1"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"effectiveTo\":\"" + today + "\"}"))
+            .andExpect(status().isOk())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH))
+            .andExpect(jsonPath("$.effectiveTo").value(today))
+            .andExpect(jsonPath("$.endedBy").value("fin-1"));
+
+        // Never extended: a later period is a new rule.
+        mockMvc.perform(post("/withholding-rules/{id}/end", ruleId).with(staff("FINANCE_OFFICER", "fin-1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"effectiveTo\":\"" + LocalDate.parse(today).plusDays(30) + "\"}"))
+            .andExpect(status().isUnprocessableEntity());
+
+        // Finance's, not customer service's.
+        mockMvc.perform(post("/withholding-rules/{id}/end", ruleId).with(staff("CUSTOMER_SERVICE", "cs-1"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"effectiveTo\":\"" + today + "\"}"))
+            .andExpect(status().isForbidden());
     }
 
     @Test

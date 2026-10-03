@@ -161,11 +161,24 @@ class AnnuityDeathIntegrationTest {
     @Test
     void insideAGuaranteeTheInstalmentsContinueAndThePolicyStaysOpen() {
         String policy = inPayment(AnnuityChoice.of("LIFE-10G", "MONTHLY", null), fixtures.person(TENANT, 61, null), 3);
+        // While the annuitant lives, every review must say how they were confirmed alive.
+        assertThat(rows(policy)).allSatisfy(i -> assertThat(i.proofOfLifeRequired()).isTrue());
         LocalDate died = TODAY.minusDays(5);
         deathClaim(policy, died, null, "0");
         assertThat(contract(policy).status()).isEqualTo(ContractStatus.GUARANTEE);
         assertThat(rows(policy).stream().filter(i -> i.dueDate().isAfter(died)))
             .isNotEmpty().allSatisfy(i -> assertThat(i.status()).isNotEqualTo(InstalmentStatus.CANCELLED));
+        // Redirected to the beneficiaries: the life it proved is over, so the view stops asking -- and
+        // review agrees, accepting one with no method rather than demanding a false "confirmed alive".
+        assertThat(rows(policy).stream().filter(i -> i.dueDate().isAfter(died)))
+            .allSatisfy(i -> assertThat(i.proofOfLifeRequired()).isFalse());
+        // The fourth instalment: collected three months ago, monthly in advance, so it falls due today.
+        UUID next = rows(policy).stream().filter(i -> i.dueDate().equals(COLLECTED.plusMonths(3)))
+            .findFirst().map(PayoutInstalmentView::instalmentId).orElseThrow();
+        asTenant(TENANT, () -> { engine.fallDue(next); return null; });
+        PayoutInstalmentView reviewed = asTenant(TENANT, () -> payouts.review(next, "+255700000999", null, null, "finance-reviewer"));
+        assertThat(reviewed.status()).isEqualTo(InstalmentStatus.REVIEWED);
+        assertThat(reviewed.proofOfLifeRequired()).isFalse();
         // Not closed by the settled claim: the guarantee still pays.
         assertThat(asTenant(TENANT, () -> policyApi.getPolicy(policy)).status()).isEqualTo(PolicyStatus.ACTIVE);
     }

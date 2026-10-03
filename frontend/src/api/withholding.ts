@@ -30,3 +30,8 @@ export function approveWithholdingRule(ruleId: string): Promise<WithholdingRuleV
 export function withdrawWithholdingRule(ruleId: string): Promise<WithholdingRuleView> {
   return post<WithholdingRuleView>(`/withholding-rules/${encodeURIComponent(ruleId)}/withdraw`);
 }
+
+/** Ends an approved rule on its last day. One finance officer may do it alone. */
+export function endWithholdingRule(ruleId: string, effectiveTo: string): Promise<WithholdingRuleView> {
+  return post<WithholdingRuleView>(`/withholding-rules/${encodeURIComponent(ruleId)}/end`, { effectiveTo });
+}

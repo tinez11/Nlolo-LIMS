@@ -29,8 +29,9 @@ async function ensureWithholdingRule(page: Page, financePage: Page, today: strin
   await financePage.goto('/staff/withholding-rules');
   const list = financePage.getByRole('list', { name: 'Withholding rules' });
   const approved = list.getByRole('listitem').filter({ hasText: '10% from Annuity income' }).filter({ hasText: /approved by/ });
-  // An approved rule cannot yet be ended, and a second overlapping one is refused at approval -- so
-  // a rerun reuses the first run's rule rather than failing on its own leftovers.
+  // A second rule overlapping an approved one is refused at approval, so a rerun reuses the first
+  // run's rule rather than ending it: ending is today-or-later, and today's instalment must still be
+  // withheld at 10% for the figures below.
   // Loaded once either the list or its empty state is on screen -- not networkidle, which the
   // sidebar's polled counts never reach.
   await expect(list.or(financePage.getByText('No withholding rule', { exact: true }))).toBeVisible({ timeout: 30_000 });

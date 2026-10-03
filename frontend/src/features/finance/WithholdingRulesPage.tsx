@@ -15,11 +15,11 @@ import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { approveRuleGates } from '@/gates/withholdingGates';
-import { formatDate } from '@/lib/dates';
+import { formatDate, todayIso } from '@/lib/dates';
 import { startMutation } from '@/lib/idempotency';
 import { isInitialLoad } from '@/store/createResourceSlice';
 import { useAnnuityStore } from '@/store/annuityStore';
-import { withholdingRuleSchema, type WithholdingRuleValues } from './withholdingRuleForm';
+import { endRuleSchema, withholdingRuleSchema, type EndRuleValues, type WithholdingRuleValues } from './withholdingRuleForm';
 
 const KIND_LABEL: Record<string, string> = {
   ANNUITY: 'Annuity income',
@@ -99,9 +99,11 @@ function RuleRow({ rule, viewerSubject }: { rule: WithholdingRuleView; viewerSub
           From {formatDate(rule.effectiveFrom)}
           {rule.effectiveTo ? ` to ${formatDate(rule.effectiveTo)}` : ''} · {rule.legalReference} · proposed by {rule.proposedBy}
           {rule.approvedBy ? ` · approved by ${rule.approvedBy}` : ''}
+          {rule.endedBy ? ` · ended by ${rule.endedBy}` : ''}
         </p>
       </div>
       {acting?.status === 'error' && acting.error && <InlineError error={acting.error} />}
+      {rule.status === 'APPROVED' && <EndRuleForm rule={rule} busy={acting?.status === 'loading'} />}
       {rule.status === 'PROPOSED' && (
         <>
           <GatePanel gates={gates} title="Before approving" />
@@ -116,6 +118,36 @@ function RuleRow({ rule, viewerSubject }: { rule: WithholdingRuleView; viewerSub
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Ends an approved rule on its last day. One finance officer, alone (the user's decision); never in
+ * the past, and only ever earlier -- a later period is a new rule, which takes two people.
+ */
+function EndRuleForm({ rule, busy }: { rule: WithholdingRuleView; busy: boolean }) {
+  const endRule = useAnnuityStore((s) => s.endRule);
+  const form = useForm<EndRuleValues>({
+    resolver: zodResolver(endRuleSchema(rule, todayIso())),
+    defaultValues: { effectiveTo: '' },
+  });
+  return (
+    <form
+      className="flex flex-wrap items-end gap-2"
+      aria-label={`End rule ${rule.ratePercent}% from ${formatDate(rule.effectiveFrom)}`}
+      onSubmit={form.handleSubmit((v) => void endRule(rule.ruleId, v.effectiveTo))}
+    >
+      <FormField label="Last day" error={form.formState.errors.effectiveTo?.message}>
+        <Controller
+          control={form.control}
+          name="effectiveTo"
+          render={({ field }) => <DatePicker value={field.value || null} onChange={(iso) => field.onChange(iso ?? '')} />}
+        />
+      </FormField>
+      <Button type="submit" size="sm" variant="ghost" disabled={busy}>
+        End rule
+      </Button>
+    </form>
   );
 }
 

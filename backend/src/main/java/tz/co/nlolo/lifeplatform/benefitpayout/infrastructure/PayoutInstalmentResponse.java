@@ -18,7 +18,7 @@ public record PayoutInstalmentResponse(UUID instalmentId, String policyNumber, S
                                        String payeeRef, String proofOfLifeMethod, String reviewedBy,
                                        String approvedBy, UUID paymentRunId, int attempts,
                                        Map<String, String> grossAmount, Map<String, String> withheldAmount,
-                                       Map<String, String> netAmount) {
+                                       Map<String, String> netAmount, boolean proofOfLifeRequired) {
 
     public static PayoutInstalmentResponse from(PayoutInstalmentView v) {
         return new PayoutInstalmentResponse(v.instalmentId(), v.policyNumber(), v.kind().name(), v.dueDate().toString(),
@@ -26,7 +26,8 @@ public record PayoutInstalmentResponse(UUID instalmentId, String policyNumber, S
             v.status().name(), v.statusReason(), v.streamId(), v.payeeRef(),
             v.proofOfLifeMethod() != null ? v.proofOfLifeMethod().name() : null,
             v.reviewedBy(), v.approvedBy(), v.paymentRunId(), v.attempts(),
-            money(v.grossAmount(), v.currency()), money(v.withheldAmount(), v.currency()), money(v.netAmount(), v.currency()));
+            money(v.grossAmount(), v.currency()), money(v.withheldAmount(), v.currency()), money(v.netAmount(), v.currency()),
+            v.proofOfLifeRequired());
     }
 
     /** Null, not a zero: a premium return genuinely has no amount until it falls due. */

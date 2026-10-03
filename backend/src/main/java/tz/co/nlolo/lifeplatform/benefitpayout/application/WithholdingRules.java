@@ -100,6 +100,14 @@ public class WithholdingRules {
         return rules.save(rule);
     }
 
+    /** Ends an approved rule on its last day -- one finance officer, alone. Shrinking a range never creates an overlap. */
+    @Transactional
+    public WithholdingRule end(UUID ruleId, java.time.LocalDate lastDay, String endedBy) {
+        WithholdingRule rule = load(ruleId);
+        rule.end(lastDay, java.time.LocalDate.now(java.time.ZoneId.of("Africa/Dar_es_Salaam")), endedBy);
+        return rules.save(rule);
+    }
+
     @Transactional(readOnly = true)
     public List<WithholdingRule> list() {
         return rules.findByTenantIdOrderByEffectiveFromDescProposedAtDesc(TenantContext.get());

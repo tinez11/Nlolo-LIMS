@@ -424,6 +424,35 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /withholding-rules/{ruleId}/end:
+    post:
+      summary: End an approved withholding rule on its last day
+      description: >-
+        One finance officer may do it alone. The last day must be today or later (withholding is fixed
+        at approval, so a backdated end would drop tax from payouts already due), on or after the
+        rule's start, and never after an end date it already has -- a later period is a new rule,
+        proposed and approved by two people.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WithholdingRuleEndRequest' }
+      responses:
+        '200':
+          description: Ended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WithholdingRule' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '422':
+          description: Refused, in the rule's words
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /withholding-rules/{ruleId}/withdraw:
     post:
       summary: Withdraw a proposed withholding rule
@@ -537,6 +566,12 @@ components:
           anyOf:
             - { $ref: 'openapi-common.yaml#/components/schemas/Money' }
             - { type: 'null' }
+        proofOfLifeRequired:
+          type: boolean
+          description: >-
+            Whether a review must say how the life assured was confirmed alive. True for SURVIVAL,
+            INCOME and ANNUITY instalments, except on an annuity stream redirected to beneficiaries
+            after the annuitant's death (product step 5), which owes none. The same rule review enforces.
     WithholdingRule:
       type: object
       additionalProperties: false
@@ -553,6 +588,12 @@ components:
         proposedAt: { type: string, format: date-time }
         approvedBy: { type: [string, "null"] }
         approvedAt: { type: [string, "null"], format: date-time }
+        endedBy: { type: [string, "null"], description: "Who ended an approved rule early; null until then" }
+        endedAt: { type: [string, "null"], format: date-time }
+    WithholdingRuleEndRequest:
+      type: object
+      properties:
+        effectiveTo: { type: [string, "null"], format: date, description: "The rule's last day. Today or later, never after an existing end date." }
     WithholdingRuleRequest:
       type: object
       properties:

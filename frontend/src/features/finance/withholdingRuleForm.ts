@@ -25,3 +25,26 @@ export const withholdingRuleSchema = z
     }
   });
 export type WithholdingRuleValues = z.infer<typeof withholdingRuleSchema>;
+
+/**
+ * Ending an approved rule (product step 5): one finance officer, alone. A factory because the checks
+ * read the rule and today. Mirrors WithholdingRule.end, in its words.
+ */
+export function endRuleSchema(rule: { effectiveFrom: string; effectiveTo?: string | null }, today: string) {
+  return z.object({ effectiveTo: z.string().trim() }).superRefine((v, ctx) => {
+    const issue = (message: string) => ctx.addIssue({ code: 'custom', path: ['effectiveTo'], message });
+    if (v.effectiveTo === '') return issue('Ending a withholding rule needs its last day');
+    if (v.effectiveTo < rule.effectiveFrom) return issue('A withholding rule cannot end before it begins');
+    if (v.effectiveTo < today) {
+      return issue(
+        'A withholding rule cannot be ended in the past -- payouts due before today and not yet approved would lose the tax it withholds',
+      );
+    }
+    if (rule.effectiveTo && v.effectiveTo > rule.effectiveTo) {
+      issue(
+        `This rule already ends on ${rule.effectiveTo}; it can be ended earlier, never extended -- propose a new rule for the later period`,
+      );
+    }
+  });
+}
+export type EndRuleValues = { effectiveTo: string };

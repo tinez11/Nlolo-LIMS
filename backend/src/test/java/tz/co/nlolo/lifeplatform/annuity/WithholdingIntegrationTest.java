@@ -103,11 +103,15 @@ class WithholdingIntegrationTest {
         return fixtures.issueInForce(tenant, product, fixtures.person(tenant, 61, null), "50000000.00");
     }
 
-    private void approvedRule(UUID tenant, List<String> kinds, String rate) {
-        asTenant(tenant, () -> {
-            var rule = rules.propose(kinds, new BigDecimal(rate), TODAY, null, "Income Tax Act s.82 (test)", "finance-one",
+    private UUID approvedRule(UUID tenant, List<String> kinds, String rate) {
+        return approvedRule(tenant, kinds, rate, TODAY);
+    }
+
+    private UUID approvedRule(UUID tenant, List<String> kinds, String rate, java.time.LocalDate from) {
+        return asTenant(tenant, () -> {
+            var rule = rules.propose(kinds, new BigDecimal(rate), from, null, "Income Tax Act s.82 (test)", "finance-one",
                 UUID.randomUUID().toString());
-            return rules.approve(rule.getRuleId(), "finance-two");
+            return rules.approve(rule.getRuleId(), "finance-two").getRuleId();
         });
     }
 
@@ -186,6 +190,55 @@ class WithholdingIntegrationTest {
         assertThatThrownBy(() -> asTenant(tenant, () -> rules.approve(second.getRuleId(), "finance-two")))
             .isInstanceOf(PayoutStateException.class)
             .hasMessageStartingWith("An approved withholding rule already applies to ANNUITY from " + TODAY);
+    }
+
+    @Test
+    void oneFinanceOfficerEndsAnApprovedRuleAndItsReplacementThenApproves() {
+        UUID tenant = UUID.randomUUID();
+        UUID first = approvedRule(tenant, List.of("ANNUITY"), "10");
+        // Alone, and the proposer at that -- ending takes one person (the user's decision).
+        var ended = asTenant(tenant, () -> rules.end(first, TODAY, "finance-one"));
+        assertThat(ended.getEffectiveTo()).isEqualTo(TODAY);
+        assertThat(ended.getEndedBy()).isEqualTo("finance-one");
+        assertThat(ended.getEndedAt()).isNotNull();
+
+        // The overlap refusal's advice is now something a person can act on.
+        var replacement = asTenant(tenant, () -> rules.propose(List.of("ANNUITY"), new BigDecimal("15"), TODAY.plusDays(1), null,
+            "Finance Act 2026 (test)", "finance-one", UUID.randomUUID().toString()));
+        assertThat(asTenant(tenant, () -> rules.approve(replacement.getRuleId(), "finance-two")).status())
+            .isEqualTo(tz.co.nlolo.lifeplatform.benefitpayout.domain.WithholdingRule.Status.APPROVED);
+
+        // An instalment due on the ended rule's last day is still withheld by it.
+        String policy = annuityPolicy(tenant);
+        UUID instalment = reviewedInstalment(tenant, policy);
+        assertThat(asTenant(tenant, () -> payouts.approve(instalment, "finance-approver")).withheldAmount())
+            .isEqualByComparingTo("29400.00");
+    }
+
+    @Test
+    void anEndIsNeverInThePastNeverAnExtensionAndOnlyForAnApprovedRule() {
+        UUID tenant = UUID.randomUUID();
+        UUID running = approvedRule(tenant, List.of("ANNUITY"), "10", TODAY.minusDays(10));
+        assertThatThrownBy(() -> asTenant(tenant, () -> rules.end(running, TODAY.minusDays(1), "finance-one")))
+            .isInstanceOf(PayoutStateException.class)
+            .hasMessageStartingWith("A withholding rule cannot be ended in the past");
+        assertThatThrownBy(() -> asTenant(tenant, () -> rules.end(running, TODAY.minusDays(11), "finance-one")))
+            .isInstanceOf(PayoutStateException.class)
+            .hasMessage("A withholding rule cannot end before it begins");
+
+        asTenant(tenant, () -> rules.end(running, TODAY.plusDays(30), "finance-one"));
+        assertThatThrownBy(() -> asTenant(tenant, () -> rules.end(running, TODAY.plusDays(60), "finance-one")))
+            .isInstanceOf(PayoutStateException.class)
+            .hasMessageStartingWith("This rule already ends on " + TODAY.plusDays(30));
+        // Earlier is fine.
+        assertThat(asTenant(tenant, () -> rules.end(running, TODAY.plusDays(5), "finance-one")).getEffectiveTo())
+            .isEqualTo(TODAY.plusDays(5));
+
+        var proposal = asTenant(tenant, () -> rules.propose(List.of("MATURITY"), BigDecimal.TEN, TODAY, null, "Act (test)",
+            "finance-one", UUID.randomUUID().toString()));
+        assertThatThrownBy(() -> asTenant(tenant, () -> rules.end(proposal.getRuleId(), TODAY, "finance-one")))
+            .isInstanceOf(PayoutStateException.class)
+            .hasMessage("Only an approved withholding rule can be ended; this one is proposed");
     }
 
     @Test

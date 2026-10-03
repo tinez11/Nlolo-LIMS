@@ -51,6 +51,16 @@ public class WithholdingController {
         return WithholdingRuleResponse.from(rules.approve(ruleId, jwt.getSubject()));
     }
 
+    public record EndRequest(LocalDate effectiveTo) {}
+
+    /** Ends an approved rule on its last day. One finance officer may do it alone (the user's decision). */
+    @PostMapping("/withholding-rules/{ruleId}/end")
+    @PreAuthorize(BenefitPayoutController.FINANCE)
+    public WithholdingRuleResponse end(@PathVariable UUID ruleId, @RequestBody EndRequest request,
+                                       @AuthenticationPrincipal Jwt jwt) {
+        return WithholdingRuleResponse.from(rules.end(ruleId, request.effectiveTo(), jwt.getSubject()));
+    }
+
     @PostMapping("/withholding-rules/{ruleId}/withdraw")
     @PreAuthorize(BenefitPayoutController.FINANCE)
     public WithholdingRuleResponse withdraw(@PathVariable UUID ruleId, @AuthenticationPrincipal Jwt jwt) {

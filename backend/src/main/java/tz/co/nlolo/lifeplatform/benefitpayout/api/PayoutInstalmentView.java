@@ -20,4 +20,7 @@ public record PayoutInstalmentView(UUID instalmentId, String policyNumber, Payou
                                    UUID streamId, String payeeRef, ProofOfLifeMethod proofOfLifeMethod,
                                    String reviewedBy, String approvedBy, UUID paymentRunId, int attempts,
                                    // Tax withheld at approval (product step 5); null before approval or with none checked.
-                                   BigDecimal grossAmount, BigDecimal withheldAmount, BigDecimal netAmount) {}
+                                   BigDecimal grossAmount, BigDecimal withheldAmount, BigDecimal netAmount,
+                                   // Whether a review must say how the life assured was confirmed alive -- false on a
+                                   // stream redirected to beneficiaries after the annuitant's death (product step 5).
+                                   boolean proofOfLifeRequired) {}

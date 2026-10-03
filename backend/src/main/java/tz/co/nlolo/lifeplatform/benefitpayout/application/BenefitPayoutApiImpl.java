@@ -89,13 +89,13 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     @Override
     @Transactional(readOnly = true)
     public List<PayoutInstalmentView> listForPolicy(String policyNumber) {
-        return instalments.findByPolicyNumberOrderByDueDateAscRowOrderAsc(policyNumber).stream().map(Views::of).toList();
+        return instalments.findByPolicyNumberOrderByDueDateAscRowOrderAsc(policyNumber).stream().map(this::view).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public PayoutInstalmentView getInstalment(UUID instalmentId) {
-        return Views.of(load(instalmentId));
+        return view(load(instalmentId));
     }
 
     @Override
@@ -269,16 +269,30 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         }
     }
 
+    /**
+     * Whether a review of this instalment must say how the life assured was confirmed alive. One rule,
+     * read by review and by every view, so the console asks exactly when the server will insist.
+     */
+    private boolean proofOfLifeRequired(PayoutInstalment i) {
+        if (!i.needsProofOfLife()) {
+            return false;
+        }
+        return i.getStreamId() == null
+            || !streams.findById(i.getStreamId()).map(PayoutStream::isProofOfLifeStopped).orElse(false);
+    }
+
+    private PayoutInstalmentView view(PayoutInstalment i) {
+        return Views.of(i, proofOfLifeRequired(i));
+    }
+
     @Override
     @Transactional
     public PayoutInstalmentView review(UUID instalmentId, String payeeRef, ProofOfLifeMethod method,
                                        UUID documentId, String reviewer) {
         PayoutInstalment i = load(instalmentId);
         // A redirected annuity's beneficiaries owe no proof of life: the life it proved is over.
-        boolean proofStopped = i.getStreamId() != null
-            && streams.findById(i.getStreamId()).map(PayoutStream::isProofOfLifeStopped).orElse(false);
-        i.review(reviewer, payeeRef, method, documentId, i.needsProofOfLife() && !proofStopped);
-        return Views.of(instalments.save(i));
+        i.review(reviewer, payeeRef, method, documentId, proofOfLifeRequired(i));
+        return view(instalments.save(i));
     }
 
     @Override
@@ -299,7 +313,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
                 });
         }
         publishPayoutRequested(i);
-        return Views.of(i);
+        return view(i);
     }
 
     @Override
@@ -307,7 +321,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     public Page<PayoutInstalmentView> search(Collection<InstalmentStatus> statuses, Pageable pageable) {
         Collection<InstalmentStatus> wanted = statuses == null || statuses.isEmpty()
             ? EnumSet.allOf(InstalmentStatus.class) : statuses;
-        return instalments.findByStatusIn(wanted.stream().map(Enum::name).toList(), pageable).map(Views::of);
+        return instalments.findByStatusIn(wanted.stream().map(Enum::name).toList(), pageable).map(this::view);
     }
 
     /** The disbursement landed. Publishes {@code PayoutPaid}, which finaccounting books. */
@@ -378,7 +392,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         i.retry();
         instalments.save(i);
         publishPayoutRequested(i);
-        return Views.of(i);
+        return view(i);
     }
 
     /** Ask payment to disburse. The key carries the attempt, so a retry is a NEW request rather
@@ -624,7 +638,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     @Override
     @Transactional(readOnly = true)
     public List<PayoutInstalmentView> runInstalments(UUID paymentRunId) {
-        return instalments.findByPaymentRunIdOrderByDueDateAsc(paymentRunId).stream().map(Views::of).toList();
+        return instalments.findByPaymentRunIdOrderByDueDateAsc(paymentRunId).stream().map(this::view).toList();
     }
 
     private PaymentRunView runView(PaymentRun run) {

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { getAnnuityChoice, getPolicyAnnuity } from '@/api/annuity';
 import {
   approveWithholdingRule,
+  endWithholdingRule,
   listWithholdingRules,
   proposeWithholdingRule,
   withdrawWithholdingRule,
@@ -35,6 +36,7 @@ interface AnnuityState {
   proposeRule: (body: WithholdingRuleBody, attempt: MutationAttempt) => Promise<void>;
   approveRule: (ruleId: string) => Promise<void>;
   withdrawRule: (ruleId: string) => Promise<void>;
+  endRule: (ruleId: string, effectiveTo: string) => Promise<void>;
 }
 
 export const useAnnuityStore = create<AnnuityState>((set, getState) => {
@@ -82,6 +84,11 @@ export const useAnnuityStore = create<AnnuityState>((set, getState) => {
     approveRule: (ruleId) =>
       act(ruleId, async () => {
         await approveWithholdingRule(ruleId);
+        await getState().loadRules();
+      }),
+    endRule: (ruleId, effectiveTo) =>
+      act(ruleId, async () => {
+        await endWithholdingRule(ruleId, effectiveTo);
         await getState().loadRules();
       }),
     withdrawRule: (ruleId) =>

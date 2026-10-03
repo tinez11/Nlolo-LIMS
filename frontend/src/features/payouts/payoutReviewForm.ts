@@ -44,3 +44,12 @@ export function payoutReviewSchema(needsProofOfLife: boolean) {
       message: 'Proof that the life assured is alive is required',
     });
 }
+
+/**
+ * Whether this payout's review must say how the life assured was confirmed alive. The server's own
+ * answer, which leaves out an annuity stream redirected to beneficiaries after the annuitant's death
+ * (product step 5); the kind check is only a fallback for a response that predates the field.
+ */
+export function needsProofOfLife(payout: { kind: string; proofOfLifeRequired?: boolean }): boolean {
+  return payout.proofOfLifeRequired ?? (payout.kind === 'SURVIVAL' || payout.kind === 'INCOME' || payout.kind === 'ANNUITY');
+}

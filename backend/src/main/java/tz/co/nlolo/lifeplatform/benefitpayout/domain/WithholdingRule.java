@@ -37,6 +37,8 @@ public class WithholdingRule {
     @Column(name = "approved_by") private String approvedBy;
     @Column(name = "approved_at") private Instant approvedAt;
     @Column(name = "withdrawn_by") private String withdrawnBy;
+    @Column(name = "ended_by") private String endedBy;
+    @Column(name = "ended_at") private Instant endedAt;
     @Column(name = "idempotency_key", nullable = false) private String idempotencyKey;
 
     protected WithholdingRule() {}
@@ -73,6 +75,35 @@ public class WithholdingRule {
         this.withdrawnBy = by;
     }
 
+    /**
+     * Ends an approved rule on {@code lastDay}, the last day it withholds. One finance officer may do
+     * this alone (the user's decision). Never in the past: withholding is fixed when a payout is
+     * approved, so a backdated end would let one person stop tax on payouts already due and not yet
+     * approved. And only ever earlier -- extending a rule's reach is a new rule, which takes two people.
+     */
+    public void end(LocalDate lastDay, LocalDate today, String by) {
+        if (status() != Status.APPROVED) {
+            throw new PayoutStateException("Only an approved withholding rule can be ended; this one is " + status.toLowerCase());
+        }
+        if (lastDay == null) {
+            throw new PayoutStateException("Ending a withholding rule needs its last day");
+        }
+        if (lastDay.isBefore(effectiveFrom)) {
+            throw new PayoutStateException("A withholding rule cannot end before it begins");
+        }
+        if (lastDay.isBefore(today)) {
+            throw new PayoutStateException("A withholding rule cannot be ended in the past -- payouts due before today "
+                + "and not yet approved would lose the tax it withholds");
+        }
+        if (effectiveTo != null && lastDay.isAfter(effectiveTo)) {
+            throw new PayoutStateException("This rule already ends on " + effectiveTo
+                + "; it can be ended earlier, never extended -- propose a new rule for the later period");
+        }
+        this.effectiveTo = lastDay;
+        this.endedBy = by;
+        this.endedAt = Instant.now();
+    }
+
     public boolean appliesTo(String kind, LocalDate date) {
         return status() == Status.APPROVED && getPayoutKinds().contains(kind)
             && !date.isBefore(effectiveFrom) && (effectiveTo == null || !date.isAfter(effectiveTo));
@@ -98,4 +129,6 @@ public class WithholdingRule {
     public String getApprovedBy() { return approvedBy; }
     public Instant getApprovedAt() { return approvedAt; }
     public String getIdempotencyKey() { return idempotencyKey; }
+    public String getEndedBy() { return endedBy; }
+    public Instant getEndedAt() { return endedAt; }
 }
