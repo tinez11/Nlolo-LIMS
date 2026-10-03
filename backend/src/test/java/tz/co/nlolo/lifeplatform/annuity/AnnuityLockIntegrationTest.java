@@ -169,4 +169,16 @@ class AnnuityLockIntegrationTest {
         assertThat(contract(policy).status()).isEqualTo(ContractStatus.CANCELLED);
         assertThat(annuityRows(policy)).allSatisfy(i -> assertThat(i.status()).isEqualTo(InstalmentStatus.CANCELLED));
     }
+
+    @Test
+    void anOfferThatExpiresUnpaidCancelsTheContractRatherThanLeavingItAwaitingPayment() {
+        var product = fixtures.publish(TENANT, AnnuityTestFixtures.everyForm());
+        String policy = fixtures.buy(TENANT, product, fixtures.person(TENANT, 61, null), PRICE,
+            AnnuityChoice.of("LIFE-0G", "MONTHLY", null));
+        asTenant(TENANT, () -> { policyApi.expireOffer(policy); return null; });
+        AnnuityContractView c = contract(policy);
+        assertThat(c.status()).isEqualTo(ContractStatus.CANCELLED);
+        assertThat(c.instalment()).isNull();
+        assertThat(annuityRows(policy)).isEmpty();
+    }
 }

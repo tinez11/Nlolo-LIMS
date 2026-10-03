@@ -201,6 +201,19 @@ public class AnnuityApiImpl implements AnnuityApi {
         });
     }
 
+    /**
+     * The offer expired unpaid: no premium, so nothing was ever locked and nothing is owed. Without
+     * this the contract read "locked when the single premium is collected" on a policy that never can be.
+     * Only a contract still awaiting payment -- a paid one cannot be not-taken-up.
+     */
+    @Transactional
+    public void onNotTakenUp(String policyNumber) {
+        contracts.findById(policyNumber).filter(c -> c.status() == ContractStatus.AWAITING_PAYMENT).ifPresent(c -> {
+            c.cancel();
+            contracts.save(c);
+        });
+    }
+
     /** {@code policy.AnnuityEnded}: a guarantee paid out (or the last death with none) -- the contract has ended. */
     @Transactional
     public void onPolicyEnded(String policyNumber) {

@@ -42,6 +42,8 @@ public class PolicyEventListener {
                     api.onFreeLookCancelled(policyNumber);
                 }
             });
+        } else if ("policy.PolicyNotTakenUp".equals(type)) {
+            runner.run(envelope, e -> api.onNotTakenUp((String) Payloads.of(e.payload()).get("policyNumber")));
         }
     }
 }

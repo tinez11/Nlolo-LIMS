@@ -60,15 +60,31 @@ class AnnuityContractTest {
     @Autowired private AnnuityTestFixtures fixtures;
 
     private static RequestPostProcessor as(String realmRole) {
+        return as(realmRole, "tester");
+    }
+
+    private static RequestPostProcessor as(String realmRole, String subject) {
         return jwt().authorities(new SimpleGrantedAuthority(realmRole))
-            .jwt(builder -> builder.subject("tester").claim("tenant_id", TENANT.toString()));
+            .jwt(builder -> builder.subject(subject).claim("tenant_id", TENANT.toString()));
+    }
+
+    @Test
+    void anAgentMayNotQuoteAClientTheyDidNotRegister() throws Exception {
+        // The answer carries the annuitant's age and rated sex: quoting a stranger would read them.
+        var product = fixtures.publish(TENANT, AnnuityTestFixtures.everyForm());
+        UUID someoneElses = fixtures.person(TENANT, 61, Sex.MALE);
+        mockMvc.perform(post("/annuity-quotes").with(as("ROLE_REALM_AGENTS", "another-agent")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"productVersionId\":\"" + product.versionId() + "\",\"formCode\":\"LIFE-BS\",\"frequency\":\"MONTHLY\","
+                    + "\"purchasePrice\":50000000,\"annuitantPartyId\":\"" + someoneElses + "\"}"))
+            .andExpect(status().isForbidden());
     }
 
     @Test
     void aQuoteIsPricedToSpecForAnAgent() throws Exception {
         var product = fixtures.publish(TENANT, AnnuityTestFixtures.everyForm());
+        // Registered by "test-agent" (the fixture), so that agent may quote them.
         UUID annuitant = fixtures.person(TENANT, 61, Sex.MALE);
-        mockMvc.perform(post("/annuity-quotes").with(as("ROLE_REALM_AGENTS")).contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(post("/annuity-quotes").with(as("ROLE_REALM_AGENTS", "test-agent")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"productVersionId\":\"" + product.versionId() + "\",\"formCode\":\"LIFE-BS\",\"frequency\":\"MONTHLY\","
                     + "\"purchasePrice\":50000000,\"annuitantPartyId\":\"" + annuitant + "\"}"))
             .andExpect(status().isOk())
