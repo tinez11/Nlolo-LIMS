@@ -215,6 +215,14 @@ class AnnuityDeathIntegrationTest {
     }
 
     @Test
+    void aFreeLookRefundIsThePriceLessIncomeAlreadyPaidAddedByTheServer() {
+        String policy = inPayment(AnnuityChoice.of("LIFE-0G", "MONTHLY", null), fixtures.person(TENANT, 61, null), 2);
+        var cancellation = asTenant(TENANT, () -> payouts.requestFreeLook(policy, "+255700000999", List.of(), "service-officer"));
+        // 50,000,000 collected less two instalments of 294,000 paid.
+        assertThat(cancellation.refundAmount()).isEqualByComparingTo("49412000.00");
+    }
+
+    @Test
     void aJointClaimNamingNeitherLifeIsRefused() {
         UUID annuitant = fixtures.person(TENANT, 62, null);
         String policy = inPayment(AnnuityChoice.of("JOINT-50", "MONTHLY", fixtures.person(TENANT, 57, null)), annuitant, 0);

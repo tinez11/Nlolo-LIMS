@@ -410,7 +410,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
      * cancelled under the terms the employer or lender negotiated, not under this window.
      */
     private static final Set<String> INDIVIDUAL_CATEGORIES =
-        Set.of("TERM_LIFE", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS");
+        Set.of("TERM_LIFE", "ENDOWMENT", "WHOLE_LIFE", "EDUCATION_SAVINGS", "ANNUITY");
 
     /** The statuses {@code ux_free_look_live} treats as in flight. */
     private static final Set<String> LIVE_CANCELLATION = Set.of("REQUESTED", "APPROVED");
@@ -451,11 +451,17 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             throw new PayoutStateException("Policy " + policyNumber + "'s free-look period ended on " + lastDay);
         }
 
-        List<FreeLookDeductionInput> items = deductionInputs != null ? deductionInputs : List.of();
+        List<FreeLookDeductionInput> items = new java.util.ArrayList<>(deductionInputs != null ? deductionInputs : List.of());
         for (FreeLookDeductionInput d : items) {
             if (d.description() == null || d.description().isBlank() || d.amount() == null || d.amount().signum() <= 0) {
                 throw new PayoutStateException("Every deduction needs a description and an amount greater than zero");
             }
+        }
+        // An annuity's income already paid (product step 5, spec section 5.3) comes off the refund --
+        // added by the server, not entered, so it can neither be forgotten nor typed wrong.
+        BigDecimal annuityPaid = annuityPaidGross(policyNumber);
+        if (annuityPaid.signum() > 0) {
+            items.add(new FreeLookDeductionInput("Annuity income already paid", annuityPaid, null));
         }
         BigDecimal total = items.stream().map(FreeLookDeductionInput::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal collected = tallies.findById(policyNumber)
