@@ -169,7 +169,10 @@ function ReviewAction({ payout }: { payout: PayoutInstalmentView }) {
   const acting = useBenefitPayoutStore((s) => s.acting[payout.instalmentId]);
   const gates = reviewGates(payout);
   const refused = gates.some((g) => !g.ok && g.hard);
-  const needsProofOfLife = payout.kind === 'SURVIVAL' || payout.kind === 'INCOME';
+  // PayoutInstalment.needsProofOfLife: an annuity instalment is income to a living annuitant too.
+  // KNOWN GAP: a stream redirected to beneficiaries after the annuitant's death owes none server-side,
+  // but this view cannot tell such a stream apart, so it still asks -- see the D1 branch review.
+  const needsProofOfLife = payout.kind === 'SURVIVAL' || payout.kind === 'INCOME' || payout.kind === 'ANNUITY';
 
   const form = useForm<PayoutReviewValues>({
     resolver: zodResolver(payoutReviewSchema(needsProofOfLife)),
