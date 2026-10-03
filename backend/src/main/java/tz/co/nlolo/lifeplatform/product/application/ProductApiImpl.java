@@ -34,6 +34,10 @@ public class ProductApiImpl implements ProductApi {
     private final DepositRateRepository depositRateRepository;
     private final VersionBonusTermsRepository versionBonusTermsRepository;
     private final BonusSurrenderEntryRepository bonusSurrenderEntryRepository;
+    private final VersionAnnuityTermsRepository versionAnnuityTermsRepository;
+    private final AnnuityFormRepository annuityFormRepository;
+    private final AnnuityRateEntryRepository annuityRateEntryRepository;
+    private final AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository;
 
     public ProductApiImpl(ProductDefinitionRepository productDefinitionRepository, ProductVersionRepository productVersionRepository,
                            RatingFactorRepository ratingFactorRepository, BenefitScheduleEntryRepository benefitScheduleEntryRepository,
@@ -45,7 +49,15 @@ public class ProductApiImpl implements ProductApi {
                            AccumulationChargeRepository accumulationChargeRepository,
                            DepositRateRepository depositRateRepository,
                            VersionBonusTermsRepository versionBonusTermsRepository,
-                           BonusSurrenderEntryRepository bonusSurrenderEntryRepository) {
+                           BonusSurrenderEntryRepository bonusSurrenderEntryRepository,
+                           VersionAnnuityTermsRepository versionAnnuityTermsRepository,
+                           AnnuityFormRepository annuityFormRepository,
+                           AnnuityRateEntryRepository annuityRateEntryRepository,
+                           AnnuityFrequencyEntryRepository annuityFrequencyEntryRepository) {
+        this.versionAnnuityTermsRepository = versionAnnuityTermsRepository;
+        this.annuityFormRepository = annuityFormRepository;
+        this.annuityRateEntryRepository = annuityRateEntryRepository;
+        this.annuityFrequencyEntryRepository = annuityFrequencyEntryRepository;
         this.depositRateRepository = depositRateRepository;
         this.versionBonusTermsRepository = versionBonusTermsRepository;
         this.bonusSurrenderEntryRepository = bonusSurrenderEntryRepository;
@@ -253,6 +265,19 @@ public class ProductApiImpl implements ProductApi {
                                 TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                                 AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
                                 String publishedBy) {
+        publishVersion(productId, ifrsMeasurementModel, effectiveDate, retirementDate, ratingTable, benefitSchedule,
+            fundDefinitions, baseRates, bounds, frequencyLoading, tiraFiling, cashValue, payoutPlan, accumulationPlan,
+            depositPlan, bonusPlan, AnnuityPlan.none(), publishedBy);
+    }
+
+    @Override
+    @Transactional
+    public void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                                List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                                List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                                TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                                AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                                AnnuityPlan annuityPlan, String publishedBy) {
         // First, so the message is about the filing rather than about a rating table the caller
         // may not have reached yet. TiraFiling validates its own contents; what it cannot do is
         // object to its own absence.
@@ -346,6 +371,8 @@ public class ProductApiImpl implements ProductApi {
         PayoutPlanValidator.validate(category, payoutPlan, effectiveAccumulation, deposit.isDeposit());
         // The EFFECTIVE account plan, so a deposit is told the deposit rule rather than the account one.
         BonusPlanValidator.validate(category, bonusPlan, cashValue, effectiveAccumulation, payoutPlan, deposit);
+        AnnuityPlan annuity = annuityPlan != null ? annuityPlan : AnnuityPlan.none();
+        AnnuityPlanValidator.validate(category, annuity, bounds, cashValue, effectiveAccumulation, deposit, bonusPlan, payoutPlan);
 
         // Version rollover: ux_product_version_active permits at most one
         // is_active_for_new_business = true row per product_id. Retire whatever version
@@ -380,6 +407,7 @@ public class ProductApiImpl implements ProductApi {
         persistAccumulationPlan(tenantId, version.getProductVersionId(), effectiveAccumulation);
         persistDepositPlan(tenantId, version.getProductVersionId(), deposit);
         persistBonusPlan(tenantId, version.getProductVersionId(), bonusPlan);
+        persistAnnuityPlan(tenantId, version.getProductVersionId(), annuity);
 
         for (RatingFactorInput input : ratingTable) {
             ratingFactorRepository.save(new RatingFactor(tenantId, version.getProductVersionId(),
@@ -922,6 +950,64 @@ public class ProductApiImpl implements ProductApi {
         for (BonusSurrenderRow row : plan.surrenderRows()) {
             bonusSurrenderEntryRepository.save(new BonusSurrenderEntry(tenantId, productVersionId, row));
         }
+    }
+
+    /** An ANNUITY version's terms (V22). Nothing for any other version -- its absence IS that. */
+    private void persistAnnuityPlan(UUID tenantId, UUID productVersionId, AnnuityPlan plan) {
+        if (plan == null || !plan.annuity()) {
+            return;
+        }
+        versionAnnuityTermsRepository.save(new VersionAnnuityTerms(tenantId, productVersionId, plan.timing().name(),
+            plan.proofOfLifeIntervalMonths(), plan.jointAgeDifferenceMin(), plan.jointAgeDifferenceMax(),
+            plan.basisReference(), plan.basisDate()));
+        for (AnnuityForm form : plan.forms()) {
+            AnnuityFormEntity saved = annuityFormRepository.saveAndFlush(new AnnuityFormEntity(tenantId, productVersionId, form));
+            for (AnnuityRateRow row : form.rates()) {
+                annuityRateEntryRepository.save(new AnnuityRateEntry(tenantId, saved.getAnnuityFormId(), row));
+            }
+        }
+        for (AnnuityFrequencyFactor f : plan.frequencies()) {
+            annuityFrequencyEntryRepository.save(new AnnuityFrequencyEntry(tenantId, productVersionId, f));
+        }
+    }
+
+    /**
+     * Product first, annuity tables second (plan R2): the version's own product says whether it is an
+     * ANNUITY before any V22 table is read. Every policy event on the platform reaches a caller of
+     * this, so a test class that never publishes an annuity never needs V22 -- and never logs a
+     * missing-relation error for it.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public AnnuityPlan resolveAnnuityPlan(UUID productVersionId) {
+        if (productVersionId == null) {
+            return AnnuityPlan.none();
+        }
+        Optional<ProductVersion> version = productVersionRepository.findById(productVersionId);
+        if (version.isEmpty()) {
+            return AnnuityPlan.none();
+        }
+        boolean annuity = productDefinitionRepository.findById(version.get().getProductId())
+            .map(p -> ProductCategory.ANNUITY.name().equals(p.getCategory())).orElse(false);
+        if (!annuity) {
+            return AnnuityPlan.none();
+        }
+        return versionAnnuityTermsRepository.findById(productVersionId)
+            .map(t -> new AnnuityPlan(true, AnnuityTiming.valueOf(t.getTiming()), t.getProofOfLifeIntervalMonths(),
+                t.getJointAgeDifferenceMin(), t.getJointAgeDifferenceMax(), t.getBasisReference(), t.getBasisDate(),
+                annuityFormRepository.findByProductVersionIdOrderByFormCode(productVersionId).stream()
+                    .map(f -> f.toForm(annuityRateEntryRepository.findByAnnuityFormIdOrderByAge(f.getAnnuityFormId())
+                        .stream().map(AnnuityRateEntry::toRow).toList()))
+                    .toList(),
+                annuityFrequencyEntryRepository.findByProductVersionId(productVersionId).stream()
+                    .map(AnnuityFrequencyEntry::toFactor).toList()))
+            .orElse(AnnuityPlan.none());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AnnuityPrice priceAnnuity(UUID productVersionId, AnnuityPricingInput input) {
+        return AnnuityPricer.price(resolveAnnuityPlan(productVersionId), input);
     }
 
     @Override

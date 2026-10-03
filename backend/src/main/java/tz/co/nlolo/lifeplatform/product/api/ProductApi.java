@@ -326,6 +326,31 @@ public interface ProductApi {
                          TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
                          AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan, String publishedBy);
 
+    /**
+     * The fullest form (product step 5): also an ANNUITY version's forms, grids and frequency
+     * factors. Every other overload delegates here with {@link AnnuityPlan#none()}. Ten overloads now;
+     * the command-record consolidation step 4 flagged is still its own change.
+     */
+    void publishVersion(UUID productId, IfrsMeasurementModel ifrsMeasurementModel, LocalDate effectiveDate, LocalDate retirementDate,
+                         List<RatingFactorInput> ratingTable, List<BenefitInput> benefitSchedule, List<FundInput> fundDefinitions,
+                         List<BaseRateInput> baseRates, EligibilityBounds bounds, FrequencyLoading frequencyLoading,
+                         TiraFiling tiraFiling, CashValuePlan cashValue, PayoutPlan payoutPlan,
+                         AccumulationPlan accumulationPlan, DepositPlan depositPlan, BonusPlan bonusPlan,
+                         AnnuityPlan annuityPlan, String publishedBy);
+
+    /**
+     * An ANNUITY version's terms; {@link AnnuityPlan#none()} for every other version. Asks the
+     * product's category before reading any annuity table, so callers on ordinary policies touch none.
+     */
+    AnnuityPlan resolveAnnuityPlan(UUID productVersionId);
+
+    /**
+     * The one annuity pricer (plan R1): underwriting at acceptance, the annuity module at the lock.
+     *
+     * @throws AnnuityPricingRefusedException in words a person can act on
+     */
+    AnnuityPrice priceAnnuity(UUID productVersionId, AnnuityPricingInput input);
+
     /** A version's deposit grid; {@link DepositPlan#none()} for any other version. Internal-only. */
     DepositPlan resolveDepositPlan(UUID productVersionId);
 

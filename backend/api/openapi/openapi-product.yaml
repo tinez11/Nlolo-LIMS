@@ -249,6 +249,32 @@ paths:
         '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { description: "No such version for that product in this tenant" }
+  /products/{productId}/versions/{versionId}/annuity:
+    get:
+      summary: An annuity version's forms and payment frequencies, for the case form
+      description: >-
+        Product step 5. The forms a purchase may choose and the frequencies it may be paid at --
+        not the rate rows, which only the pricer reads; a quote is how anyone sees a figure. 404
+        NOT_AN_ANNUITY for any version that is not an annuity. Agents open cases, so they may read it.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The annuity terms
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnuityTerms' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not an annuity version
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /products/{productId}/versions/{versionId}/exclusion-periods:
     put:
       summary: Set or clear a version's policy-term exclusion windows
@@ -468,6 +494,51 @@ components:
                 properties:
                   fromCompletedYears: { type: integer, minimum: 0 }
                   perMille: { type: number, minimum: 0, maximum: 1000 }
+        annuity:
+          description: >-
+            Required on an ANNUITY version and refused on every other (product step 5). Forms are
+            configurable combinations of four settings -- guaranteed years, joint life with a survivor
+            percentage, escalation, capital protection -- each with its own grid of annual income per
+            1,000 of purchase price. timing has no default. Every age within the version's entry-age
+            bounds must have a rate in every form (and both sexes on BY_SEX, and every age difference
+            on a joint form): a gap is refused at publish.
+          type: [object, "null"]
+          properties:
+            timing: { type: [string, "null"], enum: [ARREARS, ADVANCE, null] }
+            proofOfLifeIntervalMonths: { type: [integer, "null"], minimum: 1, maximum: 24 }
+            jointAgeDifferenceMin: { type: [integer, "null"], description: "Annuitant age minus joint-life age; joint forms' bands must cover min..max" }
+            jointAgeDifferenceMax: { type: [integer, "null"] }
+            basisReference: { type: [string, "null"], maxLength: 100 }
+            basisDate: { type: [string, "null"], format: date }
+            forms:
+              type: array
+              items:
+                type: object
+                properties:
+                  formCode: { type: [string, "null"], maxLength: 30 }
+                  guaranteeYears: { type: [integer, "null"], minimum: 0, maximum: 30 }
+                  joint: { type: [boolean, "null"] }
+                  survivorPercent: { type: [number, "null"], minimum: 1, maximum: 100 }
+                  escalationPercent: { type: [number, "null"], minimum: 0, maximum: 10 }
+                  capitalProtected: { type: [boolean, "null"] }
+                  rateBasis: { type: [string, "null"], enum: [UNISEX, BY_SEX, null] }
+                  rates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
+                        age: { type: [integer, "null"], minimum: 0, maximum: 120 }
+                        ageDifferenceFrom: { type: [integer, "null"] }
+                        ageDifferenceTo: { type: [integer, "null"] }
+                        annualRatePerMille: { type: [number, "null"], exclusiveMinimum: 0 }
+            frequencies:
+              type: array
+              items:
+                type: object
+                properties:
+                  frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL, null] }
+                  factor: { type: [number, "null"], exclusiveMinimum: 0, maximum: 1 }
         tiraFiling:
           description: >-
             The TIRA filing that authorises this version. Required: in Tanzania a product and
@@ -651,6 +722,37 @@ components:
         frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE] }
         instalmentsPerYear: { type: integer }
         instalmentAmount: { type: number }
+    AnnuityTerms:
+      description: An annuity version's forms and payment frequencies (product step 5), without rate rows.
+      type: object
+      additionalProperties: false
+      required: [timing, proofOfLifeIntervalMonths, forms, frequencies]
+      properties:
+        timing: { type: string, enum: [ARREARS, ADVANCE] }
+        proofOfLifeIntervalMonths: { type: integer }
+        forms:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [formCode, guaranteeYears, joint, escalationPercent, capitalProtected, rateBasis]
+            properties:
+              formCode: { type: string }
+              guaranteeYears: { type: integer }
+              joint: { type: boolean }
+              survivorPercent: { type: [string, "null"], description: "Decimal string, no trailing zeros; null on a single-life form" }
+              escalationPercent: { type: string, description: "Decimal string, no trailing zeros" }
+              capitalProtected: { type: boolean }
+              rateBasis: { type: string, enum: [UNISEX, BY_SEX] }
+        frequencies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [frequency, factor]
+            properties:
+              frequency: { type: string, enum: [MONTHLY, QUARTERLY, SEMI_ANNUAL, ANNUAL] }
+              factor: { type: string, description: "Decimal string, no trailing zeros" }
     VersionRatingView:
       description: The rating basis for one version, for actuarial and product review.
       type: object

@@ -76,6 +76,7 @@ class ProductContractTest {
             "db-migrations/product/V19__accumulation_terms.sql",
             "db-migrations/product/V20__deposit_rate_grid.sql",
             "db-migrations/product/V21__bonus_terms.sql",
+            "db-migrations/product/V22__annuity_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql");
     }
@@ -958,6 +959,98 @@ class ProductContractTest {
                 .content(withProfitsVersion("[]")))
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.detail").value("A TERM_LIFE product cannot be with-profits"));
+    }
+
+    // ---- Step 5: an annuity over the wire ----
+
+    private static final String ANNUITY_RATES = """
+        [{"age":60,"annualRatePerMille":72},{"age":61,"annualRatePerMille":74},{"age":62,"annualRatePerMille":76}]""";
+
+    private static String annuityVersion(String rates) {
+        return """
+            {"ifrsMeasurementModel":"GMM","effectiveDate":"2026-01-01",
+             "payoutTerms":{"freeLookDays":15},"tiraFiling":{"reference":"TIRA/CONTRACT/ANN","approvalDate":"2026-01-15"},
+             "eligibility":{"minEntryAge":60,"maxEntryAge":62},
+             "ratingTable":[{"factorType":"AGE","band":"60-62","multiplier":1.0,"ageFrom":60,"ageTo":62},{"factorType":"SUM_ASSURED_BAND","band":"LOW","multiplier":1.0}],
+             "benefitSchedule":[{"benefitType":"DEATH","calculationMethod":"SUM_ASSURED"}],
+             "annuity":{"timing":"ARREARS","proofOfLifeIntervalMonths":12,"basisReference":"ACT/ANN/2026","basisDate":"2026-01-01",
+               "forms":[{"formCode":"LIFE-10G","guaranteeYears":10,"joint":false,"escalationPercent":3,
+                         "capitalProtected":false,"rateBasis":"UNISEX","rates":%s}],
+               "frequencies":[{"frequency":"MONTHLY","factor":0.98},{"frequency":"ANNUAL","factor":1}]}}
+            """.formatted(rates);
+    }
+
+    private UUID activeVersion(UUID tenantId, UUID productId) throws Exception {
+        MvcResult snapshot = mockMvc.perform(get("/products/" + productId + "/active-snapshot")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andReturn();
+        return objectMapper.readTree(snapshot.getResponse().getContentAsString())
+            .path("productVersionId").traverse(objectMapper).readValueAs(UUID.class);
+    }
+
+    @Test
+    void anAnnuityIsPublishedAndItsFormsReadBackToSpec() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "ANN-CONTRACT-01", "ANNUITY");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(annuityVersion(ANNUITY_RATES)))
+            .andExpect(status().isCreated())
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+
+        UUID versionId = activeVersion(tenantId, productId);
+        mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/annuity")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_AGENTS"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.timing").value("ARREARS"))
+            .andExpect(jsonPath("$.proofOfLifeIntervalMonths").value(12))
+            .andExpect(jsonPath("$.forms[0].formCode").value("LIFE-10G"))
+            .andExpect(jsonPath("$.forms[0].guaranteeYears").value(10))
+            .andExpect(jsonPath("$.forms[0].joint").value(false))
+            .andExpect(jsonPath("$.forms[0].escalationPercent").value("3"))
+            .andExpect(jsonPath("$.forms[0].capitalProtected").value(false))
+            .andExpect(jsonPath("$.forms[0].rateBasis").value("UNISEX"))
+            .andExpect(jsonPath("$.forms[0].rates").doesNotExist())
+            .andExpect(jsonPath("$.frequencies[0].frequency").exists())
+            .andExpect(jsonPath("$.frequencies[?(@.frequency=='MONTHLY')].factor").value("0.98"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
+    }
+
+    @Test
+    void aGapInAnAnnuityGridIsRefusedNamingTheAge() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "ANN-CONTRACT-02", "ANNUITY");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(annuityVersion("[{\"age\":60,\"annualRatePerMille\":72},{\"age\":62,\"annualRatePerMille\":76}]")))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("Form LIFE-10G has no rate for age 61"));
+    }
+
+    @Test
+    void theAnnuityReadOfAnOrdinaryVersionIsA404WithItsOwnCode() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        UUID productId = createProductOfCategory(tenantId, "ANN-CONTRACT-03", "ENDOWMENT");
+        mockMvc.perform(post("/products/" + productId + "/versions")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"), new SimpleGrantedAuthority("ROLE_ADMIN"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString())))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(withProfitsVersion("[{\"kind\":\"MATURITY\",\"amountBasis\":\"PERCENT_OF_SA\",\"amountValue\":100}]")))
+            .andExpect(status().isCreated());
+        UUID versionId = activeVersion(tenantId, productId);
+        mockMvc.perform(get("/products/" + productId + "/versions/" + versionId + "/annuity")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_REALM_STAFF"))
+                    .jwt(builder -> builder.claim("tenant_id", tenantId.toString()))))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.errorCode").value("NOT_AN_ANNUITY"))
+            .andExpect(OpenApiValidationMatchers.openApi().isValid(SPEC_PATH));
     }
 
     @Test

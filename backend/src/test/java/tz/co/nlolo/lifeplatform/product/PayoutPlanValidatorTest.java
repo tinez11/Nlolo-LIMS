@@ -97,8 +97,8 @@ class PayoutPlanValidatorTest {
 
     @Test
     void wholeLifeAnnuityAndUnitLinkedTakeNoRows() {
-        // Whole life has no term to mature at; annuities and unit-linked arrive with steps 5 and 6
-        // and would need an engine that does not exist.
+        // Whole life has no term to mature at; an annuity's income is set by its forms (step 5), never
+        // authored as rows; unit-linked arrives with step 6.
         for (ProductCategory c : List.of(ProductCategory.WHOLE_LIFE, ProductCategory.ANNUITY, ProductCategory.UNIT_LINKED)) {
             assertThatThrownBy(() -> PayoutPlanValidator.validate(c, PayoutPlan.authored(FREE_LOOK_15, List.of(MATURITY_100))))
                 .hasMessage("A " + c + " product cannot carry a payout schedule");
