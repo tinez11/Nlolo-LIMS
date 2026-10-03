@@ -93,7 +93,22 @@ public interface UnderwritingApi {
      *     is one nobody can review — and on a DECLINED or POSTPONED case it is what the
      *     applicant is eventually told.
      */
-    record DecisionInput(DecisionOutcome outcome, BigDecimal loadingPercent, String reason) {}
+    record DecisionInput(DecisionOutcome outcome, BigDecimal loadingPercent, String reason, boolean ageEvidenceConfirmed) {
+        /** Every decision but an annuity's: age evidence is the annuity light path's only evidence. */
+        public DecisionInput(DecisionOutcome outcome, BigDecimal loadingPercent, String reason) {
+            this(outcome, loadingPercent, reason, false);
+        }
+    }
+
+    /**
+     * Record (or change, until decided) an annuity case's chosen form, frequency and joint life
+     * (product step 5). Refused on any product that is not an annuity, and for a form or frequency
+     * the case's version does not offer.
+     */
+    AnnuityChoice recordAnnuityChoice(UUID caseId, AnnuityChoice choice, String recordedBy);
+
+    /** An annuity case's choice; empty for every other case, and for an annuity case not yet chosen. */
+    java.util.Optional<AnnuityChoice> annuityChoice(UUID caseId);
 
     /**
      * Record a human underwriting decision, and publish {@code UnderwritingDecisionMade}.

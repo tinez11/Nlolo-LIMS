@@ -360,6 +360,21 @@ public class UnderwritingDecisionEventListener {
                 if (schemeProduct) {
                     throw new NotASingleLifeProductException(category.name());
                 }
+                // An annuity is bought, not rated (product step 5): its premium is the purchase
+                // price, paid once, and it has no term. The income is priced by the annuity module
+                // when the money arrives -- underwriting already proved it prices at acceptance.
+                if (productApi.resolveAnnuityPlan(decidedCase.productVersionId()).annuity()) {
+                    policyApi.issuePolicy(caseId, new PolicyApi.IssueRequest(
+                        decidedCase.applicantPartyId(), decidedCase.productId(), decidedCase.productVersionId(),
+                        decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(),
+                        decidedCase.sumAssuredAmount(), decidedCase.sumAssuredCurrency(), "SINGLE",
+                        decidedCase.agentOfRecordId(), nominationsAsBeneficiaries(decidedCase),
+                        "Automatic issuance on underwriting decision " + outcome,
+                        decidedCase.proposedCommencementDate(), null, null,
+                        decidedCase.lifeAssuredPartyId()),
+                        "system:underwriting-decision-listener");
+                    return;
+                }
                 // No actuarial rating engine exists anywhere in this codebase (M2's
                 // SimpleRulesEngine is a deliberate placeholder). Global Constraints (M4):
                 // annualPremium = sumAssured * (baseRatePerMille/1000) * ratingMultiplier

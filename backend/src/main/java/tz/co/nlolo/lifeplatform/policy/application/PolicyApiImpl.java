@@ -235,6 +235,7 @@ public class PolicyApiImpl implements PolicyApi {
         partyApi.getParty(request.policyholderPartyId()); // existence check -- PartyNotFoundException propagates as-is
         ProductSnapshotView snapshot = productApi.getActiveSnapshot(request.productId(), LocalDate.now());
         refuseUnlessAValidDeposit(request);
+        refuseUnlessAValidAnnuity(request);
 
         // Placeholder generation scheme (flagged): policy.policy's own column comment describes
         // a "tenant/product/year/sequence, human-meaningful for USSD/call-center lookup"
@@ -1320,6 +1321,23 @@ public class PolicyApiImpl implements PolicyApi {
         LocalDate maturity = policy.restateTerm(commencement, policyTermMonths);
         policyRepository.save(policy);
         return maturity;
+    }
+
+    /**
+     * An annuity is bought with one payment of its purchase price and pays for life (product step 5):
+     * so SINGLE, premium equal to the sum assured (the price), and no term. Product is asked first.
+     */
+    private void refuseUnlessAValidAnnuity(IssueRequest request) {
+        if (!productApi.resolveAnnuityPlan(request.productVersionId()).annuity()) {
+            return;
+        }
+        if (!"SINGLE".equals(request.premiumFrequency()) || request.premiumAmount() == null
+                || request.sumAssuredAmount() == null || request.premiumAmount().compareTo(request.sumAssuredAmount()) != 0) {
+            throw new IllegalArgumentException("An annuity is bought with a single premium equal to its purchase price");
+        }
+        if (request.policyTermMonths() != null || request.premiumPayingTermMonths() != null) {
+            throw new IllegalArgumentException("An annuity has no term; it pays for life");
+        }
     }
 
     /** A fixed-term deposit is one payment, of the deposit itself, for a term its grid offers (plan §R9). */

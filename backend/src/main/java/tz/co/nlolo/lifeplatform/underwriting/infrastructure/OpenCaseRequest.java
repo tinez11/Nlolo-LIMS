@@ -82,7 +82,21 @@ public record OpenCaseRequest(
      */
     @Pattern(regexp = "MONTHLY|QUARTERLY|ANNUALLY|SINGLE") String premiumFrequency,
 
-    List<@Valid BeneficiaryNominationDto> beneficiaries) {
+    List<@Valid BeneficiaryNominationDto> beneficiaries,
+
+    /**
+     * On an ANNUITY product only (product step 5): the chosen form, frequency and joint life,
+     * recorded with the case. Optional here -- it may also be recorded afterwards, and the decision
+     * refuses an annuity case that has none.
+     */
+    @Valid AnnuityChoiceDto annuityChoice) {
+
+    /** What an annuity applicant chose. Unannotated: the service refuses in the console's words. */
+    public record AnnuityChoiceDto(String formCode, String frequency, UUID jointLifePartyId) {
+        public tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice toApi() {
+            return tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice.of(formCode, frequency, jointLifePartyId);
+        }
+    }
 
     // Field names/constraints mirror openapi-common.yaml#/components/schemas/Money exactly.
     public record Money(

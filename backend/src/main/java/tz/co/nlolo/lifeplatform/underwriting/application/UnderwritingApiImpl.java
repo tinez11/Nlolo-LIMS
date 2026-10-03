@@ -13,6 +13,11 @@ import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.refdata.api.ReferenceDataApi;
 import tz.co.nlolo.lifeplatform.underwriting.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.domain.*;
+import tz.co.nlolo.lifeplatform.product.api.AnnuityForm;
+import tz.co.nlolo.lifeplatform.product.api.AnnuityPlan;
+import tz.co.nlolo.lifeplatform.product.api.AnnuityPricingInput;
+import tz.co.nlolo.lifeplatform.product.api.AnnuityPricingRefusedException;
+import tz.co.nlolo.lifeplatform.underwriting.infrastructure.AnnuityChoiceRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.MedicalDisclosureRepository;
 import tz.co.nlolo.lifeplatform.underwriting.infrastructure.ProposalBeneficiaryRepository;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
@@ -56,6 +61,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
     private final ProposalGroupSchemeRepository proposalGroupSchemeRepository;
     private final ProposalGroupGradeRepository proposalGroupGradeRepository;
     private final ProposalGroupMemberRepository proposalGroupMemberRepository;
+    private final AnnuityChoiceRepository annuityChoiceRepository;
+    /** "Today" is the civil date here, never UTC's (the UTC-vs-civil day bug). */
+    private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
     /** Serialises the disclosure Q&A set into its JSONB column -- see recordDisclosures. */
     private final ObjectMapper objectMapper;
 
@@ -67,7 +75,9 @@ public class UnderwritingApiImpl implements UnderwritingApi {
                                 ProposalBeneficiaryRepository proposalBeneficiaryRepository,
                                 ProposalGroupSchemeRepository proposalGroupSchemeRepository,
                                 ProposalGroupGradeRepository proposalGroupGradeRepository,
-                                ProposalGroupMemberRepository proposalGroupMemberRepository) {
+                                ProposalGroupMemberRepository proposalGroupMemberRepository,
+                                AnnuityChoiceRepository annuityChoiceRepository) {
+        this.annuityChoiceRepository = annuityChoiceRepository;
         this.proposalBeneficiaryRepository = proposalBeneficiaryRepository;
         this.proposalGroupSchemeRepository = proposalGroupSchemeRepository;
         this.proposalGroupGradeRepository = proposalGroupGradeRepository;
@@ -441,9 +451,17 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         if (decision.reason() == null || decision.reason().isBlank()) {
             throw new UnderwritingValidationException("A decision must carry a reason");
         }
+        // An annuity takes the light path (product step 5): its risk is the annuitant living LONG,
+        // so medical evidence matters little and proof of age -- which picks the rate -- is the
+        // evidence. Product is asked first; only an ANNUITY version reads the choice table.
+        AnnuityPlan annuityPlan = productApi.resolveAnnuityPlan(underwritingCase.getProductVersionId());
+        boolean annuity = annuityPlan.annuity();
+        if (annuity) {
+            checkAnnuityDecision(underwritingCase, decision, annuityPlan);
+        }
         // Evidence first. Nothing structural stopped a case being decided the instant it was
         // opened, and "accepted, nothing assessed" is not a decision anyone can defend later.
-        if (riskAssessmentRepository.countByTenantIdAndCaseId(tenantId, caseId) == 0) {
+        if (!annuity && riskAssessmentRepository.countByTenantIdAndCaseId(tenantId, caseId) == 0) {
             throw new UnderwritingValidationException(
                 "Case " + caseId + " has no assessment -- there is nothing to decide on");
         }
@@ -494,6 +512,12 @@ public class UnderwritingApiImpl implements UnderwritingApi {
         underwritingCase.recordDecision(decision.outcome().name(), decision.loadingPercent(),
             declineReason, decidedBy, overrode);
         underwritingCaseRepository.save(underwritingCase);
+        if (annuity && decision.outcome() == DecisionOutcome.ACCEPT) {
+            annuityChoiceRepository.findById(caseId).ifPresent(choice -> {
+                choice.confirmAgeEvidence(decidedBy);
+                annuityChoiceRepository.save(choice);
+            });
+        }
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("caseId", caseId);
@@ -567,6 +591,90 @@ public class UnderwritingApiImpl implements UnderwritingApi {
             // was disclosed" -- the most misleading answer this endpoint could give.
             throw new IllegalStateException("Stored disclosure set is not readable as answers", e);
         }
+    }
+
+    /**
+     * An annuity is accepted or declined, never loaded (its premium is the purchase price, so there is
+     * nothing to load) or postponed (a priced quote would dangle) -- plan R4. Acceptance needs the
+     * choice, confirmed proof of age, and a purchase that PRICES today: re-quoted here so a refusal
+     * surfaces before any money is taken, not at the lock.
+     */
+    private void checkAnnuityDecision(UnderwritingCase underwritingCase, DecisionInput decision, AnnuityPlan plan) {
+        if (decision.outcome() != DecisionOutcome.ACCEPT && decision.outcome() != DecisionOutcome.DECLINED) {
+            throw new UnderwritingValidationException("An annuity is accepted or declined; it is not loaded or postponed");
+        }
+        if (decision.outcome() == DecisionOutcome.DECLINED) {
+            return;
+        }
+        AnnuityChoiceEntity choice = annuityChoiceRepository.findById(underwritingCase.getCaseId())
+            .orElseThrow(() -> new UnderwritingValidationException(
+                "An annuity case must record the chosen form and frequency before it is decided"));
+        if (!decision.ageEvidenceConfirmed()) {
+            throw new UnderwritingValidationException("An annuity is accepted only once proof of age is confirmed");
+        }
+        AnnuityChoice chosen = choice.toChoice();
+        PartyDetailView annuitant = partyApi.getPartyDetail(lifeAssuredPartyId(underwritingCase));
+        PartyDetailView joint = chosen.jointLifePartyId() != null ? partyApi.getPartyDetail(chosen.jointLifePartyId()) : null;
+        try {
+            productApi.priceAnnuity(underwritingCase.getProductVersionId(), new AnnuityPricingInput(
+                chosen.formCode(), chosen.frequency(), underwritingCase.getSumAssuredAmount(),
+                annuitant.dateOfBirth(), annuitant.sex() != null ? annuitant.sex().name() : null,
+                joint != null ? joint.dateOfBirth() : null, joint != null && joint.sex() != null ? joint.sex().name() : null,
+                LocalDate.now(CIVIL_ZONE)));
+        } catch (AnnuityPricingRefusedException e) {
+            throw new UnderwritingValidationException(e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public AnnuityChoice recordAnnuityChoice(UUID caseId, AnnuityChoice choice, String recordedBy) {
+        UUID tenantId = TenantContext.get();
+        UnderwritingCase underwritingCase = findOrThrow(caseId, tenantId);
+        AnnuityPlan plan = productApi.resolveAnnuityPlan(underwritingCase.getProductVersionId());
+        if (!plan.annuity()) {
+            throw new UnderwritingValidationException("Only an annuity case records an annuity choice");
+        }
+        if (isDecided(underwritingCase)) {
+            throw new UnderwritingCaseAlreadyDecidedException(caseId);
+        }
+        AnnuityForm form = plan.form(choice.formCode()).orElseThrow(() ->
+            new UnderwritingValidationException("This version does not offer form " + choice.formCode()));
+        if (plan.frequency(choice.frequency()).isEmpty()) {
+            throw new UnderwritingValidationException("This version does not offer " + choice.frequency() + " payments");
+        }
+        if (form.joint() && choice.jointLifePartyId() == null) {
+            throw new UnderwritingValidationException("Form " + form.formCode() + " is joint-life: name the joint life");
+        }
+        if (!form.joint() && choice.jointLifePartyId() != null) {
+            throw new UnderwritingValidationException("Form " + form.formCode() + " is single-life: it takes no joint life");
+        }
+        if (choice.jointLifePartyId() != null) {
+            if (choice.jointLifePartyId().equals(lifeAssuredPartyId(underwritingCase))) {
+                throw new UnderwritingValidationException("The joint life must be someone other than the annuitant");
+            }
+            PartyDetailView joint = partyApi.getPartyDetail(choice.jointLifePartyId());
+            if (joint.partyType() != PartyType.INDIVIDUAL) {
+                throw new UnderwritingValidationException("The joint life must be a person");
+            }
+            if (joint.dateOfBirth() == null) {
+                throw new UnderwritingValidationException("The joint life's date of birth is not recorded, so there is no age to price");
+            }
+        }
+        AnnuityChoiceEntity entity = annuityChoiceRepository.findById(caseId)
+            .orElseGet(() -> new AnnuityChoiceEntity(tenantId, caseId));
+        entity.choose(choice.formCode(), choice.frequency(), choice.jointLifePartyId(), recordedBy);
+        return annuityChoiceRepository.save(entity).toChoice();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Optional<AnnuityChoice> annuityChoice(UUID caseId) {
+        UnderwritingCase underwritingCase = findOrThrow(caseId, TenantContext.get());
+        if (!productApi.resolveAnnuityPlan(underwritingCase.getProductVersionId()).annuity()) {
+            return java.util.Optional.empty();
+        }
+        return annuityChoiceRepository.findById(caseId).map(AnnuityChoiceEntity::toChoice);
     }
 
     private static boolean isDecided(UnderwritingCase underwritingCase) {

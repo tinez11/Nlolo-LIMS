@@ -18,4 +18,6 @@ import java.math.BigDecimal;
 public record DecideRequest(
     @NotNull DecisionOutcome outcome,
     BigDecimal loadingPercent,
-    @NotBlank String reason) {}
+    @NotBlank String reason,
+    // An annuity's light path (product step 5): proof of age was seen. Ignored on every other case.
+    Boolean ageEvidenceConfirmed) {}
