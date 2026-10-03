@@ -4,6 +4,8 @@ import tz.co.nlolo.lifeplatform.DomainEventEnvelope;
 import tz.co.nlolo.lifeplatform.TenantContext;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.GlPostingCalculator;
 import tz.co.nlolo.lifeplatform.finaccounting.domain.JournalEntry;
+import tz.co.nlolo.lifeplatform.finaccounting.api.PostingDirection;
+import tz.co.nlolo.lifeplatform.finaccounting.domain.PostingRule;
 import tz.co.nlolo.lifeplatform.finaccounting.infrastructure.ChartOfAccountSeeder;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -91,6 +93,28 @@ public class BenefitPayoutEventListener {
         String currency = (String) paid.get("currencyCode");
 
         chartOfAccountSeeder.seedIfAbsent(tenantId, "system:" + EVENT);
+
+        // Tax withheld (product step 5): the expense is the GROSS, the bank paid the NET, and the
+        // difference is owed to the tax authority -- three legs, balanced. Absent or zero withholding
+        // (every payout before this step, and any with no rule in force) posts exactly as before.
+        Object withheldField = payload.get("withheldAmount");
+        if (withheldField instanceof Map<?, ?> withheldMoney) {
+            BigDecimal withheld = new BigDecimal((String) withheldMoney.get("amount"));
+            if (withheld.signum() > 0) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> grossMoney = (Map<String, Object>) payload.get("grossAmount");
+                BigDecimal gross = new BigDecimal((String) grossMoney.get("amount"));
+                // postEntry is idempotent on (tenant, event, instalment), so a redelivery posts nothing.
+                JournalEntry entry = new JournalEntry(tenantId, EVENT, instalmentId, YearMonth.now().toString(),
+                    policyNumber, "system:" + EVENT);
+                entry.addLeg(PostingRule.CLAIMS_EXPENSE, PostingDirection.DR, gross, currency);
+                entry.addLeg(PostingRule.CASH, PostingDirection.CR, amount, currency);
+                entry.addLeg(PostingRule.WITHHOLDING_TAX_PAYABLE, PostingDirection.CR, withheld, currency);
+                finaccountingApiImpl.postEntry(entry);
+                return;
+            }
+        }
+
         Optional<JournalEntry> maybeEntry = GlPostingCalculator.calculate(tenantId, EVENT,
             instalmentId, policyNumber, amount, currency, YearMonth.now().toString(), "system:" + EVENT);
         if (maybeEntry.isEmpty()) {

@@ -67,7 +67,9 @@ class ChartOfAccountMigrationV5Test {
         MigrationTestSupport.applyMigration(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(),
             POSTGRES.getPassword(),
             "db-migrations/finaccounting/V5__chart_of_account_hierarchy.sql",
-            "db-migrations/finaccounting/V7__q4_2026_partitions.sql");
+            "db-migrations/finaccounting/V7__q4_2026_partitions.sql",
+            // Product step 5: V8 adds 2230 to every seeded chart, so the migrated chart still equals the blueprint.
+            "db-migrations/finaccounting/V8__withholding_tax_account.sql");
     }
 
     /** The nine flat accounts as M9 seeded them -- no parent, no level, no status. */

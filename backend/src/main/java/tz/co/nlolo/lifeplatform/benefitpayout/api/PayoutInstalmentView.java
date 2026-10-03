@@ -18,4 +18,6 @@ public record PayoutInstalmentView(UUID instalmentId, String policyNumber, Payou
                                    BigDecimal originalAmount, BigDecimal currentAmount, String currency,
                                    String restatementReason, InstalmentStatus status, String statusReason,
                                    UUID streamId, String payeeRef, ProofOfLifeMethod proofOfLifeMethod,
-                                   String reviewedBy, String approvedBy, UUID paymentRunId, int attempts) {}
+                                   String reviewedBy, String approvedBy, UUID paymentRunId, int attempts,
+                                   // Tax withheld at approval (product step 5); null before approval or with none checked.
+                                   BigDecimal grossAmount, BigDecimal withheldAmount, BigDecimal netAmount) {}

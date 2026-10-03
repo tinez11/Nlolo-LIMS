@@ -60,6 +60,8 @@ public final class PostingRule {
     public static final String CLAIMS_PAYABLE = "2110";
     public static final String UNEARNED_PREMIUM = "2140";
     public static final String REINSURANCE_PAYABLE = "2220";
+    /** Tax withheld from a payout, owed to the authority (product step 5). */
+    public static final String WITHHOLDING_TAX_PAYABLE = "2230";
     public static final String CLAIMS_EXPENSE = "5100";
     public static final String COMMISSION_EXPENSE = "5200";
     public static final String REINSURANCE_CEDED_PREMIUM = "5500";

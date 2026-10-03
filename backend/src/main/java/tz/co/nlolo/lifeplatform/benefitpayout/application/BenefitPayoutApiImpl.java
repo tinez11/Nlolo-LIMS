@@ -63,13 +63,16 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     private final AccumulationApi accumulationApi;
     /** Product step 4: a with-profits maturity and death ceiling add the bonus. */
     private final BonusApi bonusApi;
+    /** Product step 5: tax withheld at approval, by finance-approved rules. */
+    private final WithholdingRules withholding;
 
     public BenefitPayoutApiImpl(PayoutInstalmentRepository instalments, PayoutStreamRepository streams,
                                 PremiumTallyRepository tallies, PaymentRunRepository runs,
                                 FreeLookCancellationRepository cancellations, FreeLookDeductionRepository deductions,
                                 ProductApi productApi, PolicyApi policyApi,
                                 ApplicationEventPublisher eventPublisher, AccumulationApi accumulationApi,
-                                BonusApi bonusApi) {
+                                BonusApi bonusApi, WithholdingRules withholding) {
+        this.withholding = withholding;
         this.accumulationApi = accumulationApi;
         this.bonusApi = bonusApi;
         this.cancellations = cancellations;
@@ -283,6 +286,8 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     public PayoutInstalmentView approve(UUID instalmentId, String approver) {
         PayoutInstalment i = load(instalmentId);
         i.approve(approver);
+        // Tax withheld now, when the gross is final (product step 5) -- before the rail is asked to pay.
+        withholding.apply(i);
         instalments.save(i);
         // The first approved instalment of an income stream starts its proof-of-life clock.
         if (i.getStreamId() != null) {
@@ -317,12 +322,19 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         endRedirectedAnnuityIfPaidOut(i);
         // On the real APPROVED -> PAID transition only, so a redelivery cannot post the same
         // payout to the ledger twice.
-        eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutPaid", TenantContext.get(),
-            Map.of("instalmentId", instalmentId.toString(),
-                   "policyNumber", i.getPolicyNumber(),
-                   "kind", i.kind().name(),
-                   "paidAmount", Map.of("amount", i.getCurrentAmount().toPlainString(),
-                        "currencyCode", i.getCurrency()))));
+        // paidAmount is what left the bank (the net, when tax was withheld). grossAmount and
+        // withheldAmount are additive (product step 5): absent on a payout approved before withholding
+        // existed, which finaccounting posts exactly as it always did.
+        Map<String, Object> paid = new HashMap<>();
+        paid.put("instalmentId", instalmentId.toString());
+        paid.put("policyNumber", i.getPolicyNumber());
+        paid.put("kind", i.kind().name());
+        paid.put("paidAmount", Map.of("amount", i.payableAmount().toPlainString(), "currencyCode", i.getCurrency()));
+        if (i.getGrossAmount() != null) {
+            paid.put("grossAmount", Map.of("amount", i.getGrossAmount().toPlainString(), "currencyCode", i.getCurrency()));
+            paid.put("withheldAmount", Map.of("amount", i.getWithheldAmount().toPlainString(), "currencyCode", i.getCurrency()));
+        }
+        eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutPaid", TenantContext.get(), paid));
     }
 
     /**
@@ -376,7 +388,8 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
                    "policyNumber", i.getPolicyNumber(),
                    "payeeRef", i.getPayeeRef(),
                    "purpose", purposeFor(i.kind()),
-                   "amount", Map.of("amount", i.getCurrentAmount().toPlainString(),
+                   // The NET when tax was withheld (product step 5): the rail pays what leaves the bank.
+                   "amount", Map.of("amount", i.payableAmount().toPlainString(),
                         "currencyCode", i.getCurrency()))));
     }
 
@@ -551,6 +564,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             // payee per row would be the one place in this flow where money could be redirected
             // without a second pair of eyes.
             i.approveInRun(paymentRunId, approver, streamPayee(i.getStreamId()));
+            withholding.apply(i);
             instalments.save(i);
             publishPayoutRequested(i);
         }

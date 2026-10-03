@@ -63,6 +63,8 @@ public final class ChartOfAccountBlueprint {
         header("2200", "Payables", "2000"),
         post("2210", "Agent Commissions Payable", "2200", "DISTRIBUTION"),
         post("2220", "Reinsurance Payable", "2200", "REINSURANCE"),
+        // Product step 5: tax withheld from payouts, owed to the authority until remitted (finaccounting V8).
+        post("2230", "Withholding Tax Payable", "2200"),
         post("2300", "Other Liabilities", "2000"),
         header("3000", "Equity", null),
         post("3100", "Share Capital", "3000"),

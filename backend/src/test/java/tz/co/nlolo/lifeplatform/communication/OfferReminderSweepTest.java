@@ -111,6 +111,7 @@ class OfferReminderSweepTest {
             "db-migrations/product/V21__bonus_terms.sql",
             "db-migrations/benefitpayout/V1__create_benefitpayout_schema.sql",
             "db-migrations/benefitpayout/V2__annuity_streams.sql",
+            "db-migrations/benefitpayout/V3__withholding.sql",
             "db-migrations/accumulation/V1__create_accumulation_schema.sql",
             "db-migrations/refdata/V1__create_refdata_schema.sql",
             "db-migrations/refdata/V2__seed_policy_loan_parameters.sql",

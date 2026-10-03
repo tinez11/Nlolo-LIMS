@@ -14,6 +14,7 @@ final class Views {
             i.getOriginalAmount(), i.getCurrentAmount(), i.getCurrency(), i.getRestatementReason(), i.status(),
             i.getStatusReason(), i.getStreamId(), i.getPayeeRef(),
             i.getProofOfLifeMethod() != null ? ProofOfLifeMethod.valueOf(i.getProofOfLifeMethod()) : null,
-            i.getReviewedBy(), i.getApprovedBy(), i.getPaymentRunId(), i.getAttempts());
+            i.getReviewedBy(), i.getApprovedBy(), i.getPaymentRunId(), i.getAttempts(),
+            i.getGrossAmount(), i.getWithheldAmount(), i.getNetAmount());
     }
 }
