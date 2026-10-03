@@ -18,6 +18,8 @@ server:
 benefitpayout:
   due-drain-interval-ms: 5000
   run-drain-interval-ms: 10000
+  # Product step 5: daily elsewhere; an annuity stream only needs topping up a year ahead.
+  annuity-rollforward-interval-ms: 60000
 # Product step 3: month-end interest and fees are posted hourly elsewhere -- a completed month is
 # not urgent -- but an e2e test funding an account commenced months ago must see them in seconds.
 accumulation:

@@ -15,6 +15,8 @@ public final class AnnuityTestMigrations {
     private static final String[] ANNUITY = {
         "db-migrations/product/V22__annuity_terms.sql",
         "db-migrations/underwriting/V14__annuity_choice.sql",
+        // benefitpayout V2 arrives through DepositTestMigrations, which every benefitpayout class sweeps.
+        "db-migrations/payment/V11__annuity_purpose.sql",
     };
 
     public static final String[] ALL = Stream.concat(Stream.of(DepositTestMigrations.ALL), Stream.of(ANNUITY))

@@ -47,6 +47,9 @@ public final class PayoutPlanValidator {
         if (plan == null || !plan.authored()) {
             return;
         }
+        if (plan.rows().stream().anyMatch(r -> r.kind() == PayoutKind.ANNUITY)) {
+            fail("ANNUITY payouts are set by an annuity's forms, not authored as rows");
+        }
         checkAccountRules(plan, accumulation);
         PayoutTerms terms = plan.terms();
         if (INDIVIDUAL.contains(category) && terms.freeLookDays() == null) {

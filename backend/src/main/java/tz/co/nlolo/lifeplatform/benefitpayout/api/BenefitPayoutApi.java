@@ -108,4 +108,41 @@ public interface BenefitPayoutApi {
      */
     java.math.BigDecimal deathBenefitCeiling(String policyNumber, java.math.BigDecimal sumAssuredCeiling,
                                              java.time.LocalDate dateOfDeath);
+
+    // ---- An annuity's income for life (product step 5) ----
+
+    /**
+     * Open an annuity's stream: no end date, the locked base escalated from the first payment, twelve
+     * months expanded ahead and rolled forward from there. Idempotent per policy: a second call
+     * returns the stream already open.
+     */
+    UUID openAnnuityStream(String policyNumber, java.time.LocalDate firstDue, String frequency,
+                           java.math.BigDecimal baseAmount, String currency, java.math.BigDecimal escalationPercent,
+                           int proofOfLifeIntervalMonths);
+
+    /** Nothing further is owed: every instalment due after {@code afterDate} is withdrawn, and the stream ends. */
+    void endAnnuityStream(String policyNumber, java.time.LocalDate afterDate, String reason);
+
+    /** A joint annuity's first death: every instalment due on or after {@code fromDate} pays {@code percent}. */
+    void reduceAnnuityStream(String policyNumber, java.time.LocalDate fromDate, java.math.BigDecimal percent);
+
+    /**
+     * The last death inside a guarantee: instalments due on or after {@code fromDate} up to
+     * {@code untilDate} go to {@code payeeRef} (null when none is known -- each then waits for a
+     * reviewer to enter one), and none after. Proof of life stops.
+     */
+    void redirectAnnuityStream(String policyNumber, java.time.LocalDate fromDate, java.time.LocalDate untilDate, String payeeRef);
+
+    /** Gross annuity income paid on the policy so far. */
+    java.math.BigDecimal annuityPaidGross(String policyNumber);
+
+    /** Gross annuity income paid for due dates after {@code date}. */
+    java.math.BigDecimal annuityPaidGrossDueAfter(String policyNumber, java.time.LocalDate date);
+
+    /**
+     * What the stream will pay for due dates after {@code fromExclusive} up to {@code toInclusive},
+     * from its own figures (including instalments not yet expanded). Zero when there is no stream.
+     */
+    java.math.BigDecimal annuityScheduledGrossBetween(String policyNumber, java.time.LocalDate fromExclusive,
+                                                      java.time.LocalDate toInclusive);
 }

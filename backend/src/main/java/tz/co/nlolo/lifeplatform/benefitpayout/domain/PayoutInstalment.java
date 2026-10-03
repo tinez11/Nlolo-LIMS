@@ -121,11 +121,19 @@ public class PayoutInstalment {
      * alive; a maturity or premium return does not, because it is owed by the calendar alone.
      */
     public void review(String reviewer, String payeeRef, ProofOfLifeMethod method, UUID documentId) {
+        review(reviewer, payeeRef, method, documentId, needsProofOfLife());
+    }
+
+    /**
+     * The same, saying whether proof of life is owed. An annuity's instalments redirected to its
+     * beneficiaries after the annuitant's death (product step 5) owe none: the life it proved is over.
+     */
+    public void review(String reviewer, String payeeRef, ProofOfLifeMethod method, UUID documentId, boolean proofRequired) {
         require(InstalmentStatus.DUE, "be reviewed");
         if (payeeRef == null || payeeRef.isBlank()) {
             throw new PayoutStateException("A payout needs a payee reference");
         }
-        if (needsProofOfLife() && method == null) {
+        if (proofRequired && method == null) {
             throw new PayoutStateException("A " + kind + " payout needs proof that the life assured is alive");
         }
         this.payeeRef = payeeRef;
@@ -137,7 +145,7 @@ public class PayoutInstalment {
     }
 
     public boolean needsProofOfLife() {
-        return kind() == PayoutKind.SURVIVAL || kind() == PayoutKind.INCOME;
+        return kind() == PayoutKind.SURVIVAL || kind() == PayoutKind.INCOME || kind() == PayoutKind.ANNUITY;
     }
 
     /** REVIEWED -> APPROVED, by someone other than the reviewer (decision Q1). */

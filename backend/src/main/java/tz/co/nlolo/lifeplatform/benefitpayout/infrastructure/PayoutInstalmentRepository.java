@@ -42,6 +42,16 @@ public interface PayoutInstalmentRepository extends JpaRepository<PayoutInstalme
 
     boolean existsByPolicyNumberAndKindIn(String policyNumber, Collection<String> kinds);
 
+    /** Gross annuity income paid on a policy (product step 5): the figure a capital refund nets off. */
+    @Query("select coalesce(sum(i.currentAmount), 0) from PayoutInstalment i "
+        + "where i.policyNumber = :policyNumber and i.kind = 'ANNUITY' and i.status = 'PAID'")
+    java.math.BigDecimal sumAnnuityPaid(@Param("policyNumber") String policyNumber);
+
+    /** Gross annuity income paid for due dates after {@code date} -- a late-notified death's overpayment. */
+    @Query("select coalesce(sum(i.currentAmount), 0) from PayoutInstalment i "
+        + "where i.policyNumber = :policyNumber and i.kind = 'ANNUITY' and i.status = 'PAID' and i.dueDate > :date")
+    java.math.BigDecimal sumAnnuityPaidDueAfter(@Param("policyNumber") String policyNumber, @Param("date") LocalDate date);
+
     Page<PayoutInstalment> findByStatusIn(Collection<String> statuses, Pageable pageable);
 
     /**

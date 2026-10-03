@@ -7,6 +7,8 @@ import tz.co.nlolo.lifeplatform.party.api.IdentityDocument;
 import tz.co.nlolo.lifeplatform.party.api.IndividualRegistration;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.Sex;
+import tz.co.nlolo.lifeplatform.policy.api.IssuanceBasis;
+import tz.co.nlolo.lifeplatform.policy.api.PolicyApi;
 import tz.co.nlolo.lifeplatform.product.api.*;
 import tz.co.nlolo.lifeplatform.underwriting.api.AnnuityChoice;
 import tz.co.nlolo.lifeplatform.underwriting.api.ProposalDetails;
@@ -33,11 +35,13 @@ public class AnnuityTestFixtures {
     private final PartyApi partyApi;
     private final ProductApi productApi;
     private final UnderwritingApi underwritingApi;
+    private final PolicyApi policyApi;
 
-    public AnnuityTestFixtures(PartyApi partyApi, ProductApi productApi, UnderwritingApi underwritingApi) {
+    public AnnuityTestFixtures(PartyApi partyApi, ProductApi productApi, UnderwritingApi underwritingApi, PolicyApi policyApi) {
         this.partyApi = partyApi;
         this.productApi = productApi;
         this.underwritingApi = underwritingApi;
+        this.policyApi = policyApi;
     }
 
     public record Product(UUID productId, UUID versionId) {}
@@ -132,6 +136,16 @@ public class AnnuityTestFixtures {
                 "+25571800" + String.format("%04d", n % 10000), null, sex, null, IdentityDocument.none(), null, null, null,
                 null, Address.none()), "test-agent").partyId();
         });
+    }
+
+    /**
+     * An annuity policy in force at once, by the MIGRATION exception path -- for tests of what happens
+     * downstream of issue, where the case and the premium are not the point.
+     */
+    public String issueInForce(UUID tenant, Product product, UUID annuitant, String price) {
+        return asTenant(tenant, () -> policyApi.issuePolicy(UUID.randomUUID(), new PolicyApi.IssueRequest(annuitant,
+            product.productId(), product.versionId(), new BigDecimal(price), "TZS", new BigDecimal(price), "TZS", "SINGLE",
+            null, List.of(), "annuity test", null, null, null, null, IssuanceBasis.MIGRATION), "test-staff").policyNumber());
     }
 
     /** Opens a case for {@code annuitant} at {@code price}, as staff-opener, and records the choice when given. */

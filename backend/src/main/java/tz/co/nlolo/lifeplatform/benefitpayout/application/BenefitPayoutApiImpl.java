@@ -271,7 +271,10 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
     public PayoutInstalmentView review(UUID instalmentId, String payeeRef, ProofOfLifeMethod method,
                                        UUID documentId, String reviewer) {
         PayoutInstalment i = load(instalmentId);
-        i.review(reviewer, payeeRef, method, documentId);
+        // A redirected annuity's beneficiaries owe no proof of life: the life it proved is over.
+        boolean proofStopped = i.getStreamId() != null
+            && streams.findById(i.getStreamId()).map(PayoutStream::isProofOfLifeStopped).orElse(false);
+        i.review(reviewer, payeeRef, method, documentId, i.needsProofOfLife() && !proofStopped);
         return Views.of(instalments.save(i));
     }
 
@@ -311,6 +314,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         }
         i.markPaid(disbursementId);
         instalments.save(i);
+        endRedirectedAnnuityIfPaidOut(i);
         // On the real APPROVED -> PAID transition only, so a redelivery cannot post the same
         // payout to the ledger twice.
         eventPublisher.publishEvent(DomainEventEnvelope.of("benefitpayout.PayoutPaid", TenantContext.get(),
@@ -320,6 +324,28 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
                    "paidAmount", Map.of("amount", i.getCurrentAmount().toPlainString(),
                         "currencyCode", i.getCurrency()))));
     }
+
+    /**
+     * A guarantee paid to the beneficiaries is finished once its last instalment is paid and nothing
+     * on the stream is still to go: the stream ends, so nothing rolls forward past it.
+     */
+    private void endRedirectedAnnuityIfPaidOut(PayoutInstalment paid) {
+        if (paid.kind() != PayoutKind.ANNUITY || paid.getStreamId() == null) {
+            return;
+        }
+        streams.findById(paid.getStreamId())
+            .filter(s -> s.getRedirectUntil() != null && !s.getExpandedThrough().isBefore(s.getRedirectUntil()))
+            .filter(s -> instalments.findByStreamIdOrderByDueDateAsc(s.getStreamId()).stream()
+                .noneMatch(i -> OUTSTANDING.contains(i.status())))
+            .ifPresent(s -> {
+                s.end();
+                streams.save(s);
+            });
+    }
+
+    private static final Set<InstalmentStatus> OUTSTANDING = EnumSet.of(InstalmentStatus.SCHEDULED, InstalmentStatus.DUE,
+        InstalmentStatus.ON_HOLD, InstalmentStatus.REVIEWED, InstalmentStatus.APPROVED, InstalmentStatus.FAILED,
+        InstalmentStatus.IN_DOUBT);
 
     /** The disbursement failed outright -- the money did not move, so it can be tried again. */
     @Transactional
@@ -360,6 +386,7 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
             case SURVIVAL -> "SURVIVAL_BENEFIT_PAYOUT";
             case INCOME -> "INCOME_PAYOUT";
             case RETURN_OF_PREMIUM -> "PREMIUM_RETURN_PAYOUT";
+            case ANNUITY -> "ANNUITY_PAYOUT";
         };
     }
 
@@ -530,8 +557,28 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
         return runView(run);
     }
 
-    /** The payee a person already confirmed on this stream, from the earliest instalment that has one. */
+    /**
+     * The payee a person already confirmed on this stream, from the earliest instalment that has one.
+     *
+     * <p>A redirected annuity (product step 5) pays its beneficiaries, never the annuitant's account:
+     * the redirect's own payee, or else the earliest payee a reviewer entered on or after the
+     * redirect began. Falling back to the annuitant's payee would pay a dead person's account.
+     */
     private String streamPayee(UUID streamId) {
+        PayoutStream stream = streams.findById(streamId).orElse(null);
+        if (stream != null && stream.getRedirectFrom() != null) {
+            if (stream.getRedirectPayeeRef() != null) {
+                return stream.getRedirectPayeeRef();
+            }
+            LocalDate from = stream.getRedirectFrom();
+            return instalments.findByStreamIdOrderByDueDateAsc(streamId).stream()
+                .filter(i -> !i.getDueDate().isBefore(from))
+                .map(PayoutInstalment::getPayeeRef)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElseThrow(() -> new PayoutStateException("Stream " + streamId
+                    + " pays the beneficiaries now, and no reviewer has confirmed their payee"));
+        }
         return instalments.findByStreamIdOrderByDueDateAsc(streamId).stream()
             .map(PayoutInstalment::getPayeeRef)
             .filter(java.util.Objects::nonNull)
@@ -749,5 +796,123 @@ public class BenefitPayoutApiImpl implements BenefitPayoutApi {
 
     PayoutInstalment load(UUID instalmentId) {
         return instalments.findById(instalmentId).orElseThrow(() -> new PayoutNotFoundException(instalmentId));
+    }
+
+    // ---- An annuity's income for life (product step 5) ----
+
+    /** "Today" is the civil date, never UTC's: an expansion horizon drawn at 01:00 must not be yesterday. */
+    private static final java.time.ZoneId CIVIL_ZONE = java.time.ZoneId.of("Africa/Dar_es_Salaam");
+    /** How far ahead an annuity's instalments exist as rows; the roll-forward keeps it there. */
+    static final int ANNUITY_HORIZON_MONTHS = 12;
+
+    @Override
+    @Transactional
+    public UUID openAnnuityStream(String policyNumber, LocalDate firstDue, String frequency, BigDecimal baseAmount,
+                                  String currency, BigDecimal escalationPercent, int proofOfLifeIntervalMonths) {
+        java.util.Optional<PayoutStream> existing = streams.findAnnuityStream(policyNumber);
+        if (existing.isPresent()) {
+            return existing.get().getStreamId();
+        }
+        PayoutStream stream = streams.saveAndFlush(PayoutStream.annuity(TenantContext.get(), policyNumber,
+            proofOfLifeIntervalMonths, frequency, firstDue, baseAmount, currency, escalationPercent));
+        expand(stream, LocalDate.now(CIVIL_ZONE).plusMonths(ANNUITY_HORIZON_MONTHS));
+        return stream.getStreamId();
+    }
+
+    /** The roll-forward drain's per-stream work: row-locked, so two runs cannot both expand it. */
+    @Transactional
+    public void rollForward(UUID streamId, LocalDate horizon) {
+        streams.lockById(streamId).filter(PayoutStream::isOpenEnded)
+            .filter(s -> s.status() != StreamStatus.ENDED)
+            .ifPresent(s -> expand(s, horizon));
+    }
+
+    /**
+     * Rows for every due date after the stream's expansion so far, up to the horizon -- and never
+     * past a redirect's end, after which nothing is owed. The (policy, row, date) unique index makes
+     * a racing duplicate a failure rather than a second payment.
+     */
+    private void expand(PayoutStream s, LocalDate horizon) {
+        LocalDate limit = s.getRedirectUntil() != null && s.getRedirectUntil().isBefore(horizon) ? s.getRedirectUntil() : horizon;
+        for (int n = 0; ; n++) {
+            LocalDate due = AnnuitySchedule.dueDate(s.getFirstDueDate(), s.getFrequency(), n);
+            if (due.isAfter(limit)) {
+                break;
+            }
+            if (due.isAfter(s.getExpandedThrough())) {
+                instalments.save(new PayoutInstalment(s.getTenantId(), s.getPolicyNumber(), PayoutKind.ANNUITY, 0,
+                    s.getStreamId(), due, AnnuitySchedule.amount(s.getBaseAmount(), s.getEscalationPercent(),
+                        s.getFirstDueDate(), due, s.getAmountMultiplier()), s.getCurrency()));
+            }
+        }
+        s.expandedThrough(limit);
+        streams.save(s);
+    }
+
+    @Override
+    @Transactional
+    public void endAnnuityStream(String policyNumber, LocalDate afterDate, String reason) {
+        streams.findAnnuityStream(policyNumber).ifPresent(s -> {
+            for (PayoutInstalment i : instalments.findByStreamIdOrderByDueDateAsc(s.getStreamId())) {
+                if (i.getDueDate().isAfter(afterDate) && i.cancel(reason)) {
+                    instalments.save(i);
+                }
+            }
+            s.end();
+            streams.save(s);
+        });
+    }
+
+    @Override
+    @Transactional
+    public void reduceAnnuityStream(String policyNumber, LocalDate fromDate, BigDecimal percent) {
+        PayoutStream s = streams.findAnnuityStream(policyNumber)
+            .orElseThrow(() -> new PayoutStateException("Policy " + policyNumber + " has no annuity stream"));
+        BigDecimal multiplier = percent.divide(new BigDecimal("100"), 4, java.math.RoundingMode.HALF_EVEN);
+        s.reduceTo(multiplier);
+        streams.save(s);
+        String reason = "The survivor's " + percent.stripTrailingZeros().toPlainString() + "% from " + fromDate;
+        for (PayoutInstalment i : instalments.findByStreamIdOrderByDueDateAsc(s.getStreamId())) {
+            if (!i.getDueDate().isBefore(fromDate)) {
+                i.restate(AnnuitySchedule.amount(s.getBaseAmount(), s.getEscalationPercent(), s.getFirstDueDate(),
+                    i.getDueDate(), multiplier), reason);
+                instalments.save(i);
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public void redirectAnnuityStream(String policyNumber, LocalDate fromDate, LocalDate untilDate, String payeeRef) {
+        PayoutStream s = streams.findAnnuityStream(policyNumber)
+            .orElseThrow(() -> new PayoutStateException("Policy " + policyNumber + " has no annuity stream"));
+        s.redirect(fromDate, untilDate, payeeRef);
+        streams.save(s);
+        for (PayoutInstalment i : instalments.findByStreamIdOrderByDueDateAsc(s.getStreamId())) {
+            if (i.getDueDate().isAfter(untilDate) && i.cancel("Nothing is owed after the guarantee ends on " + untilDate)) {
+                instalments.save(i);
+            }
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal annuityPaidGross(String policyNumber) {
+        return instalments.sumAnnuityPaid(policyNumber).setScale(2);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal annuityPaidGrossDueAfter(String policyNumber, LocalDate date) {
+        return instalments.sumAnnuityPaidDueAfter(policyNumber, date).setScale(2);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal annuityScheduledGrossBetween(String policyNumber, LocalDate fromExclusive, LocalDate toInclusive) {
+        return streams.findAnnuityStream(policyNumber)
+            .map(s -> AnnuitySchedule.sumBetween(s.getFirstDueDate(), s.getFrequency(), s.getBaseAmount(),
+                s.getEscalationPercent(), s.getAmountMultiplier(), fromExclusive, toInclusive))
+            .orElse(BigDecimal.ZERO.setScale(2));
     }
 }
