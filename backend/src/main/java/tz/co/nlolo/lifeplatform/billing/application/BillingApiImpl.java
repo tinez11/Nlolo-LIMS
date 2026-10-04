@@ -544,6 +544,32 @@ public class BillingApiImpl implements BillingApi {
     }
 
     /**
+     * No premium is owed after {@code after} (policy.PremiumsEnded -- a funeral plan's main member died and
+     * the family is covered free to the next premium date). The schedule ends, and every unsettled
+     * instalment due after that date is waived AND its outstanding receivable reversed, on
+     * billing.PremiumInvoiceReduced for the whole outstanding amount. A plain waive would leave the
+     * receivable in the ledger: finaccounting has no rule for billing.InvoiceWaived.
+     */
+    @Transactional
+    void endBillingAfter(UUID tenantId, String policyNumber, LocalDate after, String reason) {
+        terminateScheduleForExpiry(tenantId, policyNumber);
+        for (PremiumInvoice invoice : premiumInvoiceRepository.findByPolicyNumberAndTenantIdOrderByDueDate(policyNumber, tenantId)) {
+            if (!invoice.getDueDate().isAfter(after) || !UNSETTLED.contains(invoice.getStatus())) {
+                continue;
+            }
+            BigDecimal outstanding = invoice.getAmount().subtract(invoice.getAmountPaid());
+            invoice.waive(reason);
+            premiumInvoiceRepository.save(invoice);
+            if (outstanding.signum() > 0) {
+                eventPublisher.publishEvent(DomainEventEnvelope.of("billing.PremiumInvoiceReduced", tenantId,
+                    Map.of("restatementId", UUID.randomUUID().toString(), "invoiceId", invoice.getInvoiceId(),
+                           "policyNumber", policyNumber, "dueDate", invoice.getDueDate().toString(), "reason", reason,
+                           "amount", Map.of("amount", outstanding.toPlainString(), "currencyCode", invoice.getCurrency()))));
+            }
+        }
+    }
+
+    /**
      * A deferral with contributions continuing (policy.PremiumPayingTermRestated, D2): the ACTIVE
      * schedule's paying end moves, and the roll-forward drain raises the invoices up to it.
      */

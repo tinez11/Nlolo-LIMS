@@ -113,4 +113,40 @@ class ExclusionWindowsTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("before cover started");
     }
+
+    // ---- Family funeral cover: the waiting period (plan R7) ----
+
+    /** Six months' waiting, accidents waived; no suicide or pre-existing window. */
+    private static final ExclusionPeriods SIX_MONTHS_WAITING = new ExclusionPeriods(null, null, 6, true);
+
+    @Test
+    void aNaturalDeathInsideTheWaitingPeriodOpensIt() {
+        assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(5), SIX_MONTHS_WAITING, false))
+            .containsExactly(ClaimDeclineReason.WITHIN_WAITING_PERIOD);
+    }
+
+    @Test
+    void theWaitingPeriodClosesOnItsSixMonthAnniversary() {
+        assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(6).minusDays(1), SIX_MONTHS_WAITING, false))
+            .containsExactly(ClaimDeclineReason.WITHIN_WAITING_PERIOD);
+        assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(6), SIX_MONTHS_WAITING, false)).isEmpty();
+    }
+
+    @Test
+    void anAccidentHasNoWaitingPeriodWhenTheProductWaivesIt() {
+        assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(1), SIX_MONTHS_WAITING, true)).isEmpty();
+    }
+
+    @Test
+    void anAccidentStillWaitsWhenTheProductDoesNotWaiveIt() {
+        ExclusionPeriods noWaiver = new ExclusionPeriods(null, null, 6, false);
+        assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusMonths(1), noWaiver, true))
+            .containsExactly(ClaimDeclineReason.WITHIN_WAITING_PERIOD);
+    }
+
+    @Test
+    void noWaitingPeriodIsNeverOpen() {
+        assertThat(ExclusionWindows.openAt(COVER_START, COVER_START.plusDays(1), TWELVE_AND_TWELVE, false))
+            .doesNotContain(ClaimDeclineReason.WITHIN_WAITING_PERIOD);
+    }
 }

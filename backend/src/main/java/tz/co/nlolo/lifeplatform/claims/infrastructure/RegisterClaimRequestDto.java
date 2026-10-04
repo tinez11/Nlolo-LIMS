@@ -27,4 +27,8 @@ public record RegisterClaimRequestDto(
     @NotNull UUID claimantPartyId,
     @NotNull ClaimType claimType,
     @NotNull LocalDate dateOfEvent,
-    @NotNull ClaimDetails details) {}
+    @NotNull ClaimDetails details,
+    // Family funeral cover: the covered life who died (required on a funeral plan), and whether it was
+    // an accident. Both optional here; policy refuses a funeral claim with no life.
+    UUID coveredLifeId,
+    Boolean accidental) {}

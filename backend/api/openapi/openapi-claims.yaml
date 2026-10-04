@@ -221,6 +221,34 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /claims/{claimId}/accidental:
+    put:
+      summary: Record whether a funeral claim's death was accidental, before it is decided
+      description: >-
+        Family funeral cover. What the assessor learns at claim: a product that waives its waiting period
+        for an accident then pays a death inside it. 422 on a claim that is not on a funeral plan; 409 once
+        the claim is decided.
+      security:
+        - staffAuth: []
+      parameters:
+        - { name: claimId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accidental]
+              properties:
+                accidental: { type: boolean }
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimView' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+        '422': { $ref: 'openapi-common.yaml#/components/responses/UnprocessableEntity' }
   /claims/{claimId}/settlement-decision:
     post:
       summary: Approve or reject the claim (staff — CLAIMS_MANAGER role only; distinct from CLAIMS_ASSESSOR)
@@ -259,6 +287,14 @@ paths:
                     ABSENT: the lender is the claimant and the policyholder, so the payout goes to
                     them by bank transfer and the platform names them itself — a supplied value
                     is refused with a 422.
+                declineReason:
+                  type: [string, "null"]
+                  enum: [SUICIDE_WITHIN_EXCLUSION, PRE_EXISTING_WITHIN_EXCLUSION, WITHIN_WAITING_PERIOD, null]
+                  description: >
+                    A policy-term reason for a DECLINE: an exclusion window, or a funeral plan's waiting
+                    period. Refused (422) on an approval, and refused when its window was not open on the
+                    date of event. On a funeral plan, approval of a natural death inside the named life's
+                    waiting period is itself refused (409) -- decline it with WITHIN_WAITING_PERIOD.
       responses:
         '202':
           description: >
@@ -409,6 +445,16 @@ components:
         claimType: { type: string, enum: [DEATH, DISABILITY, CRITICAL_ILLNESS, MATURITY] }
         dateOfEvent: { type: string, format: date }
         details: { $ref: '#/components/schemas/ClaimDetails' }
+        coveredLifeId:
+          description: >-
+            Family funeral cover: the covered life who died. REQUIRED on a funeral plan and refused on
+            every other policy (409). A dependant's death is filed by the main member, or by a beneficiary
+            they nominated, as the product says -- anyone else is a 422.
+          type: [string, "null"]
+          format: uuid
+        accidental:
+          description: Whether the death was accidental -- a funeral plan may waive its waiting period for an accident.
+          type: [boolean, "null"]
     ClaimDetails:
       description: >-
         Polymorphic by claimType — modeled server-side as a sealed ClaimDetails hierarchy
@@ -549,6 +595,13 @@ components:
         requiresContestabilityReview:
           type: boolean
           description: "True when the claim falls inside the policy's contestability window and needs a non-disclosure review before approval — re-derived fresh on every read, not a stored column"
+        coveredLifeId:
+          description: The covered life who died, on a funeral plan's claim. NULL on every other claim, and on a search row.
+          type: [string, "null"]
+          format: uuid
+        accidental:
+          description: Whether the death was accidental; null where coveredLifeId is.
+          type: [boolean, "null"]
     ClaimSearchResponse:
       type: object
       properties:

@@ -540,6 +540,60 @@ paths:
         '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
         '404': { $ref: 'openapi-common.yaml#/components/responses/NotFound' }
         '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/covered-lives/{coveredLifeId}/promotion:
+    post:
+      summary: Promote a name-only covered life to a registered party at claim
+      description: >-
+        Family funeral cover (plan R10). From the identity document on the death certificate: an existing
+        party holding that document is reused, never duplicated. Idempotent. Claims staff only.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+        - { name: coveredLifeId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifyCoveredLife' }
+      responses:
+        '200':
+          description: The life, now a party
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoveredLifeView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
+  /policies/{policyNumber}/takeover:
+    post:
+      summary: The spouse takes over a funeral policy whose main member died
+      description: >-
+        Family funeral cover (plan R8). Only on a policy whose version passes it to the spouse and whose
+        main member's death claim has settled: the spouse is registered from their identity document,
+        made policyholder and life assured, and re-priced as the main member from the next premium date.
+      security:
+        - staffAuth: []
+      parameters:
+        - name: policyNumber
+          in: path
+          required: true
+          schema: { $ref: 'openapi-common.yaml#/components/schemas/PolicyNumberRef' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifyCoveredLife' }
+      responses:
+        '200':
+          description: The policy, with its new policyholder
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyView' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: 'openapi-common.yaml#/components/responses/Conflict' }
   /policies/{policyNumber}/covered-lives/{coveredLifeId}/removal:
     post:
       summary: Take a dependant off a funeral policy at the next premium date
@@ -1465,6 +1519,13 @@ paths:
 
 components:
   schemas:
+    IdentifyCoveredLife:
+      type: object
+      properties:
+        idType: { type: [string, "null"], enum: [NATIONAL_ID, PASSPORT, DRIVING_LICENCE, VOTER_ID, null] }
+        idNumber: { type: [string, "null"], maxLength: 50 }
+        phoneNumber: { type: [string, "null"] }
+        sex: { type: [string, "null"], enum: [FEMALE, MALE, null] }
     CoveredLifeView:
       type: object
       additionalProperties: false

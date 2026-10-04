@@ -13,8 +13,12 @@ import java.util.HashMap;
 import java.util.Map;
 import tz.co.nlolo.lifeplatform.party.api.PartyApi;
 import tz.co.nlolo.lifeplatform.party.api.PartyDetailView;
+import tz.co.nlolo.lifeplatform.policy.api.ClaimableCoverView;
 import tz.co.nlolo.lifeplatform.policy.api.CoveredLifeView;
+import tz.co.nlolo.lifeplatform.policy.api.ExclusionPeriodsView;
+import tz.co.nlolo.lifeplatform.policy.api.FuneralClaimFacts;
 import tz.co.nlolo.lifeplatform.policy.api.InvalidPolicyStateException;
+import tz.co.nlolo.lifeplatform.policy.api.PromoteMemberRequest;
 import tz.co.nlolo.lifeplatform.policy.domain.CoveredLife;
 import tz.co.nlolo.lifeplatform.policy.domain.FuneralPolicy;
 import tz.co.nlolo.lifeplatform.policy.domain.Policy;
@@ -57,8 +61,9 @@ class CoveredLives {
         this.eventPublisher = eventPublisher;
     }
 
+    /** From the category the policy was issued under -- no product call, and no funeral table touched. */
     boolean isFuneral(Policy policy) {
-        return productApi.resolveFuneralPlan(policy.getProductVersionId()).funeral();
+        return "FUNERAL".equals(policy.getProductCategory());
     }
 
     /**
@@ -232,6 +237,152 @@ class CoveredLives {
                 anniversary ? "Anniversary re-pricing" : "A life aged out");
         }
         return anyLeft;
+    }
+
+    // ---- Claims (plan R7-R10) ----
+
+    /** What a death claim on this life pays: its own stored benefit, if it was covered on the date of death. */
+    ClaimableCoverView claimable(Policy policy, UUID coveredLifeId, LocalDate asOf, String benefitType) {
+        if (coveredLifeId == null) {
+            throw new InvalidPolicyStateException("A claim on a funeral plan names the covered life who died");
+        }
+        if (!"DEATH".equals(benefitType)) {
+            throw new InvalidPolicyStateException("A funeral plan pays only on a death, not on " + benefitType);
+        }
+        CoveredLife life = lifeOn(policy, coveredLifeId);
+        if (!life.coveredOn(asOf)) {
+            throw new InvalidPolicyStateException(life.getFullName() + " was not covered on " + asOf + " under policy "
+                + policy.getPolicyNumber());
+        }
+        return new ClaimableCoverView(life.getBenefit(), policy.getSumAssuredCurrency(), null);
+    }
+
+    /** The life's OWN cover start, and the version's waiting period and accident waiver beside the exclusions. */
+    ExclusionPeriodsView exclusionPeriods(Policy policy, UUID coveredLifeId, Integer suicideMonths, Integer preExistingMonths) {
+        CoveredLife life = lifeOn(policy, coveredLifeId);
+        FuneralPlan plan = productApi.resolveFuneralPlan(policy.getProductVersionId());
+        return new ExclusionPeriodsView(life.getCoverStart(), suicideMonths, preExistingMonths,
+            plan.waitingPeriodMonths(), plan.accidentWaivesWaiting());
+    }
+
+    FuneralClaimFacts claimFacts(Policy policy, UUID coveredLifeId, List<UUID> beneficiaryPartyIds) {
+        CoveredLife life = lifeOn(policy, coveredLifeId);
+        FuneralPlan plan = productApi.resolveFuneralPlan(policy.getProductVersionId());
+        return new FuneralClaimFacts(life.getRole(), policy.getPolicyholderPartyId(), plan.dependantClaimPayee().name(),
+            beneficiaryPartyIds);
+    }
+
+    /** What a settled death did to the policy, for PolicyApiImpl to finish (close it, or end its billing). */
+    enum DeathOutcome { ALREADY_DISCHARGED, DEPENDANT_ENDED, POLICY_ENDS, FREE_COVER, AWAITING_TAKEOVER }
+
+    /**
+     * A settled death claim on one covered life. A dependant ends and the premium falls; the main member
+     * ends and the version's rule decides the rest: the spouse takes over (R8) when the rule says so and a
+     * spouse is still covered, else every other life ends with the policy -- at the date of death, or at the
+     * next premium date after it when free cover is on (R5).
+     */
+    DeathOutcome dischargeDeath(Policy policy, UUID coveredLifeId, LocalDate dateOfEvent) {
+        CoveredLife life = lifeOn(policy, coveredLifeId);
+        if (!life.isActive()) {
+            return DeathOutcome.ALREADY_DISCHARGED; // a redelivered settlement
+        }
+        life.end("DECEASED", dateOfEvent);
+        lives.save(life);
+        publishLife("policy.CoveredLifeEnded", policy, life, Map.of("endReason", "DECEASED", "endedOn", dateOfEvent.toString()));
+        if (!FuneralRole.MAIN_MEMBER.name().equals(life.getRole())) {
+            restate(policy, InstalmentDates.nextAfter(policy.getIssueDate(), policy.getPremiumFrequency(), today()),
+                "A covered life died");
+            return DeathOutcome.DEPENDANT_ENDED;
+        }
+        FuneralPlan plan = productApi.resolveFuneralPlan(policy.getProductVersionId());
+        List<CoveredLife> others = lives.findByPolicy(TenantContext.get(), policy.getPolicyNumber()).stream()
+            .filter(CoveredLife::isActive).toList();
+        if (plan.onMainMemberDeath() == tz.co.nlolo.lifeplatform.product.api.MainMemberDeathRule.SPOUSE_TAKES_OVER) {
+            java.util.Optional<CoveredLife> spouse = others.stream()
+                .filter(l -> FuneralRole.SPOUSE.name().equals(l.getRole()) && l.getCoverEnd() == null).findFirst();
+            if (spouse.isPresent()) {
+                FuneralPolicy funeral = funeralPolicy(policy);
+                funeral.awaitTakeoverBy(spouse.get().getCoveredLifeId());
+                funeralPolicies.save(funeral);
+                // Billing goes on while the takeover waits, but not for the life that has died.
+                restate(policy, InstalmentDates.nextAfter(policy.getIssueDate(), policy.getPremiumFrequency(), today()),
+                    "The main member died; the spouse is taking over");
+                return DeathOutcome.AWAITING_TAKEOVER;
+            }
+        }
+        if (plan.freeCoverToPaidDate() && !others.isEmpty()) {
+            LocalDate freeCoverEnds = InstalmentDates.nextAfter(policy.getIssueDate(), policy.getPremiumFrequency(), dateOfEvent);
+            for (CoveredLife other : others) {
+                if (other.getCoverEnd() == null || other.getCoverEnd().isAfter(freeCoverEnds)) {
+                    other.scheduleEnd(freeCoverEnds, "FREE_COVER_ENDED");
+                    lives.save(other);
+                }
+            }
+            return DeathOutcome.FREE_COVER;
+        }
+        for (CoveredLife other : others) {
+            other.end("MAIN_MEMBER_DIED", dateOfEvent);
+            lives.save(other);
+            publishLife("policy.CoveredLifeEnded", policy, other,
+                Map.of("endReason", "MAIN_MEMBER_DIED", "endedOn", dateOfEvent.toString()));
+        }
+        return DeathOutcome.POLICY_ENDS;
+    }
+
+    /**
+     * A name-only dependant becomes a registered party, from an identity document seen at claim (R10, credit
+     * life's step): an existing party with that document is reused, never duplicated. Idempotent.
+     */
+    CoveredLifeView promote(Policy policy, UUID coveredLifeId, PromoteMemberRequest identity, String promotedBy) {
+        CoveredLife life = lifeOn(policy, coveredLifeId);
+        if (life.getPartyId() == null) {
+            life.promoteToParty(partyFor(life, identity, promotedBy));
+            lives.save(life);
+        }
+        return toView(life, productApi.resolveFuneralPlan(policy.getProductVersionId()));
+    }
+
+    /**
+     * The spouse completes a takeover the main member's death left waiting (R8): promoted to a party,
+     * made policyholder and life assured, re-priced as the main member from the next premium date.
+     */
+    UUID takeOver(Policy policy, PromoteMemberRequest identity, String by) {
+        FuneralPolicy funeral = funeralPolicy(policy);
+        if (funeral.getAwaitingTakeoverLifeId() == null) {
+            throw new InvalidPolicyStateException("Policy " + policy.getPolicyNumber() + " is not awaiting a takeover");
+        }
+        CoveredLife spouse = lifeOn(policy, funeral.getAwaitingTakeoverLifeId());
+        UUID partyId = spouse.getPartyId() != null ? spouse.getPartyId() : partyFor(spouse, identity, by);
+        int age = java.time.Period.between(spouse.getDateOfBirth(), today()).getYears();
+        java.math.BigDecimal yearly;
+        try {
+            yearly = productApi.funeralYearlyPremium(policy.getProductVersionId(), funeral.getPlanCode(), FuneralRole.MAIN_MEMBER, age);
+        } catch (FuneralQuoteRefusedException e) {
+            throw new InvalidPolicyStateException(e.getMessage());
+        }
+        UUID previous = policy.getPolicyholderPartyId();
+        spouse.becomeMainMember(partyId, yearly, age);
+        lives.save(spouse);
+        policy.transferToSpouse(partyId);
+        funeral.takeoverCompleted();
+        funeralPolicies.save(funeral);
+        restate(policy, InstalmentDates.nextAfter(policy.getIssueDate(), policy.getPremiumFrequency(), today()),
+            "The spouse took over the policy");
+        eventPublisher.publishEvent(DomainEventEnvelope.of("policy.PolicyholderChanged", TenantContext.get(),
+            Map.of("policyNumber", policy.getPolicyNumber(), "previousPartyId", previous, "policyholderPartyId", partyId)));
+        return partyId;
+    }
+
+    private UUID partyFor(CoveredLife life, PromoteMemberRequest identity, String by) {
+        if (identity == null || identity.identityDocument() == null || !identity.identityDocument().recorded()) {
+            throw new InvalidPolicyStateException("Promoting " + life.getFullName() + " needs an identity document; that"
+                + " is what makes them identifiable, and promoting without one just creates a second nameless person");
+        }
+        return partyApi.findByIdentityDocument(identity.identityDocument())
+            .map(tz.co.nlolo.lifeplatform.party.api.PartyView::partyId)
+            .orElseGet(() -> partyApi.registerIndividual(new tz.co.nlolo.lifeplatform.party.api.IndividualRegistration(
+                life.getFullName(), life.getDateOfBirth(), identity.phoneNumber(), null, identity.sex(), null,
+                identity.identityDocument(), null, null, null, null, null, null), by).partyId());
     }
 
     /** Lives that will still be covered on {@code day}: active, and not scheduled off by then. */

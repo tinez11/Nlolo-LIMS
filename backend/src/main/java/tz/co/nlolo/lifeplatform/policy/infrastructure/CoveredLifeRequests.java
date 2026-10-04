@@ -16,4 +16,15 @@ final class CoveredLifeRequests {
     }
 
     record Remove(String reason) {}
+
+    /** The identity document seen at claim (promotion) or at takeover, with a phone number and sex. */
+    record Identify(tz.co.nlolo.lifeplatform.party.api.IdType idType, String idNumber, String phoneNumber,
+                    tz.co.nlolo.lifeplatform.party.api.Sex sex) {
+        tz.co.nlolo.lifeplatform.policy.api.PromoteMemberRequest toRequest() {
+            return new tz.co.nlolo.lifeplatform.policy.api.PromoteMemberRequest(
+                idType == null ? tz.co.nlolo.lifeplatform.party.api.IdentityDocument.none()
+                    : new tz.co.nlolo.lifeplatform.party.api.IdentityDocument(idType, idNumber),
+                phoneNumber, sex);
+        }
+    }
 }

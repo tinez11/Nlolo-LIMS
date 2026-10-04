@@ -11,7 +11,8 @@ import java.util.UUID;
 public record ClaimResponseDto(UUID claimId, String policyNumber, UUID policyMemberId,
                                 UUID claimantPartyId, ClaimType claimType,
                                 ClaimStatus status, LocalDate dateOfEvent, ClaimDetails details,
-                                MoneyDto approvedAmount, boolean requiresContestabilityReview) {
+                                MoneyDto approvedAmount, boolean requiresContestabilityReview,
+                                UUID coveredLifeId, Boolean accidental) {
 
     public static ClaimResponseDto from(ClaimView view) {
         // approvedAmount is null until APPROVED -- unlike PolicyResponseDto's sumAssured (always
@@ -22,6 +23,7 @@ public record ClaimResponseDto(UUID claimId, String policyNumber, UUID policyMem
             : null;
         return new ClaimResponseDto(view.claimId(), view.policyNumber(), view.policyMemberId(),
             view.claimantPartyId(), view.claimType(),
-            view.status(), view.dateOfEvent(), view.details(), approvedAmount, view.requiresContestabilityReview());
+            view.status(), view.dateOfEvent(), view.details(), approvedAmount, view.requiresContestabilityReview(),
+            view.coveredLifeId(), view.accidental());
     }
 }

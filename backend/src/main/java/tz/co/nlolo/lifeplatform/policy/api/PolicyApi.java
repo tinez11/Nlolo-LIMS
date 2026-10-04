@@ -539,6 +539,35 @@ public interface PolicyApi {
      * restate the premium from then. The main member cannot be removed.
      */
     CoveredLifeView removeCoveredLife(String policyNumber, UUID coveredLifeId, String reason, String removedBy);
+
+    /**
+     * Who a funeral claim's life is and who may file for it (plan R9); empty for any other policy.
+     *
+     * @throws InvalidPolicyStateException if the life is not on this funeral policy
+     */
+    java.util.Optional<FuneralClaimFacts> funeralClaimFacts(String policyNumber, UUID coveredLifeId);
+
+    /** Promote a name-only covered life to a registered party at claim (plan R10). Idempotent. */
+    CoveredLifeView promoteCoveredLife(String policyNumber, UUID coveredLifeId, PromoteMemberRequest identity, String promotedBy);
+
+    /**
+     * The spouse completes the takeover the main member's death left waiting (plan R8): promoted, made
+     * policyholder and life assured, re-priced as the main member from the next premium date.
+     *
+     * @return the new policyholder's party id
+     */
+    UUID takeOverFuneralPolicy(String policyNumber, PromoteMemberRequest identity, String by);
+
+    /** A funeral claim's cover: the named life's stored benefit, if covered on {@code asOf}. */
+    ClaimableCoverView claimableCover(String policyNumber, UUID policyMemberId, UUID coveredLifeId, LocalDate asOf,
+                                      String benefitType);
+
+    /** A funeral claim's windows: the named life's own cover start, with the version's waiting period. */
+    ExclusionPeriodsView exclusionPeriodsFor(String policyNumber, UUID policyMemberId, UUID coveredLifeId);
+
+    /** A settled funeral death claim discharges the named life, and the version's rule decides the rest. */
+    void dischargeForSettledClaim(String policyNumber, UUID policyMemberId, UUID coveredLifeId, LocalDate dateOfEvent,
+                                  UUID claimId, String dischargedBy);
     SurrenderQuoteView quoteSurrenderValue(String policyNumber);
     PolicyView getPolicy(String policyNumber);
 

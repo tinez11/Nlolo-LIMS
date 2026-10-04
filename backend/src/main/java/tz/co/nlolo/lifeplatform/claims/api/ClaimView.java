@@ -18,4 +18,9 @@ public record ClaimView(UUID claimId, String policyNumber,
                          UUID claimantPartyId, ClaimType claimType,
                          ClaimStatus status, LocalDate dateOfEvent, ClaimDetails details,
                          BigDecimal approvedAmount, String approvedCurrency,
-                         boolean requiresContestabilityReview) {}
+                         boolean requiresContestabilityReview,
+                         /** The covered life who died, on a funeral plan's claim; NULL on every other
+                          * claim, and on a list row (a search does not load it). */
+                         UUID coveredLifeId,
+                         /** Whether the death was accidental; null where coveredLifeId is. */
+                         Boolean accidental) {}

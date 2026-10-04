@@ -31,5 +31,13 @@ public enum ClaimDeclineReason {
      * about a borrower's health at enrolment — the lender's file carries a name, a date of
      * birth and a loan.
      */
-    PRE_EXISTING_WITHIN_EXCLUSION
+    PRE_EXISTING_WITHIN_EXCLUSION,
+
+    /**
+     * A natural death inside the covered life's waiting period (family funeral cover, plan R7). Unlike the
+     * two above, approval is REFUSED while this window is open: a waiting period is not an assessor's
+     * finding about cause, it is the product's rule that cover has not yet started for a natural death.
+     * An accidental death has no window when the product waives accidents.
+     */
+    WITHIN_WAITING_PERIOD
 }

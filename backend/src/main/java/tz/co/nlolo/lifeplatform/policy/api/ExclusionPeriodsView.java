@@ -22,7 +22,18 @@ import java.time.LocalDate;
  *     policy's commencement.
  * @param suicideMonths null where the product has no such exclusion — every product before
  *     credit life, whose behaviour is unchanged.
+ * @param waitingMonths a funeral plan's waiting period for a natural death, measured from the covered
+ *     life's OWN cover start (an added baby waits from its own date); null on every other product
+ * @param accidentWaivesWaiting whether an accidental death has no waiting period (funeral plans only)
  */
 public record ExclusionPeriodsView(LocalDate coverStart,
                                     Integer suicideMonths,
-                                    Integer preExistingMonths) {}
+                                    Integer preExistingMonths,
+                                    Integer waitingMonths,
+                                    boolean accidentWaivesWaiting) {
+
+    /** Every product that is not a funeral plan: no waiting period. */
+    public ExclusionPeriodsView(LocalDate coverStart, Integer suicideMonths, Integer preExistingMonths) {
+        this(coverStart, suicideMonths, preExistingMonths, null, false);
+    }
+}

@@ -9,15 +9,25 @@ package tz.co.nlolo.lifeplatform.claims.domain;
  *
  * @param suicideMonths the client confirmed 12 for credit life on 2026-09-22
  * @param preExistingMonths likewise 12, and independent — nothing may assume they match
+ * @param waitingMonths a funeral plan's waiting period for a natural death, from the covered life's own
+ *     cover start; null on every other product
+ * @param accidentWaivesWaiting whether an accidental death has no waiting period (funeral plans only)
  */
-public record ExclusionPeriods(Integer suicideMonths, Integer preExistingMonths) {
+public record ExclusionPeriods(Integer suicideMonths, Integer preExistingMonths, Integer waitingMonths,
+                               boolean accidentWaivesWaiting) {
 
     public ExclusionPeriods {
         requireSaneWindow("suicideMonths", suicideMonths);
         requireSaneWindow("preExistingMonths", preExistingMonths);
+        requireSaneWindow("waitingMonths", waitingMonths);
     }
 
-    /** Every product that is not credit life, today. */
+    /** The two credit-life windows, and no waiting period -- every caller before funeral plans. */
+    public ExclusionPeriods(Integer suicideMonths, Integer preExistingMonths) {
+        this(suicideMonths, preExistingMonths, null, false);
+    }
+
+    /** Every product that is not credit life or a funeral plan, today. */
     public static ExclusionPeriods none() {
         return new ExclusionPeriods(null, null);
     }

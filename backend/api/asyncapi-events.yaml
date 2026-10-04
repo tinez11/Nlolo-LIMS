@@ -199,6 +199,19 @@ channels:
       death). Consumers: communication (FUNERAL_LIFE_ENDED, never for a DECEASED life), audit.
     publish:
       message: { $ref: '#/components/messages/CoveredLifeEnded' }
+  policy.PremiumsEnded:
+    description: >-
+      Producer: policy (family funeral cover -- the main member died and the family is covered free to
+      the next premium date). Consumers: billing (ends the schedule; waives every unsettled instalment due
+      after `after` and reverses its outstanding receivable on billing.PremiumInvoiceReduced), audit.
+    publish:
+      message: { $ref: '#/components/messages/PremiumsEnded' }
+  policy.PolicyholderChanged:
+    description: >-
+      Producer: policy (family funeral cover -- the spouse took over after the main member's death).
+      Consumers: audit. The policy's own record carries the new policyholder and life assured.
+    publish:
+      message: { $ref: '#/components/messages/PolicyholderChanged' }
   billing.PremiumInvoiceIncreased:
     description: >-
       Producer: billing (an untouched instalment restated upward). Consumers: finaccounting (DR premium
@@ -686,6 +699,8 @@ components:
     CoveredLifeAdded: { messageId: CoveredLifeAdded, name: CoveredLifeAdded, payload: { $ref: '#/components/schemas/CoveredLifePayload' } }
     CoveredLifeEnded: { messageId: CoveredLifeEnded, name: CoveredLifeEnded, payload: { $ref: '#/components/schemas/CoveredLifePayload' } }
     PremiumInvoiceRestated: { messageId: PremiumInvoiceRestated, name: PremiumInvoiceRestated, payload: { $ref: '#/components/schemas/PremiumInvoiceRestatedPayload' } }
+    PremiumsEnded: { messageId: PremiumsEnded, name: PremiumsEnded, payload: { $ref: '#/components/schemas/PremiumsEndedPayload' } }
+    PolicyholderChanged: { messageId: PolicyholderChanged, name: PolicyholderChanged, payload: { $ref: '#/components/schemas/PolicyholderChangedPayload' } }
     SurrenderValueCalculated: { messageId: SurrenderValueCalculated, name: SurrenderValueCalculated, payload: { $ref: '#/components/schemas/SurrenderValueCalculatedPayload' } }
     PolicySurrenderInitiated: { messageId: PolicySurrenderInitiated, name: PolicySurrenderInitiated, payload: { $ref: '#/components/schemas/PolicySurrenderInitiatedPayload' } }
     PolicyMaturityInitiated: { messageId: PolicyMaturityInitiated, name: PolicyMaturityInitiated, payload: { $ref: '#/components/schemas/PolicyMaturityInitiatedPayload' } }
@@ -909,6 +924,24 @@ components:
             coverStart: { type: string, format: date, description: "CoveredLifeAdded only" }
             endReason: { type: string, description: "CoveredLifeEnded only" }
             endedOn: { type: string, format: date, description: "CoveredLifeEnded only" }
+    PremiumsEndedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          required: [policyNumber, after, reason]
+          properties:
+            policyNumber: { type: string }
+            after: { type: string, format: date, description: "No instalment due after this date is owed" }
+            reason: { type: string }
+    PolicyholderChangedPayload:
+      allOf:
+        - $ref: '#/components/schemas/EventEnvelopeMeta'
+        - type: object
+          required: [policyNumber, previousPartyId, policyholderPartyId]
+          properties:
+            policyNumber: { type: string }
+            previousPartyId: { type: string, format: uuid }
+            policyholderPartyId: { type: string, format: uuid }
     PremiumInvoiceRestatedPayload:
       allOf:
         - $ref: '#/components/schemas/EventEnvelopeMeta'

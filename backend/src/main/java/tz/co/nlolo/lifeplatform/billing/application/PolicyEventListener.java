@@ -64,6 +64,8 @@ public class PolicyEventListener {
             case "policy.PremiumPayingTermRestated" -> withTenant(envelope, this::handlePremiumPayingTermRestated);
             // Family funeral cover: a life added or ended, or the anniversary, changed the premium.
             case "policy.PremiumRestated" -> withTenant(envelope, this::handlePremiumRestated);
+            case "policy.PremiumsEnded" -> withTenant(envelope, p -> billingApiImpl.endBillingAfter(TenantContext.get(),
+                (String) p.get("policyNumber"), LocalDate.parse((String) p.get("after")), (String) p.get("reason")));
             default -> { /* not billing-relevant */ }
         }
     }
