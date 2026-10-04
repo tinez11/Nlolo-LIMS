@@ -301,6 +301,44 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+  /products/{productId}/versions/{versionId}/funeral-quote:
+    post:
+      summary: Price a family on one funeral plan
+      description: >-
+        Family funeral cover. A line per life (its age on asOf, the plan's benefit for its role, its yearly
+        premium from the table), the family's yearly total, and the instalment: the total loaded for the
+        frequency and divided once, rounded once. asOf defaults to today. 422 FUNERAL_QUOTE_REFUSED names
+        what the plan will not cover (a second spouse, a child too old to join, a role the plan does not
+        cover). 404 NOT_A_FUNERAL_PRODUCT for any other version.
+      security:
+        - agentsAuth: [agent]
+        - staffAuth: []
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FuneralQuoteRequest' }
+      responses:
+        '200':
+          description: The family, priced
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FuneralQuote' }
+        '401': { $ref: 'openapi-common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: 'openapi-common.yaml#/components/responses/Forbidden' }
+        '404':
+          description: Not a funeral plan version
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
+        '422':
+          description: The plan will not cover or cannot price this family
+          content:
+            application/problem+json:
+              schema: { $ref: 'openapi-common.yaml#/components/schemas/ProblemDetails' }
   /products/{productId}/versions/{versionId}/exclusion-periods:
     put:
       summary: Set or clear a version's policy-term exclusion windows
@@ -920,6 +958,44 @@ components:
     FuneralRole:
       type: string
       enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED]
+    FuneralQuoteRequest:
+      type: object
+      properties:
+        planCode: { type: [string, "null"] }
+        frequency: { type: [string, "null"], enum: [MONTHLY, QUARTERLY, ANNUALLY, SINGLE, null] }
+        asOf: { type: [string, "null"], format: date, description: "Defaults to today's civil date" }
+        lives:
+          type: array
+          description: Every life, the main member included.
+          items:
+            type: object
+            properties:
+              role: { type: [string, "null"], enum: [MAIN_MEMBER, SPOUSE, CHILD, PARENT, EXTENDED, null] }
+              name: { type: [string, "null"] }
+              dateOfBirth: { type: [string, "null"], format: date }
+              student: { type: [boolean, "null"], description: "A child only" }
+    FuneralQuote:
+      type: object
+      additionalProperties: false
+      required: [planCode, frequency, lines, totalYearlyPremium, instalment, mainMemberBenefit]
+      properties:
+        planCode: { type: string }
+        frequency: { type: string, enum: [MONTHLY, QUARTERLY, ANNUALLY] }
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [role, name, age, benefit, yearlyPremium]
+            properties:
+              role: { $ref: '#/components/schemas/FuneralRole' }
+              name: { type: [string, "null"] }
+              age: { type: integer }
+              benefit: { type: number }
+              yearlyPremium: { type: number }
+        totalYearlyPremium: { type: number }
+        instalment: { type: number, description: "The yearly total loaded for the frequency, divided once, rounded once" }
+        mainMemberBenefit: { type: number, description: "The policy's sum assured" }
     VersionRatingView:
       description: The rating basis for one version, for actuarial and product review.
       type: object

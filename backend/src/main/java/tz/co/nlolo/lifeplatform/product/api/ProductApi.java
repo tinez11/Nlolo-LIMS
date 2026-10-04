@@ -356,6 +356,22 @@ public interface ProductApi {
     FuneralPlan resolveFuneralPlan(UUID productVersionId);
 
     /**
+     * The one funeral quote: every life priced on the plan, the family total and the instalment, rounded
+     * once. Underwriting quotes on it, issuance takes the policy's premium from it.
+     *
+     * @throws FuneralQuoteRefusedException in words a person can act on
+     */
+    FuneralQuote quoteFuneral(UUID productVersionId, FuneralQuoteInput input);
+
+    /**
+     * One existing life's yearly premium at {@code age} -- no entry-age check: the anniversary re-prices a
+     * life long past the age it joined at.
+     *
+     * @throws FuneralQuoteRefusedException where the table has no row
+     */
+    BigDecimal funeralYearlyPremium(UUID productVersionId, String planCode, FuneralRole role, int age);
+
+    /**
      * An ANNUITY version's terms; {@link AnnuityPlan#none()} for every other version. Asks the
      * product's category before reading any annuity table, so callers on ordinary policies touch none.
      */

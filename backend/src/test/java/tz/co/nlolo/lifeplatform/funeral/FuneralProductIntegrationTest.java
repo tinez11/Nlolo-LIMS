@@ -32,6 +32,10 @@ import tz.co.nlolo.lifeplatform.product.api.PayoutPlan;
 import tz.co.nlolo.lifeplatform.product.api.PayoutTerms;
 import tz.co.nlolo.lifeplatform.product.api.ProductApi;
 import tz.co.nlolo.lifeplatform.product.api.ProductCategory;
+import tz.co.nlolo.lifeplatform.product.api.FuneralLifeInput;
+import tz.co.nlolo.lifeplatform.product.api.FuneralQuoteInput;
+import tz.co.nlolo.lifeplatform.product.api.PremiumFrequency;
+import tz.co.nlolo.lifeplatform.product.domain.FuneralQuoter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -88,6 +92,26 @@ class FuneralProductIntegrationTest {
         assertThat(read.onMainMemberDeath()).isEqualTo(published.onMainMemberDeath());
         assertThat(read.freeCoverToPaidDate()).isTrue();
         assertThat(read.yearlyPremium("B", FuneralRole.MAIN_MEMBER, 40)).contains(new BigDecimal("60000.00"));
+    }
+
+    @Test
+    void quotesThroughTheApiAsThePureQuoterDoes() {
+        UUID tenant = UUID.randomUUID();
+        var product = fixtures.publishFamilia(tenant);
+        LocalDate on = LocalDate.of(2026, 10, 4);
+        var input = new FuneralQuoteInput("B", PremiumFrequency.MONTHLY, on, List.of(
+            new FuneralLifeInput(FuneralRole.MAIN_MEMBER, "Juma", on.minusYears(40), false),
+            new FuneralLifeInput(FuneralRole.SPOUSE, "Asha", on.minusYears(38), false),
+            new FuneralLifeInput(FuneralRole.CHILD, "Neema", on.minusYears(10), false)));
+
+        var viaApi = asTenant(tenant, () -> productApi.quoteFuneral(product.versionId(), input));
+        var pure = FuneralQuoter.quote(FuneralPlans.familia(), FuneralTestFixtures.LOADING, input);
+
+        assertThat(viaApi).isEqualTo(pure);
+        // 126,000 x 1.05 / 12
+        assertThat(viaApi.instalment()).isEqualByComparingTo("11025.00");
+        assertThat(asTenant(tenant, () -> productApi.funeralYearlyPremium(product.versionId(), "A", FuneralRole.PARENT, 70)))
+            .isEqualByComparingTo("45000");
     }
 
     @Test

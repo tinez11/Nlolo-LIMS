@@ -1052,6 +1052,19 @@ public class ProductApiImpl implements ProductApi {
         return funeral ? funeralTermsStore.read(productVersionId) : FuneralPlan.none();
     }
 
+    /** A refusal is an answer (priceAnnuity's reason): it must not mark the caller's transaction rollback-only. */
+    @Override
+    @Transactional(readOnly = true, noRollbackFor = FuneralQuoteRefusedException.class)
+    public FuneralQuote quoteFuneral(UUID productVersionId, FuneralQuoteInput input) {
+        return FuneralQuoter.quote(resolveFuneralPlan(productVersionId), resolveFrequencyLoading(productVersionId), input);
+    }
+
+    @Override
+    @Transactional(readOnly = true, noRollbackFor = FuneralQuoteRefusedException.class)
+    public BigDecimal funeralYearlyPremium(UUID productVersionId, String planCode, FuneralRole role, int age) {
+        return FuneralQuoter.yearlyPremiumAt(resolveFuneralPlan(productVersionId), planCode, role, age);
+    }
+
     /**
      * A refusal is an answer, not a failure: callers catch it and record it -- the D1 lock as
      * LOCK_FAILED, the D2 vesting as a hold -- inside their own transaction. Without noRollbackFor the
